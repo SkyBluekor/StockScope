@@ -7,6 +7,7 @@ from app.core.config import get_settings
 from app.market.providers import KrxProvider, OpenDartProvider
 from app.market.providers.base import ProviderError, ProviderNotConfigured
 from app.market.service import MarketDataService
+from app.strategy.service import StrategyAnalysisService
 
 router = APIRouter(tags=["market-data"])
 
@@ -92,6 +93,27 @@ async def market_snapshot(as_of: str | None = Query(default=None)) -> dict[str, 
         _raise_provider_error(exc)
 
 
+@router.get("/market/dashboard")
+async def market_dashboard(
+    as_of: str | None = Query(default=None),
+) -> dict[str, Any]:
+    try:
+        return await _service().market_dashboard(as_of)
+    except (ProviderError, ValueError) as exc:
+        _raise_provider_error(exc)
+
+
+@router.get("/market/history")
+async def market_history(
+    as_of: str | None = Query(default=None),
+    points: int = Query(default=7, ge=3, le=12),
+) -> dict[str, Any]:
+    try:
+        return await _service().market_history(as_of, points)
+    except (ProviderError, ValueError) as exc:
+        _raise_provider_error(exc)
+
+
 @router.get("/dart/company/{corp_code}")
 async def dart_company(corp_code: str) -> dict[str, Any]:
     _, dart = _providers()
@@ -124,6 +146,19 @@ async def dart_disclosures(
         _raise_provider_error(exc)
 
 
+@router.get("/stocks/search")
+async def stock_search(
+    q: str = Query(..., min_length=1, max_length=50),
+    market: Literal["KOSPI", "KOSDAQ"] | None = Query(default=None),
+    limit: int = Query(default=12, ge=1, le=30),
+) -> dict[str, Any]:
+    krx, _ = _providers()
+    try:
+        return await krx.search_stocks(q, market, limit)
+    except (ProviderError, ValueError) as exc:
+        _raise_provider_error(exc)
+
+
 @router.get("/stocks/{code}/context")
 async def stock_context(
     code: str,
@@ -132,5 +167,39 @@ async def stock_context(
 ) -> dict[str, Any]:
     try:
         return await _service().stock_context(code, market, as_of)
+    except (ProviderError, ValueError) as exc:
+        _raise_provider_error(exc)
+
+
+@router.get("/stocks/{code}/strategy-analysis")
+async def stock_strategy_analysis(
+    code: str,
+    market: Literal["KOSPI", "KOSDAQ"] = "KOSPI",
+    as_of: str | None = Query(default=None),
+    history_points: int = Query(default=60, ge=20, le=60),
+    reference_price: float | None = Query(default=None, gt=0),
+    reference_high: float | None = Query(default=None, gt=0),
+    reference_low: float | None = Query(default=None, gt=0),
+    reference_volume: float | None = Query(default=None, ge=0),
+    position_mode: Literal["NOT_HELD", "HOLDING"] = "NOT_HELD",
+    average_price: float | None = Query(default=None, gt=0),
+    quantity: float | None = Query(default=None, gt=0),
+) -> dict[str, Any]:
+    krx, dart = _providers()
+    service = StrategyAnalysisService(krx, dart)
+    try:
+        return await service.analyze(
+            code,
+            market,
+            as_of,
+            history_points,
+            reference_price,
+            reference_high,
+            reference_low,
+            reference_volume,
+            position_mode,
+            average_price,
+            quantity,
+        )
     except (ProviderError, ValueError) as exc:
         _raise_provider_error(exc)

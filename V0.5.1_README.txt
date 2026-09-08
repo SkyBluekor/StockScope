@@ -1,0 +1,10 @@
+StockScope v0.5.1 - dashboard perceived-load optimization
+
+Changes:
+- Main dashboard no longer waits for 7-day KRX history.
+- Latest index / market breadth / turnover data renders first.
+- KOSPI/KOSDAQ sparkline history loads afterwards in background.
+- History failure does not block the dashboard.
+- No trading/order capability added.
+
+Apply: copy the contents over D:\Projects\StockScope and restart run-dev.ps1.

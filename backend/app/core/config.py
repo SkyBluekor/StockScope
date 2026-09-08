@@ -8,7 +8,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 class Settings(BaseSettings):
     app_name: str = "StockScope API"
-    app_version: str = "0.3.0"
+    app_version: str = "0.5.0"
     environment: str = "development"
 
     krx_api_key: str | None = None

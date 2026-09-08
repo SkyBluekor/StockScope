@@ -1,174 +1,1396 @@
 import { useEffect, useState } from "react";
 import {
-  ProviderStatus,
-  StockContext,
   fetchHealth,
+  fetchMarketDashboard,
+  fetchMarketHistory,
   fetchProviderStatus,
   fetchStockContext,
+  fetchStrategyAnalysis,
+  searchStocks,
+  type IndexPoint,
+  type MarketDashboard,
+  type ProviderStatus,
+  type StockContext,
+  type StrategyAnalysis,
+  type StockSearchItem,
 } from "./services/api";
 
 function number(value: number | null | undefined, suffix = "") {
-  return value == null ? "-" : `${new Intl.NumberFormat("ko-KR").format(value)}${suffix}`;
+  if (value == null) return "-";
+  return `${new Intl.NumberFormat("ko-KR").format(value)}${suffix}`;
 }
 
-function formatKrxDate(value: string | null | undefined) {
-  if (!value || value.length !== 8) return value ?? "-";
-  return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
+function compactMoney(value: number | null | undefined) {
+  if (value == null) return "-";
+  if (Math.abs(value) >= 1_000_000_000_000) return `${(value / 1_000_000_000_000).toFixed(1)}조`;
+  if (Math.abs(value) >= 100_000_000) return `${(value / 100_000_000).toFixed(1)}억`;
+  if (Math.abs(value) >= 10_000) return `${(value / 10_000).toFixed(1)}만`;
+  return number(value);
+}
+
+function signedRate(value: number | null | undefined) {
+  if (value == null) return "-";
+  return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+
+function formatDate(value: string | null | undefined) {
+  if (!value) return "-";
+  const compact = value.replace(/-/g, "");
+  if (compact.length !== 8) return value;
+  return `${compact.slice(0, 4)}.${compact.slice(4, 6)}.${compact.slice(6, 8)}`;
+}
+
+function rateClass(value: number | null | undefined) {
+  if ((value ?? 0) > 0) return "positive";
+  if ((value ?? 0) < 0) return "negative";
+  return "neutral";
+}
+
+function Sparkline({ points }: { points: IndexPoint[] }) {
+  const values = points.map((point) => point.close).filter((value): value is number => value != null);
+  if (values.length < 2) return <div className="spark-empty">데이터 준비 중</div>;
+  const width = 190;
+  const height = 56;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const path = values
+    .map((value, index) => {
+      const x = (index / (values.length - 1)) * width;
+      const y = height - ((value - min) / range) * (height - 8) - 4;
+      return `${index === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+  return (
+    <svg className="sparkline" viewBox={`0 0 ${width} ${height}`} aria-label="최근 지수 흐름">
+      <path d={path} fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IndexCard({
+  name,
+  point,
+  history,
+}: {
+  name: string;
+  point: IndexPoint;
+  history: IndexPoint[];
+}) {
+  return (
+    <article className="summary-card index-card">
+      <div>
+        <span className="summary-label">{name}</span>
+        <strong className="summary-value">{number(point?.close)}</strong>
+        <span className={`summary-change ${rateClass(point?.change_rate)}`}>{signedRate(point?.change_rate)}</span>
+      </div>
+      <Sparkline points={history} />
+    </article>
+  );
 }
 
 export default function App() {
   const [apiStatus, setApiStatus] = useState("확인 중");
   const [providers, setProviders] = useState<ProviderStatus | null>(null);
+  const [dashboard, setDashboard] = useState<MarketDashboard | null>(null);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [stockCode, setStockCode] = useState("005930");
-  const [market, setMarket] = useState<"KOSPI" | "KOSDAQ">("KOSPI");
-  const [context, setContext] = useState<StockContext | null>(null);
-  const [message, setMessage] = useState("KRX + OpenDART 통합 데이터 조회 준비 완료");
-  const [busy, setBusy] = useState(false);
+  const [stockMarket, setStockMarket] = useState<"KOSPI" | "KOSDAQ">("KOSPI");
+  const [stockQuery, setStockQuery] = useState("삼성전자 (005930)");
+  const [selectedStockName, setSelectedStockName] = useState("삼성전자");
+  const [stockSearchResults, setStockSearchResults] = useState<StockSearchItem[]>([]);
+  const [stockSearchBusy, setStockSearchBusy] = useState(false);
+  const [stockSearchOpen, setStockSearchOpen] = useState(false);
+  const [stock, setStock] = useState<StockContext | null>(null);
+  const [stockMessage, setStockMessage] = useState("종목코드로 KRX + OpenDART 통합 조회 가능");
+  const [stockBusy, setStockBusy] = useState(false);
+  const [strategyAnalysis, setStrategyAnalysis] = useState<StrategyAnalysis | null>(null);
+  const [strategyBusy, setStrategyBusy] = useState(false);
+  const [strategyMessage, setStrategyMessage] = useState("종목 조회 후 실제 기술지표 기반 전략 분석을 실행할 수 있습니다.");
+  const [referencePriceInput, setReferencePriceInput] = useState("");
+  const [referenceHighInput, setReferenceHighInput] = useState("");
+  const [referenceLowInput, setReferenceLowInput] = useState("");
+  const [referenceVolumeInput, setReferenceVolumeInput] = useState("");
+  const [positionMode, setPositionMode] = useState<"NOT_HELD" | "HOLDING">("NOT_HELD");
+  const [averagePriceInput, setAveragePriceInput] = useState("");
+  const [holdingQuantityInput, setHoldingQuantityInput] = useState("");
+
+  async function loadDashboard() {
+    setLoading(true);
+    setDashboardError(null);
+    try {
+      // 1) 최신 시장 데이터부터 표시합니다.
+      const result = await fetchMarketDashboard();
+      setDashboard(result);
+      setLoading(false);
+
+      // 2) 최근 지수 차트는 백그라운드에서 늦게 붙입니다.
+      // 히스토리 실패는 핵심 시장 데이터 표시를 막지 않습니다.
+      void fetchMarketHistory()
+        .then((history) => {
+          setDashboard((current) =>
+            current
+              ? {
+                  ...current,
+                  history: { kospi: history.kospi, kosdaq: history.kosdaq },
+                }
+              : current,
+          );
+        })
+        .catch(() => {
+          // Sparkline만 비워두고 대시보드는 계속 사용합니다.
+        });
+    } catch (error) {
+      setDashboardError(error instanceof Error ? error.message : "시장 대시보드 조회 실패");
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
     fetchHealth()
       .then((data) => setApiStatus(data.status === "ok" ? "정상" : "오류"))
       .catch(() => setApiStatus("연결 실패"));
     fetchProviderStatus().then(setProviders).catch(() => setProviders(null));
+    void loadDashboard();
   }, []);
 
-  async function analyze() {
-    setBusy(true);
-    setMessage("최근 거래일 탐색 + KRX/OpenDART 통합 조회 중...");
-    try {
-      const result = await fetchStockContext(stockCode, market);
-      setContext(result);
-      const fallback = result.fallback_used ? ` · 최근 거래일 ${formatKrxDate(result.data_date)} 자동 적용` : "";
-      setMessage(`통합 조회 성공 · ${result.company.corp_name ?? result.stock.name ?? stockCode}${fallback}`);
-    } catch (error) {
-      setContext(null);
-      setMessage(error instanceof Error ? error.message : "통합 조회 실패");
-    } finally {
-      setBusy(false);
+  useEffect(() => {
+    const query = stockQuery.trim();
+    const selectedLabel = selectedStockName ? `${selectedStockName} (${stockCode})` : "";
+    if (query === selectedLabel || query.length < 2) {
+      setStockSearchResults([]);
+      setStockSearchBusy(false);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setStockSearchBusy(true);
+      void searchStocks(query)
+        .then((result) => {
+          setStockSearchResults(result.rows);
+          setStockSearchOpen(true);
+        })
+        .catch(() => {
+          setStockSearchResults([]);
+          setStockSearchOpen(true);
+        })
+        .finally(() => setStockSearchBusy(false));
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [stockQuery, stockCode, selectedStockName]);
+
+  function chooseStock(item: StockSearchItem) {
+    setStockCode(item.code.trim().toUpperCase());
+    setStockMarket(item.market);
+    setSelectedStockName(item.name);
+    setStockQuery(`${item.name} (${item.code})`);
+    setStockSearchResults([]);
+    setStockSearchOpen(false);
+    setStock(null);
+    setStrategyAnalysis(null);
+    setReferencePriceInput("");
+    setReferenceHighInput("");
+    setReferenceLowInput("");
+    setReferenceVolumeInput("");
+    setPositionMode("NOT_HELD");
+    setAveragePriceInput("");
+    setHoldingQuantityInput("");
+    setStockMessage(`${item.market} · ${item.name} 선택됨`);
+  }
+
+  function changeStockQuery(value: string) {
+    setStockQuery(value);
+    const selectedLabel = selectedStockName ? `${selectedStockName} (${stockCode})` : "";
+    if (value !== selectedLabel) {
+      setSelectedStockName("");
+      setStockCode("");
+      setStock(null);
+      setStrategyAnalysis(null);
+      setReferencePriceInput("");
+      setReferenceHighInput("");
+      setReferenceLowInput("");
+      setReferenceVolumeInput("");
+      setPositionMode("NOT_HELD");
+      setAveragePriceInput("");
+      setHoldingQuantityInput("");
     }
   }
 
+  async function quickAnalyze() {
+    setStockBusy(true);
+    setStockMessage("KRX + OpenDART 통합 조회 중...");
+    try {
+      const result = await fetchStockContext(stockCode, stockMarket);
+      setStock(result);
+      setStrategyAnalysis(null);
+      setStockMessage(`${result.company.corp_name ?? result.stock.name ?? stockCode} 조회 완료`);
+    } catch (error) {
+      setStock(null);
+      setStrategyAnalysis(null);
+      setStockMessage(error instanceof Error ? error.message : "종목 조회 실패");
+    } finally {
+      setStockBusy(false);
+    }
+  }
+
+
+const strategyName: Record<string, string> = {
+    trend_following: "추세추종",
+    pullback: "눌림목",
+    breakout: "돌파",
+    support_bounce: "지지선 반등",
+    oversold_bounce: "과매도 반등",
+    range_trading: "박스권 매매",
+    momentum_continuation: "모멘텀 지속",
+    volatility_squeeze: "변동성 압축 돌파 준비",
+    ma20_rebound: "20일선 반등",
+    trend_recovery: "추세 회복",
+    no_trade: "매매 보류",
+  };
+
+  const strategyEasyDescription: Record<string, string> = {
+    trend_following: "이미 상승 흐름이 만들어진 종목을 따라가는 방식입니다. 추세가 꺾이기 전까지 흐름을 이용합니다.",
+    pullback: "상승하던 종목이 잠깐 내려왔을 때, 지지 구간에서 다시 오르는 흐름을 노리는 방식입니다.",
+    breakout: "최근 고점이나 저항 가격을 거래량과 함께 넘어설 때 추가 상승을 기대하는 방식입니다.",
+    support_bounce: "주가가 여러 번 버텼던 가격 근처에서 다시 반등하는지를 보는 방식입니다.",
+    oversold_bounce: "짧은 기간 너무 많이 떨어진 종목이 일시적으로 되돌아오르는 구간을 노리는 방식입니다.",
+    range_trading: "주가가 일정 범위 안에서 오르내릴 때 아래쪽에서는 반등, 위쪽에서는 저항을 보는 방식입니다.",
+    momentum_continuation: "가격과 거래량이 동시에 강한 종목의 상승 흐름이 계속 이어지는지를 보는 방식입니다.",
+    volatility_squeeze: "가격 변동과 거래량이 줄어든 압축 구간 뒤 큰 움직임이 나올 준비 상태인지 보는 방식입니다.",
+    ma20_rebound: "상승 중인 20일 이동평균선 근처에서 주가가 다시 지지를 받는지를 보는 방식입니다.",
+    trend_recovery: "조정이나 약세 뒤 주가가 20일선과 저점 구조를 다시 회복하는 초기 전환을 보는 방식입니다.",
+    no_trade: "현재는 어느 전략도 조건이 충분하지 않습니다. 억지로 진입하기보다 기다리거나 관찰하는 쪽이 낫다는 뜻입니다.",
+  };
+
+  const strategyBeginnerHint: Record<string, string> = {
+    trend_following: "쉽게 말해: 이미 잘 가는 흐름에 올라타는 전략",
+    pullback: "쉽게 말해: 오르던 종목이 잠깐 쉬어갈 때 들어가는 전략",
+    breakout: "쉽게 말해: 막혀 있던 가격을 강하게 뚫을 때 따라가는 전략",
+    support_bounce: "쉽게 말해: 자주 버틴 가격에서 튀어 오르는지 보는 전략",
+    oversold_bounce: "쉽게 말해: 너무 많이 떨어진 뒤 단기 반등을 노리는 전략",
+    range_trading: "쉽게 말해: 박스권 아래에서 사고 위에서 정리하는 관점",
+    momentum_continuation: "쉽게 말해: 강하게 오르는 흐름이 계속 살아 있는지 보는 전략",
+    volatility_squeeze: "쉽게 말해: 조용히 힘을 모으다가 터지는 구간을 기다리는 전략",
+    ma20_rebound: "쉽게 말해: 상승 중인 20일선에 닿고 다시 튀는지 보는 전략",
+    trend_recovery: "쉽게 말해: 약해졌던 흐름이 다시 살아나는 초입을 확인하는 전략",
+    no_trade: "쉽게 말해: 지금은 굳이 매매하지 않는 편이 낫다는 판단",
+  };
+
+  async function runStrategyAnalysis() {
+    const parseOptional = (value: string) => {
+      const normalized = value.replace(/,/g, "").trim();
+      if (!normalized) return undefined;
+      const parsed = Number(normalized);
+      return Number.isFinite(parsed) ? parsed : Number.NaN;
+    };
+
+    const referencePrice = parseOptional(referencePriceInput);
+    const referenceHigh = parseOptional(referenceHighInput);
+    const referenceLow = parseOptional(referenceLowInput);
+    const referenceVolume = parseOptional(referenceVolumeInput);
+    const averagePrice = parseOptional(averagePriceInput);
+    const holdingQuantity = parseOptional(holdingQuantityInput);
+
+    if (referencePrice != null && (!Number.isFinite(referencePrice) || referencePrice <= 0)) {
+      setStrategyMessage("현재 참고가격은 0보다 큰 숫자로 입력해주세요.");
+      return;
+    }
+    if ((referenceHigh != null || referenceLow != null || referenceVolume != null) && referencePrice == null) {
+      setStrategyMessage("오늘 고가·저가·거래량을 사용할 때는 현재 참고가격도 함께 입력해주세요.");
+      return;
+    }
+    if (referenceHigh != null && (!Number.isFinite(referenceHigh) || referenceHigh <= 0)) {
+      setStrategyMessage("오늘 고가는 0보다 큰 숫자로 입력해주세요.");
+      return;
+    }
+    if (referenceLow != null && (!Number.isFinite(referenceLow) || referenceLow <= 0)) {
+      setStrategyMessage("오늘 저가는 0보다 큰 숫자로 입력해주세요.");
+      return;
+    }
+    if (referenceVolume != null && (!Number.isFinite(referenceVolume) || referenceVolume < 0)) {
+      setStrategyMessage("현재 거래량은 0 이상의 숫자로 입력해주세요.");
+      return;
+    }
+    if (positionMode === "HOLDING" && (averagePrice == null || !Number.isFinite(averagePrice) || averagePrice <= 0)) {
+      setStrategyMessage("보유 중으로 분석하려면 평균 매수가를 입력해주세요.");
+      return;
+    }
+    if (holdingQuantity != null && (!Number.isFinite(holdingQuantity) || holdingQuantity <= 0)) {
+      setStrategyMessage("보유 수량은 0보다 큰 숫자로 입력해주세요.");
+      return;
+    }
+
+    const scrollPosition = window.scrollY;
+    setStrategyBusy(true);
+    setStrategyMessage(
+      referencePrice
+        ? "확정 EOD 분석과 현재 참고가격 시나리오를 각각 계산해 전략 변화까지 비교 중..."
+        : "최근 KRX 확정 데이터로 EOD 전략 적합도를 계산 중...",
+    );
+    try {
+      const result = await fetchStrategyAnalysis(
+        stockCode,
+        stockMarket,
+        referencePrice,
+        referenceHigh,
+        referenceLow,
+        referenceVolume,
+        positionMode,
+        averagePrice,
+        holdingQuantity,
+      );
+      setStrategyAnalysis(result);
+      const topName = result.risk_gate.active
+        ? "매매 보류"
+        : result.best_regular_strategy
+          ? (strategyName[result.best_regular_strategy.strategy] ?? result.best_regular_strategy.strategy)
+          : "매매 보류";
+      setStrategyMessage(`${result.history_points}거래일 분석 완료 · ${result.position_context.label} 기준 · 현재 판단: ${topName}`);
+    } catch (error) {
+      setStrategyAnalysis(null);
+      setStrategyMessage(error instanceof Error ? error.message : "전략 분석 실패");
+    } finally {
+      setStrategyBusy(false);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          window.scrollTo({ top: scrollPosition, behavior: "auto" });
+        });
+      });
+    }
+  }
+
+  const breadth = dashboard?.market.breadth;
+  const upPercent = breadth?.total ? (breadth.up / breadth.total) * 100 : 0;
+  const downPercent = breadth?.total ? (breadth.down / breadth.total) * 100 : 0;
+
   return (
-    <main className="shell">
+    <div className="app-shell">
       <header className="topbar">
-        <div className="brand">StockScope</div>
-        <div className="top-statuses">
-          <span className="status">API {apiStatus}</span>
-          <span className={`status ${providers?.krx.configured ? "connected" : ""}`}>
-            KRX {providers?.krx.configured ? "설정됨" : "미설정"}
-          </span>
-          <span className={`status ${providers?.dart.configured ? "connected" : ""}`}>
-            DART {providers?.dart.configured ? "설정됨" : "미설정"}
-          </span>
+        <div className="brand-wrap">
+          <div className="brand-mark"><i /><i /><i /></div>
+          <strong className="brand">StockScope</strong>
+        </div>
+        <nav className="topnav" aria-label="주요 메뉴">
+          <button className="nav-item active">대시보드</button>
+          <button className="nav-item" disabled>전략 스캐너 <em>준비중</em></button>
+          <button className="nav-item" disabled>종목 분석</button>
+          <button className="nav-item" disabled>백테스트</button>
+          <button className="nav-item" disabled>시뮬레이션</button>
+        </nav>
+        <div className="header-status">
+          <span className={`dot-status ${apiStatus === "정상" ? "ok" : ""}`}>API {apiStatus}</span>
+          <span className={`dot-status ${providers?.krx.configured ? "ok" : ""}`}>KRX</span>
+          <span className={`dot-status ${providers?.dart.configured ? "ok" : ""}`}>DART</span>
         </div>
       </header>
 
-      <section className="workspace">
-        <div className="page-heading">
-          <p className="eyebrow">MARKET DATA FOUNDATION · v0.4</p>
-          <h1>종목코드 하나로 KRX + OpenDART 통합 조회</h1>
-          <p>
-            사용자가 날짜나 DART 고유번호를 직접 찾지 않아도 됩니다. StockScope가 최근 사용 가능한 KRX 거래일과
-            DART corp_code를 자동으로 찾아 통합합니다.
-          </p>
-        </div>
-
-        <div className="danger-banner">
-          <strong>실제 매매 기능 없음</strong>
-          <span>조회·분석·백테스트·시뮬레이션 전용입니다. 증권사 주문 API는 구현하지 않습니다.</span>
-        </div>
-
-        <section className="panel">
-          <div className="panel-title">
-            <div><span className="step">01</span><h2>통합 종목 조회</h2></div>
-            <span className="read-only">KRX + OpenDART</span>
+      <div className="layout">
+        <aside className="sidebar">
+          <button className="side-item active"><span>⌂</span>오늘의 시장</button>
+          <button className="side-item" disabled><span>◉</span>추천 전략</button>
+          <button className="side-item" disabled><span>☆</span>관심 종목</button>
+          <button className="side-item" disabled><span>◷</span>최근 분석</button>
+          <div className="sidebar-note">
+            <strong>분석 전용</strong>
+            <p>실제 주문 API를 구현하지 않습니다.</p>
+            <span>KRX + OpenDART</span>
           </div>
-          <div className="form compact">
-            <label>시장
-              <select value={market} onChange={(e) => setMarket(e.target.value as "KOSPI" | "KOSDAQ") }>
-                <option value="KOSPI">KOSPI</option>
-                <option value="KOSDAQ">KOSDAQ</option>
-              </select>
-            </label>
-            <label>종목코드
-              <input value={stockCode} onChange={(e) => setStockCode(e.target.value.replace(/\D/g, "").slice(0, 6))} />
-            </label>
-            <button className="primary" disabled={busy || stockCode.length !== 6} onClick={analyze}>
-              {busy ? "조회 중..." : "통합 조회"}
-            </button>
+        </aside>
+
+        <main className="content">
+          <section className="page-head">
+            <div>
+              <span className="eyebrow">MARKET DASHBOARD · v0.7</span>
+              <h1>오늘의 시장</h1>
+              <p>최근 사용 가능한 KRX 거래일 데이터를 자동으로 찾아 시장 상태를 요약합니다.</p>
+            </div>
+            <div className="date-box">
+              <span>데이터 기준</span>
+              <strong>{formatDate(dashboard?.data_date)}</strong>
+              {dashboard?.fallback_used && <small>최근 거래일 자동 보정</small>}
+            </div>
+          </section>
+
+          <div className="trade-lock">
+            <strong>실제 매매 기능 없음</strong>
+            <span>조회 · 분석 · 백테스트 · 시뮬레이션 전용이며 증권사 주문을 전송하지 않습니다.</span>
           </div>
-          <p className="hint">당일 KRX 데이터가 아직 없거나 휴장일이면 최근 거래일을 자동으로 찾아 사용합니다.</p>
-        </section>
 
-        <div className="message">{message}</div>
+          {loading && <div className="loading-card">KRX 시장 데이터를 불러오는 중입니다...</div>}
+          {dashboardError && (
+            <div className="error-card">
+              <strong>시장 데이터 조회 실패</strong>
+              <span>{dashboardError}</span>
+              <button onClick={() => void loadDashboard()}>다시 조회</button>
+            </div>
+          )}
 
-        {context && (
-          <>
-            <section className="panel quote-panel">
-              <div className="quote-head">
-                <div>
-                  <span className="eyebrow">KRX DAILY · {formatKrxDate(context.data_date)}</span>
-                  <h2>{context.stock.name ?? context.company.corp_name} <small>{context.code}</small></h2>
-                </div>
-                <div className="price">
-                  {number(context.stock.close, "원")}
-                  <small>{context.stock.change_rate == null ? "" : `${context.stock.change_rate >= 0 ? "+" : ""}${context.stock.change_rate}%`}</small>
-                </div>
-              </div>
-              {context.fallback_used && (
-                <div className="sample-note">당일 데이터가 없어 최근 사용 가능한 거래일 {formatKrxDate(context.data_date)} 기준으로 자동 보정했습니다.</div>
-              )}
-              <div className="metrics six">
-                <div><span>시가</span><strong>{number(context.stock.open)}</strong></div>
-                <div><span>고가</span><strong>{number(context.stock.high)}</strong></div>
-                <div><span>저가</span><strong>{number(context.stock.low)}</strong></div>
-                <div><span>거래량</span><strong>{number(context.stock.volume)}</strong></div>
-                <div><span>거래대금</span><strong>{number(context.stock.trade_value)}</strong></div>
-                <div><span>시가총액</span><strong>{number(context.stock.market_cap)}</strong></div>
-              </div>
-            </section>
+          {dashboard && (
+            <>
+              <section className="summary-grid">
+                <IndexCard name="KOSPI" point={dashboard.indices.kospi} history={dashboard.history.kospi} />
+                <IndexCard name="KOSDAQ" point={dashboard.indices.kosdaq} history={dashboard.history.kosdaq} />
+                <article className="summary-card">
+                  <span className="summary-label">시장 상태</span>
+                  <strong className="summary-value text-value">{dashboard.market.regime}</strong>
+                  <span className="summary-sub">상승 종목 비율 {(dashboard.market.breadth.up_ratio * 100).toFixed(1)}%</span>
+                </article>
+                <article className="summary-card">
+                  <span className="summary-label">변동성 프록시</span>
+                  <strong className="summary-value text-value">{dashboard.market.volatility_proxy}</strong>
+                  <span className="summary-sub">평균 절대 등락 {dashboard.market.breadth.avg_abs_change_rate.toFixed(2)}%</span>
+                </article>
+              </section>
 
-            <section className="grid two result-grid">
-              <article className="panel">
-                <div className="panel-title"><div><span className="step">02</span><h2>시장 지수</h2></div><span className="read-only">KRX</span></div>
-                <dl className="detail-list">
-                  <div><dt>지수</dt><dd>{context.market_index?.name ?? context.market}</dd></div>
-                  <div><dt>종가</dt><dd>{number(context.market_index?.close)}</dd></div>
-                  <div><dt>등락률</dt><dd>{context.market_index?.change_rate == null ? "-" : `${context.market_index.change_rate}%`}</dd></div>
-                  <div><dt>기준일</dt><dd>{formatKrxDate(context.market_index?.date)}</dd></div>
-                </dl>
-              </article>
-
-              <article className="panel">
-                <div className="panel-title"><div><span className="step">03</span><h2>기업 개황</h2></div><span className="read-only">OpenDART</span></div>
-                <dl className="detail-list">
-                  <div><dt>회사명</dt><dd>{context.company.corp_name ?? "-"}</dd></div>
-                  <div><dt>DART 코드</dt><dd>{context.company.corp_code ?? "-"}</dd></div>
-                  <div><dt>대표자</dt><dd>{context.company.ceo ?? "-"}</dd></div>
-                  <div><dt>설립일</dt><dd>{context.company.established_date ?? "-"}</dd></div>
-                  <div><dt>결산월</dt><dd>{context.company.fiscal_month ?? "-"}</dd></div>
-                </dl>
-              </article>
-            </section>
-
-            <section className="panel">
-              <div className="panel-title">
-                <div><span className="step">04</span><h2>최근 공시</h2></div>
-                <span className="read-only">{context.disclosures.count}건</span>
-              </div>
-              <div className="disclosure-list">
-                {context.disclosures.rows.slice(0, 8).map((row, index) => (
-                  <div className="disclosure" key={`${row.receipt_no ?? index}`}>
-                    <span>{row.receipt_date ?? "-"}</span>
-                    <strong>{row.report_name ?? "-"}</strong>
+              <section className="dashboard-grid">
+                <article className="panel market-panel">
+                  <div className="panel-head">
+                    <div>
+                      <span className="panel-kicker">MARKET BREADTH</span>
+                      <h2>시장 폭</h2>
+                    </div>
+                    <span className="source-chip">KRX 공식 데이터</span>
                   </div>
-                ))}
-                {context.disclosures.count === 0 && <p className="hint">최근 조회 기간에 공시가 없습니다.</p>}
+                  <div className="breadth-stats">
+                    <div><strong className="positive">{number(breadth?.up)}</strong><span>상승</span></div>
+                    <div><strong>{number(breadth?.flat)}</strong><span>보합</span></div>
+                    <div><strong className="negative">{number(breadth?.down)}</strong><span>하락</span></div>
+                  </div>
+                  <div className="breadth-bar" aria-label="상승 하락 종목 비중">
+                    <div className="breadth-up" style={{ width: `${upPercent}%` }} />
+                    <div className="breadth-flat" style={{ width: `${Math.max(0, 100 - upPercent - downPercent)}%` }} />
+                    <div className="breadth-down" style={{ width: `${downPercent}%` }} />
+                  </div>
+                  <p className="muted">총 {number(breadth?.total)}개 종목의 당일 등락률을 집계한 값입니다.</p>
+                </article>
+
+                <article className="panel group-panel">
+                  <div className="panel-head">
+                    <div>
+                      <span className="panel-kicker">RELATIVE STRENGTH</span>
+                      <h2>강한 업종 / 지수</h2>
+                    </div>
+                  </div>
+                  <div className="group-list">
+                    {dashboard.strong_groups.map((group, index) => (
+                      <div className="group-row" key={`${group.name}-${index}`}>
+                        <span className="rank">{index + 1}</span>
+                        <div><strong>{group.name ?? "-"}</strong><small>{group.kind} · {group.class ?? "KRX"}</small></div>
+                        <b className="positive">{signedRate(group.change_rate)}</b>
+                      </div>
+                    ))}
+                    {dashboard.strong_groups.length === 0 && <p className="muted">양(+)의 업종/지수 그룹이 없습니다.</p>}
+                  </div>
+                </article>
+
+                <article className="panel turnover-panel">
+                  <div className="panel-head">
+                    <div>
+                      <span className="panel-kicker">TURNOVER</span>
+                      <h2>거래대금 상위 종목</h2>
+                    </div>
+                    <span className="source-chip">KOSPI + KOSDAQ</span>
+                  </div>
+                  <div className="table-wrap">
+                    <table>
+                      <thead><tr><th>순위</th><th>종목</th><th>시장</th><th>현재 기준가</th><th>등락률</th><th>거래대금</th></tr></thead>
+                      <tbody>
+                        {dashboard.top_turnover.map((row, index) => (
+                          <tr key={`${row.code}-${index}`}>
+                            <td>{index + 1}</td>
+                            <td><strong>{row.name ?? row.code}</strong><small>{row.code}</small></td>
+                            <td>{row.market ?? "-"}</td>
+                            <td>{number(row.close, "원")}</td>
+                            <td className={rateClass(row.change_rate)}>{signedRate(row.change_rate)}</td>
+                            <td>{compactMoney(row.trade_value)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </article>
+
+                <article className="panel summary-panel">
+                  <div className="panel-head">
+                    <div>
+                      <span className="panel-kicker">RULE-BASED SUMMARY</span>
+                      <h2>현재 상황 요약</h2>
+                    </div>
+                    <span className="source-chip purple">AI 아님</span>
+                  </div>
+                  <div className="summary-copy">
+                    <strong>{dashboard.market.regime}</strong>
+                    <p>{dashboard.summary}</p>
+                  </div>
+                  <div className="engine-status">
+                    <div><span>시장 데이터</span><b>동작 중</b></div>
+                    <div><span>전략 엔진</span><b className="pending">다음 단계</b></div>
+                    <div><span>Risk Engine</span><b className="pending">대기</b></div>
+                  </div>
+                </article>
+              </section>
+            </>
+          )}
+
+          <section className="panel quick-panel">
+            <div className="panel-head">
+              <div>
+                <span className="panel-kicker">QUICK ANALYSIS</span>
+                <h2>종목 빠른 조회</h2>
               </div>
-            </section>
-          </>
-        )}
-      </section>
-    </main>
+              <span className="source-chip">KRX + OpenDART</span>
+            </div>
+            <div className="stock-search-line">
+              <div className="stock-search-box">
+                <input
+                  value={stockQuery}
+                  onChange={(event) => changeStockQuery(event.target.value)}
+                  onFocus={() => stockSearchResults.length > 0 && setStockSearchOpen(true)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && stockSearchResults[0]) {
+                      event.preventDefault();
+                      chooseStock(stockSearchResults[0]);
+                    }
+                  }}
+                  placeholder="종목명 또는 6자리 코드 검색 · 예: 삼성전자, 005930, 0011A0"
+                  autoComplete="off"
+                />
+                {stockSearchBusy && <span className="search-spinner">검색 중</span>}
+                {stockSearchOpen && stockQuery.trim().length >= 2 && (
+                  <div className="stock-suggestions">
+                    {stockSearchResults.map((item) => (
+                      <button type="button" key={`${item.market}-${item.code}`} onMouseDown={() => chooseStock(item)}>
+                        <span className={`market-badge ${item.market.toLowerCase()}`}>{item.market}</span>
+                        <div>
+                          <strong>{item.name}</strong>
+                          <small>{item.code} · {item.stock_type || item.security_group || "주식"}</small>
+                        </div>
+                        <em>선택</em>
+                      </button>
+                    ))}
+                    {!stockSearchBusy && stockSearchResults.length === 0 && (
+                      <div className="search-empty">검색 결과가 없습니다.</div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <span className="selected-market">{selectedStockName ? `${stockMarket} · ${stockCode}` : "종목을 검색해 선택하세요"}</span>
+              <button className="analyze-button" disabled={stockBusy || stockCode.length !== 6 || !selectedStockName} onClick={() => void quickAnalyze()}>
+                {stockBusy ? "조회 중..." : "통합 조회"}
+              </button>
+            </div>
+            <span className="quick-message">{stockMessage}</span>
+            {stock && (
+              <div className="stock-preview">
+                <div className="stock-main">
+                  <span>{stock.market} · KRX EOD</span>
+                  <h3>{stock.company.corp_name ?? stock.stock.name} <small>{stock.code}</small></h3>
+                  <div className="confirmed-price-line">
+                    <div>
+                      <small>최근 확정 종가</small>
+                      <strong>{number(stock.stock.close, "원")}</strong>
+                    </div>
+                    <b className={rateClass(stock.stock.change_rate)}>{signedRate(stock.stock.change_rate)}</b>
+                  </div>
+                  <em className="confirmed-date">분석 기준 거래일 · {formatDate(stock.data_date)}</em>
+                </div>
+                <div className="stock-facts">
+                  <div><span>대표자</span><strong>{stock.company.ceo ?? "-"}</strong></div>
+                  <div><span>거래량</span><strong>{number(stock.stock.volume)}</strong></div>
+                  <div><span>시가총액</span><strong>{compactMoney(stock.stock.market_cap)}</strong></div>
+                  <div><span>최근 공시</span><strong>{stock.disclosures.count}건</strong></div>
+                </div>
+              </div>
+            )}
+
+            {stock && (
+              <div className="strategy-test">
+                <div className="strategy-test-head">
+                  <div>
+                    <span className="panel-kicker">STRATEGY ENGINE · v0.11</span>
+                    <h3>확정 EOD vs 현재 참고가격 시나리오</h3>
+                    <p>{strategyMessage}</p>
+                  </div>
+                  <button type="button" disabled={strategyBusy} onClick={() => void runStrategyAnalysis()}>
+                    {strategyBusy ? "분석 중..." : "전략 분석 실행"}
+                  </button>
+                </div>
+
+                <div className="reference-price-editor">
+                  <div className="reference-copy">
+                    <strong>현재 참고정보 직접 입력 <span>선택</span></strong>
+                    <p>
+                      현재가격만 입력해도 예상 RSI·MA20과 가격 위치를 다시 계산합니다.
+                      오늘 고가·저가·거래량까지 넣으면 ATR·거래량 조건도 더 현재 상황에 가깝게 보정합니다.
+                    </p>
+                  </div>
+                  <div className="reference-input-grid">
+                    <label>
+                      <span>현재 참고가격 <b>핵심</b></span>
+                      <div className="reference-input-wrap">
+                        <input
+                          value={referencePriceInput}
+                          onChange={(event) => setReferencePriceInput(event.target.value.replace(/[^0-9,.]/g, ""))}
+                          placeholder={stock.stock.close ? `예: ${number(stock.stock.close)}` : "현재 참고가격"}
+                          inputMode="decimal"
+                        />
+                        <i>원</i>
+                      </div>
+                    </label>
+                    <label>
+                      <span>오늘 고가 <em>선택</em></span>
+                      <div className="reference-input-wrap">
+                        <input value={referenceHighInput} onChange={(event) => setReferenceHighInput(event.target.value.replace(/[^0-9,.]/g, ""))} placeholder="선택 입력" inputMode="decimal" />
+                        <i>원</i>
+                      </div>
+                    </label>
+                    <label>
+                      <span>오늘 저가 <em>선택</em></span>
+                      <div className="reference-input-wrap">
+                        <input value={referenceLowInput} onChange={(event) => setReferenceLowInput(event.target.value.replace(/[^0-9,.]/g, ""))} placeholder="선택 입력" inputMode="decimal" />
+                        <i>원</i>
+                      </div>
+                    </label>
+                    <label>
+                      <span>현재 누적 거래량 <em>선택</em></span>
+                      <div className="reference-input-wrap">
+                        <input value={referenceVolumeInput} onChange={(event) => setReferenceVolumeInput(event.target.value.replace(/[^0-9,]/g, ""))} placeholder="선택 입력" inputMode="numeric" />
+                        <i>주</i>
+                      </div>
+                    </label>
+                  </div>
+                  {(referencePriceInput || referenceHighInput || referenceLowInput || referenceVolumeInput) && (
+                    <button
+                      type="button"
+                      className="reference-reset"
+                      onClick={() => {
+                        setReferencePriceInput("");
+                        setReferenceHighInput("");
+                        setReferenceLowInput("");
+                        setReferenceVolumeInput("");
+                        setStrategyAnalysis(null);
+                      }}
+                    >
+                      참고정보 초기화
+                    </button>
+                  )}
+                  <small>사용자 입력값은 현재 분석 요청에만 사용하며 KRX 확정 일봉·캐시·DB에는 저장하지 않습니다.</small>
+                </div>
+
+                <div className="position-context-editor">
+                  <div className="position-context-head">
+                    <div>
+                      <strong>내 현재 상태 가정</strong>
+                      <p>실제 증권계좌와 연결하지 않고, 전략 설명을 내 상황에 맞게 바꾸기 위한 분석용 입력입니다.</p>
+                    </div>
+                    <span>실제 주문 없음</span>
+                  </div>
+                  <div className="position-mode-buttons">
+                    <button
+                      type="button"
+                      className={positionMode === "NOT_HELD" ? "active" : ""}
+                      onClick={() => { setPositionMode("NOT_HELD"); setAveragePriceInput(""); setHoldingQuantityInput(""); setStrategyAnalysis(null); }}
+                    >
+                      아직 보유하지 않음
+                      <small>신규 진입 관점</small>
+                    </button>
+                    <button
+                      type="button"
+                      className={positionMode === "HOLDING" ? "active" : ""}
+                      onClick={() => { setPositionMode("HOLDING"); setStrategyAnalysis(null); }}
+                    >
+                      현재 보유 중
+                      <small>보유 포지션 관리 관점</small>
+                    </button>
+                  </div>
+                  {positionMode === "HOLDING" && (
+                    <div className="holding-inputs">
+                      <label>
+                        <span>평균 매수가 <b>필수</b></span>
+                        <div className="reference-input-wrap">
+                          <input value={averagePriceInput} onChange={(event) => setAveragePriceInput(event.target.value.replace(/[^0-9,.]/g, ""))} placeholder="예: 245000" inputMode="decimal" />
+                          <i>원</i>
+                        </div>
+                      </label>
+                      <label>
+                        <span>보유 수량 <em>선택</em></span>
+                        <div className="reference-input-wrap">
+                          <input value={holdingQuantityInput} onChange={(event) => setHoldingQuantityInput(event.target.value.replace(/[^0-9,.]/g, ""))} placeholder="예: 10" inputMode="decimal" />
+                          <i>주</i>
+                        </div>
+                      </label>
+                    </div>
+                  )}
+                </div>
+
+                {strategyAnalysis && (
+                  <>
+                    <section className={`position-context-result ${strategyAnalysis.position_context.mode.toLowerCase()} ${strategyAnalysis.position_context.state.toLowerCase()}`}>
+                      <div className="position-result-head">
+                        <div>
+                          <span>MY POSITION CONTEXT</span>
+                          <strong>{strategyAnalysis.position_context.mode === "HOLDING" ? "보유 포지션 자동 점검" : "신규 진입 관점"}</strong>
+                        </div>
+                        <b>{strategyAnalysis.position_context.label}</b>
+                      </div>
+                      <p>{strategyAnalysis.position_context.summary}</p>
+                      {strategyAnalysis.position_context.mode === "HOLDING" && (
+                        <>
+                          <div className="position-metrics">
+                            <div><span>평균 매수가</span><strong>{number(strategyAnalysis.position_context.average_price, "원")}</strong></div>
+                            <div><span>분석 기준가격</span><strong>{number(strategyAnalysis.position_context.analysis_price, "원")}</strong></div>
+                            <div><span>평균가 대비</span><strong className={rateClass(strategyAnalysis.position_context.return_pct)}>{signedRate(strategyAnalysis.position_context.return_pct)}</strong></div>
+                            <div><span>평가손익</span><strong>{strategyAnalysis.position_context.unrealized_pnl == null ? "수량 미입력" : `${strategyAnalysis.position_context.unrealized_pnl >= 0 ? "+" : ""}${number(strategyAnalysis.position_context.unrealized_pnl, "원")}`}</strong></div>
+                          </div>
+
+                          {strategyAnalysis.position_action_guide.available && (
+                            <div className={`position-action-card ${strategyAnalysis.position_action_guide.primary_code.toLowerCase()}`}>
+                              <div className="position-action-main">
+                                <span>PROGRAM RESPONSE</span>
+                                <strong>{strategyAnalysis.position_action_guide.primary_label}</strong>
+                                <h4>{strategyAnalysis.position_action_guide.headline}</h4>
+                                <p>{strategyAnalysis.position_action_guide.summary}</p>
+                              </div>
+
+                              <div className="position-action-options">
+                                <article>
+                                  <span>현재 보유분</span>
+                                  <b>{strategyAnalysis.position_action_guide.hold?.label}</b>
+                                  <p>{strategyAnalysis.position_action_guide.hold?.reason}</p>
+                                </article>
+                                <article className="add">
+                                  <span>추가매수 / 물타기</span>
+                                  <b>{strategyAnalysis.position_action_guide.add_position?.label}</b>
+                                  <p>{strategyAnalysis.position_action_guide.add_position?.reason}</p>
+                                </article>
+                                <article className="reduce">
+                                  <span>비중 축소 / 정리</span>
+                                  <b>{strategyAnalysis.position_action_guide.reduce_position?.label}</b>
+                                  <p>{strategyAnalysis.position_action_guide.reduce_position?.reason}</p>
+                                </article>
+                              </div>
+
+                              {!!strategyAnalysis.position_action_guide.why?.length && (
+                                <div className="position-action-why">
+                                  <b>왜 이렇게 판단했나?</b>
+                                  <ul>{strategyAnalysis.position_action_guide.why.map((text) => <li key={text}>{text}</li>)}</ul>
+                                </div>
+                              )}
+
+                              {!!strategyAnalysis.position_action_guide.triggers?.length && (
+                                <div className="position-action-triggers">
+                                  <b>대응이 바뀌는 조건</b>
+                                  {strategyAnalysis.position_action_guide.triggers.map((item) => (
+                                    <div key={`${item.condition}-${item.effect}`}>
+                                      <strong>{item.condition}</strong>
+                                      <span>{item.effect}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          <div className="auto-check-list position-checks">
+                            {strategyAnalysis.position_context.checks.map((check) => (
+                              <div className={`auto-check ${check.status.toLowerCase()}`} key={check.key}>
+                                <span className="check-icon">{check.status === "PASS" ? "✓" : check.status === "FAIL" ? "✕" : check.status === "WARN" ? "!" : "?"}</span>
+                                <div><strong>{check.label}</strong><em>{check.value}</em><small>{check.explanation}</small></div>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </section>
+
+                    <div className={`freshness-card ${strategyAnalysis.data_freshness.reference?.status.toLowerCase() ?? "eod"}`}>
+                      <div className="freshness-title">
+                        <div>
+                          <span>DATA FRESHNESS</span>
+                          <strong>
+                            {strategyAnalysis.data_freshness.reference
+                              ? strategyAnalysis.data_freshness.reference.status === "EXTREME_MOVE"
+                                ? "급격한 가격 변동 · 재검토 필요"
+                                : strategyAnalysis.data_freshness.reference.status === "STALE"
+                                  ? "확정 데이터와 가격 괴리 큼"
+                                  : "현재 참고가격 반영"
+                              : "KRX 최근 확정 데이터 기준"}
+                          </strong>
+                        </div>
+                        <span className="freshness-source">{strategyAnalysis.data_freshness.price_source === "USER_INPUT" ? "USER INPUT" : "KRX EOD"}</span>
+                      </div>
+                      <div className="freshness-values">
+                        <div><span>확정 거래일</span><strong>{formatDate(strategyAnalysis.data_freshness.eod_date)}</strong></div>
+                        <div><span>확정 종가</span><strong>{number(strategyAnalysis.data_freshness.eod_close, "원")}</strong></div>
+                        {strategyAnalysis.data_freshness.reference && (
+                          <>
+                            <div><span>현재 참고가격</span><strong>{number(strategyAnalysis.data_freshness.reference.reference_price, "원")}</strong></div>
+                            <div><span>확정 종가 대비</span><strong className={rateClass(strategyAnalysis.data_freshness.reference.gap_pct)}>{signedRate(strategyAnalysis.data_freshness.reference.gap_pct)}</strong></div>
+                          </>
+                        )}
+                      </div>
+                      <p>
+                        {strategyAnalysis.data_freshness.reference?.message
+                          ?? "장중 실시간 가격은 반영되지 않았습니다. 현재 상황과 차이가 크다면 위 입력란에 참고가격을 넣고 다시 분석하세요."}
+                      </p>
+                      {strategyAnalysis.data_freshness.reference?.is_extreme_move && (
+                        <div className="extreme-warning">
+                          <b>EXTREME MOVE</b>
+                          <span>확정 종가 대비 변동폭이 ATR 기반 허용 범위를 크게 넘어 기존 전략을 그대로 적용하지 않고 Risk Gate를 우선합니다.</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="analysis-layer-section">
+                      <div className="layer-section-head">
+                        <div>
+                          <span>ANALYSIS LAYERS</span>
+                          <strong>확정 데이터와 현재 시나리오를 분리해서 봅니다</strong>
+                        </div>
+                        <p>현재가격을 입력해도 과거 KRX 데이터는 바뀌지 않습니다.</p>
+                      </div>
+                      <div className="analysis-layer-grid">
+                        <article className="analysis-layer-card confirmed">
+                          <span>① 확정 EOD 기준</span>
+                          <strong>{formatDate(strategyAnalysis.data_freshness.eod_date)} · {number(strategyAnalysis.analysis_layers.confirmed_eod.price, "원")}</strong>
+                          <div><b>MA20</b><em>{number(strategyAnalysis.analysis_layers.confirmed_eod.ma20, "원")}</em></div>
+                          <div><b>RSI14</b><em>{number(strategyAnalysis.analysis_layers.confirmed_eod.rsi14)}</em></div>
+                          <div><b>ATR</b><em>{strategyAnalysis.analysis_layers.confirmed_eod.atr_pct == null ? "-" : `${strategyAnalysis.analysis_layers.confirmed_eod.atr_pct.toFixed(2)}%`}</em></div>
+                          <div><b>거래량비</b><em>{strategyAnalysis.analysis_layers.confirmed_eod.volume_ratio_20 == null ? "-" : `${strategyAnalysis.analysis_layers.confirmed_eod.volume_ratio_20.toFixed(2)}배`}</em></div>
+                          <small>KRX 확정값 · 수정되지 않음</small>
+                        </article>
+
+                        <article className={`analysis-layer-card reference ${strategyAnalysis.analysis_layers.current_reference ? "active" : "empty"}`}>
+                          <span>② 현재 참고가격 시나리오</span>
+                          {strategyAnalysis.analysis_layers.current_reference ? (
+                            <>
+                              <strong>{number(strategyAnalysis.analysis_layers.current_reference.price, "원")}</strong>
+                              <div><b>예상 MA20</b><em>{number(strategyAnalysis.analysis_layers.current_reference.estimated_ma20, "원")}</em></div>
+                              <div><b>예상 RSI14</b><em>{number(strategyAnalysis.analysis_layers.current_reference.estimated_rsi14)}</em></div>
+                              <div>
+                                <b>{strategyAnalysis.analysis_layers.current_reference.estimated_atr_pct == null ? "ATR" : "예상 ATR"}</b>
+                                <em>{strategyAnalysis.analysis_layers.current_reference.effective_atr_pct == null ? "-" : `${strategyAnalysis.analysis_layers.current_reference.effective_atr_pct.toFixed(2)}%`}</em>
+                              </div>
+                              <div>
+                                <b>{strategyAnalysis.analysis_layers.current_reference.estimated_volume_ratio_20 == null ? "거래량비" : "현재 거래량비"}</b>
+                                <em>{strategyAnalysis.analysis_layers.current_reference.effective_volume_ratio_20 == null ? "-" : `${strategyAnalysis.analysis_layers.current_reference.effective_volume_ratio_20.toFixed(2)}배`}</em>
+                              </div>
+                              <small>
+                                {strategyAnalysis.analysis_layers.current_reference.input_mode === "PRICE_ONLY"
+                                  ? "현재가격 반영 · ATR/거래량은 EOD 유지"
+                                  : strategyAnalysis.analysis_layers.current_reference.input_mode === "PRICE_OHLC"
+                                    ? "현재가격+고저가 반영 · 거래량은 EOD 유지"
+                                    : "현재가격+고저가+거래량 반영"}
+                              </small>
+                            </>
+                          ) : (
+                            <p>현재 참고가격을 입력하면 이 영역에 예상 지표와 현재 시나리오가 표시됩니다.</p>
+                          )}
+                        </article>
+                      </div>
+                    </div>
+
+                    {strategyAnalysis.data_freshness.reference && strategyAnalysis.strategy_comparison.length > 0 && (
+                      <div className="strategy-change-panel">
+                        <div className="strategy-change-head">
+                          <div>
+                            <span>CURRENT REFERENCE SCENARIO</span>
+                            <strong>현재 참고가격을 반영하면 전략 점수가 어떻게 바뀌나</strong>
+                          </div>
+                          <p>왼쪽은 확정 EOD, 오른쪽은 현재 참고정보를 반영한 임시 시나리오입니다.</p>
+                        </div>
+                        <div className="strategy-change-list">
+                          {strategyAnalysis.strategy_comparison.slice(0, 10).map((row) => (
+                            <div className="strategy-change-row" key={row.strategy}>
+                              <strong>{strategyName[row.strategy] ?? row.strategy}</strong>
+                              <span className="score-before">EOD {row.eod_score ?? "-"}</span>
+                              <span className="score-arrow">→</span>
+                              <span className="score-after">현재 {row.reference_score ?? "-"}</span>
+                              <b className={(row.score_delta ?? 0) > 0 ? "positive" : (row.score_delta ?? 0) < 0 ? "negative" : ""}>
+                                {row.score_delta == null ? "-" : `${row.score_delta > 0 ? "+" : ""}${row.score_delta}`}
+                              </b>
+                              <em className={row.current_data_status === "PARTIAL" ? "partial" : "updated"}>
+                                {row.current_data_status === "PARTIAL" ? "부분 반영" : "현재 조건 반영"}
+                              </em>
+                              <small>{row.current_data_message}</small>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <section className={`event-risk-panel event-impact-panel ${strategyAnalysis.event_risk.risk_gate ? "high-active" : ""}`}>
+                      <div className="event-risk-head">
+                        <div>
+                          <span className="panel-kicker">OPENDART EVENT IMPACT · v0.13</span>
+                          <h3>최근 공시가 현재 판단에 미치는 영향</h3>
+                          <p>{strategyAnalysis.event_risk.message}</p>
+                        </div>
+                        <div className="event-counts impact-counts">
+                          <span className="positive"><b>{strategyAnalysis.event_risk.positive_count ?? 0}</b> 긍정</span>
+                          <span className="negative"><b>{strategyAnalysis.event_risk.negative_count ?? 0}</b> 부정</span>
+                          <span className="mixed"><b>{strategyAnalysis.event_risk.mixed_count ?? 0}</b> 혼재</span>
+                          <span className="high"><b>{strategyAnalysis.event_risk.high_count}</b> HIGH</span>
+                        </div>
+                      </div>
+
+                      {!strategyAnalysis.event_risk.available && (
+                        <div className="event-unavailable">공시 세부 분석을 사용할 수 없습니다. 기술 분석은 계속 사용할 수 있습니다.</div>
+                      )}
+
+                      {strategyAnalysis.event_risk.events.length === 0 && strategyAnalysis.event_risk.available && (
+                        <div className="event-empty">최근 60일 분류 대상 공시에서 현재 판단에 큰 영향을 줄 이벤트가 확인되지 않았습니다.</div>
+                      )}
+
+                      {strategyAnalysis.event_risk.events.length > 0 && (
+                        <div className="event-list">
+                          {strategyAnalysis.event_risk.events.map((event) => {
+                            const directionLabel =
+                              event.direction === "POSITIVE" ? "긍정 가능성" :
+                              event.direction === "NEGATIVE" ? "부정 가능성" :
+                              event.direction === "MIXED" ? "혼재" : "중립";
+                            const priceSource =
+                              event.price_reaction.analysis_price_source === "USER_REFERENCE"
+                                ? "사용자 현재 참고가격"
+                                : "KRX 확정 종가";
+
+                            return (
+                              <article
+                                className={`event-card impact-${event.direction.toLowerCase()} level-${event.impact_level.toLowerCase()}`}
+                                key={`${event.receipt_no}-${event.report_name}`}
+                              >
+                                <div className="event-card-head">
+                                  <div>
+                                    <div className="impact-badges">
+                                      <span className={`direction ${event.direction.toLowerCase()}`}>{directionLabel}</span>
+                                      <span className={`event-level ${event.impact_level.toLowerCase()}`}>영향도 {event.impact_level}</span>
+                                      <span className={`confidence ${event.confidence.toLowerCase()}`}>신뢰도 {event.confidence_label}</span>
+                                    </div>
+                                    <strong>{event.report_name ?? event.event_type}</strong>
+                                    <small>
+                                      {event.receipt_date ? formatDate(event.receipt_date) : "날짜 미확인"}
+                                      {" · "}
+                                      {event.detail_source === "STRUCTURED_API" ? "OpenDART 구조화 데이터" : event.detail_source === "DOCUMENT_XML" ? "공시 원문 자동추출" : "제목 기반 1차 분석"}
+                                    </small>
+                                  </div>
+                                  {event.viewer_url && (
+                                    <a href={event.viewer_url} target="_blank" rel="noreferrer">DART 원문</a>
+                                  )}
+                                </div>
+
+                                <div className={`event-conclusion ${event.direction.toLowerCase()}`}>
+                                  <span>현재 결론</span>
+                                  <strong>{event.current_conclusion.headline}</strong>
+                                  <p>{event.current_conclusion.summary}</p>
+                                </div>
+
+                                <div className="event-explain">
+                                  <b>이 공시는 무엇을 의미하나?</b>
+                                  <p>{event.easy_summary}</p>
+                                </div>
+
+                                {event.facts.length > 0 && (
+                                  <div className="event-facts-structured">
+                                    <b>프로그램이 읽은 핵심 조건</b>
+                                    <div>
+                                      {event.facts.map((fact, index) => (
+                                        <article key={`${fact.label}-${index}`}>
+                                          <span>{fact.label}</span>
+                                          <strong>{fact.value}</strong>
+                                        </article>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+
+                                <div className="event-reaction-section">
+                                  <b>시장은 어떻게 반응했나?</b>
+                                  {event.price_reaction.available ? (
+                                    <>
+                                      <div className="event-reaction-grid">
+                                        <article>
+                                          <span>공시 전 확정 종가</span>
+                                          <strong>{number(event.price_reaction.pre_event_close, "원")}</strong>
+                                        </article>
+                                        <article>
+                                          <span>{priceSource}</span>
+                                          <strong>{number(event.price_reaction.analysis_price, "원")}</strong>
+                                        </article>
+                                        <article>
+                                          <span>가격 변화</span>
+                                          <strong className={rateClass(event.price_reaction.price_change_pct)}>
+                                            {signedRate(event.price_reaction.price_change_pct)}
+                                          </strong>
+                                        </article>
+                                        <article>
+                                          <span>거래량 반응</span>
+                                          <strong>
+                                            {event.price_reaction.volume_ratio_20 == null
+                                              ? "데이터 부족"
+                                              : `${event.price_reaction.volume_ratio_20.toFixed(2)}배`}
+                                          </strong>
+                                        </article>
+                                      </div>
+                                      <p className="reaction-message">
+                                        {event.price_reaction.label}
+                                        {event.price_reaction.analysis_price_source === "USER_REFERENCE"
+                                          ? " · 현재 참고가격을 사용했으며 KRX 확정 데이터와 분리된 임시 시나리오입니다."
+                                          : ""}
+                                      </p>
+                                    </>
+                                  ) : (
+                                    <p className="reaction-message unavailable">공시 전후 가격 데이터를 충분히 확보하지 못해 가격 반영 정도를 자동 판단할 수 없습니다.</p>
+                                  )}
+                                </div>
+
+                                <div className="event-strategy-effects">
+                                  <b>현재 전략에는 어떤 영향을 주나?</b>
+                                  <div>
+                                    {event.strategy_effects.map((effect) => (
+                                      <article className={`effect-${effect.direction.toLowerCase()}`} key={effect.strategy}>
+                                        <span>{strategyName[effect.strategy] ?? effect.strategy}</span>
+                                        <strong>
+                                          {effect.direction === "UP" ? "↑ " : effect.direction === "DOWN" ? "↓ " : "→ "}
+                                          {effect.label}
+                                        </strong>
+                                        <p>{effect.reason}</p>
+                                      </article>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                <div className="event-user-action">
+                                  <span>{positionMode === "HOLDING" ? "내 보유 대응" : "내 신규진입 대응"}</span>
+                                  <strong>{event.user_response.action}</strong>
+                                  <p>{event.user_response.summary}</p>
+                                </div>
+
+                                {event.watch_points.length > 0 && (
+                                  <div className="event-watch-points">
+                                    <b>앞으로 프로그램이 다시 봐야 할 것</b>
+                                    <ul>{event.watch_points.map((item) => <li key={item}>{item}</li>)}</ul>
+                                  </div>
+                                )}
+
+                                {event.facts.length === 0 && event.document_highlights.length > 0 && (
+                                  <details className="event-raw-details">
+                                    <summary>자동 구조화하지 못한 원문 참고</summary>
+                                    <ul>{event.document_highlights.map((line) => <li key={line}>{line}</li>)}</ul>
+                                  </details>
+                                )}
+                              </article>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      <div className="event-policy">
+                        <strong>자동 분석 기준</strong>
+                        <span>공시 사실 → 핵심 조건 → 회사 규모 비교 → 공시 전후 가격 반응 → 전략 영향 → 사용자 상태별 대응 순서로 분석합니다. 자동 추출이 불완전한 항목은 원문 확인이 우선입니다.</span>
+                      </div>
+                    </section>
+
+                    {strategyAnalysis.risk_gate.active && (
+                      <div className="risk-gate-card">
+                        <div>
+                          <span>RISK GATE</span>
+                          <strong>신규 진입 판단 보류</strong>
+                          <p>{strategyAnalysis.risk_gate.message}</p>
+                        </div>
+                        <ul>
+                          {strategyAnalysis.risk_gate.reasons.map((reason) => <li key={reason}>{reason}</li>)}
+                        </ul>
+                      </div>
+                    )}
+
+                    <div className="strategy-summary">
+                      <div>
+                        <span>현재 결론</span>
+                        <strong>
+                          {strategyAnalysis.risk_gate.active
+                            ? "매매 보류"
+                            : strategyName[strategyAnalysis.best_regular_strategy?.strategy ?? "no_trade"] ?? "매매 보류"}
+                        </strong>
+                      </div>
+                      <p>
+                        {strategyAnalysis.risk_gate.active
+                          ? "현재는 리스크 조건이 우선합니다. 아래 전략들은 '가능한 시나리오' 참고용으로만 확인하세요."
+                          : strategyEasyDescription[strategyAnalysis.best_regular_strategy?.strategy ?? "no_trade"]}
+                      </p>
+                    </div>
+
+                    {strategyAnalysis.risk_analysis.selected_plan && (
+                      <section className={`risk-engine-panel ${strategyAnalysis.risk_analysis.status.toLowerCase()}`}>
+                        <div className="risk-engine-head">
+                          <div>
+                            <span className="panel-kicker">RISK ENGINE · v0.10</span>
+                            <h3>
+                              {strategyAnalysis.risk_analysis.reference_only ? "참고용 손익 구조" : "현재 전략 손익 구조"}
+                            </h3>
+                            <p>{strategyAnalysis.risk_analysis.summary}</p>
+                          </div>
+                          <div className="risk-structure-badge">
+                            <strong>{strategyAnalysis.risk_analysis.selected_plan.structure_rating}</strong>
+                            <span>{strategyAnalysis.risk_analysis.reference_only ? "참고 시나리오" : "구조 평가"}</span>
+                          </div>
+                        </div>
+
+                        <div className="risk-strategy-line">
+                          <span>기준 전략</span>
+                          <strong>{strategyName[strategyAnalysis.risk_analysis.selected_strategy ?? ""] ?? strategyAnalysis.risk_analysis.selected_strategy}</strong>
+                          <em>{strategyAnalysis.risk_analysis.basis === "MANUAL_REFERENCE" ? "현재 참고가격 기준" : "확정 EOD 기준"}</em>
+                        </div>
+
+                        <div className="risk-price-grid">
+                          <div>
+                            <span>분석 기준가격</span>
+                            <strong>{number(strategyAnalysis.risk_analysis.selected_plan.entry_price, "원")}</strong>
+                            <small>실제 주문가격이 아닌 분석 기준</small>
+                          </div>
+                          <div>
+                            <span>전략 무효화 기준</span>
+                            <strong>{number(strategyAnalysis.risk_analysis.selected_plan.invalidation_price, "원")}</strong>
+                            <small>{strategyAnalysis.risk_analysis.selected_plan.structural_anchor_label ?? "구조적 기준 부족"}</small>
+                          </div>
+                          <div>
+                            <span>손절 참고구간</span>
+                            <strong>
+                              {strategyAnalysis.risk_analysis.selected_plan.stop_zone_low == null || strategyAnalysis.risk_analysis.selected_plan.stop_zone_high == null
+                                ? "-"
+                                : `${number(strategyAnalysis.risk_analysis.selected_plan.stop_zone_low)} ~ ${number(strategyAnalysis.risk_analysis.selected_plan.stop_zone_high)}원`}
+                            </strong>
+                            <small>{strategyAnalysis.risk_analysis.selected_plan.risk_pct == null ? "계산 불가" : `기준가격 대비 약 -${strategyAnalysis.risk_analysis.selected_plan.risk_pct.toFixed(2)}%`}</small>
+                          </div>
+                          <div>
+                            <span>1차 목표 참고</span>
+                            <strong>{number(strategyAnalysis.risk_analysis.selected_plan.target1_price, "원")}</strong>
+                            <small>{strategyAnalysis.risk_analysis.selected_plan.target1_basis ?? "-"}</small>
+                          </div>
+                          <div>
+                            <span>2차 목표 참고</span>
+                            <strong>{number(strategyAnalysis.risk_analysis.selected_plan.target2_price, "원")}</strong>
+                            <small>{strategyAnalysis.risk_analysis.selected_plan.target2_basis ?? "-"}</small>
+                          </div>
+                          <div>
+                            <span>Risk : Reward</span>
+                            <strong>
+                              {strategyAnalysis.risk_analysis.selected_plan.rr1 == null ? "-" : `1 : ${strategyAnalysis.risk_analysis.selected_plan.rr1.toFixed(2)}`}
+                            </strong>
+                            <small>
+                              2차 기준 {strategyAnalysis.risk_analysis.selected_plan.rr2 == null ? "-" : `1 : ${strategyAnalysis.risk_analysis.selected_plan.rr2.toFixed(2)}`}
+                            </small>
+                          </div>
+                        </div>
+
+                        <div className="risk-explain-grid">
+                          <div>
+                            <b>왜 이 가격인가?</b>
+                            <ul>{strategyAnalysis.risk_analysis.selected_plan.reasons.map((text) => <li key={text}>{text}</li>)}</ul>
+                          </div>
+                          <div className="risk-warning-box">
+                            <b>주의할 점</b>
+                            {strategyAnalysis.risk_analysis.selected_plan.warnings.length > 0
+                              ? <ul>{strategyAnalysis.risk_analysis.selected_plan.warnings.map((text) => <li key={text}>{text}</li>)}</ul>
+                              : <p>현재 계산상 추가 경고는 없습니다. 실제 가격 변동과 공시는 별도로 확인해야 합니다.</p>}
+                          </div>
+                        </div>
+
+                        {strategyAnalysis.risk_analysis.plans.length > 1 && (
+                          <div className="risk-plan-compare">
+                            <div className="risk-plan-compare-head">
+                              <strong>상위 전략별 손익 구조 비교</strong>
+                              <span>전략이 달라지면 무효화 기준도 달라집니다.</span>
+                            </div>
+                            {strategyAnalysis.risk_analysis.plans.map((plan) => (
+                              <div className="risk-plan-row" key={plan.strategy}>
+                                <strong>{strategyName[plan.strategy] ?? plan.strategy}</strong>
+                                <span>손절폭 {plan.risk_pct == null ? "-" : `${plan.risk_pct.toFixed(2)}%`}</span>
+                                <span>1차 R:R {plan.rr1 == null ? "-" : `1:${plan.rr1.toFixed(2)}`}</span>
+                                <span>2차 R:R {plan.rr2 == null ? "-" : `1:${plan.rr2.toFixed(2)}`}</span>
+                                <em>{plan.structure_rating}</em>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="risk-policy-note">
+                          <strong>실제 매매 기능 없음</strong>
+                          <span>{strategyAnalysis.risk_analysis.policy.message}</span>
+                        </div>
+                      </section>
+                    )}
+
+                    <div className="technical-grid">
+                      <div>
+                        <span>20일 평균 가격</span>
+                        <strong>{number(strategyAnalysis.effective.ma20, "원")}</strong>
+                        <small>
+                          {strategyAnalysis.data_freshness.reference
+                            ? `확정 ${number(strategyAnalysis.technical.ma20, "원")} · 현재가를 임시 종가로 가정한 예상값`
+                            : "최근 20거래일 확정 종가 평균"}
+                        </small>
+                      </div>
+                      <div>
+                        <span>RSI · 과열/과매도</span>
+                        <strong>{number(strategyAnalysis.effective.rsi14)}</strong>
+                        <small>
+                          {strategyAnalysis.data_freshness.reference
+                            ? `확정 RSI ${number(strategyAnalysis.technical.rsi14)} · 현재가 가정 예상 RSI`
+                            : "확정 EOD 기준 · 70 이상 과열, 30 이하 과매도 참고"}
+                        </small>
+                      </div>
+                      <div>
+                        <span>ATR · 평균 변동폭</span>
+                        <strong>{strategyAnalysis.effective.atr_pct == null ? "-" : `${strategyAnalysis.effective.atr_pct.toFixed(2)}%`}</strong>
+                        <small>
+                          {strategyAnalysis.data_freshness.reference?.estimated.atr_pct != null
+                            ? "오늘 고가·저가를 반영한 예상 ATR"
+                            : "확정 EOD 기준 · 오늘 고가·저가 미입력 시 유지"}
+                        </small>
+                      </div>
+                      <div>
+                        <span>평균 대비 거래량</span>
+                        <strong>{strategyAnalysis.effective.volume_ratio_20 == null ? "-" : `${strategyAnalysis.effective.volume_ratio_20.toFixed(2)}배`}</strong>
+                        <small>
+                          {strategyAnalysis.data_freshness.reference?.estimated.volume_ratio_20 != null
+                            ? "입력한 현재 누적 거래량 ÷ 최근 20일 평균 거래량"
+                            : "확정 EOD 거래량 기준 · 현재 거래량 미입력 시 유지"}
+                        </small>
+                      </div>
+                      <div>
+                        <span>지지 가격 후보</span>
+                        <strong>{number(strategyAnalysis.technical.support, "원")}</strong>
+                        <small>현재 참고가격과 거리 {strategyAnalysis.effective.support_distance_pct == null ? "-" : `${strategyAnalysis.effective.support_distance_pct.toFixed(2)}%`}</small>
+                      </div>
+                      <div>
+                        <span>저항 가격 후보</span>
+                        <strong>{number(strategyAnalysis.technical.resistance, "원")}</strong>
+                        <small>현재 참고가격과 거리 {strategyAnalysis.effective.resistance_distance_pct == null ? "-" : `${strategyAnalysis.effective.resistance_distance_pct.toFixed(2)}%`}</small>
+                      </div>
+                    </div>
+
+                    <div className="strategy-guide">
+                      <strong>전략 점수 보는 법</strong>
+                      <p>
+                        점수가 높을수록 <b>현재 상태가 그 전략의 조건과 많이 맞는다</b>는 뜻입니다.
+                        80점이라고 해서 주가가 80% 확률로 오른다는 의미는 아닙니다.
+                      </p>
+                    </div>
+
+                    <div className="strategy-catalog-note">
+                      <strong>
+                        {strategyAnalysis.data_freshness.reference ? "현재 참고가격 시나리오 기준" : "확정 EOD 기준"} · {strategyAnalysis.strategies.filter((item) => item.strategy !== "no_trade").length}개 전략 비교
+                      </strong>
+                      <span>
+                        {strategyAnalysis.data_freshness.reference
+                          ? "아래 점수와 대응 가이드는 현재 참고가격을 반영한 임시 시나리오입니다. 현재 거래량/고저가를 입력하지 않은 전략은 일부 EOD 조건을 유지합니다."
+                          : "한 종목에 여러 전략이 동시에 일부 성립할 수 있으므로 점수와 대응 가이드를 함께 봅니다."}
+                      </span>
+                    </div>
+                    <div className="strategy-results">
+                      {strategyAnalysis.strategies.map((item, index) => (
+                        <article className={`strategy-row ${index === 0 ? "top" : ""}`} key={`${item.strategy}-${index}`}>
+                          <span className="strategy-rank">{index + 1}</span>
+                          <div className="strategy-info">
+                            <div className="strategy-title-line">
+                              <strong>{strategyName[item.strategy] ?? item.strategy}</strong>
+                              {item.strategy !== "no_trade" && <span>{item.passed}/{item.total}개 조건 충족</span>}
+                            </div>
+                            <p className="strategy-easy">{strategyEasyDescription[item.strategy] ?? item.note}</p>
+                            <p className="strategy-beginner">{strategyBeginnerHint[item.strategy]}</p>
+
+                            <div className="condition-section">
+                              <b>현재 맞는 조건</b>
+                              <div className="reason-list">
+                                {item.reasons.slice(0, 4).map((reason) => <em key={reason}>✓ {reason}</em>)}
+                                {item.blockers.map((reason) => <em className="blocker" key={reason}>! {reason}</em>)}
+                              </div>
+                            </div>
+
+                            {item.unmet.length > 0 && (
+                              <div className="condition-section unmet-section">
+                                <b>아직 부족한 조건</b>
+                                <div className="reason-list unmet-list">
+                                  {item.unmet.slice(0, 3).map((reason) => <em key={reason}>– {reason}</em>)}
+                                </div>
+                              </div>
+                            )}
+
+                            {item.strategy !== "no_trade" && item.auto_checks.length > 0 && (
+                              <div className="program-check-section">
+                                <div className="program-check-head">
+                                  <b>프로그램 자동 점검</b>
+                                  <span>사용자가 직접 확인할 수 있는 항목은 StockScope가 먼저 계산합니다.</span>
+                                </div>
+                                <div className="auto-check-list">
+                                  {item.auto_checks.map((check) => (
+                                    <div className={`auto-check ${check.status.toLowerCase()}`} key={`${item.strategy}-${check.key}`}>
+                                      <span className="check-icon">{check.status === "PASS" ? "✓" : check.status === "FAIL" ? "✕" : check.status === "WARN" ? "!" : "?"}</span>
+                                      <div>
+                                        <strong>{check.label}</strong>
+                                        <em>{check.value}</em>
+                                        <small>{check.explanation}</small>
+                                      </div>
+                                      <i>{check.source === "USER_INPUT" ? "현재 참고" : check.source === "KRX_INDEX" ? "시장지수" : "확정 EOD"}</i>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            <details className="response-guide" open={index === 0}>
+                              <summary>{strategyAnalysis.position_context.mode === "HOLDING" ? "보유 중이라면 어떻게 관리하나?" : "신규 진입을 검토한다면 어떻게 대응하나?"}</summary>
+                              <div className="response-grid contextual">
+                                <section className="primary-response">
+                                  <b>{strategyAnalysis.position_context.mode === "HOLDING" ? "보유 중 대응 기준" : "신규 진입 검토 기준"}</b>
+                                  <ul>
+                                    {(strategyAnalysis.position_context.mode === "HOLDING" ? item.action_plan.holding : item.action_plan.new_entry).map((text) => <li key={text}>{text}</li>)}
+                                  </ul>
+                                </section>
+                                <section className="avoid-box">
+                                  <b>피해야 할 대응</b>
+                                  <ul>{item.action_plan.avoid.map((text) => <li key={text}>{text}</li>)}</ul>
+                                </section>
+                                <section>
+                                  <b>앞으로 관찰할 항목</b>
+                                  <p className="watch-explain">아래 항목은 자동 점검 결과가 바뀌는지 계속 보는 용도입니다.</p>
+                                  <ul>{item.action_plan.watch.map((text) => <li key={text}>{text}</li>)}</ul>
+                                </section>
+                              </div>
+                              <div className="invalidation-box">
+                                <b>전략이 약해지는 기준</b>
+                                <p>{item.action_plan.invalidation}</p>
+                              </div>
+                            </details>
+                          </div>
+                          <div className={`strategy-score ${item.strategy === "no_trade" ? "hold" : ""}`}>
+                            {item.score == null ? <b>보류</b> : <b>{item.score}점</b>}
+                            <span>{item.strategy === "no_trade" ? "Risk Gate / 관찰" : item.suitability}</span>
+                            <small>{item.strategy === "no_trade" ? "점수형 전략 아님" : "조건 적합도"}</small>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+
+                    <div className="analysis-limit">
+                      <strong>중요</strong>
+                      <span>
+                        이 결과는 투자 판단을 돕기 위한 설명입니다. 사용자 참고가격은 임시 계산에만 사용되며 KRX 확정 데이터는 수정하지 않습니다.
+                        자동 매매나 실제 주문은 수행하지 않으며, 손절·목표가는 Risk Engine이 분석 참고값으로 계산하며 실제 주문으로 전송되지 않습니다.
+                      </span>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </section>
+
+          <footer>
+            <span>※ StockScope는 투자 판단 보조용이며 실제 매수·매도 주문 기능을 제공하지 않습니다.</span>
+            <span>데이터: KRX · OpenDART</span>
+          </footer>
+        </main>
+      </div>
+    </div>
   );
 }
