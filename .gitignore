@@ -1,0 +1,162 @@
+# =========================================================
+# StockScope .gitignore
+# React / Vite / Python / FastAPI / Cloudflare Workers
+# =========================================================
+
+
+# ---------------------------------------------------------
+# 1. Secrets / Environment Variables
+# 절대 GitHub에 올라가면 안 되는 정보
+# ---------------------------------------------------------
+
+.env
+.env.*
+!.env.example
+
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+
+*.pem
+*.key
+*.p12
+*.pfx
+
+secrets/
+credentials/
+
+
+# ---------------------------------------------------------
+# 2. Python
+# ---------------------------------------------------------
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+.venv/
+venv/
+env/
+ENV/
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyright/
+.coverage
+.coverage.*
+htmlcov/
+
+*.egg-info/
+.eggs/
+dist/
+build/
+
+
+# ---------------------------------------------------------
+# 3. Node / React / Vite
+# ---------------------------------------------------------
+
+node_modules/
+
+dist/
+build/
+
+.vite/
+.vite-cache/
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+.cache/
+
+
+# ---------------------------------------------------------
+# 4. Cloudflare Workers / Wrangler
+# ---------------------------------------------------------
+
+.wrangler/
+
+# Wrangler local state / local D1 / KV / R2
+.wrangler/state/
+.wrangler/tmp/
+
+
+# ---------------------------------------------------------
+# 5. Local Database / Runtime Data
+# ---------------------------------------------------------
+
+*.db
+*.sqlite
+*.sqlite3
+
+data/
+runtime/
+tmp/
+temp/
+
+
+# ---------------------------------------------------------
+# 6. Logs
+# ---------------------------------------------------------
+
+logs/
+*.log
+
+
+# ---------------------------------------------------------
+# 7. Generated Analysis / Backtest Results
+# 로컬에서 생성되는 대용량 결과
+# ---------------------------------------------------------
+
+results/
+backtest_results/
+analysis_results/
+cache/
+exports/
+
+
+# ---------------------------------------------------------
+# 8. Uploaded / Downloaded Runtime Files
+# ---------------------------------------------------------
+
+uploads/
+downloads/
+
+
+# ---------------------------------------------------------
+# 9. IDE
+# ---------------------------------------------------------
+
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.example.json
+
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+
+# ---------------------------------------------------------
+# 10. OS
+# ---------------------------------------------------------
+
+.DS_Store
+Thumbs.db
+desktop.ini
+
+
+# ---------------------------------------------------------
+# 11. Backup / Temporary Files
+# ---------------------------------------------------------
+
+*.bak
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
