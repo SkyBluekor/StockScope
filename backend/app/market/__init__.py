@@ -1,0 +1,1 @@
+"""StockScope market domain package."""

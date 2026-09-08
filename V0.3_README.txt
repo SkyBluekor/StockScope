@@ -1,0 +1,25 @@
+StockScope v0.3 - KRX + OpenDART Data PoC
+
+변경점
+- KIS를 필수 데이터 공급원에서 제거했습니다.
+- KRX Open API: KOSPI/KOSDAQ 일별 시세 및 지수 데이터 공급원
+- OpenDART: 기업 개황 및 최근 공시 데이터 공급원
+- 실제 주문/매매 기능은 계속 존재하지 않습니다.
+- 키는 프로젝트 루트 .env에만 저장하며 .gitignore로 제외됩니다.
+
+적용
+1) 실행 중인 백엔드/프론트 PowerShell 창에서 Ctrl+C
+2) 이 ZIP 내용을 D:\Projects\StockScope 에 덮어쓰기
+3) 프로젝트 루트에서 apply-v0.3.cmd 실행
+4) KRX 인증키와 OpenDART 인증키 입력
+5) 테스트/build 완료 후 .\run-dev.ps1 실행
+6) http://localhost:5173 접속
+
+기본 테스트값
+- KRX: 삼성전자 005930 / KOSPI / 2026-09-07
+- DART: 삼성전자 corp_code 00126380
+
+주의
+- KRX는 인증키 발급과 별개로 각 API의 '활용 신청' 승인이 필요한 경우가 있습니다.
+- KRX 기준일이 휴장일이거나 아직 일별 데이터가 확정되지 않은 시점이면 결과가 없을 수 있습니다.
+- OpenDART corp_code는 6자리 종목코드와 다른 8자리 기업 고유번호입니다. 자동 매핑은 다음 단계에서 구현합니다.

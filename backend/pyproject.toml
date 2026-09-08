@@ -3,21 +3,21 @@ name = "stockscope-backend"
 version = "0.1.0"
 description = "StockScope investment analysis backend"
 requires-python = ">=3.11"
-
 dependencies = [
-    "fastapi",
-    "uvicorn[standard]",
-    "httpx",
-    "pydantic-settings",
-    "python-dotenv",
+    "fastapi>=0.116,<1.0",
+    "uvicorn[standard]>=0.35,<1.0",
+    "httpx>=0.28,<1.0",
+    "pydantic-settings>=2.10,<3.0",
+    "python-dotenv>=1.1,<2.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest",
-    "pytest-asyncio",
+    "pytest>=8.4,<9.0",
+    "pytest-asyncio>=1.1,<2.0",
 ]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+addopts = "-q"

@@ -1,0 +1,1 @@
+"""StockScope scanner domain package."""

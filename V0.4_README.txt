@@ -1,0 +1,15 @@
+StockScope v0.4 Market Data Foundation
+
+변경사항
+- KRX 당일 데이터가 없으면 최근 사용 가능한 거래일 자동 탐색
+- KRX 조회 결과 메모리 캐시
+- 종목코드 -> OpenDART corp_code 자동 매핑
+- 종목코드 하나로 KRX 시세 + 시장지수 + DART 기업개황 + 최근공시 통합 조회
+- 실제 주문 기능 없음 유지
+
+적용
+1. 이 ZIP 내용을 StockScope 루트에 덮어쓰기
+2. 기존 .env는 그대로 유지
+3. 개발 서버가 켜져 있으면 Ctrl+C로 종료
+4. .\run-dev.ps1 재실행
+5. localhost:5173에서 005930/KOSPI 통합 조회
