@@ -43,3 +43,6 @@ async def test_strategy_analysis_service_returns_ranked_results():
     assert result["market_context"]["regime"] == "TREND_UP"
     assert len(result["strategies"]) >= 1
     assert "score" in result["strategies"][0]
+    assert result["pullback_confirmation"]["state"]
+    assert result["analysis_summary"]["primary_action"]
+    assert result["analysis_summary"]["navigation"][0]["key"] == "summary"

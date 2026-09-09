@@ -18,6 +18,8 @@ class OpenDartProvider:
     _stock_to_corp_cache: dict[str, str] | None = None
     _document_text_cache: dict[str, str] = {}
     _annual_revenue_cache: dict[str, dict[str, Any] | None] = {}
+    _annual_statement_cache: dict[tuple[str, int, str], dict[str, Any]] = {}
+    _financial_statement_cache: dict[tuple[str, int, str, str], dict[str, Any]] = {}
 
     def __init__(self, api_key: str | None) -> None:
         self.api_key = (api_key or "").strip()
@@ -201,6 +203,81 @@ class OpenDartProvider:
         self.__class__._document_text_cache[receipt] = text
         return text
 
+    async def financial_statement(
+        self,
+        corp_code: str,
+        business_year: int,
+        report_code: str,
+        *,
+        fs_div: str = "CFS",
+    ) -> dict[str, Any]:
+        """Return one official periodic financial statement from OpenDART.
+
+        `report_code` follows OpenDART periodic report codes:
+        11013=1분기, 11012=반기, 11014=3분기, 11011=사업보고서.
+        Raw rows are returned so the fundamental layer can compare the same
+        period year-over-year instead of mixing annual and interim figures.
+        """
+        code = corp_code.strip()
+        if len(code) != 8 or not code.isdigit():
+            raise ValueError("OpenDART corp_code는 8자리 숫자여야 합니다.")
+        year = int(business_year)
+        if year < 1990 or year > 2100:
+            raise ValueError("business_year가 올바르지 않습니다.")
+        report_key = str(report_code).strip()
+        if report_key not in {"11013", "11012", "11014", "11011"}:
+            raise ValueError("지원하지 않는 OpenDART 정기보고서 코드입니다.")
+        fs_key = fs_div.upper().strip()
+        if fs_key not in {"CFS", "OFS"}:
+            raise ValueError("fs_div는 CFS 또는 OFS여야 합니다.")
+
+        cache_key = (code, year, report_key, fs_key)
+        cached = self.__class__._financial_statement_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        payload = await self._get(
+            "fnlttSinglAcntAll.json",
+            {
+                "corp_code": code,
+                "bsns_year": str(year),
+                "reprt_code": report_key,
+                "fs_div": fs_key,
+            },
+        )
+        rows = payload.get("list") or []
+        result = {
+            "provider": "OpenDART",
+            "endpoint": "fnlttSinglAcntAll.json",
+            "corp_code": code,
+            "business_year": year,
+            "report_code": report_key,
+            "fs_div": fs_key,
+            "count": len(rows),
+            "rows": rows,
+        }
+        self.__class__._financial_statement_cache[cache_key] = result
+        return result
+
+    async def annual_statement(
+        self,
+        corp_code: str,
+        business_year: int,
+        *,
+        fs_div: str = "CFS",
+    ) -> dict[str, Any]:
+        """Backward-compatible annual statement wrapper."""
+        code = corp_code.strip()
+        year = int(business_year)
+        fs_key = fs_div.upper().strip()
+        cache_key = (code, year, fs_key)
+        cached = self.__class__._annual_statement_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        result = await self.financial_statement(code, year, "11011", fs_div=fs_key)
+        self.__class__._annual_statement_cache[cache_key] = result
+        return result
+
     async def latest_annual_revenue(self, corp_code: str) -> dict[str, Any] | None:
         """Return latest available annual revenue from official OpenDART statements.
 
@@ -316,6 +393,7 @@ class OpenDartProvider:
             "homepage": payload.get("hm_url"),
             "ir_url": payload.get("ir_url"),
             "phone": payload.get("phn_no"),
+            "industry_code": payload.get("induty_code"),
             "fiscal_month": payload.get("acc_mt"),
         }
 

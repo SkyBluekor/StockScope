@@ -1,5 +1,6 @@
-from datetime import date, timedelta
+from datetime import datetime
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -10,6 +11,10 @@ from app.market.service import MarketDataService
 from app.strategy.service import StrategyAnalysisService
 
 router = APIRouter(tags=["market-data"])
+
+
+def _today_kst_iso() -> str:
+    return datetime.now(ZoneInfo("Asia/Seoul")).date().isoformat()
 
 
 def _providers() -> tuple[KrxProvider, OpenDartProvider]:
@@ -45,11 +50,12 @@ async def provider_status() -> dict[str, Any]:
 async def krx_stock_daily(
     code: str,
     market: Literal["KOSPI", "KOSDAQ"] = "KOSPI",
-    bas_date: str = Query(default=(date.today() - timedelta(days=1)).isoformat()),
+    bas_date: str | None = Query(default=None, description="생략 시 한국시간 오늘 날짜를 조회합니다."),
 ) -> dict[str, Any]:
     krx, _ = _providers()
+    target_date = bas_date or _today_kst_iso()
     try:
-        result = await krx.stock_daily(market, bas_date, code)
+        result = await krx.stock_daily(market, target_date, code)
     except (ProviderError, ValueError) as exc:
         _raise_provider_error(exc)
     if result["count"] == 0:
@@ -76,11 +82,12 @@ async def krx_stock_latest(
 @router.get("/krx/index/{market}/daily")
 async def krx_index_daily(
     market: Literal["KOSPI", "KOSDAQ"],
-    bas_date: str = Query(default=(date.today() - timedelta(days=1)).isoformat()),
+    bas_date: str | None = Query(default=None, description="생략 시 한국시간 오늘 날짜를 조회합니다."),
 ) -> dict[str, Any]:
     krx, _ = _providers()
+    target_date = bas_date or _today_kst_iso()
     try:
-        return await krx.index_daily(market, bas_date)
+        return await krx.index_daily(market, target_date)
     except (ProviderError, ValueError) as exc:
         _raise_provider_error(exc)
 

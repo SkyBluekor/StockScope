@@ -218,13 +218,44 @@ class MarketDataService:
             "전략 추천 점수는 아직 전략 엔진 검증 전이므로 표시하지 않습니다."
         )
 
+        requested_date = str(kospi_index.get("requested_date") or "")
+        data_date = min(kospi_date, kosdaq_date)
+        fallback_used = bool(
+            kospi_index.get("fallback_used") or kosdaq_index.get("fallback_used")
+        )
+        if fallback_used:
+            requested_label = (
+                f"{requested_date[:4]}.{requested_date[4:6]}.{requested_date[6:8]}"
+                if len(requested_date) == 8 else requested_date
+            )
+            data_label = (
+                f"{data_date[:4]}.{data_date[4:6]}.{data_date[6:8]}"
+                if len(data_date) == 8 else data_date
+            )
+            freshness_message = (
+                f"KRX에 {requested_label} 확정 데이터가 현재 없어 "
+                f"최근 확인 가능한 거래일인 {data_label} 데이터를 사용 중입니다. "
+                "장 마감 후 게시 지연 또는 휴장일일 수 있습니다."
+            )
+            freshness_status = "FALLBACK"
+        else:
+            freshness_message = "요청한 날짜의 KRX 확정 데이터를 사용하고 있습니다."
+            freshness_status = "CONFIRMED"
+
         return {
             "real_trading": False,
-            "data_date": min(kospi_date, kosdaq_date),
-            "requested_date": kospi_index.get("requested_date"),
-            "fallback_used": bool(
-                kospi_index.get("fallback_used") or kosdaq_index.get("fallback_used")
-            ),
+            "data_date": data_date,
+            "requested_date": requested_date,
+            "fallback_used": fallback_used,
+            "data_freshness": {
+                "status": freshness_status,
+                "message": freshness_message,
+                "requested_date": requested_date,
+                "data_date": data_date,
+                "kospi_data_date": kospi_date,
+                "kosdaq_data_date": kosdaq_date,
+                "retry_note": "당일 KRX 빈 응답은 5분만 임시 보관하고 이후 다시 확인합니다.",
+            },
             "market": {
                 "regime": regime,
                 "volatility_proxy": volatility,

@@ -4,9 +4,11 @@ import asyncio
 import gzip
 import json
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
+from time import monotonic
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -39,6 +41,8 @@ class KrxProvider:
     }
 
     _rows_cache: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    _cache_expiry: dict[tuple[str, str], float] = {}
+    _volatile_cache_seconds = 300
     _cache_dir = Path(__file__).resolve().parents[3] / "runtime" / "krx"
 
     def __init__(self, api_key: str | None) -> None:
@@ -47,6 +51,16 @@ class KrxProvider:
     def _require_key(self) -> None:
         if not self.api_key:
             raise ProviderNotConfigured("KRX_API_KEY가 설정되지 않았습니다.")
+
+    @staticmethod
+    def _today_kst() -> date:
+        return datetime.now(ZoneInfo("Asia/Seoul")).date()
+
+    @classmethod
+    def _is_volatile_date(cls, bas_dd: str) -> bool:
+        # 당일/미래 날짜는 KRX가 늦게 게시하거나 정정할 수 있으므로
+        # 장기 디스크 캐시로 고정하지 않습니다.
+        return bas_dd >= cls._today_kst().strftime("%Y%m%d")
 
     @staticmethod
     def _format_date(value: str | date) -> str:
@@ -96,6 +110,55 @@ class KrxProvider:
                 return row
         return None
 
+    @staticmethod
+    def _normalize_index_name(value: str | None) -> str:
+        return "".join(ch.lower() for ch in str(value or "") if ch.isalnum())
+
+    @classmethod
+    def select_index_by_aliases(
+        cls,
+        rows: list[dict[str, Any]],
+        aliases: list[str],
+    ) -> dict[str, Any] | None:
+        """Select one KRX index row from a list of human-readable aliases.
+
+        Exact normalized-name matches are preferred. Industry/sector class rows get
+        priority over thematic/representative indices when names overlap.
+        """
+        normalized_aliases = [
+            (idx, alias, cls._normalize_index_name(alias))
+            for idx, alias in enumerate(aliases)
+            if cls._normalize_index_name(alias)
+        ]
+        scored: list[tuple[int, int, int, dict[str, Any], str]] = []
+        for row in rows:
+            if row.get("close") is None or not row.get("name"):
+                continue
+            name = str(row.get("name") or "")
+            norm_name = cls._normalize_index_name(name)
+            class_text = str(row.get("class") or "")
+            sector_class = "업종" in class_text or "산업" in class_text
+            for alias_index, alias, norm_alias in normalized_aliases:
+                if norm_name == norm_alias:
+                    match_score = 0
+                elif norm_alias in norm_name or norm_name in norm_alias:
+                    match_score = 3
+                else:
+                    continue
+                if not sector_class:
+                    match_score += 2
+                scored.append((match_score, alias_index, len(name), row, alias))
+        if not scored:
+            return None
+        scored.sort(key=lambda item: (item[0], item[1], item[2]))
+        score, _, _, row, alias = scored[0]
+        return {
+            **row,
+            "matched_alias": alias,
+            "match_confidence": "HIGH" if score <= 1 else "MEDIUM",
+            "match_confidence_label": "높음" if score <= 1 else "보통",
+        }
+
     @classmethod
     def _disk_cache_path(cls, endpoint: KrxEndpoint, bas_dd: str) -> Path:
         safe_name = endpoint.path.replace("/", "__")
@@ -109,7 +172,17 @@ class KrxProvider:
         try:
             with gzip.open(path, "rt", encoding="utf-8") as fp:
                 payload = json.load(fp)
-            return payload if isinstance(payload, list) else None
+            if not isinstance(payload, list):
+                return None
+            if not payload:
+                # v0.13 이하에서 저장된 빈 응답 캐시는 최신 데이터 게시 후에도
+                # fallback을 고정할 수 있으므로 폐기합니다.
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                return None
+            return payload
         except (OSError, json.JSONDecodeError):
             return None
 
@@ -132,15 +205,23 @@ class KrxProvider:
     async def _get_rows(self, endpoint: KrxEndpoint, bas_dd: str) -> list[dict[str, Any]]:
         self._require_key()
         cache_key = (endpoint.path, bas_dd)
+        now = monotonic()
+
+        expiry = self._cache_expiry.get(cache_key)
+        if expiry is not None and expiry <= now:
+            self._cache_expiry.pop(cache_key, None)
+            self._rows_cache.pop(cache_key, None)
 
         cached = self._rows_cache.get(cache_key)
         if cached is not None:
             return cached
 
-        disk_cached = self._load_disk_cache(endpoint, bas_dd)
-        if disk_cached is not None:
-            self._rows_cache[cache_key] = disk_cached
-            return disk_cached
+        # 당일 데이터는 게시 시점이 늦을 수 있으므로 디스크 캐시를 사용하지 않습니다.
+        if not self._is_volatile_date(bas_dd):
+            disk_cached = self._load_disk_cache(endpoint, bas_dd)
+            if disk_cached is not None:
+                self._rows_cache[cache_key] = disk_cached
+                return disk_cached
 
         url = f"{self.BASE_URL}/{endpoint.path}"
         headers = {"AUTH_KEY": self.api_key}
@@ -166,8 +247,20 @@ class KrxProvider:
         if not isinstance(rows, list):
             raise ProviderError("KRX 응답에 OutBlock_1 데이터가 없습니다.")
 
+        if not rows:
+            # 빈 응답을 영구 캐시하면 KRX가 나중에 당일 데이터를 게시해도
+            # 서버가 계속 전 거래일로 fallback할 수 있습니다. 5분만 임시 보관합니다.
+            self._rows_cache[cache_key] = rows
+            self._cache_expiry[cache_key] = now + self._volatile_cache_seconds
+            return rows
+
         self._rows_cache[cache_key] = rows
-        self._save_disk_cache(endpoint, bas_dd, rows)
+        if self._is_volatile_date(bas_dd):
+            # 당일 확정 데이터도 정정 가능성을 고려해 5분 후 다시 확인합니다.
+            self._cache_expiry[cache_key] = now + self._volatile_cache_seconds
+        else:
+            self._cache_expiry.pop(cache_key, None)
+            self._save_disk_cache(endpoint, bas_dd, rows)
         return rows
 
     @staticmethod
@@ -397,7 +490,7 @@ class KrxProvider:
         날짜별 원본 응답은 backend/runtime/krx에 gzip 캐시하여 이후 같은 시장의
         다른 종목 분석에서도 재사용합니다.
         """
-        wanted = min(max(points, 20), 60)
+        wanted = min(max(points, 20), 120)
         dates = self._candidate_dates(as_of, lookback_days)
         found: list[dict[str, Any]] = []
 
@@ -460,28 +553,75 @@ class KrxProvider:
         as_of: str | date | None = None,
         points: int = 7,
         lookback_days: int = 30,
+        concurrency: int = 5,
     ) -> list[dict[str, Any]]:
         market_key = market.upper().strip()
-        wanted = min(max(points, 2), 20)
+        wanted = min(max(points, 2), 120)
         found: list[dict[str, Any]] = []
         seen_dates: set[str] = set()
+        dates = self._candidate_dates(as_of, lookback_days)
 
-        for candidate in self._candidate_dates(as_of, lookback_days):
-            result = await self.index_daily(market_key, candidate)
-            if result["count"] == 0:
-                continue
-            main = self._select_main_index(result["rows"], market_key)
-            if not main:
-                continue
-            row_date = str(main.get("date") or result["date"])
-            if row_date in seen_dates:
-                continue
-            seen_dates.add(row_date)
-            found.append(main)
+        for start in range(0, len(dates), max(1, concurrency)):
+            batch = dates[start : start + max(1, concurrency)]
+            results = await asyncio.gather(
+                *(self.index_daily(market_key, candidate) for candidate in batch),
+                return_exceptions=True,
+            )
+            for result in results:
+                if isinstance(result, Exception) or result["count"] == 0:
+                    continue
+                main = self._select_main_index(result["rows"], market_key)
+                if not main:
+                    continue
+                row_date = str(main.get("date") or result["date"])
+                if row_date in seen_dates:
+                    continue
+                seen_dates.add(row_date)
+                found.append(main)
             if len(found) >= wanted:
                 break
 
-        return list(reversed(found))
+        found.sort(key=lambda row: str(row.get("date") or ""))
+        return found[-wanted:]
+
+    async def index_alias_history(
+        self,
+        market: str,
+        aliases: list[str],
+        as_of: str | date | None = None,
+        points: int = 61,
+        lookback_days: int = 140,
+        concurrency: int = 5,
+    ) -> list[dict[str, Any]]:
+        """Return one industry/index series selected from aliases for each date."""
+        market_key = market.upper().strip()
+        wanted = min(max(points, 2), 120)
+        found: list[dict[str, Any]] = []
+        seen_dates: set[str] = set()
+        dates = self._candidate_dates(as_of, lookback_days)
+
+        for start in range(0, len(dates), max(1, concurrency)):
+            batch = dates[start : start + max(1, concurrency)]
+            results = await asyncio.gather(
+                *(self.index_daily(market_key, candidate) for candidate in batch),
+                return_exceptions=True,
+            )
+            for result in results:
+                if isinstance(result, Exception) or result["count"] == 0:
+                    continue
+                selected = self.select_index_by_aliases(result["rows"], aliases)
+                if not selected:
+                    continue
+                row_date = str(selected.get("date") or result["date"])
+                if row_date in seen_dates:
+                    continue
+                seen_dates.add(row_date)
+                found.append(selected)
+            if len(found) >= wanted:
+                break
+
+        found.sort(key=lambda row: str(row.get("date") or ""))
+        return found[-wanted:]
 
     async def latest_index_daily(
         self,

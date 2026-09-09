@@ -100,12 +100,15 @@ class StrategyEngine:
             },
             StrategyName.PULLBACK: {
                 "new_entry": [
-                    f"주가가 지지 후보 {support} 또는 20일선 {ma20} 근처에서 실제로 멈추고 반등하는지 확인한 뒤 판단합니다.",
-                    "가격만 내려왔다고 바로 진입하기보다 조정 중 거래량 감소 → 반등 시 거래량 회복 흐름이 있는지 봅니다.",
+                    "상단의 '눌림·지지 자동 확인' 결과가 지지 테스트 중인지, 반등 확인인지 먼저 봅니다.",
+                    "앱이 지지 유지·RSI 회복·반등 거래량을 자동 점검하므로 사용자가 차트를 보고 같은 조건을 다시 판정할 필요는 없습니다.",
                 ],
-                "holding": ["보유 중이라면 눌림이 정상 조정인지 추세 훼손인지 구분합니다.", f"지지 후보 {support}를 지키면서 저점이 높아지면 기존 시나리오가 유지되는 쪽입니다."],
-                "avoid": ["지지 확인 전 떨어지는 가격을 계속 따라가며 추가매수", "하락 추세 종목을 단순히 싸졌다는 이유로 눌림목으로 오해"],
-                "watch": ["지지선 반등 확인", "20일선 기울기", "조정 거래량"],
+                "holding": [
+                    "눌림·지지 자동 확인이 '지지 실패'로 바뀌는지 우선 봅니다.",
+                    f"지지 후보 {support}와 20일선 {ma20}이 유지되면 정상 조정 시나리오가 유지되는 쪽입니다.",
+                ],
+                "avoid": ["앱이 지지 실패/미확정으로 판단했는데 손실만을 이유로 추가매수", "하락 추세 종목을 단순히 싸졌다는 이유로 눌림목으로 오해"],
+                "watch": ["앱의 눌림·지지 상태", "지지 실패 여부", "RSI·거래량 반등 자동 점검"],
                 "invalidation": f"주요 지지 후보 {support}를 종가 기준 뚜렷하게 이탈하고 회복하지 못하면 눌림목 시나리오를 다시 평가합니다.",
             },
             StrategyName.BREAKOUT: {
@@ -248,7 +251,8 @@ class StrategyEngine:
             ("20일 이동평균 기울기 상승", 15, lambda x: x.ma20_slope_pct is not None and x.ma20_slope_pct > 0),
             ("고점 상승 구조", 10, lambda x: x.higher_high is True),
             ("저점 상승 구조", 10, lambda x: x.higher_low is True),
-            ("시장 대비 상대강도 양호", 10, lambda x: x.relative_strength_market_pct is not None and x.relative_strength_market_pct > 0),
+            ("시장 대비 상대강도 양호", 6, lambda x: x.relative_strength_market_pct is not None and x.relative_strength_market_pct > 0),
+            ("업종 대비 상대강도 양호", 4, lambda x: (x.relative_strength_sector_pct > 0) if x.relative_strength_sector_pct is not None else (x.relative_strength_market_pct is not None and x.relative_strength_market_pct > 0)),
             ("시장 국면이 상승 추세", 7, lambda x: x.market_regime == MarketRegime.TREND_UP),
         ], note="상승 추세가 이미 확인된 종목을 따라가는 전략입니다.")
 
@@ -260,7 +264,8 @@ class StrategyEngine:
             ("RSI가 40~65 범위", 12, lambda x: x.rsi14 is not None and 40 <= x.rsi14 <= 65),
             ("거래량이 20일 평균의 1.3배 이하", 10, lambda x: x.volume_ratio_20 is not None and x.volume_ratio_20 <= 1.3),
             ("저점 상승 구조 유지", 10, lambda x: x.higher_low is True),
-            ("시장 대비 상대강도 양호", 8, lambda x: x.relative_strength_market_pct is not None and x.relative_strength_market_pct >= 0),
+            ("시장 대비 상대강도 양호", 4, lambda x: x.relative_strength_market_pct is not None and x.relative_strength_market_pct >= 0),
+            ("업종 대비 상대강도 양호", 4, lambda x: (x.relative_strength_sector_pct >= 0) if x.relative_strength_sector_pct is not None else (x.relative_strength_market_pct is not None and x.relative_strength_market_pct >= 0)),
             ("상승 시장 또는 중립 시장", 5, lambda x: x.market_regime in {MarketRegime.TREND_UP, MarketRegime.RANGE}),
         ], note="상승 추세 안에서 지지구간 조정을 이용하는 전략입니다.")
 
@@ -271,8 +276,9 @@ class StrategyEngine:
             ("현재가가 20일선 위", 15, lambda x: x.ma20 is not None and x.current_price > x.ma20),
             ("20일선 기울기 상승", 12, lambda x: x.ma20_slope_pct is not None and x.ma20_slope_pct > 0),
             ("RSI 과열 전 구간", 10, lambda x: x.rsi14 is not None and 50 <= x.rsi14 < 75),
-            ("시장 대비 상대강도 양호", 10, lambda x: x.relative_strength_market_pct is not None and x.relative_strength_market_pct > 0),
-            ("업종 대비 상대강도 양호", 8, lambda x: x.relative_strength_sector_pct is not None and x.relative_strength_sector_pct >= 0),
+            ("20일 시장 대비 상대강도 양호", 6, lambda x: x.relative_strength_market_pct is not None and x.relative_strength_market_pct > 0),
+            ("20일 업종 대비 상대강도 양호", 4, lambda x: (x.relative_strength_sector_pct > 0) if x.relative_strength_sector_pct is not None else (x.relative_strength_market_pct is not None and x.relative_strength_market_pct > 0)),
+            ("20일 업종 대비 상대강도 양호", 8, lambda x: (x.relative_strength_sector_pct > 0) if x.relative_strength_sector_pct is not None else (x.relative_strength_market_pct is not None and x.relative_strength_market_pct > 0)),
             ("상승 시장", 5, lambda x: x.market_regime == MarketRegime.TREND_UP),
         ], note="주요 고점 부근에서 거래량이 동반되는 돌파 후보를 평가합니다.")
 
@@ -314,9 +320,10 @@ class StrategyEngine:
             ("20일선 기울기 0.8% 이상", 15, lambda x: x.ma20_slope_pct is not None and x.ma20_slope_pct >= 0.8),
             ("RSI 55~75", 15, lambda x: x.rsi14 is not None and 55 <= x.rsi14 <= 75),
             ("거래량 20일 평균의 1.2배 이상", 15, lambda x: x.volume_ratio_20 is not None and x.volume_ratio_20 >= 1.2),
-            ("고점 상승 구조", 15, lambda x: x.higher_high is True),
+            ("고점 상승 구조", 10, lambda x: x.higher_high is True),
             ("저점 상승 구조", 10, lambda x: x.higher_low is True),
-            ("20일 고점과 5% 이내", 10, lambda x: x.distance_to_20d_high_pct is not None and x.distance_to_20d_high_pct <= 5),
+            ("20일 고점과 5% 이내", 5, lambda x: x.distance_to_20d_high_pct is not None and x.distance_to_20d_high_pct <= 5),
+            ("20일 시장 대비 상대강도 양호", 10, lambda x: x.relative_strength_market_pct is not None and x.relative_strength_market_pct > 0),
             ("시장 급락 아님", 5, lambda x: x.market_regime not in {MarketRegime.TREND_DOWN, MarketRegime.PANIC}),
         ], note="강한 가격·거래량 흐름이 계속 이어질 가능성이 있는 구간을 평가합니다.")
 

@@ -4,9 +4,15 @@ import asyncio
 from typing import Any
 
 from app.market.event_risk import EventRiskAnalyzer
+from app.market.fundamental import FundamentalAnalyzer
+from app.market.investor_style import InvestorStyleAnalyzer
 from app.market.providers import KrxProvider, OpenDartProvider
+from app.market.pullback_confirmation import PullbackConfirmationAnalyzer
+from app.market.relative_strength import RelativeStrengthAnalyzer
+from app.market.sector_relative_strength import SectorRelativeStrengthAnalyzer
 from app.market.technical import TechnicalAnalyzer
 from app.risk import RiskEngine
+from app.strategy.analysis_hub import AnalysisHubBuilder
 from app.strategy.engine import StrategyEngine
 from app.strategy.models import MarketRegime, StrategyInput, StrategyName
 
@@ -29,9 +35,15 @@ class StrategyAnalysisService:
         self.krx = krx
         self.dart = dart
         self.event = EventRiskAnalyzer(dart) if dart is not None else None
+        self.fundamental = FundamentalAnalyzer(dart)
+        self.investor_style = InvestorStyleAnalyzer()
         self.technical = TechnicalAnalyzer()
         self.engine = StrategyEngine()
         self.risk = RiskEngine()
+        self.relative_strength = RelativeStrengthAnalyzer()
+        self.sector_relative_strength = SectorRelativeStrengthAnalyzer()
+        self.pullback_confirmation = PullbackConfirmationAnalyzer()
+        self.analysis_hub = AnalysisHubBuilder()
 
     @staticmethod
     def _regime_from_index(change_rate: float | None) -> MarketRegime:
@@ -88,6 +100,10 @@ class StrategyAnalysisService:
         index_rate: float | None,
         history_points: int,
         event_risk: bool = False,
+        relative_strength_market_pct: float | None = None,
+        relative_strength_sector_pct: float | None = None,
+        relative_strength_context: dict[str, Any] | None = None,
+        sector_relative_strength_context: dict[str, Any] | None = None,
     ) -> StrategyInput:
         return StrategyInput(
             code=code,
@@ -107,8 +123,8 @@ class StrategyAnalysisService:
             resistance_price=technical.get("resistance"),
             higher_high=technical.get("higher_high"),
             higher_low=technical.get("higher_low"),
-            relative_strength_market_pct=None,
-            relative_strength_sector_pct=None,
+            relative_strength_market_pct=relative_strength_market_pct,
+            relative_strength_sector_pct=relative_strength_sector_pct,
             market_regime=regime,
             event_risk=event_risk,
             liquidity_ok=liquidity_ok,
@@ -119,6 +135,8 @@ class StrategyAnalysisService:
                 "market_index_change_rate": index_rate,
                 "history_points": history_points,
                 "price_source": source,
+                "relative_strength": relative_strength_context,
+                "sector_relative_strength": sector_relative_strength_context,
             },
         )
 
@@ -343,6 +361,74 @@ class StrategyAnalysisService:
                 status = "PASS" if 35 <= rsi <= 65 else "WARN"
                 explanation = "중립적인 RSI 범위입니다." if status == "PASS" else "RSI가 일반적인 중립 범위를 벗어났습니다."
             checks.append(cls._check(key="rsi", label="RSI 상태", status=status, value=f"{rsi:.2f}", explanation=explanation, source=source))
+
+        if strategy in {StrategyName.TREND_FOLLOWING, StrategyName.PULLBACK, StrategyName.BREAKOUT, StrategyName.MOMENTUM_CONTINUATION}:
+            relative = data.relative_strength_market_pct
+            if relative is None:
+                checks.append(cls._check(
+                    key="relative_strength_market",
+                    label="시장 대비 상대강도",
+                    status="UNKNOWN",
+                    value="데이터 부족",
+                    explanation="종목과 시장 지수의 같은 거래일 데이터를 충분히 맞추지 못했습니다.",
+                    source="KRX_INDEX",
+                ))
+            else:
+                if relative >= 3:
+                    status = "PASS"
+                    explanation = "최근 20거래일 동안 시장보다 뚜렷하게 강한 흐름입니다."
+                elif relative >= 0:
+                    status = "PASS" if strategy == StrategyName.PULLBACK else "WARN"
+                    explanation = "시장과 비슷하거나 소폭 강한 흐름입니다."
+                elif relative > -3:
+                    status = "WARN"
+                    explanation = "시장보다 다소 약해 상대강도 확인이 필요합니다."
+                else:
+                    status = "FAIL"
+                    explanation = "시장보다 뚜렷하게 약해 추세·돌파 계열 전략에는 불리합니다."
+                checks.append(cls._check(
+                    key="relative_strength_market",
+                    label="20일 시장 대비 상대강도",
+                    status=status,
+                    value=f"{relative:+.2f}%p",
+                    explanation=explanation,
+                    source="KRX_INDEX",
+                ))
+
+        if strategy in {StrategyName.TREND_FOLLOWING, StrategyName.PULLBACK, StrategyName.BREAKOUT, StrategyName.MOMENTUM_CONTINUATION}:
+            sector_relative = data.relative_strength_sector_pct
+            sector_context = data.metadata.get("sector_relative_strength") or {}
+            sector_name = str(((sector_context.get("benchmark") or {}).get("name") or "업종"))
+            if sector_relative is None:
+                checks.append(cls._check(
+                    key="relative_strength_sector",
+                    label="업종 대비 상대강도",
+                    status="UNKNOWN",
+                    value="데이터 부족",
+                    explanation=str(sector_context.get("message") or "업종지수 매핑 또는 같은 거래일 데이터가 부족합니다."),
+                    source="DART+KRX_INDEX",
+                ))
+            else:
+                if sector_relative >= 3:
+                    status = "PASS"
+                    explanation = f"최근 20거래일 동안 {sector_name} 업종보다 뚜렷하게 강합니다."
+                elif sector_relative >= 0:
+                    status = "PASS" if strategy == StrategyName.PULLBACK else "WARN"
+                    explanation = f"{sector_name} 업종과 비슷하거나 소폭 강한 흐름입니다."
+                elif sector_relative > -3:
+                    status = "WARN"
+                    explanation = f"{sector_name} 업종보다 다소 약합니다."
+                else:
+                    status = "FAIL"
+                    explanation = f"{sector_name} 업종보다 뚜렷하게 약해 추세·돌파 계열에는 불리합니다."
+                checks.append(cls._check(
+                    key="relative_strength_sector",
+                    label=f"20일 {sector_name} 대비 상대강도",
+                    status=status,
+                    value=f"{sector_relative:+.2f}%p",
+                    explanation=explanation,
+                    source="DART+KRX_INDEX",
+                ))
 
         if strategy == StrategyName.BREAKOUT:
             distance = data.distance_to_20d_high_pct
@@ -743,18 +829,181 @@ class StrategyAnalysisService:
         average_price: float | None = None,
         quantity: float | None = None,
     ) -> dict[str, Any]:
-        history = await self.krx.stock_history(
+        # 상대강도 60거래일 수익률 계산에는 시작값까지 61개의 확정 종가가 필요합니다.
+        # 기술지표는 기존 요청 구간만 사용하고, 상대강도 계산에만 한 개 이상의 과거값을 더 보관합니다.
+        extended_history = await self.krx.stock_history(
             market=market,
             code=code,
             as_of=as_of,
-            points=history_points,
-            lookback_days=max(60, history_points * 2),
+            points=max(history_points, 61),
+            lookback_days=max(120, history_points * 2),
         )
+        history = extended_history[-history_points:]
         technical = self.technical.analyze(history)
         latest_index = await self.krx.latest_index_daily(market, as_of)
         market_index = latest_index.get("main_index")
         index_rate = market_index.get("change_rate") if market_index else None
         regime = self._regime_from_index(index_rate)
+
+        try:
+            index_history = await self.krx.index_history(
+                market,
+                as_of=as_of,
+                points=61,
+                lookback_days=max(120, history_points * 2),
+            )
+            relative_strength = self.relative_strength.analyze(
+                extended_history,
+                index_history,
+                market=market,
+                benchmark_name=market_index.get("name") if market_index else market.upper(),
+                position_mode=position_mode,
+            )
+        except Exception as exc:  # 상대강도 실패가 기존 전략 분석 전체를 막지 않도록 격리
+            relative_strength = {
+                "available": False,
+                "source": "KRX_EOD",
+                "price_basis": "CONFIRMED_EOD",
+                "benchmark": {"market": market.upper(), "name": market_index.get("name") if market_index else market.upper()},
+                "as_of": technical.get("date_to"),
+                "aligned_points": 0,
+                "primary_period": None,
+                "primary_excess_pct": None,
+                "status": "UNKNOWN",
+                "label": "분석 실패",
+                "trend": "UNKNOWN",
+                "trend_label": "판단 보류",
+                "trend_message": "상대강도 계산에 실패했습니다.",
+                "summary": f"시장 대비 상대강도 분석 실패: {exc}",
+                "periods": [],
+                "strategy_effects": [],
+                "decision": {
+                    "archetype": "UNKNOWN",
+                    "label": "판단 보류",
+                    "headline": "상대강도 분석에 실패했습니다.",
+                    "summary": "기술적 분석·리스크·공시 결과를 우선 사용합니다.",
+                    "confidence": "LOW",
+                    "confidence_label": "낮음",
+                    "new_entry": {"action": "다른 분석 근거 우선", "summary": "상대강도 결과를 현재 판단에 사용하지 않습니다."},
+                    "holding": {"action": "기존 보유 기준 유지", "summary": "상대강도 오류만으로 보유 판단을 바꾸지 않습니다."},
+                    "user_response": {
+                        "perspective": "보유 관리" if position_mode == "HOLDING" else "신규 진입",
+                        "action": "상대강도 판단 보류",
+                        "summary": "다른 분석 결과를 우선 사용합니다.",
+                    },
+                    "preferred_strategies": [],
+                    "deprioritized_strategies": [],
+                    "why": [f"상대강도 계산 오류: {exc}"],
+                    "watch_points": ["상대강도 데이터 재조회"],
+                    "short_term_heat": "UNKNOWN",
+                    "short_term_heat_label": "판단 보류",
+                },
+                "note": "기술적 분석은 계속 사용할 수 있습니다.",
+            }
+        relative_strength_market_pct = (
+            relative_strength.get("primary_excess_pct")
+            if relative_strength.get("primary_period") == 20
+            else None
+        )
+
+        # v0.16.4: OpenDART 업종코드를 KRX 업종지수 후보에 보수적으로 매핑한 뒤
+        # 종목 vs 업종 상대강도를 계산합니다. 매핑이 불확실하면 임의 추정하지 않습니다.
+        sector_relative_strength: dict[str, Any]
+        company_for_sector: dict[str, Any] | None = None
+        if self.dart is None:
+            sector_relative_strength = self.sector_relative_strength.unavailable(
+                market=market,
+                industry_code=None,
+                reason="OpenDART provider가 없어 업종코드를 확인할 수 없습니다.",
+                market_relative=relative_strength,
+                position_mode=position_mode,
+            )
+        else:
+            try:
+                company_for_sector = await self.dart.company_by_stock_code(code)
+                industry_code = company_for_sector.get("industry_code")
+                mapping = self.sector_relative_strength.map_industry_code(industry_code)
+                if not mapping.get("available"):
+                    sector_relative_strength = self.sector_relative_strength.unavailable(
+                        market=market,
+                        industry_code=industry_code,
+                        reason=str(mapping.get("reason") or "업종지수 자동 매핑에 실패했습니다."),
+                        market_relative=relative_strength,
+                        position_mode=position_mode,
+                        mapping=mapping,
+                    )
+                else:
+                    matched_sector = self.sector_relative_strength.match_index_row(
+                        list(latest_index.get("rows") or []),
+                        list(mapping.get("aliases") or []),
+                    )
+                    if matched_sector is None:
+                        sector_relative_strength = self.sector_relative_strength.unavailable(
+                            market=market,
+                            industry_code=industry_code,
+                            reason=f"KRX {market.upper()} 지수 목록에서 {mapping.get('sector_group')} 업종지수를 확인하지 못했습니다.",
+                            market_relative=relative_strength,
+                            position_mode=position_mode,
+                            mapping=mapping,
+                        )
+                    else:
+                        resolved_mapping = {
+                            **mapping,
+                            "benchmark_name": matched_sector.get("name"),
+                            "benchmark_class": matched_sector.get("class"),
+                            "matched_alias": matched_sector.get("matched_alias"),
+                            "index_match_confidence": matched_sector.get("match_confidence"),
+                            "index_match_confidence_label": matched_sector.get("match_confidence_label"),
+                        }
+                        history_aliases = [
+                            str(matched_sector.get("name") or ""),
+                            *list(mapping.get("aliases") or []),
+                        ]
+                        history_aliases = [item for item in dict.fromkeys(history_aliases) if item]
+                        sector_history = await self.krx.index_alias_history(
+                            market,
+                            history_aliases,
+                            as_of=as_of,
+                            points=61,
+                            lookback_days=max(140, history_points * 2 + 20),
+                        )
+                        sector_relative_strength = self.sector_relative_strength.analyze(
+                            extended_history,
+                            sector_history,
+                            market=market,
+                            industry_code=industry_code,
+                            mapping=resolved_mapping,
+                            benchmark_name=str(matched_sector.get("name") or mapping.get("sector_group") or "업종"),
+                            market_relative=relative_strength,
+                            position_mode=position_mode,
+                        )
+            except Exception as exc:
+                sector_relative_strength = self.sector_relative_strength.unavailable(
+                    market=market,
+                    industry_code=None,
+                    reason=f"업종 상대강도 분석 실패: {exc}",
+                    market_relative=relative_strength,
+                    position_mode=position_mode,
+                )
+
+        relative_strength_sector_pct = (
+            sector_relative_strength.get("primary_excess_pct")
+            if sector_relative_strength.get("primary_period") == 20
+            else None
+        )
+
+        latest = history[-1]
+        fundamental_task = asyncio.create_task(
+            self.fundamental.analyze(
+                code,
+                eod_price=float(technical.get("current_price") or 0) or None,
+                reference_price=reference_price,
+                listed_shares=latest.get("listed_shares"),
+                market_cap=latest.get("market_cap"),
+                as_of=str(latest.get("date") or technical.get("date_to") or as_of or ""),
+                company=company_for_sector,
+            )
+        )
 
         if self.event is not None:
             try:
@@ -794,8 +1043,11 @@ class StrategyAnalysisService:
                 "events": [],
             }
         event_risk_active = bool(event_analysis.get("risk_gate"))
+        try:
+            fundamental_analysis = await fundamental_task
+        except Exception as exc:  # 재무 분석 실패가 기술 분석 전체를 막지 않도록 격리
+            fundamental_analysis = FundamentalAnalyzer.unavailable(f"재무 분석 실패: {exc}")
 
-        latest = history[-1]
         trade_value = latest.get("trade_value")
         eod_liquidity_ok = trade_value is not None and float(trade_value) >= 1_000_000_000
 
@@ -820,6 +1072,10 @@ class StrategyAnalysisService:
             index_rate=index_rate,
             history_points=len(history),
             event_risk=event_risk_active,
+            relative_strength_market_pct=relative_strength_market_pct,
+            relative_strength_sector_pct=relative_strength_sector_pct,
+            relative_strength_context=relative_strength,
+            sector_relative_strength_context=sector_relative_strength,
         )
         eod_evaluations = self.engine.evaluate_all(eod_input)
 
@@ -870,6 +1126,10 @@ class StrategyAnalysisService:
                 index_rate=index_rate,
                 history_points=len(history),
                 event_risk=event_risk_active,
+                relative_strength_market_pct=relative_strength_market_pct,
+                relative_strength_sector_pct=relative_strength_sector_pct,
+                relative_strength_context=relative_strength,
+                sector_relative_strength_context=sector_relative_strength,
             )
             reference_evaluations = self.engine.evaluate_all(reference_input)
 
@@ -925,6 +1185,58 @@ class StrategyAnalysisService:
             risk_gate=current_risk_gate,
             best_regular=best_regular,
             event_analysis=event_analysis,
+        )
+
+        pullback_confirmation = self.pullback_confirmation.analyze(
+            history=history,
+            technical=technical,
+            current_price=reference_input.current_price,
+            current_ma20=reference_input.ma20,
+            current_rsi14=reference_input.rsi14,
+            current_volume_ratio=reference_input.volume_ratio_20,
+            source="USER_INPUT" if reference_context is not None else "KRX_EOD",
+            position_mode=position_mode,
+            reference_low=reference_low,
+            reference_high=reference_high,
+            reference_volume=reference_volume,
+        )
+
+        investor_style_analysis = self.investor_style.analyze(
+            fundamental=fundamental_analysis,
+            relative_strength=relative_strength,
+            sector_relative_strength=sector_relative_strength,
+            event_analysis=event_analysis,
+            effective={
+                "price": reference_input.current_price,
+                "ma20": reference_input.ma20,
+                "rsi14": reference_input.rsi14,
+                "atr_pct": effective_atr,
+                "volume_ratio_20": effective_volume,
+                "distance_to_20d_high_pct": reference_input.distance_to_20d_high_pct,
+            },
+            market_context={
+                "regime": regime.value,
+                "index_name": market_index.get("name") if market_index else None,
+                "index_change_rate": index_rate,
+            },
+            position_mode=position_mode,
+            pullback_confirmation=pullback_confirmation,
+            risk_gate=current_risk_gate,
+        )
+
+        analysis_summary = self.analysis_hub.build(
+            position_mode=position_mode,
+            risk_gate=current_risk_gate,
+            risk_analysis=risk_analysis,
+            best_regular=best_regular,
+            position_action=position_action_guide,
+            relative_strength=relative_strength,
+            sector_relative_strength=sector_relative_strength,
+            event_analysis=event_analysis,
+            pullback_confirmation=pullback_confirmation,
+            strategy_payloads=current_strategy_payloads,
+            fundamental_analysis=fundamental_analysis,
+            investor_style_analysis=investor_style_analysis,
         )
 
         return {
@@ -985,12 +1297,18 @@ class StrategyAnalysisService:
                 "index_name": market_index.get("name") if market_index else None,
                 "index_change_rate": index_rate,
             },
+            "relative_strength": relative_strength,
+            "sector_relative_strength": sector_relative_strength,
+            "fundamental": fundamental_analysis,
+            "investor_style": investor_style_analysis,
             "risk_gate": current_risk_gate,
             "event_risk": event_analysis,
             "risk_analysis": risk_analysis,
             "eod_risk_gate": eod_risk_gate,
             "position_context": position_context,
             "position_action_guide": position_action_guide,
+            "pullback_confirmation": pullback_confirmation,
+            "analysis_summary": analysis_summary,
             "strategies": current_strategy_payloads,
             "eod_strategies": eod_strategy_payloads,
             "reference_strategies": reference_strategy_payloads,
@@ -1011,6 +1329,13 @@ class StrategyAnalysisService:
                 "보유 상태·평균 매수가·수량 입력은 현재 분석 요청에만 사용하는 가정값이며 실제 증권계좌와 연동되지 않습니다.",
                 "OpenDART 최근 공시는 제목 분류 후 중요 공시에 대해 구조화 API 또는 원문 XML에서 세부조건을 보조 추출합니다.",
                 "공시 자동요약은 원문을 대체하지 않으며 중요한 판단 전에는 DART 원문 확인이 필요합니다.",
-                "업종 상대강도는 후속 단계에서 연결합니다.",
+                "시장 상대강도는 종목과 KOSPI/KOSDAQ의 같은 거래일 KRX 확정 EOD만 비교합니다.",
+                "수동 현재가는 실시간 시장지수와 시점이 맞지 않으므로 상대강도 계산에는 섞지 않습니다.",
+                "재무 분석은 OpenDART 연간 사업보고서의 비교 가능한 연도끼리 분석하며 분기·반기와 연간 수치를 임의로 섞지 않습니다.",
+                "사용자 참고가격은 PER/PBR Preview에만 사용하며 OpenDART 확정 재무제표 자체를 변경하지 않습니다.",
+                "PER/PBR의 높고 낮음은 업종에 따라 의미가 달라 절대값만으로 저평가·고평가를 확정하지 않습니다.",
+                "업종 상대강도는 OpenDART 업종코드를 KRX 업종지수 후보에 규칙 매핑한 뒤 같은 거래일 EOD로 비교합니다.",
+                "업종지수 자동 매핑이 불확실하거나 KRX 지수명이 맞지 않으면 임의 추정하지 않고 업종 비교를 생략합니다.",
+                "눌림·지지 확인은 앱이 계산 가능한 가격·지지·RSI·거래량 조건을 자동 판정하며, 장중 시가/저가가 없는 항목은 미확정으로 표시합니다.",
             ],
         }
