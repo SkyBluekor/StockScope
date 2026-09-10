@@ -4,6 +4,7 @@ import { BeginnerGlossary, BeginnerIndicatorSummary, TermHelp } from "./componen
 import { AnalysisDetailHeader, AnalysisHub, PullbackConfirmationPanel, type AnalysisSection } from "./components/AnalysisHub";
 import { FundamentalPanel } from "./components/FundamentalPanel";
 import { InvestorStylePanel } from "./components/InvestorStylePanel";
+import BacktestPanel from "./components/BacktestPanel";
 import {
   fetchHealth,
   fetchMarketDashboard,
@@ -19,6 +20,12 @@ import {
   type StrategyAnalysis,
   type StockSearchItem,
 } from "./services/api";
+
+type AppPage = "analysis" | "backtest";
+
+function pageFromPathname(pathname: string): AppPage {
+  return pathname.toLowerCase().startsWith("/backtest") ? "backtest" : "analysis";
+}
 
 function number(value: number | null | undefined, suffix = "") {
   if (value == null) return "-";
@@ -99,7 +106,8 @@ export default function App() {
   const [providers, setProviders] = useState<ProviderStatus | null>(null);
   const [dashboard, setDashboard] = useState<MarketDashboard | null>(null);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [appPage, setAppPage] = useState<AppPage>(() => pageFromPathname(window.location.pathname));
   const [stockCode, setStockCode] = useState("005930");
   const [stockMarket, setStockMarket] = useState<"KOSPI" | "KOSDAQ">("KOSPI");
   const [stockQuery, setStockQuery] = useState("삼성전자 (005930)");
@@ -176,8 +184,24 @@ export default function App() {
       .then((data) => setApiStatus(data.status === "ok" ? "정상" : "오류"))
       .catch(() => setApiStatus("연결 실패"));
     fetchProviderStatus().then(setProviders).catch(() => setProviders(null));
-    void loadDashboard();
+
+    if (window.location.pathname === "/") {
+      window.history.replaceState({}, "", "/analysis");
+    }
+
+    const handlePopState = () => {
+      setAppPage(pageFromPathname(window.location.pathname));
+      window.scrollTo({ top: 0, behavior: "auto" });
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
   }, []);
+
+  useEffect(() => {
+    if (appPage === "analysis" && dashboard == null && !loading) {
+      void loadDashboard();
+    }
+  }, [appPage]);
 
   useEffect(() => {
     const query = stockQuery.trim();
@@ -400,6 +424,13 @@ const strategyName: Record<string, string> = {
     });
   }
 
+  function navigateApp(page: AppPage) {
+    const pathname = page === "analysis" ? "/analysis" : "/backtest";
+    if (window.location.pathname !== pathname) window.history.pushState({}, "", pathname);
+    setAppPage(page);
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }
+
   const breadth = dashboard?.market.breadth;
   const upPercent = breadth?.total ? (breadth.up / breadth.total) * 100 : 0;
   const downPercent = breadth?.total ? (breadth.down / breadth.total) * 100 : 0;
@@ -411,12 +442,11 @@ const strategyName: Record<string, string> = {
           <div className="brand-mark"><i /><i /><i /></div>
           <strong className="brand">StockScope</strong>
         </div>
-        <nav className="topnav" aria-label="주요 메뉴">
-          <button className="nav-item active">대시보드</button>
-          <button className="nav-item" disabled>전략 스캐너 <em>준비중</em></button>
-          <button className="nav-item" disabled>종목 분석</button>
-          <button className="nav-item" disabled>백테스트</button>
-          <button className="nav-item" disabled>시뮬레이션</button>
+        <nav className="topnav" aria-label="주요 기능">
+          <button className={`nav-item ${appPage === "analysis" ? "active" : ""}`} onClick={() => navigateApp("analysis")}>빠른 조회</button>
+          <button className={`nav-item ${appPage === "backtest" ? "active" : ""}`} onClick={() => navigateApp("backtest")}>백테스트</button>
+          <button className="nav-item" disabled>종목 찾기 <em>준비중</em></button>
+          <button className="nav-item" disabled>시뮬레이션 <em>준비중</em></button>
         </nav>
         <div className="header-status">
           <span className={`dot-status ${apiStatus === "정상" ? "ok" : ""}`}>API {apiStatus}</span>
@@ -425,20 +455,24 @@ const strategyName: Record<string, string> = {
         </div>
       </header>
 
-      <div className="layout">
-        <aside className="sidebar">
-          <button className="side-item active"><span>⌂</span>오늘의 시장</button>
-          <button className="side-item" disabled><span>◉</span>추천 전략</button>
-          <button className="side-item" disabled><span>☆</span>관심 종목</button>
-          <button className="side-item" disabled><span>◷</span>최근 분석</button>
-          <div className="sidebar-note">
-            <strong>분석 전용</strong>
-            <p>실제 주문 API를 구현하지 않습니다.</p>
-            <span>KRX + OpenDART</span>
-          </div>
-        </aside>
+      <div className={`layout ${appPage === "backtest" ? "backtest-layout" : ""}`}>
+        {appPage === "analysis" && (
+          <aside className="sidebar">
+            <button className="side-item active"><span>⌂</span>오늘의 시장</button>
+            <button className="side-item" disabled><span>◉</span>추천 전략</button>
+            <button className="side-item" disabled><span>☆</span>관심 종목</button>
+            <button className="side-item" disabled><span>◷</span>최근 분석</button>
+            <div className="sidebar-note">
+              <strong>분석 전용</strong>
+              <p>실제 주문 API를 구현하지 않습니다.</p>
+              <span>KRX + OpenDART</span>
+            </div>
+          </aside>
+        )}
 
-        <main className="content">
+        <main className={`content ${appPage === "backtest" ? "backtest-page-content" : ""}`}>
+          {appPage === "analysis" ? (
+            <>
           <section className="page-head">
             <div>
               <span className="eyebrow">MARKET DASHBOARD · v0.7</span>
@@ -1821,6 +1855,16 @@ const strategyName: Record<string, string> = {
               </div>
             )}
           </section>
+
+            </>
+          ) : (
+            <BacktestPanel
+              code={stockCode}
+              market={stockMarket}
+              stockName={selectedStockName}
+              onSelectStock={chooseStock}
+            />
+          )}
 
           <footer>
             <span>※ StockScope는 투자 판단 보조용이며 실제 매수·매도 주문 기능을 제공하지 않습니다.</span>

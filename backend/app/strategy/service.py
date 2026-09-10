@@ -13,6 +13,7 @@ from app.market.sector_relative_strength import SectorRelativeStrengthAnalyzer
 from app.market.technical import TechnicalAnalyzer
 from app.risk import RiskEngine
 from app.strategy.analysis_hub import AnalysisHubBuilder
+from app.strategy.context import build_strategy_input, regime_from_index
 from app.strategy.engine import StrategyEngine
 from app.strategy.models import MarketRegime, StrategyInput, StrategyName
 
@@ -47,13 +48,7 @@ class StrategyAnalysisService:
 
     @staticmethod
     def _regime_from_index(change_rate: float | None) -> MarketRegime:
-        if change_rate is None:
-            return MarketRegime.UNKNOWN
-        if change_rate >= 1.0:
-            return MarketRegime.TREND_UP
-        if change_rate <= -1.0:
-            return MarketRegime.TREND_DOWN
-        return MarketRegime.RANGE
+        return regime_from_index(change_rate)
 
     @staticmethod
     def _risk_gate_payload(evaluations: list[Any]) -> dict[str, Any]:
@@ -105,39 +100,30 @@ class StrategyAnalysisService:
         relative_strength_context: dict[str, Any] | None = None,
         sector_relative_strength_context: dict[str, Any] | None = None,
     ) -> StrategyInput:
-        return StrategyInput(
+        return build_strategy_input(
             code=code,
-            market=market.upper(),
-            current_price=price,
+            market=market,
+            technical=technical,
+            regime=regime,
+            liquidity_ok=liquidity_ok,
+            price=price,
             ma20=ma20,
-            ma60=technical.get("ma60"),
-            ma120=technical.get("ma120"),
-            ma20_slope_pct=technical.get("ma20_slope_pct"),
             rsi14=rsi14,
             atr_pct=atr_pct,
             volume_ratio_20=volume_ratio_20,
-            distance_to_20d_high_pct=distance_to_high,
-            support_distance_pct=support_distance,
-            resistance_distance_pct=resistance_distance,
-            support_price=technical.get("support"),
-            resistance_price=technical.get("resistance"),
-            higher_high=technical.get("higher_high"),
-            higher_low=technical.get("higher_low"),
-            relative_strength_market_pct=relative_strength_market_pct,
-            relative_strength_sector_pct=relative_strength_sector_pct,
-            market_regime=regime,
-            event_risk=event_risk,
-            liquidity_ok=liquidity_ok,
-            tradable=True,
+            distance_to_high=distance_to_high,
+            support_distance=support_distance,
+            resistance_distance=resistance_distance,
             extreme_move=extreme_move,
             data_stale=data_stale,
-            metadata={
-                "market_index_change_rate": index_rate,
-                "history_points": history_points,
-                "price_source": source,
-                "relative_strength": relative_strength_context,
-                "sector_relative_strength": sector_relative_strength_context,
-            },
+            source=source,
+            index_rate=index_rate,
+            history_points=history_points,
+            event_risk=event_risk,
+            relative_strength_market_pct=relative_strength_market_pct,
+            relative_strength_sector_pct=relative_strength_sector_pct,
+            relative_strength_context=relative_strength_context,
+            sector_relative_strength_context=sector_relative_strength_context,
         )
 
     def _risk_analysis(

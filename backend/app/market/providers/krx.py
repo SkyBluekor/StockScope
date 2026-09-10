@@ -47,6 +47,37 @@ class KrxProvider:
 
     def __init__(self, api_key: str | None) -> None:
         self.api_key = (api_key or "").strip()
+        self._client: httpx.AsyncClient | None = None
+        self._owns_client = False
+        self._request_stats: dict[str, int] = {
+            "memory_hits": 0,
+            "disk_hits": 0,
+            "empty_marker_hits": 0,
+            "network_requests": 0,
+            "retries": 0,
+        }
+
+    async def open_session(self) -> None:
+        """Open one reusable HTTP connection pool for bulk/history work."""
+        if self._client is None:
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(15.0),
+                limits=httpx.Limits(max_connections=16, max_keepalive_connections=12),
+            )
+            self._owns_client = True
+
+    async def close_session(self) -> None:
+        if self._client is None or not self._owns_client:
+            return
+        client = self._client
+        self._client = None
+        self._owns_client = False
+        close = getattr(client, "aclose", None)
+        if close is not None:
+            await close()
+
+    def request_stats(self) -> dict[str, int]:
+        return dict(self._request_stats)
 
     def _require_key(self) -> None:
         if not self.api_key:
@@ -61,6 +92,15 @@ class KrxProvider:
         # 당일/미래 날짜는 KRX가 늦게 게시하거나 정정할 수 있으므로
         # 장기 디스크 캐시로 고정하지 않습니다.
         return bas_dd >= cls._today_kst().strftime("%Y%m%d")
+
+    @classmethod
+    def _is_stable_empty_date(cls, bas_dd: str) -> bool:
+        """Only persist empty responses far enough in the past to avoid publication-delay traps."""
+        try:
+            candidate = datetime.strptime(bas_dd, "%Y%m%d").date()
+        except ValueError:
+            return False
+        return candidate <= cls._today_kst() - timedelta(days=3)
 
     @staticmethod
     def _format_date(value: str | date) -> str:
@@ -165,6 +205,32 @@ class KrxProvider:
         return cls._cache_dir / f"{safe_name}__{bas_dd}.json.gz"
 
     @classmethod
+    def _empty_marker_path(cls, endpoint: KrxEndpoint, bas_dd: str) -> Path:
+        safe_name = endpoint.path.replace("/", "__")
+        return cls._cache_dir / f"{safe_name}__{bas_dd}.empty"
+
+    @classmethod
+    def _has_empty_marker(cls, endpoint: KrxEndpoint, bas_dd: str) -> bool:
+        return cls._empty_marker_path(endpoint, bas_dd).exists()
+
+    @classmethod
+    def _save_empty_marker(cls, endpoint: KrxEndpoint, bas_dd: str) -> None:
+        if not cls._is_stable_empty_date(bas_dd):
+            return
+        try:
+            cls._cache_dir.mkdir(parents=True, exist_ok=True)
+            cls._empty_marker_path(endpoint, bas_dd).touch(exist_ok=True)
+        except OSError:
+            pass
+
+    @classmethod
+    def _clear_empty_marker(cls, endpoint: KrxEndpoint, bas_dd: str) -> None:
+        try:
+            cls._empty_marker_path(endpoint, bas_dd).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    @classmethod
     def _load_disk_cache(cls, endpoint: KrxEndpoint, bas_dd: str) -> list[dict[str, Any]] | None:
         path = cls._disk_cache_path(endpoint, bas_dd)
         if not path.exists():
@@ -202,6 +268,61 @@ class KrxProvider:
             # 캐시 실패가 실제 데이터 조회를 막으면 안 됩니다.
             pass
 
+    async def _request_rows(self, endpoint: KrxEndpoint, bas_dd: str) -> list[dict[str, Any]]:
+        url = f"{self.BASE_URL}/{endpoint.path}"
+        headers = {"AUTH_KEY": self.api_key}
+        params = {"basDd": bas_dd}
+        retry_delays = (0.5, 1.0, 2.0)
+        last_error: Exception | None = None
+
+        for attempt in range(len(retry_delays) + 1):
+            try:
+                self._request_stats["network_requests"] += 1
+                if self._client is not None:
+                    response = await self._client.get(url, headers=headers, params=params)
+                else:
+                    async with httpx.AsyncClient(timeout=15.0) as client:
+                        response = await client.get(url, headers=headers, params=params)
+            except httpx.HTTPError as exc:
+                last_error = exc
+                if attempt >= len(retry_delays):
+                    raise ProviderError(f"KRX 연결 실패: {exc}") from exc
+                self._request_stats["retries"] += 1
+                await asyncio.sleep(retry_delays[attempt])
+                continue
+
+            if response.status_code == 200:
+                try:
+                    payload = response.json()
+                except ValueError as exc:
+                    raise ProviderError("KRX가 JSON이 아닌 응답을 반환했습니다.") from exc
+                rows = payload.get("OutBlock_1")
+                if not isinstance(rows, list):
+                    raise ProviderError("KRX 응답에 OutBlock_1 데이터가 없습니다.")
+                return rows
+
+            if response.status_code == 429 or response.status_code >= 500:
+                if attempt < len(retry_delays):
+                    self._request_stats["retries"] += 1
+                    retry_after = None
+                    headers_obj = getattr(response, "headers", None)
+                    if headers_obj is not None:
+                        retry_after = headers_obj.get("Retry-After")
+                    try:
+                        delay = max(float(retry_after), retry_delays[attempt]) if retry_after else retry_delays[attempt]
+                    except (TypeError, ValueError):
+                        delay = retry_delays[attempt]
+                    await asyncio.sleep(min(delay, 5.0))
+                    continue
+
+            raise ProviderError(
+                f"KRX 요청 실패 ({response.status_code}). 인증키와 해당 API 활용신청 상태를 확인하세요."
+            )
+
+        if last_error is not None:
+            raise ProviderError(f"KRX 연결 실패: {last_error}") from last_error
+        raise ProviderError("KRX 요청에 실패했습니다.")
+
     async def _get_rows(self, endpoint: KrxEndpoint, bas_dd: str) -> list[dict[str, Any]]:
         self._require_key()
         cache_key = (endpoint.path, bas_dd)
@@ -214,49 +335,35 @@ class KrxProvider:
 
         cached = self._rows_cache.get(cache_key)
         if cached is not None:
+            self._request_stats["memory_hits"] += 1
             return cached
 
-        # 당일 데이터는 게시 시점이 늦을 수 있으므로 디스크 캐시를 사용하지 않습니다.
         if not self._is_volatile_date(bas_dd):
             disk_cached = self._load_disk_cache(endpoint, bas_dd)
             if disk_cached is not None:
+                self._request_stats["disk_hits"] += 1
                 self._rows_cache[cache_key] = disk_cached
                 return disk_cached
+            if self._has_empty_marker(endpoint, bas_dd):
+                self._request_stats["empty_marker_hits"] += 1
+                self._rows_cache[cache_key] = []
+                return []
 
-        url = f"{self.BASE_URL}/{endpoint.path}"
-        headers = {"AUTH_KEY": self.api_key}
-        params = {"basDd": bas_dd}
-
-        try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                response = await client.get(url, headers=headers, params=params)
-        except httpx.HTTPError as exc:
-            raise ProviderError(f"KRX 연결 실패: {exc}") from exc
-
-        if response.status_code != 200:
-            raise ProviderError(
-                f"KRX 요청 실패 ({response.status_code}). 인증키와 해당 API 활용신청 상태를 확인하세요."
-            )
-
-        try:
-            payload = response.json()
-        except ValueError as exc:
-            raise ProviderError("KRX가 JSON이 아닌 응답을 반환했습니다.") from exc
-
-        rows = payload.get("OutBlock_1")
-        if not isinstance(rows, list):
-            raise ProviderError("KRX 응답에 OutBlock_1 데이터가 없습니다.")
+        rows = await self._request_rows(endpoint, bas_dd)
 
         if not rows:
-            # 빈 응답을 영구 캐시하면 KRX가 나중에 당일 데이터를 게시해도
-            # 서버가 계속 전 거래일로 fallback할 수 있습니다. 5분만 임시 보관합니다.
             self._rows_cache[cache_key] = rows
-            self._cache_expiry[cache_key] = now + self._volatile_cache_seconds
+            if self._is_stable_empty_date(bas_dd):
+                self._cache_expiry.pop(cache_key, None)
+                self._save_empty_marker(endpoint, bas_dd)
+            else:
+                # Recent/today empty data can appear before KRX publishes the final daily row.
+                self._cache_expiry[cache_key] = now + self._volatile_cache_seconds
             return rows
 
+        self._clear_empty_marker(endpoint, bas_dd)
         self._rows_cache[cache_key] = rows
         if self._is_volatile_date(bas_dd):
-            # 당일 확정 데이터도 정정 가능성을 고려해 5분 후 다시 확인합니다.
             self._cache_expiry[cache_key] = now + self._volatile_cache_seconds
         else:
             self._cache_expiry.pop(cache_key, None)

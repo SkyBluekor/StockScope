@@ -937,3 +937,344 @@ export async function searchStocks(query: string): Promise<StockSearchResponse> 
   const params = new URLSearchParams({ q: query, limit: "12" });
   return asJson<StockSearchResponse>(await fetch(`/api/stocks/search?${params.toString()}`));
 }
+
+export type BacktestMetrics = {
+  trades: number;
+  wins: number;
+  losses: number;
+  win_rate_pct: number | null;
+  average_gross_return_pct: number | null;
+  average_net_return_pct: number | null;
+  median_net_return_pct: number | null;
+  average_win_pct: number | null;
+  average_loss_pct: number | null;
+  expectancy_pct: number | null;
+  profit_factor: number | null;
+  average_holding_days: number | null;
+  max_consecutive_losses: number;
+  max_drawdown_pct: number;
+  initial_capital: number;
+  final_capital: number;
+  total_net_return_pct: number | null;
+};
+
+export type BacktestGroupMetrics = BacktestMetrics & { key: string };
+
+export type BacktestAuditCheck = {
+  id: string;
+  status: "PASS" | "WARN" | "FAIL" | "INFO" | string;
+  title: string;
+  detail: string;
+};
+
+export type BacktestTradeAudit = {
+  signal_boundary?: {
+    stock_history_start_date?: string | null;
+    stock_history_end_date?: string | null;
+    index_history_end_date?: string | null;
+    market_regime_source_date?: string | null;
+    future_data_used?: boolean;
+  };
+  entry?: {
+    signal_close?: number | null;
+    entry_date?: string | null;
+    entry_open?: number | null;
+    gap_from_signal_close_pct?: number | null;
+    next_trading_day_open_verified?: boolean;
+  };
+  risk?: {
+    source?: string;
+    signal_support?: number | null;
+    signal_ma20?: number | null;
+    technical_low20?: number | null;
+    structural_anchor?: number | null;
+    structural_anchor_label?: string | null;
+    atr_pct?: number | null;
+    atr_value_at_entry?: number | null;
+    buffer_factor?: number | null;
+    formula?: string;
+    invalidation_price?: number | null;
+    initial_stop_distance_pct?: number | null;
+    anchor_distance_from_entry_pct?: number | null;
+    atr_buffer_from_anchor_pct?: number | null;
+    risk_plan_status?: string;
+    reference_only?: boolean;
+    structure_rating?: string;
+    summary?: string;
+    warnings?: string[];
+    reasons?: string[];
+  };
+  execution?: {
+    exit_date?: string | null;
+    exit_open?: number | null;
+    exit_high?: number | null;
+    exit_low?: number | null;
+    exit_close?: number | null;
+    exit_trigger?: string;
+    gross_formula?: string;
+    gross_return_pct?: number | null;
+    round_trip_cost_pct?: number | null;
+    net_return_pct?: number | null;
+  };
+  flags?: string[];
+};
+
+export type BacktestAccuracyAudit = {
+  version: string;
+  status: string;
+  label: string;
+  headline: string;
+  summary: string;
+  checks: BacktestAuditCheck[];
+  flagged_trades: Array<{
+    signal_date?: string;
+    entry_date?: string;
+    entry_price?: number | null;
+    signal_close?: number | null;
+    entry_gap_pct?: number | null;
+    stop_price?: number | null;
+    stop_distance_pct?: number | null;
+    risk_plan_status?: string;
+    structure_rating?: string | null;
+    structural_anchor?: number | null;
+    structural_anchor_label?: string | null;
+    anchor_distance_from_entry_pct?: number | null;
+    atr_pct?: number | null;
+    atr_value_at_entry?: number | null;
+    buffer_factor?: number | null;
+    flags?: string[];
+    cause: string;
+  }>;
+  policy_observation: string;
+  research_observation: string;
+  guardrail: string;
+  counts: Record<string, number>;
+};
+
+export type BacktestRiskPolicyScenario = {
+  id: string;
+  label: string;
+  short: string;
+  description: string;
+  problem_target: string;
+  metrics: BacktestMetrics & {
+    closed_trade_max_drawdown_pct?: number;
+    max_drawdown_basis?: string;
+  };
+  eligible_attempts: number;
+  blocked_by_policy: number;
+  blocked_reasons: Record<string, number>;
+  unusable_risk_plan: number;
+  caution_trades: number;
+  wide_stop_trades: number;
+  average_initial_stop_distance_pct: number | null;
+  anchor_changed_signals: number;
+  anchor_changed_trades: number;
+  delta: {
+    trades: number;
+    expectancy_pctp: number | null;
+    total_net_return_pctp: number | null;
+    max_drawdown_pctp: number | null;
+  };
+  interpretation: {
+    status: string;
+    headline: string;
+    meaning: string;
+  };
+};
+
+export type BacktestRiskPolicyComparison = {
+  version: string;
+  status: string;
+  headline: string;
+  summary: string;
+  decision: string;
+  baseline_problem: {
+    caution_trades: number;
+    wide_stop_trades: number;
+    wide_stop_threshold_pct: number;
+  };
+  scenarios: BacktestRiskPolicyScenario[];
+  next_validation_candidate: null | {
+    policy_id: string;
+    label: string;
+    reason: string;
+    next_step: string;
+  };
+  guardrail: string;
+};
+
+export type BacktestTrade = {
+  signal_date: string;
+  entry_date: string;
+  entry_price: number;
+  exit_date: string;
+  exit_price: number;
+  exit_reason: string;
+  holding_days: number;
+  strategy_score: number;
+  entry_timing_passed: number;
+  entry_timing_total: number;
+  entry_timing_state: string;
+  market_regime: string;
+  stop_price: number;
+  target1_price: number;
+  target2_price: number | null;
+  gross_return_pct: number;
+  net_return_pct: number;
+  risk_plan_status: string;
+  research_only: boolean;
+  metadata: Record<string, unknown> & { audit?: BacktestTradeAudit };
+};
+
+
+export type BacktestProblemItem = {
+  id: string;
+  priority: number;
+  severity: "HIGH" | "MEDIUM" | "INFO" | string;
+  title: string;
+  evidence: string;
+  meaning: string;
+  solution: string;
+};
+
+export type BacktestNextAction = {
+  id: string;
+  type: "RERUN_PERIOD" | "VIEW_SECTION" | string;
+  label: string;
+  description: string;
+  priority: number;
+  years?: number;
+  section?: string;
+};
+
+export type BacktestProblemSolver = {
+  status: string;
+  label: string;
+  headline: string;
+  summary: string;
+  confidence: { level: string; label: string; reason: string };
+  performance: { level: string; label: string; reason: string };
+  risk: { level: string; label: string; reason: string };
+  problems: BacktestProblemItem[];
+  next_actions: BacktestNextAction[];
+  strategy_candidate: null | {
+    status: string;
+    title: string;
+    reason: string;
+    next_validation: string;
+  };
+  guardrail: string;
+};
+
+export type PullbackBacktestResponse = {
+  version: "0.19" | string;
+  strategy: "pullback" | string;
+  code: string;
+  market: "KOSPI" | "KOSDAQ";
+  period: { start: string; end: string };
+  config: {
+    initial_capital: number;
+    max_holding_days: number;
+    round_trip_cost_pct: number;
+    minimum_strategy_score: number;
+    entry_policy: string;
+    entry_price_policy: string;
+    same_day_stop_target_policy: string;
+    stop_policy: string;
+    target_policy: string;
+    overlapping_positions: boolean;
+    position_sizing: string;
+  };
+  summary: BacktestMetrics;
+  assessment: { status: string; label: string; summary: string };
+  problem_solver?: BacktestProblemSolver;
+  accuracy_audit?: BacktestAccuracyAudit;
+  risk_policy_comparison?: BacktestRiskPolicyComparison;
+  diagnostics: Record<string, number>;
+  score_performance: BacktestGroupMetrics[];
+  entry_timing_research: Array<BacktestMetrics & { entry_timing: string; signals: number }>;
+  market_regime_performance: BacktestGroupMetrics[];
+  trades: BacktestTrade[];
+  methodology: Record<string, string>;
+  data_window: {
+    requested_start: string;
+    requested_end: string;
+    warmup_start: string;
+    first_stock_date: string;
+    last_stock_date: string;
+    stock_rows: number;
+    index_rows: number;
+    cache_note: string;
+  };
+  performance?: {
+    data_prepare_seconds: number;
+    strategy_calculation_seconds: number;
+    total_seconds: number;
+    history_store_hits: number;
+    raw_cache_hits: number;
+    network_requests: number;
+    retries: number;
+    warmup_rows: number;
+  };
+  warnings: string[];
+};
+
+export type PullbackBacktestRequest = {
+  code: string;
+  market: "KOSPI" | "KOSDAQ";
+  start_date: string;
+  end_date: string;
+  initial_capital: number;
+  max_holding_days: number;
+  round_trip_cost_pct: number;
+};
+
+export async function fetchPullbackBacktest(payload: PullbackBacktestRequest): Promise<PullbackBacktestResponse> {
+  return asJson<PullbackBacktestResponse>(
+    await fetch("/api/backtest/pullback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  );
+}
+
+
+export type BacktestJob = {
+  job_id: string;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled" | string;
+  stage: string;
+  progress: {
+    current: number;
+    total: number;
+    percent: number;
+    message: string;
+    details: Record<string, number | string | boolean | null>;
+  };
+  result: PullbackBacktestResponse | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+  elapsed_seconds: number;
+};
+
+export async function createPullbackBacktestJob(payload: PullbackBacktestRequest): Promise<BacktestJob> {
+  return asJson<BacktestJob>(
+    await fetch("/api/backtest/pullback/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  );
+}
+
+export async function fetchBacktestJob(jobId: string): Promise<BacktestJob> {
+  return asJson<BacktestJob>(await fetch(`/api/backtest/jobs/${encodeURIComponent(jobId)}`));
+}
+
+export async function cancelBacktestJob(jobId: string): Promise<BacktestJob> {
+  return asJson<BacktestJob>(
+    await fetch(`/api/backtest/jobs/${encodeURIComponent(jobId)}`, { method: "DELETE" }),
+  );
+}
