@@ -1104,6 +1104,91 @@ export type BacktestRiskPolicyComparison = {
   guardrail: string;
 };
 
+
+export type RiskPolicyCrossStockEvidence = {
+  code: string;
+  name: string;
+  size_band?: string;
+  baseline_trades: number;
+  candidate_trades: number;
+  changed_trades: number;
+  triggered: boolean;
+  problem_solved: boolean;
+  balanced_improvement: boolean;
+  harmed: boolean;
+  overfiltered: boolean;
+  trade_retention_pct: number | null;
+  expectancy_delta_pctp: number | null;
+  max_drawdown_delta_pctp: number | null;
+  baseline_expectancy_pct: number | null;
+  candidate_expectancy_pct: number | null;
+  baseline_max_drawdown_pct: number | null;
+  candidate_max_drawdown_pct: number | null;
+  status: string;
+};
+
+export type RiskPolicyCrossStockPolicy = {
+  policy_id: string;
+  label: string;
+  problem_target: string;
+  tested_stocks: number;
+  triggered_stocks: number;
+  problem_solved_stocks: number;
+  balanced_improvement_stocks: number;
+  harmed_stocks: number;
+  overfiltered_stocks: number;
+  average_trade_retention_pct: number | null;
+  average_expectancy_delta_pctp: number | null;
+  average_max_drawdown_delta_pctp: number | null;
+  verdict: { status: string; label: string; reason: string };
+  stock_evidence: RiskPolicyCrossStockEvidence[];
+};
+
+export type RiskPolicyCrossValidationStock = {
+  code: string;
+  name: string;
+  market_cap: number | null;
+  size_band: string;
+  role: "TARGET" | "PEER" | string;
+  universe_rank?: number;
+  summary: BacktestMetrics;
+  risk_policy_comparison: BacktestRiskPolicyComparison;
+  accuracy_audit?: BacktestAccuracyAudit;
+};
+
+export type RiskPolicyCrossValidationResponse = {
+  version: string;
+  status: string;
+  market: "KOSPI" | "KOSDAQ" | string;
+  period: { start: string; end: string };
+  target_code: string;
+  selection: {
+    method: string;
+    label: string;
+    snapshot_date: string;
+    market: string;
+    requested_stock_count: number;
+    selected_stock_count: number;
+    description: string;
+  };
+  tested_stock_count: number;
+  valid_trade_stock_count: number;
+  stocks: RiskPolicyCrossValidationStock[];
+  policies: RiskPolicyCrossStockPolicy[];
+  decision: {
+    status: string;
+    label: string;
+    headline: string;
+    reason: string;
+    recommended_policy_id: string | null;
+    recommended_policy_label: string | null;
+    next_step: string;
+  };
+  guardrail: string;
+  limitation: string;
+  errors?: Array<{ code: string; name: string; error: string }>;
+};
+
 export type BacktestTrade = {
   signal_date: string;
   entry_date: string;
@@ -1241,7 +1326,7 @@ export async function fetchPullbackBacktest(payload: PullbackBacktestRequest): P
 }
 
 
-export type BacktestJob = {
+export type BacktestJob<TResult = PullbackBacktestResponse> = {
   job_id: string;
   status: "queued" | "running" | "completed" | "failed" | "cancelled" | string;
   stage: string;
@@ -1252,7 +1337,7 @@ export type BacktestJob = {
     message: string;
     details: Record<string, number | string | boolean | null>;
   };
-  result: PullbackBacktestResponse | null;
+  result: TResult | null;
   error: string | null;
   created_at: string;
   updated_at: string;
@@ -1269,12 +1354,138 @@ export async function createPullbackBacktestJob(payload: PullbackBacktestRequest
   );
 }
 
-export async function fetchBacktestJob(jobId: string): Promise<BacktestJob> {
-  return asJson<BacktestJob>(await fetch(`/api/backtest/jobs/${encodeURIComponent(jobId)}`));
+export async function createRiskPolicyValidationJob(payload: PullbackBacktestRequest): Promise<BacktestJob<RiskPolicyCrossValidationResponse>> {
+  return asJson<BacktestJob<RiskPolicyCrossValidationResponse>>(
+    await fetch("/api/backtest/pullback/risk-policy-validation/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  );
 }
 
-export async function cancelBacktestJob(jobId: string): Promise<BacktestJob> {
-  return asJson<BacktestJob>(
+export async function fetchBacktestJob<TResult = PullbackBacktestResponse>(jobId: string): Promise<BacktestJob<TResult>> {
+  return asJson<BacktestJob<TResult>>(await fetch(`/api/backtest/jobs/${encodeURIComponent(jobId)}`));
+}
+
+export async function cancelBacktestJob<TResult = PullbackBacktestResponse>(jobId: string): Promise<BacktestJob<TResult>> {
+  return asJson<BacktestJob<TResult>>(
     await fetch(`/api/backtest/jobs/${encodeURIComponent(jobId)}`, { method: "DELETE" }),
+  );
+}
+
+export type MultiStrategyHistoricalFit = {
+  status: "GOOD" | "FAIR" | "WEAK" | "INSUFFICIENT" | string;
+  label: string;
+  summary: string;
+};
+
+export type MultiStrategyCurrentState = {
+  status: "READY" | "WATCH" | "CAUTION" | "BLOCKED" | "NOT_READY" | string;
+  label: string;
+  summary: string;
+  score: number;
+  passed: number;
+  total: number;
+  risk_status: string | null;
+  unmet: string[];
+  reasons: string[];
+  reason_details?: MultiStrategyConditionDetail[];
+  unmet_details?: MultiStrategyConditionDetail[];
+  suitability?: string;
+  eligible?: boolean;
+};
+
+export type MultiStrategyGuide = {
+  easy_name: string;
+  professional_name: string;
+  description: string;
+  when_to_use: string;
+};
+
+export type MultiStrategyConditionDetail = {
+  raw: string;
+  label: string;
+  detail: string;
+};
+
+export type MultiStrategyRow = {
+  strategy: string;
+  label: string;
+  guide: MultiStrategyGuide;
+  rank: number;
+  selector_score: number;
+  historical_fit: MultiStrategyHistoricalFit;
+  historical_metrics: BacktestMetrics & {
+    closed_trade_max_drawdown_pct?: number;
+    max_drawdown_basis?: string;
+  };
+  signal_count: number;
+  risk_blocked_signals: number;
+  current: MultiStrategyCurrentState;
+  recent_trades: BacktestTrade[];
+};
+
+export type MultiStrategyRecommendation = {
+  strategy: string | null;
+  strategy_label: string | null;
+  strategy_easy_name: string | null;
+  strategy_description: string | null;
+  strategy_when_to_use: string | null;
+  action: "ENTRY_CANDIDATE" | "WAIT" | "NO_TRADE" | "NEEDS_VALIDATION" | string;
+  action_label: string;
+  headline: string;
+  reason: string;
+  change_conditions: string[];
+  change_condition_details: MultiStrategyConditionDetail[];
+  user_action: {
+    user_task: string;
+    title: string;
+    detail: string;
+    has_immediate_task: boolean;
+    stockscope_title: string;
+    stockscope_detail: string;
+    next_transition: string;
+  };
+  recheck_mode: "ON_NEXT_ANALYSIS" | string;
+  recheck_label: string;
+  as_of_date: string;
+  market_regime: string;
+  guardrail?: string;
+};
+
+export type MultiStrategyBacktestResponse = {
+  version: "0.20" | "0.20.1" | string;
+  code: string;
+  market: "KOSPI" | "KOSDAQ";
+  period: { start: string; end: string };
+  as_of_date: string;
+  market_regime: string;
+  recommendation: MultiStrategyRecommendation;
+  strategies: MultiStrategyRow[];
+  config: {
+    minimum_strategy_score: number;
+    entry_policy: string;
+    entry_price_policy: string;
+    risk_exit_framework: string;
+    same_day_stop_target_policy: string;
+    target_policy: string;
+    max_holding_days: number;
+    round_trip_cost_pct: number;
+    overlapping_positions: string;
+  };
+  methodology: Record<string, string>;
+  data_window: PullbackBacktestResponse["data_window"];
+  performance?: PullbackBacktestResponse["performance"];
+  warnings: string[];
+};
+
+export async function createMultiStrategyBacktestJob(payload: PullbackBacktestRequest): Promise<BacktestJob<MultiStrategyBacktestResponse>> {
+  return asJson<BacktestJob<MultiStrategyBacktestResponse>>(
+    await fetch("/api/backtest/multi-strategy/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
   );
 }

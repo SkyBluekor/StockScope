@@ -145,6 +145,7 @@ class BacktestEngine:
             sector_relative_strength_context=None,
         )
         evaluations = self.strategy.evaluate_all(strategy_input)
+        evaluation_map = {item.strategy.value: item for item in evaluations if item.strategy != StrategyName.NO_TRADE}
         evaluation = self._pullback_evaluation(evaluations)
         if evaluation is None or evaluation.score is None:
             return None
@@ -178,6 +179,7 @@ class BacktestEngine:
             "strategy_input": strategy_input,
             "strategy_score": int(evaluation.score),
             "strategy_eligible": bool(evaluation.eligible),
+            "evaluations": evaluation_map,
             "risk_gate_active": risk_gate_active,
             "risk_gate_reasons": risk_gate_reasons,
             "entry_timing_state": str(entry_timing.get("state") or confirmation.get("state") or "UNKNOWN"),
@@ -217,6 +219,7 @@ class BacktestEngine:
         signal: dict[str, Any],
         entry_price: float,
         risk_policy: str,
+        strategy: StrategyName = StrategyName.PULLBACK,
     ) -> tuple[Any, dict[str, Any]]:
         """Build a Risk Plan for a controlled policy experiment.
 
@@ -230,7 +233,7 @@ class BacktestEngine:
         def build(data: StrategyInput) -> Any:
             return self.risk.build_plan(
                 data=data,
-                strategy=StrategyName.PULLBACK,
+                strategy=strategy,
                 technical=signal["technical"],
                 risk_gate_active=bool(signal["risk_gate_active"]),
                 risk_gate_reasons=list(signal["risk_gate_reasons"]),
@@ -295,6 +298,7 @@ class BacktestEngine:
         research_only: bool,
         risk_policy: str = POLICY_CURRENT,
         policy_meta: dict[str, Any] | None = None,
+        strategy: StrategyName = StrategyName.PULLBACK,
     ) -> tuple[BacktestTrade | None, int | None]:
         signal_index = int(signal["signal_index"])
         entry_index = signal_index + 1
@@ -312,6 +316,7 @@ class BacktestEngine:
             signal=signal,
             entry_price=entry_price,
             risk_policy=risk_policy,
+            strategy=strategy,
         )
         if policy_meta is not None:
             policy_meta.update(policy_trace)
@@ -440,6 +445,7 @@ class BacktestEngine:
             risk_plan_status=plan.status.value,
             research_only=research_only,
             metadata={
+                "strategy": strategy.value,
                 "relative_strength_market_pct": signal.get("relative_strength_market_pct"),
                 "target_policy": "TARGET_1_FULL_EXIT",
                 "stop_policy": "RISK_ENGINE_INVALIDATION_PRICE",

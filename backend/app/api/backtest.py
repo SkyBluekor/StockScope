@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from app.backtest import BacktestConfig, BacktestService
 from app.backtest.jobs import BacktestJobCancelled, backtest_jobs
+from app.backtest.risk_validation import RiskPolicyValidationService
 from app.core.config import get_settings
 from app.market.providers import KrxProvider
 from app.market.providers.base import ProviderError, ProviderNotConfigured
@@ -86,6 +87,88 @@ async def create_pullback_backtest_job(payload: PullbackBacktestRequest) -> dict
     settings = get_settings()
     job = backtest_jobs.create()
     task = asyncio.create_task(_run_job(job.job_id, _config(payload), settings.krx_api_key))
+    backtest_jobs.attach_task(job.job_id, task)
+    return job.public()
+
+
+async def _run_risk_policy_validation_job(job_id: str, config: BacktestConfig, api_key: str | None) -> None:
+    service = RiskPolicyValidationService(KrxProvider(api_key))
+
+    def update_progress(payload: dict) -> None:
+        if backtest_jobs.is_cancelled(job_id):
+            raise BacktestJobCancelled()
+        backtest_jobs.update_progress(job_id, payload)
+
+    try:
+        result = await service.run(config, progress=update_progress)
+    except BacktestJobCancelled:
+        backtest_jobs.mark_cancelled(job_id)
+    except asyncio.CancelledError:
+        backtest_jobs.mark_cancelled(job_id)
+        raise
+    except (ProviderNotConfigured, ProviderError, ValueError) as exc:
+        backtest_jobs.fail(job_id, str(exc))
+    except Exception as exc:  # pragma: no cover - final containment for background jobs
+        backtest_jobs.fail(job_id, f"Risk 정책 교차검증 중 예상하지 못한 오류가 발생했습니다: {exc}")
+    else:
+        backtest_jobs.complete(job_id, result)
+
+
+@router.post("/pullback/risk-policy-validation/jobs", status_code=202)
+async def create_risk_policy_validation_job(payload: PullbackBacktestRequest) -> dict:
+    """Automatically validate all v0.19.5 Risk-policy experiments on same-market peers."""
+    settings = get_settings()
+    job = backtest_jobs.create()
+    task = asyncio.create_task(
+        _run_risk_policy_validation_job(job.job_id, _config(payload), settings.krx_api_key)
+    )
+    backtest_jobs.attach_task(job.job_id, task)
+    return job.public()
+
+
+@router.post("/multi-strategy")
+async def multi_strategy_backtest(payload: PullbackBacktestRequest) -> dict:
+    """Compare all supported strategies on one shared historical dataset."""
+    settings = get_settings()
+    service = BacktestService(KrxProvider(settings.krx_api_key))
+    try:
+        return await service.run_multi_strategy(_config(payload))
+    except ProviderNotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ProviderError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+async def _run_multi_strategy_job(job_id: str, config: BacktestConfig, api_key: str | None) -> None:
+    service = BacktestService(KrxProvider(api_key))
+
+    def update_progress(payload: dict) -> None:
+        if backtest_jobs.is_cancelled(job_id):
+            raise BacktestJobCancelled()
+        backtest_jobs.update_progress(job_id, payload)
+
+    try:
+        result = await service.run_multi_strategy(config, progress=update_progress)
+    except BacktestJobCancelled:
+        backtest_jobs.mark_cancelled(job_id)
+    except asyncio.CancelledError:
+        backtest_jobs.mark_cancelled(job_id)
+        raise
+    except (ProviderNotConfigured, ProviderError, ValueError) as exc:
+        backtest_jobs.fail(job_id, str(exc))
+    except Exception as exc:  # pragma: no cover
+        backtest_jobs.fail(job_id, f"전체 전략 검증 중 예상하지 못한 오류가 발생했습니다: {exc}")
+    else:
+        backtest_jobs.complete(job_id, result)
+
+
+@router.post("/multi-strategy/jobs", status_code=202)
+async def create_multi_strategy_backtest_job(payload: PullbackBacktestRequest) -> dict:
+    settings = get_settings()
+    job = backtest_jobs.create()
+    task = asyncio.create_task(_run_multi_strategy_job(job.job_id, _config(payload), settings.krx_api_key))
     backtest_jobs.attach_task(job.job_id, task)
     return job.public()
 

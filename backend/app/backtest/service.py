@@ -8,6 +8,7 @@ from typing import Any, Callable
 from app.backtest.engine import BacktestEngine
 from app.backtest.history_store import HistoricalStore, HistorySeries
 from app.backtest.interpreter import build_problem_solver
+from app.backtest.multi_strategy import MultiStrategyBacktestEngine
 from app.backtest.models import BacktestConfig
 from app.core.stock_code import normalize_stock_code
 from app.market.providers import KrxProvider
@@ -34,6 +35,7 @@ class BacktestService:
     ) -> None:
         self.krx = krx
         self.engine = engine or BacktestEngine()
+        self.multi_engine = MultiStrategyBacktestEngine(self.engine)
         self.history_store = history_store or HistoricalStore()
 
     @staticmethod
@@ -371,7 +373,7 @@ class BacktestService:
         calculation_seconds = monotonic() - calculation_started
         total_seconds = monotonic() - started
 
-        result["version"] = "0.19.5"
+        result["version"] = "0.19.6"
         result["problem_solver"] = build_problem_solver(result, config)
         result["data_window"] = {
             "requested_start": config.start_date,
@@ -399,3 +401,85 @@ class BacktestService:
             details=result["performance"],
         )
         return result
+
+    async def run_multi_strategy(
+        self,
+        config: BacktestConfig,
+        *,
+        progress: ProgressCallback | None = None,
+    ) -> dict[str, Any]:
+        """Validate all ten StockScope strategies on one shared historical dataset."""
+        started = monotonic()
+        start = self._parse_iso(config.start_date, "시작일")
+        end = self._parse_iso(config.end_date, "종료일")
+        if start > end:
+            raise ValueError("시작일은 종료일보다 늦을 수 없습니다.")
+        if (end - start).days > self.MAX_CALENDAR_DAYS:
+            raise ValueError("한 번에 최대 5년까지 백테스트할 수 있습니다.")
+        if config.max_holding_days < 1 or config.max_holding_days > 120:
+            raise ValueError("최대 보유기간은 1~120 거래일 범위여야 합니다.")
+        if config.initial_capital <= 0:
+            raise ValueError("초기 자본은 0보다 커야 합니다.")
+        if config.round_trip_cost_pct < 0 or config.round_trip_cost_pct > 5:
+            raise ValueError("왕복 비용률은 0~5% 범위여야 합니다.")
+
+        config.code = normalize_stock_code(config.code)
+        config.market = config.market.upper().strip()
+        if config.market not in {"KOSPI", "KOSDAQ"}:
+            raise ValueError("market은 KOSPI 또는 KOSDAQ이어야 합니다.")
+
+        self._emit(progress, stage="queued", message="전체 전략 검증 준비 중", current=0, total=1, details={})
+        await self.krx.open_session()
+        try:
+            data_started = monotonic()
+            stock_rows, index_rows, warnings, warmup_start, fetch_stats = await self._prepare_history(
+                config=config,
+                start=start,
+                end=end,
+                progress=progress,
+            )
+            data_seconds = monotonic() - data_started
+        finally:
+            await self.krx.close_session()
+
+        calculation_started = monotonic()
+
+        def engine_progress(payload: dict[str, Any]) -> None:
+            self._emit(progress, **payload)
+
+        result = await asyncio.to_thread(
+            self.multi_engine.run,
+            stock_rows=stock_rows,
+            index_rows=index_rows,
+            config=config,
+            progress_callback=engine_progress,
+        )
+        calculation_seconds = monotonic() - calculation_started
+        total_seconds = monotonic() - started
+        result["data_window"] = {
+            "requested_start": config.start_date,
+            "requested_end": config.end_date,
+            "warmup_start": warmup_start.isoformat(),
+            "first_stock_date": str(stock_rows[0].get("date") or ""),
+            "last_stock_date": str(stock_rows[-1].get("date") or ""),
+            "stock_rows": len(stock_rows),
+            "index_rows": len(index_rows),
+            "cache_note": "10개 전략이 같은 Historical Store 데이터를 재사용하므로 전략 수가 늘어도 KRX 과거 데이터는 한 번만 준비합니다.",
+        }
+        result["performance"] = {
+            "data_prepare_seconds": round(data_seconds, 3),
+            "strategy_calculation_seconds": round(calculation_seconds, 3),
+            "total_seconds": round(total_seconds, 3),
+            **fetch_stats,
+        }
+        result["warnings"] = warnings
+        self._emit(
+            progress,
+            stage="completed",
+            message="10개 전략 비교 완료",
+            current=1,
+            total=1,
+            details=result["performance"],
+        )
+        return result
+
