@@ -1297,10 +1297,17 @@ export type PullbackBacktestResponse = {
     strategy_calculation_seconds: number;
     total_seconds: number;
     history_store_hits: number;
+    market_store_hits?: number;
+    legacy_rows_imported?: number;
     raw_cache_hits: number;
+    cache_reuse_pct?: number;
+    estimated_network_requests?: number;
     network_requests: number;
     retries: number;
     warmup_rows: number;
+    budget_used?: number;
+    budget_limit?: number;
+    budget_remaining?: number;
   };
   warnings: string[];
 };
@@ -1386,8 +1393,23 @@ export type MultiStrategyCurrentState = {
   summary: string;
   score: number;
   passed: number;
+  missing?: number;
   total: number;
   risk_status: string | null;
+  reference_only?: boolean;
+  risk_warning?: boolean;
+  warnings?: string[];
+  decision_reason?: string;
+  conditions_complete?: boolean;
+  condition_consistency?: {
+    ok: boolean;
+    engine_passed: number;
+    engine_missing: number;
+    engine_total: number;
+    detail_passed: number;
+    detail_missing: number;
+    detail_total: number;
+  };
   unmet: string[];
   reasons: string[];
   reason_details?: MultiStrategyConditionDetail[];
@@ -1404,9 +1426,14 @@ export type MultiStrategyGuide = {
 };
 
 export type MultiStrategyConditionDetail = {
+  condition_id?: string;
   raw: string;
   label: string;
   detail: string;
+  status?: "PASS" | "FAIL" | "UNKNOWN" | string;
+  current_value?: string | null;
+  required_value?: string | null;
+  metric_key?: string | null;
 };
 
 export type MultiStrategyRow = {
@@ -1436,6 +1463,8 @@ export type MultiStrategyRecommendation = {
   action_label: string;
   headline: string;
   reason: string;
+  decision_reason?: string;
+  additional_warnings?: string[];
   change_conditions: string[];
   change_condition_details: MultiStrategyConditionDetail[];
   user_action: {
@@ -1455,7 +1484,7 @@ export type MultiStrategyRecommendation = {
 };
 
 export type MultiStrategyBacktestResponse = {
-  version: "0.20" | "0.20.1" | string;
+  version: "0.20" | "0.20.1" | "0.20.2" | string;
   code: string;
   market: "KOSPI" | "KOSDAQ";
   period: { start: string; end: string };
@@ -1483,6 +1512,112 @@ export type MultiStrategyBacktestResponse = {
 export async function createMultiStrategyBacktestJob(payload: PullbackBacktestRequest): Promise<BacktestJob<MultiStrategyBacktestResponse>> {
   return asJson<BacktestJob<MultiStrategyBacktestResponse>>(
     await fetch("/api/backtest/multi-strategy/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  );
+}
+
+export type ScannerConditionDetail = MultiStrategyConditionDetail;
+
+export type ScannerCandidate = {
+  code: string;
+  name: string;
+  market: "KOSPI" | "KOSDAQ";
+  data_date: string;
+  current_price: number | null;
+  candidate_state: "READY" | "WATCH" | "VALIDATION" | "EXCLUDED" | string;
+  candidate_label: string;
+  strategy: string;
+  strategy_easy_name: string;
+  strategy_name: string;
+  strategy_description: string;
+  action: "ENTRY_CANDIDATE" | "WAIT" | "NO_TRADE" | "NEEDS_VALIDATION" | string;
+  action_label: string;
+  headline: string;
+  reason: string;
+  conditions: {
+    passed: number;
+    total: number;
+    missing: number;
+    top_missing: ScannerConditionDetail[];
+  };
+  risk: {
+    status: string | null;
+    warning: boolean;
+    warnings: string[];
+  };
+  historical_fit: {
+    status: string;
+    label: string;
+    summary: string;
+    trades: number;
+  };
+  user_action: {
+    title: string | null;
+    detail: string | null;
+    next_transition: string | null;
+  };
+};
+
+export type ScannerResponse = {
+  version: string;
+  scanner_cache_hit: boolean;
+  generated_at: string;
+  requested_as_of: string;
+  market_scope: "ALL" | "KOSPI" | "KOSDAQ";
+  data_dates: Partial<Record<"KOSPI" | "KOSDAQ", string>>;
+  market_summary: Array<{
+    market: "KOSPI" | "KOSDAQ";
+    data_date: string;
+    regime: string;
+  }>;
+  summary: {
+    universe_total: number;
+    special_excluded: number;
+    liquidity_filtered: number;
+    quick_analyzed: number;
+    data_insufficient: number;
+    deep_analyzed: number;
+    candidate_count: number;
+    shown_count: number;
+    excluded_after_analysis: number;
+  };
+  candidates: ScannerCandidate[];
+  more_candidates: ScannerCandidate[];
+  empty_message: string | null;
+  exclusion_policy: {
+    default: string[];
+    liquidity: string;
+  };
+  methodology: {
+    meaning: string;
+    pipeline: string[];
+    guardrail: string;
+  };
+  diagnostics: {
+    market_store_reused_items: number;
+    estimated_network_requests: number;
+    network_requests: number;
+    raw_cache_hits: number;
+    retries: number;
+    budget_used: number;
+    budget_limit: number;
+    budget_remaining: number;
+  };
+};
+
+export type ScannerRequest = {
+  market_scope?: "ALL" | "KOSPI" | "KOSDAQ";
+  as_of_date?: string;
+  candidate_limit?: number;
+  force_refresh?: boolean;
+};
+
+export async function createScannerJob(payload: ScannerRequest): Promise<BacktestJob<ScannerResponse>> {
+  return asJson<BacktestJob<ScannerResponse>>(
+    await fetch("/api/backtest/scanner/jobs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),

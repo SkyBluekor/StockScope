@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 from app.backtest.engine import BacktestEngine
 from app.backtest.history_store import HistoricalStore, HistorySeries
+from app.backtest.market_store import HistoricalMarketStore
 from app.backtest.interpreter import build_problem_solver
 from app.backtest.multi_strategy import MultiStrategyBacktestEngine
 from app.backtest.models import BacktestConfig
@@ -32,11 +33,13 @@ class BacktestService:
         krx: KrxProvider,
         engine: BacktestEngine | None = None,
         history_store: HistoricalStore | None = None,
+        market_store: HistoricalMarketStore | None = None,
     ) -> None:
         self.krx = krx
         self.engine = engine or BacktestEngine()
         self.multi_engine = MultiStrategyBacktestEngine(self.engine)
         self.history_store = history_store or HistoricalStore()
+        self.market_store = market_store or HistoricalMarketStore()
 
     @staticmethod
     def _parse_iso(value: str, label: str) -> date:
@@ -95,7 +98,7 @@ class BacktestService:
         index_series: HistorySeries,
         progress: ProgressCallback | None,
         phase_label: str,
-    ) -> tuple[int, int, int]:
+    ) -> tuple[int, int, int, int]:
         dates = self._weekdays(start, end)
         work: list[tuple[str, date]] = []
         for day in dates:
@@ -114,6 +117,16 @@ class BacktestService:
         today_compact = today.strftime("%Y%m%d")
         stats_before = self.krx.request_stats()
 
+        # Raw KRX gzip/memory cache may already satisfy SQLite misses. Only the
+        # remaining items are expected to become real HTTP requests. This check is
+        # completed before the first network call so an oversized sync can be blocked.
+        estimated_network = sum(
+            1
+            for kind, day in work
+            if not self.krx.has_cached_day(market, day, kind)
+        )
+        budget_before = self.krx.assert_budget(estimated_network)
+
         self._emit(
             progress,
             stage="data_prepare",
@@ -122,9 +135,14 @@ class BacktestService:
             total=total_items,
             details={
                 "history_store_hits": store_hits,
+                "market_store_hits": store_hits,
+                "estimated_network_requests": estimated_network,
                 "network_requests": 0,
                 "raw_cache_hits": 0,
                 "concurrency": concurrency,
+                "budget_used": budget_before.get("used", 0),
+                "budget_limit": budget_before.get("safe_limit", 0),
+                "budget_remaining": budget_before.get("remaining", 0),
             },
         )
 
@@ -135,7 +153,9 @@ class BacktestService:
 
             async def fetch_one(kind: str, day: date) -> dict[str, Any]:
                 if kind == "stock":
-                    return await self.krx.stock_daily(market, day, code)
+                    # Important: do NOT filter by symbol here. One KRX response already
+                    # contains the whole market, so persist it once for every stock.
+                    return await self.krx.stock_daily(market, day)
                 return await self.krx.index_daily(market, day)
 
             results = await asyncio.gather(
@@ -153,23 +173,31 @@ class BacktestService:
                     continue
 
                 if kind == "stock":
-                    if result.get("count"):
-                        row = result["rows"][0]
-                        if row.get("close") is not None:
-                            stock_series.rows[key] = row
-                            if day < today:
-                                stock_series.checked_dates.add(key)
-                    elif self.krx._is_stable_empty_date(key):  # noqa: SLF001
+                    rows = list(result.get("rows") or [])
+                    selected = next(
+                        (row for row in rows if str(row.get("code") or "").strip().upper() == code),
+                        None,
+                    )
+                    if selected is not None and selected.get("close") is not None:
+                        stock_series.rows[key] = selected
+                    if rows and day < today:
                         stock_series.checked_dates.add(key)
+                        self.market_store.put_stock_day(market, key, rows, stable=True)
+                    elif not rows and self.krx._is_stable_empty_date(key):  # noqa: SLF001
+                        stock_series.checked_dates.add(key)
+                        self.market_store.put_stock_day(market, key, [], stable=True)
+                    # Today's/recent volatile data remains provider-memory-only.
                 else:
-                    if result.get("count"):
-                        main = self.krx._select_main_index(result.get("rows") or [], market)  # noqa: SLF001
-                        if main is not None:
-                            index_series.rows[key] = main
-                            if day < today:
-                                index_series.checked_dates.add(key)
-                    elif self.krx._is_stable_empty_date(key):  # noqa: SLF001
+                    rows = list(result.get("rows") or [])
+                    main = self.krx._select_main_index(rows, market) if rows else None  # noqa: SLF001
+                    if main is not None:
+                        index_series.rows[key] = main
+                    if rows and day < today:
                         index_series.checked_dates.add(key)
+                        self.market_store.put_index_day(market, key, main, stable=True)
+                    elif not rows and self.krx._is_stable_empty_date(key):  # noqa: SLF001
+                        index_series.checked_dates.add(key)
+                        self.market_store.put_index_day(market, key, None, stable=True)
 
             # Be faster on healthy KRX responses, but back off when a batch is unstable
             # or when the provider had to retry 429/5xx/connection failures.
@@ -189,6 +217,7 @@ class BacktestService:
 
             offset += len(batch)
             stats_now = self._stats_delta(stats_before, batch_stats_after)
+            budget_now = self.krx.budget_snapshot()
             self._emit(
                 progress,
                 stage="data_prepare",
@@ -197,15 +226,20 @@ class BacktestService:
                 total=total_items,
                 details={
                     "history_store_hits": store_hits,
+                    "market_store_hits": store_hits,
+                    "estimated_network_requests": estimated_network,
                     "network_requests": stats_now.get("network_requests", 0),
                     "raw_cache_hits": stats_now.get("disk_hits", 0) + stats_now.get("memory_hits", 0) + stats_now.get("empty_marker_hits", 0),
                     "retries": stats_now.get("retries", 0),
                     "concurrency": concurrency,
+                    "budget_used": budget_now.get("used", 0),
+                    "budget_limit": budget_now.get("safe_limit", 0),
+                    "budget_remaining": budget_now.get("remaining", 0),
                 },
             )
 
-        # Merge into compact history files after each completed range. The current day
-        # stays memory-only because KRX may still revise/publish it later.
+        # Keep the old compact per-symbol cache as a backwards-compatible fallback.
+        # New cross-symbol reuse comes from HistoricalMarketStore above.
         self.history_store.save_stock(
             market,
             code,
@@ -216,7 +250,7 @@ class BacktestService:
             self._persistent_copy(index_series, today_compact),
         )
         stats_after = self._stats_delta(stats_before, self.krx.request_stats())
-        return errors, store_hits, stats_after.get("network_requests", 0)
+        return errors, store_hits, stats_after.get("network_requests", 0), estimated_network
 
     async def _prepare_history(
         self,
@@ -226,16 +260,32 @@ class BacktestService:
         end: date,
         progress: ProgressCallback | None,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str], date, dict[str, int]]:
-        stock_series = self.history_store.load_stock(config.market, config.code)
-        index_series = self.history_store.load_index(config.market)
+        # One-time/on-demand migration: existing compact history is imported instead
+        # of being downloaded again. Raw market-wide gzip cache is still reused by
+        # KrxProvider on any SQLite miss and then promoted into SQLite.
+        legacy_stock = self.history_store.load_stock(config.market, config.code)
+        legacy_index = self.history_store.load_index(config.market)
+        imported_stock = self.market_store.import_legacy_stock(config.market, config.code, legacy_stock)
+        imported_index = self.market_store.import_legacy_index(config.market, legacy_index)
+
+        stock_series = self.market_store.stock_series(config.market, config.code)
+        index_series = self.market_store.index_series(config.market)
+        # Legacy checked_dates are symbol-specific. Reuse them for this run without
+        # falsely marking the whole market/date complete for every other symbol.
+        stock_series.rows.update(legacy_stock.rows)
+        stock_series.checked_dates.update(legacy_stock.checked_dates)
+        index_series.rows.update(legacy_index.rows)
+        index_series.checked_dates.update(legacy_index.checked_dates)
+
         warnings: list[str] = []
         error_count = 0
         history_store_hits = 0
         network_requests = 0
+        estimated_requests = 0
         provider_before = self.krx.request_stats()
 
         range_start = start - timedelta(days=self.INITIAL_WARMUP_CALENDAR_DAYS)
-        errors, hits, requests = await self._ensure_range(
+        errors, hits, requests, estimate = await self._ensure_range(
             code=config.code,
             market=config.market,
             start=range_start,
@@ -248,6 +298,7 @@ class BacktestService:
         error_count += errors
         history_store_hits += hits
         network_requests += requests
+        estimated_requests += estimate
 
         start_key = self._compact(start)
         prestart_count = sum(1 for key in stock_series.rows if key < start_key)
@@ -255,7 +306,7 @@ class BacktestService:
         while prestart_count < self.REQUIRED_PRESTART_ROWS and range_start > max_start:
             new_start = max(max_start, range_start - timedelta(days=self.WARMUP_EXTENSION_DAYS))
             extension_end = range_start - timedelta(days=1)
-            errors, hits, requests = await self._ensure_range(
+            errors, hits, requests, estimate = await self._ensure_range(
                 code=config.code,
                 market=config.market,
                 start=new_start,
@@ -268,6 +319,7 @@ class BacktestService:
             error_count += errors
             history_store_hits += hits
             network_requests += requests
+            estimated_requests += estimate
             range_start = new_start
             prestart_count = sum(1 for key in stock_series.rows if key < start_key)
 
@@ -302,12 +354,24 @@ class BacktestService:
             + provider_delta.get("disk_hits", 0)
             + provider_delta.get("empty_marker_hits", 0)
         )
+        budget = self.krx.budget_snapshot()
+        distinct_remote_fetches = max(0, provider_delta.get("network_requests", network_requests) - provider_delta.get("retries", 0))
+        reused_items = history_store_hits + cache_hits
+        reuse_denominator = reused_items + distinct_remote_fetches
+        cache_reuse_pct = round(reused_items / reuse_denominator * 100.0, 1) if reuse_denominator else 100.0
         return stock_rows, index_rows, warnings, range_start, {
             "history_store_hits": history_store_hits,
+            "market_store_hits": history_store_hits,
+            "legacy_rows_imported": imported_stock + imported_index,
             "raw_cache_hits": cache_hits,
+            "cache_reuse_pct": cache_reuse_pct,
+            "estimated_network_requests": estimated_requests,
             "network_requests": provider_delta.get("network_requests", network_requests),
             "retries": provider_delta.get("retries", 0),
             "warmup_rows": prestart_count,
+            "budget_used": int(budget.get("used", 0)),
+            "budget_limit": int(budget.get("safe_limit", 0)),
+            "budget_remaining": int(budget.get("remaining", 0)),
         }
 
     async def run_pullback(
@@ -383,7 +447,7 @@ class BacktestService:
             "last_stock_date": str(stock_rows[-1].get("date") or ""),
             "stock_rows": len(stock_rows),
             "index_rows": len(index_rows),
-            "cache_note": "종목별 Historical Store와 기존 KRX 원본 gzip 캐시를 함께 사용하며, 부족한 날짜만 KRX에서 추가 조회합니다.",
+            "cache_note": "시장+날짜 단위 SQLite Historical Market Store를 우선 사용하고, 기존 종목별/GZIP 캐시를 가져온 뒤 정말 없는 날짜만 KRX에서 추가 조회합니다.",
         }
         result["performance"] = {
             "data_prepare_seconds": round(data_seconds, 3),
@@ -464,7 +528,7 @@ class BacktestService:
             "last_stock_date": str(stock_rows[-1].get("date") or ""),
             "stock_rows": len(stock_rows),
             "index_rows": len(index_rows),
-            "cache_note": "10개 전략이 같은 Historical Store 데이터를 재사용하므로 전략 수가 늘어도 KRX 과거 데이터는 한 번만 준비합니다.",
+            "cache_note": "10개 전략이 같은 SQLite 시장 데이터를 공유합니다. 같은 시장/날짜를 다른 종목이 다시 분석해도 저장된 데이터를 재사용합니다.",
         }
         result["performance"] = {
             "data_prepare_seconds": round(data_seconds, 3),

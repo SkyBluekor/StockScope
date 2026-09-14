@@ -6,6 +6,7 @@ import {
   searchStocks,
   type BacktestJob,
   type MultiStrategyBacktestResponse,
+  type MultiStrategyConditionDetail,
   type MultiStrategyRow,
   type StockSearchItem,
 } from "../services/api";
@@ -20,16 +21,16 @@ type Props = {
 };
 
 const strategyGuides = [
-  { professional: "추세 추종", easy: "꾸준한 상승 흐름 따라가기" },
-  { professional: "눌림목", easy: "오르다 잠깐 쉰 뒤 다시 오를 때 노리기" },
-  { professional: "돌파", easy: "막혀 있던 가격을 뚫을 때 노리기" },
-  { professional: "지지 반등", easy: "잘 버티던 가격에서 다시 오를 때 노리기" },
-  { professional: "과매도 반등", easy: "너무 많이 떨어진 뒤 반등 노리기" },
-  { professional: "박스권 매매", easy: "일정한 가격 범위에서 기회 찾기" },
-  { professional: "모멘텀 지속", easy: "강한 상승 힘이 계속될 때 따라가기" },
-  { professional: "변동성 수축", easy: "조용해진 뒤 큰 움직임 기다리기" },
-  { professional: "20일선 반등", easy: "20일 평균 가격에서 다시 오를 때 노리기" },
-  { professional: "추세 회복", easy: "약해졌던 상승 흐름이 다시 살아날 때 노리기" },
+  { professional: "추세 추종", easy: "상승 흐름 따라가기" },
+  { professional: "눌림목", easy: "쉬어간 뒤 다시 오를 때 노리기" },
+  { professional: "돌파", easy: "막힌 가격 돌파 노리기" },
+  { professional: "지지 반등", easy: "지지 가격에서 반등 노리기" },
+  { professional: "과매도 반등", easy: "과도한 하락 뒤 반등 노리기" },
+  { professional: "박스권 매매", easy: "일정 가격 범위에서 노리기" },
+  { professional: "모멘텀 지속", easy: "강한 상승 이어가기" },
+  { professional: "변동성 수축", easy: "큰 움직임 전 조용한 구간 찾기" },
+  { professional: "20일선 반등", easy: "20일선 반등 노리기" },
+  { professional: "추세 회복", easy: "상승 흐름 회복 노리기" },
 ];
 
 const regimeLabel: Record<string, string> = {
@@ -96,6 +97,116 @@ function DetailToggleText({ closed = "펼치기 ▼", open = "숨기기 ▲" }: 
       <span className="when-closed">{closed}</span>
       <span className="when-open">{open}</span>
     </b>
+  );
+}
+
+function ConditionMetricCard({ condition }: { condition: MultiStrategyConditionDetail }) {
+  const status = condition.status ?? "UNKNOWN";
+  const statusLabel = status === "PASS" ? "충족" : status === "FAIL" ? "아직 부족" : "확인 필요";
+  return (
+    <article className={`strategy-condition-metric status-${status.toLowerCase()}`}>
+      <div className="strategy-condition-head">
+        <strong>{condition.label}</strong>
+        <b>{status === "PASS" ? "✓" : status === "FAIL" ? "✕" : "○"} {statusLabel}</b>
+      </div>
+      <p>{condition.detail}</p>
+      {(condition.current_value || condition.required_value) && (
+        <div className="strategy-condition-values">
+          {condition.current_value && <span><small>현재</small><strong>{condition.current_value}</strong></span>}
+          {condition.required_value && <span><small>필요</small><strong>{condition.required_value}</strong></span>}
+        </div>
+      )}
+    </article>
+  );
+}
+
+function StrategyConditionSummary({ row, action }: { row: MultiStrategyRow; action: string }) {
+  const rawPassedDetails = row.current.reason_details ?? [];
+  const rawMissingDetails = row.current.unmet_details ?? [];
+  const total = Math.max(0, row.current.total ?? 0);
+  const passed = Math.max(0, Math.min(total, row.current.passed ?? 0));
+  const missing = Math.max(0, row.current.missing ?? (total - passed));
+  const passedDetails = rawPassedDetails.slice(0, passed);
+  const missingDetails = rawMissingDetails.slice(0, missing);
+  const primaryMissing = missingDetails.slice(0, 3);
+  const remainingMissing = missingDetails.slice(3);
+
+  return (
+    <section className="strategy-condition-summary">
+      <div className="strategy-condition-summary-head">
+        <div>
+          <span>{action === "ENTRY_CANDIDATE" ? "현재 진입 준비" : "왜 아직 진입하지 않나요?"}</span>
+          <strong>전체 {total}개 · 충족 {passed}개 · 부족 {missing}개</strong>
+        </div>
+        <b>{passed}/{total}</b>
+      </div>
+
+      {missing > 0 && (
+        <>
+          <div className="strategy-condition-section-title">
+            <strong>가장 중요한 부족 조건</strong>
+            <span>{missing > 3 ? "우선 3개만 보여드립니다." : "현재 부족한 조건입니다."}</span>
+          </div>
+          <div className="strategy-condition-grid">
+            {primaryMissing.map((condition) => (
+              <ConditionMetricCard key={`${condition.condition_id ?? condition.raw}-${condition.status}`} condition={condition} />
+            ))}
+          </div>
+          {remainingMissing.length > 0 && (
+            <details className="strategy-condition-more">
+              <summary>
+                <span>나머지 부족 조건 {remainingMissing.length}개</span>
+                <DetailToggleText closed="보기 ▼" open="숨기기 ▲" />
+              </summary>
+              <div className="strategy-condition-grid">
+                {remainingMissing.map((condition) => (
+                  <ConditionMetricCard key={`${condition.condition_id ?? condition.raw}-${condition.status}`} condition={condition} />
+                ))}
+              </div>
+            </details>
+          )}
+          {missingDetails.length < missing && (
+            <p className="strategy-condition-empty">
+              부족 조건은 총 {missing}개지만 상세 설명은 {missingDetails.length}개만 제공됐습니다. 전문 상세에서 원본 조건을 확인할 수 있습니다.
+            </p>
+          )}
+        </>
+      )}
+
+      {passed > 0 && (
+        <details className="strategy-condition-more passed">
+          <summary>
+            <span>이미 충족한 조건 {passed}개</span>
+            <DetailToggleText closed="보기 ▼" open="숨기기 ▲" />
+          </summary>
+          {passedDetails.length > 0 ? (
+            <>
+              <div className="strategy-condition-grid">
+                {passedDetails.map((condition) => (
+                  <ConditionMetricCard key={`${condition.condition_id ?? condition.raw}-${condition.status}`} condition={condition} />
+                ))}
+              </div>
+              {passedDetails.length < passed && (
+                <p className="strategy-condition-empty">충족 조건은 총 {passed}개지만 상세 설명은 {passedDetails.length}개만 제공됐습니다.</p>
+              )}
+            </>
+          ) : (
+            <p className="strategy-condition-empty">충족 개수는 계산됐지만 상세 설명 데이터가 없습니다.</p>
+          )}
+        </details>
+      )}
+
+      {row.current.condition_consistency?.ok === false && (
+        <div className="strategy-condition-consistency-error" role="alert">
+          <strong>조건 집계가 서로 맞지 않습니다.</strong>
+          <span>이 결과는 진입 판단에 사용하지 말고 최신 데이터로 다시 분석하세요.</span>
+        </div>
+      )}
+
+      {total === 0 && (
+        <p className="strategy-condition-empty">현재 전략 조건을 세부 항목으로 나눠 표시할 수 없습니다. 다음 분석에서 다시 계산합니다.</p>
+      )}
+    </section>
   );
 }
 
@@ -281,7 +392,7 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
     <section className="backtest-workspace multi-strategy-workspace" ref={workspaceTopRef}>
       <header className="multi-strategy-header">
         <div>
-          <span>STRATEGY SELECTOR · v0.20.1</span>
+          <span>STRATEGY SELECTOR · v0.20.3</span>
           <h1>10가지 투자 방법 자동 비교</h1>
           <p>종목 하나를 고르면 StockScope가 10가지 방법을 같은 과거 데이터로 비교합니다. 전문 용어를 몰라도 지금 어떤 방법이 맞는지와 사용자가 해야 할 일을 쉬운 말로 정리합니다.</p>
         </div>
@@ -393,7 +504,7 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
             <div className="backtest-progress-card">
               <div className="backtest-progress-head"><div><strong>{job.progress.message}</strong><span>{job.progress.current.toLocaleString()} / {job.progress.total.toLocaleString()} · {job.progress.percent.toFixed(1)}%</span></div><b>{job.elapsed_seconds.toFixed(1)}초</b></div>
               <progress max={100} value={job.progress.percent} />
-              <div className="backtest-progress-stats"><span><b>과거 저장소</b>{Number(job.progress.details.history_store_hits ?? 0).toLocaleString()} hit</span><span><b>KRX 캐시</b>{Number(job.progress.details.raw_cache_hits ?? 0).toLocaleString()} hit</span><span><b>실제 요청</b>{Number(job.progress.details.network_requests ?? 0).toLocaleString()}회</span><span><b>현재 전략</b>{String(job.progress.details.strategy ?? "-")}</span></div>
+              <div className="backtest-progress-stats"><span><b>시장 저장소</b>{Number(job.progress.details.market_store_hits ?? job.progress.details.history_store_hits ?? 0).toLocaleString()} hit</span><span><b>기존 KRX 캐시</b>{Number(job.progress.details.raw_cache_hits ?? 0).toLocaleString()} hit</span><span><b>예상 신규 요청</b>{Number(job.progress.details.estimated_network_requests ?? 0).toLocaleString()}회</span><span><b>실제 요청</b>{Number(job.progress.details.network_requests ?? 0).toLocaleString()}회</span>{Number(job.progress.details.budget_limit ?? 0) > 0 && <span><b>오늘 KRX(앱 기록)</b>{Number(job.progress.details.budget_used ?? 0).toLocaleString()} / {Number(job.progress.details.budget_limit ?? 0).toLocaleString()}</span>}<span><b>현재 전략</b>{String(job.progress.details.strategy ?? "-")}</span></div>
               <button type="button" className="backtest-cancel-button" onClick={() => void cancelRunning()}>분석 취소</button>
             </div>
           )}
@@ -436,47 +547,52 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
                 <div className="strategy-selector-reason">
                   <span>왜 지금 이렇게 판단했나요?</span>
                   <p>{result.recommendation.reason}</p>
+                  {(result.recommendation.additional_warnings?.length ?? 0) > 0 && (
+                    <div className="strategy-selector-secondary-warnings">
+                      <b>추가 주의</b>
+                      {result.recommendation.additional_warnings!.map((warning) => <small key={warning}>{warning}</small>)}
+                    </div>
+                  )}
                 </div>
+
+                {topStrategy && <StrategyConditionSummary row={topStrategy} action={result.recommendation.action} />}
 
                 <div className="strategy-user-action-card">
                   <div className="strategy-user-action-head">
-                    <span>현재 사용자가 할 일</span>
+                    <span>지금 행동</span>
                     <strong>{result.recommendation.user_action.user_task}</strong>
                   </div>
                   <div>
                     <b>{result.recommendation.user_action.title}</b>
                     <p>{result.recommendation.user_action.detail}</p>
+                    {result.recommendation.action !== "ENTRY_CANDIDATE" && (
+                      <p className="strategy-next-user-action"><strong>다음 행동</strong> 최신 확정 데이터가 나온 뒤 다시 분석하세요.</p>
+                    )}
                   </div>
                 </div>
 
                 <div className="strategy-next-check-card">
                   <div className="strategy-next-check-copy">
-                    <span>{result.recommendation.user_action.stockscope_title}</span>
-                    <strong>{result.recommendation.user_action.stockscope_detail}</strong>
+                    <span>다음 분석에서는 무엇을 하나요?</span>
+                    <strong>최신 확정 데이터로 부족했던 조건과 위험을 다시 계산합니다.</strong>
                     <small>{result.recommendation.recheck_label}</small>
                   </div>
                   <div className="strategy-next-conditions">
-                    <span>StockScope가 다음 분석에서 다시 확인할 조건</span>
-                    {result.recommendation.change_condition_details.length > 0 ? (
-                      <ul>
-                        {result.recommendation.change_condition_details.map((condition) => (
-                          <li key={`${condition.raw}-${condition.label}`}>
-                            <b>{condition.label}</b>
-                            <small>{condition.detail}</small>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p>특정 조건 하나만 보는 상태가 아닙니다. 다음 분석에서 전체 전략 조건과 위험 구조를 다시 계산합니다.</p>
-                    )}
+                    <span>다시 확인하는 항목</span>
+                    <ul className="strategy-recheck-list">
+                      <li>부족했던 전략 조건</li>
+                      <li>현재 시장 상황</li>
+                      <li>손절 위험</li>
+                      <li>목표 가격까지의 여유</li>
+                    </ul>
                   </div>
                 </div>
 
                 <div className="strategy-transition-card">
                   <div>
-                    <span>조건이 바뀌면 어떻게 되나요?</span>
-                    <strong>{result.recommendation.user_action.next_transition}</strong>
-                    <small>조건 하나가 맞았다고 곧바로 매수 판단으로 바꾸지 않습니다.</small>
+                    <span>조건이 충족되면?</span>
+                    <strong>바로 매수 신호가 되지는 않습니다.</strong>
+                    <small>StockScope가 전략 조건 + 시장 상황 + 손절·목표 위험을 다시 확인하고, 모두 적절하면 진입 후보로 변경합니다.</small>
                   </div>
                   <button type="button" className="secondary" disabled={busy} onClick={rerunLatest}>최신 확정 데이터로 다시 분석</button>
                 </div>
@@ -535,13 +651,13 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
                     {(topStrategy.current.reason_details?.length ?? 0) > 0 && (
                       <div className="multi-strategy-reason-list">
                         <strong>현재 맞아 있는 조건</strong>
-                        <ul>{topStrategy.current.reason_details!.slice(0, 5).map((reason) => <li key={reason.raw}><b>{reason.label}</b><small>{reason.detail}</small></li>)}</ul>
+                        <div className="strategy-detail-condition-grid">{topStrategy.current.reason_details!.slice(0, 5).map((reason) => <ConditionMetricCard key={reason.condition_id ?? reason.raw} condition={reason} />)}</div>
                       </div>
                     )}
                     {(topStrategy.current.unmet_details?.length ?? 0) > 0 && (
                       <div className="multi-strategy-reason-list missing">
                         <strong>아직 부족한 조건</strong>
-                        <ul>{topStrategy.current.unmet_details!.slice(0, 5).map((reason) => <li key={reason.raw}><b>{reason.label}</b><small>{reason.detail}</small></li>)}</ul>
+                        <div className="strategy-detail-condition-grid">{topStrategy.current.unmet_details!.slice(0, 5).map((reason) => <ConditionMetricCard key={reason.condition_id ?? reason.raw} condition={reason} />)}</div>
                       </div>
                     )}
                   </details>
@@ -566,7 +682,7 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
                 {result.performance && (
                   <details>
                     <summary><span>개발 확인용 · 실행 성능 진단</span><DetailToggleText /></summary>
-                    <div className="backtest-progress-stats"><span><b>데이터 준비</b>{formatNumber(result.performance.data_prepare_seconds, 2)}초</span><span><b>10전략 계산</b>{formatNumber(result.performance.strategy_calculation_seconds, 2)}초</span><span><b>전체</b>{formatNumber(result.performance.total_seconds, 2)}초</span><span><b>KRX 요청</b>{result.performance.network_requests}회</span></div>
+                    <div className="backtest-progress-stats"><span><b>데이터 준비</b>{formatNumber(result.performance.data_prepare_seconds, 2)}초</span><span><b>10전략 계산</b>{formatNumber(result.performance.strategy_calculation_seconds, 2)}초</span><span><b>전체</b>{formatNumber(result.performance.total_seconds, 2)}초</span><span><b>실제 KRX 요청</b>{result.performance.network_requests}회</span>{result.performance.estimated_network_requests !== undefined && <span><b>실행 전 예상</b>{result.performance.estimated_network_requests}회</span>}{result.performance.market_store_hits !== undefined && <span><b>시장 저장소 재사용</b>{result.performance.market_store_hits.toLocaleString()} hit</span>}{result.performance.raw_cache_hits !== undefined && <span><b>기존 KRX 캐시</b>{result.performance.raw_cache_hits.toLocaleString()} hit</span>}{result.performance.cache_reuse_pct !== undefined && <span><b>데이터 재사용</b>{formatNumber(result.performance.cache_reuse_pct, 1)}%</span>}{result.performance.budget_limit !== undefined && <span><b>오늘 KRX(앱 기록)</b>{Number(result.performance.budget_used ?? 0).toLocaleString()} / {result.performance.budget_limit.toLocaleString()}</span>}</div>
                   </details>
                 )}
               </div>

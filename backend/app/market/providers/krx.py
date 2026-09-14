@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import gzip
 import json
+import threading
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -13,6 +14,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from app.core.stock_code import normalize_stock_code
+from app.market.krx_budget import KrxApiBudget
 from app.market.providers.base import ProviderError, ProviderNotConfigured
 
 
@@ -44,9 +46,12 @@ class KrxProvider:
     _cache_expiry: dict[tuple[str, str], float] = {}
     _volatile_cache_seconds = 300
     _cache_dir = Path(__file__).resolve().parents[3] / "runtime" / "krx"
+    _inflight_guard = threading.RLock()
+    _inflight_tasks: dict[tuple[str, str], asyncio.Task[list[dict[str, Any]]]] = {}
 
-    def __init__(self, api_key: str | None) -> None:
+    def __init__(self, api_key: str | None, budget: KrxApiBudget | None = None) -> None:
         self.api_key = (api_key or "").strip()
+        self.budget = budget or KrxApiBudget()
         self._client: httpx.AsyncClient | None = None
         self._owns_client = False
         self._request_stats: dict[str, int] = {
@@ -78,6 +83,32 @@ class KrxProvider:
 
     def request_stats(self) -> dict[str, int]:
         return dict(self._request_stats)
+
+    def budget_snapshot(self) -> dict[str, int | str]:
+        return self.budget.snapshot().as_dict()
+
+    def assert_budget(self, estimated_requests: int) -> dict[str, int | str]:
+        return self.budget.assert_can_start(estimated_requests).as_dict()
+
+    @classmethod
+    def _endpoint_for_kind(cls, market: str, kind: str) -> KrxEndpoint:
+        key = market.upper().strip()
+        endpoints = cls.STOCK_ENDPOINTS if kind == "stock" else cls.INDEX_ENDPOINTS
+        endpoint = endpoints.get(key)
+        if endpoint is None:
+            raise ValueError("market은 KOSPI 또는 KOSDAQ이어야 합니다.")
+        return endpoint
+
+    def has_cached_day(self, market: str, bas_date: str | date, kind: str) -> bool:
+        endpoint = self._endpoint_for_kind(market, kind)
+        bas_dd = self._format_date(bas_date)
+        key = (endpoint.path, bas_dd)
+        expiry = self._cache_expiry.get(key)
+        if key in self._rows_cache and (expiry is None or expiry > monotonic()):
+            return True
+        if self._is_volatile_date(bas_dd):
+            return False
+        return self._disk_cache_path(endpoint, bas_dd).exists() or self._has_empty_marker(endpoint, bas_dd)
 
     def _require_key(self) -> None:
         if not self.api_key:
@@ -277,6 +308,9 @@ class KrxProvider:
 
         for attempt in range(len(retry_delays) + 1):
             try:
+                # Reserve the real HTTP attempt before sending it. Retries consume the
+                # same daily budget because they are real KRX requests too.
+                self.budget.consume(retry=attempt > 0)
                 self._request_stats["network_requests"] += 1
                 if self._client is not None:
                     response = await self._client.get(url, headers=headers, params=params)
@@ -349,8 +383,27 @@ class KrxProvider:
                 self._rows_cache[cache_key] = []
                 return []
 
-        rows = await self._request_rows(endpoint, bas_dd)
+        loop = asyncio.get_running_loop()
+        with self._inflight_guard:
+            task = self._inflight_tasks.get(cache_key)
+            # FastAPI requests normally share one loop. If a test/worker uses another
+            # loop, do not await a task bound to the wrong loop.
+            if task is None or task.done() or task.get_loop() is not loop:
+                task = loop.create_task(self._request_rows(endpoint, bas_dd))
+                self._inflight_tasks[cache_key] = task
 
+        try:
+            rows = await asyncio.shield(task)
+        except Exception:
+            with self._inflight_guard:
+                if self._inflight_tasks.get(cache_key) is task:
+                    self._inflight_tasks.pop(cache_key, None)
+            raise
+
+        # Keep the in-flight entry until the shared cache is populated. Otherwise a
+        # third caller could slip into the tiny gap after HTTP completion and issue
+        # the same request again.
+        now = monotonic()
         if not rows:
             self._rows_cache[cache_key] = rows
             if self._is_stable_empty_date(bas_dd):
@@ -359,15 +412,18 @@ class KrxProvider:
             else:
                 # Recent/today empty data can appear before KRX publishes the final daily row.
                 self._cache_expiry[cache_key] = now + self._volatile_cache_seconds
-            return rows
-
-        self._clear_empty_marker(endpoint, bas_dd)
-        self._rows_cache[cache_key] = rows
-        if self._is_volatile_date(bas_dd):
-            self._cache_expiry[cache_key] = now + self._volatile_cache_seconds
         else:
-            self._cache_expiry.pop(cache_key, None)
-            self._save_disk_cache(endpoint, bas_dd, rows)
+            self._clear_empty_marker(endpoint, bas_dd)
+            self._rows_cache[cache_key] = rows
+            if self._is_volatile_date(bas_dd):
+                self._cache_expiry[cache_key] = now + self._volatile_cache_seconds
+            else:
+                self._cache_expiry.pop(cache_key, None)
+                self._save_disk_cache(endpoint, bas_dd, rows)
+
+        with self._inflight_guard:
+            if self._inflight_tasks.get(cache_key) is task:
+                self._inflight_tasks.pop(cache_key, None)
         return rows
 
     @staticmethod

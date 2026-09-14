@@ -6,7 +6,7 @@ from typing import Any, Callable
 from app.backtest.engine import BacktestEngine
 from app.backtest.metrics import summarize_trades
 from app.backtest.models import BacktestConfig, BacktestTrade
-from app.backtest.selector import current_readiness, historical_fit, plain_condition, select_strategy, strategy_guide, strategy_label
+from app.backtest.selector import build_condition_state, current_readiness, historical_fit, select_strategy, strategy_guide, strategy_label
 from app.strategy.models import StrategyEvaluation, StrategyName
 
 
@@ -152,10 +152,23 @@ class MultiStrategyBacktestEngine:
                 "reasons": [],
             }
         else:
-            current = current_readiness(evaluation=evaluation, risk_plan=risk_plan)
+            latest_data = latest["strategy_input"]
+            latest_technical = latest["technical"]
+            condition_state = build_condition_state(
+                evaluation,
+                data=latest_data,
+                technical=latest_technical,
+            )
+            current = current_readiness(
+                evaluation=evaluation,
+                risk_plan=risk_plan,
+                condition_state=condition_state,
+            )
             current["reasons"] = list(evaluation.reasons or [])
-            current["reason_details"] = [plain_condition(reason) for reason in (evaluation.reasons or [])]
-            current["unmet_details"] = [plain_condition(reason) for reason in (evaluation.unmet or [])]
+            current["reason_details"] = condition_state["passed_details"]
+            current["unmet_details"] = condition_state["missing_details"]
+            current["conditions"] = condition_state["conditions"]
+            current["condition_consistency"] = condition_state["consistency"]
             current["suitability"] = evaluation.suitability
             current["eligible"] = bool(evaluation.eligible)
 
@@ -252,7 +265,7 @@ class MultiStrategyBacktestEngine:
             })
 
         return {
-            "version": "0.20.1",
+            "version": "0.20.3",
             "code": config.code,
             "market": config.market,
             "period": {"start": config.start_date, "end": config.end_date},

@@ -9,8 +9,10 @@ import pytest
 
 from app.backtest.history_store import HistoricalStore, HistorySeries
 from app.backtest.jobs import BacktestJobManager
+from app.backtest.market_store import HistoricalMarketStore
 from app.backtest.models import BacktestConfig
 from app.backtest.service import BacktestService
+from app.market.krx_budget import KrxApiBudget
 from app.market.providers.krx import KrxProvider
 
 
@@ -71,7 +73,7 @@ async def test_historical_store_makes_second_run_network_free(tmp_path, monkeypa
     stock = _weekday_rows(all_start, end)
     indices = _weekday_rows(all_start, end, index=True)
 
-    provider = KrxProvider("test")
+    provider = KrxProvider("test", budget=KrxApiBudget(tmp_path / "budget.sqlite3", safe_limit=8000))
     calls = {"stock": 0, "index": 0}
 
     async def no_open():
@@ -80,7 +82,7 @@ async def test_historical_store_makes_second_run_network_free(tmp_path, monkeypa
     async def no_close():
         return None
 
-    async def stock_daily(market, day, code):
+    async def stock_daily(market, day, code=None):
         calls["stock"] += 1
         key = day.strftime("%Y%m%d")
         row = stock.get(key)
@@ -98,7 +100,12 @@ async def test_historical_store_makes_second_run_network_free(tmp_path, monkeypa
     monkeypatch.setattr(provider, "index_daily", index_daily)
     monkeypatch.setattr(provider, "_today_kst", lambda: date(2026, 9, 10))
 
-    service = BacktestService(provider, engine=_FakeEngine(), history_store=HistoricalStore(tmp_path))
+    service = BacktestService(
+        provider,
+        engine=_FakeEngine(),
+        history_store=HistoricalStore(tmp_path / "legacy"),
+        market_store=HistoricalMarketStore(tmp_path / "market.sqlite3"),
+    )
     cfg = BacktestConfig(
         code="005930",
         market="KOSPI",
@@ -153,7 +160,7 @@ async def test_krx_shared_session_reuses_one_async_client(monkeypatch, tmp_path)
     monkeypatch.setattr(KrxProvider, "_cache_dir", tmp_path)
     KrxProvider._rows_cache.clear()
     KrxProvider._cache_expiry.clear()
-    provider = KrxProvider("key")
+    provider = KrxProvider("key", budget=KrxApiBudget(tmp_path / "budget.sqlite3", safe_limit=8000))
     endpoint = provider.STOCK_ENDPOINTS["KOSPI"]
 
     await provider.open_session()
@@ -217,7 +224,7 @@ async def test_stable_empty_krx_date_uses_persistent_marker(monkeypatch, tmp_pat
     KrxProvider._cache_expiry.clear()
     FakeClient.calls = 0
 
-    provider = KrxProvider("key")
+    provider = KrxProvider("key", budget=KrxApiBudget(tmp_path / "budget.sqlite3", safe_limit=8000))
     endpoint = provider.INDEX_ENDPOINTS["KOSPI"]
     first = await provider._get_rows(endpoint, "20260101")
     assert first == []
@@ -262,7 +269,7 @@ async def test_krx_retries_server_error_then_succeeds(monkeypatch, tmp_path):
     monkeypatch.setattr(KrxProvider, "_cache_dir", tmp_path)
     KrxProvider._rows_cache.clear()
     KrxProvider._cache_expiry.clear()
-    provider = KrxProvider("key")
+    provider = KrxProvider("key", budget=KrxApiBudget(tmp_path / "budget.sqlite3", safe_limit=8000))
     rows = await provider._get_rows(provider.STOCK_ENDPOINTS["KOSPI"], "20260102")
     assert rows[0]["BAS_DD"] == "20260102"
     assert provider.request_stats()["retries"] == 1

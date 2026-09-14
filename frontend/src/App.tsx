@@ -5,6 +5,7 @@ import { AnalysisDetailHeader, AnalysisHub, PullbackConfirmationPanel, type Anal
 import { FundamentalPanel } from "./components/FundamentalPanel";
 import { InvestorStylePanel } from "./components/InvestorStylePanel";
 import BacktestPanel from "./components/BacktestPanel";
+import ScannerPanel from "./components/ScannerPanel";
 import {
   fetchHealth,
   fetchMarketDashboard,
@@ -21,10 +22,26 @@ import {
   type StockSearchItem,
 } from "./services/api";
 
-type AppPage = "analysis" | "backtest";
+type AppPage = "analysis" | "backtest" | "scanner";
+type ThemeMode = "light" | "dark";
+
+function initialTheme(): ThemeMode {
+  const saved = window.localStorage.getItem("stockscope-theme");
+  if (saved === "light" || saved === "dark") {
+    document.documentElement.dataset.theme = saved;
+    return saved;
+  }
+  const systemDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
+  const resolved: ThemeMode = systemDark ? "dark" : "light";
+  document.documentElement.dataset.theme = resolved;
+  return resolved;
+}
 
 function pageFromPathname(pathname: string): AppPage {
-  return pathname.toLowerCase().startsWith("/backtest") ? "backtest" : "analysis";
+  const lower = pathname.toLowerCase();
+  if (lower.startsWith("/scanner")) return "scanner";
+  if (lower.startsWith("/backtest")) return "backtest";
+  return "analysis";
 }
 
 function number(value: number | null | undefined, suffix = "") {
@@ -103,6 +120,7 @@ function IndexCard({
 
 export default function App() {
   const [apiStatus, setApiStatus] = useState("확인 중");
+  const [theme, setTheme] = useState<ThemeMode>(initialTheme);
   const [providers, setProviders] = useState<ProviderStatus | null>(null);
   const [dashboard, setDashboard] = useState<MarketDashboard | null>(null);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
@@ -424,8 +442,15 @@ const strategyName: Record<string, string> = {
     });
   }
 
+  function toggleTheme() {
+    const next: ThemeMode = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    document.documentElement.dataset.theme = next;
+    window.localStorage.setItem("stockscope-theme", next);
+  }
+
   function navigateApp(page: AppPage) {
-    const pathname = page === "analysis" ? "/analysis" : "/backtest";
+    const pathname = page === "analysis" ? "/analysis" : page === "scanner" ? "/scanner" : "/backtest";
     if (window.location.pathname !== pathname) window.history.pushState({}, "", pathname);
     setAppPage(page);
     window.scrollTo({ top: 0, behavior: "auto" });
@@ -445,17 +470,29 @@ const strategyName: Record<string, string> = {
         <nav className="topnav" aria-label="주요 기능">
           <button className={`nav-item ${appPage === "analysis" ? "active" : ""}`} onClick={() => navigateApp("analysis")}>빠른 조회</button>
           <button className={`nav-item ${appPage === "backtest" ? "active" : ""}`} onClick={() => navigateApp("backtest")}>백테스트</button>
-          <button className="nav-item" disabled>종목 찾기 <em>준비중</em></button>
+          <button className={`nav-item ${appPage === "scanner" ? "active" : ""}`} onClick={() => navigateApp("scanner")}>종목 찾기</button>
           <button className="nav-item" disabled>시뮬레이션 <em>준비중</em></button>
         </nav>
-        <div className="header-status">
-          <span className={`dot-status ${apiStatus === "정상" ? "ok" : ""}`}>API {apiStatus}</span>
-          <span className={`dot-status ${providers?.krx.configured ? "ok" : ""}`}>KRX</span>
-          <span className={`dot-status ${providers?.dart.configured ? "ok" : ""}`}>DART</span>
+        <div className="header-actions">
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={toggleTheme}
+            aria-label={theme === "dark" ? "라이트 모드로 전환" : "다크 모드로 전환"}
+            title={theme === "dark" ? "라이트 모드로 전환" : "다크 모드로 전환"}
+          >
+            <span aria-hidden="true">{theme === "dark" ? "☀" : "🌙"}</span>
+            <b>{theme === "dark" ? "라이트" : "다크"}</b>
+          </button>
+          <div className="header-status">
+            <span className={`dot-status ${apiStatus === "정상" ? "ok" : ""}`}>API {apiStatus}</span>
+            <span className={`dot-status ${providers?.krx.configured ? "ok" : ""}`}>KRX</span>
+            <span className={`dot-status ${providers?.dart.configured ? "ok" : ""}`}>DART</span>
+          </div>
         </div>
       </header>
 
-      <div className={`layout ${appPage === "backtest" ? "backtest-layout" : ""}`}>
+      <div className={`layout ${appPage !== "analysis" ? "backtest-layout" : ""}`}>
         {appPage === "analysis" && (
           <aside className="sidebar">
             <button className="side-item active"><span>⌂</span>오늘의 시장</button>
@@ -470,7 +507,7 @@ const strategyName: Record<string, string> = {
           </aside>
         )}
 
-        <main className={`content ${appPage === "backtest" ? "backtest-page-content" : ""}`}>
+        <main className={`content ${appPage !== "analysis" ? "backtest-page-content" : ""}`}>
           {appPage === "analysis" ? (
             <>
           <section className="page-head">
@@ -1857,12 +1894,19 @@ const strategyName: Record<string, string> = {
           </section>
 
             </>
-          ) : (
+          ) : appPage === "backtest" ? (
             <BacktestPanel
               code={stockCode}
               market={stockMarket}
               stockName={selectedStockName}
               onSelectStock={chooseStock}
+            />
+          ) : (
+            <ScannerPanel
+              onAnalyzeStock={(item) => {
+                chooseStock(item);
+                navigateApp("backtest");
+              }}
             />
           )}
 
