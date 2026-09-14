@@ -58,3 +58,72 @@ def test_scanner_result_cache_key_includes_candidate_limit(tmp_path: Path, monke
     assert first != second
     assert "_5_" in first.name
     assert "_10_" in second.name
+
+
+def test_scanner_fast_request_limit_can_be_overridden(monkeypatch) -> None:
+    monkeypatch.setenv("KRX_SCANNER_FAST_REQUEST_LIMIT", "77")
+    assert StockScannerService.fast_request_limit() == 77
+
+
+def test_scanner_history_plan_counts_only_uncached_network_requests() -> None:
+    class FakeStore:
+        @staticmethod
+        def day_complete(market: str, key: str, kind: str) -> bool:
+            return key == "20260901"
+
+    class FakeKrx:
+        @staticmethod
+        def has_cached_day(market: str, day: date, kind: str) -> bool:
+            return kind == "stock"
+
+    service = object.__new__(StockScannerService)
+    service.market_store = FakeStore()
+    service.krx = FakeKrx()
+    plan = service._history_plan(
+        market="KOSPI",
+        start=date(2026, 9, 1),
+        end=date(2026, 9, 4),
+    )
+    assert plan["total"] == 8
+    assert plan["reused"] == 2
+    assert len(plan["work"]) == 6
+    assert plan["estimated_network_requests"] == 3
+
+
+def test_scanner_current_only_candidate_is_labeled_as_unverified_history() -> None:
+    service = object.__new__(StockScannerService)
+    item = {
+        "code": "000001",
+        "name": "테스트",
+        "market": "KOSPI",
+        "latest_date": "20260911",
+        "current_price": 10000,
+        "quick_strategy": "MOMENTUM_CONTINUATION",
+        "quick_guide": {
+            "easy_name": "강한 상승 이어가기",
+            "professional_name": "모멘텀 지속",
+            "description": "상승 힘이 이어지는지 확인하는 방법입니다.",
+        },
+        "quick_current": {
+            "status": "WATCH",
+            "passed": 8,
+            "missing": 1,
+            "total": 9,
+            "risk_warning": False,
+            "risk_status": "READY",
+            "summary": "9개 중 1개 조건이 부족합니다.",
+            "warnings": [],
+        },
+        "quick_condition_state": {
+            "missing_details": [
+                {"raw": "거래량", "label": "거래량 증가", "detail": "거래량 조건이 부족합니다."}
+            ]
+        },
+        "quick_score": 80,
+    }
+    candidate = service._fast_candidate(item)
+    assert candidate is not None
+    assert candidate["candidate_state"] == "VALIDATION"
+    assert candidate["verification_level"] == "CURRENT_ONLY"
+    assert candidate["historical_fit"]["verified"] is False
+    assert candidate["historical_fit"]["label"] == "과거 검증 전"

@@ -4,10 +4,9 @@ import os
 import sqlite3
 import threading
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
+from app.market.kst import now_kst
 from app.market.providers.base import ProviderError
 
 
@@ -62,7 +61,7 @@ class KrxApiBudget:
 
     @staticmethod
     def _today_key() -> str:
-        return datetime.now(ZoneInfo("Asia/Seoul")).date().isoformat()
+        return now_kst().date().isoformat()
 
     def _connect(self) -> sqlite3.Connection:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -108,7 +107,7 @@ class KrxApiBudget:
     def consume(self, *, retry: bool = False) -> KrxBudgetSnapshot:
         """Atomically reserve one real HTTP attempt before it is sent."""
         day = self._today_key()
-        now = datetime.now(ZoneInfo("Asia/Seoul")).isoformat()
+        now = now_kst().isoformat()
         with self._lock, self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(

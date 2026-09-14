@@ -1553,7 +1553,9 @@ export type ScannerCandidate = {
     label: string;
     summary: string;
     trades: number;
+    verified?: boolean;
   };
+  verification_level?: "CURRENT_ONLY" | "CURRENT_AND_HISTORY" | string;
   user_action: {
     title: string | null;
     detail: string | null;
@@ -1573,6 +1575,14 @@ export type ScannerResponse = {
     data_date: string;
     regime: string;
   }>;
+  partial_data?: boolean;
+  preparation_required?: Array<{
+    market: "KOSPI" | "KOSDAQ" | string;
+    estimated_network_requests: number;
+    items_missing: number;
+    message: string;
+  }>;
+  fast_request_limit?: number;
   summary: {
     universe_total: number;
     special_excluded: number;
@@ -1580,6 +1590,8 @@ export type ScannerResponse = {
     quick_analyzed: number;
     data_insufficient: number;
     deep_analyzed: number;
+    historically_verified?: number;
+    current_only?: number;
     candidate_count: number;
     shown_count: number;
     excluded_after_analysis: number;
@@ -1605,6 +1617,16 @@ export type ScannerResponse = {
     budget_used: number;
     budget_limit: number;
     budget_remaining: number;
+    fast_request_limit?: number;
+    large_sync_blocked?: boolean;
+    bootstrap_processed_items?: number;
+    bootstrap_peak_concurrency?: number;
+    bootstrap_errors?: number;
+    bootstrap_request_rate?: number;
+    data_prepare_seconds?: number;
+    quick_filter_seconds?: number;
+    deep_analysis_seconds?: number;
+    total_seconds?: number;
   };
 };
 
@@ -1613,6 +1635,7 @@ export type ScannerRequest = {
   as_of_date?: string;
   candidate_limit?: number;
   force_refresh?: boolean;
+  allow_large_sync?: boolean;
 };
 
 export async function createScannerJob(payload: ScannerRequest): Promise<BacktestJob<ScannerResponse>> {

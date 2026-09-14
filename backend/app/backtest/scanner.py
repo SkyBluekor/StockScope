@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
+import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
@@ -30,14 +32,20 @@ class StockScannerService:
     presented to the user as probabilities.
     """
 
-    VERSION = "0.21.0"
-    HISTORY_CALENDAR_DAYS = 485  # ~1y evidence + enough 60-row warmup
+    VERSION = "0.21.0.3"
+    HISTORY_CALENDAR_DAYS = 485  # local-only historical evidence window
+    FAST_HISTORY_CALENDAR_DAYS = 220  # current-condition scan only; ~150 weekdays
     EVIDENCE_CALENDAR_DAYS = 365
+    HISTORICAL_VALIDATION_MIN_ROWS = 220
     QUICK_LIMIT_PER_MARKET = 160
     DEEP_LIMIT = 18
     EXTRA_RESULT_LIMIT = 10
     MIN_HISTORY_ROWS = 61
-    FETCH_CONCURRENCY = 8
+    FETCH_CONCURRENCY_MIN = 4
+    FETCH_CONCURRENCY_INITIAL = 8
+    FETCH_CONCURRENCY_MAX = 12
+    FETCH_CONCURRENCY_RAMP_SUCCESSES = 16
+    DEFAULT_FAST_REQUEST_LIMIT = 60
     CACHE_ROOT = Path(__file__).resolve().parents[2] / "runtime" / "scanner"
 
     def __init__(
@@ -118,16 +126,15 @@ class StockScannerService:
         keys = set(before) | set(after)
         return {key: int(after.get(key, 0)) - int(before.get(key, 0)) for key in keys}
 
-    async def _ensure_market_history(
-        self,
-        *,
-        market: str,
-        start: date,
-        end: date,
-        progress: ProgressCallback | None,
-        phase_index: int,
-        phase_total: int,
-    ) -> dict[str, int]:
+    @classmethod
+    def fast_request_limit(cls) -> int:
+        raw = os.getenv("KRX_SCANNER_FAST_REQUEST_LIMIT", str(cls.DEFAULT_FAST_REQUEST_LIMIT))
+        try:
+            return max(1, int(raw))
+        except (TypeError, ValueError):
+            return cls.DEFAULT_FAST_REQUEST_LIMIT
+
+    def _history_plan(self, *, market: str, start: date, end: date) -> dict[str, Any]:
         dates = self._weekdays(start, end)
         work: list[tuple[str, date]] = []
         for day in dates:
@@ -136,78 +143,220 @@ class StockScannerService:
                 work.append(("stock", day))
             if not self.market_store.day_complete(market, key, "index"):
                 work.append(("index", day))
-
         total = len(dates) * 2
         reused = total - len(work)
         estimated = sum(1 for kind, day in work if not self.krx.has_cached_day(market, day, kind))
+        return {
+            "market": market,
+            "dates": dates,
+            "work": work,
+            "total": total,
+            "reused": reused,
+            "estimated_network_requests": estimated,
+        }
+
+    @staticmethod
+    def _progress_payload(
+        *,
+        overall_percent: float,
+        started_at: float,
+        current_item: str | None = None,
+        **details: Any,
+    ) -> dict[str, Any]:
+        return {
+            "overall_percent": round(max(0.0, min(100.0, overall_percent)), 1),
+            "elapsed_seconds": round(max(0.0, time.perf_counter() - started_at), 1),
+            "heartbeat_at": datetime.now().isoformat(timespec="seconds"),
+            "current_item": current_item,
+            **details,
+        }
+
+    async def _ensure_market_history(
+        self,
+        *,
+        market: str,
+        start: date,
+        end: date,
+        progress: ProgressCallback | None,
+        progress_base: float,
+        progress_span: float,
+        started_at: float,
+        plan: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Prepare one market with adaptive network concurrency and non-blocking persistence.
+
+        Network requests are kept in flight continuously instead of waiting for fixed
+        batches. KRX raw gzip writes happen inside the provider without blocking the
+        event loop, while Market Store writes are serialized on a background writer.
+        This keeps the first-PC bootstrap responsive without changing request count.
+        """
+        planned = plan or self._history_plan(market=market, start=start, end=end)
+        work = list(planned["work"])
+        total = int(planned["total"])
+        reused = int(planned["reused"])
+        estimated = int(planned["estimated_network_requests"])
         self.krx.assert_budget(estimated)
         before = self.krx.request_stats()
         completed = reused
         errors = 0
+        current_limit = min(self.FETCH_CONCURRENCY_INITIAL, self.FETCH_CONCURRENCY_MAX)
+        current_limit = max(self.FETCH_CONCURRENCY_MIN, current_limit)
+        peak_concurrency = 0
+        stable_successes = 0
+        sync_started_at = time.perf_counter()
+        current_item: str | None = None
+        active_requests = 0
 
-        self._emit(
-            progress,
-            stage="scanner_data_prepare",
-            message=f"{market} 시장 데이터 준비 중",
-            current=phase_index - 1,
-            total=phase_total,
-            details={
-                "market": market,
-                "reused_items": reused,
-                "estimated_network_requests": estimated,
-                "items_done": completed,
-                "items_total": total,
-            },
+        writer_queue: asyncio.Queue[tuple[str, date, dict[str, Any] | Exception] | None] = asyncio.Queue(
+            maxsize=max(8, self.FETCH_CONCURRENCY_MAX * 2)
         )
 
-        for offset in range(0, len(work), self.FETCH_CONCURRENCY):
-            batch = work[offset : offset + self.FETCH_CONCURRENCY]
+        def progress_metrics() -> dict[str, Any]:
+            elapsed = max(0.001, time.perf_counter() - sync_started_at)
+            newly_completed = max(0, completed - reused)
+            rate = newly_completed / elapsed
+            remaining = max(0, total - completed)
+            eta = (remaining / rate) if rate > 0.05 else None
+            delta_now = self._stats_delta(before, self.krx.request_stats())
+            return {
+                "network_requests_so_far": int(delta_now.get("network_requests", 0)),
+                "retry_count": int(delta_now.get("retries", 0)),
+                "items_done": completed,
+                "items_total": total,
+                "items_remaining": remaining,
+                "processing_rate": round(rate, 2),
+                "eta_seconds": None if eta is None else round(eta, 1),
+                "concurrency_limit": current_limit,
+                "active_requests": active_requests,
+                "peak_concurrency": peak_concurrency,
+                "errors": errors,
+            }
 
-            async def fetch_one(kind: str, day: date) -> dict[str, Any]:
-                if kind == "stock":
-                    return await self.krx.stock_daily(market, day)
-                return await self.krx.index_daily(market, day)
-
-            results = await asyncio.gather(
-                *(fetch_one(kind, day) for kind, day in batch),
-                return_exceptions=True,
-            )
-            for (kind, day), result in zip(batch, results, strict=True):
-                completed += 1
-                key = self._compact(day)
-                if isinstance(result, Exception):
-                    errors += 1
-                    continue
-                if kind == "stock":
-                    rows = list(result.get("rows") or [])
-                    self.market_store.put_stock_day(market, key, rows, stable=True)
-                else:
-                    rows = list(result.get("rows") or [])
-                    main = self.krx._select_main_index(rows, market) if rows else None  # noqa: SLF001
-                    self.market_store.put_index_day(market, key, main, stable=True)
-
+        def emit_state(message: str) -> None:
+            fraction = 1.0 if total <= 0 else completed / total
+            percent = progress_base + progress_span * fraction
             self._emit(
                 progress,
                 stage="scanner_data_prepare",
-                message=f"{market} 시장 데이터 준비 중",
-                current=phase_index - 1,
-                total=phase_total,
-                details={
-                    "market": market,
-                    "reused_items": reused,
-                    "estimated_network_requests": estimated,
-                    "items_done": completed,
-                    "items_total": total,
-                },
+                message=message,
+                current=completed,
+                total=max(total, 1),
+                details=self._progress_payload(
+                    overall_percent=percent,
+                    started_at=started_at,
+                    current_item=current_item,
+                    market=market,
+                    reused_items=reused,
+                    estimated_network_requests=estimated,
+                    **progress_metrics(),
+                ),
             )
 
+        async def persist_worker() -> None:
+            nonlocal completed, errors, current_item
+            while True:
+                payload = await writer_queue.get()
+                try:
+                    if payload is None:
+                        return
+                    kind, day, result = payload
+                    current_item = f"{market} {day.isoformat()} {'주식' if kind == 'stock' else '지수'}"
+                    if isinstance(result, Exception):
+                        errors += 1
+                    else:
+                        try:
+                            key = self._compact(day)
+                            if kind == "stock":
+                                rows = list(result.get("rows") or [])
+                                await asyncio.to_thread(self.market_store.put_stock_day, market, key, rows, stable=True)
+                            else:
+                                rows = list(result.get("rows") or [])
+                                main = self.krx._select_main_index(rows, market) if rows else None  # noqa: SLF001
+                                await asyncio.to_thread(self.market_store.put_index_day, market, key, main, stable=True)
+                        except Exception:
+                            errors += 1
+                    completed += 1
+                    emit_state(f"{market} 최근 시장 데이터 준비 중")
+                finally:
+                    writer_queue.task_done()
+
+        async def fetch_one(kind: str, day: date) -> dict[str, Any]:
+            if kind == "stock":
+                return await self.krx.stock_daily(market, day)
+            return await self.krx.index_daily(market, day)
+
+        emit_state(f"{market} 최근 시장 데이터 준비 중")
+        writer_task = asyncio.create_task(persist_worker())
+        active: dict[asyncio.Task[dict[str, Any]], tuple[str, date]] = {}
+        next_index = 0
+        last_retry_count = int(before.get("retries", 0))
+
+        def launch_more() -> None:
+            nonlocal next_index, active_requests, peak_concurrency
+            while next_index < len(work) and len(active) < current_limit:
+                kind, day = work[next_index]
+                next_index += 1
+                task = asyncio.create_task(fetch_one(kind, day))
+                active[task] = (kind, day)
+            active_requests = len(active)
+            peak_concurrency = max(peak_concurrency, active_requests)
+
+        try:
+            launch_more()
+            while active:
+                done, _ = await asyncio.wait(tuple(active), return_when=asyncio.FIRST_COMPLETED)
+                had_error = False
+                for task in done:
+                    kind, day = active.pop(task)
+                    try:
+                        result: dict[str, Any] | Exception = task.result()
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as exc:  # keep already-fetched days and continue remaining bootstrap
+                        result = exc
+                        had_error = True
+                    await writer_queue.put((kind, day, result))
+
+                current_retries = int(self.krx.request_stats().get("retries", 0))
+                retry_delta = max(0, current_retries - last_retry_count)
+                last_retry_count = current_retries
+                if had_error or retry_delta > 0:
+                    current_limit = max(self.FETCH_CONCURRENCY_MIN, current_limit - 2)
+                    stable_successes = 0
+                else:
+                    stable_successes += len(done)
+                    if stable_successes >= self.FETCH_CONCURRENCY_RAMP_SUCCESSES and current_limit < self.FETCH_CONCURRENCY_MAX:
+                        current_limit += 1
+                        stable_successes = 0
+                launch_more()
+
+            await writer_queue.join()
+        except asyncio.CancelledError:
+            for task in active:
+                task.cancel()
+            if active:
+                await asyncio.gather(*active, return_exceptions=True)
+            # Completed HTTP responses already queued for persistence are preserved.
+            await writer_queue.join()
+            raise
+        finally:
+            await writer_queue.put(None)
+            await writer_task
+
         delta = self._stats_delta(before, self.krx.request_stats())
+        sync_elapsed = max(0.001, time.perf_counter() - sync_started_at)
+        processed = max(0, completed - reused)
         return {
             "store_hits": reused,
             "estimated_network_requests": estimated,
             "network_requests": int(delta.get("network_requests", 0)),
             "raw_cache_hits": int(delta.get("disk_hits", 0) + delta.get("memory_hits", 0) + delta.get("empty_marker_hits", 0)),
             "errors": errors,
+            "processed_items": processed,
+            "sync_seconds": round(sync_elapsed, 3),
+            "processing_rate": round(processed / sync_elapsed, 3),
+            "peak_concurrency": peak_concurrency,
+            "final_concurrency_limit": current_limit,
         }
 
     @staticmethod
@@ -295,6 +444,7 @@ class StockScannerService:
                     "strategy": strategy.value,
                     "guide": strategy_guide(strategy),
                     "current": current,
+                    "condition_state": condition_state,
                 }
         if best is None:
             return None
@@ -316,7 +466,88 @@ class StockScannerService:
             "quick_strategy": best["strategy"],
             "quick_guide": best["guide"],
             "quick_current": current,
+            "quick_condition_state": best.get("condition_state") or {},
             "quick_score": round(quick_score, 4),
+        }
+
+    def _fast_candidate(self, item: dict[str, Any]) -> dict[str, Any] | None:
+        current = dict(item.get("quick_current") or {})
+        guide = dict(item.get("quick_guide") or {})
+        condition_state = dict(item.get("quick_condition_state") or {})
+        total = int(current.get("total") or condition_state.get("total") or 0)
+        passed = int(current.get("passed") or condition_state.get("passed") or 0)
+        missing = int(current.get("missing") or condition_state.get("missing") or max(0, total - passed))
+        ratio = passed / total if total else 0.0
+        risk_warning = bool(current.get("risk_warning"))
+        status = str(current.get("status") or "NOT_READY")
+
+        if status == "READY" and not risk_warning:
+            candidate_state = "VALIDATION"
+            candidate_label = "현재 조건 좋음 · 과거 검증 전"
+            action = "NEEDS_VALIDATION"
+            action_label = "과거 근거 확인 필요"
+            headline = "현재 조건은 좋지만 과거 근거를 아직 확인하지 않았습니다."
+        elif ratio >= 0.65:
+            candidate_state = "VALIDATION"
+            candidate_label = "현재 조건 후보 · 과거 검증 전"
+            action = "NEEDS_VALIDATION"
+            action_label = "현재 조건 기준 후보"
+            headline = "현재 조건만 보면 먼저 확인할 가치가 있습니다."
+        else:
+            candidate_state = "EXCLUDED"
+            candidate_label = "현재 우선 후보 아님"
+            action = "NO_TRADE"
+            action_label = "관망"
+            headline = "현재 조건이 아직 충분하지 않습니다."
+
+        missing_details = list(condition_state.get("missing_details") or [])
+        warnings = list(current.get("warnings") or [])
+        reason = str(current.get("summary") or headline)
+        internal_rank = float(item.get("quick_score") or 0.0) - 12.0
+        if risk_warning:
+            internal_rank -= 10.0
+
+        return {
+            "code": item["code"],
+            "name": item["name"],
+            "market": item["market"],
+            "data_date": self._iso(str(item["latest_date"])),
+            "current_price": item.get("current_price"),
+            "candidate_state": candidate_state,
+            "candidate_label": candidate_label,
+            "strategy": item.get("quick_strategy"),
+            "strategy_easy_name": guide.get("easy_name") or guide.get("professional_name") or str(item.get("quick_strategy") or ""),
+            "strategy_name": guide.get("professional_name") or str(item.get("quick_strategy") or ""),
+            "strategy_description": guide.get("description") or "현재 조건을 바탕으로 먼저 확인할 후보입니다.",
+            "action": action,
+            "action_label": action_label,
+            "headline": headline,
+            "reason": reason,
+            "conditions": {
+                "passed": passed,
+                "total": total,
+                "missing": missing,
+                "top_missing": missing_details[:3],
+            },
+            "risk": {
+                "status": current.get("risk_status"),
+                "warning": risk_warning,
+                "warnings": warnings,
+            },
+            "historical_fit": {
+                "status": "NOT_RUN",
+                "label": "과거 검증 전",
+                "summary": "현재 조건으로 먼저 추렸습니다. 과거 근거는 아직 장기 검증하지 않았습니다.",
+                "trades": 0,
+                "verified": False,
+            },
+            "verification_level": "CURRENT_ONLY",
+            "user_action": {
+                "title": "지금은 신규 진입하지 마세요.",
+                "detail": "현재 조건 후보로 먼저 살펴보되, 과거 근거와 손절·목표 위험을 추가로 확인한 뒤 판단하세요.",
+                "next_transition": "과거 근거 확인 후 다시 판단",
+            },
+            "internal_rank": round(internal_rank, 4),
         }
 
     def _deep_candidate(
@@ -410,7 +641,9 @@ class StockScannerService:
                 "label": hist.get("label"),
                 "summary": hist.get("summary"),
                 "trades": int(metrics.get("trades") or 0),
+                "verified": True,
             },
+            "verification_level": "CURRENT_AND_HISTORY",
             "user_action": {
                 "title": user_action.get("title"),
                 "detail": user_action.get("detail"),
@@ -426,6 +659,7 @@ class StockScannerService:
         as_of_date: str | None = None,
         candidate_limit: int = 5,
         force_refresh: bool = False,
+        allow_large_sync: bool = False,
         progress: ProgressCallback | None = None,
     ) -> dict[str, Any]:
         scope = market_scope.upper().strip()
@@ -434,31 +668,114 @@ class StockScannerService:
         candidate_limit = max(1, min(int(candidate_limit), 10))
         today = self.krx._today_kst()  # noqa: SLF001 - same EOD freshness boundary as provider
         stable_end = self._parse_as_of(as_of_date, today)
+        started_at = time.perf_counter()
 
         if not force_refresh:
             cached = self._load_cache(scope, stable_end, candidate_limit)
             if cached is not None:
-                self._emit(progress, stage="scanner_cache", message="오늘의 Scanner 결과 재사용", current=1, total=1, details={"cache_hit": True})
+                self._emit(
+                    progress,
+                    stage="scanner_cache",
+                    message="오늘의 Scanner 결과 재사용",
+                    current=1,
+                    total=1,
+                    details=self._progress_payload(
+                        overall_percent=100,
+                        started_at=started_at,
+                        cache_hit=True,
+                    ),
+                )
                 return cached
 
         markets = ["KOSPI", "KOSDAQ"] if scope == "ALL" else [scope]
-        start = stable_end - timedelta(days=self.HISTORY_CALENDAR_DAYS)
+        fast_start = stable_end - timedelta(days=self.FAST_HISTORY_CALENDAR_DAYS)
+        evidence_start = stable_end - timedelta(days=self.HISTORY_CALENDAR_DAYS)
         provider_before = self.krx.request_stats()
-        aggregate_sync = {"store_hits": 0, "estimated_network_requests": 0, "network_requests": 0, "raw_cache_hits": 0, "errors": 0}
+        aggregate_sync: dict[str, float] = {
+            "store_hits": 0,
+            "estimated_network_requests": 0,
+            "network_requests": 0,
+            "raw_cache_hits": 0,
+            "errors": 0,
+            "processed_items": 0,
+            "sync_seconds": 0,
+            "peak_concurrency": 0,
+        }
+        timings: dict[str, float] = {}
+        preparation_required: list[dict[str, Any]] = []
 
+        self._emit(
+            progress,
+            stage="scanner_plan",
+            message="필요한 시장 데이터를 확인하는 중",
+            current=0,
+            total=1,
+            details=self._progress_payload(overall_percent=4, started_at=started_at),
+        )
+
+        plans = {market: self._history_plan(market=market, start=fast_start, end=stable_end) for market in markets}
+        estimated_total = sum(int(plan["estimated_network_requests"]) for plan in plans.values())
+        fast_limit = self.fast_request_limit()
+        large_sync_blocked = estimated_total > fast_limit and not allow_large_sync
+
+        if large_sync_blocked:
+            for market, plan in plans.items():
+                estimated = int(plan["estimated_network_requests"])
+                if estimated <= 0:
+                    continue
+                preparation_required.append({
+                    "market": market,
+                    "estimated_network_requests": estimated,
+                    "items_missing": len(plan["work"]),
+                    "message": f"{market} 최근 기술지표 계산용 시장 데이터가 부족합니다.",
+                })
+            self._emit(
+                progress,
+                stage="scanner_fast_budget",
+                message="대량 다운로드 없이 저장된 데이터로 먼저 검색합니다.",
+                current=1,
+                total=1,
+                details=self._progress_payload(
+                    overall_percent=10,
+                    started_at=started_at,
+                    estimated_network_requests=estimated_total,
+                    fast_request_limit=fast_limit,
+                    large_sync_blocked=True,
+                ),
+            )
+
+        t_data = time.perf_counter()
         await self.krx.open_session()
         try:
-            for position, market in enumerate(markets, start=1):
-                sync = await self._ensure_market_history(
-                    market=market,
-                    start=start,
-                    end=stable_end,
-                    progress=progress,
-                    phase_index=position,
-                    phase_total=len(markets),
-                )
-                for key in aggregate_sync:
-                    aggregate_sync[key] += int(sync.get(key, 0))
+            if not large_sync_blocked:
+                market_count = max(len(markets), 1)
+                for position, market in enumerate(markets):
+                    base = 10 + (15.0 / market_count) * position
+                    span = 15.0 / market_count
+                    sync = await self._ensure_market_history(
+                        market=market,
+                        start=fast_start,
+                        end=stable_end,
+                        progress=progress,
+                        progress_base=base,
+                        progress_span=span,
+                        started_at=started_at,
+                        plan=plans[market],
+                    )
+                    for key in ("store_hits", "estimated_network_requests", "network_requests", "raw_cache_hits", "errors", "processed_items"):
+                        aggregate_sync[key] += float(sync.get(key, 0) or 0)
+                    aggregate_sync["sync_seconds"] += float(sync.get("sync_seconds", 0) or 0)
+                    aggregate_sync["peak_concurrency"] = max(
+                        aggregate_sync["peak_concurrency"],
+                        float(sync.get("peak_concurrency", 0) or 0),
+                    )
+            else:
+                # Store/raw-cache reuse is still counted even when network sync is skipped.
+                for market, plan in plans.items():
+                    aggregate_sync["store_hits"] += float(plan["reused"])
+                    aggregate_sync["estimated_network_requests"] += float(plan["estimated_network_requests"])
+
+            timings["data_prepare_seconds"] = time.perf_counter() - t_data
 
             universe_rows: list[dict[str, Any]] = []
             latest_dates: dict[str, str] = {}
@@ -468,10 +785,31 @@ class StockScannerService:
             special_excluded = 0
             liquidity_filtered = 0
 
-            for market in markets:
+            self._emit(
+                progress,
+                stage="scanner_universe",
+                message="현재 시장 종목을 정리하는 중",
+                current=0,
+                total=max(len(markets), 1),
+                details=self._progress_payload(overall_percent=25, started_at=started_at),
+            )
+
+            for market_index, market in enumerate(markets, start=1):
                 end_key = self._compact(stable_end)
                 latest_date = self.market_store.latest_complete_date(market, "stock", end_key)
                 if not latest_date:
+                    self._emit(
+                        progress,
+                        stage="scanner_universe",
+                        message=f"{market} 저장 데이터가 없어 빠른 검색에서 건너뜁니다.",
+                        current=market_index,
+                        total=max(len(markets), 1),
+                        details=self._progress_payload(
+                            overall_percent=25 + 5 * market_index / max(len(markets), 1),
+                            started_at=started_at,
+                            current_item=market,
+                        ),
+                    )
                     continue
                 latest_dates[market] = self._iso(latest_date)
                 day_rows = self.market_store.stock_day_rows(market, latest_date)
@@ -490,13 +828,26 @@ class StockScannerService:
                 ordinary.sort(key=lambda row: (float(row.get("trade_value") or 0), float(row.get("market_cap") or 0)), reverse=True)
                 prefiltered_by_market[market] = ordinary[: self.QUICK_LIMIT_PER_MARKET]
 
-                index_series = self.market_store.index_series(market, self._compact(start), latest_date)
+                index_series = self.market_store.index_series(market, self._compact(fast_start), latest_date)
                 index_rows = sorted(index_series.rows.values(), key=self._row_date)
                 index_rows_by_market[market] = index_rows
                 last_index = index_rows[-1] if index_rows else {}
                 rate = last_index.get("change_rate")
                 regime = regime_from_index(float(rate) if rate is not None else None)
                 market_summaries.append({"market": market, "data_date": self._iso(latest_date), "regime": regime.value})
+                self._emit(
+                    progress,
+                    stage="scanner_universe",
+                    message="현재 시장 종목을 정리하는 중",
+                    current=market_index,
+                    total=max(len(markets), 1),
+                    details=self._progress_payload(
+                        overall_percent=25 + 5 * market_index / max(len(markets), 1),
+                        started_at=started_at,
+                        current_item=market,
+                        universe=len(universe_rows),
+                    ),
+                )
 
             quick_inputs: list[tuple[str, dict[str, Any]]] = []
             series_by_market: dict[str, dict[str, Any]] = {}
@@ -506,11 +857,24 @@ class StockScannerService:
                 series_by_market[market] = self.market_store.stock_series_many(
                     market,
                     [str(row.get("code") or "") for row in rows],
-                    self._compact(start),
+                    self._compact(fast_start),
                     latest_date,
                 )
 
-            self._emit(progress, stage="scanner_quick_filter", message="현재 조건으로 빠르게 후보를 추리는 중", current=0, total=max(len(quick_inputs), 1), details={"universe": len(universe_rows)})
+            t_quick = time.perf_counter()
+            self._emit(
+                progress,
+                stage="scanner_quick_filter",
+                message="현재 조건으로 빠르게 후보를 추리는 중",
+                current=0,
+                total=max(len(quick_inputs), 1),
+                details=self._progress_payload(
+                    overall_percent=30,
+                    started_at=started_at,
+                    universe=len(universe_rows),
+                    shortlisted=0,
+                ),
+            )
 
             quick_candidates: list[dict[str, Any]] = []
             data_insufficient = 0
@@ -530,27 +894,113 @@ class StockScannerService:
                     data_insufficient += 1
                 else:
                     quick_candidates.append(quick)
-                if position == 1 or position % 20 == 0 or position == len(quick_inputs):
-                    self._emit(progress, stage="scanner_quick_filter", message="현재 조건으로 빠르게 후보를 추리는 중", current=position, total=max(len(quick_inputs), 1), details={"shortlisted": len(quick_candidates)})
+                if position == 1 or position % 10 == 0 or position == len(quick_inputs):
+                    percent = 30 + 35.0 * position / max(len(quick_inputs), 1)
+                    self._emit(
+                        progress,
+                        stage="scanner_quick_filter",
+                        message="현재 조건으로 빠르게 후보를 추리는 중",
+                        current=position,
+                        total=max(len(quick_inputs), 1),
+                        details=self._progress_payload(
+                            overall_percent=percent,
+                            started_at=started_at,
+                            current_item=f"{row.get('name') or code} ({code})",
+                            shortlisted=len(quick_candidates),
+                            items_done=position,
+                            items_total=len(quick_inputs),
+                        ),
+                    )
+            timings["quick_filter_seconds"] = time.perf_counter() - t_quick
 
             quick_candidates.sort(key=lambda item: (float(item.get("quick_score") or 0), float(item.get("trade_value") or 0)), reverse=True)
             deep_inputs = quick_candidates[: self.DEEP_LIMIT]
             deep_results: list[dict[str, Any]] = []
+            verified_count = 0
+            current_only_count = 0
 
-            self._emit(progress, stage="scanner_deep_analysis", message="상위 후보의 10가지 전략과 과거 근거를 검증 중", current=0, total=max(len(deep_inputs), 1), details={"shortlisted": len(deep_inputs)})
+            # Historical evidence is local-only here. Scanner never downloads a year of
+            # history merely to finish one search. Existing Market Store data is reused.
+            deep_codes_by_market: dict[str, list[str]] = {}
+            for item in deep_inputs:
+                deep_codes_by_market.setdefault(str(item["market"]), []).append(str(item["code"]))
+            deep_series_by_market: dict[str, dict[str, Any]] = {}
+            deep_index_by_market: dict[str, list[dict[str, Any]]] = {}
+            for market, codes in deep_codes_by_market.items():
+                latest_date = latest_dates.get(market, "").replace("-", "")
+                deep_series_by_market[market] = self.market_store.stock_series_many(
+                    market, codes, self._compact(evidence_start), latest_date
+                )
+                index_series = self.market_store.index_series(market, self._compact(evidence_start), latest_date)
+                deep_index_by_market[market] = sorted(index_series.rows.values(), key=self._row_date)
+
+            t_deep = time.perf_counter()
+            self._emit(
+                progress,
+                stage="scanner_deep_analysis",
+                message="상위 후보의 전략과 위험을 확인하는 중",
+                current=0,
+                total=max(len(deep_inputs), 1),
+                details=self._progress_payload(
+                    overall_percent=65,
+                    started_at=started_at,
+                    shortlisted=len(deep_inputs),
+                    verified=0,
+                ),
+            )
             for position, item in enumerate(deep_inputs, start=1):
                 market = str(item["market"])
                 code = str(item["code"])
-                series = series_by_market.get(market, {}).get(code)
-                deep = self._deep_candidate(
-                    item=item,
-                    stock_rows=list(series.rows.values()) if series is not None else [],
-                    index_rows=index_rows_by_market.get(market, []),
+                deep_series = deep_series_by_market.get(market, {}).get(code)
+                deep_stock_rows = list(deep_series.rows.values()) if deep_series is not None else []
+                deep_index_rows = deep_index_by_market.get(market, [])
+                enough_history = (
+                    len(deep_stock_rows) >= self.HISTORICAL_VALIDATION_MIN_ROWS
+                    and len(deep_index_rows) >= self.HISTORICAL_VALIDATION_MIN_ROWS
                 )
+                if enough_history:
+                    deep = self._deep_candidate(
+                        item=item,
+                        stock_rows=deep_stock_rows,
+                        index_rows=deep_index_rows,
+                    )
+                    if deep is not None:
+                        verified_count += 1
+                else:
+                    deep = self._fast_candidate(item)
+                    if deep is not None:
+                        current_only_count += 1
                 if deep is not None:
                     deep_results.append(deep)
-                self._emit(progress, stage="scanner_deep_analysis", message="상위 후보의 10가지 전략과 과거 근거를 검증 중", current=position, total=max(len(deep_inputs), 1), details={"candidates": len(deep_results)})
 
+                percent = 65 + 25.0 * position / max(len(deep_inputs), 1)
+                self._emit(
+                    progress,
+                    stage="scanner_deep_analysis",
+                    message="상위 후보의 전략과 위험을 확인하는 중",
+                    current=position,
+                    total=max(len(deep_inputs), 1),
+                    details=self._progress_payload(
+                        overall_percent=percent,
+                        started_at=started_at,
+                        current_item=f"{item.get('name') or code} ({code})",
+                        candidates=len(deep_results),
+                        verified=verified_count,
+                        current_only=current_only_count,
+                        items_done=position,
+                        items_total=len(deep_inputs),
+                    ),
+                )
+            timings["deep_analysis_seconds"] = time.perf_counter() - t_deep
+
+            self._emit(
+                progress,
+                stage="scanner_finalize",
+                message="후보 우선순위를 정리하는 중",
+                current=0,
+                total=1,
+                details=self._progress_payload(overall_percent=95, started_at=started_at),
+            )
             deep_results.sort(key=lambda item: float(item.get("internal_rank") or 0.0), reverse=True)
             actionable = [item for item in deep_results if item.get("candidate_state") in {"READY", "WATCH", "VALIDATION"}]
             top = actionable[:candidate_limit]
@@ -562,6 +1012,8 @@ class StockScannerService:
 
             delta = self._stats_delta(provider_before, self.krx.request_stats())
             budget = self.krx.budget_snapshot()
+            timings["total_seconds"] = time.perf_counter() - started_at
+            partial_data = bool(preparation_required)
             result = {
                 "version": self.VERSION,
                 "scanner_cache_hit": False,
@@ -570,6 +1022,9 @@ class StockScannerService:
                 "market_scope": scope,
                 "data_dates": latest_dates,
                 "market_summary": market_summaries,
+                "partial_data": partial_data,
+                "preparation_required": preparation_required,
+                "fast_request_limit": fast_limit,
                 "summary": {
                     "universe_total": len(universe_rows),
                     "special_excluded": special_excluded,
@@ -577,35 +1032,69 @@ class StockScannerService:
                     "quick_analyzed": len(quick_inputs),
                     "data_insufficient": data_insufficient,
                     "deep_analyzed": len(deep_results),
+                    "historically_verified": verified_count,
+                    "current_only": current_only_count,
                     "candidate_count": len(actionable),
                     "shown_count": len(top),
                     "excluded_after_analysis": excluded_deep,
                 },
                 "candidates": top,
                 "more_candidates": more,
-                "empty_message": None if top else "현재 조건과 위험 기준을 함께 통과해 먼저 볼 만한 종목이 없습니다. 억지로 후보 수를 채우지 않습니다.",
+                "empty_message": None if top else (
+                    "시장 데이터가 부족해 아직 종목 검사를 충분히 시작하지 못했습니다. 시장 데이터를 준비한 뒤 다시 찾으면 후보 여부를 판단할 수 있습니다."
+                    if preparation_required and len(universe_rows) == 0
+                    else "저장된 최근 데이터만으로는 먼저 볼 만한 후보를 만들지 못했습니다. 필요한 시장 데이터를 준비하면 검색 범위를 넓힐 수 있습니다."
+                    if preparation_required
+                    else "현재 조건과 위험 기준을 함께 통과해 먼저 볼 만한 종목이 없습니다. 억지로 후보 수를 채우지 않습니다."
+                ),
                 "exclusion_policy": {
                     "default": ["우선주", "SPAC", "ETF/ETN", "거래정지·거래 없음", "데이터 부족"],
                     "liquidity": "최근 거래대금이 StockScope 기본 유동성 기준에 미달하면 빠른 후보에서 제외합니다.",
                 },
                 "methodology": {
-                    "meaning": "상승 확률 순위가 아니라 현재 전략 준비도, 위험, 시장 환경, 과거 전략 근거를 함께 본 우선 확인 목록입니다.",
-                    "pipeline": ["전체 종목 빠른 필터", "현재 10개 전략 비교", "Risk 확인", "상위 후보 1년 과거 근거 검증", "최종 후보 정렬"],
-                    "guardrail": "후보 1위라도 현재 진입 조건이 부족하면 신규 진입하지 않도록 안내합니다.",
+                    "meaning": "상승 확률 순위가 아니라 현재 전략 준비도와 위험을 먼저 보고, 이미 저장된 과거 데이터가 있으면 과거 근거까지 결합한 우선 확인 목록입니다.",
+                    "pipeline": ["최근 데이터 확인", "전체 종목 빠른 필터", "현재 10개 전략·Risk 확인", "저장된 과거 근거가 있으면 결합", "최종 후보 정렬"],
+                    "guardrail": "과거 데이터가 부족하다고 Scanner 전체를 몇 분간 막지 않습니다. 과거 검증 전 후보는 화면에서 명확히 구분합니다.",
                 },
                 "diagnostics": {
                     "market_store_reused_items": aggregate_sync["store_hits"],
-                    "estimated_network_requests": aggregate_sync["estimated_network_requests"],
+                    "estimated_network_requests": estimated_total,
                     "network_requests": int(delta.get("network_requests", aggregate_sync["network_requests"])),
                     "raw_cache_hits": int(delta.get("disk_hits", 0) + delta.get("memory_hits", 0) + delta.get("empty_marker_hits", 0)),
                     "retries": int(delta.get("retries", 0)),
                     "budget_used": budget.get("used", 0),
                     "budget_limit": budget.get("safe_limit", 0),
                     "budget_remaining": budget.get("remaining", 0),
+                    "fast_request_limit": fast_limit,
+                    "large_sync_blocked": large_sync_blocked,
+                    "bootstrap_processed_items": int(aggregate_sync.get("processed_items", 0)),
+                    "bootstrap_peak_concurrency": int(aggregate_sync.get("peak_concurrency", 0)),
+                    "bootstrap_errors": int(aggregate_sync.get("errors", 0)),
+                    "bootstrap_request_rate": round(
+                        float(aggregate_sync.get("processed_items", 0)) / max(float(aggregate_sync.get("sync_seconds", 0)), 0.001),
+                        3,
+                    ),
+                    **{key: round(value, 3) for key, value in timings.items()},
                 },
             }
-            self._save_cache(scope, stable_end, candidate_limit, result)
-            self._emit(progress, stage="scanner_complete", message="오늘 먼저 볼 후보 정리 완료", current=1, total=1, details={"candidates": len(top), "all_candidates": len(actionable)})
+            # A partial result should not be frozen for the whole day; once the user
+            # prepares missing recent data, a subsequent scan must recompute it.
+            if not partial_data:
+                self._save_cache(scope, stable_end, candidate_limit, result)
+            self._emit(
+                progress,
+                stage="scanner_complete",
+                message="오늘 먼저 볼 후보 정리 완료",
+                current=1,
+                total=1,
+                details=self._progress_payload(
+                    overall_percent=100,
+                    started_at=started_at,
+                    candidates=len(top),
+                    all_candidates=len(actionable),
+                ),
+            )
             return result
         finally:
             await self.krx.close_session()
+

@@ -3,18 +3,19 @@ from __future__ import annotations
 import asyncio
 import gzip
 import json
+import os
 import threading
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from time import monotonic
 from typing import Any
-from zoneinfo import ZoneInfo
 
 import httpx
 
 from app.core.stock_code import normalize_stock_code
 from app.market.krx_budget import KrxApiBudget
+from app.market.kst import today_kst
 from app.market.providers.base import ProviderError, ProviderNotConfigured
 
 
@@ -26,6 +27,7 @@ class KrxEndpoint:
 
 class KrxProvider:
     BASE_URL = "https://data-dbg.krx.co.kr/svc/apis"
+    DEFAULT_NETWORK_CONCURRENCY = 12
 
     STOCK_ENDPOINTS = {
         "KOSPI": KrxEndpoint("sto/stk_bydd_trd", "유가증권 일별매매정보"),
@@ -54,6 +56,13 @@ class KrxProvider:
         self.budget = budget or KrxApiBudget()
         self._client: httpx.AsyncClient | None = None
         self._owns_client = False
+        raw_limit = os.getenv("KRX_MAX_CONCURRENCY", str(self.DEFAULT_NETWORK_CONCURRENCY)).strip()
+        try:
+            configured_limit = int(raw_limit)
+        except ValueError:
+            configured_limit = self.DEFAULT_NETWORK_CONCURRENCY
+        self._max_network_concurrency = max(1, min(configured_limit, 24))
+        self._network_semaphore: asyncio.Semaphore | None = None
         self._request_stats: dict[str, int] = {
             "memory_hits": 0,
             "disk_hits": 0,
@@ -64,10 +73,15 @@ class KrxProvider:
 
     async def open_session(self) -> None:
         """Open one reusable HTTP connection pool for bulk/history work."""
+        if self._network_semaphore is None:
+            self._network_semaphore = asyncio.Semaphore(self._max_network_concurrency)
         if self._client is None:
             self._client = httpx.AsyncClient(
                 timeout=httpx.Timeout(15.0),
-                limits=httpx.Limits(max_connections=16, max_keepalive_connections=12),
+                limits=httpx.Limits(
+                    max_connections=max(16, self._max_network_concurrency + 4),
+                    max_keepalive_connections=max(12, self._max_network_concurrency),
+                ),
             )
             self._owns_client = True
 
@@ -77,6 +91,7 @@ class KrxProvider:
         client = self._client
         self._client = None
         self._owns_client = False
+        self._network_semaphore = None
         close = getattr(client, "aclose", None)
         if close is not None:
             await close()
@@ -116,7 +131,7 @@ class KrxProvider:
 
     @staticmethod
     def _today_kst() -> date:
-        return datetime.now(ZoneInfo("Asia/Seoul")).date()
+        return today_kst()
 
     @classmethod
     def _is_volatile_date(cls, bas_dd: str) -> bool:
@@ -308,15 +323,20 @@ class KrxProvider:
 
         for attempt in range(len(retry_delays) + 1):
             try:
-                # Reserve the real HTTP attempt before sending it. Retries consume the
-                # same daily budget because they are real KRX requests too.
-                self.budget.consume(retry=attempt > 0)
-                self._request_stats["network_requests"] += 1
-                if self._client is not None:
-                    response = await self._client.get(url, headers=headers, params=params)
-                else:
-                    async with httpx.AsyncClient(timeout=15.0) as client:
-                        response = await client.get(url, headers=headers, params=params)
+                semaphore = self._network_semaphore
+                if semaphore is None:
+                    semaphore = asyncio.Semaphore(self._max_network_concurrency)
+                    self._network_semaphore = semaphore
+                async with semaphore:
+                    # Reserve immediately before the real HTTP attempt. SQLite ledger I/O
+                    # is pushed off the event loop so concurrent KRX responses stay responsive.
+                    await asyncio.to_thread(self.budget.consume, retry=attempt > 0)
+                    self._request_stats["network_requests"] += 1
+                    if self._client is not None:
+                        response = await self._client.get(url, headers=headers, params=params)
+                    else:
+                        async with httpx.AsyncClient(timeout=15.0) as client:
+                            response = await client.get(url, headers=headers, params=params)
             except httpx.HTTPError as exc:
                 last_error = exc
                 if attempt >= len(retry_delays):
@@ -373,7 +393,7 @@ class KrxProvider:
             return cached
 
         if not self._is_volatile_date(bas_dd):
-            disk_cached = self._load_disk_cache(endpoint, bas_dd)
+            disk_cached = await asyncio.to_thread(self._load_disk_cache, endpoint, bas_dd)
             if disk_cached is not None:
                 self._request_stats["disk_hits"] += 1
                 self._rows_cache[cache_key] = disk_cached
@@ -419,7 +439,7 @@ class KrxProvider:
                 self._cache_expiry[cache_key] = now + self._volatile_cache_seconds
             else:
                 self._cache_expiry.pop(cache_key, None)
-                self._save_disk_cache(endpoint, bas_dd, rows)
+                await asyncio.to_thread(self._save_disk_cache, endpoint, bas_dd, rows)
 
         with self._inflight_guard:
             if self._inflight_tasks.get(cache_key) is task:

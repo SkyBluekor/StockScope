@@ -11513,3 +11513,78 @@ html[data-theme="light"] .scanner-run-button { background: var(--primary); }
   .scanner-detail-button { width: 100%; }
   .scanner-details-grid { grid-template-columns: 1fr; }
 }
+
+/* v0.21.0.1 — Scanner Fast Start & visible progress */
+.scanner-progress-stages {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 7px;
+  margin: 12px 0;
+}
+.scanner-progress-stages > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  color: var(--text-subtle);
+  font-size: 13px;
+}
+.scanner-progress-stages > div i { font-style: normal; flex: 0 0 auto; }
+.scanner-progress-stages > div span { min-width: 0; line-height: 1.35; word-break: keep-all; }
+.scanner-progress-stages > div.active { color: var(--primary); border-color: var(--primary); background: var(--primary-soft); }
+.scanner-progress-stages > div.done { color: var(--success); border-color: #3a765f; background: var(--success-bg); }
+.scanner-progress-warning {
+  display: grid;
+  gap: 2px;
+  margin-top: 12px;
+  padding: 11px 12px;
+  border: 1px solid #665532;
+  border-radius: 10px;
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+.scanner-progress-warning strong { font-size: 15px; }
+.scanner-progress-warning span { font-size: 13px; line-height: 1.5; }
+.scanner-progress-warning.danger { border-color: #73424a; background: var(--danger-bg); color: var(--danger); }
+.scanner-preparation-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 20px;
+  border: 1px solid #665532;
+  border-radius: 14px;
+  background: var(--warning-bg);
+}
+.scanner-preparation-card > div { min-width: 0; }
+.scanner-preparation-card > div > span { color: var(--warning); font-size: 13px; font-weight: 900; }
+.scanner-preparation-card > div > strong { display: block; color: var(--text-strong); font-size: 19px; margin: 2px 0 4px; }
+.scanner-preparation-card p { margin: 0; color: var(--text); font-size: 15px; line-height: 1.55; }
+.scanner-preparation-card > button {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 15px;
+  border: 1px solid var(--warning);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  color: var(--warning);
+  font-size: 15px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.scanner-preparation-markets { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 9px; }
+.scanner-preparation-markets span { padding: 6px 8px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--surface-muted); color: var(--text-subtle); font-size: 13px; }
+.scanner-preparation-markets b { color: var(--text); }
+
+@media (max-width: 1100px) {
+  .scanner-progress-stages { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .scanner-preparation-card { align-items: stretch; flex-direction: column; }
+  .scanner-preparation-card > button { align-self: flex-start; white-space: normal; }
+}
+@media (max-width: 700px) {
+  .scanner-progress-stages { grid-template-columns: 1fr; }
+}

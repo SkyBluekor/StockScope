@@ -24,6 +24,7 @@ class ScannerRequest(BaseModel):
     as_of_date: str | None = None
     candidate_limit: int = Field(default=5, ge=1, le=10)
     force_refresh: bool = False
+    allow_large_sync: bool = False
 
 class PullbackBacktestRequest(BaseModel):
     code: str = Field(..., min_length=1, max_length=12)
@@ -196,6 +197,7 @@ async def _run_scanner_job(job_id: str, payload: ScannerRequest, api_key: str | 
             as_of_date=payload.as_of_date,
             candidate_limit=payload.candidate_limit,
             force_refresh=payload.force_refresh,
+            allow_large_sync=payload.allow_large_sync,
             progress=update_progress,
         )
     except BacktestJobCancelled:
