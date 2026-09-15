@@ -15,6 +15,7 @@ from app.backtest.exit_policy_validation_runner import (
 )
 from app.backtest.risk_validation import RiskPolicyValidationService
 from app.backtest.scanner import StockScannerService
+from app.backtest.production_exit_policy import ProductionExitPolicyRegistry
 from app.core.config import get_settings
 from app.market.providers import KrxProvider
 from app.market.providers.base import ProviderError, ProviderNotConfigured
@@ -393,6 +394,26 @@ async def latest_exit_policy_validation_report() -> dict:
     if report is None:
         return {"available": False, "report": None}
     return {"available": True, "report": report}
+
+
+@router.get("/exit-policy-production/status")
+async def exit_policy_production_status() -> dict:
+    return ProductionExitPolicyRegistry().status()
+
+
+@router.post("/exit-policy-production/activate")
+async def activate_exit_policy_production(force: bool = False) -> dict:
+    try:
+        mapping = ProductionExitPolicyRegistry().activate_from_latest_validation(force=force)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "activated": True,
+        "policy_version": mapping.get("policy_version"),
+        "production_policy_changed": bool(mapping.get("production_policy_changed")),
+        "validation_signature": mapping.get("validation_signature"),
+        "strategies": mapping.get("strategies") or {},
+    }
 
 
 @router.post("/multi-strategy")

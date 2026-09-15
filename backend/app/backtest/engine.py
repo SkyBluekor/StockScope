@@ -695,6 +695,7 @@ class BacktestEngine:
         index_rows: list[dict[str, Any]],
         config: BacktestConfig,
         progress_callback: Callable[[dict[str, Any]], None] | None = None,
+        actual_trade_simulator: Callable[..., tuple[BacktestTrade | None, int | None]] | None = None,
     ) -> dict[str, Any]:
         rows = sorted(stock_rows, key=self._date)
         indices = sorted(index_rows, key=self._date)
@@ -757,12 +758,19 @@ class BacktestEngine:
             if signal["risk_gate_active"]:
                 continue
             qualifying_signals += 1
-            trade, exit_index = self._simulate_trade(
-                signal=signal,
-                stock_rows=rows,
-                config=config,
-                research_only=False,
-            )
+            if actual_trade_simulator is None:
+                trade, exit_index = self._simulate_trade(
+                    signal=signal,
+                    stock_rows=rows,
+                    config=config,
+                    research_only=False,
+                )
+            else:
+                trade, exit_index = actual_trade_simulator(
+                    signal=signal,
+                    stock_rows=rows,
+                    config=config,
+                )
             if trade is None or exit_index is None:
                 skipped_risk += 1
                 continue

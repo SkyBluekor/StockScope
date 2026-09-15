@@ -128,18 +128,20 @@ def data_readiness(
 
 
 def _exit_counts(trades: list[dict[str, Any]]) -> dict[str, int]:
-    stop = target = time_exit = other = 0
+    stop = target = trailing = time_exit = other = 0
     for trade in trades:
         reason = str(trade.get("exit_reason") or "")
         if reason.startswith("STOP"):
             stop += 1
         elif reason.startswith("TARGET_1"):
             target += 1
-        elif reason == "TIME_EXIT":
+        elif reason == "TRAILING_CLOSE_EXIT":
+            trailing += 1
+        elif reason in {"TIME_EXIT", "TIME_EXIT_PRE_TARGET2", "HARD_MAX_HOLD_EXIT", "PRODUCTION_HORIZON_EXIT"}:
             time_exit += 1
         else:
             other += 1
-    return {"stop": stop, "target1": target, "time_exit": time_exit, "other": other}
+    return {"stop": stop, "target1": target, "trailing": trailing, "time_exit": time_exit, "other": other}
 
 
 def _regime_summary(trades: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -356,4 +358,6 @@ def build_historical_evidence(
     evidence["signal_count"] = int(strategy_row.get("signal_count") or 0)
     evidence["risk_blocked_signals"] = int(strategy_row.get("risk_blocked_signals") or 0)
     evidence["strategy"] = strategy_name.value
+    evidence["exit_policy"] = dict(strategy_row.get("exit_policy") or {})
+    evidence["historical_policy"] = dict((strategy_row.get("exit_policy") or {}).get("historical_policy") or {})
     return evidence

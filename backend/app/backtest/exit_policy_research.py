@@ -1,10 +1,20 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from statistics import fmean, median
 from typing import Any, Callable
 
 from app.backtest.engine import BacktestEngine
+from app.backtest.exit_policy_catalog import (
+    ExitPolicySpec,
+    POLICY_ATR_15,
+    POLICY_ATR_20,
+    POLICY_ATR_25,
+    POLICY_MA20,
+    POLICY_SWING_LOW,
+    POLICY_TARGET1_FULL_EXIT,
+    RESEARCH_POLICIES,
+)
+from app.backtest.exit_policy_simulator import ExitPolicySimulator
 from app.backtest.metrics import summarize_trades
 from app.backtest.models import BacktestConfig, BacktestTrade
 from app.backtest.multi_strategy import SUPPORTED_STRATEGIES
@@ -15,72 +25,6 @@ from app.strategy.models import StrategyEvaluation, StrategyName
 EXIT_RESEARCH_VERSION = "0.21.4-A"
 MIN_RESEARCH_SAMPLE = 10
 DEFAULT_POST_TARGET2_RESEARCH_DAYS = 60
-
-
-@dataclass(frozen=True, slots=True)
-class ExitPolicySpec:
-    id: str
-    label: str
-    family: str
-    activation: str
-    exit_basis: str
-    atr_multiplier: float | None = None
-
-
-POLICY_TARGET1_FULL_EXIT = ExitPolicySpec(
-    id="TARGET1_FULL_EXIT",
-    label="기존 Target1 전량 종료",
-    family="BASELINE",
-    activation="TARGET1",
-    exit_basis="INTRADAY_OHLC",
-)
-POLICY_ATR_15 = ExitPolicySpec(
-    id="ATR_TRAIL_1_5",
-    label="Target2 이후 ATR 1.5배 추적",
-    family="ATR_TRAIL",
-    activation="TARGET2",
-    exit_basis="DAILY_CLOSE_PREVIOUS_PROTECTION",
-    atr_multiplier=1.5,
-)
-POLICY_ATR_20 = ExitPolicySpec(
-    id="ATR_TRAIL_2_0",
-    label="Target2 이후 ATR 2.0배 추적",
-    family="ATR_TRAIL",
-    activation="TARGET2",
-    exit_basis="DAILY_CLOSE_PREVIOUS_PROTECTION",
-    atr_multiplier=2.0,
-)
-POLICY_ATR_25 = ExitPolicySpec(
-    id="ATR_TRAIL_2_5",
-    label="Target2 이후 ATR 2.5배 추적",
-    family="ATR_TRAIL",
-    activation="TARGET2",
-    exit_basis="DAILY_CLOSE_PREVIOUS_PROTECTION",
-    atr_multiplier=2.5,
-)
-POLICY_MA20 = ExitPolicySpec(
-    id="MA20_TRAIL",
-    label="Target2 이후 MA20 추적",
-    family="MA20",
-    activation="TARGET2",
-    exit_basis="DAILY_CLOSE_PREVIOUS_PROTECTION",
-)
-POLICY_SWING_LOW = ExitPolicySpec(
-    id="CONFIRMED_SWING_LOW_TRAIL",
-    label="Target2 이후 최근 확정 Swing Low 추적",
-    family="SWING_LOW",
-    activation="TARGET2",
-    exit_basis="DAILY_CLOSE_PREVIOUS_PROTECTION",
-)
-
-RESEARCH_POLICIES: tuple[ExitPolicySpec, ...] = (
-    POLICY_TARGET1_FULL_EXIT,
-    POLICY_ATR_15,
-    POLICY_ATR_20,
-    POLICY_ATR_25,
-    POLICY_MA20,
-    POLICY_SWING_LOW,
-)
 
 
 class ExitPolicyResearchEngine:
@@ -95,6 +39,7 @@ class ExitPolicyResearchEngine:
 
     def __init__(self, base: BacktestEngine | None = None) -> None:
         self.base = base or BacktestEngine()
+        self.simulator = ExitPolicySimulator(self.base)
 
     @staticmethod
     def _evaluation(snapshot: dict[str, Any], strategy: StrategyName) -> StrategyEvaluation | None:
@@ -236,7 +181,7 @@ class ExitPolicyResearchEngine:
         entry_index = next((i for i, row in enumerate(rows) if self.base._date(row) == trade.entry_date), -1)
         exit_index = next((i for i, row in enumerate(rows) if self.base._date(row) == trade.exit_date), -1)
         if entry_index >= 0 and exit_index >= entry_index:
-            path = self._trade_path_metrics(
+            path = self.simulator.trade_path_metrics(
                 rows=rows,
                 entry_index=entry_index,
                 exit_index=exit_index,
@@ -276,194 +221,22 @@ class ExitPolicyResearchEngine:
         post_target2_research_days: int,
         extend_after_target2: bool = True,
     ) -> tuple[BacktestTrade | None, int | None]:
-        signal_index = int(signal["signal_index"])
-        entry_index = signal_index + 1
-        if entry_index >= len(stock_rows):
-            return None, None
-
-        entry_open = self._number(stock_rows[entry_index].get("open"))
-        if entry_open is None or entry_open <= 0:
-            return None, None
-        entry_price = float(entry_open)
-
-        plan, _ = self.base._build_risk_plan_for_policy(  # noqa: SLF001 - research reuses approved Risk framework
+        # Keep the research seam patchable for existing tests while delegating the
+        # actual state machine to the same simulator used by Production.
+        self.simulator.protection_candidate = self._protection_candidate  # type: ignore[method-assign]
+        return self.simulator.simulate_profit_protection_trade(
             signal=signal,
-            entry_price=entry_price,
-            risk_policy=POLICY_CURRENT,
+            stock_rows=stock_rows,
+            config=config,
             strategy=strategy,
-        )
-        if plan.reference_only or plan.invalidation_price is None or plan.target1_price is None or plan.target2_price is None:
-            return None, None
-
-        stop_price = float(plan.invalidation_price)
-        target1 = float(plan.target1_price)
-        target2 = float(plan.target2_price)
-        if stop_price <= 0 or stop_price >= entry_price or target1 <= entry_price or target2 <= target1:
-            return None, None
-
-        pre_target_limit = min(len(stock_rows) - 1, entry_index + config.max_holding_days - 1)
-        target1_reached = False
-        target2_reached = False
-        target2_index: int | None = None
-        protection_price = stop_price
-        final_limit = pre_target_limit
-        exit_index: int | None = None
-        exit_price: float | None = None
-        exit_reason: str | None = None
-        last_protection_source: float | None = None
-
-        row_index = entry_index
-        while row_index <= final_limit:
-            row = stock_rows[row_index]
-            day_open = self._number(row.get("open"))
-            day_high = self._number(row.get("high"))
-            day_low = self._number(row.get("low"))
-            day_close = self._number(row.get("close"))
-
-            # Original invalidation stop remains a hard stop throughout research.
-            if row_index > entry_index and day_open is not None and day_open <= stop_price:
-                exit_index, exit_price, exit_reason = row_index, day_open, "STOP_GAP"
-                break
-
-            stop_hit = day_low is not None and day_low <= stop_price
-            target2_hit = (
-                (day_open is not None and day_open >= target2)
-                or (day_high is not None and day_high >= target2)
-            )
-            if stop_hit and target2_hit and not target2_reached:
-                exit_index, exit_price, exit_reason = row_index, stop_price, "STOP_SAME_DAY_PRIORITY"
-                break
-            if stop_hit:
-                exit_index, exit_price, exit_reason = row_index, stop_price, "STOP"
-                break
-
-            if (day_open is not None and day_open >= target1) or (day_high is not None and day_high >= target1):
-                target1_reached = True
-
-            if not target2_reached and target2_hit:
-                target2_reached = True
-                target1_reached = True
-                target2_index = row_index
-                # Target2 changes mode; it is not an exit. The first protection value
-                # is calculated from this completed bar for use on the NEXT bar.
-                source = self._protection_candidate(
-                    policy=policy,
-                    rows=stock_rows,
-                    end_index=row_index,
-                    entry_index=entry_index,
-                    target2_index=target2_index,
-                )
-                if source is not None and source > 0:
-                    protection_price = max(protection_price, source)
-                    last_protection_source = source
-                if extend_after_target2:
-                    final_limit = min(len(stock_rows) - 1, target2_index + post_target2_research_days)
-                else:
-                    final_limit = pre_target_limit
-                    if row_index >= final_limit:
-                        if day_close is None:
-                            return None, None
-                        exit_index, exit_price, exit_reason = row_index, day_close, "HARD_MAX_HOLD_EXIT"
-                        break
-                row_index += 1
-                continue
-
-            if target2_reached:
-                # EOD rule: compare today's confirmed close with the protection line
-                # that existed BEFORE today's bar. Only survivors may raise the line
-                # for tomorrow. This prevents same-candle look-ahead.
-                if day_close is not None and day_close < protection_price:
-                    exit_index, exit_price, exit_reason = row_index, day_close, "TRAILING_CLOSE_EXIT"
-                    break
-
-                assert target2_index is not None
-                source = self._protection_candidate(
-                    policy=policy,
-                    rows=stock_rows,
-                    end_index=row_index,
-                    entry_index=entry_index,
-                    target2_index=target2_index,
-                )
-                if source is not None and source > 0:
-                    protection_price = max(protection_price, source)
-                    last_protection_source = source
-
-                if row_index >= final_limit:
-                    if day_close is None:
-                        return None, None
-                    exit_index, exit_price, exit_reason = (
-                        row_index,
-                        day_close,
-                        "RESEARCH_HORIZON_EXIT" if extend_after_target2 else "HARD_MAX_HOLD_EXIT",
-                    )
-                    break
-            elif row_index >= pre_target_limit:
-                if day_close is None:
-                    return None, None
-                exit_index, exit_price, exit_reason = row_index, day_close, "TIME_EXIT_PRE_TARGET2"
-                break
-
-            row_index += 1
-
-        if exit_index is None or exit_price is None or exit_reason is None:
-            fallback_index = min(final_limit, len(stock_rows) - 1)
-            close = self._number(stock_rows[fallback_index].get("close"))
-            if close is None:
-                return None, None
-            exit_index, exit_price, exit_reason = fallback_index, close, "END_OF_DATA"
-
-        gross_return = (exit_price / entry_price - 1.0) * 100.0
-        net_return = gross_return - config.round_trip_cost_pct
-        holding_days = exit_index - entry_index + 1
-        path = self._trade_path_metrics(
-            rows=stock_rows,
-            entry_index=entry_index,
-            exit_index=exit_index,
-            entry_price=entry_price,
-            exit_price=exit_price,
-        )
-        trade = BacktestTrade(
-            signal_date=str(signal["signal_date"]),
-            entry_date=self.base._date(stock_rows[entry_index]),
-            entry_price=entry_price,
-            exit_date=self.base._date(stock_rows[exit_index]),
-            exit_price=exit_price,
-            exit_reason=exit_reason,
-            holding_days=holding_days,
-            strategy_score=int(signal["strategy_score"]),
-            entry_timing_passed=int(signal["entry_timing_passed"]),
-            entry_timing_total=int(signal["entry_timing_total"]),
-            entry_timing_state=str(signal["entry_timing_state"]),
-            market_regime=str(signal["market_regime"]),
-            stop_price=stop_price,
-            target1_price=target1,
-            target2_price=target2,
-            gross_return_pct=gross_return,
-            net_return_pct=net_return,
-            risk_plan_status=plan.status.value,
+            policy=policy,
+            post_target2_days=post_target2_research_days,
+            extend_after_target2=extend_after_target2,
             research_only=True,
-            metadata={
-                "relative_strength_market_pct": signal.get("relative_strength_market_pct"),
-                "exit_policy_research": {
-                    "version": EXIT_RESEARCH_VERSION,
-                    "policy_id": policy.id,
-                    "policy_family": policy.family,
-                    "target1_reached": target1_reached,
-                    "target2_reached": target2_reached,
-                    "target2_date": None if target2_index is None else self.base._date(stock_rows[target2_index]),
-                    "trailing_activated": target2_reached,
-                    "final_protection_price": round(protection_price, 4),
-                    "last_protection_source": None if last_protection_source is None else round(last_protection_source, 4),
-                    "protection_never_decreases": True,
-                    "exit_basis": policy.exit_basis,
-                    "post_target2_holding_policy": (
-                        "TRAILING_HORIZON_AFTER_TARGET2" if extend_after_target2 else "HARD_MAX_HOLD"
-                    ),
-                    **path,
-                },
-            },
+            metadata_key="exit_policy_research",
+            metadata_version=EXIT_RESEARCH_VERSION,
+            horizon_exit_reason="RESEARCH_HORIZON_EXIT",
         )
-        return trade, exit_index
 
     @staticmethod
     def _research_metrics(trades: list[BacktestTrade]) -> dict[str, Any]:

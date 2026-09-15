@@ -7,6 +7,7 @@ from app.backtest.engine import BacktestEngine
 from app.backtest.metrics import summarize_trades
 from app.backtest.entry_risk_guide import build_entry_risk_guide
 from app.backtest.models import BacktestConfig, BacktestTrade
+from app.backtest.production_exit_policy import ProductionExitPolicyEngine
 from app.backtest.selector import build_condition_state, current_readiness, historical_fit, select_strategy, strategy_guide, strategy_label
 from app.strategy.models import StrategyEvaluation, StrategyName
 
@@ -36,6 +37,7 @@ class MultiStrategyBacktestEngine:
 
     def __init__(self, base: BacktestEngine | None = None) -> None:
         self.base = base or BacktestEngine()
+        self.production_exit = ProductionExitPolicyEngine(self.base)
 
     @staticmethod
     def _evaluation(snapshot: dict[str, Any], strategy: StrategyName) -> StrategyEvaluation | None:
@@ -93,6 +95,8 @@ class MultiStrategyBacktestEngine:
         signal_count = 0
         blocked_risk = 0
         armed = True
+        strategy_exit_resolution = self.production_exit.registry.resolve(strategy)
+        exit_policy_trade_fallbacks = 0
 
         for snapshot in snapshots:
             evaluation = self._evaluation(snapshot, strategy)
@@ -113,13 +117,16 @@ class MultiStrategyBacktestEngine:
 
             signal_count += 1
             signal = self._strategy_signal(snapshot, evaluation)
-            trade, exit_index = self.base._simulate_trade(
+            trade, exit_index, trade_exit_resolution = self.production_exit.simulate_trade(
                 signal=signal,
                 stock_rows=stock_rows,
                 config=config,
-                research_only=False,
                 strategy=strategy,
             )
+            if trade_exit_resolution.policy_id != strategy_exit_resolution.policy_id or (
+                strategy_exit_resolution.policy_id != "TARGET1_FULL_EXIT" and trade_exit_resolution.fallback_used
+            ):
+                exit_policy_trade_fallbacks += 1
             if trade is None or exit_index is None:
                 blocked_risk += 1
                 continue
@@ -185,6 +192,9 @@ class MultiStrategyBacktestEngine:
                 as_of_date=str(latest.get("signal_date") or "") or None,
                 entry_timing=latest.get("entry_timing") or None,
             )
+            current["entry_risk_guide"]["historical_policy"] = self.production_exit.historical_policy_metadata(
+                strategy_exit_resolution
+            )
 
         recent_trades = [trade.to_dict() for trade in trades[-5:]]
         result = {
@@ -195,6 +205,11 @@ class MultiStrategyBacktestEngine:
             "historical_metrics": metrics,
             "signal_count": signal_count,
             "risk_blocked_signals": blocked_risk,
+            "exit_policy": {
+                **strategy_exit_resolution.to_dict(),
+                "historical_policy": self.production_exit.historical_policy_metadata(strategy_exit_resolution),
+                "trade_fallbacks": exit_policy_trade_fallbacks,
+            },
             "current": current,
             "recent_trades": recent_trades,
         }
@@ -286,7 +301,7 @@ class MultiStrategyBacktestEngine:
             })
 
         return {
-            "version": "0.21.1",
+            "version": "0.21.4-B.2.1",
             "code": config.code,
             "market": config.market,
             "period": {"start": config.start_date, "end": config.end_date},
@@ -294,12 +309,15 @@ class MultiStrategyBacktestEngine:
             "market_regime": market_regime,
             "recommendation": recommendation,
             "strategies": ranked_rows,
-            "historical_policy": {
-                "policy_id": "TARGET1_FULL_EXIT_V1",
-                "label": "1차 목표 도달 시 전량 종료",
-                "target1_is_exit": True,
-                "target2_included": False,
-                "target2_label": "2차 확장 목표",
+            "historical_policy": (
+                (recommended_row or {}).get("exit_policy", {}).get("historical_policy")
+                or self.production_exit.historical_policy_metadata(
+                    self.production_exit.registry.resolve(str(recommended_strategy or "NO_TRADE"))
+                )
+            ),
+            "production_exit_policy": {
+                "version": self.production_exit.registry.status().get("policy_version"),
+                "cache_token": self.production_exit.registry.status().get("cache_token"),
             },
             "config": {
                 "minimum_strategy_score": config.minimum_strategy_score,
@@ -307,13 +325,13 @@ class MultiStrategyBacktestEngine:
                 "entry_price_policy": "NEXT_TRADING_DAY_OPEN",
                 "risk_exit_framework": "COMMON_RISK_ENGINE_FRAMEWORK",
                 "same_day_stop_target_policy": "STOP_FIRST_CONSERVATIVE",
-                "target_policy": "TARGET_1_FULL_EXIT",
+                "target_policy": "STRATEGY_SPECIFIC_PRODUCTION_EXIT_POLICY",
                 "max_holding_days": config.max_holding_days,
                 "round_trip_cost_pct": config.round_trip_cost_pct,
                 "overlapping_positions": "전략별 기존 거래 종료 전 재진입 금지",
             },
             "methodology": {
-                "comparison": "10개 전략은 동일한 KRX 과거 데이터와 동일한 다음 거래일 시가/비용/보유기간 프레임으로 비교합니다.",
+                "comparison": "10개 전략은 동일한 KRX 과거 데이터와 동일한 다음 거래일 시가/비용 프레임으로 비교하며, 검증된 전략만 Production Exit 정책을 사용합니다.",
                 "signal": "각 전략의 기존 StrategyEngine 조건을 사용하며 적합도 55점 이상인 새로운 조건 구간에서만 진입을 시도합니다.",
                 "risk": "청산은 모두 기존 RiskEngine을 사용합니다. 전략별 구조적 기준은 RiskEngine의 기존 규칙을 따르므로 손절 가격 자체는 전략마다 달라질 수 있습니다.",
                 "selector": "추천은 수익률 1등만 고르지 않고 표본, 거래당 평균, Profit Factor, MDD, 현재 전략 조건과 Risk 상태를 함께 봅니다.",

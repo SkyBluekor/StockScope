@@ -12,6 +12,7 @@ from typing import Any, Callable
 from app.backtest.engine import BacktestEngine
 from app.backtest.candidate_priority import rank_candidates
 from app.backtest.entry_risk_guide import build_entry_risk_guide
+from app.backtest.production_exit_policy import production_policy_cache_token
 from app.backtest.historical_evidence import build_historical_evidence, validation_start_for_years
 from app.backtest.market_store import HistoricalMarketStore
 from app.backtest.models import BacktestConfig
@@ -101,7 +102,8 @@ class StockScannerService:
     @classmethod
     def _cache_path(cls, scope: str, stable_end: date, candidate_limit: int) -> Path:
         cls.CACHE_ROOT.mkdir(parents=True, exist_ok=True)
-        return cls.CACHE_ROOT / f"scanner_{scope.lower()}_{stable_end.isoformat()}_{candidate_limit}_{cls.VERSION}.json"
+        exit_token = re.sub(r"[^A-Za-z0-9_-]+", "_", production_policy_cache_token())
+        return cls.CACHE_ROOT / f"scanner_{scope.lower()}_{stable_end.isoformat()}_{candidate_limit}_{cls.VERSION}_{exit_token}.json"
 
     @classmethod
     def _load_cache(cls, scope: str, stable_end: date, candidate_limit: int) -> dict[str, Any] | None:
@@ -131,7 +133,8 @@ class StockScannerService:
         root = cls.CACHE_ROOT / "historical_evidence"
         root.mkdir(parents=True, exist_ok=True)
         safe_strategy = re.sub(r"[^A-Za-z0-9_-]+", "_", strategy)
-        return root / f"{market}_{code}_{safe_strategy}_{data_end.isoformat()}_{cls.HISTORICAL_EVIDENCE_POLICY_VERSION}.json"
+        exit_token = re.sub(r"[^A-Za-z0-9_-]+", "_", production_policy_cache_token())
+        return root / f"{market}_{code}_{safe_strategy}_{data_end.isoformat()}_{cls.HISTORICAL_EVIDENCE_POLICY_VERSION}_{exit_token}.json"
 
     @classmethod
     def _load_evidence_cache(cls, *, market: str, code: str, strategy: str, data_end: date) -> dict[str, Any] | None:
@@ -143,6 +146,8 @@ class StockScannerService:
         except (OSError, json.JSONDecodeError):
             return None
         if payload.get("policy_version") != cls.HISTORICAL_EVIDENCE_POLICY_VERSION:
+            return None
+        if payload.get("exit_policy_cache_token") != production_policy_cache_token():
             return None
         evidence = payload.get("evidence")
         if not isinstance(evidence, dict) or not bool(evidence.get("verified")):
@@ -156,6 +161,7 @@ class StockScannerService:
         path = cls._evidence_cache_path(market=market, code=code, strategy=strategy, data_end=data_end)
         payload = {
             "policy_version": cls.HISTORICAL_EVIDENCE_POLICY_VERSION,
+            "exit_policy_cache_token": production_policy_cache_token(),
             "market": market,
             "code": code,
             "strategy": strategy,
@@ -515,6 +521,10 @@ class StockScannerService:
             historical_status="NOT_RUN",
             as_of_date=str(latest_date or "") or None,
             entry_timing=best.get("entry_timing"),
+        )
+        quick_exit_resolution = self.multi.production_exit.registry.resolve(best["strategy"])
+        entry_risk_guide["historical_policy"] = self.multi.production_exit.historical_policy_metadata(
+            quick_exit_resolution
         )
         return {
             "code": str(row.get("code") or ""),

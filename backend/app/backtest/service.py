@@ -24,6 +24,8 @@ from app.backtest.market_store import HistoricalMarketStore
 from app.backtest.interpreter import build_problem_solver
 from app.backtest.multi_strategy import MultiStrategyBacktestEngine
 from app.backtest.models import BacktestConfig
+from app.backtest.production_exit_policy import ProductionExitPolicyEngine
+from app.strategy.models import StrategyName
 from app.core.stock_code import normalize_stock_code
 from app.market.providers import KrxProvider
 from app.market.providers.base import ProviderError
@@ -50,6 +52,7 @@ class BacktestService:
     ) -> None:
         self.krx = krx
         self.engine = engine or BacktestEngine()
+        self.production_exit = ProductionExitPolicyEngine(self.engine)
         self.multi_engine = MultiStrategyBacktestEngine(self.engine)
         self.exit_policy_research = ExitPolicyResearchEngine(self.engine)
         self.exit_policy_selector = ExitPolicySelector()
@@ -514,17 +517,47 @@ class BacktestService:
         def engine_progress(payload: dict[str, Any]) -> None:
             self._emit(progress, **payload)
 
+        pullback_resolution = self.production_exit.registry.resolve(StrategyName.PULLBACK)
+        production_trade_fallbacks = 0
+
+        def simulate_actual_trade(*, signal: dict[str, Any], stock_rows: list[dict[str, Any]], config: BacktestConfig):
+            nonlocal production_trade_fallbacks
+            trade, exit_index, used_resolution = self.production_exit.simulate_trade(
+                signal=signal,
+                stock_rows=stock_rows,
+                config=config,
+                strategy=StrategyName.PULLBACK,
+            )
+            if used_resolution.fallback_used and used_resolution.fallback_reason == "SELECTED_POLICY_UNUSABLE_FOR_TRADE":
+                production_trade_fallbacks += 1
+            return trade, exit_index
+
         result = await asyncio.to_thread(
             self.engine.run,
             stock_rows=stock_rows,
             index_rows=index_rows,
             config=config,
             progress_callback=engine_progress,
+            actual_trade_simulator=simulate_actual_trade,
         )
         calculation_seconds = monotonic() - calculation_started
         total_seconds = monotonic() - started
 
         result["version"] = "0.19.6"
+        result["production_exit_policy"] = {
+            **pullback_resolution.to_dict(),
+            "trade_fallbacks": production_trade_fallbacks,
+            "cache_token": self.production_exit.registry.cache_token(),
+        }
+        result["historical_policy"] = self.production_exit.historical_policy_metadata(pullback_resolution)
+        if pullback_resolution.policy_id == "TARGET1_FULL_EXIT":
+            result["config"]["target_policy"] = "TARGET_1_FULL_EXIT"
+        else:
+            result["config"]["target_policy"] = "PRODUCTION_PROFIT_PROTECTION_AFTER_TARGET2"
+            result["methodology"]["target"] = (
+                "검증된 Production Exit 정책을 사용합니다. 1차 목표는 milestone이며 2차 목표 도달 뒤 "
+                f"{pullback_resolution.policy_id} 수익 보호 기준을 적용합니다."
+            )
         result["problem_solver"] = build_problem_solver(result, config)
         result["data_window"] = {
             "requested_start": config.start_date,
