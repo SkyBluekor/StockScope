@@ -64,16 +64,18 @@ def test_selector_combines_history_and_current_state_instead_of_return_only():
     assert result["recheck_mode"] == "ON_NEXT_ANALYSIS"
 
 
-def test_selector_does_not_enter_when_best_historical_sample_is_insufficient():
+def test_selector_separates_current_entry_readiness_from_historical_sample_size():
     rows = [
         _row("breakout", "돌파", hist_score=95, current_score=90, hist_status="INSUFFICIENT"),
         _row("pullback", "눌림목", hist_score=40, current_score=40, hist_status="WEAK", current_status="WATCH"),
     ]
     result = select_strategy(rows, as_of_date="20260910", market_regime="RANGE")
     assert result["strategy"] == "breakout"
-    assert result["action"] == "NEEDS_VALIDATION"
-    assert result["user_action"]["user_task"] == "신규 진입하지 않기"
+    assert result["action"] == "ENTRY_CANDIDATE"
+    assert result["user_action"]["user_task"] == "진입 여부를 결정하세요"
+    assert result["decision_reason"] == "ENTRY_CANDIDATE"
     assert "과거" in result["reason"]
+    assert any("과거" in warning for warning in result["additional_warnings"])
 
 
 def test_wait_action_makes_user_task_and_recheck_responsibility_explicit():
@@ -340,3 +342,11 @@ def test_selector_switches_to_risk_blocked_only_after_strategy_conditions_are_co
     assert result["action_label"] == "위험 때문에 진입 보류"
     assert result["decision_reason"] == "RISK_BLOCKED"
     assert result["additional_warnings"] == []
+
+
+def test_selector_keeps_current_candidate_when_history_is_weak_but_warns_separately():
+    row = _row("trend_following", "추세 추종", hist_score=45, current_score=92, hist_status="WEAK", current_status="READY")
+    result = select_strategy([row], as_of_date="20260914", market_regime="TREND_UP")
+    assert result["action"] == "ENTRY_CANDIDATE"
+    assert result["decision_reason"] == "ENTRY_CANDIDATE"
+    assert any("과거" in warning for warning in result["additional_warnings"])

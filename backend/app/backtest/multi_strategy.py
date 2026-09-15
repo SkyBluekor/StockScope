@@ -5,6 +5,7 @@ from typing import Any, Callable
 
 from app.backtest.engine import BacktestEngine
 from app.backtest.metrics import summarize_trades
+from app.backtest.entry_risk_guide import build_entry_risk_guide
 from app.backtest.models import BacktestConfig, BacktestTrade
 from app.backtest.selector import build_condition_state, current_readiness, historical_fit, select_strategy, strategy_guide, strategy_label
 from app.strategy.models import StrategyEvaluation, StrategyName
@@ -85,6 +86,7 @@ class MultiStrategyBacktestEngine:
         snapshots: list[dict[str, Any]],
         stock_rows: list[dict[str, Any]],
         config: BacktestConfig,
+        include_trade_history: bool = False,
     ) -> dict[str, Any]:
         trades: list[BacktestTrade] = []
         occupied_until = -1
@@ -171,9 +173,21 @@ class MultiStrategyBacktestEngine:
             current["condition_consistency"] = condition_state["consistency"]
             current["suitability"] = evaluation.suitability
             current["eligible"] = bool(evaluation.eligible)
+            current["entry_risk_guide"] = build_entry_risk_guide(
+                strategy=strategy,
+                data=latest_data,
+                technical=latest_technical,
+                condition_state=condition_state,
+                risk_plan=risk_plan,
+                current_state=current,
+                historical_verified=True,
+                historical_status=fit.get("status"),
+                as_of_date=str(latest.get("signal_date") or "") or None,
+                entry_timing=latest.get("entry_timing") or None,
+            )
 
         recent_trades = [trade.to_dict() for trade in trades[-5:]]
-        return {
+        result = {
             "strategy": strategy.value,
             "label": strategy_label(strategy),
             "guide": strategy_guide(strategy),
@@ -184,6 +198,10 @@ class MultiStrategyBacktestEngine:
             "current": current,
             "recent_trades": recent_trades,
         }
+        if include_trade_history:
+            # Internal v0.21.2 evidence path only. Default multi-strategy API payload stays unchanged.
+            result["trade_history"] = [trade.to_dict() for trade in trades]
+        return result
 
     def run(
         self,
@@ -240,6 +258,9 @@ class MultiStrategyBacktestEngine:
         as_of_date = str(snapshots[-1]["signal_date"]) if snapshots else end
         market_regime = str(snapshots[-1].get("market_regime") or "UNKNOWN") if snapshots else "UNKNOWN"
         recommendation = select_strategy(strategy_rows, as_of_date=as_of_date, market_regime=market_regime)
+        recommended_strategy = recommendation.get("strategy")
+        recommended_row = next((row for row in strategy_rows if row.get("strategy") == recommended_strategy), None)
+        recommendation["entry_risk_guide"] = (recommended_row or {}).get("current", {}).get("entry_risk_guide")
         # Recompute the same internal ordering for the serializable rows. The raw
         # selector score is kept only as a diagnostic field and is not presented as
         # an upward probability in the UI.
@@ -265,7 +286,7 @@ class MultiStrategyBacktestEngine:
             })
 
         return {
-            "version": "0.20.3",
+            "version": "0.21.1",
             "code": config.code,
             "market": config.market,
             "period": {"start": config.start_date, "end": config.end_date},
@@ -273,6 +294,13 @@ class MultiStrategyBacktestEngine:
             "market_regime": market_regime,
             "recommendation": recommendation,
             "strategies": ranked_rows,
+            "historical_policy": {
+                "policy_id": "TARGET1_FULL_EXIT_V1",
+                "label": "1차 목표 도달 시 전량 종료",
+                "target1_is_exit": True,
+                "target2_included": False,
+                "target2_label": "2차 확장 목표",
+            },
             "config": {
                 "minimum_strategy_score": config.minimum_strategy_score,
                 "entry_policy": "각 전략 적합도 기준 충족이 새로 시작된 첫 거래일",

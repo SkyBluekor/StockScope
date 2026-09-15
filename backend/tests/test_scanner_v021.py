@@ -123,7 +123,79 @@ def test_scanner_current_only_candidate_is_labeled_as_unverified_history() -> No
     }
     candidate = service._fast_candidate(item)
     assert candidate is not None
-    assert candidate["candidate_state"] == "VALIDATION"
+    assert candidate["candidate_state"] == "WATCH"
     assert candidate["verification_level"] == "CURRENT_ONLY"
     assert candidate["historical_fit"]["verified"] is False
     assert candidate["historical_fit"]["label"] == "과거 검증 전"
+
+
+def test_scanner_ready_current_candidate_is_not_blocked_only_because_history_is_unverified() -> None:
+    service = object.__new__(StockScannerService)
+    item = {
+        "code": "000002",
+        "name": "현재조건완료",
+        "market": "KOSPI",
+        "latest_date": "20260911",
+        "current_price": 20000,
+        "quick_strategy": "trend_following",
+        "quick_guide": {
+            "easy_name": "상승 흐름 따라가기",
+            "professional_name": "추세 추종",
+            "description": "상승 흐름을 확인합니다.",
+        },
+        "quick_current": {
+            "status": "READY",
+            "passed": 6,
+            "missing": 0,
+            "total": 6,
+            "risk_warning": False,
+            "risk_status": "READY",
+            "summary": "모든 현재 조건을 통과했습니다.",
+            "warnings": [],
+        },
+        "quick_condition_state": {"missing_details": []},
+        "quick_entry_risk_guide": {"action": {"status": "ENTRY_CANDIDATE"}},
+        "quick_score": 90,
+    }
+    candidate = service._fast_candidate(item)
+    assert candidate is not None
+    assert candidate["candidate_state"] == "READY"
+    assert candidate["action"] == "ENTRY_CANDIDATE"
+    assert candidate["historical_fit"]["verified"] is False
+    assert "과거 검증 전" in candidate["candidate_label"]
+
+
+def test_v0212_evidence_cache_key_separates_strategy_and_data_end(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(StockScannerService, "CACHE_ROOT", tmp_path)
+    first = StockScannerService._evidence_cache_path(
+        market="KOSPI", code="005930", strategy="breakout", data_end=date(2026, 9, 14)
+    )
+    second = StockScannerService._evidence_cache_path(
+        market="KOSPI", code="005930", strategy="pullback", data_end=date(2026, 9, 14)
+    )
+    third = StockScannerService._evidence_cache_path(
+        market="KOSPI", code="005930", strategy="breakout", data_end=date(2026, 9, 15)
+    )
+    assert first != second
+    assert first != third
+    assert "v1" in first.name
+
+
+def test_v0213_scanner_version_invalidates_old_daily_cache() -> None:
+    assert StockScannerService.VERSION == "0.21.3"
+
+
+def test_v0212_unverified_evidence_is_not_frozen_in_cache(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(StockScannerService, "CACHE_ROOT", tmp_path)
+    data_end = date(2026, 9, 14)
+    StockScannerService._save_evidence_cache(
+        market="KOSPI",
+        code="005930",
+        strategy="breakout",
+        data_end=data_end,
+        evidence={"verified": False, "status": "DATA_UNAVAILABLE"},
+    )
+    assert StockScannerService._load_evidence_cache(
+        market="KOSPI", code="005930", strategy="breakout", data_end=data_end
+    ) is None
+    assert not list((tmp_path / "historical_evidence").glob("*.json"))

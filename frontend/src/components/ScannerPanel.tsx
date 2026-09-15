@@ -1,4 +1,12 @@
+import EntryRiskGuideCard from "./EntryRiskGuideCard";
 import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  clearScannerSession,
+  latestScannerDataDate,
+  localDateKey,
+  readScannerSession,
+  writeScannerSession,
+} from "./scannerSession";
 import {
   cancelBacktestJob,
   createScannerJob,
@@ -36,6 +44,11 @@ function formatNumber(value: number | null | undefined) {
   return new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 0 }).format(value);
 }
 
+function formatSignedPct(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value)) return "-";
+  return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+
 function formatElapsed(seconds: number) {
   const safe = Math.max(0, Math.floor(seconds));
   if (safe < 60) return `${safe}초`;
@@ -44,12 +57,23 @@ function formatElapsed(seconds: number) {
   return `${minutes}분 ${remain}초`;
 }
 
+function formatLocalTime(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value)) return "-";
+  return new Intl.DateTimeFormat("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
+}
+
+function evidenceKey(candidate: ScannerCandidate) {
+  return `${candidate.market}-${candidate.code}`;
+}
+
 const scannerStages = [
   { key: "scanner_plan", label: "필요 데이터 확인" },
   { key: "scanner_data_prepare", label: "최근 시장 데이터 준비" },
   { key: "scanner_quick_filter", label: "전체 종목 빠른 검사" },
   { key: "scanner_deep_analysis", label: "상위 후보 전략·위험 확인" },
-  { key: "scanner_finalize", label: "후보 결과 정리" },
+  { key: "scanner_finalize", label: "후보 풀 확정" },
+  { key: "scanner_historical_evidence", label: "후보 풀 3년 근거" },
+  { key: "scanner_priority_rank", label: "최종 우선순위 설명" },
 ];
 
 function stageIndex(stage: string | undefined) {
@@ -71,9 +95,24 @@ function conditionStatusLabel(candidate: ScannerCandidate) {
   return `${passed}/${total} 충족 · 부족 ${missing}개`;
 }
 
-function CandidateCard({ candidate, rank, onAnalyze }: { candidate: ScannerCandidate; rank: number; onAnalyze: () => void }) {
+function CandidateCard({
+  candidate,
+  rank,
+  onAnalyze,
+  evidenceOpen,
+  onEvidenceToggle,
+}: {
+  candidate: ScannerCandidate;
+  rank: number;
+  onAnalyze: () => void;
+  evidenceOpen: boolean;
+  onEvidenceToggle: (open: boolean) => void;
+}) {
   const tone = candidateTone(candidate);
   const topMissing = candidate.conditions.top_missing ?? [];
+  const evidence = candidate.historical_evidence;
+  const evidenceLabel = evidence?.label ?? (candidate.historical_fit.verified === false ? "과거 검증 전" : candidate.historical_fit.label);
+  const evidenceSummary = evidence?.summary ?? candidate.historical_fit.summary;
   return (
     <article className={`scanner-candidate-card tone-${tone}`}>
       <div className="scanner-rank">{rank}위</div>
@@ -92,6 +131,26 @@ function CandidateCard({ candidate, rank, onAnalyze }: { candidate: ScannerCandi
             <span>{formatDate(candidate.data_date)} 기준</span>
           </div>
         </div>
+
+        {candidate.priority && (
+          <section className={`scanner-priority-card priority-${candidate.priority.tier.toLowerCase()}`}>
+            <div className="scanner-priority-head">
+              <div>
+                <small>왜 {rank}위인가요?</small>
+                <strong>{candidate.priority.label}</strong>
+                <p>{candidate.priority.reason}</p>
+              </div>
+            </div>
+            <div className="scanner-priority-factors">
+              {candidate.priority.strengths.map((item) => <span className="positive" key={`strength-${item}`}>✓ {item}</span>)}
+              {candidate.priority.facts
+                .filter((item) => !/\b거리\s+[0-9.]+%/.test(item))
+                .map((item) => <span className="neutral" key={`fact-${item}`}>· {item}</span>)}
+              {candidate.priority.penalties.map((item) => <span className="negative" key={`penalty-${item}`}>△ {item}</span>)}
+            </div>
+            <small className="scanner-priority-rule">순위 기준 · {candidate.priority.ranking_rule}</small>
+          </section>
+        )}
 
         <div className="scanner-strategy-box">
           <small>현재 가장 맞는 방법</small>
@@ -112,11 +171,60 @@ function CandidateCard({ candidate, rank, onAnalyze }: { candidate: ScannerCandi
             <p>{candidate.reason}</p>
           </section>
           <section>
-            <small>검증 수준</small>
-            <strong>{candidate.historical_fit.verified === false ? "현재 조건 기준" : "현재 조건 + 과거 검증"}</strong>
-            <p>{candidate.historical_fit.verified === false ? candidate.historical_fit.summary : `과거 사례 ${candidate.historical_fit.trades}건 · ${candidate.historical_fit.summary}`}</p>
+            <small>3년 과거 근거</small>
+            <strong>{evidenceLabel}</strong>
+            <p>{evidenceSummary}</p>
           </section>
         </div>
+
+        {candidate.entry_risk_guide && <EntryRiskGuideCard guide={candidate.entry_risk_guide} compact />}
+
+        {evidence && (
+          <section className={`scanner-evidence-card evidence-${evidence.status.toLowerCase()}`}>
+            <div className="scanner-section-caption">
+              <strong>같은 전략의 최근 3년 과거 근거</strong>
+              <span>{formatDate(evidence.period.start)} ~ {formatDate(evidence.period.end)}</span>
+            </div>
+            {evidence.verified ? (
+              <>
+                <div className="scanner-evidence-grid">
+                  <div><small>유사 거래</small><strong>{evidence.sample_count}회</strong><span>{evidence.sample_sufficient ? "평가 가능한 표본" : `최소 ${evidence.minimum_sample}회 필요`}</span></div>
+                  <div><small>수익 거래</small><strong>{evidence.wins} / {evidence.sample_count}</strong><span>상승 확률이 아니라 과거 결과입니다.</span></div>
+                  <div><small>평균 순수익</small><strong>{formatSignedPct(evidence.average_net_return_pct)}</strong><span>거래당 과거 평균</span></div>
+                  <div><small>최대 낙폭</small><strong>{formatSignedPct(evidence.max_drawdown_pct)}</strong><span>과거 검증 구간 기준</span></div>
+                </div>
+                <details
+                  className="scanner-evidence-details"
+                  open={evidenceOpen}
+                  onToggle={(event) => onEvidenceToggle(event.currentTarget.open)}
+                >
+                  <summary>과거 근거 자세히 보기</summary>
+                  <div className="scanner-evidence-detail-grid">
+                    <div><small>Profit Factor</small><strong>{evidence.profit_factor == null ? "-" : evidence.profit_factor.toFixed(2)}</strong></div>
+                    <div><small>손절 종료</small><strong>{evidence.exit_counts.stop}회</strong></div>
+                    <div><small>1차 목표 종료</small><strong>{evidence.exit_counts.target1}회</strong></div>
+                    <div><small>시간 종료</small><strong>{evidence.exit_counts.time_exit}회</strong></div>
+                  </div>
+                  {evidence.market_regime_summary.length > 0 && (
+                    <div className="scanner-regime-evidence">
+                      {evidence.market_regime_summary.map((row) => (
+                        <span key={row.regime}><b>{regimeLabel[row.regime] ?? row.regime}</b> · {row.trades}회 · 평균 {formatSignedPct(row.average_net_return_pct)}</span>
+                      ))}
+                    </div>
+                  )}
+                  {evidence.warnings.length > 0 && <div className="scanner-evidence-warnings">{evidence.warnings.map((warning) => <p key={warning}>{warning}</p>)}</div>}
+                  <p className="scanner-evidence-guardrail">{evidence.guardrail}</p>
+                </details>
+              </>
+            ) : (
+              <div className="scanner-evidence-unavailable">
+                <strong>{evidence.label}</strong>
+                <p>{evidence.summary}</p>
+                {evidence.warnings.length > 0 && <small>{evidence.warnings.join(" · ")}</small>}
+              </div>
+            )}
+          </section>
+        )}
 
         {topMissing.length > 0 && (
           <div className="scanner-missing-block">
@@ -162,19 +270,54 @@ function CandidateCard({ candidate, rank, onAnalyze }: { candidate: ScannerCandi
 }
 
 export default function ScannerPanel({ onAnalyzeStock }: Props) {
-  const [scope, setScope] = useState<MarketScope>("ALL");
+  const initialSession = useMemo(() => readScannerSession(), []);
+  const [scope, setScope] = useState<MarketScope>(initialSession?.scope ?? "ALL");
   const [job, setJob] = useState<BacktestJob<ScannerResponse> | null>(null);
-  const [result, setResult] = useState<ScannerResponse | null>(null);
+  const [result, setResult] = useState<ScannerResponse | null>(initialSession?.result ?? null);
   const [error, setError] = useState<string | null>(null);
-  const [showMore, setShowMore] = useState(false);
+  const [showMore, setShowMore] = useState(initialSession?.showMore ?? false);
+  const [expandedEvidenceIds, setExpandedEvidenceIds] = useState<string[]>(initialSession?.expandedEvidenceIds ?? []);
+  const [completedAt, setCompletedAt] = useState<number | null>(initialSession?.completedAt ?? null);
+  const [restoredFromSession, setRestoredFromSession] = useState(Boolean(initialSession));
   const [clock, setClock] = useState(Date.now());
   const pollRef = useRef<number | null>(null);
   const startedAtRef = useRef<number | null>(null);
   const lastProgressAtRef = useRef<number | null>(null);
   const lastProgressSignatureRef = useRef("");
+  const savedScrollRef = useRef(initialSession?.scrollY ?? 0);
+  const didRestoreScrollRef = useRef(false);
 
   const busy = job?.status === "queued" || job?.status === "running";
   const progress = job?.progress;
+
+  useEffect(() => {
+    const onScroll = () => {
+      savedScrollRef.current = window.scrollY;
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    if (!result) return;
+    writeScannerSession({
+      scope,
+      result,
+      completedAt: completedAt ?? Date.now(),
+      scrollY: savedScrollRef.current,
+      showMore,
+      expandedEvidenceIds,
+    });
+  }, [scope, result, completedAt, showMore, expandedEvidenceIds]);
+
+  useEffect(() => {
+    if (!initialSession || !result || didRestoreScrollRef.current) return;
+    didRestoreScrollRef.current = true;
+    const target = Math.max(0, initialSession.scrollY);
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => window.scrollTo({ top: target, behavior: "auto" }));
+    });
+  }, [initialSession, result]);
 
   useEffect(() => () => {
     if (pollRef.current != null) window.clearTimeout(pollRef.current);
@@ -220,6 +363,10 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
       if (latest.status === "completed" && latest.result) {
         setResult(latest.result);
         setShowMore(false);
+        setExpandedEvidenceIds([]);
+        setCompletedAt(Date.now());
+        setRestoredFromSession(false);
+        savedScrollRef.current = window.scrollY;
         return;
       }
       if (latest.status === "failed") {
@@ -237,8 +384,10 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
     if (busy) return;
     if (pollRef.current != null) window.clearTimeout(pollRef.current);
     setError(null);
-    setResult(null);
-    setShowMore(false);
+    if (!result) {
+      setShowMore(false);
+      setExpandedEvidenceIds([]);
+    }
     const started = Date.now();
     startedAtRef.current = started;
     lastProgressAtRef.current = started;
@@ -256,6 +405,49 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
     } catch (err) {
       setError(err instanceof Error ? err.message : "종목 찾기를 시작하지 못했습니다.");
     }
+  }
+
+  function persistBeforeNavigation() {
+    if (!result) return;
+    const scrollY = window.scrollY;
+    savedScrollRef.current = scrollY;
+    writeScannerSession({
+      scope,
+      result,
+      completedAt: completedAt ?? Date.now(),
+      scrollY,
+      showMore,
+      expandedEvidenceIds,
+    });
+  }
+
+  function analyzeCandidate(candidate: ScannerCandidate) {
+    persistBeforeNavigation();
+    onAnalyzeStock(stockItem(candidate));
+  }
+
+  function changeScope(value: MarketScope) {
+    if (busy || value === scope) return;
+    if (pollRef.current != null) window.clearTimeout(pollRef.current);
+    clearScannerSession();
+    setScope(value);
+    setJob(null);
+    setResult(null);
+    setError(null);
+    setShowMore(false);
+    setExpandedEvidenceIds([]);
+    setCompletedAt(null);
+    setRestoredFromSession(false);
+    savedScrollRef.current = 0;
+    didRestoreScrollRef.current = true;
+  }
+
+  function toggleEvidence(candidate: ScannerCandidate, open: boolean) {
+    const key = evidenceKey(candidate);
+    setExpandedEvidenceIds((current) => {
+      if (open) return current.includes(key) ? current : [...current, key];
+      return current.filter((item) => item !== key);
+    });
   }
 
   async function cancel() {
@@ -283,17 +475,19 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
   const preparationItems = result?.preparation_required ?? [];
   const preparationRequests = preparationItems.reduce((sum, item) => sum + Number(item.estimated_network_requests || 0), 0);
   const noAnalyzedData = Boolean(result && result.summary.universe_total === 0 && preparationItems.length > 0);
+  const analysisDataDate = latestScannerDataDate(result);
+  const restoredOnDifferentDay = Boolean(initialSession && restoredFromSession && localDateKey(initialSession.completedAt) !== localDateKey());
 
   return (
     <div className="scanner-workspace">
       <section className="scanner-hero">
         <div>
-          <span className="eyebrow">STOCK SCANNER · v0.21.0.3</span>
+          <span className="eyebrow">STOCK SCANNER · v0.21.4-A.3</span>
           <h1>오늘 어떤 종목을 먼저 볼까요?</h1>
-          <p>종목을 직접 고르기 전에 StockScope가 현재 조건, 10가지 전략, 위험, 과거 근거를 순서대로 확인해 먼저 볼 후보만 추립니다.</p>
+          <p>종목을 직접 고르기 전에 현재 조건을 먼저 보고, Risk·진입 기준까지의 거리·같은 전략의 3년 과거 근거를 순서대로 비교해 먼저 확인할 후보를 정합니다.</p>
         </div>
         <div className="scanner-flow" aria-label="종목 찾기 흐름">
-          <span>1 · 시장 전체 빠른 검사</span><i>→</i><span>2 · 전략·위험 검증</span><i>→</i><span>3 · 후보 5개 안내</span>
+          <span>1 · 시장 전체 빠른 검사</span><i>→</i><span>2 · 전략·Risk·3년 근거</span><i>→</i><span>3 · 후보 우선순위 설명</span>
         </div>
       </section>
 
@@ -305,15 +499,22 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
         </div>
         <div className="scanner-market-tabs" role="group" aria-label="검색 시장 선택">
           {(["ALL", "KOSPI", "KOSDAQ"] as MarketScope[]).map((value) => (
-            <button key={value} type="button" className={scope === value ? "active" : ""} onClick={() => setScope(value)} disabled={busy}>
+            <button key={value} type="button" className={scope === value ? "active" : ""} onClick={() => changeScope(value)} disabled={busy}>
               {value === "ALL" ? "전체" : value}
             </button>
           ))}
         </div>
         <div className="scanner-control-actions">
-          <button type="button" className="scanner-run-button" onClick={() => void runScanner(false)} disabled={busy}>
-            {busy ? "후보 찾는 중..." : "오늘의 후보 찾기"}
-          </button>
+          {result && !busy ? (
+            <div className="scanner-result-held">
+              <strong>✓ 분석 결과 유지 중</strong>
+              <span>같은 설정에서는 다시 찾지 않습니다.</span>
+            </div>
+          ) : (
+            <button type="button" className="scanner-run-button" onClick={() => void runScanner(false)} disabled={busy}>
+              {busy ? "후보 찾는 중..." : "오늘의 후보 찾기"}
+            </button>
+          )}
           {busy && <button type="button" className="scanner-cancel-button" onClick={() => void cancel()}>중지</button>}
         </div>
       </section>
@@ -377,9 +578,9 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
 
       {error && (
         <section className="scanner-error-card">
-          <strong>종목 찾기를 완료하지 못했습니다.</strong>
+          <strong>{result ? "새 분석을 완료하지 못했습니다. 기존 결과를 유지합니다." : "종목 찾기를 완료하지 못했습니다."}</strong>
           <p>{error}</p>
-          <button type="button" onClick={() => void runScanner(false)}>다시 시도</button>
+          <button type="button" onClick={() => void runScanner(Boolean(result))}>다시 시도</button>
         </section>
       )}
 
@@ -407,6 +608,18 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
             <div className="scanner-cache-note">
               {result.scanner_cache_hit ? "오늘 계산한 결과를 바로 재사용했습니다." : `KRX 신규 요청 ${result.diagnostics.network_requests}회 · 시장 저장 데이터 재사용 ${result.diagnostics.market_store_reused_items}건`}
             </div>
+            <div className={`scanner-session-note ${restoredFromSession ? "restored" : "current"}`}>
+              <div>
+                <small>{analysisDataDate ? `${formatDate(analysisDataDate)} 확정 일봉 기준` : "확정 일봉 기준"}</small>
+                <strong>{restoredFromSession ? "이전 분석 결과를 그대로 불러왔습니다." : "현재 세션에서 이 결과를 유지합니다."}</strong>
+                <span>마지막 분석 {formatLocalTime(completedAt)}</span>
+              </div>
+              <p>
+                {restoredOnDifferentDay
+                  ? "브라우저 날짜가 바뀌었습니다. 새 확정 일봉이 생겼다면 ‘다시 분석’으로 갱신하세요."
+                  : "상세 분석 후 종목 찾기로 돌아와도 같은 결과를 다시 계산하지 않습니다."}
+              </p>
+            </div>
           </section>
 
           {preparationItems.length > 0 && (
@@ -429,9 +642,9 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
             <div>
               <span>오늘 먼저 볼 후보</span>
               <h2>{result.candidates.length > 0 ? `${result.candidates.length}개를 먼저 확인하세요.` : noAnalyzedData ? "아직 후보를 판단하지 못했습니다." : "억지로 추천할 종목이 없습니다."}</h2>
-              <p>순위는 상승 확률이 아니라 현재 준비도·위험·시장환경·과거 근거를 함께 본 확인 우선순위입니다.</p>
+              <p>순위는 상승 확률이 아닙니다. 현재 조건을 먼저 보고 Risk, 실제 진입 기준까지의 거리, 같은 전략의 3년 과거 근거 순으로 비교해 먼저 확인할 순서를 정합니다.</p>
             </div>
-            <button type="button" className="scanner-refresh-button" onClick={() => void runScanner(true)} disabled={busy}>최신 데이터로 다시 찾기</button>
+            <button type="button" className="scanner-refresh-button" onClick={() => void runScanner(true)} disabled={busy}>다시 분석</button>
           </section>
 
           {result.candidates.length === 0 ? (
@@ -442,7 +655,14 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
           ) : (
             <div className="scanner-candidate-list">
               {result.candidates.map((candidate, index) => (
-                <CandidateCard key={`${candidate.market}-${candidate.code}`} candidate={candidate} rank={index + 1} onAnalyze={() => onAnalyzeStock(stockItem(candidate))} />
+                <CandidateCard
+                  key={`${candidate.market}-${candidate.code}`}
+                  candidate={candidate}
+                  rank={index + 1}
+                  onAnalyze={() => analyzeCandidate(candidate)}
+                  evidenceOpen={expandedEvidenceIds.includes(evidenceKey(candidate))}
+                  onEvidenceToggle={(open) => toggleEvidence(candidate, open)}
+                />
               ))}
             </div>
           )}
@@ -455,7 +675,14 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
               {showMore && (
                 <div className="scanner-candidate-list compact">
                   {result.more_candidates.map((candidate, index) => (
-                    <CandidateCard key={`more-${candidate.market}-${candidate.code}`} candidate={candidate} rank={result.candidates.length + index + 1} onAnalyze={() => onAnalyzeStock(stockItem(candidate))} />
+                    <CandidateCard
+                      key={`more-${candidate.market}-${candidate.code}`}
+                      candidate={candidate}
+                      rank={result.candidates.length + index + 1}
+                      onAnalyze={() => analyzeCandidate(candidate)}
+                      evidenceOpen={expandedEvidenceIds.includes(evidenceKey(candidate))}
+                      onEvidenceToggle={(open) => toggleEvidence(candidate, open)}
+                    />
                   ))}
                 </div>
               )}
@@ -484,7 +711,7 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
               <div><small>기존 KRX 캐시</small><strong>{formatNumber(result.diagnostics.raw_cache_hits)} hit</strong></div>
               <div><small>오늘 KRX(앱 기록)</small><strong>{formatNumber(result.diagnostics.budget_used)} / {formatNumber(result.diagnostics.budget_limit)}</strong></div>
               <div><small>Fast Scan 자동 상한</small><strong>{formatNumber(result.diagnostics.fast_request_limit ?? result.fast_request_limit)}회</strong></div>
-              <div><small>과거 검증 완료</small><strong>{formatNumber(result.summary.historically_verified ?? 0)}개</strong></div>
+              <div><small>3년 과거 근거 완료</small><strong>{formatNumber(result.summary.three_year_evidence_verified ?? 0)}개</strong></div>
               <div><small>현재 조건만</small><strong>{formatNumber(result.summary.current_only ?? 0)}개</strong></div>
               <div><small>데이터 준비</small><strong>{Number(result.diagnostics.data_prepare_seconds ?? 0).toFixed(2)}초</strong></div>
               <div><small>빠른 검사</small><strong>{Number(result.diagnostics.quick_filter_seconds ?? 0).toFixed(2)}초</strong></div>

@@ -11517,7 +11517,7 @@ html[data-theme="light"] .scanner-run-button { background: var(--primary); }
 /* v0.21.0.1 — Scanner Fast Start & visible progress */
 .scanner-progress-stages {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 7px;
   margin: 12px 0;
 }
@@ -11587,4 +11587,1967 @@ html[data-theme="light"] .scanner-run-button { background: var(--primary); }
 }
 @media (max-width: 700px) {
   .scanner-progress-stages { grid-template-columns: 1fr; }
+}
+
+/* v0.21.1 · concrete entry / risk guide */
+.concrete-guide-card {
+  margin-top: 16px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface-muted);
+  color: var(--text);
+}
+.concrete-guide-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+.concrete-guide-head span,
+.concrete-guide-current small,
+.concrete-guide-grid small {
+  display: block;
+  color: var(--text-subtle);
+  font-size: 14px;
+  font-weight: 800;
+}
+.concrete-guide-head strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-strong);
+  font-size: 20px;
+  line-height: 1.4;
+}
+.concrete-guide-head p {
+  margin: 5px 0 0;
+  color: var(--text-subtle);
+  font-size: 16px;
+  line-height: 1.6;
+}
+.concrete-guide-current {
+  min-width: 180px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: var(--input-surface);
+  text-align: right;
+}
+.concrete-guide-current b {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-strong);
+  font-size: 22px;
+}
+.concrete-guide-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.concrete-guide-grid article {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.concrete-guide-grid article > strong {
+  display: block;
+  margin-top: 5px;
+  color: var(--text-strong);
+  font-size: 18px;
+  line-height: 1.35;
+  overflow-wrap: break-word;
+  word-break: keep-all;
+}
+.concrete-guide-grid article > span {
+  display: block;
+  margin-top: 5px;
+  color: var(--text-subtle);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.concrete-guide-grid article > b {
+  display: block;
+  margin-top: 7px;
+  color: var(--text-subtle);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.concrete-guide-grid .guide-gap { color: var(--warning); }
+.concrete-guide-grid .guide-ok { color: var(--success); }
+.concrete-guide-note {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 13px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+.concrete-guide-note strong {
+  display: block;
+  color: var(--text-strong);
+  font-size: 15px;
+}
+.concrete-guide-note span,
+.concrete-guide-note p {
+  margin: 3px 0 0;
+  color: var(--text-subtle);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.concrete-guide-note p b { color: var(--warning); }
+.concrete-guide-card.compact {
+  margin-top: 14px;
+  padding: 15px;
+  background: var(--surface-soft);
+}
+.concrete-guide-card.compact .concrete-guide-head strong { font-size: 18px; }
+.concrete-guide-card.compact .concrete-guide-head p { font-size: 14px; }
+.concrete-guide-card.compact .concrete-guide-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.concrete-guide-card.compact .concrete-guide-grid article > strong { font-size: 16px; }
+.concrete-guide-card.compact .concrete-guide-note { margin-top: 10px; }
+
+@media (max-width: 1180px) {
+  .concrete-guide-grid,
+  .concrete-guide-card.compact .concrete-guide-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
+  .concrete-guide-head { flex-direction: column; }
+  .concrete-guide-current { width: 100%; min-width: 0; text-align: left; }
+  .concrete-guide-grid,
+  .concrete-guide-card.compact .concrete-guide-grid { grid-template-columns: 1fr; }
+}
+.concrete-guide-current > span {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-subtle);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* v0.21.2 — Top candidate three-year historical evidence */
+.scanner-evidence-card {
+  padding: 14px 15px;
+  border: 1px solid var(--line-soft);
+  border-radius: 13px;
+  background: var(--surface-muted);
+  min-width: 0;
+}
+.scanner-evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.scanner-evidence-grid > div,
+.scanner-evidence-detail-grid > div {
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+.scanner-evidence-grid small,
+.scanner-evidence-detail-grid small {
+  display: block;
+  color: var(--text-subtle);
+  font-size: 13px;
+}
+.scanner-evidence-grid strong,
+.scanner-evidence-detail-grid strong {
+  display: block;
+  margin: 2px 0;
+  color: var(--text-strong);
+  font-size: 18px;
+}
+.scanner-evidence-grid span {
+  display: block;
+  color: var(--text-subtle);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.scanner-evidence-details { margin-top: 10px; }
+.scanner-evidence-details summary {
+  cursor: pointer;
+  color: var(--primary);
+  font-size: 14px;
+  font-weight: 800;
+}
+.scanner-evidence-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 9px;
+}
+.scanner-regime-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+.scanner-regime-evidence span {
+  padding: 6px 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: 13px;
+}
+.scanner-evidence-warnings { margin-top: 9px; }
+.scanner-evidence-warnings p {
+  margin: 4px 0 0;
+  color: var(--warning);
+  font-size: 13px;
+}
+.scanner-evidence-guardrail {
+  margin-top: 9px;
+  color: var(--text-subtle);
+  font-size: 12px;
+}
+.scanner-evidence-unavailable {
+  padding: 11px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+.scanner-evidence-unavailable strong { color: var(--text-strong); font-size: 16px; }
+.scanner-evidence-unavailable p { margin: 4px 0; font-size: 14px; }
+.scanner-evidence-unavailable small { color: var(--text-subtle); font-size: 12px; }
+
+@media (max-width: 1180px) {
+  .scanner-evidence-grid,
+  .scanner-evidence-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .scanner-evidence-grid,
+  .scanner-evidence-detail-grid { grid-template-columns: 1fr; }
+}
+
+/* ======================================================================
+   v0.21.2.1 · Quick Analysis Dark UI Consistency Polish
+   Scope: quick stock search + position context/result cards only.
+   Keep calculation / scanner / risk / historical logic unchanged.
+   ====================================================================== */
+
+/* Search dropdown: restore information hierarchy and keep the popup inside
+   the StockScope surface system instead of using light-only hard-codes. */
+.quick-panel {
+  position: relative;
+  overflow: visible;
+}
+
+.stock-search-box {
+  z-index: 30;
+  min-width: 0;
+}
+
+.stock-suggestions {
+  max-height: 330px;
+  padding: 6px;
+  border-color: var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  overscroll-behavior: contain;
+}
+
+.stock-suggestions > button {
+  min-width: 0;
+  min-height: 54px;
+  grid-template-columns: 76px minmax(0, 1fr) 58px;
+  gap: 11px;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+}
+
+.stock-suggestions > button + button {
+  margin-top: 2px;
+}
+
+.stock-suggestions > button:hover,
+.stock-suggestions > button:focus-visible {
+  border-color: color-mix(in srgb, var(--primary) 38%, var(--line));
+  background: var(--hover-surface);
+  outline: none;
+}
+
+.stock-suggestions > button > div {
+  min-width: 0;
+}
+
+.stock-suggestions strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 15px;
+  font-weight: 850;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stock-suggestions small {
+  overflow: hidden;
+  margin-top: 3px;
+  color: var(--text-subtle);
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stock-suggestions em {
+  justify-self: end;
+  padding: 5px 7px;
+  border-radius: 7px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.stock-suggestions .market-badge {
+  min-width: 68px;
+  padding: 5px 7px;
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--line));
+  background: color-mix(in srgb, var(--primary) 11%, var(--surface-muted));
+  color: var(--primary);
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.stock-suggestions .market-badge.kosdaq {
+  border-color: color-mix(in srgb, #8b5cf6 32%, var(--line));
+  background: color-mix(in srgb, #8b5cf6 12%, var(--surface-muted));
+  color: color-mix(in srgb, #8b5cf6 72%, var(--text));
+}
+
+.search-empty {
+  color: var(--text-subtle);
+}
+
+/* Current-position assumption: no white island in dark mode. */
+.position-context-editor {
+  border-color: var(--line);
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.position-context-head strong {
+  color: var(--text-strong);
+  font-size: 16px;
+}
+
+.position-context-head p {
+  color: var(--text-subtle);
+  font-size: 13px;
+}
+
+.position-context-head > span {
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--line));
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.position-mode-buttons button {
+  min-width: 0;
+  min-height: 66px;
+  border-color: var(--line);
+  background: var(--input-surface);
+  color: var(--text);
+  transition: background-color .14s ease, border-color .14s ease, box-shadow .14s ease;
+}
+
+.position-mode-buttons button:hover {
+  border-color: color-mix(in srgb, var(--primary) 50%, var(--line));
+  background: var(--hover-surface);
+}
+
+.position-mode-buttons button small {
+  color: var(--text-subtle);
+  font-size: 11px;
+}
+
+.position-mode-buttons button.active {
+  border-color: color-mix(in srgb, var(--primary) 72%, var(--line));
+  background: var(--selected-surface);
+  color: var(--text-strong);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+.position-mode-buttons button.active small {
+  color: color-mix(in srgb, var(--primary) 62%, var(--text));
+}
+
+.holding-inputs label > span,
+.holding-inputs label em {
+  color: var(--text-subtle);
+}
+
+.holding-inputs label b {
+  color: var(--primary);
+}
+
+/* The result/action cards belong to the same quick-analysis visual family. */
+.position-context-result {
+  border-color: var(--line);
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.position-context-result.holding {
+  border-color: var(--line);
+  background: var(--surface-muted);
+}
+
+.position-context-result.strategy_invalidated {
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--line));
+  background: var(--danger-bg);
+}
+
+.position-context-result.weakening,
+.position-context-result.risk_review {
+  border-color: color-mix(in srgb, var(--warning) 42%, var(--line));
+  background: var(--warning-bg);
+}
+
+.position-result-head span,
+.position-context-result > p,
+.position-metrics span {
+  color: var(--text-subtle);
+}
+
+.position-result-head strong,
+.position-metrics strong {
+  color: var(--text-strong);
+}
+
+.position-result-head > b {
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--line));
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.position-metrics > div {
+  border-color: var(--line);
+  background: var(--input-surface);
+}
+
+.position-action-card {
+  border-color: var(--line);
+  background: var(--surface-muted);
+}
+
+.position-action-card.reduce_risk_review {
+  border-color: color-mix(in srgb, var(--warning) 42%, var(--line));
+  background: var(--warning-bg);
+}
+
+.position-action-card.exit_review {
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--line));
+  background: var(--danger-bg);
+}
+
+.position-action-main > span,
+.position-action-main p,
+.position-action-options article > span,
+.position-action-options article p,
+.position-action-why li,
+.position-action-triggers span {
+  color: var(--text-subtle);
+}
+
+.position-action-main h4,
+.position-action-options article > b,
+.position-action-why > b,
+.position-action-triggers > b,
+.position-action-triggers strong {
+  color: var(--text-strong);
+}
+
+.position-action-options article {
+  border-color: var(--line);
+  background: var(--input-surface);
+}
+
+.position-action-why,
+.position-action-triggers {
+  border-top-color: var(--line);
+}
+
+.position-action-triggers > div {
+  background: var(--surface-soft);
+}
+
+/* Old quick-analysis helper blocks also contained near-white fixed surfaces. */
+.strategy-catalog-note,
+.response-grid section {
+  border-color: var(--line);
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.strategy-catalog-note strong,
+.response-grid section > b {
+  color: var(--text-strong);
+}
+
+.strategy-catalog-note span,
+.response-grid li {
+  color: var(--text-subtle);
+}
+
+.response-guide {
+  border-top-color: var(--line);
+}
+
+.response-guide summary {
+  color: var(--primary);
+}
+
+.response-grid .avoid-box {
+  border-color: color-mix(in srgb, var(--warning) 38%, var(--line));
+  background: var(--warning-bg);
+}
+
+.response-grid .avoid-box > b {
+  color: var(--warning);
+}
+
+.invalidation-box {
+  border-color: color-mix(in srgb, var(--danger) 38%, var(--line));
+  background: var(--danger-bg);
+}
+
+.invalidation-box b {
+  color: var(--danger);
+}
+
+.invalidation-box p {
+  color: color-mix(in srgb, var(--danger) 58%, var(--text));
+}
+
+/* Dark mode explicitly closes the remaining light-only paths with a little
+   extra contrast. Light mode continues to use the same component variables. */
+html[data-theme="dark"] .stock-suggestions > button {
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] .stock-suggestions strong,
+html[data-theme="dark"] .position-context-head strong,
+html[data-theme="dark"] .position-result-head strong {
+  color: var(--text-strong) !important;
+}
+
+html[data-theme="dark"] .position-context-editor,
+html[data-theme="dark"] .position-context-result,
+html[data-theme="dark"] .position-action-card {
+  color: var(--text) !important;
+}
+
+@media (max-width: 900px) {
+  .stock-suggestions > button {
+    grid-template-columns: 70px minmax(0, 1fr) 54px;
+  }
+}
+
+@media (max-width: 560px) {
+  .stock-suggestions > button {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+
+  .stock-suggestions em {
+    grid-column: 2;
+    justify-self: start;
+    margin-top: 3px;
+  }
+}
+
+/* ======================================================================
+   v0.21.2.1 hotfix · Action Plan Dark Surface Consistency
+   Fix legacy v0.16~v0.18 Action Plan light gradients/white islands that
+   leaked into dark mode (notably verdict-risk_first brown/rose panel).
+   ====================================================================== */
+html[data-theme="dark"] .analysis-hub,
+html[data-theme="dark"] .analysis-hub.verdict-risk_first,
+html[data-theme="dark"] .analysis-hub.verdict-positive,
+html[data-theme="dark"] .analysis-hub.verdict-positive_caution,
+html[data-theme="dark"] .analysis-hub.verdict-mixed_positive {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+html[data-theme="dark"] .analysis-hub.verdict-risk_first {
+  border-color: color-mix(in srgb, var(--danger) 34%, var(--line));
+  background: color-mix(in srgb, var(--danger-bg) 32%, var(--surface));
+}
+
+html[data-theme="dark"] .analysis-hub.verdict-positive,
+html[data-theme="dark"] .analysis-hub.verdict-positive_caution,
+html[data-theme="dark"] .analysis-hub.verdict-mixed_positive {
+  border-color: color-mix(in srgb, var(--success) 28%, var(--line));
+  background: color-mix(in srgb, var(--success-bg) 22%, var(--surface));
+}
+
+html[data-theme="dark"] .analysis-action-copy h3,
+html[data-theme="dark"] .analysis-hub-head h3,
+html[data-theme="dark"] .analysis-hub-verdict strong,
+html[data-theme="dark"] .analysis-action-label span,
+html[data-theme="dark"] .analysis-strategy-separation strong,
+html[data-theme="dark"] .analysis-action-grid article > span,
+html[data-theme="dark"] .analysis-price-levels-head strong,
+html[data-theme="dark"] .analysis-price-levels article span,
+html[data-theme="dark"] .analysis-decision-scenarios > strong,
+html[data-theme="dark"] .analysis-decision-scenarios article b,
+html[data-theme="dark"] .analysis-priority-head > div > strong,
+html[data-theme="dark"] .analysis-signal > strong,
+html[data-theme="dark"] .analysis-other-signals > summary strong,
+html[data-theme="dark"] .analysis-evidence-summary > summary strong,
+html[data-theme="dark"] .analysis-hub-explain strong,
+html[data-theme="dark"] .analysis-hub-nav button strong,
+html[data-theme="dark"] .analysis-hub-collapsed-note strong {
+  color: var(--text-strong);
+}
+
+html[data-theme="dark"] .analysis-action-copy > p,
+html[data-theme="dark"] .analysis-hub-head p,
+html[data-theme="dark"] .analysis-hub-verdict span,
+html[data-theme="dark"] .analysis-hub-verdict em,
+html[data-theme="dark"] .analysis-strategy-separation span,
+html[data-theme="dark"] .analysis-strategy-separation small,
+html[data-theme="dark"] .analysis-action-grid li,
+html[data-theme="dark"] .analysis-action-grid p,
+html[data-theme="dark"] .analysis-price-levels-head span,
+html[data-theme="dark"] .analysis-price-levels article p,
+html[data-theme="dark"] .analysis-decision-scenarios article span,
+html[data-theme="dark"] .analysis-priority-head > div > span,
+html[data-theme="dark"] .analysis-priority-head > small,
+html[data-theme="dark"] .analysis-signal > span,
+html[data-theme="dark"] .analysis-signal > p,
+html[data-theme="dark"] .analysis-signal > small,
+html[data-theme="dark"] .analysis-other-signals > summary small,
+html[data-theme="dark"] .analysis-evidence-summary > summary small,
+html[data-theme="dark"] .analysis-other-signals > summary b,
+html[data-theme="dark"] .analysis-evidence-summary > summary b,
+html[data-theme="dark"] .analysis-hub-explain li,
+html[data-theme="dark"] .analysis-hub-explain p,
+html[data-theme="dark"] .analysis-hub-nav button span,
+html[data-theme="dark"] .analysis-hub-collapsed-note span {
+  color: var(--text-subtle);
+}
+
+html[data-theme="dark"] .analysis-action-copy > span,
+html[data-theme="dark"] .analysis-action-label strong,
+html[data-theme="dark"] .analysis-strategy-separation b,
+html[data-theme="dark"] .analysis-price-levels article strong {
+  color: var(--primary);
+}
+
+html[data-theme="dark"] .analysis-hub-verdict,
+html[data-theme="dark"] .analysis-action-label,
+html[data-theme="dark"] .analysis-strategy-separation > div,
+html[data-theme="dark"] .analysis-action-grid article,
+html[data-theme="dark"] .analysis-price-levels article,
+html[data-theme="dark"] .analysis-auto-check-main,
+html[data-theme="dark"] .analysis-auto-check-progress,
+html[data-theme="dark"] .analysis-auto-check-missing,
+html[data-theme="dark"] .analysis-signal,
+html[data-theme="dark"] .analysis-hub-explain article {
+  border-color: var(--line);
+  background: var(--input-surface);
+}
+
+html[data-theme="dark"] .analysis-action-grid article.do-now {
+  border-color: color-mix(in srgb, var(--success) 34%, var(--line));
+  background: color-mix(in srgb, var(--success-bg) 42%, var(--surface));
+}
+
+html[data-theme="dark"] .analysis-action-grid article.avoid-now {
+  border-color: color-mix(in srgb, var(--warning) 34%, var(--line));
+  background: color-mix(in srgb, var(--warning-bg) 42%, var(--surface));
+}
+
+html[data-theme="dark"] .analysis-price-levels,
+html[data-theme="dark"] .analysis-decision-scenarios,
+html[data-theme="dark"] .analysis-auto-check-strip,
+html[data-theme="dark"] .analysis-other-signals,
+html[data-theme="dark"] .analysis-evidence-summary {
+  border-color: var(--line);
+  background: var(--surface-muted);
+}
+
+html[data-theme="dark"] .analysis-decision-scenarios article {
+  background: var(--surface-soft);
+}
+
+html[data-theme="dark"] .analysis-decision-scenarios article.negative {
+  background: color-mix(in srgb, var(--danger-bg) 52%, var(--surface));
+}
+
+html[data-theme="dark"] .analysis-decision-scenarios article.negative b {
+  color: var(--danger);
+}
+
+html[data-theme="dark"] .analysis-decision-scenarios article.positive {
+  background: color-mix(in srgb, var(--success-bg) 52%, var(--surface));
+}
+
+html[data-theme="dark"] .analysis-decision-scenarios article.positive b {
+  color: var(--success);
+}
+
+html[data-theme="dark"] .analysis-conflict-explainer {
+  border-color: color-mix(in srgb, var(--warning) 38%, var(--line));
+  background: color-mix(in srgb, var(--warning-bg) 48%, var(--surface));
+}
+
+html[data-theme="dark"] .analysis-conflict-explainer > strong,
+html[data-theme="dark"] .analysis-conflict-explainer > p,
+html[data-theme="dark"] .analysis-conflict-explainer > div span {
+  color: color-mix(in srgb, var(--warning) 70%, var(--text));
+}
+
+html[data-theme="dark"] .analysis-conflict-explainer > div span {
+  background: var(--input-surface);
+}
+
+html[data-theme="dark"] .analysis-signal.positive {
+  border-color: color-mix(in srgb, var(--success) 34%, var(--line));
+  background: color-mix(in srgb, var(--success-bg) 50%, var(--surface));
+}
+html[data-theme="dark"] .analysis-signal.positive > strong { color: var(--success); }
+
+html[data-theme="dark"] .analysis-signal.negative {
+  border-color: color-mix(in srgb, var(--danger) 34%, var(--line));
+  background: color-mix(in srgb, var(--danger-bg) 50%, var(--surface));
+}
+html[data-theme="dark"] .analysis-signal.negative > strong { color: var(--danger); }
+
+html[data-theme="dark"] .analysis-signal.caution {
+  border-color: color-mix(in srgb, var(--warning) 34%, var(--line));
+  background: color-mix(in srgb, var(--warning-bg) 50%, var(--surface));
+}
+html[data-theme="dark"] .analysis-signal.caution > strong { color: var(--warning); }
+
+html[data-theme="dark"] .analysis-hub-nav {
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  box-shadow: var(--shadow);
+}
+
+html[data-theme="dark"] .analysis-hub-nav button:hover {
+  background: var(--hover-surface);
+}
+
+html[data-theme="dark"] .analysis-hub-nav button.active {
+  border-color: color-mix(in srgb, var(--primary) 52%, var(--line));
+  background: var(--selected-surface);
+}
+
+html[data-theme="dark"] .analysis-hub-nav button.active strong {
+  color: var(--primary);
+}
+
+html[data-theme="dark"] .analysis-hub-collapsed-note {
+  background: var(--surface-muted);
+}
+
+/* ======================================================================
+   v0.21.2.2 · Action Plan Readability & Information Hierarchy
+   Keep the analysis engine unchanged; make the first screen read as:
+   current decision → top reasons → decision-changing conditions → prices.
+   ====================================================================== */
+.analysis-hub.readability-v02122,
+.analysis-hub.readability-v02122.verdict-risk_first,
+.analysis-hub.readability-v02122.verdict-positive,
+.analysis-hub.readability-v02122.verdict-positive_caution,
+.analysis-hub.readability-v02122.verdict-mixed_positive {
+  background: var(--surface);
+  border-color: var(--line);
+}
+
+.analysis-hub.readability-v02122.verdict-risk_first {
+  border-left: 4px solid color-mix(in srgb, var(--danger) 72%, var(--line));
+}
+.analysis-hub.readability-v02122.verdict-positive,
+.analysis-hub.readability-v02122.verdict-positive_caution,
+.analysis-hub.readability-v02122.verdict-mixed_positive {
+  border-left: 4px solid color-mix(in srgb, var(--success) 68%, var(--line));
+}
+
+.analysis-action-hero-v02122 {
+  grid-template-columns: minmax(0, 1fr) minmax(210px, 270px);
+  gap: 24px;
+  align-items: stretch;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface-muted);
+}
+
+.analysis-action-hero-v02122 .analysis-action-copy {
+  min-width: 0;
+}
+
+.analysis-action-hero-v02122 .analysis-action-copy > span {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .09em;
+}
+
+.analysis-current-decision-label {
+  color: var(--text-subtle);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.analysis-current-decision {
+  display: block;
+  margin: 2px 0 8px;
+  color: var(--text-strong);
+  font-size: clamp(27px, 2.4vw, 34px);
+  line-height: 1.15;
+  letter-spacing: -.035em;
+}
+
+.analysis-action-hero-v02122 .analysis-action-copy h3 {
+  margin: 0 0 6px;
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1.45;
+  letter-spacing: -.015em;
+}
+
+.analysis-action-hero-v02122 .analysis-action-copy > p {
+  margin: 0;
+  color: var(--text-subtle);
+  font-size: 16px;
+  line-height: 1.65;
+}
+
+.analysis-decision-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.analysis-decision-meta span {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--input-surface);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.analysis-hub-verdict-compact {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--input-surface);
+}
+
+.analysis-hub-verdict-compact span {
+  color: var(--text-subtle);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.analysis-hub-verdict-compact strong {
+  margin: 6px 0;
+  color: var(--text-strong);
+  font-size: 20px;
+  line-height: 1.35;
+}
+
+.analysis-hub-verdict-compact em {
+  color: var(--text-subtle);
+  font-size: 13px;
+  font-style: normal;
+  line-height: 1.5;
+}
+
+.analysis-priority-compact {
+  margin-top: 14px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: var(--surface-muted);
+}
+
+.analysis-priority-compact .analysis-priority-head {
+  margin-bottom: 12px;
+}
+
+.analysis-priority-compact .analysis-priority-head > div > span,
+.analysis-section-heading > span,
+.analysis-detail-navigation-head span {
+  display: block;
+  color: var(--text-subtle);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.analysis-priority-compact .analysis-priority-head > div > strong,
+.analysis-section-heading > strong,
+.analysis-detail-navigation-head strong {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-strong);
+  font-size: 20px;
+  line-height: 1.35;
+}
+
+.analysis-priority-compact .analysis-priority-head > small {
+  color: var(--text-subtle);
+  font-size: 13px;
+}
+
+.analysis-priority-list {
+  display: grid;
+  gap: 8px;
+}
+
+.analysis-priority-row {
+  display: grid;
+  grid-template-columns: 32px minmax(190px, .75fr) minmax(0, 1.25fr);
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: 11px;
+  background: var(--input-surface);
+}
+
+.analysis-priority-index {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--text-subtle);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.analysis-priority-name {
+  min-width: 0;
+}
+
+.analysis-priority-name > span {
+  display: block;
+  color: var(--text-subtle);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.analysis-priority-name > strong {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-strong);
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.analysis-priority-row > p {
+  margin: 0;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.analysis-priority-row.positive,
+.analysis-priority-row.pass {
+  border-left-color: var(--success);
+}
+.analysis-priority-row.negative,
+.analysis-priority-row.fail {
+  border-left-color: var(--danger);
+}
+.analysis-priority-row.caution,
+.analysis-priority-row.warn {
+  border-left-color: var(--warning);
+}
+
+.analysis-decision-scenarios-v02122 {
+  margin-top: 14px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: var(--surface-muted);
+}
+
+.analysis-section-heading {
+  margin-bottom: 12px;
+}
+
+.analysis-decision-table {
+  display: grid !important;
+  gap: 8px;
+}
+
+.analysis-decision-scenarios-v02122 .analysis-decision-table > article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: 11px;
+  background: var(--input-surface);
+}
+
+.analysis-decision-scenarios-v02122 article > div {
+  min-width: 0;
+}
+
+.analysis-decision-scenarios-v02122 article small {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--text-subtle);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.analysis-decision-scenarios-v02122 article span,
+.analysis-decision-scenarios-v02122 article strong {
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.analysis-decision-scenarios-v02122 article > b {
+  color: var(--text-subtle);
+  text-align: center;
+  font-size: 17px;
+}
+
+.analysis-decision-scenarios-v02122 article.positive {
+  border-left-color: var(--success);
+}
+.analysis-decision-scenarios-v02122 article.positive strong {
+  color: var(--success);
+}
+.analysis-decision-scenarios-v02122 article.negative {
+  border-left-color: var(--danger);
+}
+.analysis-decision-scenarios-v02122 article.negative strong {
+  color: var(--danger);
+}
+.analysis-decision-scenarios-v02122 article.caution,
+.analysis-decision-scenarios-v02122 article.warn {
+  border-left-color: var(--warning);
+}
+.analysis-decision-scenarios-v02122 article.caution strong,
+.analysis-decision-scenarios-v02122 article.warn strong {
+  color: var(--warning);
+}
+
+.analysis-price-levels-v02122 {
+  margin-top: 14px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: var(--surface-muted);
+}
+
+.analysis-price-levels-v02122 > div:last-child {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.analysis-price-levels-v02122 article {
+  min-height: 0;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  background: var(--input-surface);
+}
+
+.analysis-price-levels-v02122 article strong {
+  font-size: 20px;
+}
+
+.analysis-supporting-details,
+.analysis-other-signals,
+.analysis-evidence-summary {
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface-muted);
+  overflow: hidden;
+}
+
+.analysis-supporting-details > summary,
+.analysis-other-signals > summary,
+.analysis-evidence-summary > summary {
+  min-height: 66px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 13px 16px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.analysis-supporting-details > summary::-webkit-details-marker,
+.analysis-other-signals > summary::-webkit-details-marker,
+.analysis-evidence-summary > summary::-webkit-details-marker {
+  display: none;
+}
+
+.analysis-supporting-details > summary:hover,
+.analysis-other-signals > summary:hover,
+.analysis-evidence-summary > summary:hover {
+  background: var(--hover-surface);
+}
+
+.analysis-supporting-details > summary span,
+.analysis-other-signals > summary span,
+.analysis-evidence-summary > summary span {
+  min-width: 0;
+}
+
+.analysis-supporting-details > summary strong,
+.analysis-other-signals > summary strong,
+.analysis-evidence-summary > summary strong {
+  display: block;
+  color: var(--text-strong);
+  font-size: 16px;
+}
+
+.analysis-supporting-details > summary small,
+.analysis-other-signals > summary small,
+.analysis-evidence-summary > summary small {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-subtle);
+  font-size: 13px;
+}
+
+.analysis-supporting-details > summary b,
+.analysis-other-signals > summary b,
+.analysis-evidence-summary > summary b {
+  flex: 0 0 auto;
+  color: var(--primary);
+  font-size: 13px;
+}
+
+.analysis-supporting-details[open] > summary b,
+.analysis-other-signals[open] > summary b,
+.analysis-evidence-summary[open] > summary b {
+  font-size: 0;
+}
+.analysis-supporting-details[open] > summary b::after,
+.analysis-other-signals[open] > summary b::after,
+.analysis-evidence-summary[open] > summary b::after {
+  content: "접기";
+  font-size: 13px;
+}
+
+.analysis-supporting-details > .analysis-strategy-separation,
+.analysis-supporting-details > .analysis-action-grid,
+.analysis-supporting-details > .analysis-conflict-explainer {
+  margin-left: 14px;
+  margin-right: 14px;
+}
+
+.analysis-supporting-details > .analysis-strategy-separation {
+  margin-top: 2px;
+}
+.analysis-supporting-details > .analysis-conflict-explainer,
+.analysis-supporting-details > .analysis-action-grid:last-child {
+  margin-bottom: 14px;
+}
+
+.analysis-detail-navigation-block {
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: var(--surface-muted);
+}
+
+.analysis-detail-navigation-head {
+  margin-bottom: 10px;
+}
+
+.analysis-hub.action-first .analysis-hub-nav-v02122 {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 6px;
+  margin: 0;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--input-surface);
+  box-shadow: none;
+  overflow: visible;
+}
+
+.analysis-hub.action-first .analysis-hub-nav-v02122 > button {
+  flex: 1 1 0;
+  min-width: 76px;
+  min-height: 46px;
+  padding: 9px 7px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+}
+
+.analysis-hub.action-first .analysis-hub-nav-v02122 > button strong {
+  color: var(--text);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.analysis-hub.action-first .analysis-hub-nav-v02122 > button:hover {
+  background: var(--hover-surface);
+}
+
+.analysis-hub.action-first .analysis-hub-nav-v02122 > button.active {
+  border-color: color-mix(in srgb, var(--primary) 50%, var(--line));
+  background: var(--selected-surface);
+}
+.analysis-hub.action-first .analysis-hub-nav-v02122 > button.active strong {
+  color: var(--primary);
+}
+
+.analysis-hub-nav-more {
+  position: relative;
+  flex: 0 0 94px;
+}
+
+.analysis-hub-nav-more > summary {
+  min-height: 46px;
+  display: grid;
+  place-items: center;
+  padding: 9px 8px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+  white-space: nowrap;
+}
+.analysis-hub-nav-more > summary::-webkit-details-marker { display: none; }
+.analysis-hub-nav-more > summary:hover { background: var(--hover-surface); }
+.analysis-hub-nav-more.active > summary {
+  border-color: color-mix(in srgb, var(--primary) 50%, var(--line));
+  background: var(--selected-surface);
+  color: var(--primary);
+}
+
+.analysis-hub-nav-more > div {
+  position: absolute;
+  z-index: 8;
+  top: calc(100% + 6px);
+  right: 0;
+  width: max-content;
+  min-width: 150px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.analysis-hub-nav-more > div button {
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+}
+.analysis-hub-nav-more > div button:hover { background: var(--hover-surface); }
+.analysis-hub-nav-more > div button.active { background: var(--selected-surface); }
+.analysis-hub-nav-more > div button strong {
+  color: var(--text);
+  font-size: 14px;
+}
+.analysis-hub-nav-more > div button.active strong { color: var(--primary); }
+
+.analysis-hub.readability-v02122 .analysis-hub-collapsed-note {
+  margin-top: 10px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: transparent;
+}
+
+/* State colour is an accent, never a full-card wash. */
+html[data-theme="dark"] .analysis-hub.readability-v02122,
+html[data-theme="dark"] .analysis-hub.readability-v02122.verdict-risk_first,
+html[data-theme="dark"] .analysis-hub.readability-v02122.verdict-positive,
+html[data-theme="dark"] .analysis-hub.readability-v02122.verdict-positive_caution,
+html[data-theme="dark"] .analysis-hub.readability-v02122.verdict-mixed_positive {
+  background: var(--surface);
+}
+
+html[data-theme="dark"] .analysis-priority-compact,
+html[data-theme="dark"] .analysis-decision-scenarios-v02122,
+html[data-theme="dark"] .analysis-price-levels-v02122,
+html[data-theme="dark"] .analysis-supporting-details,
+html[data-theme="dark"] .analysis-detail-navigation-block {
+  background: var(--surface-muted);
+}
+
+html[data-theme="dark"] .analysis-priority-row,
+html[data-theme="dark"] .analysis-decision-scenarios-v02122 .analysis-decision-table > article,
+html[data-theme="dark"] .analysis-price-levels-v02122 article,
+html[data-theme="dark"] .analysis-hub-verdict-compact,
+html[data-theme="dark"] .analysis-hub.action-first .analysis-hub-nav-v02122 {
+  background: var(--input-surface);
+}
+
+html[data-theme="dark"] .analysis-decision-scenarios-v02122 article.positive,
+html[data-theme="dark"] .analysis-decision-scenarios-v02122 article.negative,
+html[data-theme="dark"] .analysis-decision-scenarios-v02122 article.caution,
+html[data-theme="dark"] .analysis-decision-scenarios-v02122 article.warn {
+  background: var(--input-surface);
+}
+
+@media (max-width: 1100px) {
+  .analysis-action-hero-v02122 {
+    grid-template-columns: minmax(0, 1fr) 220px;
+    gap: 16px;
+  }
+
+  .analysis-priority-row {
+    grid-template-columns: 32px minmax(160px, .8fr) minmax(0, 1.2fr);
+  }
+
+  .analysis-hub.action-first .analysis-hub-nav-v02122 > button {
+    min-width: 68px;
+    padding-left: 5px;
+    padding-right: 5px;
+  }
+}
+
+@media (max-width: 860px) {
+  .analysis-action-hero-v02122 {
+    grid-template-columns: 1fr;
+  }
+
+  .analysis-hub-verdict-compact {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    column-gap: 12px;
+    align-items: center;
+  }
+  .analysis-hub-verdict-compact em { grid-column: 1 / -1; }
+
+  .analysis-priority-compact .analysis-priority-head {
+    display: block;
+  }
+  .analysis-priority-compact .analysis-priority-head > small {
+    display: block;
+    margin-top: 5px;
+  }
+
+  .analysis-priority-row {
+    grid-template-columns: 32px minmax(0, 1fr);
+  }
+  .analysis-priority-row > p {
+    grid-column: 2;
+  }
+
+  .analysis-decision-scenarios-v02122 .analysis-decision-table > article {
+    grid-template-columns: 1fr;
+  }
+  .analysis-decision-scenarios-v02122 article > b {
+    text-align: left;
+    transform: rotate(90deg);
+    transform-origin: center;
+    width: 20px;
+  }
+
+  .analysis-hub.action-first .analysis-hub-nav-v02122 {
+    gap: 4px;
+  }
+  .analysis-hub.action-first .analysis-hub-nav-v02122 > button strong,
+  .analysis-hub-nav-more > summary {
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 640px) {
+  .analysis-action-hero-v02122,
+  .analysis-priority-compact,
+  .analysis-decision-scenarios-v02122,
+  .analysis-price-levels-v02122,
+  .analysis-detail-navigation-block {
+    padding: 14px;
+  }
+
+  .analysis-current-decision {
+    font-size: 26px;
+  }
+
+  .analysis-decision-meta span {
+    width: 100%;
+    border-radius: 9px;
+  }
+
+  .analysis-priority-row {
+    padding: 11px;
+  }
+
+  .analysis-hub.action-first .analysis-hub-nav-v02122 {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .analysis-hub.action-first .analysis-hub-nav-v02122 > button,
+  .analysis-hub-nav-more {
+    min-width: 0;
+    width: 100%;
+  }
+  .analysis-hub-nav-more {
+    position: static;
+  }
+  .analysis-hub-nav-more > div {
+    right: 6px;
+    left: 6px;
+    width: auto;
+  }
+}
+
+/* v0.21.3 · Scanner Candidate Ranking & Priority Explanation */
+.scanner-priority-card {
+  padding: 15px 16px;
+  border: 1px solid var(--line-soft);
+  border-radius: 13px;
+  background: var(--surface-soft);
+  display: grid;
+  gap: 10px;
+}
+.scanner-priority-card.priority-ready { border-left: 4px solid var(--success); }
+.scanner-priority-card.priority-near_ready { border-left: 4px solid var(--primary); }
+.scanner-priority-card.priority-wait { border-left: 4px solid var(--warning); }
+.scanner-priority-card.priority-risk_hold { border-left: 4px solid var(--danger); }
+.scanner-priority-card.priority-low_priority { border-left: 4px solid var(--line); }
+.scanner-priority-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+}
+.scanner-priority-head > div:first-child { min-width: 0; }
+.scanner-priority-head small,
+.scanner-priority-rule {
+  color: var(--text-subtle);
+  font-size: 13px;
+}
+.scanner-priority-head strong {
+  display: block;
+  margin: 2px 0 3px;
+  color: var(--text-strong);
+  font-size: 19px;
+  line-height: 1.35;
+}
+.scanner-priority-head p {
+  margin: 0;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.55;
+}
+.scanner-priority-gap {
+  flex: 0 0 154px;
+  padding: 9px 11px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--surface-muted);
+  text-align: right;
+}
+.scanner-priority-gap small,
+.scanner-priority-gap span { display: block; color: var(--text-subtle); font-size: 12px; }
+.scanner-priority-gap strong { display: block; color: var(--primary); font-size: 20px; margin: 1px 0; }
+.scanner-priority-factors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.scanner-priority-factors span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+.scanner-priority-factors .positive {
+  color: var(--success);
+  background: var(--success-bg);
+  border-color: #3a765f;
+}
+.scanner-priority-factors .negative {
+  color: var(--warning);
+  background: var(--warning-bg);
+  border-color: #665532;
+}
+.scanner-priority-card.priority-risk_hold .scanner-priority-factors .negative {
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-color: #73424a;
+}
+.scanner-priority-rule { display: block; line-height: 1.45; }
+
+@media (max-width: 760px) {
+  .scanner-priority-head { flex-direction: column; }
+  .scanner-priority-gap { flex: 0 0 auto; width: 100%; text-align: left; }
+}
+.scanner-priority-factors .neutral {
+  color: var(--text);
+  background: var(--surface-muted);
+  border-color: var(--line-soft);
+}
+
+
+/* v0.21.4-A.2 · Backtest interpretation & price accuracy */
+.strategy-rank-guardrail {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-subtle);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.historical-policy-banner {
+  display: grid;
+  grid-template-columns: minmax(220px, .7fr) minmax(0, 1.3fr);
+  gap: 18px;
+  align-items: center;
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-muted);
+}
+.historical-policy-banner div { display: grid; gap: 4px; }
+.historical-policy-banner span { color: var(--text-subtle); font-size: 13px; }
+.historical-policy-banner strong { color: var(--text-strong); font-size: 16px; }
+.historical-policy-banner p { margin: 0; color: var(--text); line-height: 1.55; }
+.historical-policy-note {
+  margin: 8px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--text-subtle);
+}
+@media (max-width: 720px) {
+  .historical-policy-banner { grid-template-columns: 1fr; gap: 8px; }
+}
+
+/* v0.21.4-A.3 · Scanner Result Persistence & Back Navigation */
+.scanner-session-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 13px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: var(--surface-muted);
+}
+.scanner-session-note > div { min-width: 0; }
+.scanner-session-note small,
+.scanner-session-note span {
+  color: var(--text-subtle);
+  font-size: 13px;
+}
+.scanner-session-note strong {
+  display: block;
+  margin: 2px 0;
+  color: var(--text-strong);
+  font-size: 15px;
+}
+.scanner-session-note p {
+  margin: 0;
+  max-width: 560px;
+  color: var(--text-subtle);
+  font-size: 13px;
+  line-height: 1.55;
+  text-align: right;
+}
+.scanner-session-note.restored {
+  border-color: color-mix(in srgb, var(--primary) 34%, var(--line-soft));
+  background: color-mix(in srgb, var(--primary-soft) 46%, var(--surface-muted));
+}
+@media (max-width: 760px) {
+  .scanner-session-note { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .scanner-session-note p { max-width: none; text-align: left; }
+}
+.scanner-result-held {
+  display: grid;
+  gap: 2px;
+  min-width: 210px;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--primary) 34%, var(--line));
+  border-radius: 12px;
+  background: var(--primary-soft);
+}
+.scanner-result-held strong { color: var(--text-strong); font-size: 14px; }
+.scanner-result-held span { color: var(--text-subtle); font-size: 12px; }
+
+/* v0.21.4-A.4 · Scanner Price Plan & Entry Position Clarity */
+.scanner-price-plan {
+  display: grid;
+  gap: 12px;
+}
+.scanner-price-plan-head {
+  display: grid;
+  grid-template-columns: minmax(180px, .42fr) minmax(0, 1.58fr);
+  gap: 12px;
+  align-items: stretch;
+}
+.scanner-price-plan-head > div {
+  min-width: 0;
+  padding: 13px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: var(--input-surface);
+}
+.scanner-price-plan-head > div:first-child > span,
+.scanner-price-position > small,
+.scanner-price-plan-grid small,
+.scanner-price-plan-policy small {
+  display: block;
+  color: var(--text-subtle);
+  font-size: 13px;
+  font-weight: 800;
+}
+.scanner-price-plan-head > div:first-child > strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-strong);
+  font-size: 22px;
+  line-height: 1.3;
+}
+.scanner-price-plan-head > div:first-child > small {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-subtle);
+  font-size: 12px;
+}
+.scanner-price-position {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border-left: 3px solid var(--primary) !important;
+}
+.scanner-price-position.state-inside { border-left-color: var(--success) !important; }
+.scanner-price-position.state-above { border-left-color: var(--primary) !important; }
+.scanner-price-position.state-below { border-left-color: var(--warning) !important; }
+.scanner-price-position.state-unavailable { border-left-color: var(--line) !important; }
+.scanner-price-position > strong {
+  display: block;
+  margin-top: 5px;
+  color: var(--text-strong);
+  font-size: 17px;
+  line-height: 1.5;
+  word-break: keep-all;
+}
+.scanner-price-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.scanner-price-plan-grid article {
+  min-width: 0;
+  padding: 13px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.scanner-price-plan-grid article > strong {
+  display: block;
+  margin-top: 5px;
+  color: var(--text-strong);
+  font-size: 16px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.scanner-price-plan-grid article > span,
+.scanner-price-plan-grid article > b {
+  display: block;
+  margin-top: 5px;
+  color: var(--text-subtle);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.scanner-price-plan-grid .price-plan-stop { border-top: 2px solid color-mix(in srgb, var(--danger) 72%, var(--line-soft)); }
+.scanner-price-plan-grid .price-plan-target { border-top: 2px solid color-mix(in srgb, var(--success) 72%, var(--line-soft)); }
+.scanner-price-plan-grid .price-plan-target2 { border-top: 2px solid color-mix(in srgb, var(--primary) 72%, var(--line-soft)); }
+.scanner-price-plan-policy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--surface-muted);
+  color: var(--text-subtle);
+}
+.scanner-price-plan-policy strong {
+  color: var(--text-strong);
+  font-size: 13px;
+}
+.scanner-price-plan-policy > span {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+}
+.scanner-price-plan-policy > small {
+  flex-basis: 100%;
+  line-height: 1.45;
+}
+/* The ranking engine may still keep entry_gap_pct internally for sorting.
+   It is intentionally not rendered as an abstract 0.0% user metric. */
+.scanner-priority-head { justify-content: flex-start; }
+
+@media (max-width: 1180px) {
+  .scanner-price-plan-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
+  .scanner-price-plan-head { grid-template-columns: 1fr; }
+  .scanner-price-plan-grid { grid-template-columns: 1fr; }
+}
+
+/* v0.21.4-B.1.1 · Exit Policy Validation Runner & Report */
+.exit-validation-panel {
+  margin-top: 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.exit-validation-panel > summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  cursor: pointer;
+  color: var(--text-strong);
+  font-weight: 800;
+}
+
+.exit-validation-panel > summary::-webkit-details-marker { display: none; }
+.exit-validation-body { padding: 0 18px 18px; }
+
+.exit-validation-intro {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: var(--surface-muted);
+}
+.exit-validation-intro strong { display: block; color: var(--text-strong); font-size: 17px; }
+.exit-validation-intro p { margin: 6px 0 0; color: var(--text-subtle); line-height: 1.55; }
+.exit-validation-intro > span {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text-subtle);
+  font-size: 12px;
+}
+
+.exit-validation-config-summary,
+.exit-validation-meta {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.exit-validation-config-summary span,
+.exit-validation-meta span {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: 13px;
+}
+.exit-validation-config-summary b,
+.exit-validation-meta b { display: block; margin-bottom: 4px; color: var(--text-subtle); font-size: 11px; }
+
+.exit-validation-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.exit-validation-actions button {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--primary);
+  border-radius: 10px;
+  background: var(--selected-surface);
+  color: var(--primary);
+  font-weight: 800;
+  cursor: pointer;
+}
+.exit-validation-actions button.secondary { border-color: var(--line); background: var(--input-surface); color: var(--text); }
+.exit-validation-actions button:disabled { opacity: .55; cursor: default; }
+
+.exit-validation-progress {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: var(--surface-muted);
+}
+.exit-validation-progress > div { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 12px; }
+.exit-validation-progress strong { color: var(--text-strong); }
+.exit-validation-progress span,
+.exit-validation-progress p { color: var(--text-subtle); }
+.exit-validation-progress progress { width: 100%; margin: 10px 0 4px; }
+.exit-validation-progress p { margin: 0; font-size: 12px; }
+
+.exit-validation-report { margin-top: 14px; }
+.exit-validation-report-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-muted);
+}
+.exit-validation-report-head span { color: var(--text-subtle); font-size: 12px; }
+.exit-validation-report-head strong { display: block; margin-top: 3px; color: var(--text-strong); font-size: 18px; }
+.exit-validation-report-head p { margin: 5px 0 0; color: var(--text-subtle); }
+.exit-validation-report-head > b { color: var(--primary); white-space: nowrap; }
+
+.exit-validation-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.exit-validation-summary span {
+  padding: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+.exit-validation-summary small { display: block; color: var(--text-subtle); }
+.exit-validation-summary b { display: block; margin-top: 4px; color: var(--text-strong); font-size: 20px; }
+
+.exit-validation-warning {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--warning-border, var(--line));
+  border-radius: 10px;
+  background: var(--warning-bg, var(--surface-muted));
+  color: var(--text);
+}
+
+.exit-validation-strategies { display: grid; gap: 10px; margin-top: 12px; }
+.exit-validation-strategy {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-muted);
+}
+.exit-validation-strategy.status-selected { border-left: 3px solid var(--success, #52c58b); }
+.exit-validation-strategy.status-baseline_better { border-left: 3px solid var(--primary); }
+.exit-validation-strategy.status-unresolved,
+.exit-validation-strategy.status-insufficient_sample { border-left: 3px solid var(--warning, #d6a84a); }
+.exit-validation-strategy-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.exit-validation-strategy-head span { color: var(--text-subtle); font-size: 12px; }
+.exit-validation-strategy-head strong { display: block; margin-top: 2px; color: var(--text-strong); font-size: 17px; }
+.exit-validation-strategy-head > b { color: var(--primary); text-align: right; }
+.exit-validation-strategy > p { margin: 8px 0 0; color: var(--text-subtle); line-height: 1.5; }
+.exit-validation-metrics {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 10px;
+}
+.exit-validation-metrics span { padding: 9px; border: 1px solid var(--line-soft); border-radius: 9px; background: var(--input-surface); }
+.exit-validation-metrics small { display: block; color: var(--text-subtle); font-size: 11px; }
+.exit-validation-metrics b { display: block; margin-top: 3px; color: var(--text-strong); font-size: 13px; }
+.exit-validation-hold { display: grid; grid-template-columns: 150px 1fr; gap: 10px; margin-top: 10px; padding: 10px; border-radius: 9px; background: var(--surface-soft); }
+.exit-validation-hold b { color: var(--text-strong); }
+.exit-validation-hold span { color: var(--text-subtle); }
+.exit-validation-policy-details { margin-top: 10px; border-top: 1px solid var(--line-soft); padding-top: 9px; }
+.exit-validation-policy-details summary { display: flex; justify-content: space-between; cursor: pointer; color: var(--text); font-weight: 700; }
+.exit-validation-policy-table-wrap { overflow-x: auto; margin-top: 8px; }
+.exit-validation-policy-table { width: 100%; border-collapse: collapse; min-width: 720px; }
+.exit-validation-policy-table th,
+.exit-validation-policy-table td { padding: 8px; border-bottom: 1px solid var(--line-soft); text-align: right; color: var(--text); font-size: 12px; }
+.exit-validation-policy-table th:first-child,
+.exit-validation-policy-table td:first-child { text-align: left; }
+.exit-validation-policy-table th { color: var(--text-subtle); font-weight: 700; }
+
+@media (max-width: 1100px) {
+  .exit-validation-config-summary,
+  .exit-validation-meta { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .exit-validation-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 700px) {
+  .exit-validation-intro,
+  .exit-validation-report-head,
+  .exit-validation-strategy-head { flex-direction: column; }
+  .exit-validation-config-summary,
+  .exit-validation-meta,
+  .exit-validation-summary,
+  .exit-validation-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .exit-validation-hold { grid-template-columns: 1fr; }
+}
+.exit-validation-regime-grid,
+.exit-validation-sample-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 9px;
+}
+.exit-validation-regime-grid span,
+.exit-validation-sample-grid span {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 9px;
+  background: var(--input-surface);
+}
+.exit-validation-regime-grid small,
+.exit-validation-sample-grid small { display: block; color: var(--text-subtle); font-size: 11px; }
+.exit-validation-regime-grid b,
+.exit-validation-sample-grid b { display: block; margin-top: 3px; color: var(--text-strong); }
+.exit-validation-regime-grid em { display: block; margin-top: 3px; color: var(--text-subtle); font-size: 11px; font-style: normal; }
+.exit-validation-sample-details { margin-top: 10px; border: 1px solid var(--line-soft); border-radius: 10px; padding: 10px 12px; background: var(--surface-soft); }
+.exit-validation-sample-details summary { display: flex; justify-content: space-between; cursor: pointer; color: var(--text); font-weight: 700; }
+.exit-validation-sample-grid span.excluded { opacity: .8; }
+@media (max-width: 900px) {
+  .exit-validation-regime-grid,
+  .exit-validation-sample-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

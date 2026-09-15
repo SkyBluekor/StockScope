@@ -212,14 +212,22 @@ class HistoricalMarketStore:
         if end_dd:
             clauses.append("bas_dd<=?")
             params.append(end_dd)
+        status_clauses = ["market=?", "kind='stock'"]
+        status_params: list[Any] = [market]
+        if start_dd:
+            status_clauses.append("bas_dd>=?")
+            status_params.append(start_dd)
+        if end_dd:
+            status_clauses.append("bas_dd<=?")
+            status_params.append(end_dd)
         with self._lock, self._connect() as conn:
             rows = conn.execute(
                 f"SELECT bas_dd,row_json FROM stock_daily WHERE {' AND '.join(clauses)} ORDER BY bas_dd",
                 params,
             ).fetchall()
             statuses = conn.execute(
-                "SELECT bas_dd FROM day_status WHERE market=? AND kind='stock'",
-                (market,),
+                f"SELECT bas_dd FROM day_status WHERE {' AND '.join(status_clauses)}",
+                status_params,
             ).fetchall()
         return HistorySeries(
             rows={str(row["bas_dd"]): self._load(str(row["row_json"])) for row in rows},
@@ -272,14 +280,22 @@ class HistoricalMarketStore:
         if end_dd:
             clauses.append("bas_dd<=?")
             params.append(end_dd)
+        status_clauses = ["market=?", "kind='stock'"]
+        status_params: list[Any] = [market]
+        if start_dd:
+            status_clauses.append("bas_dd>=?")
+            status_params.append(start_dd)
+        if end_dd:
+            status_clauses.append("bas_dd<=?")
+            status_params.append(end_dd)
         with self._lock, self._connect() as conn:
             rows = conn.execute(
                 f"SELECT bas_dd,stock_code,row_json FROM stock_daily WHERE {' AND '.join(clauses)} ORDER BY stock_code,bas_dd",
                 params,
             ).fetchall()
             statuses = conn.execute(
-                "SELECT bas_dd FROM day_status WHERE market=? AND kind='stock'",
-                (market,),
+                f"SELECT bas_dd FROM day_status WHERE {' AND '.join(status_clauses)}",
+                status_params,
             ).fetchall()
         checked_dates = {str(row["bas_dd"]) for row in statuses}
         result = {code: HistorySeries(rows={}, checked_dates=set(checked_dates)) for code in normalized_codes}
@@ -288,6 +304,78 @@ class HistoricalMarketStore:
             series = result.setdefault(code, HistorySeries(rows={}, checked_dates=set(checked_dates)))
             series.rows[str(row["bas_dd"])] = self._load(str(row["row_json"]))
         return result
+
+
+    def research_candidates(
+        self,
+        market: str,
+        start_dd: str,
+        end_dd: str,
+        *,
+        minimum_coverage_pct: float = 90.0,
+        limit: int = 30,
+    ) -> dict[str, Any]:
+        """Return locally available symbols suitable for research without network fill.
+
+        Coverage is measured against market trading days that already exist in the
+        Market Store (day_status=stock/data), not calendar weekdays.
+        """
+        market = self._market(market)
+        with self._lock, self._connect() as conn:
+            trading_row = conn.execute(
+                """
+                SELECT COUNT(*) AS cnt
+                FROM day_status
+                WHERE market=? AND kind='stock' AND status='data' AND bas_dd>=? AND bas_dd<=?
+                """,
+                (market, start_dd, end_dd),
+            ).fetchone()
+            trading_days = int((trading_row or {"cnt": 0})["cnt"] or 0)
+            index_row = conn.execute(
+                """
+                SELECT COUNT(*) AS cnt
+                FROM day_status
+                WHERE market=? AND kind='index' AND status='data' AND bas_dd>=? AND bas_dd<=?
+                """,
+                (market, start_dd, end_dd),
+            ).fetchone()
+            index_days = int((index_row or {"cnt": 0})["cnt"] or 0)
+            rows = conn.execute(
+                """
+                SELECT stock_code, COUNT(*) AS row_count, MIN(bas_dd) AS first_date, MAX(bas_dd) AS last_date
+                FROM stock_daily
+                WHERE market=? AND bas_dd>=? AND bas_dd<=?
+                GROUP BY stock_code
+                ORDER BY row_count DESC, stock_code ASC
+                """,
+                (market, start_dd, end_dd),
+            ).fetchall()
+
+        candidates: list[dict[str, Any]] = []
+        for row in rows:
+            row_count = int(row["row_count"] or 0)
+            coverage = 0.0 if trading_days <= 0 else row_count / trading_days * 100.0
+            if coverage + 1e-9 < minimum_coverage_pct:
+                continue
+            candidates.append({
+                "code": str(row["stock_code"]),
+                "market": market,
+                "row_count": row_count,
+                "trading_days": trading_days,
+                "coverage_pct": round(coverage, 2),
+                "first_date": str(row["first_date"] or ""),
+                "last_date": str(row["last_date"] or ""),
+            })
+            if len(candidates) >= limit:
+                break
+
+        return {
+            "market": market,
+            "trading_days": trading_days,
+            "index_days": index_days,
+            "index_coverage_pct": 0.0 if trading_days <= 0 else round(index_days / trading_days * 100.0, 2),
+            "candidates": candidates,
+        }
 
     def index_series(self, market: str, start_dd: str | None = None, end_dd: str | None = None) -> HistorySeries:
         market = self._market(market)
@@ -299,14 +387,22 @@ class HistoricalMarketStore:
         if end_dd:
             clauses.append("bas_dd<=?")
             params.append(end_dd)
+        status_clauses = ["market=?", "kind='index'"]
+        status_params: list[Any] = [market]
+        if start_dd:
+            status_clauses.append("bas_dd>=?")
+            status_params.append(start_dd)
+        if end_dd:
+            status_clauses.append("bas_dd<=?")
+            status_params.append(end_dd)
         with self._lock, self._connect() as conn:
             rows = conn.execute(
                 f"SELECT bas_dd,row_json FROM main_index_daily WHERE {' AND '.join(clauses)} ORDER BY bas_dd",
                 params,
             ).fetchall()
             statuses = conn.execute(
-                "SELECT bas_dd FROM day_status WHERE market=? AND kind='index'",
-                (market,),
+                f"SELECT bas_dd FROM day_status WHERE {' AND '.join(status_clauses)}",
+                status_params,
             ).fetchall()
         return HistorySeries(
             rows={str(row["bas_dd"]): self._load(str(row["row_json"])) for row in rows},

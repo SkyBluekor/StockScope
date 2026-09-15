@@ -1300,6 +1300,19 @@ export type PullbackBacktestResponse = {
     market_store_hits?: number;
     legacy_rows_imported?: number;
     raw_cache_hits: number;
+    cached_symbol_fast_path_hits?: number;
+    cached_index_fast_path_hits?: number;
+    network_symbol_fast_path_hits?: number;
+    network_index_fast_path_hits?: number;
+    raw_market_cache_seeded?: number;
+    market_wide_sqlite_promotions?: number;
+    cold_start_fast_path?: boolean;
+    concurrency?: number;
+    single_stock_fast_path?: boolean;
+    legacy_load_ms?: number;
+    market_store_load_ms?: number;
+    history_fill_ms?: number;
+    data_prepare_ms?: number;
     cache_reuse_pct?: number;
     estimated_network_requests?: number;
     network_requests: number;
@@ -1387,6 +1400,93 @@ export type MultiStrategyHistoricalFit = {
   summary: string;
 };
 
+export type ConcreteEntryRiskGuide = {
+  strategy: string;
+  as_of_date: string | null;
+  current_price: number | null;
+  display_current_price?: number | null;
+  price_rule: {
+    kind: "RANGE" | "ABOVE" | "AT_OR_BELOW" | "REFERENCE" | "UNAVAILABLE" | string;
+    label: string;
+    status: string;
+    basis: string | null;
+    range_low: number | null;
+    range_high: number | null;
+    trigger_price: number | null;
+    reference_price: number | null;
+    display_range_low?: number | null;
+    display_range_high?: number | null;
+    display_trigger_price?: number | null;
+    display_reference_price?: number | null;
+    gap_pct: number | null;
+    message: string;
+  };
+  volume_rule: {
+    available: boolean;
+    status: string;
+    current_ratio: number | null;
+    required_ratio: number | null;
+    comparator: "AT_LEAST" | "AT_MOST" | string | null;
+    gap_pct: number | null;
+    basis: string | null;
+    message: string;
+  };
+  trend_strength: {
+    available: boolean;
+    label: string;
+    current_value: number | null;
+    required_value: string | null;
+    status: string;
+    metric_key: string | null;
+    message: string;
+  };
+  rebound_rule: {
+    available: boolean;
+    status: string;
+    trigger_price: number | null;
+    gap_pct: number | null;
+    basis: string | null;
+    message: string;
+  };
+  risk: {
+    available: boolean;
+    status: string | null;
+    reference_only: boolean;
+    entry_reference_price: number | null;
+    structural_anchor: number | null;
+    structural_anchor_label: string | null;
+    invalidation_price: number | null;
+    display_invalidation_price?: number | null;
+    stop_zone_low: number | null;
+    stop_zone_high: number | null;
+    target1_price: number | null;
+    display_target1_price?: number | null;
+    target2_price: number | null;
+    display_target2_price?: number | null;
+    risk_pct: number | null;
+    reward1_pct: number | null;
+    reward2_pct: number | null;
+    rr1: number | null;
+    rr2: number | null;
+    structure_rating: string | null;
+    summary: string | null;
+    warnings: string[];
+    needs_recheck: boolean;
+    basis_label: string;
+    recheck_message: string | null;
+  };
+  action: { status: string; title: string; detail: string };
+  historical_verification: { verified: boolean | null; status: string | null; message: string };
+  historical_policy?: {
+    policy_id: string;
+    label: string;
+    target1_is_exit: boolean;
+    target2_included: boolean;
+    target2_label: string;
+  };
+  guardrail: string;
+};
+
 export type MultiStrategyCurrentState = {
   status: "READY" | "WATCH" | "CAUTION" | "BLOCKED" | "NOT_READY" | string;
   label: string;
@@ -1416,6 +1516,7 @@ export type MultiStrategyCurrentState = {
   unmet_details?: MultiStrategyConditionDetail[];
   suitability?: string;
   eligible?: boolean;
+  entry_risk_guide?: ConcreteEntryRiskGuide | null;
 };
 
 export type MultiStrategyGuide = {
@@ -1481,6 +1582,7 @@ export type MultiStrategyRecommendation = {
   as_of_date: string;
   market_regime: string;
   guardrail?: string;
+  entry_risk_guide?: ConcreteEntryRiskGuide | null;
 };
 
 export type MultiStrategyBacktestResponse = {
@@ -1492,6 +1594,13 @@ export type MultiStrategyBacktestResponse = {
   market_regime: string;
   recommendation: MultiStrategyRecommendation;
   strategies: MultiStrategyRow[];
+  historical_policy?: {
+    policy_id: string;
+    label: string;
+    target1_is_exit: boolean;
+    target2_included: boolean;
+    target2_label: string;
+  };
   config: {
     minimum_strategy_score: number;
     entry_policy: string;
@@ -1519,7 +1628,180 @@ export async function createMultiStrategyBacktestJob(payload: PullbackBacktestRe
   );
 }
 
+export type ExitPolicyAggregateMetrics = {
+  trades: number;
+  win_rate_pct: number | null;
+  average_net_return_pct: number | null;
+  profit_factor: number | null;
+  median_max_drawdown_pct: number | null;
+  worst_max_drawdown_pct: number | null;
+  average_holding_days: number | null;
+  average_profit_giveback_pct_points: number | null;
+};
+
+export type ExitPolicyValidationPolicy = {
+  policy_id: string;
+  stock_count: number;
+  markets: string[];
+  aggregate_metrics: ExitPolicyAggregateMetrics;
+};
+
+export type ExitPolicyValidationStrategy = {
+  strategy: string;
+  status: "SELECTED" | "BASELINE_BETTER" | "UNRESOLVED" | "INSUFFICIENT_SAMPLE" | string;
+  selected_policy_id: string;
+  reason: string;
+  baseline?: ExitPolicyValidationPolicy | null;
+  selected?: ExitPolicyValidationPolicy | null;
+  policies: ExitPolicyValidationPolicy[];
+  stock_concentration?: {
+    single_stock_dominant?: boolean;
+    dominant_code?: string | null;
+    [key: string]: unknown;
+  };
+  regime_metrics?: Record<string, {
+    trades: number;
+    win_rate_pct: number | null;
+    average_net_return_pct: number | null;
+    profit_factor: number | null;
+  }>;
+  max_hold_validation?: {
+    status: string;
+    selected: string | null;
+    reason: string;
+  };
+};
+
+export type ExitPolicyValidationReport = {
+  version: string;
+  runner_version?: string;
+  research_only: boolean;
+  production_policy_changed: false;
+  status: "COMPLETED" | "DATA_REQUIRED" | string;
+  message?: string;
+  signature: string;
+  period: { start: string; end: string };
+  sample?: {
+    stocks: number;
+    markets: string[];
+    minimum_stock_count: number;
+    minimum_total_trades: number;
+    market_diversity_warning: boolean;
+  };
+  summary?: {
+    selected: number;
+    baseline_better: number;
+    unresolved: number;
+    insufficient_sample: number;
+    production_policy_changed: false;
+  };
+  strategies?: ExitPolicyValidationStrategy[];
+  selected_stocks?: Array<{ code: string; market: string; coverage_pct?: number; row_count?: number }>;
+  validated_stocks?: Array<{ code: string; market: string }>;
+  excluded_stocks?: Array<{ code: string; market: string; reason: string }>;
+  market_availability?: Record<string, {
+    trading_days: number;
+    index_days: number;
+    index_coverage_pct: number;
+    candidates: Array<{ code: string; market: string; coverage_pct: number; row_count: number }>;
+  }>;
+  checkpoint?: { reused_stocks: number; completed_stocks: number; resumable?: boolean };
+  performance: {
+    market_store_load_seconds?: number;
+    exit_policy_calculation_seconds?: number;
+    selection_seconds?: number;
+    total_seconds: number;
+    network_requests: number;
+  };
+  report?: { saved: boolean; filename: string; runtime_area: string };
+};
+
+export type ExitPolicyValidationRunnerRequest = {
+  start_date: string;
+  end_date: string;
+  markets?: Array<"KOSPI" | "KOSDAQ">;
+  max_stocks?: number;
+  minimum_coverage_pct?: number;
+  initial_capital: number;
+  max_holding_days: number;
+  round_trip_cost_pct: number;
+  minimum_stock_count?: number;
+  minimum_total_trades?: number;
+  post_target2_research_days?: number;
+  force_refresh?: boolean;
+};
+
+export async function createExitPolicyValidationJob(
+  payload: ExitPolicyValidationRunnerRequest,
+): Promise<BacktestJob<ExitPolicyValidationReport>> {
+  return asJson<BacktestJob<ExitPolicyValidationReport>>(
+    await fetch("/api/backtest/exit-policy-validation/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  );
+}
+
+export async function fetchLatestExitPolicyValidationReport(): Promise<{ available: boolean; report: ExitPolicyValidationReport | null }> {
+  return asJson<{ available: boolean; report: ExitPolicyValidationReport | null }>(
+    await fetch("/api/backtest/exit-policy-validation/latest"),
+  );
+}
+
 export type ScannerConditionDetail = MultiStrategyConditionDetail;
+
+export type ScannerHistoricalEvidence = {
+  status: "GOOD" | "FAIR" | "WEAK" | "INSUFFICIENT" | "NO_CASES" | "DATA_UNAVAILABLE" | string;
+  label: string;
+  summary: string;
+  verified: boolean;
+  sample_sufficient: boolean;
+  minimum_sample: number;
+  validation_years: number;
+  period: { start: string; end: string };
+  sample_count: number;
+  wins: number;
+  losses: number;
+  win_rate_pct: number | null;
+  average_net_return_pct: number | null;
+  median_net_return_pct: number | null;
+  expectancy_pct: number | null;
+  profit_factor: number | null;
+  max_drawdown_pct: number | null;
+  average_win_pct: number | null;
+  average_loss_pct: number | null;
+  exit_counts: { stop: number; target1: number; time_exit: number; other: number };
+  market_regime_summary: Array<{
+    regime: string;
+    trades: number;
+    average_net_return_pct: number;
+    wins: number;
+    losses: number;
+  }>;
+  warnings: string[];
+  guardrail: string;
+  signal_count?: number;
+  risk_blocked_signals?: number;
+  strategy?: string;
+};
+
+
+export type ScannerCandidatePriority = {
+  tier: "READY" | "NEAR_READY" | "WAIT" | "RISK_HOLD" | "LOW_PRIORITY" | string;
+  label: string;
+  reason: string;
+  strengths: string[];
+  facts: string[];
+  penalties: string[];
+  entry_gap_pct: number | null;
+  entry_gap_basis: string | null;
+  historical_status: string;
+  ranking_rule: string;
+  rank: number;
+  previous_rank: number;
+  rank_change: number;
+};
 
 export type ScannerCandidate = {
   code: string;
@@ -1555,7 +1837,10 @@ export type ScannerCandidate = {
     trades: number;
     verified?: boolean;
   };
-  verification_level?: "CURRENT_ONLY" | "CURRENT_AND_HISTORY" | string;
+  verification_level?: "CURRENT_ONLY" | "CURRENT_AND_HISTORY" | "CURRENT_AND_3Y_EVIDENCE" | string;
+  historical_evidence?: ScannerHistoricalEvidence | null;
+  priority?: ScannerCandidatePriority | null;
+  entry_risk_guide?: ConcreteEntryRiskGuide | null;
   user_action: {
     title: string | null;
     detail: string | null;
@@ -1592,6 +1877,10 @@ export type ScannerResponse = {
     deep_analyzed: number;
     historically_verified?: number;
     current_only?: number;
+    three_year_evidence_verified?: number;
+    three_year_evidence_data_unavailable?: number;
+    three_year_evidence_sample_insufficient?: number;
+    three_year_evidence_cache_hits?: number;
     candidate_count: number;
     shown_count: number;
     excluded_after_analysis: number;
@@ -1627,6 +1916,15 @@ export type ScannerResponse = {
     quick_filter_seconds?: number;
     deep_analysis_seconds?: number;
     total_seconds?: number;
+    ranking_changes?: Array<{
+      code: string;
+      name: string;
+      previous_rank: number;
+      new_rank: number;
+      rank_change: number;
+      tier: string;
+      reason: string;
+    }>;
   };
 };
 

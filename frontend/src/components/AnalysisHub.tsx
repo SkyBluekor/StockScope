@@ -42,74 +42,83 @@ export function AnalysisHub({
   const topStrategyName = summary.top_strategy.strategy
     ? strategyNames[summary.top_strategy.strategy] ?? summary.top_strategy.strategy
     : "뚜렷한 우선 전략 없음";
+  const primaryNavigation = summary.navigation.slice(0, 7);
+  const moreNavigation = summary.navigation.slice(7);
+  const moreNavigationActive = moreNavigation.some((item) => item.key === activeSection);
 
   return (
-    <section className={`analysis-hub action-first verdict-${summary.verdict_code.toLowerCase()}`}>
-      <div className="analysis-action-hero">
+    <section className={`analysis-hub action-first readability-v02122 verdict-${summary.verdict_code.toLowerCase()}`}>
+      <div className="analysis-action-hero analysis-action-hero-v02122">
         <div className="analysis-action-copy">
           <span>STOCKSCOPE ACTION PLAN · v0.18.2</span>
+          <div className="analysis-current-decision-label">현재 판단</div>
+          <strong className="analysis-current-decision">{action.label}</strong>
           <h3>{action.headline}</h3>
           <p>{action.summary}</p>
-          <div className="analysis-action-label">
-            <span>내 상황 기준 · {summary.perspective}</span>
-            <strong>{action.label}</strong>
+          <div className="analysis-decision-meta" aria-label="현재 판단 요약">
+            <span>내 상황 · {summary.perspective}</span>
+            {entry.relevant && <span>진입 조건 · {entry.progress.label}</span>}
+            <span>Risk · {summary.risk_level}</span>
           </div>
         </div>
-        <div className="analysis-hub-verdict">
+        <div className="analysis-hub-verdict analysis-hub-verdict-compact">
           <span>종합 판단</span>
           <strong>{summary.verdict_label}</strong>
-          <em>위험 수준 {summary.risk_level}</em>
+          <em>세부 점수보다 현재 행동을 먼저 봅니다.</em>
         </div>
       </div>
 
-      <div className={`analysis-strategy-separation ${entry.relevant ? "entry-timing-compact-grid" : ""}`}>
-        <div>
-          <span>기업 조건</span>
-          <strong>{entry.style_context.label || "투자스타일 분석"}</strong>
-          <b>{entry.style_context.fit_label || "판단 보류"}{entry.style_context.score == null ? "" : ` · ${Math.round(entry.style_context.score)} / 100`}</b>
-          <small>기업 자체의 스타일 적합도입니다. 단기 가격 타이밍과는 별도로 판정합니다.</small>
-        </div>
-        <div>
-          <span>전략 형태 적합도</span>
-          <strong>{topStrategyName}</strong>
-          <b>{summary.top_strategy.score == null ? "점수 없음" : `${summary.top_strategy.score} / 100`}</b>
-          <small>이 점수는 해당 전략의 형태와 얼마나 맞는지이며 진입 신호가 아닙니다.</small>
-        </div>
-        {entry.relevant && (
-          <div className="entry-timing-compact">
-            <span>단기 진입 타이밍</span>
-            <strong>{entry.action.primary}</strong>
-            <b>{entry.label} · {entry.progress.label}</b>
-            <small>{entry.most_missing.length > 0 ? `가장 부족: ${entry.most_missing.join(" · ")}` : "현재 핵심 조건 확인 완료"}</small>
-            <button type="button" onClick={() => onNavigate("strategy")}>진입 타이밍 상세</button>
+      <section className="analysis-priority-section analysis-priority-compact" aria-labelledby="priority-heading">
+        <div className="analysis-priority-head">
+          <div>
+            <span>현재 결정에 가장 중요한 이유</span>
+            <strong id="priority-heading">핵심 3개만 먼저 확인하세요.</strong>
           </div>
-        )}
-      </div>
+          <small>나머지 근거는 아래에서 필요할 때 펼쳐볼 수 있습니다.</small>
+        </div>
+        <div className="analysis-priority-list">
+          {summary.priority_signals.map((signal, index) => (
+            <article className={`analysis-priority-row ${signal.status.toLowerCase()}`} key={signal.key}>
+              <span className="analysis-priority-index">{index + 1}</span>
+              <div className="analysis-priority-name">
+                <span>{signal.label}</span>
+                <strong>{signal.value}</strong>
+              </div>
+              <p>{signal.action_hint}</p>
+            </article>
+          ))}
+        </div>
+      </section>
 
-      <div className="analysis-action-grid">
-        <article className="do-now">
-          <span>지금 할 것</span>
-          {action.do_now.length > 0 ? (
-            <ul>{action.do_now.map((item) => <li key={item}>{item}</li>)}</ul>
-          ) : (
-            <p>현재 자동 분석에서 별도의 즉시 확인 항목은 없습니다.</p>
-          )}
-        </article>
-        <article className="avoid-now">
-          <span>지금 피할 것</span>
-          {action.avoid_now.length > 0 ? (
-            <ul>{action.avoid_now.map((item) => <li key={item}>{item}</li>)}</ul>
-          ) : (
-            <p>현재 별도의 금지 조건은 계산되지 않았습니다.</p>
-          )}
-        </article>
-      </div>
+      {action.decision_scenarios.length > 0 && (
+        <section className="analysis-decision-scenarios analysis-decision-scenarios-v02122" aria-labelledby="decision-change-heading">
+          <div className="analysis-section-heading">
+            <span>다음 분석에서 다시 볼 조건</span>
+            <strong id="decision-change-heading">무엇이 바뀌면 판단이 달라지나요?</strong>
+          </div>
+          <div className="analysis-decision-table" role="list">
+            {action.decision_scenarios.map((scenario) => (
+              <article className={scenario.tone.toLowerCase()} key={`${scenario.condition}-${scenario.effect}`} role="listitem">
+                <div>
+                  <small>조건</small>
+                  <span>{scenario.condition}</span>
+                </div>
+                <b aria-hidden="true">→</b>
+                <div>
+                  <small>판단 변화</small>
+                  <strong>{scenario.effect}</strong>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
 
       {action.price_levels.length > 0 && (
-        <div className="analysis-price-levels">
+        <section className="analysis-price-levels analysis-price-levels-v02122" aria-labelledby="price-level-heading">
           <div className="analysis-price-levels-head">
-            <strong>앱이 자동으로 보는 가격 기준</strong>
-            <span>사용자가 차트를 보고 직접 찾을 필요가 없습니다.</span>
+            <strong id="price-level-heading">앱이 자동으로 보는 핵심 가격</strong>
+            <span>사용자가 차트에서 직접 계산할 필요가 없습니다.</span>
           </div>
           <div>
             {action.price_levels.map((level) => (
@@ -120,59 +129,78 @@ export function AnalysisHub({
               </article>
             ))}
           </div>
-        </div>
+        </section>
       )}
 
-      {action.decision_scenarios.length > 0 && (
-        <div className="analysis-decision-scenarios">
-          <strong>다음에 결론이 어떻게 바뀌나?</strong>
+      <details className="analysis-supporting-details">
+        <summary>
+          <span>
+            <strong>보조 분석 보기</strong>
+            <small>기업 조건, 전략 점수, 진입 타이밍과 행동 근거</small>
+          </span>
+          <b>펼쳐보기</b>
+        </summary>
+
+        <div className={`analysis-strategy-separation ${entry.relevant ? "entry-timing-compact-grid" : ""}`}>
           <div>
-            {action.decision_scenarios.map((scenario) => (
-              <article className={scenario.tone.toLowerCase()} key={`${scenario.condition}-${scenario.effect}`}>
-                <span>{scenario.condition}</span>
-                <b>→ {scenario.effect}</b>
-              </article>
-            ))}
+            <span>기업 조건</span>
+            <strong>{entry.style_context.label || "투자스타일 분석"}</strong>
+            <b>{entry.style_context.fit_label || "판단 보류"}{entry.style_context.score == null ? "" : ` · ${Math.round(entry.style_context.score)} / 100`}</b>
+            <small>기업 자체의 스타일 적합도입니다. 단기 가격 타이밍과는 별도로 판정합니다.</small>
           </div>
-        </div>
-      )}
-
-      {action.conflict.show && (
-        <div className="analysis-conflict-explainer">
-          <strong>{action.conflict.headline}</strong>
-          <p>{action.conflict.summary}</p>
-          {action.conflict.blockers.length > 0 && (
-            <div>{action.conflict.blockers.map((item) => <span key={item}>{item}</span>)}</div>
+          <div>
+            <span>전략 형태 적합도</span>
+            <strong>{topStrategyName}</strong>
+            <b>{summary.top_strategy.score == null ? "점수 없음" : `${summary.top_strategy.score} / 100`}</b>
+            <small>이 점수는 해당 전략의 형태와 얼마나 맞는지이며 진입 신호가 아닙니다.</small>
+          </div>
+          {entry.relevant && (
+            <div className="entry-timing-compact">
+              <span>단기 진입 타이밍</span>
+              <strong>{entry.action.primary}</strong>
+              <b>{entry.label} · {entry.progress.label}</b>
+              <small>{entry.most_missing.length > 0 ? `가장 부족: ${entry.most_missing.join(" · ")}` : "현재 핵심 조건 확인 완료"}</small>
+              <button type="button" onClick={() => onNavigate("strategy")}>진입 타이밍 상세</button>
+            </div>
           )}
         </div>
-      )}
 
-      <div className="analysis-priority-section">
-        <div className="analysis-priority-head">
-          <div>
-            <span>현재 결정에 가장 중요한 요소</span>
-            <strong>우선순위 3개만 먼저 보여드립니다.</strong>
+        <div className="analysis-action-grid">
+          <article className="do-now">
+            <span>지금 할 것</span>
+            {action.do_now.length > 0 ? (
+              <ul>{action.do_now.map((item) => <li key={item}>{item}</li>)}</ul>
+            ) : (
+              <p>현재 자동 분석에서 별도의 즉시 확인 항목은 없습니다.</p>
+            )}
+          </article>
+          <article className="avoid-now">
+            <span>지금 피할 것</span>
+            {action.avoid_now.length > 0 ? (
+              <ul>{action.avoid_now.map((item) => <li key={item}>{item}</li>)}</ul>
+            ) : (
+              <p>현재 별도의 금지 조건은 계산되지 않았습니다.</p>
+            )}
+          </article>
+        </div>
+
+        {action.conflict.show && (
+          <div className="analysis-conflict-explainer">
+            <strong>{action.conflict.headline}</strong>
+            <p>{action.conflict.summary}</p>
+            {action.conflict.blockers.length > 0 && (
+              <div>{action.conflict.blockers.map((item) => <span key={item}>{item}</span>)}</div>
+            )}
           </div>
-          <small>나머지는 필요할 때 펼쳐볼 수 있습니다.</small>
-        </div>
-        <div className="analysis-signal-grid priority-only">
-          {summary.priority_signals.map((signal, index) => (
-            <article className={`analysis-signal ${signal.status.toLowerCase()}`} key={signal.key}>
-              <span>{index + 1}. {signal.label}</span>
-              <strong>{signal.value}</strong>
-              <p>{signal.action_hint}</p>
-              <small>{signal.detail}</small>
-            </article>
-          ))}
-        </div>
-      </div>
+        )}
+      </details>
 
       {summary.other_signals.length > 0 && (
         <details className="analysis-other-signals">
           <summary>
             <span>
               <strong>나머지 분석 결과 {summary.other_signals.length}개</strong>
-              <small>현재 행동을 이해하는 데 필요할 때만 확인하세요.</small>
+              <small>현재 행동에 영향이 적은 결과입니다.</small>
             </span>
             <b>펼쳐보기</b>
           </summary>
@@ -213,24 +241,50 @@ export function AnalysisHub({
         </div>
       </details>
 
-      <nav className="analysis-hub-nav" aria-label="분석 상세 탐색">
-        {summary.navigation.map((item) => (
-          <button
-            type="button"
-            key={item.key}
-            className={activeSection === item.key ? "active" : ""}
-            onClick={() => onNavigate(item.key as AnalysisSection)}
-          >
-            <strong>{item.label}</strong>
-            <span>{item.description}</span>
-          </button>
-        ))}
-      </nav>
+      <div className="analysis-detail-navigation-block">
+        <div className="analysis-detail-navigation-head">
+          <div>
+            <span>전문 분석</span>
+            <strong>궁금한 영역만 선택해서 확인하세요.</strong>
+          </div>
+        </div>
+        <nav className="analysis-hub-nav analysis-hub-nav-v02122" aria-label="분석 상세 탐색">
+          {primaryNavigation.map((item) => (
+            <button
+              type="button"
+              key={item.key}
+              className={activeSection === item.key ? "active" : ""}
+              onClick={() => onNavigate(item.key as AnalysisSection)}
+              title={item.description}
+            >
+              <strong>{item.label}</strong>
+            </button>
+          ))}
+          {moreNavigation.length > 0 && (
+            <details className={`analysis-hub-nav-more ${moreNavigationActive ? "active" : ""}`}>
+              <summary>더보기</summary>
+              <div>
+                {moreNavigation.map((item) => (
+                  <button
+                    type="button"
+                    key={item.key}
+                    className={activeSection === item.key ? "active" : ""}
+                    onClick={() => onNavigate(item.key as AnalysisSection)}
+                    title={item.description}
+                  >
+                    <strong>{item.label}</strong>
+                  </button>
+                ))}
+              </div>
+            </details>
+          )}
+        </nav>
+      </div>
 
       {activeSection === "summary" && (
         <div className="analysis-hub-collapsed-note">
           <strong>세부 분석은 기본적으로 접혀 있습니다.</strong>
-          <span>위 메뉴에서 궁금한 영역만 선택하면 해당 분석만 표시됩니다.</span>
+          <span>전문 분석에서 궁금한 영역만 선택하면 해당 분석만 표시됩니다.</span>
         </div>
       )}
     </section>

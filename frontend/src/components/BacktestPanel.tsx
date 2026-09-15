@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import EntryRiskGuideCard from "./EntryRiskGuideCard";
 import {
   cancelBacktestJob,
+  createExitPolicyValidationJob,
   createMultiStrategyBacktestJob,
   fetchBacktestJob,
+  fetchLatestExitPolicyValidationReport,
   searchStocks,
   type BacktestJob,
+  type ExitPolicyValidationReport,
+  type ExitPolicyValidationStrategy,
   type MultiStrategyBacktestResponse,
   type MultiStrategyConditionDetail,
   type MultiStrategyRow,
@@ -76,6 +81,15 @@ function formatCompactDate(value: string) {
   const compact = value.replace(/-/g, "");
   if (compact.length !== 8) return value;
   return `${compact.slice(0, 4)}.${compact.slice(4, 6)}.${compact.slice(6, 8)}`;
+}
+
+function historicalEvidenceHint(row: MultiStrategyRow) {
+  const status = row.historical_fit.status;
+  if (status === "INSUFFICIENT") return "현재 비교 기준에서는 표본이 부족합니다.";
+  if (status === "WEAK") return "표본은 있지만 평균 결과나 손실 구조가 충분히 안정적이지 않았습니다.";
+  if (status === "FAIR") return "일부 긍정 근거가 있지만 결과가 혼재되어 있습니다.";
+  if (status === "GOOD") return "현재 비교 기준에서 과거 근거가 상대적으로 양호했습니다.";
+  return "표본 수와 평균 결과, 손익 구조, MDD를 함께 확인합니다.";
 }
 
 function exitLabel(value: string) {
@@ -210,6 +224,76 @@ function StrategyConditionSummary({ row, action }: { row: MultiStrategyRow; acti
   );
 }
 
+function exitPolicyStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    SELECTED: "새 정책 선택 후보",
+    BASELINE_BETTER: "기존 정책 유지",
+    UNRESOLVED: "우열 미확정",
+    INSUFFICIENT_SAMPLE: "표본 부족",
+  };
+  return labels[status] ?? status;
+}
+
+function exitPolicyLabel(policyId: string | null | undefined) {
+  const labels: Record<string, string> = {
+    TARGET1_FULL_EXIT: "1차 목표 전량 종료",
+    ATR_TRAIL_1_5: "ATR 1.5 Trailing",
+    ATR_TRAIL_2_0: "ATR 2.0 Trailing",
+    ATR_TRAIL_2_5: "ATR 2.5 Trailing",
+    MA20_TRAIL: "MA20 Exit",
+    SWING_LOW_TRAIL: "최근 Swing Low Exit",
+  };
+  return policyId ? labels[policyId] ?? policyId : "-";
+}
+
+function ExitPolicyStrategyReport({ row }: { row: ExitPolicyValidationStrategy }) {
+  const selectedPolicy = row.policies.find((policy) => policy.policy_id === row.selected_policy_id) ?? row.selected ?? row.baseline ?? null;
+  return (
+    <article className={`exit-validation-strategy status-${row.status.toLowerCase()}`}>
+      <div className="exit-validation-strategy-head">
+        <div><span>{row.strategy}</span><strong>{exitPolicyStatusLabel(row.status)}</strong></div>
+        <b>{exitPolicyLabel(row.selected_policy_id)}</b>
+      </div>
+      <p>{row.reason}</p>
+      {selectedPolicy && (
+        <div className="exit-validation-metrics">
+          <span><small>거래</small><b>{selectedPolicy.aggregate_metrics.trades.toLocaleString()}건</b></span>
+          <span><small>평균 Net</small><b>{formatPct(selectedPolicy.aggregate_metrics.average_net_return_pct)}</b></span>
+          <span><small>PF</small><b>{formatNumber(selectedPolicy.aggregate_metrics.profit_factor, 2)}</b></span>
+          <span><small>중앙 MDD</small><b>{formatPct(selectedPolicy.aggregate_metrics.median_max_drawdown_pct)}</b></span>
+          <span><small>Giveback</small><b>{selectedPolicy.aggregate_metrics.average_profit_giveback_pct_points == null ? "-" : `${formatNumber(selectedPolicy.aggregate_metrics.average_profit_giveback_pct_points, 2)}%p`}</b></span>
+          <span><small>평균 보유</small><b>{selectedPolicy.aggregate_metrics.average_holding_days == null ? "-" : `${formatNumber(selectedPolicy.aggregate_metrics.average_holding_days, 1)}일`}</b></span>
+        </div>
+      )}
+      {row.stock_concentration?.single_stock_dominant && (
+        <div className="exit-validation-warning">특정 종목({String(row.stock_concentration.dominant_code ?? "-")}) 편향이 커 자동 선택하지 않았습니다.</div>
+      )}
+      {row.max_hold_validation && (
+        <div className="exit-validation-hold"><b>Target2 이후 보유기간</b><span>{row.max_hold_validation.reason}</span></div>
+      )}
+      <details className="exit-validation-policy-details">
+        <summary><span>정책별 수치 비교</span><DetailToggleText /></summary>
+        <div className="exit-validation-policy-table-wrap">
+          <table className="exit-validation-policy-table">
+            <thead><tr><th>정책</th><th>거래</th><th>평균 Net</th><th>PF</th><th>MDD</th><th>Giveback</th><th>보유</th></tr></thead>
+            <tbody>{row.policies.map((policy) => <tr key={policy.policy_id}><td>{exitPolicyLabel(policy.policy_id)}</td><td>{policy.aggregate_metrics.trades}</td><td>{formatPct(policy.aggregate_metrics.average_net_return_pct)}</td><td>{formatNumber(policy.aggregate_metrics.profit_factor, 2)}</td><td>{formatPct(policy.aggregate_metrics.median_max_drawdown_pct)}</td><td>{policy.aggregate_metrics.average_profit_giveback_pct_points == null ? "-" : `${formatNumber(policy.aggregate_metrics.average_profit_giveback_pct_points, 2)}%p`}</td><td>{policy.aggregate_metrics.average_holding_days == null ? "-" : `${formatNumber(policy.aggregate_metrics.average_holding_days, 1)}일`}</td></tr>)}</tbody>
+          </table>
+        </div>
+      </details>
+      {row.regime_metrics && Object.keys(row.regime_metrics).length > 0 && (
+        <details className="exit-validation-policy-details">
+          <summary><span>시장 상태별 결과</span><DetailToggleText /></summary>
+          <div className="exit-validation-regime-grid">
+            {Object.entries(row.regime_metrics).map(([regime, metrics]) => (
+              <span key={regime}><small>{regimeLabel[regime] ?? regime}</small><b>{formatPct(metrics.average_net_return_pct)}</b><em>{metrics.trades}건 · PF {formatNumber(metrics.profit_factor, 2)}</em></span>
+            ))}
+          </div>
+        </details>
+      )}
+    </article>
+  );
+}
+
 function StrategyMiniCard({ row }: { row: MultiStrategyRow }) {
   return (
     <article className={`multi-strategy-mini fit-${row.historical_fit.status.toLowerCase()}`}>
@@ -242,7 +326,12 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
   const [error, setError] = useState<string | null>(null);
   const [job, setJob] = useState<BacktestJob<MultiStrategyBacktestResponse> | null>(null);
   const [result, setResult] = useState<MultiStrategyBacktestResponse | null>(null);
+  const [validationBusy, setValidationBusy] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [validationJob, setValidationJob] = useState<BacktestJob<ExitPolicyValidationReport> | null>(null);
+  const [validationReport, setValidationReport] = useState<ExitPolicyValidationReport | null>(null);
   const activeJobId = useRef<string | null>(null);
+  const activeValidationJobId = useRef<string | null>(null);
   const workspaceTopRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -274,9 +363,17 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
   }, [stockQuery, code, stockName]);
 
   useEffect(() => {
+    void fetchLatestExitPolicyValidationReport()
+      .then((response) => { if (response.available && response.report) setValidationReport(response.report); })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
     return () => {
       const running = activeJobId.current;
       if (running) void cancelBacktestJob<MultiStrategyBacktestResponse>(running).catch(() => undefined);
+      const validationRunning = activeValidationJobId.current;
+      if (validationRunning) void cancelBacktestJob<ExitPolicyValidationReport>(validationRunning).catch(() => undefined);
     };
   }, []);
 
@@ -364,6 +461,68 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
     }
   }
 
+  async function runExitPolicyValidation(forceRefresh = false) {
+    if (validationBusy) return;
+    const holding = Number(selectedHolding);
+    if (!Number.isFinite(holding) || holding < 1 || holding > 120) {
+      setValidationError("최대 보유기간은 1~120 거래일로 입력해 주세요.");
+      return;
+    }
+    setValidationBusy(true);
+    setValidationError(null);
+    try {
+      const created = await createExitPolicyValidationJob({
+        start_date: startDate,
+        end_date: endDate,
+        markets: ["KOSPI", "KOSDAQ"],
+        max_stocks: 20,
+        minimum_coverage_pct: 90,
+        initial_capital: Number(initialCapital),
+        max_holding_days: holding,
+        round_trip_cost_pct: Number(costPct),
+        minimum_stock_count: 3,
+        minimum_total_trades: 30,
+        post_target2_research_days: 60,
+        force_refresh: forceRefresh,
+      });
+      setValidationJob(created);
+      activeValidationJobId.current = created.job_id;
+      while (activeValidationJobId.current === created.job_id) {
+        await new Promise((resolve) => window.setTimeout(resolve, 800));
+        const latest = await fetchBacktestJob<ExitPolicyValidationReport>(created.job_id);
+        setValidationJob(latest);
+        if (latest.status === "completed" && latest.result) {
+          setValidationReport(latest.result);
+          setValidationBusy(false);
+          activeValidationJobId.current = null;
+          return;
+        }
+        if (latest.status === "failed") throw new Error(latest.error || "Exit 정책 검증을 완료하지 못했습니다.");
+        if (latest.status === "cancelled") {
+          setValidationBusy(false);
+          activeValidationJobId.current = null;
+          return;
+        }
+      }
+    } catch (cause) {
+      setValidationBusy(false);
+      activeValidationJobId.current = null;
+      setValidationError(cause instanceof Error ? cause.message : "Exit 정책 검증 중 오류가 발생했습니다.");
+    }
+  }
+
+  async function cancelExitPolicyValidation() {
+    const id = activeValidationJobId.current;
+    if (!id) return;
+    try {
+      const cancelled = await cancelBacktestJob<ExitPolicyValidationReport>(id);
+      setValidationJob(cancelled);
+    } finally {
+      activeValidationJobId.current = null;
+      setValidationBusy(false);
+    }
+  }
+
   function rerunLatest() {
     if (busy) return;
     const latest = isoDate(new Date());
@@ -392,7 +551,7 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
     <section className="backtest-workspace multi-strategy-workspace" ref={workspaceTopRef}>
       <header className="multi-strategy-header">
         <div>
-          <span>STRATEGY SELECTOR · v0.20.3</span>
+          <span>STRATEGY SELECTOR · v0.21.4-B.1.1</span>
           <h1>10가지 투자 방법 자동 비교</h1>
           <p>종목 하나를 고르면 StockScope가 10가지 방법을 같은 과거 데이터로 비교합니다. 전문 용어를 몰라도 지금 어떤 방법이 맞는지와 사용자가 해야 할 일을 쉬운 말로 정리합니다.</p>
         </div>
@@ -490,6 +649,72 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
             </div>
             {error && <div className="backtest-error"><strong>실행 실패</strong><span>{error}</span></div>}
           </section>
+          <details className="exit-validation-panel">
+            <summary><span>연구용 · Exit 정책 검증</span><DetailToggleText closed="검증 열기 ▼" open="검증 닫기 ▲" /></summary>
+            <div className="exit-validation-body">
+              <div className="exit-validation-intro">
+                <div><strong>Target2 이후 어떤 Exit 방식이 실제로 더 나은지 검증합니다.</strong><p>로컬 Market Store에 충분한 데이터가 있는 종목만 자동 선택합니다. 이 검증은 KRX 네트워크를 추가 호출하지 않으며 현재 실제 매도 정책도 바꾸지 않습니다.</p></div>
+                <span>연구 전용 · Production 정책 변경 없음</span>
+              </div>
+              <div className="exit-validation-config-summary">
+                <span><b>기간</b>{formatCompactDate(startDate)} ~ {formatCompactDate(endDate)}</span>
+                <span><b>시장</b>KOSPI + KOSDAQ</span>
+                <span><b>최대 표본</b>20종목</span>
+                <span><b>최소 로컬 커버리지</b>90%</span>
+              </div>
+              <div className="exit-validation-actions">
+                <button type="button" disabled={validationBusy} onClick={() => void runExitPolicyValidation(false)}>{validationBusy ? "Exit 정책 검증 중..." : validationReport ? "같은 조건으로 검증/이어하기" : "Exit 정책 검증 시작"}</button>
+                {validationReport && <button type="button" className="secondary" disabled={validationBusy} onClick={() => void runExitPolicyValidation(true)}>처음부터 다시 검증</button>}
+                {validationBusy && <button type="button" className="secondary" onClick={() => void cancelExitPolicyValidation()}>검증 중단</button>}
+              </div>
+              {validationBusy && validationJob && (
+                <div className="exit-validation-progress">
+                  <div><strong>{validationJob.progress.message}</strong><span>{validationJob.progress.current} / {validationJob.progress.total} · {validationJob.progress.percent.toFixed(1)}%</span><b>{validationJob.elapsed_seconds.toFixed(1)}초</b></div>
+                  <progress max={100} value={validationJob.progress.percent} />
+                  <p>현재 종목 {String(validationJob.progress.details.validation_code ?? "-")} · 체크포인트 재사용 {String(validationJob.progress.details.checkpoint_hit ?? false) === "true" ? "예" : "아니오"} · 네트워크 요청 {Number(validationJob.progress.details.network_requests ?? 0)}회</p>
+                </div>
+              )}
+              {validationError && <div className="backtest-error"><strong>Exit 정책 검증 실패</strong><span>{validationError}</span></div>}
+              {validationReport && (
+                <div className="exit-validation-report">
+                  <div className="exit-validation-report-head">
+                    <div><span>검증 리포트</span><strong>{validationReport.status === "COMPLETED" ? "전략별 Exit 정책 검증 완료" : "추가 로컬 데이터가 필요합니다."}</strong><p>{formatCompactDate(validationReport.period.start)} ~ {formatCompactDate(validationReport.period.end)} · 네트워크 요청 {validationReport.performance.network_requests}회</p></div>
+                    <b>{validationReport.production_policy_changed ? "실제 정책 변경됨" : "실제 정책 변경 없음"}</b>
+                  </div>
+                  {validationReport.summary && (
+                    <div className="exit-validation-summary">
+                      <span><small>새 정책 선택 후보</small><b>{validationReport.summary.selected}</b></span>
+                      <span><small>기존 유지</small><b>{validationReport.summary.baseline_better}</b></span>
+                      <span><small>미확정</small><b>{validationReport.summary.unresolved}</b></span>
+                      <span><small>표본 부족</small><b>{validationReport.summary.insufficient_sample}</b></span>
+                    </div>
+                  )}
+                  {validationReport.message && <div className="exit-validation-warning">{validationReport.message}</div>}
+                  <div className="exit-validation-meta">
+                    <span><b>완료 종목</b>{validationReport.checkpoint?.completed_stocks ?? validationReport.sample?.stocks ?? 0}</span>
+                    <span><b>체크포인트 재사용</b>{validationReport.checkpoint?.reused_stocks ?? 0}</span>
+                    <span><b>Market Store 로드</b>{formatNumber(validationReport.performance.market_store_load_seconds, 2)}초</span>
+                    <span><b>Exit 계산</b>{formatNumber(validationReport.performance.exit_policy_calculation_seconds, 2)}초</span>
+                    <span><b>전체</b>{formatNumber(validationReport.performance.total_seconds, 2)}초</span>
+                  </div>
+                  {(validationReport.validated_stocks?.length || validationReport.excluded_stocks?.length) && (
+                    <details className="exit-validation-sample-details">
+                      <summary><span>검증에 사용한 종목과 제외 사유</span><DetailToggleText /></summary>
+                      <div className="exit-validation-sample-grid">
+                        {validationReport.validated_stocks?.map((stock) => <span key={`used-${stock.market}-${stock.code}`}><b>{stock.code}</b><small>{stock.market} · 검증 사용</small></span>)}
+                        {validationReport.excluded_stocks?.map((stock) => <span className="excluded" key={`excluded-${stock.market}-${stock.code}`}><b>{stock.code}</b><small>{stock.market} · {stock.reason}</small></span>)}
+                      </div>
+                    </details>
+                  )}
+                  {validationReport.strategies && validationReport.strategies.length > 0 && (
+                    <div className="exit-validation-strategies">
+                      {validationReport.strategies.map((row) => <ExitPolicyStrategyReport key={row.strategy} row={row} />)}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </details>
         </div>
       )}
 
@@ -504,7 +729,7 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
             <div className="backtest-progress-card">
               <div className="backtest-progress-head"><div><strong>{job.progress.message}</strong><span>{job.progress.current.toLocaleString()} / {job.progress.total.toLocaleString()} · {job.progress.percent.toFixed(1)}%</span></div><b>{job.elapsed_seconds.toFixed(1)}초</b></div>
               <progress max={100} value={job.progress.percent} />
-              <div className="backtest-progress-stats"><span><b>시장 저장소</b>{Number(job.progress.details.market_store_hits ?? job.progress.details.history_store_hits ?? 0).toLocaleString()} hit</span><span><b>기존 KRX 캐시</b>{Number(job.progress.details.raw_cache_hits ?? 0).toLocaleString()} hit</span><span><b>예상 신규 요청</b>{Number(job.progress.details.estimated_network_requests ?? 0).toLocaleString()}회</span><span><b>실제 요청</b>{Number(job.progress.details.network_requests ?? 0).toLocaleString()}회</span>{Number(job.progress.details.budget_limit ?? 0) > 0 && <span><b>오늘 KRX(앱 기록)</b>{Number(job.progress.details.budget_used ?? 0).toLocaleString()} / {Number(job.progress.details.budget_limit ?? 0).toLocaleString()}</span>}<span><b>현재 전략</b>{String(job.progress.details.strategy ?? "-")}</span></div>
+              <div className="backtest-progress-stats"><span><b>처리 경로</b>{job.progress.details.cold_start_fast_path ? "Cold Start Fast Path" : job.progress.details.single_stock_fast_path ? "단일 종목 Fast Path" : "기본 경로"}</span><span><b>과거 저장소</b>{Number(job.progress.details.history_store_hits ?? 0).toLocaleString()} hit</span><span><b>선택종목 캐시</b>{Number(job.progress.details.cached_symbol_fast_path_hits ?? 0).toLocaleString()}일</span><span><b>KRX 캐시</b>{Number(job.progress.details.raw_cache_hits ?? 0).toLocaleString()} hit</span><span><b>실제 요청</b>{Number(job.progress.details.network_requests ?? 0).toLocaleString()}회</span><span><b>동시 처리</b>{Number(job.progress.details.concurrency ?? 0).toLocaleString()}</span><span><b>재시도</b>{Number(job.progress.details.retries ?? 0).toLocaleString()}회</span><span><b>현재 전략</b>{String(job.progress.details.strategy ?? "-")}</span></div>
               <button type="button" className="backtest-cancel-button" onClick={() => void cancelRunning()}>분석 취소</button>
             </div>
           )}
@@ -515,15 +740,16 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
             <div className="multi-strategy-results">
               <section className={`strategy-selector-hero action-${result.recommendation.action.toLowerCase()}`}>
                 <div className="strategy-selector-kicker">
-                  <span>{formatCompactDate(result.as_of_date)} 기준</span>
+                  <span>{formatCompactDate(result.as_of_date)} 확정 일봉 기준</span>
                   <b>{regimeLabel[result.market_regime] ?? result.market_regime}</b>
                 </div>
 
                 <div className="strategy-selector-main beginner">
                   <div>
-                    <span>현재 가장 적합한 방법</span>
+                    <span>현재 10개 방법 중 조건에 가장 가까운 방법</span>
                     <h2>{result.recommendation.strategy_easy_name ?? "현재 추천 전략 없음"}</h2>
                     {result.recommendation.strategy_label && <small className="strategy-professional-name">전문 용어 · {result.recommendation.strategy_label} 전략</small>}
+                    <small className="strategy-rank-guardrail">가장 높은 순위가 곧 진입 가능을 의미하지 않습니다.</small>
                   </div>
                   <div className="strategy-selector-decision">
                     <span>현재 판단</span>
@@ -556,6 +782,10 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
                 </div>
 
                 {topStrategy && <StrategyConditionSummary row={topStrategy} action={result.recommendation.action} />}
+
+                {result.recommendation.entry_risk_guide && (
+                  <EntryRiskGuideCard guide={result.recommendation.entry_risk_guide} />
+                )}
 
                 <div className="strategy-user-action-card">
                   <div className="strategy-user-action-head">
@@ -604,11 +834,18 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
                 <small>{result.recommendation.guardrail}</small>
               </section>
 
+              {result.historical_policy && (
+                <section className="historical-policy-banner">
+                  <div><span>현재 과거 검증 Exit 정책</span><strong>{result.historical_policy.label}</strong></div>
+                  <p>{result.historical_policy.target2_included ? "2차 목표까지 현재 과거 성과 계산에 반영됩니다." : "2차 확장 목표는 현재 Risk 계획의 참고가격이며, 현재 과거 성과 계산에는 아직 반영되지 않습니다."}</p>
+                </section>
+              )}
+
               {topStrategy && (
                 <section className="strategy-selector-proof">
                   <article><span>과거에는 어땠나요?</span><strong>{topStrategy.historical_fit.label}</strong><p>{topStrategy.historical_fit.summary}</p></article>
                   <article><span>지금 조건은 어떤가요?</span><strong>{topStrategy.current.label}</strong><p>{topStrategy.current.summary}</p></article>
-                  <article><span>과거 사례는 충분한가요?</span><strong>{topStrategy.historical_metrics.trades}건</strong><p>과거 진입 사례가 5건 미만이면 결과가 좋아도 근거 부족으로 처리합니다. 자세한 숫자는 아래에서 확인할 수 있습니다.</p></article>
+                  <article><span>과거 사례는 충분한가요?</span><strong>{topStrategy.historical_metrics.trades}건</strong><p>{historicalEvidenceHint(topStrategy)} 표본 수만이 아니라 평균 결과·손익 구조·MDD를 함께 평가합니다.</p></article>
                 </section>
               )}
 
@@ -637,7 +874,7 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
 
                 {topStrategy && (
                   <details>
-                    <summary><span>왜 ‘{topStrategy.guide.easy_name}’가 1순위인가?</span><DetailToggleText /></summary>
+                    <summary><span>왜 ‘{topStrategy.guide.easy_name}’가 현재 가장 가까운 전략인가?</span><DetailToggleText /></summary>
                     <div className="strategy-guide-detail">
                       <strong>{topStrategy.guide.easy_name}</strong>
                       <small>{topStrategy.guide.professional_name} 전략</small>
@@ -682,7 +919,7 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
                 {result.performance && (
                   <details>
                     <summary><span>개발 확인용 · 실행 성능 진단</span><DetailToggleText /></summary>
-                    <div className="backtest-progress-stats"><span><b>데이터 준비</b>{formatNumber(result.performance.data_prepare_seconds, 2)}초</span><span><b>10전략 계산</b>{formatNumber(result.performance.strategy_calculation_seconds, 2)}초</span><span><b>전체</b>{formatNumber(result.performance.total_seconds, 2)}초</span><span><b>실제 KRX 요청</b>{result.performance.network_requests}회</span>{result.performance.estimated_network_requests !== undefined && <span><b>실행 전 예상</b>{result.performance.estimated_network_requests}회</span>}{result.performance.market_store_hits !== undefined && <span><b>시장 저장소 재사용</b>{result.performance.market_store_hits.toLocaleString()} hit</span>}{result.performance.raw_cache_hits !== undefined && <span><b>기존 KRX 캐시</b>{result.performance.raw_cache_hits.toLocaleString()} hit</span>}{result.performance.cache_reuse_pct !== undefined && <span><b>데이터 재사용</b>{formatNumber(result.performance.cache_reuse_pct, 1)}%</span>}{result.performance.budget_limit !== undefined && <span><b>오늘 KRX(앱 기록)</b>{Number(result.performance.budget_used ?? 0).toLocaleString()} / {result.performance.budget_limit.toLocaleString()}</span>}</div>
+                    <div className="backtest-progress-stats"><span><b>처리 경로</b>{result.performance.cold_start_fast_path ? "Cold Start Fast Path" : result.performance.single_stock_fast_path ? "단일 종목 Fast Path" : "기본 경로"}</span><span><b>데이터 준비</b>{formatNumber(result.performance.data_prepare_seconds, 2)}초</span><span><b>10전략 계산</b>{formatNumber(result.performance.strategy_calculation_seconds, 2)}초</span><span><b>전체</b>{formatNumber(result.performance.total_seconds, 2)}초</span><span><b>선택종목 캐시</b>{Number(result.performance.cached_symbol_fast_path_hits ?? 0).toLocaleString()}일</span><span><b>KRX 요청</b>{result.performance.network_requests}회</span><span><b>재시도</b>{Number(result.performance.retries ?? 0).toLocaleString()}회</span>{result.performance.history_fill_ms !== undefined && <span><b>누락 데이터 채우기</b>{formatNumber(result.performance.history_fill_ms / 1000, 2)}초</span>}</div>
                   </details>
                 )}
               </div>

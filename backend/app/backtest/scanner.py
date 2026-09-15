@@ -10,6 +10,9 @@ from pathlib import Path
 from typing import Any, Callable
 
 from app.backtest.engine import BacktestEngine
+from app.backtest.candidate_priority import rank_candidates
+from app.backtest.entry_risk_guide import build_entry_risk_guide
+from app.backtest.historical_evidence import build_historical_evidence, validation_start_for_years
 from app.backtest.market_store import HistoricalMarketStore
 from app.backtest.models import BacktestConfig
 from app.backtest.multi_strategy import MultiStrategyBacktestEngine, SUPPORTED_STRATEGIES
@@ -32,10 +35,12 @@ class StockScannerService:
     presented to the user as probabilities.
     """
 
-    VERSION = "0.21.0.3"
+    VERSION = "0.21.3"
     HISTORY_CALENDAR_DAYS = 485  # local-only historical evidence window
     FAST_HISTORY_CALENDAR_DAYS = 220  # current-condition scan only; ~150 weekdays
     EVIDENCE_CALENDAR_DAYS = 365
+    THREE_YEAR_WARMUP_DAYS = 220
+    HISTORICAL_EVIDENCE_POLICY_VERSION = "v1"
     HISTORICAL_VALIDATION_MIN_ROWS = 220
     QUICK_LIMIT_PER_MARKET = 160
     DEEP_LIMIT = 18
@@ -119,6 +124,47 @@ class StockScannerService:
             path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         except OSError:
             # Scanner result caching is an optimization only; analysis must still return.
+            pass
+
+    @classmethod
+    def _evidence_cache_path(cls, *, market: str, code: str, strategy: str, data_end: date) -> Path:
+        root = cls.CACHE_ROOT / "historical_evidence"
+        root.mkdir(parents=True, exist_ok=True)
+        safe_strategy = re.sub(r"[^A-Za-z0-9_-]+", "_", strategy)
+        return root / f"{market}_{code}_{safe_strategy}_{data_end.isoformat()}_{cls.HISTORICAL_EVIDENCE_POLICY_VERSION}.json"
+
+    @classmethod
+    def _load_evidence_cache(cls, *, market: str, code: str, strategy: str, data_end: date) -> dict[str, Any] | None:
+        path = cls._evidence_cache_path(market=market, code=code, strategy=strategy, data_end=data_end)
+        if not path.exists():
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        if payload.get("policy_version") != cls.HISTORICAL_EVIDENCE_POLICY_VERSION:
+            return None
+        evidence = payload.get("evidence")
+        if not isinstance(evidence, dict) or not bool(evidence.get("verified")):
+            return None
+        return dict(evidence)
+
+    @classmethod
+    def _save_evidence_cache(cls, *, market: str, code: str, strategy: str, data_end: date, evidence: dict[str, Any]) -> None:
+        if not bool(evidence.get("verified")):
+            return
+        path = cls._evidence_cache_path(market=market, code=code, strategy=strategy, data_end=data_end)
+        payload = {
+            "policy_version": cls.HISTORICAL_EVIDENCE_POLICY_VERSION,
+            "market": market,
+            "code": code,
+            "strategy": strategy,
+            "data_end": data_end.isoformat(),
+            "evidence": evidence,
+        }
+        try:
+            path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        except OSError:
             pass
 
     @staticmethod
@@ -445,6 +491,10 @@ class StockScannerService:
                     "guide": strategy_guide(strategy),
                     "current": current,
                     "condition_state": condition_state,
+                    "risk_plan": risk_plan,
+                    "strategy_input": snapshot.get("strategy_input"),
+                    "technical": snapshot.get("technical") or {},
+                    "entry_timing": snapshot.get("entry_timing") or None,
                 }
         if best is None:
             return None
@@ -454,6 +504,18 @@ class StockScannerService:
         ratio = passed / total if total else 0.0
         risk_penalty = 18.0 if current.get("risk_warning") else 0.0
         quick_score = float(current.get("internal_score") or 0.0) + ratio * 20.0 - risk_penalty
+        entry_risk_guide = build_entry_risk_guide(
+            strategy=best["strategy"],
+            data=best.get("strategy_input"),
+            technical=best.get("technical") or {},
+            condition_state=best.get("condition_state") or {},
+            risk_plan=best.get("risk_plan"),
+            current_state=current,
+            historical_verified=False,
+            historical_status="NOT_RUN",
+            as_of_date=str(latest_date or "") or None,
+            entry_timing=best.get("entry_timing"),
+        )
         return {
             "code": str(row.get("code") or ""),
             "name": str(row.get("name") or ""),
@@ -467,6 +529,7 @@ class StockScannerService:
             "quick_guide": best["guide"],
             "quick_current": current,
             "quick_condition_state": best.get("condition_state") or {},
+            "quick_entry_risk_guide": entry_risk_guide,
             "quick_score": round(quick_score, 4),
         }
 
@@ -482,17 +545,23 @@ class StockScannerService:
         status = str(current.get("status") or "NOT_READY")
 
         if status == "READY" and not risk_warning:
-            candidate_state = "VALIDATION"
-            candidate_label = "현재 조건 좋음 · 과거 검증 전"
-            action = "NEEDS_VALIDATION"
-            action_label = "과거 근거 확인 필요"
-            headline = "현재 조건은 좋지만 과거 근거를 아직 확인하지 않았습니다."
+            candidate_state = "READY"
+            candidate_label = "현재 조건상 진입 후보 · 과거 검증 전"
+            action = "ENTRY_CANDIDATE"
+            action_label = "현재 조건상 진입 후보"
+            headline = "현재 전략 조건과 Risk 기준은 통과했습니다. 과거 근거는 아직 검증 전입니다."
+        elif status in {"BLOCKED", "CAUTION"} or (risk_warning and missing == 0):
+            candidate_state = "WATCH"
+            candidate_label = "조건은 갖췄지만 위험 확인 필요"
+            action = "WAIT"
+            action_label = "위험 때문에 진입 보류"
+            headline = "현재 조건은 갖춰졌지만 손절·목표 위험 구조 때문에 진입을 보류합니다."
         elif ratio >= 0.65:
-            candidate_state = "VALIDATION"
-            candidate_label = "현재 조건 후보 · 과거 검증 전"
-            action = "NEEDS_VALIDATION"
-            action_label = "현재 조건 기준 후보"
-            headline = "현재 조건만 보면 먼저 확인할 가치가 있습니다."
+            candidate_state = "WATCH"
+            candidate_label = "조금 더 기다릴 후보 · 과거 검증 전"
+            action = "WAIT"
+            action_label = "아직 진입 조건 부족"
+            headline = "현재 조건은 가까워졌지만 아직 부족한 조건이 있습니다."
         else:
             candidate_state = "EXCLUDED"
             candidate_label = "현재 우선 후보 아님"
@@ -542,11 +611,25 @@ class StockScannerService:
                 "verified": False,
             },
             "verification_level": "CURRENT_ONLY",
+            "entry_risk_guide": item.get("quick_entry_risk_guide"),
             "user_action": {
-                "title": "지금은 신규 진입하지 마세요.",
-                "detail": "현재 조건 후보로 먼저 살펴보되, 과거 근거와 손절·목표 위험을 추가로 확인한 뒤 판단하세요.",
-                "next_transition": "과거 근거 확인 후 다시 판단",
+                "title": (
+                    "현재 조건상 진입 후보로 검토할 수 있습니다."
+                    if action == "ENTRY_CANDIDATE"
+                    else "지금은 신규 진입하지 마세요."
+                ),
+                "detail": (
+                    "현재 조건과 Risk 기준은 통과했습니다. 다만 과거 근거는 아직 검증 전이며 실제 주문은 자동 실행하지 않습니다."
+                    if action == "ENTRY_CANDIDATE"
+                    else "부족한 조건이나 위험 구조가 개선된 뒤 다시 판단하세요. 과거 검증 여부는 현재 조건과 별도로 표시합니다."
+                ),
+                "next_transition": (
+                    "과거 근거를 추가 확인하거나 다음 확정 데이터에서 현재 조건을 다시 계산"
+                    if action == "ENTRY_CANDIDATE"
+                    else "남은 조건과 Risk를 다시 계산"
+                ),
             },
+            "_strategy_fit_score": round(float(item.get("quick_score") or 0.0), 4),
             "internal_rank": round(internal_rank, 4),
         }
 
@@ -593,15 +676,19 @@ class StockScannerService:
         if risk_warning:
             internal_rank -= 18.0
 
-        if action == "ENTRY_CANDIDATE":
+        concrete_guide = current.get("entry_risk_guide") or {}
+        concrete_action = concrete_guide.get("action") or {}
+        guide_action = str(concrete_action.get("status") or "")
+        missing_count = int(current.get("missing") or max(0, total - passed))
+        if guide_action == "ENTRY_CANDIDATE" or (missing_count == 0 and not risk_warning):
             candidate_state = "READY"
-            candidate_label = "진입 후보에 가까움"
-        elif action == "WAIT" and ratio >= 0.65 and hist_status in {"GOOD", "FAIR"}:
+            candidate_label = "현재 조건상 진입 후보"
+        elif guide_action == "RISK_BLOCKED" and missing_count == 0:
             candidate_state = "WATCH"
-            candidate_label = "조금 더 기다릴 후보"
-        elif action == "NEEDS_VALIDATION" and ratio >= 0.75:
-            candidate_state = "VALIDATION"
-            candidate_label = "현재 조건은 좋지만 과거 근거 추가 필요"
+            candidate_label = "조건은 갖췄지만 위험 확인 필요"
+        elif ratio >= 0.65:
+            candidate_state = "VALIDATION" if action == "NEEDS_VALIDATION" else "WATCH"
+            candidate_label = "진입 후보에 가까움" if missing_count <= 2 else "조건 확인 필요"
         else:
             candidate_state = "EXCLUDED"
             candidate_label = "현재 우선 후보 아님"
@@ -609,6 +696,14 @@ class StockScannerService:
         guide = strategy_row.get("guide") or strategy_guide(strategy)
         missing_details = list(current.get("unmet_details") or [])
         user_action = recommendation.get("user_action") or {}
+        if guide_action == "ENTRY_CANDIDATE":
+            display_action = "ENTRY_CANDIDATE"
+        elif guide_action == "RISK_BLOCKED":
+            display_action = "WAIT"
+        elif guide_action == "WAIT":
+            display_action = "WAIT"
+        else:
+            display_action = action
         return {
             "code": item["code"],
             "name": item["name"],
@@ -621,9 +716,9 @@ class StockScannerService:
             "strategy_easy_name": recommendation.get("strategy_easy_name") or guide.get("easy_name"),
             "strategy_name": recommendation.get("strategy_label") or guide.get("professional_name"),
             "strategy_description": recommendation.get("strategy_description") or guide.get("description"),
-            "action": action,
-            "action_label": recommendation.get("action_label"),
-            "headline": recommendation.get("headline"),
+            "action": display_action,
+            "action_label": concrete_action.get("title") or recommendation.get("action_label"),
+            "headline": concrete_action.get("detail") or recommendation.get("headline"),
             "reason": recommendation.get("reason"),
             "conditions": {
                 "passed": passed,
@@ -644,13 +739,115 @@ class StockScannerService:
                 "verified": True,
             },
             "verification_level": "CURRENT_AND_HISTORY",
+            "entry_risk_guide": concrete_guide,
             "user_action": {
-                "title": user_action.get("title"),
-                "detail": user_action.get("detail"),
+                "title": concrete_action.get("title") or user_action.get("title"),
+                "detail": concrete_action.get("detail") or user_action.get("detail"),
                 "next_transition": user_action.get("next_transition"),
             },
+            "_strategy_fit_score": round(selector_score, 4),
             "internal_rank": round(internal_rank, 4),
         }
+
+    async def _attach_three_year_historical_evidence(
+        self,
+        *,
+        candidates: list[dict[str, Any]],
+        progress: ProgressCallback | None,
+        started_at: float,
+    ) -> dict[str, int]:
+        """Attach three-year same-strategy evidence to the bounded final ranking pool.
+
+        This path is intentionally local-only. It never calls KRX and therefore cannot
+        turn a fast Scanner request into a multi-hundred-request historical bootstrap.
+        v0.21.3 uses the result only after current conditions and Risk have established
+        the candidate tier; history can refine a tie but cannot convert a current FAIL
+        into a current PASS.
+        """
+        stats = {"verified": 0, "data_unavailable": 0, "sample_insufficient": 0, "cache_hits": 0}
+        if not candidates:
+            return stats
+
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for candidate in candidates:
+            grouped.setdefault(str(candidate.get("market") or ""), []).append(candidate)
+
+        position = 0
+        total = len(candidates)
+        for market, market_candidates in grouped.items():
+            valid_dates = [str(item.get("data_date") or "") for item in market_candidates if item.get("data_date")]
+            if not valid_dates:
+                continue
+            market_end = max(date.fromisoformat(value) for value in valid_dates)
+            market_start = validation_start_for_years(market_end)
+            warmup_start = market_start - timedelta(days=self.THREE_YEAR_WARMUP_DAYS)
+            end_key = self._compact(market_end)
+            start_key = self._compact(warmup_start)
+            codes = [str(item.get("code") or "") for item in market_candidates]
+            stock_map = self.market_store.stock_series_many(market, codes, start_key, end_key)
+            index_series = self.market_store.index_series(market, start_key, end_key)
+            index_rows = sorted(index_series.rows.values(), key=self._row_date)
+
+            for candidate in market_candidates:
+                position += 1
+                code = str(candidate.get("code") or "")
+                strategy = str(candidate.get("strategy") or "")
+                data_end = date.fromisoformat(str(candidate.get("data_date")))
+                validation_start = validation_start_for_years(data_end)
+                cached = self._load_evidence_cache(market=market, code=code, strategy=strategy, data_end=data_end)
+                if cached is not None:
+                    evidence = cached
+                    stats["cache_hits"] += 1
+                else:
+                    series = stock_map.get(code)
+                    stock_rows = list(series.rows.values()) if series is not None else []
+                    evidence = await asyncio.to_thread(
+                        build_historical_evidence,
+                        engine=self.multi,
+                        strategy=strategy,
+                        code=code,
+                        market=market,
+                        stock_rows=stock_rows,
+                        index_rows=index_rows,
+                        validation_start=validation_start,
+                        validation_end=data_end,
+                        round_trip_cost_pct=0.0,
+                    )
+                    # Missing local history can be filled later on the same day.
+                    # Cache only completed historical calculations so an unavailable
+                    # result never becomes a stale "검증 전" snapshot.
+                    if bool(evidence.get("verified")):
+                        self._save_evidence_cache(
+                            market=market, code=code, strategy=strategy, data_end=data_end, evidence=evidence
+                        )
+
+                candidate["historical_evidence"] = evidence
+                if bool(evidence.get("verified")):
+                    stats["verified"] += 1
+                    candidate["verification_level"] = "CURRENT_AND_3Y_EVIDENCE"
+                else:
+                    stats["data_unavailable"] += 1
+                if evidence.get("status") in {"INSUFFICIENT", "NO_CASES"}:
+                    stats["sample_insufficient"] += 1
+
+                self._emit(
+                    progress,
+                    stage="scanner_historical_evidence",
+                    message="후보 풀의 3년 과거 근거를 확인하는 중",
+                    current=position,
+                    total=max(total, 1),
+                    details=self._progress_payload(
+                        overall_percent=92 + 6.0 * position / max(total, 1),
+                        started_at=started_at,
+                        current_item=f"{candidate.get('name') or code} ({code})",
+                        evidence_verified=stats["verified"],
+                        evidence_data_unavailable=stats["data_unavailable"],
+                        evidence_cache_hits=stats["cache_hits"],
+                        items_done=position,
+                        items_total=total,
+                    ),
+                )
+        return stats
 
     async def run(
         self,
@@ -996,24 +1193,47 @@ class StockScannerService:
             self._emit(
                 progress,
                 stage="scanner_finalize",
-                message="후보 우선순위를 정리하는 중",
+                message="현재 조건 기준 후보 우선순위를 확정하는 중",
                 current=0,
                 total=1,
-                details=self._progress_payload(overall_percent=95, started_at=started_at),
+                details=self._progress_payload(overall_percent=90, started_at=started_at),
             )
+            # Preliminary order is kept only as a diagnostic baseline. v0.21.3 then
+            # validates the bounded actionable pool with local three-year evidence and
+            # applies a tier-first priority rule: current conditions > Risk > concrete
+            # entry proximity > historical evidence > strategy fit. No probability score
+            # is exposed or used to let history override a current condition failure.
             deep_results.sort(key=lambda item: float(item.get("internal_rank") or 0.0), reverse=True)
             actionable = [item for item in deep_results if item.get("candidate_state") in {"READY", "WATCH", "VALIDATION"}]
-            top = actionable[:candidate_limit]
-            more = actionable[candidate_limit : candidate_limit + self.EXTRA_RESULT_LIMIT]
-            for collection in (top, more):
-                for item in collection:
-                    item.pop("internal_rank", None)
             excluded_deep = len(deep_results) - len(actionable)
+
+            evidence_stats = await self._attach_three_year_historical_evidence(
+                candidates=actionable,
+                progress=progress,
+                started_at=started_at,
+            )
+            self._emit(
+                progress,
+                stage="scanner_priority_rank",
+                message="현재 조건·Risk·진입 거리·과거 근거 순서로 후보 우선순위를 설명하는 중",
+                current=1,
+                total=1,
+                details=self._progress_payload(overall_percent=99, started_at=started_at),
+            )
+            ranked_actionable, ranking_changes = rank_candidates(actionable)
+            top = ranked_actionable[:candidate_limit]
+            more = ranked_actionable[candidate_limit : candidate_limit + self.EXTRA_RESULT_LIMIT]
+            for item in ranked_actionable:
+                item.pop("internal_rank", None)
+                item.pop("_strategy_fit_score", None)
 
             delta = self._stats_delta(provider_before, self.krx.request_stats())
             budget = self.krx.budget_snapshot()
             timings["total_seconds"] = time.perf_counter() - started_at
-            partial_data = bool(preparation_required)
+            # Do not freeze the same-day Scanner result while a ranked candidate's
+            # three-year evidence is still unavailable. If Market Store history is
+            # populated later, the next scan can validate it immediately.
+            partial_data = bool(preparation_required) or evidence_stats["data_unavailable"] > 0
             result = {
                 "version": self.VERSION,
                 "scanner_cache_hit": False,
@@ -1034,6 +1254,10 @@ class StockScannerService:
                     "deep_analyzed": len(deep_results),
                     "historically_verified": verified_count,
                     "current_only": current_only_count,
+                    "three_year_evidence_verified": evidence_stats["verified"],
+                    "three_year_evidence_data_unavailable": evidence_stats["data_unavailable"],
+                    "three_year_evidence_sample_insufficient": evidence_stats["sample_insufficient"],
+                    "three_year_evidence_cache_hits": evidence_stats["cache_hits"],
                     "candidate_count": len(actionable),
                     "shown_count": len(top),
                     "excluded_after_analysis": excluded_deep,
@@ -1052,9 +1276,9 @@ class StockScannerService:
                     "liquidity": "최근 거래대금이 StockScope 기본 유동성 기준에 미달하면 빠른 후보에서 제외합니다.",
                 },
                 "methodology": {
-                    "meaning": "상승 확률 순위가 아니라 현재 전략 준비도와 위험을 먼저 보고, 이미 저장된 과거 데이터가 있으면 과거 근거까지 결합한 우선 확인 목록입니다.",
-                    "pipeline": ["최근 데이터 확인", "전체 종목 빠른 필터", "현재 10개 전략·Risk 확인", "저장된 과거 근거가 있으면 결합", "최종 후보 정렬"],
-                    "guardrail": "과거 데이터가 부족하다고 Scanner 전체를 몇 분간 막지 않습니다. 과거 검증 전 후보는 화면에서 명확히 구분합니다.",
+                    "meaning": "상승 확률 순위가 아니라 현재 조건을 가장 먼저 보고, Risk와 실제 진입 기준까지의 거리, 같은 전략의 3년 과거 근거를 순서대로 비교해 먼저 확인할 후보를 정합니다.",
+                    "pipeline": ["최근 데이터 확인", "전체 종목 빠른 필터", "현재 10개 전략·Risk 확인", "후보 풀 3년 과거검증", "조건 → Risk → 진입 근접도 → 과거 근거 순으로 최종 우선순위"],
+                    "guardrail": "과거 근거가 좋아도 현재 조건 실패를 통과로 바꾸지 않으며, Risk가 나쁜 종목을 조건 점수만으로 상위에 올리지 않습니다. 이 순위는 미래 상승 확률이나 매수 추천이 아닙니다.",
                 },
                 "diagnostics": {
                     "market_store_reused_items": aggregate_sync["store_hits"],
@@ -1074,6 +1298,7 @@ class StockScannerService:
                         float(aggregate_sync.get("processed_items", 0)) / max(float(aggregate_sync.get("sync_seconds", 0)), 0.001),
                         3,
                     ),
+                    "ranking_changes": ranking_changes,
                     **{key: round(value, 3) for key, value in timings.items()},
                 },
             }
