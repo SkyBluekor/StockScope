@@ -469,7 +469,7 @@ const strategyName: Record<string, string> = {
         </div>
         <nav className="topnav" aria-label="주요 기능">
           <button className={`nav-item ${appPage === "analysis" ? "active" : ""}`} onClick={() => navigateApp("analysis")}>빠른 조회</button>
-          <button className={`nav-item ${appPage === "backtest" ? "active" : ""}`} onClick={() => navigateApp("backtest")}>백테스트</button>
+          <button className={`nav-item ${appPage === "backtest" ? "active" : ""}`} onClick={() => navigateApp("backtest")}>과거 성과 검증</button>
           <button className={`nav-item ${appPage === "scanner" ? "active" : ""}`} onClick={() => navigateApp("scanner")}>종목 찾기</button>
           <button className="nav-item" disabled>시뮬레이션 <em>준비중</em></button>
         </nav>
@@ -535,7 +535,7 @@ const strategyName: Record<string, string> = {
 
           <div className="trade-lock">
             <strong>실제 매매 기능 없음</strong>
-            <span>조회 · 분석 · 백테스트 · 시뮬레이션 전용이며 증권사 주문을 전송하지 않습니다.</span>
+            <span>조회 · 분석 · 과거 성과 검증 · 시뮬레이션 전용이며 증권사 주문을 전송하지 않습니다.</span>
           </div>
 
           {loading && <div className="loading-card">KRX 시장 데이터를 불러오는 중입니다...</div>}
@@ -647,7 +647,7 @@ const strategyName: Record<string, string> = {
                   <div className="engine-status">
                     <div><span>시장 데이터</span><b>동작 중</b></div>
                     <div><span>전략 엔진</span><b className="pending">다음 단계</b></div>
-                    <div><span>Risk Engine</span><b className="pending">대기</b></div>
+                    <div><span>위험 관리</span><b className="pending">대기</b></div>
                   </div>
                 </article>
               </section>
@@ -750,7 +750,7 @@ const strategyName: Record<string, string> = {
                     <strong>현재 참고정보 빠른 입력 <span>선택</span></strong>
                     <p>
                       현재가격은 직접 입력하거나 호가·누적 퍼센트 버튼으로 빠르게 맞출 수 있습니다.
-                      장중 고가·저가·누적 거래량은 선택 항목이며, 입력하지 않아도 KRX 확정 EOD 기준으로 분석할 수 있습니다.
+                      장중 고가·저가·누적 거래량은 선택 항목이며, 입력하지 않아도 KRX 확정 일봉 기준으로 분석할 수 있습니다.
                     </p>
                   </div>
                   <div className="reference-input-grid">
@@ -1093,7 +1093,7 @@ const strategyName: Record<string, string> = {
                       </div>
                       <div className="analysis-layer-grid">
                         <article className="analysis-layer-card confirmed">
-                          <span className="term-inline">① 확정 EOD 기준 <TermHelp term="eod" /></span>
+                          <span className="term-inline">① 확정 일봉 기준 <TermHelp term="eod" /></span>
                           <strong>{formatDate(strategyAnalysis.data_freshness.eod_date)} · {number(strategyAnalysis.analysis_layers.confirmed_eod.price, "원")}</strong>
                           <div><b className="term-inline">MA20 <TermHelp term="ma" /></b><em>{number(strategyAnalysis.analysis_layers.confirmed_eod.ma20, "원")}</em></div>
                           <div><b className="term-inline">RSI14 <TermHelp term="rsi" /></b><em>{number(strategyAnalysis.analysis_layers.confirmed_eod.rsi14)}</em></div>
@@ -1365,7 +1365,7 @@ const strategyName: Record<string, string> = {
                             ))}
                             {strategyAnalysis.sector_relative_strength.strategy_effects.map((effect) => (
                               <article className={effect.condition_met === true ? "pass" : effect.condition_met === false ? "fail" : "unknown"} key={`sector-${effect.strategy}`}>
-                                <div><strong>{strategyName[effect.strategy] ?? effect.label} · 업종 {effect.weight}점</strong><em>{effect.condition_met === true ? "업종 조건 충족" : effect.condition_met === false ? "업종 조건 미충족" : "업종 fallback"}</em></div>
+                                <div><strong>{strategyName[effect.strategy] ?? effect.label} · 업종 {effect.weight}점</strong><em>{effect.condition_met === true ? "업종 조건 충족" : effect.condition_met === false ? "업종 조건 미충족" : "업종 자료 부족 시 대체 기준"}</em></div>
                                 <p>{effect.message}</p>
                               </article>
                             ))}
@@ -1598,7 +1598,7 @@ const strategyName: Record<string, string> = {
                       <section className={`risk-engine-panel ${strategyAnalysis.risk_analysis.status.toLowerCase()}`}>
                         <div className="risk-engine-head">
                           <div>
-                            <span className="panel-kicker">RISK ENGINE · v0.10</span>
+                            <span className="panel-kicker">위험 관리 기준</span>
                             <h3>
                               {strategyAnalysis.risk_analysis.reference_only ? "참고용 손익 구조" : "현재 전략 손익 구조"}
                             </h3>
@@ -1613,7 +1613,7 @@ const strategyName: Record<string, string> = {
                         <div className="risk-strategy-line">
                           <span>기준 전략</span>
                           <strong>{strategyName[strategyAnalysis.risk_analysis.selected_strategy ?? ""] ?? strategyAnalysis.risk_analysis.selected_strategy}</strong>
-                          <em>{strategyAnalysis.risk_analysis.basis === "MANUAL_REFERENCE" ? "현재 참고가격 기준" : "확정 EOD 기준"}</em>
+                          <em>{strategyAnalysis.risk_analysis.basis === "MANUAL_REFERENCE" ? "현재 참고가격 기준" : "확정 일봉 기준"}</em>
                         </div>
 
                         <div className="risk-price-grid">
@@ -1647,7 +1647,7 @@ const strategyName: Record<string, string> = {
                             <small>{strategyAnalysis.risk_analysis.selected_plan.target2_basis ?? "-"}</small>
                           </div>
                           <div>
-                            <span className="label-with-help">Risk : Reward <TermHelp term="risk_reward" current={strategyAnalysis.risk_analysis.selected_plan.rr1 == null ? null : `1만큼 위험을 감수할 때 1차 목표 보상은 약 ${strategyAnalysis.risk_analysis.selected_plan.rr1.toFixed(2)}만큼입니다.`} /></span>
+                            <span className="label-with-help">손익비(R:R) <TermHelp term="risk_reward" current={strategyAnalysis.risk_analysis.selected_plan.rr1 == null ? null : `1만큼 위험을 감수할 때 1차 목표 보상은 약 ${strategyAnalysis.risk_analysis.selected_plan.rr1.toFixed(2)}만큼입니다.`} /></span>
                             <strong>
                               {strategyAnalysis.risk_analysis.selected_plan.rr1 == null ? "-" : `1 : ${strategyAnalysis.risk_analysis.selected_plan.rr1.toFixed(2)}`}
                             </strong>
@@ -1728,7 +1728,7 @@ const strategyName: Record<string, string> = {
                         <small>
                           {strategyAnalysis.data_freshness.reference
                             ? `확정 RSI ${number(strategyAnalysis.technical.rsi14)} · 현재가 가정 예상 RSI`
-                            : "확정 EOD 기준 · 70 이상 과열, 30 이하 과매도 참고"}
+                            : "확정 일봉 기준 · 70 이상 과열, 30 이하 과매도 참고"}
                         </small>
                       </div>
                       <div>
@@ -1737,7 +1737,7 @@ const strategyName: Record<string, string> = {
                         <small>
                           {strategyAnalysis.data_freshness.reference?.estimated.atr_pct != null
                             ? "오늘 고가·저가를 반영한 예상 ATR"
-                            : "확정 EOD 기준 · 오늘 고가·저가 미입력 시 유지"}
+                            : "확정 일봉 기준 · 오늘 고가·저가 미입력 시 유지"}
                         </small>
                       </div>
                       <div>
@@ -1776,7 +1776,7 @@ const strategyName: Record<string, string> = {
 
                     <div className="strategy-catalog-note">
                       <strong>
-                        {strategyAnalysis.data_freshness.reference ? "현재 참고가격 시나리오 기준" : "확정 EOD 기준"} · {strategyAnalysis.strategies.filter((item) => item.strategy !== "no_trade").length}개 전략 비교
+                        {strategyAnalysis.data_freshness.reference ? "현재 참고가격 시나리오 기준" : "확정 일봉 기준"} · {strategyAnalysis.strategies.filter((item) => item.strategy !== "no_trade").length}개 전략 비교
                       </strong>
                       <span>
                         {strategyAnalysis.data_freshness.reference
@@ -1880,7 +1880,7 @@ const strategyName: Record<string, string> = {
                       <strong>중요</strong>
                       <span>
                         이 결과는 투자 판단을 돕기 위한 설명입니다. 사용자 참고가격은 임시 계산에만 사용되며 KRX 확정 데이터는 수정하지 않습니다.
-                        자동 매매나 실제 주문은 수행하지 않으며, 손절·목표가는 Risk Engine이 분석 참고값으로 계산하며 실제 주문으로 전송되지 않습니다.
+                        자동 매매나 실제 주문은 수행하지 않으며, 손절·목표가는 위험 관리 기준에 따라 분석 참고값으로 계산하며 실제 주문으로 전송되지 않습니다.
                       </span>
                     </div>
 

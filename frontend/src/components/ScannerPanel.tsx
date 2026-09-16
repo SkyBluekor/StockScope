@@ -11,8 +11,10 @@ import {
   cancelBacktestJob,
   createScannerJob,
   fetchBacktestJob,
+  prepareScannerLatestData,
   type BacktestJob,
   type ScannerCandidate,
+  type ScannerFreshnessResponse,
   type ScannerResponse,
   type StockSearchItem,
 } from "../services/api";
@@ -200,9 +202,9 @@ function CandidateCard({
                 >
                   <summary>과거 근거 자세히 보기</summary>
                   <div className="scanner-evidence-detail-grid">
-                    <div><small>Profit Factor</small><strong>{evidence.profit_factor == null ? "-" : evidence.profit_factor.toFixed(2)}</strong></div>
+                    <div><small>이익/손실 비율(PF)</small><strong>{evidence.profit_factor == null ? "-" : evidence.profit_factor.toFixed(2)}</strong></div>
                     <div><small>손절 종료</small><strong>{evidence.exit_counts.stop}회</strong></div>
-                    <div><small>1차 목표 종료</small><strong>{evidence.exit_counts.target1}회</strong></div>
+                    <div><small>1차 목표가 도달 종료</small><strong>{evidence.exit_counts.target1}회</strong></div>
                     <div><small>시간 종료</small><strong>{evidence.exit_counts.time_exit}회</strong></div>
                   </div>
                   {evidence.market_regime_summary.length > 0 && (
@@ -280,6 +282,9 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
   const [completedAt, setCompletedAt] = useState<number | null>(initialSession?.completedAt ?? null);
   const [restoredFromSession, setRestoredFromSession] = useState(Boolean(initialSession));
   const [clock, setClock] = useState(Date.now());
+  const [freshnessBusy, setFreshnessBusy] = useState(false);
+  const [freshnessFailure, setFreshnessFailure] = useState<ScannerFreshnessResponse | null>(null);
+  const [dateNotice, setDateNotice] = useState<string | null>(null);
   const pollRef = useRef<number | null>(null);
   const startedAtRef = useRef<number | null>(null);
   const lastProgressAtRef = useRef<number | null>(null);
@@ -287,7 +292,8 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
   const savedScrollRef = useRef(initialSession?.scrollY ?? 0);
   const didRestoreScrollRef = useRef(false);
 
-  const busy = job?.status === "queued" || job?.status === "running";
+  const jobBusy = job?.status === "queued" || job?.status === "running";
+  const busy = freshnessBusy || jobBusy;
   const progress = job?.progress;
 
   useEffect(() => {
@@ -329,6 +335,12 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
     return () => window.clearInterval(timer);
   }, [busy]);
 
+  useEffect(() => {
+    if (!dateNotice) return undefined;
+    const timer = window.setTimeout(() => setDateNotice(null), 4500);
+    return () => window.clearTimeout(timer);
+  }, [dateNotice]);
+
   function stockItem(candidate: ScannerCandidate): StockSearchItem {
     return {
       code: candidate.code,
@@ -343,6 +355,7 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
       stock_type: "보통주",
       listed_date: "",
       listed_shares: null,
+      analysis_as_of_date: candidate.data_date || null,
     };
   }
 
@@ -380,10 +393,15 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
     }
   }
 
-  async function runScanner(forceRefresh = false, allowLargeSync = false) {
+  async function runScanner(
+    forceRefresh = false,
+    allowLargeSync = false,
+    pinnedAsOfDate: string | null = null,
+  ) {
     if (busy) return;
     if (pollRef.current != null) window.clearTimeout(pollRef.current);
     setError(null);
+    setFreshnessFailure(null);
     if (!result) {
       setShowMore(false);
       setExpandedEvidenceIds([]);
@@ -393,9 +411,35 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
     lastProgressAtRef.current = started;
     lastProgressSignatureRef.current = "";
     setClock(started);
+
+    let resolvedAsOfDate = pinnedAsOfDate;
+    if (!pinnedAsOfDate) {
+      setFreshnessBusy(true);
+      try {
+        const freshness = await prepareScannerLatestData({
+          market_scope: scope,
+          known_data_date: latestScannerDataDate(result),
+        });
+        if (freshness.status === "UPDATE_FAILED" || !freshness.resolved_as_of_date) {
+          setFreshnessFailure(freshness);
+          return;
+        }
+        resolvedAsOfDate = freshness.resolved_as_of_date;
+        if (freshness.date_changed) {
+          setDateNotice(freshness.resolved_as_of_date);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "최신 확정 시세를 확인하지 못했습니다.");
+        return;
+      } finally {
+        setFreshnessBusy(false);
+      }
+    }
+
     try {
       const created = await createScannerJob({
         market_scope: scope,
+        as_of_date: resolvedAsOfDate ?? undefined,
         candidate_limit: 5,
         force_refresh: forceRefresh,
         allow_large_sync: allowLargeSync,
@@ -438,6 +482,8 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
     setExpandedEvidenceIds([]);
     setCompletedAt(null);
     setRestoredFromSession(false);
+    setFreshnessFailure(null);
+    setDateNotice(null);
     savedScrollRef.current = 0;
     didRestoreScrollRef.current = true;
   }
@@ -482,7 +528,7 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
     <div className="scanner-workspace">
       <section className="scanner-hero">
         <div>
-          <span className="eyebrow">STOCK SCANNER · v0.21.4-A.3</span>
+          <span className="eyebrow">STOCK SCANNER · v0.21.4-B.2.1.1</span>
           <h1>오늘 어떤 종목을 먼저 볼까요?</h1>
           <p>종목을 직접 고르기 전에 현재 조건을 먼저 보고, Risk·진입 기준까지의 거리·같은 전략의 3년 과거 근거를 순서대로 비교해 먼저 확인할 후보를 정합니다.</p>
         </div>
@@ -512,14 +558,48 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
             </div>
           ) : (
             <button type="button" className="scanner-run-button" onClick={() => void runScanner(false)} disabled={busy}>
-              {busy ? "후보 찾는 중..." : "오늘의 후보 찾기"}
+              {freshnessBusy ? "최신 시세 확인 중..." : jobBusy ? "후보 찾는 중..." : "오늘의 후보 찾기"}
             </button>
           )}
-          {busy && <button type="button" className="scanner-cancel-button" onClick={() => void cancel()}>중지</button>}
+          {jobBusy && <button type="button" className="scanner-cancel-button" onClick={() => void cancel()}>중지</button>}
         </div>
       </section>
 
-      {busy && progress && (
+      {dateNotice && (
+        <aside className="scanner-date-toast" role="status" aria-live="polite">
+          <div>
+            <strong>✓ 새로운 확정 시세를 반영했습니다.</strong>
+            <span>{formatDate(dateNotice)} 기준으로 분석합니다.</span>
+          </div>
+          <button type="button" aria-label="안내 닫기" onClick={() => setDateNotice(null)}>×</button>
+        </aside>
+      )}
+
+      {freshnessFailure && (
+        <section className="scanner-freshness-failure">
+          <div>
+            <strong>최신 시세를 가져오지 못했습니다.</strong>
+            <p>{freshnessFailure.message}</p>
+            {freshnessFailure.available_data_date && (
+              <span>현재 사용할 수 있는 확정 일봉 · {formatDate(freshnessFailure.available_data_date)}</span>
+            )}
+          </div>
+          <div className="scanner-freshness-actions">
+            <button type="button" onClick={() => void runScanner(Boolean(result))}>다시 시도</button>
+            {freshnessFailure.available_data_date && (
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => void runScanner(Boolean(result), false, freshnessFailure.available_data_date)}
+              >
+                {formatDate(freshnessFailure.available_data_date)} 기준으로 분석
+              </button>
+            )}
+          </div>
+        </section>
+      )}
+
+      {jobBusy && progress && (
         <section className="scanner-progress-card">
           <div className="scanner-progress-head">
             <div>
@@ -584,10 +664,10 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
         </section>
       )}
 
-      {!result && !busy && !error && (
+      {!result && !busy && !error && !freshnessFailure && (
         <section className="scanner-empty-start">
           <strong>전략을 먼저 고를 필요가 없습니다.</strong>
-          <p>버튼 한 번으로 시장 전체를 빠르게 거른 뒤, 조건이 좋은 종목만 10가지 전략과 Risk Engine으로 다시 확인합니다.</p>
+          <p>버튼 한 번으로 시장 전체를 빠르게 거른 뒤, 조건이 좋은 종목만 10가지 전략과 위험 관리 기준으로 다시 확인합니다.</p>
         </section>
       )}
 
@@ -604,6 +684,10 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
               <span><small>상세 검증</small><b>{formatNumber(result.summary.deep_analyzed)}개</b></span>
               <span><small>관심 후보</small><b>{formatNumber(result.summary.candidate_count)}개</b></span>
               <span><small>먼저 표시</small><b>{formatNumber(result.summary.shown_count)}개</b></span>
+            </div>
+            <div className="scanner-analysis-date">
+              <span>분석 기준일</span>
+              <strong>{analysisDataDate ? `${formatDate(analysisDataDate)} 확정 일봉` : "확정 일봉 확인 필요"}</strong>
             </div>
             <div className="scanner-cache-note">
               {result.scanner_cache_hit ? "오늘 계산한 결과를 바로 재사용했습니다." : `KRX 신규 요청 ${result.diagnostics.network_requests}회 · 시장 저장 데이터 재사용 ${result.diagnostics.market_store_reused_items}건`}
@@ -708,7 +792,7 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
               <div><small>최대 동시 처리</small><strong>{formatNumber(result.diagnostics.bootstrap_peak_concurrency ?? 0)}개</strong></div>
               <div><small>초기 준비 오류</small><strong>{formatNumber(result.diagnostics.bootstrap_errors ?? 0)}건</strong></div>
               <div><small>시장 저장소 재사용</small><strong>{formatNumber(result.diagnostics.market_store_reused_items)}건</strong></div>
-              <div><small>기존 KRX 캐시</small><strong>{formatNumber(result.diagnostics.raw_cache_hits)} hit</strong></div>
+              <div><small>KRX 응답 재사용</small><strong>{formatNumber(result.diagnostics.raw_cache_hits)}회</strong></div>
               <div><small>오늘 KRX(앱 기록)</small><strong>{formatNumber(result.diagnostics.budget_used)} / {formatNumber(result.diagnostics.budget_limit)}</strong></div>
               <div><small>Fast Scan 자동 상한</small><strong>{formatNumber(result.diagnostics.fast_request_limit ?? result.fast_request_limit)}회</strong></div>
               <div><small>3년 과거 근거 완료</small><strong>{formatNumber(result.summary.three_year_evidence_verified ?? 0)}개</strong></div>

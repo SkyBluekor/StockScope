@@ -52,6 +52,7 @@ class StockScannerService:
     FETCH_CONCURRENCY_MAX = 12
     FETCH_CONCURRENCY_RAMP_SUCCESSES = 16
     DEFAULT_FAST_REQUEST_LIMIT = 60
+    LATEST_CONFIRM_LOOKBACK_DAYS = 14
     CACHE_ROOT = Path(__file__).resolve().parents[2] / "runtime" / "scanner"
 
     def __init__(
@@ -185,6 +186,154 @@ class StockScannerService:
             return max(1, int(raw))
         except (TypeError, ValueError):
             return cls.DEFAULT_FAST_REQUEST_LIMIT
+
+    @staticmethod
+    def _common_available_date(values: dict[str, str | None]) -> str | None:
+        available = [value for value in values.values() if value]
+        if not available or len(available) != len(values):
+            return None
+        return min(available)
+
+    async def prepare_latest_confirmed_data(
+        self,
+        *,
+        market_scope: str = "ALL",
+        known_data_date: str | None = None,
+    ) -> dict[str, Any]:
+        """Resolve the latest KRX-confirmed EOD date and persist only that day.
+
+        This is intentionally a tiny preflight used immediately before a Scanner run.
+        It does not bootstrap long history. The user can therefore be told when the
+        analysis date advances without silently changing the date after analysis starts.
+        """
+        scope = market_scope.upper().strip()
+        if scope not in {"ALL", "KOSPI", "KOSDAQ"}:
+            raise ValueError("market_scope은 ALL, KOSPI, KOSDAQ 중 하나여야 합니다.")
+        markets = ["KOSPI", "KOSDAQ"] if scope == "ALL" else [scope]
+        today = self.krx._today_kst()  # noqa: SLF001 - provider and Scanner share KST boundary
+        requested_end = today - timedelta(days=1)
+        previous_dates = {
+            market: (
+                self._iso(value) if (value := self.market_store.latest_complete_date(market, "stock", self._compact(requested_end))) else None
+            )
+            for market in markets
+        }
+        fallback_date = self._common_available_date(previous_dates)
+        before = self.krx.request_stats()
+        updated_dates: set[str] = set()
+
+        try:
+            await self.krx.open_session()
+            primary_market = markets[0]
+            primary_result: dict[str, Any] | None = None
+            resolved_day: date | None = None
+            common_previous = self._common_available_date(previous_dates)
+            if common_previous == requested_end.isoformat():
+                # Yesterday's confirmed stock rows are already persisted for every
+                # selected market, so there is no need to hit KRX merely to rediscover
+                # the same date. This is the normal fast path on an up-to-date store.
+                resolved_day = requested_end
+            else:
+                for candidate in self.krx._candidate_dates(requested_end, self.LATEST_CONFIRM_LOOKBACK_DAYS):  # noqa: SLF001
+                    probe = await self.krx.stock_daily(primary_market, candidate)
+                    if int(probe.get("count") or 0) > 0:
+                        primary_result = probe
+                        resolved_day = candidate
+                        break
+
+            if resolved_day is None:
+                raise ProviderError(
+                    f"최근 {self.LATEST_CONFIRM_LOOKBACK_DAYS}일 범위에서 최신 확정 KRX 일봉을 찾지 못했습니다."
+                )
+
+            resolved_key = self._compact(resolved_day)
+            resolved_iso = resolved_day.isoformat()
+            for market in markets:
+                if not self.market_store.day_complete(market, resolved_key, "stock"):
+                    stock_result = (
+                        primary_result
+                        if market == primary_market and primary_result is not None
+                        else await self.krx.stock_daily(market, resolved_day)
+                    )
+                    stock_rows = list(stock_result.get("rows") or [])
+                    if not stock_rows:
+                        raise ProviderError(f"{market} {resolved_iso} 확정 주식 시세를 확인하지 못했습니다.")
+                    await asyncio.to_thread(
+                        self.market_store.put_stock_day, market, resolved_key, stock_rows, stable=True
+                    )
+                    updated_dates.add(resolved_iso)
+
+                if not self.market_store.day_complete(market, resolved_key, "index"):
+                    index_result = await self.krx.index_daily(market, resolved_day)
+                    index_rows = list(index_result.get("rows") or [])
+                    main_index = self.krx._select_main_index(index_rows, market) if index_rows else None  # noqa: SLF001
+                    if main_index is None:
+                        raise ProviderError(f"{market} {resolved_iso} 확정 시장지수를 확인하지 못했습니다.")
+                    await asyncio.to_thread(
+                        self.market_store.put_index_day, market, resolved_key, main_index, stable=True
+                    )
+                    updated_dates.add(resolved_iso)
+
+            current_dates = {
+                market: (
+                    self._iso(value) if (value := self.market_store.latest_complete_date(market, "stock", resolved_key)) else None
+                )
+                for market in markets
+            }
+            if any(value != resolved_iso for value in current_dates.values()):
+                raise ProviderError("최신 시세 저장 후 분석 기준일이 시장별로 일치하지 않습니다.")
+
+            delta = self._stats_delta(before, self.krx.request_stats())
+            comparison_date = known_data_date or fallback_date
+            date_changed = bool(comparison_date and comparison_date < resolved_iso)
+            return {
+                "status": "UPDATED" if updated_dates else "READY",
+                "market_scope": scope,
+                "requested_date": requested_end.isoformat(),
+                "latest_confirmed_date": resolved_iso,
+                "resolved_as_of_date": resolved_iso,
+                "known_data_date": known_data_date,
+                "previous_data_dates": previous_dates,
+                "data_dates": current_dates,
+                "available_data_date": resolved_iso,
+                "market_data_updated": bool(updated_dates),
+                "date_changed": date_changed,
+                "updated_dates": sorted(updated_dates),
+                "diagnostics": {
+                    "network_requests": int(delta.get("network_requests", 0)),
+                    "raw_cache_hits": int(delta.get("disk_hits", 0) + delta.get("memory_hits", 0) + delta.get("empty_marker_hits", 0)),
+                    "retries": int(delta.get("retries", 0)),
+                },
+                "message": (
+                    f"새로운 확정 시세를 확인했습니다. {resolved_iso} 기준으로 분석합니다."
+                    if date_changed
+                    else f"{resolved_iso} 확정 일봉 기준으로 분석할 수 있습니다."
+                ),
+            }
+        except (ProviderError, ValueError) as exc:
+            delta = self._stats_delta(before, self.krx.request_stats())
+            return {
+                "status": "UPDATE_FAILED",
+                "market_scope": scope,
+                "requested_date": requested_end.isoformat(),
+                "latest_confirmed_date": None,
+                "resolved_as_of_date": None,
+                "known_data_date": known_data_date,
+                "previous_data_dates": previous_dates,
+                "data_dates": previous_dates,
+                "available_data_date": known_data_date or fallback_date,
+                "market_data_updated": False,
+                "date_changed": False,
+                "updated_dates": [],
+                "diagnostics": {
+                    "network_requests": int(delta.get("network_requests", 0)),
+                    "raw_cache_hits": int(delta.get("disk_hits", 0) + delta.get("memory_hits", 0) + delta.get("empty_marker_hits", 0)),
+                    "retries": int(delta.get("retries", 0)),
+                },
+                "message": f"최신 시세를 가져오지 못했습니다. {exc}",
+            }
+        finally:
+            await self.krx.close_session()
 
     def _history_plan(self, *, market: str, start: date, end: date) -> dict[str, Any]:
         dates = self._weekdays(start, end)

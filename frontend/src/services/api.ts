@@ -922,6 +922,7 @@ export type StockSearchItem = {
   stock_type: string;
   listed_date: string;
   listed_shares: number | null;
+  analysis_as_of_date?: string | null;
 };
 
 export type StockSearchResponse = {
@@ -1400,6 +1401,27 @@ export type MultiStrategyHistoricalFit = {
   summary: string;
 };
 
+export type ProductionExitPolicyMetadata = {
+  policy_id: string;
+  policy_version?: string;
+  label: string;
+  target1_is_exit: boolean;
+  target2_included: boolean;
+  target2_label: string;
+  holding_policy?: string;
+  post_target2_horizon_days?: number;
+  policy_source?: string;
+  fallback_used?: boolean;
+  fallback_reason?: string | null;
+  profit_protection?: {
+    enabled: boolean;
+    activation: "AFTER_TARGET2" | null | string;
+    state: "NOT_APPLICABLE" | "POSITION_CONTEXT_REQUIRED" | "PROTECTION_ACTIVE" | string;
+    current_protection_price: number | null;
+    protection_never_decreases?: boolean;
+  };
+};
+
 export type ConcreteEntryRiskGuide = {
   strategy: string;
   as_of_date: string | null;
@@ -1477,13 +1499,7 @@ export type ConcreteEntryRiskGuide = {
   };
   action: { status: string; title: string; detail: string };
   historical_verification: { verified: boolean | null; status: string | null; message: string };
-  historical_policy?: {
-    policy_id: string;
-    label: string;
-    target1_is_exit: boolean;
-    target2_included: boolean;
-    target2_label: string;
-  };
+  historical_policy?: ProductionExitPolicyMetadata;
   guardrail: string;
 };
 
@@ -1594,13 +1610,7 @@ export type MultiStrategyBacktestResponse = {
   market_regime: string;
   recommendation: MultiStrategyRecommendation;
   strategies: MultiStrategyRow[];
-  historical_policy?: {
-    policy_id: string;
-    label: string;
-    target1_is_exit: boolean;
-    target2_included: boolean;
-    target2_label: string;
-  };
+  historical_policy?: ProductionExitPolicyMetadata;
   config: {
     minimum_strategy_score: number;
     entry_policy: string;
@@ -1681,6 +1691,11 @@ export type ExitPolicyValidationReport = {
   message?: string;
   signature: string;
   period: { start: string; end: string };
+  validation_config?: {
+    max_holding_days?: number;
+    post_target2_research_days?: number;
+    [key: string]: unknown;
+  };
   sample?: {
     stocks: number;
     markets: string[];
@@ -1705,13 +1720,60 @@ export type ExitPolicyValidationReport = {
     index_coverage_pct: number;
     candidates: Array<{ code: string; market: string; coverage_pct: number; row_count: number }>;
   }>;
-  checkpoint?: { reused_stocks: number; completed_stocks: number; resumable?: boolean };
+  expanded_revalidation?: {
+    version?: string;
+    base_signature: string;
+    expanded_signature: string;
+    base_stock_count: number;
+    expanded_stock_count: number;
+    target_stock_count?: number;
+    conditions_match: boolean;
+    comparison_fingerprint?: string;
+    strategy_count: number;
+    same_status_count: number;
+    changed_status_count: number;
+    same_policy_count?: number;
+    previously_sensitive_strategies?: string[];
+    previously_sensitive_same_status?: number;
+    previously_sensitive_changed_status?: number;
+    outcome?: "NO_CANDIDATE_STABLE" | "BASELINE_STRENGTHENED" | "NEW_CANDIDATE" | "MIXED_OR_UNSTABLE" | string;
+    transitions?: Record<string, number>;
+    strategies: Array<{
+      strategy: string;
+      before_status: string;
+      after_status: string;
+      before_policy_id?: string;
+      after_policy_id?: string;
+      status_same: boolean;
+      policy_same?: boolean;
+    }>;
+    base_summary?: Record<string, unknown>;
+    expanded_summary?: Record<string, unknown>;
+    sample_plan?: {
+      base_market_counts?: Record<string, number>;
+      target_market_counts?: Record<string, number>;
+      ready_stock_count?: number;
+    };
+  };
+  checkpoint?: {
+    reused_stocks: number;
+    same_sample_reused_stocks?: number;
+    cross_sample_reused_stocks?: number;
+    completed_stocks: number;
+    resumable?: boolean;
+  };
   performance: {
+    cache_lookup_seconds?: number;
     market_store_load_seconds?: number;
     exit_policy_calculation_seconds?: number;
     selection_seconds?: number;
     total_seconds: number;
     network_requests: number;
+    reused_stock_count?: number;
+    same_sample_reused_stock_count?: number;
+    cross_sample_reused_stock_count?: number;
+    calculated_stock_count?: number;
+    research_workers?: number;
   };
   report?: { saved: boolean; filename: string; runtime_area: string };
 };
@@ -1746,6 +1808,309 @@ export async function createExitPolicyValidationJob(
 export async function fetchLatestExitPolicyValidationReport(): Promise<{ available: boolean; report: ExitPolicyValidationReport | null }> {
   return asJson<{ available: boolean; report: ExitPolicyValidationReport | null }>(
     await fetch("/api/backtest/exit-policy-validation/latest"),
+  );
+}
+
+export async function fetchExitPolicyValidationReport(
+  signature: string,
+): Promise<{ available: boolean; report: ExitPolicyValidationReport | null }> {
+  return asJson<{ available: boolean; report: ExitPolicyValidationReport | null }>(
+    await fetch(`/api/backtest/exit-policy-validation/report/${encodeURIComponent(signature)}`),
+  );
+}
+
+export type ExitPolicyValidationHistoryItem = {
+  signature: string;
+  status: string;
+  created_at: string;
+  period: { start: string; end: string };
+  stock_count: number;
+  max_holding_days: number | null;
+  summary: {
+    selected: number;
+    baseline_better: number;
+    unresolved: number;
+    insufficient_sample: number;
+  };
+  is_expanded: boolean;
+  base_signature: string | null;
+  expanded_from: number | null;
+};
+
+export async function fetchExitPolicyValidationHistory(
+  limit = 20,
+): Promise<{ available: boolean; rows: ExitPolicyValidationHistoryItem[] }> {
+  const query = new URLSearchParams({ limit: String(limit) });
+  return asJson<{ available: boolean; rows: ExitPolicyValidationHistoryItem[] }>(
+    await fetch(`/api/backtest/exit-policy-validation/history?${query.toString()}`),
+  );
+}
+
+export type ExpandedSamplePlan = {
+  version: string;
+  base_signature: string;
+  comparison_fingerprint: string;
+  period: { start: string; end: string };
+  markets: string[];
+  base_stock_count: number;
+  target_stock_count: number;
+  ready_stock_count: number;
+  additional_stock_count: number;
+  ready_to_run: boolean;
+  missing_base_stocks: string[];
+  base_market_counts: Record<string, number>;
+  target_market_counts: Record<string, number>;
+  selected_stocks: Array<{ code: string; market: string; coverage_pct?: number; row_count?: number }>;
+  data_preparation: {
+    needed: boolean;
+    can_prepare: boolean;
+    missing_history_items: number;
+    cached_history_items: number | null;
+    estimated_network_requests: number | null;
+    note: string;
+  };
+};
+
+export type ExpandedSamplePreparationResult = {
+  version: string;
+  status: "READY" | "PARTIAL" | "DATA_LIMIT" | string;
+  message: string;
+  plan: ExpandedSamplePlan;
+  errors?: string[];
+  performance?: {
+    total_seconds?: number;
+    prepared_items?: number;
+    error_count?: number;
+    network_requests?: number;
+  };
+};
+
+export type ExpandedSampleRequest = {
+  target_stocks: 20 | 40 | 60;
+  base_signature?: string | null;
+  force_refresh?: boolean;
+};
+
+export async function planExpandedExitPolicyValidation(payload: ExpandedSampleRequest): Promise<ExpandedSamplePlan> {
+  return asJson<ExpandedSamplePlan>(
+    await fetch("/api/backtest/exit-policy-validation/expanded/plan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  );
+}
+
+export async function createExpandedSamplePreparationJob(
+  payload: ExpandedSampleRequest,
+): Promise<BacktestJob<ExpandedSamplePreparationResult>> {
+  return asJson<BacktestJob<ExpandedSamplePreparationResult>>(
+    await fetch("/api/backtest/exit-policy-validation/expanded/prepare/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  );
+}
+
+export async function createExpandedExitPolicyValidationJob(
+  payload: ExpandedSampleRequest,
+): Promise<BacktestJob<ExitPolicyValidationReport>> {
+  return asJson<BacktestJob<ExitPolicyValidationReport>>(
+    await fetch("/api/backtest/exit-policy-validation/expanded/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  );
+}
+
+export type ExitPolicyResearchAuditStrategy = {
+  strategy: string;
+  research_status: string;
+  research_status_label: string;
+  selected_policy_id: string;
+  decision_trace?: {
+    reported_status?: string;
+    replayed_status?: string;
+    reported_policy_id?: string;
+    replayed_policy_id?: string;
+    reason_code?: string;
+    reason?: string;
+  };
+  baseline_sample?: {
+    trades?: number;
+    participating_stocks?: number;
+    market_trades?: Record<string, number>;
+    largest_stock_trade_share_pct?: number | null;
+    top1_abs_net_contribution_share_pct?: number | null;
+    top3_abs_net_contribution_share_pct?: number | null;
+    largest_contributors?: Array<{
+      code?: string;
+      market?: string;
+      trades?: number;
+      net_return_sum_pct?: number;
+    }>;
+  };
+  entry_set?: {
+    status?: string;
+    divergent_stock_count?: number;
+    recent_trade_samples_checked?: number;
+    recent_trade_entry_mismatches?: number;
+    matched_entry_equality_proven?: boolean;
+    note?: string;
+  };
+  leave_one_out?: {
+    status?: string;
+    runs?: number;
+    same_status?: number;
+    same_policy?: number;
+    same_status_pct?: number | null;
+    status_counts?: Record<string, number>;
+    unstable_removed_stocks?: Array<{
+      removed?: string;
+      status?: string;
+      status_label?: string;
+      selected_policy_id?: string;
+    }>;
+  };
+  regimes?: Array<{
+    regime: string;
+    trades: number;
+    share_pct: number | null;
+    average_net_return_pct: number | null;
+    profit_factor: number | null;
+  }>;
+};
+
+export type ExitPolicyResearchAuditReport = {
+  version: string;
+  available: boolean;
+  status: "PASS" | "PASS_WITH_NOTES" | "FAIL" | "DATA_REQUIRED" | string;
+  message?: string;
+  validation_signature?: string;
+  validation_period?: { start?: string; end?: string } | null;
+  checked_at?: string;
+  research_only?: boolean;
+  production_policy_changed?: false;
+  summary?: {
+    critical_issue_count?: number;
+    critical_issues?: string[];
+    note_count?: number;
+    notes?: string[];
+    validated_stocks?: number;
+    strategy_count?: number;
+    leave_one_out_sensitive_strategies?: number;
+    policy_dependent_entry_strategies?: number;
+    high_concentration_strategies?: number;
+  };
+  checks?: {
+    data_coverage?: {
+      status?: string;
+      minimum_coverage_pct?: number;
+      selected_stocks?: number;
+      validated_stocks?: number;
+      excluded_stocks?: number;
+      market_counts?: Record<string, number>;
+      low_coverage_stocks?: string[];
+      index_coverage_failures?: string[];
+      missing_checkpoint_audits?: string[];
+      stocks?: Array<{
+        code?: string;
+        market?: string;
+        coverage_pct?: number | null;
+        row_count?: number;
+        trading_days?: number;
+        first_date?: string;
+        last_date?: string;
+        validated?: boolean;
+      }>;
+      markets?: Array<{
+        market?: string;
+        trading_days?: number;
+        index_days?: number;
+        index_coverage_pct?: number | null;
+      }>;
+    };
+    aggregate_replay?: {
+      status?: string;
+      checked_policy_aggregates?: number;
+      mismatch_count?: number;
+      basis?: string;
+    };
+    decision_replay?: {
+      status?: string;
+      mismatch_count?: number;
+      selection_basis?: string;
+    };
+    guardrails?: {
+      status?: string;
+      config_mismatch_count?: number;
+      recent_trailing_trade_samples?: number;
+      recent_non_decreasing_failures?: number;
+      recent_same_day_stop_priority_samples?: number;
+      scope?: string;
+      limitation?: string;
+    };
+    leave_one_out?: {
+      status?: string;
+      sensitive_strategies?: string[];
+      strategy_count?: number;
+    };
+    entry_set?: {
+      status?: string;
+      policy_dependent_strategies?: string[];
+      matched_entry_equality_proven?: boolean;
+    };
+  };
+  strategies?: ExitPolicyResearchAuditStrategy[];
+  limitations?: string[];
+  report?: { saved?: boolean; filename?: string; runtime_area?: string };
+};
+
+export async function runExitPolicyValidationAudit(): Promise<ExitPolicyResearchAuditReport> {
+  return asJson<ExitPolicyResearchAuditReport>(
+    await fetch("/api/backtest/exit-policy-validation/audit", { method: "POST" }),
+  );
+}
+
+export async function fetchLatestExitPolicyValidationAudit(): Promise<{ available: boolean; report: ExitPolicyResearchAuditReport | null }> {
+  return asJson<{ available: boolean; report: ExitPolicyResearchAuditReport | null }>(
+    await fetch("/api/backtest/exit-policy-validation/audit/latest"),
+  );
+}
+
+export type ProductionExitPolicyStrategy = {
+  policy_id: string;
+  holding_policy?: string;
+  post_target2_horizon_days?: number;
+  research_status?: string | null;
+  research_reason?: string | null;
+  fallback_used?: boolean;
+  fallback_reason?: string | null;
+};
+
+export type ProductionExitPolicyStatus = {
+  available: boolean;
+  policy_version: string;
+  mapping: null | {
+    production_policy_changed?: boolean;
+    validation_signature?: string | null;
+    validation_period?: { start?: string; end?: string } | null;
+    validation_config?: {
+      max_holding_days?: number;
+      post_target2_research_days?: number;
+      [key: string]: unknown;
+    };
+    strategies?: Record<string, ProductionExitPolicyStrategy>;
+    [key: string]: unknown;
+  };
+  cache_token: string;
+};
+
+export async function fetchExitPolicyProductionStatus(): Promise<ProductionExitPolicyStatus> {
+  return asJson<ProductionExitPolicyStatus>(
+    await fetch("/api/backtest/exit-policy-production/status"),
   );
 }
 
@@ -1935,6 +2300,36 @@ export type ScannerRequest = {
   force_refresh?: boolean;
   allow_large_sync?: boolean;
 };
+
+export type ScannerFreshnessResponse = {
+  status: "READY" | "UPDATED" | "UPDATE_FAILED" | string;
+  market_scope: "ALL" | "KOSPI" | "KOSDAQ";
+  requested_date: string;
+  latest_confirmed_date: string | null;
+  resolved_as_of_date: string | null;
+  known_data_date: string | null;
+  previous_data_dates: Partial<Record<"KOSPI" | "KOSDAQ", string | null>>;
+  data_dates: Partial<Record<"KOSPI" | "KOSDAQ", string | null>>;
+  available_data_date: string | null;
+  market_data_updated: boolean;
+  date_changed: boolean;
+  updated_dates: string[];
+  diagnostics: { network_requests: number; raw_cache_hits: number; retries: number };
+  message: string;
+};
+
+export async function prepareScannerLatestData(payload: {
+  market_scope?: "ALL" | "KOSPI" | "KOSDAQ";
+  known_data_date?: string | null;
+}): Promise<ScannerFreshnessResponse> {
+  return asJson<ScannerFreshnessResponse>(
+    await fetch("/api/backtest/scanner/freshness", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  );
+}
 
 export async function createScannerJob(payload: ScannerRequest): Promise<BacktestJob<ScannerResponse>> {
   return asJson<BacktestJob<ScannerResponse>>(

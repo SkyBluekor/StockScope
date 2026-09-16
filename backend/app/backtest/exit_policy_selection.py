@@ -6,7 +6,7 @@ from pathlib import Path
 from statistics import median
 from typing import Any, Iterable
 
-from app.backtest.exit_policy_research import POLICY_TARGET1_FULL_EXIT
+from app.backtest.exit_policy_catalog import POLICY_TARGET1_FULL_EXIT
 
 EXIT_POLICY_SELECTION_VERSION = "0.21.4-B.1"
 SELECTION_BASIS = "PARETO_NO_WEIGHTING"

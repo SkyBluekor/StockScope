@@ -221,11 +221,21 @@ class ProductionExitPolicyEngine:
             "label": "1차 목표 도달 시 전량 종료" if baseline else spec.label,
             "target1_is_exit": baseline,
             "target2_included": not baseline,
-            "target2_label": "2차 확장 목표",
+            "target2_label": "2차 목표가",
             "holding_policy": resolution.holding_policy,
+            "post_target2_horizon_days": resolution.post_target2_horizon_days,
             "policy_source": resolution.policy_source,
             "fallback_used": resolution.fallback_used,
             "fallback_reason": resolution.fallback_reason,
+            "profit_protection": {
+                "enabled": not baseline,
+                "activation": None if baseline else "AFTER_TARGET2",
+                # A strategy-level analysis has no actual position start/history.
+                # Never invent an active trailing price from the current quote alone.
+                "state": "NOT_APPLICABLE" if baseline else "POSITION_CONTEXT_REQUIRED",
+                "current_protection_price": None,
+                "protection_never_decreases": not baseline,
+            },
         }
 
     @staticmethod

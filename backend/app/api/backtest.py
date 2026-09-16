@@ -16,6 +16,14 @@ from app.backtest.exit_policy_validation_runner import (
 from app.backtest.risk_validation import RiskPolicyValidationService
 from app.backtest.scanner import StockScannerService
 from app.backtest.production_exit_policy import ProductionExitPolicyRegistry
+from app.backtest.research_audit import ExitPolicyResearchAuditor, ExitPolicyResearchAuditStore
+from app.backtest.expanded_sample_validation import (
+    ALLOWED_EXPANDED_TARGETS,
+    ExpandedSamplePlanner,
+    ExpandedSamplePreparationService,
+    compare_validation_reports,
+    validation_config_from_report,
+)
 from app.core.config import get_settings
 from app.market.providers import KrxProvider
 from app.market.providers.base import ProviderError, ProviderNotConfigured
@@ -30,6 +38,12 @@ class ScannerRequest(BaseModel):
     as_of_date: str | None = None
     candidate_limit: int = Field(default=5, ge=1, le=10)
     force_refresh: bool = False
+    allow_large_sync: bool = False
+
+
+class ScannerFreshnessRequest(BaseModel):
+    market_scope: Literal["ALL", "KOSPI", "KOSDAQ"] = "ALL"
+    known_data_date: str | None = None
 
 class PullbackBacktestRequest(BaseModel):
     code: str = Field(..., min_length=1, max_length=12)
@@ -62,7 +76,7 @@ class ExitPolicyValidationRunnerRequest(BaseModel):
     start_date: str
     end_date: str
     markets: list[Literal["KOSPI", "KOSDAQ"]] = Field(default_factory=lambda: ["KOSPI", "KOSDAQ"])
-    max_stocks: int = Field(default=20, ge=2, le=30)
+    max_stocks: int = Field(default=20, ge=2, le=60)
     minimum_coverage_pct: float = Field(default=90.0, ge=50, le=100)
     initial_capital: float = Field(default=10_000_000, gt=0, le=1_000_000_000_000)
     max_holding_days: int = Field(default=20, ge=1, le=120)
@@ -70,6 +84,12 @@ class ExitPolicyValidationRunnerRequest(BaseModel):
     minimum_stock_count: int = Field(default=3, ge=2, le=30)
     minimum_total_trades: int = Field(default=30, ge=10, le=10000)
     post_target2_research_days: int = Field(default=60, ge=1, le=240)
+    force_refresh: bool = False
+
+
+class ExpandedSampleRequest(BaseModel):
+    target_stocks: int = 40
+    base_signature: str | None = None
     force_refresh: bool = False
 
 
@@ -396,6 +416,189 @@ async def latest_exit_policy_validation_report() -> dict:
     return {"available": True, "report": report}
 
 
+@router.get("/exit-policy-validation/report/{signature}")
+async def exit_policy_validation_report_by_signature(signature: str) -> dict:
+    cleaned = signature.strip().lower()
+    if len(cleaned) != 20 or any(ch not in "0123456789abcdef" for ch in cleaned):
+        raise HTTPException(status_code=400, detail="연구 결과 식별자가 올바르지 않습니다.")
+    report = ExitPolicyValidationCheckpoint().load_report(cleaned)
+    if report is None:
+        return {"available": False, "report": None}
+    return {"available": True, "report": report}
+
+
+@router.get("/exit-policy-validation/history")
+async def exit_policy_validation_history(limit: int = 20) -> dict:
+    safe_limit = max(1, min(int(limit), 100))
+    rows = ExitPolicyValidationCheckpoint().list_reports(safe_limit)
+    return {"available": bool(rows), "rows": rows}
+
+
+@router.post("/exit-policy-validation/audit")
+async def run_exit_policy_validation_audit() -> dict:
+    """Local-only reliability review of the latest completed validation report."""
+    return await asyncio.to_thread(ExitPolicyResearchAuditor().run)
+
+
+@router.get("/exit-policy-validation/audit/latest")
+async def latest_exit_policy_validation_audit() -> dict:
+    report = ExitPolicyResearchAuditStore().load()
+    if report is None:
+        return {"available": False, "report": None}
+    return {"available": True, "report": report}
+
+
+def _expanded_base_report(expected_signature: str | None = None) -> dict:
+    report = ExitPolicyValidationCheckpoint().load_report()
+    if report is None or str(report.get("status") or "") != "COMPLETED":
+        raise ValueError("완료된 매도 기준 연구 결과가 있어야 확대 표본 검증을 진행할 수 있습니다.")
+    signature = str(report.get("signature") or "")
+    if expected_signature and expected_signature != signature:
+        raise ValueError("화면에 표시된 연구 결과와 서버의 최신 연구 결과가 다릅니다. 화면을 새로고침한 뒤 다시 시도해 주세요.")
+    return report
+
+
+def _expanded_target(value: int) -> int:
+    target = int(value)
+    if target not in ALLOWED_EXPANDED_TARGETS:
+        raise ValueError("확대 검증 종목 수는 20, 40, 60 중 하나여야 합니다.")
+    return target
+
+
+@router.post("/exit-policy-validation/expanded/plan")
+async def plan_expanded_exit_policy_validation(payload: ExpandedSampleRequest) -> dict:
+    settings = get_settings()
+    try:
+        base_report = _expanded_base_report(payload.base_signature)
+        target = _expanded_target(payload.target_stocks)
+        planner = ExpandedSamplePlanner(provider=KrxProvider(settings.krx_api_key))
+        return await asyncio.to_thread(planner.plan, base_report, target)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+async def _run_expanded_sample_prepare_job(
+    job_id: str,
+    target_stocks: int,
+    base_signature: str | None,
+    api_key: str | None,
+) -> None:
+    def update_progress(payload: dict) -> None:
+        if backtest_jobs.is_cancelled(job_id):
+            raise BacktestJobCancelled()
+        backtest_jobs.update_progress(job_id, payload)
+
+    try:
+        base_report = _expanded_base_report(base_signature)
+        service = ExpandedSamplePreparationService(KrxProvider(api_key))
+        result = await service.prepare(base_report, target_stocks, progress=update_progress)
+    except BacktestJobCancelled:
+        backtest_jobs.mark_cancelled(job_id)
+    except asyncio.CancelledError:
+        backtest_jobs.mark_cancelled(job_id)
+        raise
+    except (ProviderNotConfigured, ProviderError, ValueError) as exc:
+        backtest_jobs.fail(job_id, str(exc))
+    except Exception as exc:  # pragma: no cover
+        backtest_jobs.fail(job_id, f"확대 표본 검증 데이터 준비 중 예상하지 못한 오류가 발생했습니다: {exc}")
+    else:
+        backtest_jobs.complete(job_id, result)
+
+
+@router.post("/exit-policy-validation/expanded/prepare/jobs", status_code=202)
+async def create_expanded_sample_prepare_job(payload: ExpandedSampleRequest) -> dict:
+    settings = get_settings()
+    try:
+        _expanded_base_report(payload.base_signature)
+        target = _expanded_target(payload.target_stocks)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    job = backtest_jobs.create()
+    task = asyncio.create_task(
+        _run_expanded_sample_prepare_job(job.job_id, target, payload.base_signature, settings.krx_api_key)
+    )
+    backtest_jobs.attach_task(job.job_id, task)
+    return job.public()
+
+
+async def _run_expanded_validation_job(
+    job_id: str,
+    target_stocks: int,
+    base_signature: str | None,
+    force_refresh: bool,
+    api_key: str | None,
+) -> None:
+    def update_progress(payload: dict) -> None:
+        if backtest_jobs.is_cancelled(job_id):
+            raise BacktestJobCancelled()
+        backtest_jobs.update_progress(job_id, payload)
+
+    try:
+        store = ExitPolicyValidationCheckpoint()
+        base_report = _expanded_base_report(base_signature)
+        target = _expanded_target(target_stocks)
+        store.archive_report(base_report)
+        planner = ExpandedSamplePlanner(provider=KrxProvider(api_key))
+        plan = await asyncio.to_thread(planner.plan, base_report, target)
+        if not plan.get("ready_to_run"):
+            raise ValueError("확대 표본 검증에 필요한 저장 시세가 아직 충분하지 않습니다. 먼저 검증 데이터를 준비해 주세요.")
+        runner_config = validation_config_from_report(base_report, target)
+        service = BacktestService(KrxProvider(api_key))
+        result = await service.run_exit_policy_validation_runner(
+            runner_config,
+            force_refresh=force_refresh,
+            progress=update_progress,
+            checkpoint_store=store,
+            selected_candidates=list(plan.get("selected_stocks") or []),
+        )
+        if str(result.get("status") or "") == "COMPLETED":
+            audit = ExitPolicyResearchAuditStore().load()
+            comparison = compare_validation_reports(base_report, result, audit)
+            result["expanded_revalidation"] = {
+                **comparison,
+                "target_stock_count": target,
+                "sample_plan": {
+                    "base_market_counts": plan.get("base_market_counts"),
+                    "target_market_counts": plan.get("target_market_counts"),
+                    "ready_stock_count": plan.get("ready_stock_count"),
+                },
+            }
+            store.save_report(result)
+    except BacktestJobCancelled:
+        backtest_jobs.mark_cancelled(job_id)
+    except asyncio.CancelledError:
+        backtest_jobs.mark_cancelled(job_id)
+        raise
+    except (ProviderNotConfigured, ProviderError, ValueError) as exc:
+        backtest_jobs.fail(job_id, str(exc))
+    except Exception as exc:  # pragma: no cover
+        backtest_jobs.fail(job_id, f"확대 표본 재검증 중 예상하지 못한 오류가 발생했습니다: {exc}")
+    else:
+        backtest_jobs.complete(job_id, result)
+
+
+@router.post("/exit-policy-validation/expanded/jobs", status_code=202)
+async def create_expanded_validation_job(payload: ExpandedSampleRequest) -> dict:
+    settings = get_settings()
+    try:
+        _expanded_base_report(payload.base_signature)
+        target = _expanded_target(payload.target_stocks)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    job = backtest_jobs.create()
+    task = asyncio.create_task(
+        _run_expanded_validation_job(
+            job.job_id,
+            target,
+            payload.base_signature,
+            payload.force_refresh,
+            settings.krx_api_key,
+        )
+    )
+    backtest_jobs.attach_task(job.job_id, task)
+    return job.public()
+
+
 @router.get("/exit-policy-production/status")
 async def exit_policy_production_status() -> dict:
     return ProductionExitPolicyRegistry().status()
@@ -477,6 +680,7 @@ async def _run_scanner_job(job_id: str, payload: ScannerRequest, api_key: str | 
             as_of_date=payload.as_of_date,
             candidate_limit=payload.candidate_limit,
             force_refresh=payload.force_refresh,
+            allow_large_sync=payload.allow_large_sync,
             progress=update_progress,
         )
     except BacktestJobCancelled:
@@ -490,6 +694,22 @@ async def _run_scanner_job(job_id: str, payload: ScannerRequest, api_key: str | 
         backtest_jobs.fail(job_id, f"종목 찾기 처리 중 예상하지 못한 오류가 발생했습니다: {exc}")
     else:
         backtest_jobs.complete(job_id, result)
+
+
+@router.post("/scanner/freshness")
+async def prepare_scanner_freshness(payload: ScannerFreshnessRequest) -> dict:
+    """Resolve and persist the latest confirmed EOD before a user starts Scanner analysis."""
+    settings = get_settings()
+    service = StockScannerService(KrxProvider(settings.krx_api_key))
+    try:
+        return await service.prepare_latest_confirmed_data(
+            market_scope=payload.market_scope,
+            known_data_date=payload.known_data_date,
+        )
+    except ProviderNotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/scanner/jobs", status_code=202)

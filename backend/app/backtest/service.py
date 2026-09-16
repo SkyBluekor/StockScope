@@ -838,13 +838,18 @@ class BacktestService:
         force_refresh: bool = False,
         progress: ProgressCallback | None = None,
         checkpoint_store: ExitPolicyValidationCheckpoint | None = None,
+        selected_candidates: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        """Run B.1 selection on a reproducible, local-only Market Store sample.
+        """Run multi-stock Exit-policy research using local Market Store data only.
 
-        The runner never fills missing history from KRX.  If the local Market Store is
-        insufficient it reports that condition instead of turning a research action
-        into hundreds of network requests.  Completed per-stock audits are checkpointed
-        and reused when the exact same research signature is run again.
+        B.2.1.10 keeps the original research/selection algorithm unchanged while
+        improving workflow performance:
+        - same-sample checkpoint reuse remains supported;
+        - compatible per-stock audits from smaller/larger samples are reused;
+        - only missing stocks are calculated;
+        - new stock calculations use a small bounded worker pool;
+        - outward progress is stock-based and monotonic. Internal policy progress is
+          kept in ``details`` instead of replacing the user's overall percentage.
         """
         started = monotonic()
         runner_config.validate()
@@ -871,27 +876,82 @@ class BacktestService:
                 limit=runner_config.max_stocks,
             )
             market_availability[market] = availability
-            # A missing benchmark would silently change market-regime conditions, so
-            # do not use that market until its local index history is also sufficiently covered.
             if float(availability.get("index_coverage_pct") or 0.0) + 1e-9 < runner_config.minimum_coverage_pct:
                 candidate_groups[market] = []
             else:
                 candidate_groups[market] = list(availability.get("candidates") or [])
 
-        selected = interleave_market_candidates(
-            candidate_groups,
-            runner_config.markets,
-            runner_config.max_stocks,
-        )
+        if selected_candidates is None:
+            selected = interleave_market_candidates(
+                candidate_groups,
+                runner_config.markets,
+                runner_config.max_stocks,
+            )
+        else:
+            if len(selected_candidates) > runner_config.max_stocks:
+                raise ValueError("지정한 검증 표본이 최대 종목 수보다 많습니다.")
+            selected = [dict(row) for row in selected_candidates]
+            allowed_markets = set(runner_config.markets)
+            if any(str(row.get("market") or "").upper() not in allowed_markets for row in selected):
+                raise ValueError("지정한 검증 표본에 연구 대상이 아닌 시장이 포함되어 있습니다.")
+
         signature = validation_sample_signature(runner_config, selected)
         if force_refresh:
             checkpoint_store.clear(signature)
+
+        cache_started = monotonic()
         checkpoint = None if force_refresh else checkpoint_store.load(signature)
-        audits: list[dict[str, Any]] = list((checkpoint or {}).get("audits") or [])
-        completed = {
+        current_checkpoint_audits: list[dict[str, Any]] = list((checkpoint or {}).get("audits") or [])
+        current_keys = {
             f"{str(row.get('market') or '').upper()}:{str(row.get('code') or '').upper()}"
-            for row in audits
+            for row in current_checkpoint_audits
         }
+        cross_sample_audits: list[dict[str, Any]] = []
+        if not force_refresh:
+            reusable = await asyncio.to_thread(
+                checkpoint_store.load_reusable_audits,
+                runner_config,
+                selected,
+                exclude_signature=signature,
+            )
+            cross_sample_audits = [
+                row
+                for row in reusable
+                if f"{str(row.get('market') or '').upper()}:{str(row.get('code') or '').upper()}" not in current_keys
+            ]
+        cache_lookup_seconds = monotonic() - cache_started
+
+        audit_by_key: dict[str, dict[str, Any]] = {}
+        for row in [*current_checkpoint_audits, *cross_sample_audits]:
+            key = f"{str(row.get('market') or '').upper()}:{str(row.get('code') or '').upper()}"
+            audit_by_key[key] = row
+
+        selected_keys = [
+            f"{str(row.get('market') or '').upper()}:{normalize_stock_code(str(row.get('code') or ''))}"
+            for row in selected
+        ]
+        # Normalize cache keys once more because older checkpoints may have preserved
+        # provider-specific code formatting.
+        normalized_audit_by_key: dict[str, dict[str, Any]] = {}
+        for row in audit_by_key.values():
+            market = str(row.get("market") or "").upper()
+            code = normalize_stock_code(str(row.get("code") or ""))
+            normalized_audit_by_key[f"{market}:{code}"] = row
+        audit_by_key = normalized_audit_by_key
+
+        if cross_sample_audits:
+            await asyncio.to_thread(
+                checkpoint_store.save,
+                signature,
+                runner_config,
+                [audit_by_key[key] for key in selected_keys if key in audit_by_key],
+            )
+
+        reused_same_sample = len(current_checkpoint_audits)
+        reused_cross_sample = len([key for key in selected_keys if key in audit_by_key]) - reused_same_sample
+        reused_total = max(0, len([key for key in selected_keys if key in audit_by_key]))
+        total = len(selected)
+
         if len(selected) < 2:
             return {
                 "version": VALIDATION_RUNNER_VERSION,
@@ -903,124 +963,217 @@ class BacktestService:
                 "period": {"start": runner_config.start_date, "end": runner_config.end_date},
                 "market_availability": market_availability,
                 "selected_stocks": selected,
-                "checkpoint": {"reused_stocks": len(audits), "completed_stocks": len(audits)},
-                "performance": {"total_seconds": round(monotonic() - started, 3), "network_requests": 0},
+                "checkpoint": {
+                    "reused_stocks": reused_total,
+                    "same_sample_reused_stocks": reused_same_sample,
+                    "cross_sample_reused_stocks": max(0, reused_cross_sample),
+                    "completed_stocks": reused_total,
+                },
+                "performance": {
+                    "cache_lookup_seconds": round(cache_lookup_seconds, 3),
+                    "total_seconds": round(monotonic() - started, 3),
+                    "network_requests": 0,
+                },
             }
 
+        processed_count = reused_total
         self._emit(
             progress,
             stage="exit_policy_validation_sample",
-            message="로컬 Market Store에서 검증 표본을 확정했습니다.",
-            current=len(audits),
-            total=len(selected),
-            details={"selected_stocks": len(selected), "checkpoint_reused": len(audits), "network_requests": 0},
+            message="검증 표본을 확정하고 기존 연구 결과를 확인했습니다.",
+            current=processed_count,
+            total=total,
+            details={
+                "selected_stocks": total,
+                "reused_stocks": reused_total,
+                "same_sample_reused_stocks": reused_same_sample,
+                "cross_sample_reused_stocks": max(0, reused_cross_sample),
+                "calculated_stocks": 0,
+                "network_requests": 0,
+            },
         )
 
         data_load_seconds = 0.0
         calculation_seconds = 0.0
         excluded: list[dict[str, Any]] = []
+        calculated_stocks = 0
         warmup_start = max(start - timedelta(days=self.MAX_WARMUP_CALENDAR_DAYS), date(1990, 1, 1))
         warmup_dd = self._compact(warmup_start)
         start_key = self._compact(start)
-        total = len(selected)
+        selected_position = {
+            f"{str(row.get('market') or '').upper()}:{normalize_stock_code(str(row.get('code') or ''))}": position
+            for position, row in enumerate(selected, start=1)
+        }
 
+        pending: list[tuple[int, dict[str, Any]]] = []
         for position, candidate in enumerate(selected, start=1):
             code = normalize_stock_code(str(candidate.get("code") or ""))
             market = str(candidate.get("market") or "").upper()
             key = f"{market}:{code}"
-            if key in completed:
-                self._emit(
-                    progress,
-                    stage="exit_policy_validation_checkpoint_hit",
-                    message=f"{code} 기존 연구 결과 재사용",
-                    current=position,
-                    total=total,
-                    details={"code": code, "market": market, "checkpoint_hit": True, "network_requests": 0},
-                )
+            if key in audit_by_key:
                 continue
+            pending.append((position, candidate))
 
-            load_started = monotonic()
-            stock_series, index_series = await asyncio.gather(
-                asyncio.to_thread(self.market_store.stock_series, market, code, warmup_dd, end_dd),
-                asyncio.to_thread(self.market_store.index_series, market, warmup_dd, end_dd),
-            )
-            data_load_seconds += monotonic() - load_started
-            stock_rows = [row for key_dd, row in stock_series.rows.items() if warmup_dd <= key_dd <= end_dd]
-            index_rows = [row for key_dd, row in index_series.rows.items() if warmup_dd <= key_dd <= end_dd]
-            stock_rows.sort(key=self._row_date)
-            index_rows.sort(key=self._row_date)
-            prestart_count = sum(1 for key_dd in stock_series.rows if key_dd < start_key)
-            requested_rows = sum(1 for key_dd in stock_series.rows if start_key <= key_dd <= end_dd)
+        # Two workers is deliberately conservative.  Each worker owns its own
+        # research engine, avoiding shared mutable engine state while still reducing
+        # first-run wall time on multi-core machines.
+        research_workers = min(2, max(1, len(pending)))
+        semaphore = asyncio.Semaphore(research_workers)
 
-            if prestart_count < self.REQUIRED_PRESTART_ROWS or requested_rows <= 0:
-                excluded.append({
+        async def calculate_candidate(position: int, candidate: dict[str, Any]) -> dict[str, Any]:
+            async with semaphore:
+                code = normalize_stock_code(str(candidate.get("code") or ""))
+                market = str(candidate.get("market") or "").upper()
+                key = f"{market}:{code}"
+
+                load_started = monotonic()
+                stock_series, index_series = await asyncio.gather(
+                    asyncio.to_thread(self.market_store.stock_series, market, code, warmup_dd, end_dd),
+                    asyncio.to_thread(self.market_store.index_series, market, warmup_dd, end_dd),
+                )
+                load_seconds = monotonic() - load_started
+                stock_rows = [row for key_dd, row in stock_series.rows.items() if warmup_dd <= key_dd <= end_dd]
+                index_rows = [row for key_dd, row in index_series.rows.items() if warmup_dd <= key_dd <= end_dd]
+                stock_rows.sort(key=self._row_date)
+                index_rows.sort(key=self._row_date)
+                prestart_count = sum(1 for key_dd in stock_series.rows if key_dd < start_key)
+                requested_rows = sum(1 for key_dd in stock_series.rows if start_key <= key_dd <= end_dd)
+
+                if prestart_count < self.REQUIRED_PRESTART_ROWS or requested_rows <= 0:
+                    return {
+                        "kind": "excluded",
+                        "key": key,
+                        "code": code,
+                        "market": market,
+                        "position": position,
+                        "load_seconds": load_seconds,
+                        "calculation_seconds": 0.0,
+                        "row": {
+                            "code": code,
+                            "market": market,
+                            "reason": "워밍업 또는 요청기간 로컬 데이터가 부족합니다.",
+                            "prestart_rows": prestart_count,
+                            "requested_rows": requested_rows,
+                        },
+                    }
+
+                config = BacktestConfig(
+                    code=code,
+                    market=market,
+                    start_date=runner_config.start_date,
+                    end_date=runner_config.end_date,
+                    initial_capital=runner_config.initial_capital,
+                    max_holding_days=runner_config.max_holding_days,
+                    round_trip_cost_pct=runner_config.round_trip_cost_pct,
+                )
+
+                def stock_progress(payload: dict[str, Any]) -> None:
+                    details = dict(payload.get("details") or {})
+                    internal_current = int(payload.get("current") or 0)
+                    internal_total = max(1, int(payload.get("total") or 1))
+                    details.update({
+                        "validation_stock_index": position,
+                        "validation_stock_total": total,
+                        "validation_code": code,
+                        "validation_market": market,
+                        "reused_stocks": reused_total,
+                        "calculated_stocks": calculated_stocks,
+                        "processed_stocks": processed_count,
+                        "internal_stage": str(payload.get("stage") or ""),
+                        "internal_message": str(payload.get("message") or ""),
+                        "internal_current": internal_current,
+                        "internal_total": internal_total,
+                        "internal_percent": round(internal_current / internal_total * 100.0, 1),
+                        "network_requests": 0,
+                    })
+                    # The user-facing percent is intentionally stock based.  Internal
+                    # ATR/MA/Swing progress lives only in details and can never make the
+                    # overall bar jump backward.
+                    self._emit(
+                        progress,
+                        stage="exit_policy_validation_stock_work",
+                        message=f"{code} 매도 기준 비교 중",
+                        current=processed_count,
+                        total=total,
+                        details=details,
+                    )
+
+                calc_started = monotonic()
+
+                def run_research() -> dict[str, Any]:
+                    engine = ExitPolicyResearchEngine()
+                    return engine.run(
+                        stock_rows=stock_rows,
+                        index_rows=index_rows,
+                        config=config,
+                        post_target2_research_days=runner_config.post_target2_research_days,
+                        include_holding_policy_variants=True,
+                        progress_callback=stock_progress,
+                    )
+
+                audit = await asyncio.to_thread(run_research)
+                calc_seconds = monotonic() - calc_started
+                audit["data_window"] = {
+                    "requested_start": runner_config.start_date,
+                    "requested_end": runner_config.end_date,
+                    "warmup_start": warmup_start.isoformat(),
+                    "stock_rows": len(stock_rows),
+                    "index_rows": len(index_rows),
+                    "local_only": True,
+                }
+                return {
+                    "kind": "audit",
+                    "key": key,
                     "code": code,
                     "market": market,
-                    "reason": "워밍업 또는 요청기간 로컬 데이터가 부족합니다.",
-                    "prestart_rows": prestart_count,
-                    "requested_rows": requested_rows,
-                })
-                self._emit(
-                    progress,
-                    stage="exit_policy_validation_stock_skipped",
-                    message=f"{code} 로컬 데이터 부족으로 제외",
-                    current=position,
-                    total=total,
-                    details={"code": code, "market": market, "network_requests": 0},
-                )
-                continue
+                    "position": position,
+                    "load_seconds": load_seconds,
+                    "calculation_seconds": calc_seconds,
+                    "row": audit,
+                }
 
-            config = BacktestConfig(
-                code=code,
-                market=market,
-                start_date=runner_config.start_date,
-                end_date=runner_config.end_date,
-                initial_capital=runner_config.initial_capital,
-                max_holding_days=runner_config.max_holding_days,
-                round_trip_cost_pct=runner_config.round_trip_cost_pct,
-            )
+        tasks = [
+            asyncio.create_task(calculate_candidate(position, candidate))
+            for position, candidate in pending
+        ]
+        for future in asyncio.as_completed(tasks):
+            item = await future
+            data_load_seconds += float(item.get("load_seconds") or 0.0)
+            calculation_seconds += float(item.get("calculation_seconds") or 0.0)
+            processed_count += 1
+            code = str(item.get("code") or "")
+            market = str(item.get("market") or "")
+            if item.get("kind") == "audit":
+                audit = dict(item["row"])
+                audit_by_key[str(item["key"])] = audit
+                calculated_stocks += 1
+                ordered = [audit_by_key[key] for key in selected_keys if key in audit_by_key]
+                await asyncio.to_thread(checkpoint_store.save, signature, runner_config, ordered)
+                message = f"{code} 매도 기준 비교 완료"
+            else:
+                excluded.append(dict(item["row"]))
+                message = f"{code} 저장 데이터 부족으로 제외"
 
-            def stock_progress(payload: dict[str, Any], *, _position: int = position, _code: str = code, _market: str = market) -> None:
-                details = dict(payload.get("details") or {})
-                details.update({
-                    "validation_stock_index": _position,
-                    "validation_stock_total": total,
-                    "validation_code": _code,
-                    "validation_market": _market,
-                    "network_requests": 0,
-                })
-                self._emit(progress, **{**payload, "details": details})
-
-            calc_started = monotonic()
-            audit = await asyncio.to_thread(
-                self.exit_policy_research.run,
-                stock_rows=stock_rows,
-                index_rows=index_rows,
-                config=config,
-                post_target2_research_days=runner_config.post_target2_research_days,
-                include_holding_policy_variants=True,
-                progress_callback=stock_progress,
-            )
-            calculation_seconds += monotonic() - calc_started
-            audit["data_window"] = {
-                "requested_start": runner_config.start_date,
-                "requested_end": runner_config.end_date,
-                "warmup_start": warmup_start.isoformat(),
-                "stock_rows": len(stock_rows),
-                "index_rows": len(index_rows),
-                "local_only": True,
-            }
-            audits.append(audit)
-            completed.add(key)
-            await asyncio.to_thread(checkpoint_store.save, signature, runner_config, audits)
             self._emit(
                 progress,
                 stage="exit_policy_validation_stock_completed",
-                message=f"{code} Exit 정책 검증 완료",
-                current=position,
+                message=message,
+                current=processed_count,
                 total=total,
-                details={"code": code, "market": market, "checkpoint_saved": True, "network_requests": 0},
+                details={
+                    "code": code,
+                    "market": market,
+                    "reused_stocks": reused_total,
+                    "same_sample_reused_stocks": reused_same_sample,
+                    "cross_sample_reused_stocks": max(0, reused_cross_sample),
+                    "calculated_stocks": calculated_stocks,
+                    "processed_stocks": processed_count,
+                    "research_workers": research_workers,
+                    "network_requests": 0,
+                },
             )
+
+        audits = [audit_by_key[key] for key in selected_keys if key in audit_by_key]
 
         selector_config = ExitPolicySelectionConfig(
             minimum_stock_count=runner_config.minimum_stock_count,
@@ -1040,13 +1193,22 @@ class BacktestService:
                 "market_availability": market_availability,
                 "selected_stocks": selected,
                 "excluded_stocks": excluded,
-                "checkpoint": {"reused_stocks": len((checkpoint or {}).get("audits") or []), "completed_stocks": len(audits)},
+                "checkpoint": {
+                    "reused_stocks": reused_total,
+                    "same_sample_reused_stocks": reused_same_sample,
+                    "cross_sample_reused_stocks": max(0, reused_cross_sample),
+                    "completed_stocks": len(audits),
+                },
                 "performance": {
+                    "cache_lookup_seconds": round(cache_lookup_seconds, 3),
                     "market_store_load_seconds": round(data_load_seconds, 3),
                     "exit_policy_calculation_seconds": round(calculation_seconds, 3),
                     "selection_seconds": 0.0,
                     "total_seconds": round(monotonic() - started, 3),
                     "network_requests": 0,
+                    "reused_stock_count": reused_total,
+                    "calculated_stock_count": calculated_stocks,
+                    "research_workers": research_workers,
                 },
             }
 
@@ -1065,7 +1227,9 @@ class BacktestService:
             "validated_stocks": [{"code": row.get("code"), "market": row.get("market")} for row in audits],
             "excluded_stocks": excluded,
             "checkpoint": {
-                "reused_stocks": len((checkpoint or {}).get("audits") or []),
+                "reused_stocks": reused_total,
+                "same_sample_reused_stocks": reused_same_sample,
+                "cross_sample_reused_stocks": max(0, reused_cross_sample),
                 "completed_stocks": len(audits),
                 "resumable": True,
             },
@@ -1077,11 +1241,17 @@ class BacktestService:
                 "production_policy_changed": False,
             },
             "performance": {
+                "cache_lookup_seconds": round(cache_lookup_seconds, 3),
                 "market_store_load_seconds": round(data_load_seconds, 3),
                 "exit_policy_calculation_seconds": round(calculation_seconds, 3),
                 "selection_seconds": round(selection_seconds, 3),
                 "total_seconds": round(monotonic() - started, 3),
                 "network_requests": 0,
+                "reused_stock_count": reused_total,
+                "same_sample_reused_stock_count": reused_same_sample,
+                "cross_sample_reused_stock_count": max(0, reused_cross_sample),
+                "calculated_stock_count": calculated_stocks,
+                "research_workers": research_workers,
             },
         }
         report_path = await asyncio.to_thread(checkpoint_store.save_report, report)
@@ -1093,7 +1263,7 @@ class BacktestService:
         self._emit(
             progress,
             stage="completed",
-            message="Exit 정책 검증 리포트 완료",
+            message="매도 기준 연구 완료",
             current=total,
             total=total,
             details={**report["performance"], "production_policy_changed": False},

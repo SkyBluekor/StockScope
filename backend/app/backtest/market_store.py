@@ -202,6 +202,17 @@ class HistoricalMarketStore:
                 (market, bas_dd, kind),
             ).fetchone() is not None
 
+    def completed_days(self, market: str, start_dd: str, end_dd: str, kind: str) -> set[str]:
+        market = self._market(market)
+        if kind not in {"stock", "index"}:
+            raise ValueError("kind는 stock 또는 index여야 합니다.")
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                "SELECT bas_dd FROM day_status WHERE market=? AND kind=? AND bas_dd>=? AND bas_dd<=?",
+                (market, kind, start_dd, end_dd),
+            ).fetchall()
+        return {str(row["bas_dd"]) for row in rows}
+
     def stock_series(self, market: str, code: str, start_dd: str | None = None, end_dd: str | None = None) -> HistorySeries:
         market = self._market(market)
         clauses = ["market=?", "stock_code=?"]

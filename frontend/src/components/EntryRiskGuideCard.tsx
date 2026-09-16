@@ -1,5 +1,6 @@
 import type { ConcreteEntryRiskGuide } from "../services/api";
 import { buildEntryPricePosition } from "./entryPricePosition";
+import ProfitProtectionGuide from "./ProfitProtectionGuide";
 
 type Props = {
   guide: ConcreteEntryRiskGuide;
@@ -35,6 +36,19 @@ function ratio(value: number | null | undefined) {
   return `${value.toFixed(2)}배`;
 }
 
+function userFacingText(value: string | null | undefined) {
+  if (!value) return value ?? "";
+  const replacements: Array<[string, string]> = [
+    ["Strategy/Risk Engine", "전략/위험 관리 기준"],
+    ["Risk Engine", "위험 관리 기준"],
+    ["Target1", "1차 목표가"],
+    ["Target2", "2차 목표가"],
+    ["Exit 정책", "매도 기준"],
+    ["Production", "현재 실제 적용"],
+  ];
+  return replacements.reduce((text, [from, to]) => text.split(from).join(to), value);
+}
+
 function currentRelativePct(current: number | null | undefined, target: number | null | undefined) {
   if (current == null || target == null || !Number.isFinite(current) || !Number.isFinite(target) || current === 0) return null;
   return (target - current) / current * 100;
@@ -42,7 +56,7 @@ function currentRelativePct(current: number | null | undefined, target: number |
 
 function goalPositionText(current: number | null | undefined, target: number | null | undefined, label: string) {
   if (current == null || target == null || !Number.isFinite(current) || !Number.isFinite(target) || current <= 0) return `${label} 계산 불가`;
-  if (current > target) return `${label}${label === "2차 확장 목표" ? "도" : "를"} 이미 넘어섰습니다.`;
+  if (current > target) return `${label}를 이미 넘어섰습니다.`;
   if (current === target) return `${label}에 도달했습니다.`;
   const gap = (target - current) / current * 100;
   return `현재가 대비 +${gap.toFixed(1)}%`;
@@ -70,8 +84,6 @@ function compactPricePlan(guide: ConcreteEntryRiskGuide) {
   const risk = guide.risk;
   const position = buildEntryPricePosition(guide.current_price, guide.price_rule);
   const stopPct = currentRelativePct(guide.current_price, risk.invalidation_price);
-  const policy = guide.historical_policy;
-
   return (
     <section className="concrete-guide-card compact scanner-price-plan">
       <div className="scanner-price-plan-head">
@@ -96,30 +108,25 @@ function compactPricePlan(guide: ConcreteEntryRiskGuide) {
         <article className="price-plan-stop">
           <small>손절 참고</small>
           <strong>{displayPrice(risk.invalidation_price, risk.display_invalidation_price)}</strong>
-          <span>{stopPct == null ? "현재 Risk Engine 기준" : `현재가 대비 ${pct(stopPct)}`}</span>
+          <span>{stopPct == null ? "현재 위험 관리 기준" : `현재가 대비 ${pct(stopPct)}`}</span>
           {rawPriceNote(risk.invalidation_price, risk.display_invalidation_price) && <b>{rawPriceNote(risk.invalidation_price, risk.display_invalidation_price)}</b>}
         </article>
 
         <article className="price-plan-target">
-          <small>1차 목표</small>
+          <small>1차 목표가</small>
           <strong>{displayPrice(risk.target1_price, risk.display_target1_price)}</strong>
-          <span>{goalPositionText(guide.current_price, risk.target1_price, "1차 목표")}</span>
+          <span>{goalPositionText(guide.current_price, risk.target1_price, "1차 목표가")}</span>
           {risk.rr1 != null && <b>손익비 1 : {risk.rr1.toFixed(2)}</b>}
         </article>
 
         <article className="price-plan-target2">
-          <small>{policy?.target2_label ?? "2차 확장 목표"}</small>
+          <small>2차 목표가</small>
           <strong>{displayPrice(risk.target2_price, risk.display_target2_price)}</strong>
-          <span>{goalPositionText(guide.current_price, risk.target2_price, policy?.target2_label ?? "2차 확장 목표")}</span>
+          <span>{goalPositionText(guide.current_price, risk.target2_price, "2차 목표가")}</span>
           {risk.rr2 != null && <b>손익비 1 : {risk.rr2.toFixed(2)}</b>}
         </article>
       </div>
-
-      <div className="scanner-price-plan-policy">
-        <strong>과거 검증 기준</strong>
-        <span>{policy?.label ?? "1차 목표 도달 시 전량 종료"}</span>
-        {policy && !policy.target2_included && <small>2차 확장 목표는 현재 과거 성과 계산에는 포함되지 않습니다.</small>}
-      </div>
+      <ProfitProtectionGuide guide={guide} compact />
     </section>
   );
 }
@@ -167,21 +174,21 @@ export default function EntryRiskGuideCard({ guide, compact = false }: Props) {
         <article>
           <small>손절 참고</small>
           <strong>{displayPrice(risk.invalidation_price, risk.display_invalidation_price)}</strong>
-          <span>{[rawPriceNote(risk.invalidation_price, risk.display_invalidation_price), risk.risk_pct != null ? `참고 진입가 대비 -${Math.abs(risk.risk_pct).toFixed(1)}%` : "현재 Risk Engine 기준"].filter(Boolean).join(" · ")}</span>
+          <span>{[rawPriceNote(risk.invalidation_price, risk.display_invalidation_price), risk.risk_pct != null ? `참고 진입가 대비 -${Math.abs(risk.risk_pct).toFixed(1)}%` : "현재 위험 관리 기준"].filter(Boolean).join(" · ")}</span>
           <b>{risk.structural_anchor_label || "전략 무효 기준"}</b>
         </article>
 
         <article>
-          <small>1차 목표</small>
+          <small>1차 목표가</small>
           <strong>{displayPrice(risk.target1_price, risk.display_target1_price)}</strong>
           <span>{[rawPriceNote(risk.target1_price, risk.display_target1_price), risk.reward1_pct != null ? `참고 진입가 대비 ${pct(risk.reward1_pct)}` : "계산 가능한 목표가 없음"].filter(Boolean).join(" · ")}</span>
           {risk.rr1 != null && <b>손익비 1 : {risk.rr1.toFixed(2)}</b>}
         </article>
 
         <article>
-          <small>{guide.historical_policy?.target2_label ?? "2차 확장 목표"}</small>
+          <small>2차 목표가</small>
           <strong>{displayPrice(risk.target2_price, risk.display_target2_price)}</strong>
-          <span>{[rawPriceNote(risk.target2_price, risk.display_target2_price), risk.reward2_pct != null ? `참고 진입가 대비 ${pct(risk.reward2_pct)}` : "확장 목표 계산 불가"].filter(Boolean).join(" · ")}</span>
+          <span>{[rawPriceNote(risk.target2_price, risk.display_target2_price), risk.reward2_pct != null ? `참고 진입가 대비 ${pct(risk.reward2_pct)}` : "2차 목표가 계산 불가"].filter(Boolean).join(" · ")}</span>
           {risk.rr2 != null && <b>손익비 1 : {risk.rr2.toFixed(2)}</b>}
         </article>
 
@@ -193,16 +200,15 @@ export default function EntryRiskGuideCard({ guide, compact = false }: Props) {
         </article>
       </div>
 
+      <ProfitProtectionGuide guide={guide} />
+
       <div className="concrete-guide-note">
         <div>
           <strong>전략이 틀렸다고 보는 가격</strong>
           <span>{risk.invalidation_price != null ? `${displayPrice(risk.invalidation_price, risk.display_invalidation_price)} 아래에서는 현재 전략의 전제가 깨진 것으로 봅니다.` : "현재 데이터만으로 전략 무효 가격을 계산하지 못했습니다."}</span>
         </div>
         {risk.needs_recheck && <p><b>다시 계산 필요</b> {risk.recheck_message}</p>}
-        {guide.historical_policy && (
-          <p className="historical-policy-note"><b>과거 검증 기준</b> {guide.historical_policy.label}. {guide.historical_policy.target2_included ? "2차 목표도 과거 성과 계산에 포함됩니다." : "2차 확장 목표는 현재 과거 성과 계산에는 포함되지 않습니다."}</p>
-        )}
-        <p>{guide.guardrail}</p>
+        <p>{userFacingText(guide.guardrail)}</p>
       </div>
     </section>
   );
