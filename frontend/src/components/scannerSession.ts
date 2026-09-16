@@ -38,12 +38,39 @@ export function localDateKey(value: number | Date = Date.now()) {
   return `${year}-${month}-${day}`;
 }
 
+export type ScannerDateResolution = {
+  date: string | null;
+  aligned: boolean;
+  requestedDate: string | null;
+  marketDates: Partial<Record<"KOSPI" | "KOSDAQ", string>>;
+};
+
+export function resolveScannerDataDate(result: ScannerResponse | null | undefined): ScannerDateResolution {
+  if (!result) {
+    return { date: null, aligned: false, requestedDate: null, marketDates: {} };
+  }
+  const requestedDate = result.requested_as_of || null;
+  const markets: Array<"KOSPI" | "KOSDAQ"> = result.market_scope === "ALL"
+    ? ["KOSPI", "KOSDAQ"]
+    : [result.market_scope];
+  const marketDates = result.data_dates ?? {};
+  const values = markets.map((market) => marketDates[market]).filter((value): value is string => Boolean(value));
+  if (values.length !== markets.length) {
+    return { date: null, aligned: false, requestedDate, marketDates };
+  }
+  const unique = new Set(values);
+  if (unique.size !== 1) {
+    return { date: null, aligned: false, requestedDate, marketDates };
+  }
+  const commonDate = values[0] ?? null;
+  if (requestedDate && commonDate !== requestedDate) {
+    return { date: null, aligned: false, requestedDate, marketDates };
+  }
+  return { date: commonDate, aligned: Boolean(commonDate), requestedDate, marketDates };
+}
+
 export function latestScannerDataDate(result: ScannerResponse | null | undefined) {
-  if (!result) return null;
-  const values = Object.values(result.data_dates ?? {}).filter((value): value is string => Boolean(value));
-  if (values.length === 0) return result.requested_as_of || null;
-  values.sort();
-  return values[values.length - 1] ?? result.requested_as_of ?? null;
+  return resolveScannerDataDate(result).date;
 }
 
 export function readScannerSession(storage: StorageLike | null = browserSessionStorage()): ScannerSessionSnapshot | null {

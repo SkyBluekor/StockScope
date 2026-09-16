@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   clearScannerSession,
   latestScannerDataDate,
+  resolveScannerDataDate,
   localDateKey,
   readScannerSession,
   writeScannerSession,
@@ -202,9 +203,9 @@ function CandidateCard({
                 >
                   <summary>과거 근거 자세히 보기</summary>
                   <div className="scanner-evidence-detail-grid">
-                    <div><small>이익/손실 비율(PF)</small><strong>{evidence.profit_factor == null ? "-" : evidence.profit_factor.toFixed(2)}</strong></div>
+                    <div><small>Profit Factor</small><strong>{evidence.profit_factor == null ? "-" : evidence.profit_factor.toFixed(2)}</strong></div>
                     <div><small>손절 종료</small><strong>{evidence.exit_counts.stop}회</strong></div>
-                    <div><small>1차 목표가 도달 종료</small><strong>{evidence.exit_counts.target1}회</strong></div>
+                    <div><small>1차 목표 종료</small><strong>{evidence.exit_counts.target1}회</strong></div>
                     <div><small>시간 종료</small><strong>{evidence.exit_counts.time_exit}회</strong></div>
                   </div>
                   {evidence.market_regime_summary.length > 0 && (
@@ -418,9 +419,11 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
       try {
         const freshness = await prepareScannerLatestData({
           market_scope: scope,
-          known_data_date: latestScannerDataDate(result),
+          // requested_as_of is the date the previous Scanner result claimed to use.
+          // Backend validates that claim against Market Store before preserving it.
+          known_data_date: result?.requested_as_of ?? latestScannerDataDate(result),
         });
-        if (freshness.status === "UPDATE_FAILED" || !freshness.resolved_as_of_date) {
+        if (!(["READY", "UPDATED"] as string[]).includes(freshness.status) || !freshness.resolved_as_of_date) {
           setFreshnessFailure(freshness);
           return;
         }
@@ -521,7 +524,9 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
   const preparationItems = result?.preparation_required ?? [];
   const preparationRequests = preparationItems.reduce((sum, item) => sum + Number(item.estimated_network_requests || 0), 0);
   const noAnalyzedData = Boolean(result && result.summary.universe_total === 0 && preparationItems.length > 0);
-  const analysisDataDate = latestScannerDataDate(result);
+  const analysisDateResolution = resolveScannerDataDate(result);
+  const analysisDataDate = analysisDateResolution.date;
+  const analysisDateMismatch = Boolean(result && !analysisDateResolution.aligned);
   const restoredOnDifferentDay = Boolean(initialSession && restoredFromSession && localDateKey(initialSession.completedAt) !== localDateKey());
 
   return (
@@ -576,17 +581,20 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
       )}
 
       {freshnessFailure && (
-        <section className="scanner-freshness-failure">
+        <section className={`scanner-freshness-failure ${freshnessFailure.current_date_valid ? "warning" : ""}`}>
           <div>
-            <strong>최신 시세를 가져오지 못했습니다.</strong>
+            <strong>{freshnessFailure.current_date_valid ? "새로운 확정 시세를 확인하지 못했습니다." : "현재 분석 기준 데이터를 다시 확인해야 합니다."}</strong>
             <p>{freshnessFailure.message}</p>
             {freshnessFailure.available_data_date && (
               <span>현재 사용할 수 있는 확정 일봉 · {formatDate(freshnessFailure.available_data_date)}</span>
             )}
+            {freshnessFailure.failure_reason && (
+              <small className="scanner-freshness-detail">확인 내용 · {freshnessFailure.failure_reason}</small>
+            )}
           </div>
           <div className="scanner-freshness-actions">
             <button type="button" onClick={() => void runScanner(Boolean(result))}>다시 시도</button>
-            {freshnessFailure.available_data_date && (
+            {freshnessFailure.fallback_allowed && freshnessFailure.available_data_date && (
               <button
                 type="button"
                 className="secondary"
@@ -667,7 +675,7 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
       {!result && !busy && !error && !freshnessFailure && (
         <section className="scanner-empty-start">
           <strong>전략을 먼저 고를 필요가 없습니다.</strong>
-          <p>버튼 한 번으로 시장 전체를 빠르게 거른 뒤, 조건이 좋은 종목만 10가지 전략과 위험 관리 기준으로 다시 확인합니다.</p>
+          <p>버튼 한 번으로 시장 전체를 빠르게 거른 뒤, 조건이 좋은 종목만 10가지 전략과 Risk Engine으로 다시 확인합니다.</p>
         </section>
       )}
 
@@ -688,6 +696,7 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
             <div className="scanner-analysis-date">
               <span>분석 기준일</span>
               <strong>{analysisDataDate ? `${formatDate(analysisDataDate)} 확정 일봉` : "확정 일봉 확인 필요"}</strong>
+              {analysisDateMismatch && <small>저장된 시장별 날짜가 달라 다시 분석해야 합니다.</small>}
             </div>
             <div className="scanner-cache-note">
               {result.scanner_cache_hit ? "오늘 계산한 결과를 바로 재사용했습니다." : `KRX 신규 요청 ${result.diagnostics.network_requests}회 · 시장 저장 데이터 재사용 ${result.diagnostics.market_store_reused_items}건`}
@@ -792,7 +801,7 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
               <div><small>최대 동시 처리</small><strong>{formatNumber(result.diagnostics.bootstrap_peak_concurrency ?? 0)}개</strong></div>
               <div><small>초기 준비 오류</small><strong>{formatNumber(result.diagnostics.bootstrap_errors ?? 0)}건</strong></div>
               <div><small>시장 저장소 재사용</small><strong>{formatNumber(result.diagnostics.market_store_reused_items)}건</strong></div>
-              <div><small>KRX 응답 재사용</small><strong>{formatNumber(result.diagnostics.raw_cache_hits)}회</strong></div>
+              <div><small>기존 KRX 캐시</small><strong>{formatNumber(result.diagnostics.raw_cache_hits)} hit</strong></div>
               <div><small>오늘 KRX(앱 기록)</small><strong>{formatNumber(result.diagnostics.budget_used)} / {formatNumber(result.diagnostics.budget_limit)}</strong></div>
               <div><small>Fast Scan 자동 상한</small><strong>{formatNumber(result.diagnostics.fast_request_limit ?? result.fast_request_limit)}회</strong></div>
               <div><small>3년 과거 근거 완료</small><strong>{formatNumber(result.summary.three_year_evidence_verified ?? 0)}개</strong></div>

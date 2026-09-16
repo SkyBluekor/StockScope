@@ -148,6 +148,7 @@ export default function App() {
   const [holdingQuantityInput, setHoldingQuantityInput] = useState("");
   const [lastAnalysisInputSignature, setLastAnalysisInputSignature] = useState("");
   const [analysisSection, setAnalysisSection] = useState<AnalysisSection>("summary");
+  const [selectedStrategyIndex, setSelectedStrategyIndex] = useState(0);
 
   const analysisInputSignature = [
     stockCode,
@@ -165,6 +166,10 @@ export default function App() {
       lastAnalysisInputSignature &&
       analysisInputSignature !== lastAnalysisInputSignature,
   );
+  const selectedStrategyIndexSafe = strategyAnalysis
+    ? Math.min(selectedStrategyIndex, Math.max(strategyAnalysis.strategies.length - 1, 0))
+    : 0;
+  const selectedStrategy = strategyAnalysis?.strategies[selectedStrategyIndexSafe] ?? null;
 
   async function loadDashboard() {
     setLoading(true);
@@ -255,6 +260,7 @@ export default function App() {
     setStockSearchOpen(false);
     setStock(null);
     setStrategyAnalysis(null);
+    setSelectedStrategyIndex(0);
     setLastAnalysisInputSignature("");
     setReferencePriceInput("");
     setReferenceHighInput("");
@@ -274,6 +280,7 @@ export default function App() {
       setStockCode("");
       setStock(null);
       setStrategyAnalysis(null);
+      setSelectedStrategyIndex(0);
       setLastAnalysisInputSignature("");
       setReferencePriceInput("");
       setReferenceHighInput("");
@@ -292,11 +299,13 @@ export default function App() {
       const result = await fetchStockContext(stockCode, stockMarket);
       setStock(result);
       setStrategyAnalysis(null);
+      setSelectedStrategyIndex(0);
       setLastAnalysisInputSignature("");
       setStockMessage(`${result.company.corp_name ?? result.stock.name ?? stockCode} 조회 완료`);
     } catch (error) {
       setStock(null);
       setStrategyAnalysis(null);
+      setSelectedStrategyIndex(0);
       setLastAnalysisInputSignature("");
       setStockMessage(error instanceof Error ? error.message : "종목 조회 실패");
     } finally {
@@ -412,6 +421,7 @@ const strategyName: Record<string, string> = {
         holdingQuantity,
       );
       setStrategyAnalysis(result);
+      setSelectedStrategyIndex(0);
       setAnalysisSection("summary");
       setLastAnalysisInputSignature(requestInputSignature);
       const topName = result.risk_gate.active
@@ -422,6 +432,7 @@ const strategyName: Record<string, string> = {
       setStrategyMessage(`${result.history_points}거래일 분석 완료 · ${result.position_context.label} 기준 · 현재 판단: ${topName}`);
     } catch (error) {
       setStrategyAnalysis(null);
+      setSelectedStrategyIndex(0);
       setLastAnalysisInputSignature("");
       setStrategyMessage(error instanceof Error ? error.message : "전략 분석 실패");
     } finally {
@@ -517,7 +528,7 @@ const strategyName: Record<string, string> = {
               <p>최근 사용 가능한 KRX 거래일 데이터를 자동으로 찾아 시장 상태를 요약합니다.</p>
             </div>
             <div className="date-box">
-              <span>데이터 기준</span>
+              <span>시장 요약 기준</span>
               <strong>{formatDate(dashboard?.data_date)}</strong>
               {dashboard?.fallback_used && <small>최근 확정 거래일 사용 중</small>}
             </div>
@@ -1784,89 +1795,113 @@ const strategyName: Record<string, string> = {
                           : "한 종목에 여러 전략이 동시에 일부 성립할 수 있으므로 점수와 대응 가이드를 함께 봅니다."}
                       </span>
                     </div>
-                    <div className="strategy-results">
-                      {strategyAnalysis.strategies.map((item, index) => (
-                        <article className={`strategy-row ${index === 0 ? "top" : ""}`} key={`${item.strategy}-${index}`}>
-                          <span className="strategy-rank">{index + 1}</span>
-                          <div className="strategy-info">
-                            <div className="strategy-title-line">
+                    <div className="strategy-results readability-compact">
+                      <div className="strategy-compact-list" role="list" aria-label="전략 비교 목록">
+                        {strategyAnalysis.strategies.map((item, index) => (
+                          <button
+                            type="button"
+                            role="listitem"
+                            className={`strategy-compact-item ${selectedStrategyIndexSafe === index ? "active" : ""}`}
+                            key={`${item.strategy}-${index}`}
+                            onClick={() => setSelectedStrategyIndex(index)}
+                            aria-pressed={selectedStrategyIndexSafe === index}
+                          >
+                            <span>
                               <strong>{strategyName[item.strategy] ?? item.strategy}</strong>
-                              {item.strategy !== "no_trade" && <span>{item.passed}/{item.total}개 조건 충족</span>}
-                            </div>
-                            <p className="strategy-easy">{strategyEasyDescription[item.strategy] ?? item.note}</p>
-                            <p className="strategy-beginner">{strategyBeginnerHint[item.strategy]}</p>
+                              <small>
+                                {item.strategy === "no_trade"
+                                  ? "현재 조건에서는 매매 보류"
+                                  : `${item.passed}/${item.total}개 조건 충족 · ${item.suitability}`}
+                              </small>
+                            </span>
+                            <b>{item.score == null ? "보류" : `${item.score}점`}</b>
+                          </button>
+                        ))}
+                      </div>
 
-                            <div className="condition-section">
-                              <b>현재 맞는 조건</b>
-                              <div className="reason-list">
-                                {item.reasons.slice(0, 4).map((reason) => <em key={reason}>✓ {reason}</em>)}
-                                {item.blockers.map((reason) => <em className="blocker" key={reason}>! {reason}</em>)}
+                      {selectedStrategy && (
+                        <div className="strategy-detail-selected" aria-live="polite">
+                          <article className="strategy-row top">
+                            <div className="strategy-info">
+                              <div className="strategy-title-line">
+                                <strong>{strategyName[selectedStrategy.strategy] ?? selectedStrategy.strategy}</strong>
+                                {selectedStrategy.strategy !== "no_trade" && <span>{selectedStrategy.passed}/{selectedStrategy.total}개 조건 충족</span>}
                               </div>
-                            </div>
+                              <p className="strategy-easy">{strategyEasyDescription[selectedStrategy.strategy] ?? selectedStrategy.note}</p>
+                              <p className="strategy-beginner">{strategyBeginnerHint[selectedStrategy.strategy]}</p>
 
-                            {item.unmet.length > 0 && (
-                              <div className="condition-section unmet-section">
-                                <b>아직 부족한 조건</b>
-                                <div className="reason-list unmet-list">
-                                  {item.unmet.slice(0, 3).map((reason) => <em key={reason}>– {reason}</em>)}
+                              <div className="condition-section">
+                                <b>현재 맞는 조건</b>
+                                <div className="reason-list">
+                                  {selectedStrategy.reasons.slice(0, 4).map((reason) => <em key={reason}>✓ {reason}</em>)}
+                                  {selectedStrategy.blockers.map((reason) => <em className="blocker" key={reason}>! {reason}</em>)}
                                 </div>
                               </div>
-                            )}
 
-                            {item.strategy !== "no_trade" && item.auto_checks.length > 0 && (
-                              <div className="program-check-section">
-                                <div className="program-check-head">
-                                  <b>프로그램 자동 점검</b>
-                                  <span>사용자가 직접 확인할 수 있는 항목은 StockScope가 먼저 계산합니다.</span>
+                              {selectedStrategy.unmet.length > 0 && (
+                                <div className="condition-section unmet-section">
+                                  <b>아직 부족한 조건</b>
+                                  <div className="reason-list unmet-list">
+                                    {selectedStrategy.unmet.slice(0, 3).map((reason) => <em key={reason}>– {reason}</em>)}
+                                  </div>
                                 </div>
-                                <div className="auto-check-list">
-                                  {item.auto_checks.map((check) => (
-                                    <div className={`auto-check ${check.status.toLowerCase()}`} key={`${item.strategy}-${check.key}`}>
-                                      <span className="check-icon">{check.status === "PASS" ? "✓" : check.status === "FAIL" ? "✕" : check.status === "WARN" ? "!" : "?"}</span>
-                                      <div>
-                                        <strong>{check.label}</strong>
-                                        <em>{check.value}</em>
-                                        <small>{check.explanation}</small>
+                              )}
+
+                              {selectedStrategy.strategy !== "no_trade" && selectedStrategy.auto_checks.length > 0 && (
+                                <div className="program-check-section">
+                                  <div className="program-check-head">
+                                    <b>프로그램 자동 점검</b>
+                                    <span>StockScope가 자동으로 계산한 현재 조건입니다.</span>
+                                  </div>
+                                  <div className="auto-check-list">
+                                    {selectedStrategy.auto_checks.map((check) => (
+                                      <div className={`auto-check ${check.status.toLowerCase()}`} key={`${selectedStrategy.strategy}-${check.key}`}>
+                                        <span className="check-icon">{check.status === "PASS" ? "✓" : check.status === "FAIL" ? "✕" : check.status === "WARN" ? "!" : "?"}</span>
+                                        <div>
+                                          <strong>{check.label}</strong>
+                                          <em>{check.value}</em>
+                                          <small>{check.explanation}</small>
+                                        </div>
+                                        <i>{check.source === "USER_INPUT" ? "현재 참고" : check.source === "KRX_INDEX" ? "시장지수" : "확정 EOD"}</i>
                                       </div>
-                                      <i>{check.source === "USER_INPUT" ? "현재 참고" : check.source === "KRX_INDEX" ? "시장지수" : "확정 EOD"}</i>
-                                    </div>
-                                  ))}
+                                    ))}
+                                  </div>
                                 </div>
-                              </div>
-                            )}
+                              )}
 
-                            <details className="response-guide" open={index === 0}>
-                              <summary>{strategyAnalysis.position_context.mode === "HOLDING" ? "보유 중이라면 어떻게 관리하나?" : "신규 진입을 검토한다면 어떻게 대응하나?"}</summary>
-                              <div className="response-grid contextual">
-                                <section className="primary-response">
-                                  <b>{strategyAnalysis.position_context.mode === "HOLDING" ? "보유 중 대응 기준" : "신규 진입 검토 기준"}</b>
-                                  <ul>
-                                    {(strategyAnalysis.position_context.mode === "HOLDING" ? item.action_plan.holding : item.action_plan.new_entry).map((text) => <li key={text}>{text}</li>)}
-                                  </ul>
-                                </section>
-                                <section className="avoid-box">
-                                  <b>피해야 할 대응</b>
-                                  <ul>{item.action_plan.avoid.map((text) => <li key={text}>{text}</li>)}</ul>
-                                </section>
-                                <section>
-                                  <b>앞으로 관찰할 항목</b>
-                                  <p className="watch-explain">아래 항목은 자동 점검 결과가 바뀌는지 계속 보는 용도입니다.</p>
-                                  <ul>{item.action_plan.watch.map((text) => <li key={text}>{text}</li>)}</ul>
-                                </section>
-                              </div>
-                              <div className="invalidation-box">
-                                <b>전략이 약해지는 기준</b>
-                                <p>{item.action_plan.invalidation}</p>
-                              </div>
-                            </details>
-                          </div>
-                          <div className={`strategy-score ${item.strategy === "no_trade" ? "hold" : ""}`}>
-                            {item.score == null ? <b>보류</b> : <b>{item.score}점</b>}
-                            <span>{item.strategy === "no_trade" ? "Risk Gate / 관찰" : item.suitability}</span>
-                            <small>{item.strategy === "no_trade" ? "점수형 전략 아님" : "조건 적합도"}</small>
-                          </div>
-                        </article>
-                      ))}
+                              <details className="response-guide">
+                                <summary>{strategyAnalysis.position_context.mode === "HOLDING" ? "보유 중 대응 기준 보기" : "신규 진입 대응 기준 보기"}</summary>
+                                <div className="response-grid contextual">
+                                  <section className="primary-response">
+                                    <b>{strategyAnalysis.position_context.mode === "HOLDING" ? "보유 중 대응 기준" : "신규 진입 검토 기준"}</b>
+                                    <ul>
+                                      {(strategyAnalysis.position_context.mode === "HOLDING" ? selectedStrategy.action_plan.holding : selectedStrategy.action_plan.new_entry).map((text) => <li key={text}>{text}</li>)}
+                                    </ul>
+                                  </section>
+                                  <section className="avoid-box">
+                                    <b>피해야 할 대응</b>
+                                    <ul>{selectedStrategy.action_plan.avoid.map((text) => <li key={text}>{text}</li>)}</ul>
+                                  </section>
+                                  <section>
+                                    <b>앞으로 관찰할 항목</b>
+                                    <p className="watch-explain">자동 점검 결과가 바뀌는지 계속 보는 항목입니다.</p>
+                                    <ul>{selectedStrategy.action_plan.watch.map((text) => <li key={text}>{text}</li>)}</ul>
+                                  </section>
+                                </div>
+                                <div className="invalidation-box">
+                                  <b>전략이 약해지는 기준</b>
+                                  <p>{selectedStrategy.action_plan.invalidation}</p>
+                                </div>
+                              </details>
+                            </div>
+                            <div className={`strategy-score ${selectedStrategy.strategy === "no_trade" ? "hold" : ""}`}>
+                              {selectedStrategy.score == null ? <b>보류</b> : <b>{selectedStrategy.score}점</b>}
+                              <span>{selectedStrategy.strategy === "no_trade" ? "Risk Gate / 관찰" : selectedStrategy.suitability}</span>
+                              <small>{selectedStrategy.strategy === "no_trade" ? "점수형 전략 아님" : "조건 적합도"}</small>
+                            </div>
+                          </article>
+                        </div>
+                      )}
                     </div>
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import re
@@ -36,7 +37,7 @@ class StockScannerService:
     presented to the user as probabilities.
     """
 
-    VERSION = "0.21.3"
+    VERSION = "0.21.3.2"
     HISTORY_CALENDAR_DAYS = 485  # local-only historical evidence window
     FAST_HISTORY_CALENDAR_DAYS = 220  # current-condition scan only; ~150 weekdays
     EVIDENCE_CALENDAR_DAYS = 365
@@ -53,6 +54,7 @@ class StockScannerService:
     FETCH_CONCURRENCY_RAMP_SUCCESSES = 16
     DEFAULT_FAST_REQUEST_LIMIT = 60
     LATEST_CONFIRM_LOOKBACK_DAYS = 14
+    DATA_INTEGRITY_VERSION = "v0.21.4-B.2.2.2d"
     CACHE_ROOT = Path(__file__).resolve().parents[2] / "runtime" / "scanner"
 
     def __init__(
@@ -194,17 +196,272 @@ class StockScannerService:
             return None
         return min(available)
 
+    @staticmethod
+    def _normalize_iso_date(value: str | None) -> str | None:
+        if not value:
+            return None
+        raw = str(value).strip()
+        if len(raw) == 8 and raw.isdigit():
+            raw = f"{raw[:4]}-{raw[4:6]}-{raw[6:8]}"
+        try:
+            return date.fromisoformat(raw).isoformat()
+        except ValueError:
+            return None
+
+    def _day_has_data(self, market: str, bas_dd: str, kind: str) -> bool:
+        """Return True only when the exact day contains persisted data.
+
+        HistoricalMarketStore.day_complete() intentionally treats both 'data' and
+        stable 'empty' markers as checked days. That is useful for avoiding repeated
+        holiday/weekend requests, but an empty marker must never qualify as an
+        analysis-ready EOD day.
+        """
+        return self.market_store.latest_complete_date(market, kind, bas_dd) == bas_dd
+
+    def _date_complete_for_markets(self, markets: list[str], iso_date: str | None) -> bool:
+        normalized = self._normalize_iso_date(iso_date)
+        if not normalized:
+            return False
+        key = normalized.replace("-", "")
+        return all(
+            self._day_has_data(market, key, "stock")
+            and self._day_has_data(market, key, "index")
+            for market in markets
+        )
+
+    def _latest_common_complete_date(
+        self,
+        markets: list[str],
+        *,
+        end_date: date | str | None = None,
+    ) -> str | None:
+        if not markets:
+            return None
+        if isinstance(end_date, date):
+            end_key = self._compact(end_date)
+        elif end_date:
+            normalized = self._normalize_iso_date(str(end_date))
+            end_key = normalized.replace("-", "") if normalized else str(end_date).replace("-", "")
+        else:
+            end_key = None
+
+        # Every candidate must exist for both stock rows and the representative
+        # market index in every selected market. Repeatedly lower the upper bound
+        # until all four (or two for a single-market scan) converge on one day.
+        for _ in range(self.LATEST_CONFIRM_LOOKBACK_DAYS * 2):
+            latest_values: list[str] = []
+            for market in markets:
+                for kind in ("stock", "index"):
+                    value = self.market_store.latest_complete_date(market, kind, end_key)
+                    if not value:
+                        return None
+                    latest_values.append(str(value))
+            candidate = min(latest_values)
+            candidate_iso = self._iso(candidate)
+            if self._date_complete_for_markets(markets, candidate_iso):
+                return candidate_iso
+            try:
+                candidate_day = date.fromisoformat(candidate_iso)
+            except ValueError:
+                return None
+            end_key = self._compact(candidate_day - timedelta(days=1))
+        return None
+
+    async def _krx_stock_daily(self, market: str, day: date, *, force_refresh: bool = False) -> dict[str, Any]:
+        if not force_refresh:
+            return await self.krx.stock_daily(market, day)
+        try:
+            return await self.krx.stock_daily(market, day, force_refresh=True)
+        except TypeError as exc:
+            if "force_refresh" not in str(exc):
+                raise
+            return await self.krx.stock_daily(market, day)
+
+    async def _krx_index_daily(self, market: str, day: date, *, force_refresh: bool = False) -> dict[str, Any]:
+        if not force_refresh:
+            return await self.krx.index_daily(market, day)
+        try:
+            return await self.krx.index_daily(market, day, force_refresh=True)
+        except TypeError as exc:
+            if "force_refresh" not in str(exc):
+                raise
+            return await self.krx.index_daily(market, day)
+
+    async def _store_stock_rows(self, market: str, bas_dd: str) -> list[dict[str, Any]]:
+        if hasattr(self.market_store, "stock_day_rows"):
+            return await asyncio.to_thread(self.market_store.stock_day_rows, market, bas_dd)
+        source = getattr(self.market_store, "stock_days", {})
+        return [dict(row) for row in source.get((market, bas_dd), [])]
+
+    async def _store_index_row(self, market: str, bas_dd: str) -> dict[str, Any] | None:
+        if hasattr(self.market_store, "index_day_row"):
+            return await asyncio.to_thread(self.market_store.index_day_row, market, bas_dd)
+        source = getattr(self.market_store, "index_days", {})
+        row = source.get((market, bas_dd))
+        return dict(row) if isinstance(row, dict) else None
+
+    async def _replace_stock_snapshot(self, market: str, bas_dd: str, rows: list[dict[str, Any]]) -> int:
+        writer = getattr(self.market_store, "replace_stock_day", self.market_store.put_stock_day)
+        return await asyncio.to_thread(writer, market, bas_dd, rows, stable=True)
+
+    async def _replace_index_snapshot(self, market: str, bas_dd: str, row: dict[str, Any]) -> None:
+        writer = getattr(self.market_store, "replace_index_day", self.market_store.put_index_day)
+        await asyncio.to_thread(writer, market, bas_dd, row, stable=True)
+
+    @staticmethod
+    def _result_date_aligned(payload: dict[str, Any], scope: str, expected_date: date) -> bool:
+        markets = ["KOSPI", "KOSDAQ"] if scope == "ALL" else [scope]
+        data_dates = payload.get("data_dates") or {}
+        expected = expected_date.isoformat()
+        return all(str(data_dates.get(market) or "") == expected for market in markets)
+
+    @staticmethod
+    def _compare_stock_snapshots(expected: list[dict[str, Any]], actual: list[dict[str, Any]], *, limit: int = 20) -> dict[str, Any]:
+        fields = ("open", "high", "low", "close", "volume")
+        exp = {str(row.get("code") or "").strip().upper(): row for row in expected if str(row.get("code") or "").strip()}
+        act = {str(row.get("code") or "").strip().upper(): row for row in actual if str(row.get("code") or "").strip()}
+        missing = sorted(set(exp) - set(act))
+        unexpected = sorted(set(act) - set(exp))
+        mismatches: list[dict[str, Any]] = []
+        mismatch_count = 0
+        for code in sorted(set(exp) & set(act)):
+            changed = {field: {"expected": exp[code].get(field), "actual": act[code].get(field)} for field in fields if exp[code].get(field) != act[code].get(field)}
+            if changed:
+                mismatch_count += 1
+                if len(mismatches) < limit:
+                    mismatches.append({"code": code, "name": exp[code].get("name") or act[code].get("name"), "fields": changed})
+        return {
+            "expected_rows": len(exp),
+            "actual_rows": len(act),
+            "missing_tickers": len(missing),
+            "unexpected_tickers": len(unexpected),
+            "ohlcv_mismatch": mismatch_count,
+            "missing_sample": missing[:limit],
+            "unexpected_sample": unexpected[:limit],
+            "mismatch_sample": mismatches,
+            "matches": not missing and not unexpected and mismatch_count == 0,
+        }
+
+    async def audit_input_data(
+        self,
+        *,
+        market_scope: str = "ALL",
+        as_of_date: str | None = None,
+        trace_code: str = "192820",
+    ) -> dict[str, Any]:
+        """Force-read KRX and verify KRX cache -> Market Store -> Scanner input integrity."""
+        scope = market_scope.upper().strip()
+        if scope not in {"ALL", "KOSPI", "KOSDAQ"}:
+            raise ValueError("market_scope은 ALL, KOSPI, KOSDAQ 중 하나여야 합니다.")
+        markets = ["KOSPI", "KOSDAQ"] if scope == "ALL" else [scope]
+        if as_of_date:
+            audit_day = date.fromisoformat(as_of_date)
+        else:
+            requested_end = self.krx._today_kst() - timedelta(days=1)  # noqa: SLF001
+            stored_common = self._latest_common_complete_date(markets, end_date=requested_end)
+            audit_day = date.fromisoformat(stored_common) if stored_common else requested_end
+        compact = self._compact(audit_day)
+        iso = audit_day.isoformat()
+        results: dict[str, Any] = {}
+        corrected = False
+        await self.krx.open_session()
+        try:
+            for market in markets:
+                cache_stock = self.krx.cached_daily_snapshot(market, audit_day, "stock")
+                cache_index = self.krx.cached_daily_snapshot(market, audit_day, "index")
+                store_before = await self._store_stock_rows(market, compact)
+                index_before = await self._store_index_row(market, compact)
+
+                direct_stock_result = await self._krx_stock_daily(market, audit_day, force_refresh=True)
+                direct_rows = list(direct_stock_result.get("rows") or [])
+                if not direct_rows:
+                    raise ProviderError(f"{market} {iso} KRX 직접 주식 시세가 비어 있습니다.")
+                if any(self._iso(str(row.get("date") or "")) != iso for row in direct_rows):
+                    raise ProviderError(f"{market} {iso} KRX 주식 응답 기준일이 요청일과 다릅니다.")
+
+                direct_index_result = await self._krx_index_daily(market, audit_day, force_refresh=True)
+                direct_index_rows = list(direct_index_result.get("rows") or [])
+                direct_index = self.krx._select_main_index(direct_index_rows, market) if direct_index_rows else None  # noqa: SLF001
+                if direct_index is None or self._iso(str(direct_index.get("date") or "")) != iso:
+                    raise ProviderError(f"{market} {iso} KRX 대표지수를 확인하지 못했습니다.")
+
+                cache_compare = self._compare_stock_snapshots(direct_rows, list(cache_stock.get("rows") or [])) if cache_stock.get("source") != "none" else None
+                store_compare_before = self._compare_stock_snapshots(direct_rows, store_before)
+                index_cache_rows = list(cache_index.get("rows") or [])
+                cached_main = self.krx._select_main_index(index_cache_rows, market) if index_cache_rows else None  # noqa: SLF001
+                index_cache_match = cached_main == direct_index if cache_index.get("source") != "none" else None
+                index_store_match_before = index_before == direct_index
+
+                await self._replace_stock_snapshot(market, compact, direct_rows)
+                await self._replace_index_snapshot(market, compact, direct_index)
+                store_after = await self._store_stock_rows(market, compact)
+                index_after = await self._store_index_row(market, compact)
+                store_compare_after = self._compare_stock_snapshots(direct_rows, store_after)
+                if not store_compare_after["matches"] or index_after != direct_index:
+                    raise ProviderError(f"{market} {iso} Market Store read-back 검증에 실패했습니다.")
+                if hasattr(self.market_store, "mark_integrity_verified"):
+                    await asyncio.to_thread(
+                        self.market_store.mark_integrity_verified,
+                        market,
+                        compact,
+                        self.DATA_INTEGRITY_VERSION,
+                        stock_rows=len(store_after),
+                        stock_hash=self._fingerprint_rows(store_after),
+                        index_hash=self._fingerprint_rows([index_after]),
+                        verified_at=datetime.now().isoformat(timespec="seconds"),
+                    )
+
+                had_difference = (cache_compare is not None and not cache_compare["matches"]) or not store_compare_before["matches"] or index_cache_match is False or not index_store_match_before
+                corrected = corrected or had_difference
+                direct_map = {str(row.get("code") or "").strip().upper(): row for row in direct_rows}
+                before_map = {str(row.get("code") or "").strip().upper(): row for row in store_before}
+                after_map = {str(row.get("code") or "").strip().upper(): row for row in store_after}
+                trace = {
+                    "code": trace_code,
+                    "krx_direct": direct_map.get(trace_code),
+                    "store_before": before_map.get(trace_code),
+                    "store_after": after_map.get(trace_code),
+                    "scanner_input": after_map.get(trace_code),
+                }
+                results[market] = {
+                    "date": iso,
+                    "krx_rows": len(direct_rows),
+                    "raw_cache_source_before": cache_stock.get("source"),
+                    "raw_cache_compare_before": cache_compare,
+                    "market_store_compare_before": store_compare_before,
+                    "market_store_compare_after": store_compare_after,
+                    "index_cache_match_before": index_cache_match,
+                    "index_store_match_before": index_store_match_before,
+                    "index_store_match_after": index_after == direct_index,
+                    "stock_hash": self._fingerprint_rows(direct_rows),
+                    "trace": trace,
+                }
+        finally:
+            await self.krx.close_session()
+
+        fingerprint_payload = {market: {"date": item["date"], "stock_hash": item["stock_hash"], "krx_rows": item["krx_rows"]} for market, item in results.items()}
+        fingerprint = hashlib.sha256(json.dumps(fingerprint_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()[:16]
+        return {
+            "status": "CORRECTED" if corrected else "PASS",
+            "analysis_date": iso,
+            "market_scope": scope,
+            "input_fingerprint": fingerprint,
+            "markets": results,
+            "message": "KRX 원본과 저장 데이터를 비교해 불일치를 교정했습니다." if corrected else "KRX 원본과 저장 데이터가 일치합니다.",
+        }
+
     async def prepare_latest_confirmed_data(
         self,
         *,
         market_scope: str = "ALL",
         known_data_date: str | None = None,
     ) -> dict[str, Any]:
-        """Resolve the latest KRX-confirmed EOD date and persist only that day.
+        """Resolve one effective EOD date without ever regressing a valid current date.
 
-        This is intentionally a tiny preflight used immediately before a Scanner run.
-        It does not bootstrap long history. The user can therefore be told when the
-        analysis date advances without silently changing the date after analysis starts.
+        The date shown by Scanner is only considered valid when stock rows and the
+        representative index are complete for every selected market on that exact
+        date. A refresh may advance that date, but a provider failure cannot silently
+        move a valid analysis backward.
         """
         scope = market_scope.upper().strip()
         if scope not in {"ALL", "KOSPI", "KOSDAQ"}:
@@ -212,30 +469,63 @@ class StockScannerService:
         markets = ["KOSPI", "KOSDAQ"] if scope == "ALL" else [scope]
         today = self.krx._today_kst()  # noqa: SLF001 - provider and Scanner share KST boundary
         requested_end = today - timedelta(days=1)
-        previous_dates = {
+        normalized_known = self._normalize_iso_date(known_data_date)
+
+        previous_stock_dates = {
             market: (
-                self._iso(value) if (value := self.market_store.latest_complete_date(market, "stock", self._compact(requested_end))) else None
+                self._iso(value)
+                if (value := self.market_store.latest_complete_date(market, "stock", self._compact(requested_end)))
+                else None
             )
             for market in markets
         }
-        fallback_date = self._common_available_date(previous_dates)
+        previous_index_dates = {
+            market: (
+                self._iso(value)
+                if (value := self.market_store.latest_complete_date(market, "index", self._compact(requested_end)))
+                else None
+            )
+            for market in markets
+        }
+        stored_common_before = self._latest_common_complete_date(markets, end_date=requested_end)
+        known_date_valid_before = bool(
+            normalized_known and self._date_complete_for_markets(markets, normalized_known)
+        )
+        current_valid_date = normalized_known if known_date_valid_before else None
+        effective_before = current_valid_date or stored_common_before
+
         before = self.krx.request_stats()
         updated_dates: set[str] = set()
+
+        def diagnostics() -> dict[str, int]:
+            delta = self._stats_delta(before, self.krx.request_stats())
+            return {
+                "network_requests": int(delta.get("network_requests", 0)),
+                "raw_cache_hits": int(
+                    delta.get("disk_hits", 0)
+                    + delta.get("memory_hits", 0)
+                    + delta.get("empty_marker_hits", 0)
+                ),
+                "retries": int(delta.get("retries", 0)),
+                "forced_network_requests": int(delta.get("forced_network_requests", 0)),
+            }
 
         try:
             await self.krx.open_session()
             primary_market = markets[0]
             primary_result: dict[str, Any] | None = None
             resolved_day: date | None = None
-            common_previous = self._common_available_date(previous_dates)
-            if common_previous == requested_end.isoformat():
-                # Yesterday's confirmed stock rows are already persisted for every
-                # selected market, so there is no need to hit KRX merely to rediscover
-                # the same date. This is the normal fast path on an up-to-date store.
+
+            # Fast path only when every selected market has both stock and index data
+            # for the requested date. Stock-only presence is not sufficient.
+            requested_iso = requested_end.isoformat()
+            if self._date_complete_for_markets(markets, requested_iso):
                 resolved_day = requested_end
             else:
-                for candidate in self.krx._candidate_dates(requested_end, self.LATEST_CONFIRM_LOOKBACK_DAYS):  # noqa: SLF001
-                    probe = await self.krx.stock_daily(primary_market, candidate)
+                for candidate in self.krx._candidate_dates(
+                    requested_end, self.LATEST_CONFIRM_LOOKBACK_DAYS
+                ):  # noqa: SLF001
+                    probe = await self._krx_stock_daily(primary_market, candidate, force_refresh=True)
                     if int(probe.get("count") or 0) > 0:
                         primary_result = probe
                         resolved_day = candidate
@@ -248,89 +538,230 @@ class StockScannerService:
 
             resolved_key = self._compact(resolved_day)
             resolved_iso = resolved_day.isoformat()
+
+            # A provider temporarily returning an older day must never make a valid
+            # current analysis move backward. Keep the locally verified date and report
+            # that no newer confirmed day was adopted.
+            if current_valid_date and resolved_iso < current_valid_date:
+                return {
+                    "status": "READY",
+                    "market_scope": scope,
+                    "requested_date": requested_iso,
+                    "latest_confirmed_date": resolved_iso,
+                    "resolved_as_of_date": current_valid_date,
+                    "known_data_date": normalized_known,
+                    "previous_data_dates": previous_stock_dates,
+                    "previous_index_dates": previous_index_dates,
+                    "data_dates": {market: current_valid_date for market in markets},
+                    "available_data_date": current_valid_date,
+                    "stored_common_date": stored_common_before,
+                    "current_date_valid": True,
+                    "fallback_allowed": False,
+                    "consistency_status": "CURRENT_RETAINED",
+                    "market_data_updated": False,
+                    "date_changed": False,
+                    "updated_dates": [],
+                    "diagnostics": diagnostics(),
+                    "failure_reason": None,
+                    "message": f"현재 {current_valid_date} 확정 일봉이 더 최신이므로 기존 분석 기준을 유지합니다.",
+                }
+
+            integrity_markets: dict[str, dict[str, Any]] = {}
             for market in markets:
-                if not self.market_store.day_complete(market, resolved_key, "stock"):
-                    stock_result = (
-                        primary_result
-                        if market == primary_market and primary_result is not None
-                        else await self.krx.stock_daily(market, resolved_day)
-                    )
-                    stock_rows = list(stock_result.get("rows") or [])
-                    if not stock_rows:
-                        raise ProviderError(f"{market} {resolved_iso} 확정 주식 시세를 확인하지 못했습니다.")
+                previous_rows = await self._store_stock_rows(market, resolved_key)
+                previous_index = await self._store_index_row(market, resolved_key)
+                verification = (
                     await asyncio.to_thread(
-                        self.market_store.put_stock_day, market, resolved_key, stock_rows, stable=True
+                        self.market_store.integrity_verification,
+                        market,
+                        resolved_key,
+                        self.DATA_INTEGRITY_VERSION,
                     )
-                    updated_dates.add(resolved_iso)
-
-                if not self.market_store.day_complete(market, resolved_key, "index"):
-                    index_result = await self.krx.index_daily(market, resolved_day)
-                    index_rows = list(index_result.get("rows") or [])
-                    main_index = self.krx._select_main_index(index_rows, market) if index_rows else None  # noqa: SLF001
-                    if main_index is None:
-                        raise ProviderError(f"{market} {resolved_iso} 확정 시장지수를 확인하지 못했습니다.")
-                    await asyncio.to_thread(
-                        self.market_store.put_index_day, market, resolved_key, main_index, stable=True
-                    )
-                    updated_dates.add(resolved_iso)
-
-            current_dates = {
-                market: (
-                    self._iso(value) if (value := self.market_store.latest_complete_date(market, "stock", resolved_key)) else None
+                    if hasattr(self.market_store, "integrity_verification")
+                    else None
                 )
-                for market in markets
-            }
-            if any(value != resolved_iso for value in current_dates.values()):
-                raise ProviderError("최신 시세 저장 후 분석 기준일이 시장별로 일치하지 않습니다.")
+                current_stock_hash = self._fingerprint_rows(previous_rows) if previous_rows else None
+                current_index_hash = self._fingerprint_rows([previous_index]) if previous_index else None
+                verification_matches_store = bool(
+                    verification
+                    and int(verification.get("stock_rows") or 0) == len(previous_rows)
+                    and verification.get("stock_hash") == current_stock_hash
+                    and verification.get("index_hash") == current_index_hash
+                    and self._day_has_data(market, resolved_key, "stock")
+                    and self._day_has_data(market, resolved_key, "index")
+                )
 
-            delta = self._stats_delta(before, self.krx.request_stats())
-            comparison_date = known_data_date or fallback_date
-            date_changed = bool(comparison_date and comparison_date < resolved_iso)
+                if verification_matches_store:
+                    integrity_markets[market] = {
+                        "mode": "VERIFIED_REUSE",
+                        "krx_rows": len(previous_rows),
+                        "stored_rows": len(previous_rows),
+                        "ticker_mismatch": 0,
+                        "ohlcv_mismatch": 0,
+                        "snapshot_changed": False,
+                        "verified_at": verification.get("verified_at"),
+                    }
+                    continue
+
+                stock_result = (
+                    primary_result
+                    if market == primary_market and primary_result is not None
+                    else await self._krx_stock_daily(market, resolved_day, force_refresh=True)
+                )
+                stock_rows = list(stock_result.get("rows") or [])
+                if not stock_rows:
+                    raise ProviderError(f"{market} {resolved_iso} 확정 주식 시세를 확인하지 못했습니다.")
+                wrong_stock_dates = [row for row in stock_rows if self._iso(str(row.get("date") or "")) != resolved_iso]
+                if wrong_stock_dates:
+                    raise ProviderError(f"{market} {resolved_iso} KRX 주식 응답의 기준일이 요청일과 일치하지 않습니다.")
+
+                index_result = await self._krx_index_daily(market, resolved_day, force_refresh=True)
+                index_rows = list(index_result.get("rows") or [])
+                main_index = self.krx._select_main_index(index_rows, market) if index_rows else None  # noqa: SLF001
+                if main_index is None:
+                    raise ProviderError(f"{market} {resolved_iso} 확정 시장지수를 확인하지 못했습니다.")
+                if self._iso(str(main_index.get("date") or "")) != resolved_iso:
+                    raise ProviderError(f"{market} {resolved_iso} KRX 지수 응답의 기준일이 요청일과 일치하지 않습니다.")
+
+                await self._replace_stock_snapshot(market, resolved_key, stock_rows)
+                await self._replace_index_snapshot(market, resolved_key, main_index)
+                readback_rows = await self._store_stock_rows(market, resolved_key)
+                readback_index = (await self._store_index_row(market, resolved_key)) or main_index
+                if len(readback_rows) != len(stock_rows):
+                    raise ProviderError(
+                        f"{market} {resolved_iso} 저장 검증 실패: KRX {len(stock_rows)}건 / 저장 {len(readback_rows)}건"
+                    )
+                direct_map = {str(row.get("code") or "").strip().upper(): row for row in stock_rows}
+                store_map = {str(row.get("code") or "").strip().upper(): row for row in readback_rows}
+                mismatch = 0
+                for code, direct_row in direct_map.items():
+                    stored_row = store_map.get(code)
+                    if stored_row is None or any(
+                        direct_row.get(field) != stored_row.get(field)
+                        for field in ("open", "high", "low", "close", "volume")
+                    ):
+                        mismatch += 1
+                if mismatch or set(direct_map) != set(store_map) or readback_index != main_index:
+                    raise ProviderError(f"{market} {resolved_iso} 저장된 KRX 데이터가 원본과 일치하지 않습니다.")
+
+                stock_hash = self._fingerprint_rows(readback_rows)
+                index_hash = self._fingerprint_rows([readback_index])
+                if hasattr(self.market_store, "mark_integrity_verified"):
+                    await asyncio.to_thread(
+                        self.market_store.mark_integrity_verified,
+                        market,
+                        resolved_key,
+                        self.DATA_INTEGRITY_VERSION,
+                        stock_rows=len(readback_rows),
+                        stock_hash=stock_hash,
+                        index_hash=index_hash,
+                        verified_at=datetime.now().isoformat(timespec="seconds"),
+                    )
+                changed = previous_rows != readback_rows or previous_index != readback_index
+                if changed:
+                    updated_dates.add(resolved_iso)
+                integrity_markets[market] = {
+                    "mode": "FORCED_KRX_VERIFY",
+                    "krx_rows": len(stock_rows),
+                    "stored_rows": len(readback_rows),
+                    "ticker_mismatch": len(set(direct_map) ^ set(store_map)),
+                    "ohlcv_mismatch": mismatch,
+                    "snapshot_changed": changed,
+                    "verified_at": datetime.now().isoformat(timespec="seconds"),
+                }
+
+            if not self._date_complete_for_markets(markets, resolved_iso):
+                raise ProviderError("최신 시세 저장 후 공통 분석 기준일을 확인하지 못했습니다.")
+
+            stored_common_after = self._latest_common_complete_date(markets, end_date=requested_end)
+            effective_date = resolved_iso
+            if current_valid_date and current_valid_date > effective_date:
+                effective_date = current_valid_date
+
+            comparison_date = effective_before
+            date_changed = bool(comparison_date and comparison_date < effective_date)
+            status = "UPDATED" if date_changed else "READY"
             return {
-                "status": "UPDATED" if updated_dates else "READY",
+                "status": status,
                 "market_scope": scope,
-                "requested_date": requested_end.isoformat(),
+                "requested_date": requested_iso,
                 "latest_confirmed_date": resolved_iso,
-                "resolved_as_of_date": resolved_iso,
-                "known_data_date": known_data_date,
-                "previous_data_dates": previous_dates,
-                "data_dates": current_dates,
-                "available_data_date": resolved_iso,
+                "resolved_as_of_date": effective_date,
+                "known_data_date": normalized_known,
+                "previous_data_dates": previous_stock_dates,
+                "previous_index_dates": previous_index_dates,
+                "data_dates": {market: effective_date for market in markets},
+                "available_data_date": effective_date,
+                "stored_common_date": stored_common_after,
+                "current_date_valid": bool(
+                    normalized_known and self._date_complete_for_markets(markets, normalized_known)
+                ),
+                "fallback_allowed": False,
+                "consistency_status": "ALIGNED",
                 "market_data_updated": bool(updated_dates),
                 "date_changed": date_changed,
                 "updated_dates": sorted(updated_dates),
-                "diagnostics": {
-                    "network_requests": int(delta.get("network_requests", 0)),
-                    "raw_cache_hits": int(delta.get("disk_hits", 0) + delta.get("memory_hits", 0) + delta.get("empty_marker_hits", 0)),
-                    "retries": int(delta.get("retries", 0)),
-                },
+                "diagnostics": {**diagnostics(), "data_integrity": integrity_markets},
+                "failure_reason": None,
                 "message": (
-                    f"새로운 확정 시세를 확인했습니다. {resolved_iso} 기준으로 분석합니다."
+                    f"새로운 확정 시세를 확인했습니다. {effective_date} 기준으로 분석합니다."
                     if date_changed
-                    else f"{resolved_iso} 확정 일봉 기준으로 분석할 수 있습니다."
+                    else f"{effective_date} 확정 일봉 기준으로 분석할 수 있습니다."
                 ),
             }
         except (ProviderError, ValueError) as exc:
-            delta = self._stats_delta(before, self.krx.request_stats())
+            stored_common_after = self._latest_common_complete_date(markets, end_date=requested_end)
+            known_date_valid_after = bool(
+                normalized_known and self._date_complete_for_markets(markets, normalized_known)
+            )
+            if known_date_valid_after:
+                available_date = normalized_known
+                status = "UPDATE_FAILED"
+                fallback_allowed = False
+                consistency_status = "CURRENT_VALID_REFRESH_FAILED"
+                message = (
+                    f"새로운 확정 시세를 가져오지 못했습니다. 현재 {normalized_known} 확정 일봉은 계속 사용할 수 있습니다."
+                )
+                resolved_as_of = normalized_known
+            elif normalized_known:
+                available_date = stored_common_after
+                status = "DATA_INCONSISTENT"
+                fallback_allowed = bool(stored_common_after)
+                consistency_status = "CURRENT_DATE_INVALID"
+                message = (
+                    "현재 분석 기준 데이터를 다시 확인해야 합니다. "
+                    "저장된 시세와 현재 분석 기준일이 일치하지 않습니다."
+                )
+                resolved_as_of = None
+            else:
+                available_date = stored_common_after
+                status = "UPDATE_FAILED"
+                fallback_allowed = bool(stored_common_after)
+                consistency_status = "NO_CURRENT_ANALYSIS"
+                message = "최신 확정 시세를 가져오지 못했습니다."
+                resolved_as_of = None
+
             return {
-                "status": "UPDATE_FAILED",
+                "status": status,
                 "market_scope": scope,
                 "requested_date": requested_end.isoformat(),
                 "latest_confirmed_date": None,
-                "resolved_as_of_date": None,
-                "known_data_date": known_data_date,
-                "previous_data_dates": previous_dates,
-                "data_dates": previous_dates,
-                "available_data_date": known_data_date or fallback_date,
+                "resolved_as_of_date": resolved_as_of,
+                "known_data_date": normalized_known,
+                "previous_data_dates": previous_stock_dates,
+                "previous_index_dates": previous_index_dates,
+                "data_dates": previous_stock_dates,
+                "available_data_date": available_date,
+                "stored_common_date": stored_common_after,
+                "current_date_valid": known_date_valid_after,
+                "fallback_allowed": fallback_allowed,
+                "consistency_status": consistency_status,
                 "market_data_updated": False,
                 "date_changed": False,
                 "updated_dates": [],
-                "diagnostics": {
-                    "network_requests": int(delta.get("network_requests", 0)),
-                    "raw_cache_hits": int(delta.get("disk_hits", 0) + delta.get("memory_hits", 0) + delta.get("empty_marker_hits", 0)),
-                    "retries": int(delta.get("retries", 0)),
-                },
-                "message": f"최신 시세를 가져오지 못했습니다. {exc}",
+                "diagnostics": diagnostics(),
+                "failure_reason": str(exc),
+                "message": message,
             }
         finally:
             await self.krx.close_session()
@@ -559,6 +990,34 @@ class StockScannerService:
             "peak_concurrency": peak_concurrency,
             "final_concurrency_limit": current_limit,
         }
+
+    @staticmethod
+    def _fingerprint_rows(rows: list[dict[str, Any]]) -> str:
+        canonical = [
+            {key: row.get(key) for key in ("date", "code", "name", "open", "high", "low", "close", "volume")}
+            for row in sorted(rows, key=lambda item: str(item.get("code") or ""))
+        ]
+        raw = json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(raw).hexdigest()[:16]
+
+    def _build_input_fingerprint(self, markets: list[str], data_dates: dict[str, str]) -> dict[str, Any]:
+        details: dict[str, Any] = {}
+        for market in markets:
+            market_date = str(data_dates.get(market) or "")
+            key = market_date.replace("-", "")
+            stock_snapshot = self.market_store.stock_day_rows(market, key) if key else []
+            index_snapshot = self.market_store.index_day_row(market, key) if key and hasattr(self.market_store, "index_day_row") else None
+            details[market] = {
+                "date": market_date or None,
+                "stock_rows": len(stock_snapshot),
+                "stock_hash": self._fingerprint_rows(stock_snapshot) if stock_snapshot else None,
+                "index_hash": self._fingerprint_rows([index_snapshot]) if index_snapshot else None,
+            }
+        payload = {"scanner_version": self.VERSION, "markets": details}
+        fingerprint = hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()[:16]
+        return {"id": fingerprint, **payload}
 
     @staticmethod
     def _special_reason(row: dict[str, Any]) -> str | None:
@@ -1025,10 +1484,23 @@ class StockScannerService:
         today = self.krx._today_kst()  # noqa: SLF001 - same EOD freshness boundary as provider
         stable_end = self._parse_as_of(as_of_date, today)
         started_at = time.perf_counter()
+        markets = ["KOSPI", "KOSDAQ"] if scope == "ALL" else [scope]
 
         if not force_refresh:
             cached = self._load_cache(scope, stable_end, candidate_limit)
-            if cached is not None:
+            expected_dates = {market: stable_end.isoformat() for market in markets}
+            current_fingerprint = (
+                self._build_input_fingerprint(markets, expected_dates)
+                if self._date_complete_for_markets(markets, stable_end.isoformat())
+                else None
+            )
+            cached_fingerprint = ((cached or {}).get("input_fingerprint") or {}).get("id")
+            if (
+                cached is not None
+                and self._result_date_aligned(cached, scope, stable_end)
+                and current_fingerprint is not None
+                and cached_fingerprint == current_fingerprint.get("id")
+            ):
                 self._emit(
                     progress,
                     stage="scanner_cache",
@@ -1043,7 +1515,6 @@ class StockScannerService:
                 )
                 return cached
 
-        markets = ["KOSPI", "KOSDAQ"] if scope == "ALL" else [scope]
         fast_start = stable_end - timedelta(days=self.FAST_HISTORY_CALENDAR_DAYS)
         evidence_start = stable_end - timedelta(days=self.HISTORY_CALENDAR_DAYS)
         provider_before = self.krx.request_stats()
@@ -1204,6 +1675,18 @@ class StockScannerService:
                         universe=len(universe_rows),
                     ),
                 )
+
+            if as_of_date is not None:
+                expected_iso = stable_end.isoformat()
+                missing_or_misaligned = [
+                    market for market in markets if latest_dates.get(market) != expected_iso
+                ]
+                if missing_or_misaligned:
+                    joined = ", ".join(missing_or_misaligned)
+                    raise ProviderError(
+                        f"종목 찾기 분석 기준일을 {expected_iso}로 맞추지 못했습니다. "
+                        f"다시 최신 확정 시세를 확인해 주세요. ({joined})"
+                    )
 
             quick_inputs: list[tuple[str, dict[str, Any]]] = []
             series_by_market: dict[str, dict[str, Any]] = {}
@@ -1388,6 +1871,7 @@ class StockScannerService:
 
             delta = self._stats_delta(provider_before, self.krx.request_stats())
             budget = self.krx.budget_snapshot()
+            input_fingerprint = self._build_input_fingerprint(markets, latest_dates)
             timings["total_seconds"] = time.perf_counter() - started_at
             # Do not freeze the same-day Scanner result while a ranked candidate's
             # three-year evidence is still unavailable. If Market Store history is
@@ -1400,6 +1884,7 @@ class StockScannerService:
                 "requested_as_of": stable_end.isoformat(),
                 "market_scope": scope,
                 "data_dates": latest_dates,
+                "input_fingerprint": input_fingerprint,
                 "market_summary": market_summaries,
                 "partial_data": partial_data,
                 "preparation_required": preparation_required,
@@ -1445,6 +1930,7 @@ class StockScannerService:
                     "network_requests": int(delta.get("network_requests", aggregate_sync["network_requests"])),
                     "raw_cache_hits": int(delta.get("disk_hits", 0) + delta.get("memory_hits", 0) + delta.get("empty_marker_hits", 0)),
                     "retries": int(delta.get("retries", 0)),
+                    "forced_network_requests": int(delta.get("forced_network_requests", 0)),
                     "budget_used": budget.get("used", 0),
                     "budget_limit": budget.get("safe_limit", 0),
                     "budget_remaining": budget.get("remaining", 0),

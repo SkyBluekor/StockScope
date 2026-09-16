@@ -77,6 +77,17 @@ class HistoricalMarketStore:
                     status TEXT NOT NULL CHECK(status IN ('data', 'empty')),
                     PRIMARY KEY (market, bas_dd, kind)
                 );
+
+                CREATE TABLE IF NOT EXISTS data_integrity_verification (
+                    market TEXT NOT NULL,
+                    bas_dd TEXT NOT NULL,
+                    version TEXT NOT NULL,
+                    stock_rows INTEGER NOT NULL,
+                    stock_hash TEXT NOT NULL,
+                    index_hash TEXT NOT NULL,
+                    verified_at TEXT NOT NULL,
+                    PRIMARY KEY (market, bas_dd, version)
+                );
                 """
             )
 
@@ -115,6 +126,109 @@ class HistoricalMarketStore:
                     (market, bas_dd, "data" if normalized else "empty"),
                 )
         return len(normalized)
+
+
+    def replace_stock_day(self, market: str, bas_dd: str, rows: Iterable[dict[str, Any]], *, stable: bool = True) -> int:
+        """Atomically replace one market/day snapshot so stale rows cannot survive a refresh."""
+        market = self._market(market)
+        normalized = [row for row in rows if str(row.get("code") or "").strip()]
+        with self._lock, self._connect() as conn:
+            conn.execute("DELETE FROM stock_daily WHERE market=? AND bas_dd=?", (market, bas_dd))
+            if normalized:
+                conn.executemany(
+                    "INSERT INTO stock_daily(market, bas_dd, stock_code, row_json) VALUES (?, ?, ?, ?)",
+                    [(market, bas_dd, str(row.get("code") or "").strip().upper(), self._dump(row)) for row in normalized],
+                )
+            if stable:
+                conn.execute(
+                    "INSERT INTO day_status(market, bas_dd, kind, status) VALUES (?, ?, 'stock', ?) "
+                    "ON CONFLICT(market, bas_dd, kind) DO UPDATE SET status=excluded.status",
+                    (market, bas_dd, "data" if normalized else "empty"),
+                )
+        return len(normalized)
+
+    def replace_index_day(self, market: str, bas_dd: str, row: dict[str, Any] | None, *, stable: bool = True) -> None:
+        market = self._market(market)
+        with self._lock, self._connect() as conn:
+            conn.execute("DELETE FROM main_index_daily WHERE market=? AND bas_dd=?", (market, bas_dd))
+            if row is not None:
+                conn.execute("INSERT INTO main_index_daily(market, bas_dd, row_json) VALUES (?, ?, ?)", (market, bas_dd, self._dump(row)))
+            if stable:
+                conn.execute(
+                    "INSERT INTO day_status(market, bas_dd, kind, status) VALUES (?, ?, 'index', ?) "
+                    "ON CONFLICT(market, bas_dd, kind) DO UPDATE SET status=excluded.status",
+                    (market, bas_dd, "data" if row is not None else "empty"),
+                )
+
+    def index_day_row(self, market: str, bas_dd: str) -> dict[str, Any] | None:
+        market = self._market(market)
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT row_json FROM main_index_daily WHERE market=? AND bas_dd=?",
+                (market, bas_dd),
+            ).fetchone()
+        return self._load(str(row["row_json"])) if row is not None else None
+
+    def day_status(self, market: str, bas_dd: str, kind: str) -> str | None:
+        market = self._market(market)
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT status FROM day_status WHERE market=? AND bas_dd=? AND kind=?",
+                (market, bas_dd, kind),
+            ).fetchone()
+        return str(row["status"]) if row is not None else None
+
+    def integrity_verification(self, market: str, bas_dd: str, version: str) -> dict[str, Any] | None:
+        market = self._market(market)
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT stock_rows,stock_hash,index_hash,verified_at FROM data_integrity_verification "
+                "WHERE market=? AND bas_dd=? AND version=?",
+                (market, bas_dd, version),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "stock_rows": int(row["stock_rows"]),
+            "stock_hash": str(row["stock_hash"]),
+            "index_hash": str(row["index_hash"]),
+            "verified_at": str(row["verified_at"]),
+        }
+
+    def mark_integrity_verified(
+        self,
+        market: str,
+        bas_dd: str,
+        version: str,
+        *,
+        stock_rows: int,
+        stock_hash: str,
+        index_hash: str,
+        verified_at: str,
+    ) -> None:
+        market = self._market(market)
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                "INSERT INTO data_integrity_verification(market,bas_dd,version,stock_rows,stock_hash,index_hash,verified_at) "
+                "VALUES (?,?,?,?,?,?,?) "
+                "ON CONFLICT(market,bas_dd,version) DO UPDATE SET "
+                "stock_rows=excluded.stock_rows,stock_hash=excluded.stock_hash,index_hash=excluded.index_hash,verified_at=excluded.verified_at",
+                (market, bas_dd, version, int(stock_rows), stock_hash, index_hash, verified_at),
+            )
+
+    def clear_integrity_verification(self, market: str, bas_dd: str) -> None:
+        market = self._market(market)
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                "DELETE FROM data_integrity_verification WHERE market=? AND bas_dd=?",
+                (market, bas_dd),
+            )
+
+    def stock_day_count(self, market: str, bas_dd: str) -> int:
+        market = self._market(market)
+        with self._lock, self._connect() as conn:
+            row = conn.execute("SELECT COUNT(*) AS n FROM stock_daily WHERE market=? AND bas_dd=?", (market, bas_dd)).fetchone()
+        return int(row["n"] if row else 0)
 
     def put_index_day(self, market: str, bas_dd: str, row: dict[str, Any] | None, *, stable: bool) -> None:
         market = self._market(market)
@@ -201,17 +315,6 @@ class HistoricalMarketStore:
                 "SELECT 1 FROM day_status WHERE market=? AND bas_dd=? AND kind=? LIMIT 1",
                 (market, bas_dd, kind),
             ).fetchone() is not None
-
-    def completed_days(self, market: str, start_dd: str, end_dd: str, kind: str) -> set[str]:
-        market = self._market(market)
-        if kind not in {"stock", "index"}:
-            raise ValueError("kind는 stock 또는 index여야 합니다.")
-        with self._lock, self._connect() as conn:
-            rows = conn.execute(
-                "SELECT bas_dd FROM day_status WHERE market=? AND kind=? AND bas_dd>=? AND bas_dd<=?",
-                (market, kind, start_dd, end_dd),
-            ).fetchall()
-        return {str(row["bas_dd"]) for row in rows}
 
     def stock_series(self, market: str, code: str, start_dd: str | None = None, end_dd: str | None = None) -> HistorySeries:
         market = self._market(market)

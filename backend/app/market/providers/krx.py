@@ -69,6 +69,7 @@ class KrxProvider:
             "empty_marker_hits": 0,
             "network_requests": 0,
             "retries": 0,
+            "forced_network_requests": 0,
         }
 
     async def open_session(self) -> None:
@@ -124,6 +125,69 @@ class KrxProvider:
         if self._is_volatile_date(bas_dd):
             return False
         return self._disk_cache_path(endpoint, bas_dd).exists() or self._has_empty_marker(endpoint, bas_dd)
+
+    def cached_daily_snapshot(self, market: str, bas_date: str | date, kind: str) -> dict[str, Any]:
+        """Read the currently cached KRX payload without issuing a network request."""
+        market_key = market.upper().strip()
+        endpoint = self._endpoint_for_kind(market_key, kind)
+        bas_dd = self._format_date(bas_date)
+        key = (endpoint.path, bas_dd)
+        rows: list[dict[str, Any]] | None = None
+        source = "none"
+        expiry = self._cache_expiry.get(key)
+        if key in self._rows_cache and (expiry is None or expiry > monotonic()):
+            rows = list(self._rows_cache[key])
+            source = "memory"
+        elif not self._is_volatile_date(bas_dd):
+            rows = self._load_disk_cache(endpoint, bas_dd)
+            if rows is not None:
+                source = "disk"
+            elif self._has_empty_marker(endpoint, bas_dd):
+                rows = []
+                source = "empty_marker"
+        if rows is None:
+            return {"source": source, "date": bas_dd, "count": 0, "rows": []}
+
+        if kind == "stock":
+            normalized = [
+                {
+                    "date": row.get("BAS_DD"),
+                    "code": row.get("ISU_CD"),
+                    "name": row.get("ISU_NM"),
+                    "market": row.get("MKT_NM"),
+                    "section": row.get("SECT_TP_NM"),
+                    "close": self._as_int(row.get("TDD_CLSPRC")),
+                    "change": self._as_int(row.get("CMPPREVDD_PRC")),
+                    "change_rate": self._as_float(row.get("FLUC_RT")),
+                    "open": self._as_int(row.get("TDD_OPNPRC")),
+                    "high": self._as_int(row.get("TDD_HGPRC")),
+                    "low": self._as_int(row.get("TDD_LWPRC")),
+                    "volume": self._as_int(row.get("ACC_TRDVOL")),
+                    "trade_value": self._as_int(row.get("ACC_TRDVAL")),
+                    "market_cap": self._as_int(row.get("MKTCAP")),
+                    "listed_shares": self._as_int(row.get("LIST_SHRS")),
+                }
+                for row in rows
+            ]
+        else:
+            normalized = [
+                {
+                    "date": row.get("BAS_DD"),
+                    "class": row.get("IDX_CLSS"),
+                    "name": row.get("IDX_NM"),
+                    "close": self._as_float(row.get("CLSPRC_IDX")),
+                    "change": self._as_float(row.get("CMPPREVDD_IDX")),
+                    "change_rate": self._as_float(row.get("FLUC_RT")),
+                    "open": self._as_float(row.get("OPNPRC_IDX")),
+                    "high": self._as_float(row.get("HGPRC_IDX")),
+                    "low": self._as_float(row.get("LWPRC_IDX")),
+                    "volume": self._as_int(row.get("ACC_TRDVOL")),
+                    "trade_value": self._as_int(row.get("ACC_TRDVAL")),
+                    "market_cap": self._as_int(row.get("MKTCAP")),
+                }
+                for row in rows
+            ]
+        return {"source": source, "date": bas_dd, "count": len(normalized), "rows": normalized}
 
     def _require_key(self) -> None:
         if not self.api_key:
@@ -305,13 +369,25 @@ class KrxProvider:
         bas_dd: str,
         rows: list[dict[str, Any]],
     ) -> None:
+        path = cls._disk_cache_path(endpoint, bas_dd)
+        temp_path = path.with_name(path.name + ".tmp")
         try:
             cls._cache_dir.mkdir(parents=True, exist_ok=True)
-            path = cls._disk_cache_path(endpoint, bas_dd)
-            with gzip.open(path, "wt", encoding="utf-8") as fp:
+            with gzip.open(temp_path, "wt", encoding="utf-8") as fp:
                 json.dump(rows, fp, ensure_ascii=False, separators=(",", ":"))
+            os.replace(temp_path, path)
         except OSError:
             # 캐시 실패가 실제 데이터 조회를 막으면 안 됩니다.
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    @classmethod
+    def _clear_disk_cache(cls, endpoint: KrxEndpoint, bas_dd: str) -> None:
+        try:
+            cls._disk_cache_path(endpoint, bas_dd).unlink(missing_ok=True)
+        except OSError:
             pass
 
     async def _request_rows(self, endpoint: KrxEndpoint, bas_dd: str) -> list[dict[str, Any]]:
@@ -377,10 +453,31 @@ class KrxProvider:
             raise ProviderError(f"KRX 연결 실패: {last_error}") from last_error
         raise ProviderError("KRX 요청에 실패했습니다.")
 
-    async def _get_rows(self, endpoint: KrxEndpoint, bas_dd: str) -> list[dict[str, Any]]:
+    async def _get_rows(self, endpoint: KrxEndpoint, bas_dd: str, *, force_refresh: bool = False) -> list[dict[str, Any]]:
         self._require_key()
         cache_key = (endpoint.path, bas_dd)
         now = monotonic()
+
+        if force_refresh:
+            self._request_stats["forced_network_requests"] += 1
+            rows = await self._request_rows(endpoint, bas_dd)
+            self._rows_cache.pop(cache_key, None)
+            self._cache_expiry.pop(cache_key, None)
+            if not rows:
+                self._rows_cache[cache_key] = []
+                self._clear_disk_cache(endpoint, bas_dd)
+                if self._is_stable_empty_date(bas_dd):
+                    self._save_empty_marker(endpoint, bas_dd)
+                else:
+                    self._cache_expiry[cache_key] = now + self._volatile_cache_seconds
+            else:
+                self._clear_empty_marker(endpoint, bas_dd)
+                self._rows_cache[cache_key] = rows
+                if self._is_volatile_date(bas_dd):
+                    self._cache_expiry[cache_key] = now + self._volatile_cache_seconds
+                else:
+                    await asyncio.to_thread(self._save_disk_cache, endpoint, bas_dd, rows)
+            return rows
 
         expiry = self._cache_expiry.get(cache_key)
         if expiry is not None and expiry <= now:
@@ -470,6 +567,8 @@ class KrxProvider:
         market: str,
         bas_date: str | date,
         code: str | None = None,
+        *,
+        force_refresh: bool = False,
     ) -> dict[str, Any]:
         market_key = market.upper().strip()
         endpoint = self.STOCK_ENDPOINTS.get(market_key)
@@ -477,7 +576,7 @@ class KrxProvider:
             raise ValueError("market은 KOSPI 또는 KOSDAQ이어야 합니다.")
 
         bas_dd = self._format_date(bas_date)
-        rows = await self._get_rows(endpoint, bas_dd)
+        rows = await self._get_rows(endpoint, bas_dd, force_refresh=force_refresh)
 
         if code:
             code = normalize_stock_code(code)
@@ -695,14 +794,14 @@ class KrxProvider:
         found.sort(key=lambda row: str(row.get("date") or ""))
         return found[-wanted:]
 
-    async def index_daily(self, market: str, bas_date: str | date) -> dict[str, Any]:
+    async def index_daily(self, market: str, bas_date: str | date, *, force_refresh: bool = False) -> dict[str, Any]:
         market_key = market.upper().strip()
         endpoint = self.INDEX_ENDPOINTS.get(market_key)
         if endpoint is None:
             raise ValueError("market은 KOSPI 또는 KOSDAQ이어야 합니다.")
 
         bas_dd = self._format_date(bas_date)
-        rows = await self._get_rows(endpoint, bas_dd)
+        rows = await self._get_rows(endpoint, bas_dd, force_refresh=force_refresh)
         normalized = [
             {
                 "date": row.get("BAS_DD"),

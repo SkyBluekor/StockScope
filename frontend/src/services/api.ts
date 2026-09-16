@@ -2302,15 +2302,21 @@ export type ScannerRequest = {
 };
 
 export type ScannerFreshnessResponse = {
-  status: "READY" | "UPDATED" | "UPDATE_FAILED" | string;
+  status: "READY" | "UPDATED" | "UPDATE_FAILED" | "DATA_INCONSISTENT" | string;
   market_scope: "ALL" | "KOSPI" | "KOSDAQ";
   requested_date: string;
   latest_confirmed_date: string | null;
   resolved_as_of_date: string | null;
   known_data_date: string | null;
   previous_data_dates: Partial<Record<"KOSPI" | "KOSDAQ", string | null>>;
+  previous_index_dates?: Partial<Record<"KOSPI" | "KOSDAQ", string | null>>;
   data_dates: Partial<Record<"KOSPI" | "KOSDAQ", string | null>>;
   available_data_date: string | null;
+  stored_common_date?: string | null;
+  current_date_valid?: boolean;
+  fallback_allowed?: boolean;
+  consistency_status?: string;
+  failure_reason?: string | null;
   market_data_updated: boolean;
   date_changed: boolean;
   updated_dates: string[];
