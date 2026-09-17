@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import math
 import re
 from typing import Any
+
+from app.backtest.target1_audit import build_current_target1_audit
 
 
 def _get(obj: Any, key: str, default: Any = None) -> Any:
@@ -17,7 +20,7 @@ def _number(value: Any) -> float | None:
         number = float(value)
     except (TypeError, ValueError):
         return None
-    if number != number:
+    if not math.isfinite(number):
         return None
     return number
 
@@ -68,6 +71,300 @@ def _display_price_rule(rule: dict[str, Any]) -> dict[str, Any]:
     result["display_trigger_price"] = _krx_display_price(_number(rule.get("trigger_price")))
     result["display_reference_price"] = _krx_display_price(_number(rule.get("reference_price")))
     return result
+
+
+
+
+def _price_rule_semantics(rule: dict[str, Any]) -> dict[str, Any]:
+    """Describe what the strategy-derived price rule means to a user.
+
+    v0.21.4-B.2.3.2a: RANGE rules are qualification/observation bands derived from
+    strategy conditions. They are not executable buy ranges and must not be compared
+    to the RiskEngine stop zone as if both belonged to the same execution step.
+    """
+    result = dict(rule)
+    kind = str(result.get("kind") or "UNAVAILABLE")
+    if kind == "RANGE":
+        result["semantic_role"] = "STRATEGY_CONDITION_BAND"
+        result["user_label"] = "전략 조건 가격대"
+        result["executable_entry_range"] = False
+        result["semantic_note"] = (
+            "전략 조건 충족 여부를 보기 위해 기준선을 가격대로 환산한 범위입니다. "
+            "이 구간 전체가 매수 가능한 가격 범위를 뜻하지 않습니다."
+        )
+    elif kind in {"ABOVE", "AT_OR_BELOW"}:
+        result["semantic_role"] = "STRATEGY_CONDITION_THRESHOLD"
+        result["user_label"] = "전략 조건 기준가"
+        result["executable_entry_range"] = False
+        result["semantic_note"] = "전략 조건 충족 여부를 확인하는 기준가격이며 자동 주문 가격이 아닙니다."
+    else:
+        result["semantic_role"] = "STRATEGY_REFERENCE"
+        result["user_label"] = "전략 가격 기준"
+        result["executable_entry_range"] = False
+        result["semantic_note"] = "전략 판단을 설명하기 위한 참고가격입니다."
+    return result
+
+
+def _range_overlap(low_a: float | None, high_a: float | None, low_b: float | None, high_b: float | None) -> dict[str, float | None]:
+    if None in {low_a, high_a, low_b, high_b}:
+        return {"low": None, "high": None, "width": None, "ratio_pct": None}
+    left = max(float(low_a), float(low_b))
+    right = min(float(high_a), float(high_b))
+    if right < left:
+        return {"low": None, "high": None, "width": 0.0, "ratio_pct": 0.0}
+    width = max(0.0, right - left)
+    base_width = max(0.0, float(high_a) - float(low_a))
+    ratio = width / base_width * 100.0 if base_width > 0 else (100.0 if width == 0 else None)
+    return {
+        "low": left,
+        "high": right,
+        "width": width,
+        "ratio_pct": None if ratio is None else round(ratio, 2),
+    }
+
+def _sorted_pair(low: Any, high: Any) -> tuple[float | None, float | None]:
+    first = _number(low)
+    second = _number(high)
+    if first is None and second is None:
+        return None, None
+    if first is None:
+        return second, second
+    if second is None:
+        return first, first
+    return (first, second) if first <= second else (second, first)
+
+
+def _issue(code: str, severity: str, detail: str) -> dict[str, str]:
+    return {"code": code, "severity": severity, "detail": detail}
+
+
+def _price_plan_consistency(price_rule: dict[str, Any], risk: dict[str, Any]) -> dict[str, Any]:
+    """Validate execution-risk prices while keeping strategy condition prices semantically separate.
+
+    The strategy price rule is a qualification/observation condition. RiskEngine uses its own
+    entry reference (the current analysis price for the live Scanner) to build invalidation,
+    stop and targets. A visual overlap between those two independent layers is therefore not,
+    by itself, an invalid trade plan.
+    """
+    kind = str(price_rule.get("kind") or "UNAVAILABLE")
+    semantic_role = str(price_rule.get("semantic_role") or ("STRATEGY_CONDITION_BAND" if kind == "RANGE" else "STRATEGY_CONDITION_THRESHOLD" if kind in {"ABOVE", "AT_OR_BELOW"} else "STRATEGY_REFERENCE"))
+    raw_entry_low = _number(price_rule.get("range_low"))
+    raw_entry_high = _number(price_rule.get("range_high"))
+    raw_stop_low = _number(risk.get("stop_zone_low"))
+    raw_stop_high = _number(risk.get("stop_zone_high"))
+    entry_low, entry_high = _sorted_pair(raw_entry_low, raw_entry_high)
+    display_entry_low, display_entry_high = _sorted_pair(
+        price_rule.get("display_range_low"), price_rule.get("display_range_high")
+    )
+    entry_reference = _number(risk.get("entry_reference_price"))
+    invalidation = _number(risk.get("invalidation_price"))
+    stop_low, stop_high = _sorted_pair(raw_stop_low, raw_stop_high)
+    target1 = _number(risk.get("target1_price"))
+    target2 = _number(risk.get("target2_price"))
+
+    display_stop_low, display_stop_high = _sorted_pair(
+        _krx_display_price(stop_low), _krx_display_price(stop_high)
+    )
+    display_invalidation = _krx_display_price(invalidation)
+
+    issues: list[dict[str, str]] = []
+    comparable = False
+    relation_message: str | None = None
+    raw_overlap = False
+    semantic_overlap = False
+    display_overlap_only = False
+    classification = "NOT_APPLICABLE"
+
+    raw_named_values = {
+        "전략 가격대 하단": entry_low,
+        "전략 가격대 상단": entry_high,
+        "Risk 진입 기준": entry_reference,
+        "전략 무효화": invalidation,
+        "손절 구간 하단": stop_low,
+        "손절 구간 상단": stop_high,
+        "1차 목표": target1,
+        "2차 목표": target2,
+    }
+    for label, value in raw_named_values.items():
+        if value is not None and value <= 0:
+            issues.append(_issue("NON_POSITIVE_PRICE", "INVALID", f"{label} 가격이 0 이하입니다."))
+
+    if raw_entry_low is not None and raw_entry_high is not None and raw_entry_low > raw_entry_high:
+        issues.append(_issue("CONDITION_RANGE_REVERSED", "INVALID", "전략 조건 가격대의 상·하단이 뒤바뀌었습니다."))
+    if raw_stop_low is not None and raw_stop_high is not None and raw_stop_low > raw_stop_high:
+        issues.append(_issue("STOP_ZONE_REVERSED", "INVALID", "손절 참고 구간의 상·하단이 뒤바뀌었습니다."))
+
+    # Execution-risk self consistency is the actual validity check.
+    if entry_reference is not None:
+        comparable = True
+        if invalidation is not None and invalidation >= entry_reference:
+            issues.append(_issue("INVALIDATION_AT_OR_ABOVE_RISK_ENTRY", "INVALID", "전략 무효화 가격이 리스크 계산 기준가보다 낮지 않습니다."))
+        if stop_high is not None and stop_high >= entry_reference:
+            issues.append(_issue("STOP_AT_OR_ABOVE_RISK_ENTRY", "INVALID", "손절 참고 구간이 리스크 계산 기준가보다 낮지 않습니다."))
+        if target1 is not None and target1 <= entry_reference:
+            issues.append(_issue("TARGET1_AT_OR_BELOW_RISK_ENTRY", "INVALID", "1차 목표가가 리스크 계산 기준가보다 높지 않습니다."))
+    if target1 is not None and target2 is not None:
+        comparable = True
+        if target2 < target1:
+            issues.append(_issue("TARGET2_BELOW_TARGET1", "INVALID", "2차 목표가가 1차 목표가보다 낮습니다."))
+
+    overlap = _range_overlap(entry_low, entry_high, stop_low, stop_high)
+    if kind == "RANGE" and entry_low is not None and entry_high is not None:
+        comparable = True
+        if overlap["low"] is not None and overlap["high"] is not None:
+            raw_overlap = True
+            if semantic_role == "STRATEGY_CONDITION_BAND":
+                semantic_overlap = True
+                issues.append(_issue(
+                    "CONDITION_BAND_STOP_OVERLAP",
+                    "INFO",
+                    "전략 조건 가격대와 손절 참고구간이 겹치지만 두 값은 서로 다른 계산 단계의 기준입니다.",
+                ))
+                relation_message = (
+                    f"전략 조건 가격대와 손절 참고구간이 {overlap['low']:,.0f}~{overlap['high']:,.0f}원에서 겹칩니다. "
+                    "전략 가격대는 조건 충족 범위이고 매수 가능 범위가 아니며, 손절은 리스크 계산 기준가에서 별도로 계산됩니다."
+                )
+            else:
+                issues.append(_issue("ENTRY_STOP_OVERLAP", "WARNING", "실제 진입 가격대와 손절 참고 구간이 겹칩니다."))
+        elif stop_high is not None and stop_high < entry_low:
+            gap = entry_low - stop_high
+            gap_pct = gap / entry_low * 100.0 if entry_low > 0 else None
+            relation_message = (
+                f"손절 참고 상단은 전략 조건 가격대 하단보다 {gap:,.0f}원"
+                + (f" ({gap_pct:.2f}%)" if gap_pct is not None else "")
+                + " 아래입니다."
+            )
+        elif stop_low is not None and stop_low > entry_high:
+            # Still not an execution conflict for a strategy-condition band; it means the
+            # qualification band sits below the hypothetical stop calculated from current price.
+            semantic_overlap = semantic_role == "STRATEGY_CONDITION_BAND"
+            if semantic_overlap:
+                issues.append(_issue(
+                    "CONDITION_BAND_BELOW_STOP_ZONE",
+                    "INFO",
+                    "전략 조건 가격대 전체가 손절 참고구간보다 아래에 있습니다. 서로 다른 기준이므로 자동 오류로 처리하지 않습니다.",
+                ))
+                relation_message = "전략 조건 가격대는 현재 리스크 계획보다 아래에 있습니다. 이 가격대는 매수 가능 범위가 아니라 전략 조건 기준입니다."
+            else:
+                issues.append(_issue("STOP_ZONE_ABOVE_ENTRY_RANGE", "INVALID", "손절 참고 구간이 실제 진입 가격대보다 위에 있습니다."))
+
+        # Invalidation touching a strategy condition band is also semantic context, not an
+        # execution contradiction, as long as invalidation remains below RiskEngine entry.
+        if invalidation is not None and entry_low <= invalidation <= entry_high:
+            if semantic_role == "STRATEGY_CONDITION_BAND":
+                semantic_overlap = True
+                issues.append(_issue("CONDITION_BAND_INVALIDATION_OVERLAP", "INFO", "전략 조건 가격대 안에 전략 무효화 기준이 위치합니다. 두 기준의 역할을 구분해 표시합니다."))
+            else:
+                issues.append(_issue("ENTRY_INVALIDATION_OVERLAP", "WARNING", "실제 진입 가격대와 전략 무효화 가격이 겹칩니다."))
+
+        if (
+            not raw_overlap
+            and display_entry_low is not None
+            and display_stop_high is not None
+            and display_stop_high >= display_entry_low
+        ):
+            display_overlap_only = True
+            issues.append(_issue("DISPLAY_ROUNDING_TOUCH", "INFO", "KRX 표시 단위 반올림 후 전략 가격대와 손절 가격이 같거나 겹쳐 보입니다."))
+
+    elif entry_reference is not None:
+        if stop_high is not None and stop_high < entry_reference:
+            gap = entry_reference - stop_high
+            gap_pct = gap / entry_reference * 100.0 if entry_reference > 0 else None
+            relation_message = (
+                f"손절 참고 상단은 리스크 계산 기준가보다 {gap:,.0f}원"
+                + (f" ({gap_pct:.2f}%)" if gap_pct is not None else "")
+                + " 아래입니다."
+            )
+        elif invalidation is not None and invalidation < entry_reference:
+            gap = entry_reference - invalidation
+            gap_pct = gap / entry_reference * 100.0 if entry_reference > 0 else None
+            relation_message = (
+                f"전략 무효화 가격은 리스크 계산 기준가보다 {gap:,.0f}원"
+                + (f" ({gap_pct:.2f}%)" if gap_pct is not None else "")
+                + " 아래입니다."
+            )
+
+    severities = {item["severity"] for item in issues}
+    if "INVALID" in severities:
+        status = "INVALID"
+        classification = "RISK_PLAN_INVALID"
+        message = "가격 계획을 다시 확인해야 합니다. 리스크 계산 기준가·손절·목표 가격 관계에 맞지 않는 값이 있습니다."
+    elif "WARNING" in severities:
+        status = "WARNING"
+        classification = "EXECUTION_PRICE_CONFLICT"
+        message = "가격 계획을 다시 확인해야 합니다. 실제 실행 가격 관계에 충돌 가능성이 있습니다."
+    elif semantic_overlap:
+        status = "OK"
+        classification = "STRATEGY_CONDITION_BAND_OVERLAP"
+        message = "전략 조건 가격대와 손절 참고구간은 서로 다른 목적의 값입니다. 겹침 자체는 리스크 계산 오류가 아닙니다."
+    elif display_overlap_only:
+        status = "OK"
+        classification = "DISPLAY_ROUNDING_TOUCH"
+        message = "표시 반올림 후 가격이 닿아 보이지만 내부 계산값은 분리되어 있습니다."
+    elif comparable:
+        status = "OK"
+        classification = "SEPARATED"
+        message = relation_message or "리스크 계산 기준가·손절·목표 가격 관계에 충돌이 없습니다."
+    else:
+        status = "NOT_APPLICABLE"
+        classification = "NOT_APPLICABLE"
+        message = "현재 전략에서는 가격 관계를 안전하게 비교할 기준이 충분하지 않습니다."
+
+    root_summary = None
+    if classification == "STRATEGY_CONDITION_BAND_OVERLAP":
+        root_summary = (
+            "전략 가격대는 Strategy 조건을 환산한 범위이고 RiskEngine은 별도의 진입 기준가로 손절을 계산합니다. "
+            "따라서 두 범위는 수학적으로 겹칠 수 있으며 같은 매매 단계의 가격으로 해석하면 안 됩니다."
+        )
+    elif classification == "RISK_PLAN_INVALID":
+        root_summary = "RiskEngine 내부의 진입 기준가·손절·목표 관계 자체를 다시 확인해야 합니다."
+    elif classification == "DISPLAY_ROUNDING_TOUCH":
+        root_summary = "원시 계산값은 분리되어 있으나 KRX 표시단위 반올림 때문에 화면에서 닿아 보입니다."
+
+    return {
+        "status": status,
+        "classification": classification,
+        "has_conflict": status in {"WARNING", "INVALID"},
+        "message": message,
+        "relation_message": relation_message,
+        "root_cause_summary": root_summary,
+        "issue_codes": [item["code"] for item in issues],
+        "issues": issues,
+        "raw_overlap": raw_overlap,
+        "semantic_overlap": semantic_overlap,
+        "display_overlap_only": display_overlap_only,
+        "overlap": overlap,
+        "raw": {
+            "condition_range_low": entry_low,
+            "condition_range_high": entry_high,
+            # Compatibility aliases retained for older frontend/debug tools.
+            "entry_range_low": entry_low,
+            "entry_range_high": entry_high,
+            "risk_entry_reference": entry_reference,
+            "invalidation_price": invalidation,
+            "stop_zone_low": stop_low,
+            "stop_zone_high": stop_high,
+            "target1_price": target1,
+            "target2_price": target2,
+        },
+        "display": {
+            "condition_range_low": display_entry_low,
+            "condition_range_high": display_entry_high,
+            "entry_range_low": display_entry_low,
+            "entry_range_high": display_entry_high,
+            "invalidation_price": display_invalidation,
+            "stop_zone_low": display_stop_low,
+            "stop_zone_high": display_stop_high,
+        },
+        "sources": {
+            "strategy_price": str(price_rule.get("basis") or price_rule.get("label") or kind),
+            "entry": "RiskEngine entry_price (실행 리스크 기준가)",
+            "risk_entry": "RiskEngine entry_price (실행 리스크 기준가)",
+            "stop": str(risk.get("structural_anchor_label") or risk.get("basis_label") or "RiskEngine stop zone"),
+            "invalidation": "RiskEngine invalidation_price",
+            "targets": "RiskEngine target prices",
+        },
+    }
 
 
 def _pct_gap(current: float | None, target: float | None) -> float | None:
@@ -463,10 +760,14 @@ def _risk_payload(risk_plan: Any, *, decision_reason: str | None) -> dict[str, A
         "display_invalidation_price": _krx_display_price(invalidation),
         "stop_zone_low": _number(_get(risk_plan, "stop_zone_low")),
         "stop_zone_high": _number(_get(risk_plan, "stop_zone_high")),
+        "display_stop_zone_low": _krx_display_price(_number(_get(risk_plan, "stop_zone_low"))),
+        "display_stop_zone_high": _krx_display_price(_number(_get(risk_plan, "stop_zone_high"))),
         "target1_price": target1,
         "display_target1_price": _krx_display_price(target1),
+        "target1_basis": _get(risk_plan, "target1_basis"),
         "target2_price": target2,
         "display_target2_price": _krx_display_price(target2),
+        "target2_basis": _get(risk_plan, "target2_basis"),
         "risk_pct": risk_pct,
         "reward1_pct": reward1,
         "reward2_pct": reward2,
@@ -498,11 +799,31 @@ def build_entry_risk_guide(
     current_state = current_state or {}
     current_price = _number(_get(data, "current_price"))
     decision_reason = str(current_state.get("decision_reason") or "") or None
-    price = _display_price_rule(_price_rule(strategy, data, technical, condition_state))
+    price = _price_rule_semantics(_display_price_rule(_price_rule(strategy, data, technical, condition_state)))
     volume = _volume_rule(data, condition_state)
     trend_strength = _trend_strength(data, condition_state)
     rebound = _rebound_rule(strategy, data, entry_timing)
     risk = _risk_payload(risk_plan, decision_reason=decision_reason)
+    risk["target1_audit"] = build_current_target1_audit(
+        risk_plan=risk_plan,
+        data=data,
+        technical=technical,
+    )
+    price_consistency = _price_plan_consistency(price, risk)
+    price_consistency["trace_context"] = {
+        "strategy": str(_get(strategy, "value", strategy) or ""),
+        "analysis_date": as_of_date,
+        "decision_reason": decision_reason,
+        "current_price": current_price,
+        "strategy_rule_status": price.get("status"),
+        "strategy_rule_basis": price.get("basis"),
+        "strategy_rule_role": price.get("semantic_role"),
+        "risk_status": risk.get("status"),
+        "risk_reference_only": risk.get("reference_only"),
+        "risk_entry_reference": risk.get("entry_reference_price"),
+        "risk_structural_anchor": risk.get("structural_anchor"),
+        "risk_structural_anchor_label": risk.get("structural_anchor_label"),
+    }
 
     if decision_reason == "ENTRY_CANDIDATE":
         action_status = "ENTRY_CANDIDATE"
@@ -550,6 +871,7 @@ def build_entry_risk_guide(
         "trend_strength": trend_strength,
         "rebound_rule": rebound,
         "risk": risk,
+        "price_consistency": price_consistency,
         "action": {
             "status": action_status,
             "title": action_title,

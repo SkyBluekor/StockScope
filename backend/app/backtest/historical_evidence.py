@@ -6,6 +6,7 @@ from typing import Any
 
 from app.backtest.models import BacktestConfig
 from app.backtest.multi_strategy import MultiStrategyBacktestEngine
+from app.backtest.target1_audit import build_historical_target1_audit
 from app.strategy.models import StrategyName
 
 
@@ -274,6 +275,11 @@ def unavailable_historical_evidence(*, validation_start: date, validation_end: d
         "exit_counts": {"stop": 0, "target1": 0, "time_exit": 0, "other": 0},
         "market_regime_summary": [],
         "warnings": reasons,
+        "target1_audit": {
+            "available": False,
+            "sample_count": 0,
+            "guardrail": "3년 검증 데이터가 준비되지 않아 Target1 현실성 감사도 실행하지 않았습니다.",
+        },
         "guardrail": "과거 검증 미완료를 현재 전략 조건 실패로 취급하지 않습니다.",
     }
 
@@ -360,4 +366,10 @@ def build_historical_evidence(
     evidence["strategy"] = strategy_name.value
     evidence["exit_policy"] = dict(strategy_row.get("exit_policy") or {})
     evidence["historical_policy"] = dict((strategy_row.get("exit_policy") or {}).get("historical_policy") or {})
+    evidence["target1_audit"] = build_historical_target1_audit(
+        trades=trades,
+        stock_rows=rows,
+        max_holding_days=config.max_holding_days,
+        round_trip_cost_pct=config.round_trip_cost_pct,
+    )
     return evidence

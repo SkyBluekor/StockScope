@@ -48,21 +48,21 @@ export function buildEntryPricePosition(
 
   if (rule.kind === "RANGE" && finite(rule.range_low) && finite(rule.range_high)) {
     if (currentPrice >= rule.range_low && currentPrice <= rule.range_high) {
-      return { state: "INSIDE", message: "현재가가 관심 구간 안에 있습니다." };
+      return { state: "INSIDE", message: "현재가가 전략 조건 가격대 안에 있습니다." };
     }
     if (currentPrice < rule.range_low) {
       const delta = rule.range_low - currentPrice;
       const gap = relativePct(currentPrice, rule.range_low);
       return {
         state: "BELOW",
-        message: `관심 구간까지 ${won(delta)} 남았습니다.${gap == null ? "" : ` (+${pct(gap)})`}`,
+        message: `전략 조건 가격대까지 ${won(delta)} 남았습니다.${gap == null ? "" : ` (+${pct(gap)})`}`,
       };
     }
     const delta = currentPrice - rule.range_high;
     const gap = relativePct(rule.range_high, currentPrice);
     return {
       state: "ABOVE",
-      message: `관심 구간보다 ${won(delta)} 높습니다.${gap == null ? "" : ` (+${pct(gap)})`}`,
+      message: `전략 조건 가격대보다 ${won(delta)} 높습니다.${gap == null ? "" : ` (+${pct(gap)})`}`,
     };
   }
 

@@ -661,17 +661,46 @@ def _action_payload(action: str, *, label: str, change_details: list[dict[str, s
     }
 
 
-def select_strategy(strategy_rows: list[dict[str, Any]], *, as_of_date: str, market_regime: str) -> dict[str, Any]:
-    ranked: list[dict[str, Any]] = []
-    for row in strategy_rows:
-        hist = row["historical_fit"]
-        current = row["current"]
-        history_score = float(hist.get("internal_score") or 0.0)
-        current_score = float(current.get("internal_score") or 0.0)
-        sample_penalty = 20.0 if hist.get("status") == "INSUFFICIENT" else 8.0 if hist.get("status") == "WEAK" else 0.0
-        selector_score = history_score * 0.55 + current_score * 0.45 - sample_penalty
-        ranked.append({**row, "selector_score": round(selector_score, 2)})
+def _historical_selector_score(row: dict[str, Any]) -> float:
+    hist = row["historical_fit"]
+    current = row["current"]
+    history_score = float(hist.get("internal_score") or 0.0)
+    current_score = float(current.get("internal_score") or 0.0)
+    sample_penalty = 20.0 if hist.get("status") == "INSUFFICIENT" else 8.0 if hist.get("status") == "WEAK" else 0.0
+    return round(history_score * 0.55 + current_score * 0.45 - sample_penalty, 2)
 
+
+def _current_decision_key(row: dict[str, Any]) -> tuple[float, ...]:
+    """Current action is decided by today's state first; history only breaks ties.
+
+    Scanner already uses current_readiness(). Multi-strategy comparison must not let a
+    historically strong WAIT strategy replace a currently READY strategy and then
+    publish the WAIT strategy's action as the stock-wide current decision.
+    """
+    current = row["current"]
+    status = str(current.get("status") or "NOT_READY")
+    status_rank = {
+        "READY": 5.0,
+        "WATCH": 4.0,
+        "NOT_READY": 3.0,
+        "CAUTION": 2.0,
+        "BLOCKED": 1.0,
+    }.get(status, 0.0)
+    risk_safe = 1.0 if not bool(current.get("risk_warning")) else 0.0
+    complete = 1.0 if bool(current.get("conditions_complete")) else 0.0
+    current_score = float(current.get("internal_score") or 0.0)
+    hist = row["historical_fit"]
+    history_score = float(hist.get("internal_score") or 0.0)
+    trades = float(row.get("historical_metrics", {}).get("trades") or 0.0)
+    return (status_rank, risk_safe, complete, current_score, history_score, trades)
+
+
+def select_strategy(strategy_rows: list[dict[str, Any]], *, as_of_date: str, market_regime: str) -> dict[str, Any]:
+    # Keep the legacy blended ordering as a *comparison/history* ranking only.
+    # It must no longer decide the stock-wide current action.
+    ranked: list[dict[str, Any]] = [
+        {**row, "selector_score": _historical_selector_score(row)} for row in strategy_rows
+    ]
     ranked.sort(key=lambda item: (item["selector_score"], item["historical_metrics"].get("trades") or 0), reverse=True)
     for rank, row in enumerate(ranked, start=1):
         row["rank"] = rank
@@ -697,9 +726,17 @@ def select_strategy(strategy_rows: list[dict[str, Any]], *, as_of_date: str, mar
             "recheck_label": "최신 확정 데이터가 나온 뒤 다시 분석",
             "as_of_date": as_of_date,
             "market_regime": market_regime,
+            "historical_best_strategy": None,
+            "historical_best_easy_name": None,
+            "historical_best_label": None,
+            "selection_rule": "CURRENT_STATE_FIRST",
         }
 
-    top = ranked[0]
+    historical_best = ranked[0]
+    # Current decision uses the same current_readiness output that Scanner uses.
+    current_ranked = sorted(strategy_rows, key=_current_decision_key, reverse=True)
+    top = current_ranked[0]
+
     hist_status = top["historical_fit"]["status"]
     current = top["current"]
     readiness = current["status"]
@@ -718,22 +755,13 @@ def select_strategy(strategy_rows: list[dict[str, Any]], *, as_of_date: str, mar
     risk_warning = bool(current.get("risk_warning"))
     warnings = list(current.get("warnings") or [])
 
-    if hist_status == "INSUFFICIENT":
-        action = "NEEDS_VALIDATION"
-        action_label = "추가 검증 필요"
-        headline = f"{guide['easy_name']} 방법이 가장 앞서지만 과거 사례가 아직 부족합니다."
-        reason = "현재 조건은 비교할 수 있지만 과거 거래 사례가 충분하지 않아 이 전략이 실제로 더 낫다고 확정하지 않습니다."
-        decision_reason = "INSUFFICIENT_DATA"
-    elif hist_status == "WEAK":
-        action = "NO_TRADE"
-        action_label = "현재 진입하지 않음"
-        headline = f"{guide['easy_name']} 방법이 상대적으로 앞서도 지금 적극적으로 사용할 근거는 부족합니다."
-        reason = "가장 높은 후보라도 과거 검증 결과가 충분히 좋지 않아 현재 신규 진입 전략으로 추천하지 않습니다."
-        decision_reason = "HISTORICAL_EVIDENCE_WEAK"
-    elif missing > 0:
+    # Current state always has priority over historical fit. Historical evidence is
+    # explanation/tie-break information unless a separately defined product blocker
+    # exists (none is introduced by this hotfix).
+    if missing > 0:
         action = "WAIT"
         action_label = "아직 진입 조건 부족"
-        headline = f"{guide['easy_name']} 방법이 가장 적합하지만 현재 {total}개 조건 중 {missing}개가 아직 부족합니다."
+        headline = f"{guide['easy_name']} 방법이 현재 조건에 가장 가깝지만 {total}개 조건 중 {missing}개가 아직 부족합니다."
         reason = f"현재 전략 조건이 {int(current.get('passed') or 0)}/{total}만 충족되어 아직 신규 진입 후보가 아닙니다."
         if risk_warning:
             reason += " 추가로 손절·목표 위험에도 경고가 있어 다음 분석에서 함께 다시 확인합니다."
@@ -747,21 +775,31 @@ def select_strategy(strategy_rows: list[dict[str, Any]], *, as_of_date: str, mar
     elif readiness == "READY":
         action = "ENTRY_CANDIDATE"
         action_label = "진입 후보"
-        headline = f"현재는 {guide['easy_name']} 방법을 가장 먼저 검토할 수 있습니다."
-        reason = "과거 근거와 현재 조건, 손절·목표 위험을 함께 봤을 때 다른 방법보다 우선순위가 높습니다."
+        headline = f"현재는 {guide['easy_name']} 방법을 먼저 검토할 수 있습니다."
+        if hist_status == "INSUFFICIENT":
+            reason = "현재 전략 조건과 위험 기준은 충족했습니다. 과거 사례는 아직 부족하므로 현재 판단과 과거 근거를 분리해서 확인하세요."
+        elif hist_status == "WEAK":
+            reason = "현재 전략 조건과 위험 기준은 충족했습니다. 다만 과거 검증은 약하므로 과거 근거를 별도 주의사항으로 확인하세요."
+        else:
+            reason = "현재 전략 조건과 손절·목표 위험 기준을 먼저 충족했고, 과거 근거는 우선순위를 비교하는 보조 근거로 사용했습니다."
         decision_reason = "ENTRY_CANDIDATE"
     else:
         action = "WAIT"
         action_label = "아직 진입 조건 부족"
-        headline = f"{guide['easy_name']} 방법이 가장 적합하지만 아직 진입 준비가 완성되지 않았습니다."
+        headline = f"{guide['easy_name']} 방법이 현재 조건에 가장 가깝지만 아직 진입 준비가 완성되지 않았습니다."
         reason = current.get("summary") or "다음 확정 데이터에서 현재 조건과 위험을 다시 확인합니다."
         decision_reason = current.get("decision_reason") or "ENTRY_CONDITIONS_MISSING"
 
     additional_warnings: list[str] = []
     if decision_reason != "RISK_BLOCKED":
         additional_warnings.extend(warnings)
+    if action == "ENTRY_CANDIDATE" and hist_status == "INSUFFICIENT":
+        additional_warnings.append("과거 검증 표본이 아직 충분하지 않습니다. 현재 진입 조건 충족 여부와 별도로 확인하세요.")
+    elif action == "ENTRY_CANDIDATE" and hist_status == "WEAK":
+        additional_warnings.append("현재 조건은 충족했지만 이 전략의 과거 검증 결과는 약합니다.")
 
     action_payload = _action_payload(action, label=label, change_details=change_details)
+    hist_guide = strategy_guide(historical_best["strategy"])
     return {
         "strategy": top["strategy"],
         "strategy_label": label,
@@ -781,6 +819,13 @@ def select_strategy(strategy_rows: list[dict[str, Any]], *, as_of_date: str, mar
         "recheck_label": "최신 확정 데이터가 나온 뒤 다시 분석",
         "as_of_date": as_of_date,
         "market_regime": market_regime,
-        "guardrail": "조건 하나가 충족됐다고 바로 매수 판단으로 바꾸지 않습니다. StockScope가 다른 조건과 손절·목표 위험을 다시 종합 평가하며, 이 결과는 미래 수익 확률이 아닙니다.",
+        "guardrail": "현재 진입 가능 여부는 현재 전략 조건과 위험 기준을 먼저 사용합니다. 과거 성과는 현재 FAIL을 PASS로 바꾸지 않으며 미래 수익 확률이 아닙니다.",
+        "historical_best_strategy": historical_best["strategy"],
+        "historical_best_easy_name": hist_guide["easy_name"],
+        "historical_best_label": historical_best["label"],
+        "historical_best_current_status": historical_best["current"].get("status"),
+        "historical_best_current_label": historical_best["current"].get("label"),
+        "historical_best_passed": historical_best["current"].get("passed"),
+        "historical_best_total": historical_best["current"].get("total"),
+        "selection_rule": "CURRENT_STATE_FIRST",
     }
-

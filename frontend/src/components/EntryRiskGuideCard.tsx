@@ -1,6 +1,5 @@
 import type { ConcreteEntryRiskGuide } from "../services/api";
 import { buildEntryPricePosition } from "./entryPricePosition";
-import ProfitProtectionGuide from "./ProfitProtectionGuide";
 
 type Props = {
   guide: ConcreteEntryRiskGuide;
@@ -36,30 +35,20 @@ function ratio(value: number | null | undefined) {
   return `${value.toFixed(2)}배`;
 }
 
-function userFacingText(value: string | null | undefined) {
-  if (!value) return value ?? "";
-  const replacements: Array<[string, string]> = [
-    ["Strategy/Risk Engine", "전략/위험 관리 기준"],
-    ["Risk Engine", "위험 관리 기준"],
-    ["Target1", "1차 목표가"],
-    ["Target2", "2차 목표가"],
-    ["Exit 정책", "매도 기준"],
-    ["Production", "현재 실제 적용"],
-  ];
-  return replacements.reduce((text, [from, to]) => text.split(from).join(to), value);
-}
-
-function currentRelativePct(current: number | null | undefined, target: number | null | undefined) {
-  if (current == null || target == null || !Number.isFinite(current) || !Number.isFinite(target) || current === 0) return null;
-  return (target - current) / current * 100;
-}
-
 function goalPositionText(current: number | null | undefined, target: number | null | undefined, label: string) {
   if (current == null || target == null || !Number.isFinite(current) || !Number.isFinite(target) || current <= 0) return `${label} 계산 불가`;
-  if (current > target) return `${label}를 이미 넘어섰습니다.`;
+  if (current > target) return `${label}${label === "2차 확장 목표" ? "도" : "를"} 이미 넘어섰습니다.`;
   if (current === target) return `${label}에 도달했습니다.`;
   const gap = (target - current) / current * 100;
   return `현재가 대비 +${gap.toFixed(1)}%`;
+}
+
+function targetBasisText(guide: ConcreteEntryRiskGuide) {
+  const raw = String(guide.risk.target1_audit?.target1_basis ?? guide.risk.target1_basis ?? "");
+  if (raw.includes("저항")) return "최근 저항";
+  if (raw.includes("20일") && raw.includes("고점")) return "20일 고점";
+  if (raw.includes("1.5R")) return "1.5R 손익 구조";
+  return raw || "근거 확인";
 }
 
 function priceRuleText(guide: ConcreteEntryRiskGuide) {
@@ -80,15 +69,39 @@ function volumeRuleText(guide: ConcreteEntryRiskGuide) {
   return `${ratio(rule.required_ratio)} 이상`;
 }
 
+
+function stopZoneText(guide: ConcreteEntryRiskGuide) {
+  const risk = guide.risk;
+  const low = risk.display_stop_zone_low ?? risk.stop_zone_low;
+  const high = risk.display_stop_zone_high ?? risk.stop_zone_high;
+  if (low == null && high == null) return "-";
+  if (low != null && high != null) {
+    if (Math.abs(low - high) < 0.000001) return price(low);
+    return `${price(low)} ~ ${price(high)}`;
+  }
+  return price(low ?? high);
+}
+
+function consistencyNotice(guide: ConcreteEntryRiskGuide) {
+  const audit = guide.price_consistency;
+  if (!audit || audit.status === "NOT_APPLICABLE") return null;
+  const semanticContext = audit.classification === "STRATEGY_CONDITION_BAND_OVERLAP" || audit.classification === "DISPLAY_ROUNDING_TOUCH";
+  const tone = audit.status === "INVALID" ? "invalid" : audit.status === "WARNING" ? "warning" : semanticContext ? "context" : "ok";
+  const text = audit.status === "OK" ? (audit.relation_message ?? audit.message) : audit.message;
+  const title = audit.status === "INVALID" || audit.status === "WARNING" ? "가격 계획 확인" : semanticContext ? "가격 기준 구분" : "가격 관계";
+  return <div className={`price-plan-consistency ${tone}`}><strong>{title}</strong><span>{text}</span></div>;
+}
+
 function compactPricePlan(guide: ConcreteEntryRiskGuide) {
   const risk = guide.risk;
   const position = buildEntryPricePosition(guide.current_price, guide.price_rule);
-  const stopPct = currentRelativePct(guide.current_price, risk.invalidation_price);
+  const policy = guide.historical_policy;
+
   return (
     <section className="concrete-guide-card compact scanner-price-plan">
       <div className="scanner-price-plan-head">
         <div>
-          <span>가격 계획</span>
+          <span>가격 기준</span>
           <strong>{displayPrice(guide.current_price, guide.display_current_price)}</strong>
           <small>현재 확정 종가</small>
         </div>
@@ -100,33 +113,45 @@ function compactPricePlan(guide: ConcreteEntryRiskGuide) {
 
       <div className="scanner-price-plan-grid">
         <article>
-          <small>진입 참고</small>
+          <small>{guide.price_rule.user_label ?? "전략 가격 기준"}</small>
           <strong>{priceRuleText(guide)}</strong>
-          <span>{guide.price_rule.label}</span>
+          <span>{guide.price_rule.semantic_note ?? guide.price_rule.label}</span>
         </article>
 
         <article className="price-plan-stop">
-          <small>손절 참고</small>
-          <strong>{displayPrice(risk.invalidation_price, risk.display_invalidation_price)}</strong>
-          <span>{stopPct == null ? "현재 위험 관리 기준" : `현재가 대비 ${pct(stopPct)}`}</span>
-          {rawPriceNote(risk.invalidation_price, risk.display_invalidation_price) && <b>{rawPriceNote(risk.invalidation_price, risk.display_invalidation_price)}</b>}
+          <small>손절 참고구간</small>
+          <strong>{stopZoneText(guide)}</strong>
+          <span>Risk Engine의 손실 제한 참고 구간</span>
         </article>
 
         <article className="price-plan-target">
-          <small>1차 목표가</small>
+          <small>1차 목표 · {targetBasisText(guide)}</small>
           <strong>{displayPrice(risk.target1_price, risk.display_target1_price)}</strong>
-          <span>{goalPositionText(guide.current_price, risk.target1_price, "1차 목표가")}</span>
+          <span>{goalPositionText(guide.current_price, risk.target1_price, "1차 목표")}</span>
           {risk.rr1 != null && <b>손익비 1 : {risk.rr1.toFixed(2)}</b>}
         </article>
 
         <article className="price-plan-target2">
-          <small>2차 목표가</small>
+          <small>{policy?.target2_label ?? "2차 확장 목표"}</small>
           <strong>{displayPrice(risk.target2_price, risk.display_target2_price)}</strong>
-          <span>{goalPositionText(guide.current_price, risk.target2_price, "2차 목표가")}</span>
+          <span>{goalPositionText(guide.current_price, risk.target2_price, policy?.target2_label ?? "2차 확장 목표")}</span>
           {risk.rr2 != null && <b>손익비 1 : {risk.rr2.toFixed(2)}</b>}
         </article>
       </div>
-      <ProfitProtectionGuide guide={guide} compact />
+
+      {risk.target1_audit?.formula_status === "MISMATCH" && <div className="price-plan-consistency invalid"><strong>1차 목표 계산 확인</strong><span>{risk.target1_audit.message}</span></div>}
+      {consistencyNotice(guide)}
+      <div className="scanner-price-invalidation">
+        <strong>전략 무효화 기준</strong>
+        <span>{displayPrice(risk.invalidation_price, risk.display_invalidation_price)}</span>
+        <small>현재 전략의 전제가 깨지는 기준으로, 손절 참고구간과 같은 개념이 아닙니다.</small>
+      </div>
+
+      <div className="scanner-price-plan-policy">
+        <strong>과거 검증 기준</strong>
+        <span>{policy?.label ?? "1차 목표 도달 시 전량 종료"}</span>
+        {policy && !policy.target2_included && <small>2차 확장 목표는 현재 과거 성과 계산에는 포함되지 않습니다.</small>}
+      </div>
     </section>
   );
 }
@@ -154,9 +179,9 @@ export default function EntryRiskGuideCard({ guide, compact = false }: Props) {
 
       <div className="concrete-guide-grid">
         <article>
-          <small>가격 타이밍</small>
+          <small>{rule.user_label ?? "전략 가격 조건"}</small>
           <strong>{priceRuleText(guide)}</strong>
-          <span>{rule.label}</span>
+          <span>{rule.semantic_note ?? rule.label}</span>
           {rule.gap_pct != null && rule.gap_pct !== 0 && <b className="guide-gap">현재가 대비 {pct(rule.gap_pct)}</b>}
           {rule.gap_pct === 0 && <b className="guide-ok">현재 가격 조건 충족</b>}
         </article>
@@ -172,23 +197,30 @@ export default function EntryRiskGuideCard({ guide, compact = false }: Props) {
         </article>
 
         <article>
-          <small>손절 참고</small>
-          <strong>{displayPrice(risk.invalidation_price, risk.display_invalidation_price)}</strong>
-          <span>{[rawPriceNote(risk.invalidation_price, risk.display_invalidation_price), risk.risk_pct != null ? `참고 진입가 대비 -${Math.abs(risk.risk_pct).toFixed(1)}%` : "현재 위험 관리 기준"].filter(Boolean).join(" · ")}</span>
-          <b>{risk.structural_anchor_label || "전략 무효 기준"}</b>
+          <small>손절 참고구간</small>
+          <strong>{stopZoneText(guide)}</strong>
+          <span>{risk.risk_pct != null ? `참고 진입가 대비 약 -${Math.abs(risk.risk_pct).toFixed(1)}%` : "현재 Risk Engine 기준"}</span>
+          <b>실제 손실 제한 참고 구간</b>
         </article>
 
         <article>
-          <small>1차 목표가</small>
+          <small>전략 무효화 기준</small>
+          <strong>{displayPrice(risk.invalidation_price, risk.display_invalidation_price)}</strong>
+          <span>{rawPriceNote(risk.invalidation_price, risk.display_invalidation_price) ?? "전략 전제가 깨지는 가격 기준"}</span>
+          <b>{risk.structural_anchor_label || "구조적 무효 기준"}</b>
+        </article>
+
+        <article>
+          <small>1차 목표 · {targetBasisText(guide)}</small>
           <strong>{displayPrice(risk.target1_price, risk.display_target1_price)}</strong>
           <span>{[rawPriceNote(risk.target1_price, risk.display_target1_price), risk.reward1_pct != null ? `참고 진입가 대비 ${pct(risk.reward1_pct)}` : "계산 가능한 목표가 없음"].filter(Boolean).join(" · ")}</span>
           {risk.rr1 != null && <b>손익비 1 : {risk.rr1.toFixed(2)}</b>}
         </article>
 
         <article>
-          <small>2차 목표가</small>
+          <small>{guide.historical_policy?.target2_label ?? "2차 확장 목표"}</small>
           <strong>{displayPrice(risk.target2_price, risk.display_target2_price)}</strong>
-          <span>{[rawPriceNote(risk.target2_price, risk.display_target2_price), risk.reward2_pct != null ? `참고 진입가 대비 ${pct(risk.reward2_pct)}` : "2차 목표가 계산 불가"].filter(Boolean).join(" · ")}</span>
+          <span>{[rawPriceNote(risk.target2_price, risk.display_target2_price), risk.reward2_pct != null ? `참고 진입가 대비 ${pct(risk.reward2_pct)}` : "확장 목표 계산 불가"].filter(Boolean).join(" · ")}</span>
           {risk.rr2 != null && <b>손익비 1 : {risk.rr2.toFixed(2)}</b>}
         </article>
 
@@ -200,7 +232,8 @@ export default function EntryRiskGuideCard({ guide, compact = false }: Props) {
         </article>
       </div>
 
-      <ProfitProtectionGuide guide={guide} />
+      {risk.target1_audit?.formula_status === "MISMATCH" && <div className="price-plan-consistency invalid"><strong>1차 목표 계산 확인</strong><span>{risk.target1_audit.message}</span></div>}
+      {consistencyNotice(guide)}
 
       <div className="concrete-guide-note">
         <div>
@@ -208,7 +241,10 @@ export default function EntryRiskGuideCard({ guide, compact = false }: Props) {
           <span>{risk.invalidation_price != null ? `${displayPrice(risk.invalidation_price, risk.display_invalidation_price)} 아래에서는 현재 전략의 전제가 깨진 것으로 봅니다.` : "현재 데이터만으로 전략 무효 가격을 계산하지 못했습니다."}</span>
         </div>
         {risk.needs_recheck && <p><b>다시 계산 필요</b> {risk.recheck_message}</p>}
-        <p>{userFacingText(guide.guardrail)}</p>
+        {guide.historical_policy && (
+          <p className="historical-policy-note"><b>과거 검증 기준</b> {guide.historical_policy.label}. {guide.historical_policy.target2_included ? "2차 목표도 과거 성과 계산에 포함됩니다." : "2차 확장 목표는 현재 과거 성과 계산에는 포함되지 않습니다."}</p>
+        )}
+        <p>{guide.guardrail}</p>
       </div>
     </section>
   );

@@ -5,9 +5,9 @@ function equal(actual: unknown, expected: unknown, label: string) {
 }
 
 const range = { kind: "RANGE", label: "20일 평균 가격 근처 구간", range_low: 95, range_high: 105, trigger_price: null, reference_price: 100 };
-equal(buildEntryPricePosition(100, range).message, "현재가가 관심 구간 안에 있습니다.", "range inside");
-equal(buildEntryPricePosition(90, range).message, "관심 구간까지 5원 남았습니다. (+5.6%)", "range below");
-equal(buildEntryPricePosition(110, range).message, "관심 구간보다 5원 높습니다. (+4.8%)", "range above");
+equal(buildEntryPricePosition(100, range).message, "현재가가 전략 조건 가격대 안에 있습니다.", "range inside");
+equal(buildEntryPricePosition(90, range).message, "전략 조건 가격대까지 5원 남았습니다. (+5.6%)", "range below");
+equal(buildEntryPricePosition(110, range).message, "전략 조건 가격대보다 5원 높습니다. (+4.8%)", "range above");
 
 const breakout = { kind: "ABOVE", label: "20일 고점 돌파 확인 가격", range_low: null, range_high: null, trigger_price: 100, reference_price: 100 };
 equal(buildEntryPricePosition(98, breakout).message, "돌파 기준까지 2원 남았습니다. (+2.0%)", "breakout below");

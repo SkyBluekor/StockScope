@@ -21,6 +21,7 @@ export type ScannerSessionSnapshot = {
   scrollY: number;
   showMore: boolean;
   expandedEvidenceIds: string[];
+  selectedCandidateKey?: string | null;
 };
 
 let memorySnapshot: ScannerSessionSnapshot | null = null;
@@ -95,6 +96,7 @@ export function readScannerSession(storage: StorageLike | null = browserSessionS
           expandedEvidenceIds: Array.isArray(parsed.expandedEvidenceIds)
             ? parsed.expandedEvidenceIds.filter((value): value is string => typeof value === "string")
             : [],
+          selectedCandidateKey: typeof parsed.selectedCandidateKey === "string" ? parsed.selectedCandidateKey : null,
         };
         memorySnapshot = restored;
         return restored;

@@ -1,4 +1,3 @@
-import EntryRiskGuideCard from "./EntryRiskGuideCard";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   clearScannerSession,
@@ -98,7 +97,143 @@ function conditionStatusLabel(candidate: ScannerCandidate) {
   return `${passed}/${total} 충족 · 부족 ${missing}개`;
 }
 
-function CandidateCard({
+function candidateKey(candidate: ScannerCandidate) {
+  return evidenceKey(candidate);
+}
+
+function priceText(value: number | null | undefined) {
+  return value == null || !Number.isFinite(value) ? "-" : `${formatNumber(value)}원`;
+}
+
+function priceRangeText(low: number | null | undefined, high: number | null | undefined) {
+  if (low == null && high == null) return "-";
+  if (low != null && high != null) {
+    if (Math.abs(low - high) < 0.000001) return priceText(low);
+    return `${formatNumber(low)}~${formatNumber(high)}원`;
+  }
+  return priceText(low ?? high);
+}
+
+function interestPriceText(candidate: ScannerCandidate) {
+  const rule = candidate.entry_risk_guide?.price_rule;
+  if (!rule) return "-";
+  if (rule.kind === "RANGE") {
+    return priceRangeText(rule.display_range_low ?? rule.range_low, rule.display_range_high ?? rule.range_high);
+  }
+  const trigger = rule.display_trigger_price ?? rule.trigger_price;
+  const reference = rule.display_reference_price ?? rule.reference_price;
+  if (rule.kind === "ABOVE" && trigger != null) return `${formatNumber(trigger)}원 이상`;
+  if (rule.kind === "AT_OR_BELOW" && trigger != null) return `${formatNumber(trigger)}원 이하`;
+  return priceText(trigger ?? reference);
+}
+
+
+function strategyPriceLabel(candidate: ScannerCandidate) {
+  const rule = candidate.entry_risk_guide?.price_rule;
+  if (!rule) return "전략 가격";
+  if (rule.user_label) return rule.user_label;
+  if (rule.kind === "RANGE") return "전략 조건 가격대";
+  return "전략 조건 기준가";
+}
+
+function stopPriceText(candidate: ScannerCandidate) {
+  const risk = candidate.entry_risk_guide?.risk;
+  return risk ? priceRangeText(risk.display_stop_zone_low ?? risk.stop_zone_low, risk.display_stop_zone_high ?? risk.stop_zone_high) : "-";
+}
+
+function targetPriceText(candidate: ScannerCandidate, level: 1 | 2) {
+  const risk = candidate.entry_risk_guide?.risk;
+  if (!risk) return "-";
+  const value = level === 1
+    ? (risk.display_target1_price ?? risk.target1_price)
+    : (risk.display_target2_price ?? risk.target2_price);
+  return priceText(value);
+}
+
+function targetBasisLabel(candidate: ScannerCandidate) {
+  const risk = candidate.entry_risk_guide?.risk;
+  const audit = risk?.target1_audit;
+  const raw = String(audit?.target1_basis ?? risk?.target1_basis ?? "");
+  if (raw.includes("저항")) return "최근 저항";
+  if (raw.includes("20일") && raw.includes("고점")) return "20일 고점";
+  if (raw.includes("1.5R")) return "1.5R";
+  return raw || "근거 확인";
+}
+
+function targetGainPct(candidate: ScannerCandidate) {
+  const risk = candidate.entry_risk_guide?.risk;
+  const audited = risk?.target1_audit?.target1_gain_pct;
+  if (audited != null && Number.isFinite(audited)) return audited;
+  const target = risk?.target1_price;
+  const current = candidate.current_price;
+  if (target == null || current == null || !Number.isFinite(target) || !Number.isFinite(current) || current <= 0) return null;
+  return (target / current - 1) * 100;
+}
+
+function targetRMultiple(candidate: ScannerCandidate) {
+  const risk = candidate.entry_risk_guide?.risk;
+  const value = risk?.target1_audit?.target1_r_multiple ?? risk?.rr1;
+  return value != null && Number.isFinite(value) ? value : null;
+}
+
+function evidenceCompactText(candidate: ScannerCandidate) {
+  const evidence = candidate.historical_evidence;
+  if (!evidence?.verified) return evidence?.label ?? candidate.historical_fit.label;
+  const average = formatSignedPct(evidence.average_net_return_pct);
+  return `최근 3년 · ${evidence.sample_count}회 · 평균 ${average}`;
+}
+
+function emptyCandidateMessage(result: ScannerResponse, noAnalyzedData: boolean) {
+  if (noAnalyzedData) {
+    return "최근 기술지표 계산에 필요한 시장 데이터가 아직 충분하지 않습니다. 위의 ‘시장 데이터 준비’를 실행한 뒤 다시 확인하세요.";
+  }
+  const raw = String(result.empty_message ?? "").trim();
+  if (!raw || /\bNO[_ -]?TRADE\b/i.test(raw)) {
+    return "현재 확정 일봉 기준으로 10개 전략의 진입 조건을 충분히 만족한 종목이 없습니다. 조건을 억지로 완화하지 않고 다음 확정 일봉에서 다시 확인합니다.";
+  }
+  return raw;
+}
+
+function CandidateCompareRow({
+  candidate,
+  rank,
+  selected,
+  onSelect,
+}: {
+  candidate: ScannerCandidate;
+  rank: number;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const tone = candidateTone(candidate);
+  return (
+    <button
+      type="button"
+      className={`scanner-compare-row tone-${tone} ${selected ? "selected" : ""}`}
+      onClick={onSelect}
+      aria-pressed={selected}
+    >
+      <span className="scanner-compare-rank" aria-label={`후보 우선순위 ${rank}`}>{rank}</span>
+      <span className="scanner-compare-stock">
+        <strong>{candidate.name}</strong>
+        <small>{candidate.market} · {candidate.strategy_easy_name}</small>
+      </span>
+      <span className="scanner-compare-judgement">
+        <strong>{candidate.action_label}</strong>
+        <small>{candidate.candidate_label} · {conditionStatusLabel(candidate)}</small>
+      </span>
+      <span className="scanner-compare-metrics">
+        <span><small>현재가</small><strong>{priceText(candidate.current_price)}</strong></span>
+        <span><small>{strategyPriceLabel(candidate)}</small><strong>{interestPriceText(candidate)}</strong></span>
+        <span><small>손절 참고구간</small><strong>{stopPriceText(candidate)}</strong></span>
+        <span className="scanner-target-cell"><small>1차 목표 · {targetBasisLabel(candidate)}</small><strong>{targetPriceText(candidate, 1)}</strong><em>{targetGainPct(candidate) == null ? "-" : `현재가 대비 ${formatSignedPct(targetGainPct(candidate))}`}</em></span>
+      </span>
+      <span className="scanner-compare-arrow" aria-hidden="true">›</span>
+    </button>
+  );
+}
+
+function CandidateDetail({
   candidate,
   rank,
   onAnalyze,
@@ -116,108 +251,156 @@ function CandidateCard({
   const evidence = candidate.historical_evidence;
   const evidenceLabel = evidence?.label ?? (candidate.historical_fit.verified === false ? "과거 검증 전" : candidate.historical_fit.label);
   const evidenceSummary = evidence?.summary ?? candidate.historical_fit.summary;
+  const changeSummary = candidate.user_action.next_transition
+    || (topMissing.length > 0 ? topMissing.slice(0, 2).map((item) => item.label).join(" · ") : "현재 조건이 유지되는지 확인하세요.");
+
   return (
-    <article className={`scanner-candidate-card tone-${tone}`}>
-      <div className="scanner-rank">{rank}위</div>
-      <div className="scanner-candidate-main">
-        <div className="scanner-candidate-head">
-          <div>
-            <div className="scanner-stock-line">
-              <strong>{candidate.name}</strong>
-              <span>{candidate.market} · {candidate.code}</span>
-            </div>
-            <span className={`scanner-state-badge ${tone}`}>{candidate.candidate_label}</span>
+    <article className={`scanner-selected-detail tone-${tone}`}>
+      <header className="scanner-selected-head">
+        <div>
+          <span className="scanner-selected-kicker">선택한 후보 · 우선순위 {rank}</span>
+          <div className="scanner-stock-line">
+            <h3>{candidate.name}</h3>
+            <span>{candidate.market} · {candidate.code}</span>
           </div>
-          <div className="scanner-price-box">
-            <small>기준 종가</small>
-            <strong>{formatNumber(candidate.current_price)}원</strong>
-            <span>{formatDate(candidate.data_date)} 기준</span>
+          <div className="scanner-selected-tags">
+            <span className={`scanner-state-badge ${tone}`}>{candidate.candidate_label}</span>
+            <span>{candidate.strategy_easy_name}</span>
+            <span>{evidenceCompactText(candidate)}</span>
           </div>
         </div>
+        <div className="scanner-selected-price">
+          <small>기준 종가</small>
+          <strong>{priceText(candidate.current_price)}</strong>
+          <span>{formatDate(candidate.data_date)} 확정 일봉</span>
+        </div>
+      </header>
 
-        {candidate.priority && (
-          <section className={`scanner-priority-card priority-${candidate.priority.tier.toLowerCase()}`}>
-            <div className="scanner-priority-head">
-              <div>
-                <small>왜 {rank}위인가요?</small>
-                <strong>{candidate.priority.label}</strong>
-                <p>{candidate.priority.reason}</p>
-              </div>
-            </div>
-            <div className="scanner-priority-factors">
-              {candidate.priority.strengths.map((item) => <span className="positive" key={`strength-${item}`}>✓ {item}</span>)}
-              {candidate.priority.facts
-                .filter((item) => !/\b거리\s+[0-9.]+%/.test(item))
-                .map((item) => <span className="neutral" key={`fact-${item}`}>· {item}</span>)}
-              {candidate.priority.penalties.map((item) => <span className="negative" key={`penalty-${item}`}>△ {item}</span>)}
-            </div>
-            <small className="scanner-priority-rule">순위 기준 · {candidate.priority.ranking_rule}</small>
-          </section>
-        )}
+      <section className="scanner-detail-summary-grid">
+        <div>
+          <small>현재 판단</small>
+          <strong>{candidate.action_label}</strong>
+          <p>{candidate.headline}</p>
+        </div>
+        <div>
+          <small>왜 후보인가</small>
+          <strong>{candidate.priority?.label ?? candidate.strategy_easy_name}</strong>
+          <p>{candidate.priority?.reason ?? candidate.reason}</p>
+        </div>
+        <div>
+          <small>판단이 바뀌는 조건</small>
+          <strong>{conditionStatusLabel(candidate)}</strong>
+          <p>{changeSummary}</p>
+        </div>
+      </section>
 
-        <div className="scanner-strategy-box">
+      <section className="scanner-decision-price-band" aria-label="핵심 가격 기준">
+        <div><small>현재가</small><strong>{priceText(candidate.current_price)}</strong></div>
+        <div><small>{strategyPriceLabel(candidate)}</small><strong>{interestPriceText(candidate)}</strong></div>
+        <div className="stop"><small>손절 참고구간</small><strong>{stopPriceText(candidate)}</strong></div>
+        <div className="target"><small>1차 목표 · {targetBasisLabel(candidate)}</small><strong>{targetPriceText(candidate, 1)}</strong><span>{targetGainPct(candidate) == null ? "거리 계산 불가" : `현재가 대비 ${formatSignedPct(targetGainPct(candidate))}`}{targetRMultiple(candidate) == null ? "" : ` · ${targetRMultiple(candidate)!.toFixed(2)}R`}</span></div>
+        <div><small>2차 목표</small><strong>{targetPriceText(candidate, 2)}</strong></div>
+      </section>
+
+      {candidate.entry_risk_guide?.price_consistency && candidate.entry_risk_guide.price_consistency.status !== "NOT_APPLICABLE" && (() => {
+        const consistency = candidate.entry_risk_guide!.price_consistency!;
+        const semanticContext = consistency.classification === "STRATEGY_CONDITION_BAND_OVERLAP" || consistency.classification === "DISPLAY_ROUNDING_TOUCH";
+        const tone = consistency.status === "INVALID" ? "invalid" : consistency.status === "WARNING" ? "warning" : semanticContext ? "context" : "ok";
+        const title = consistency.status === "INVALID" || consistency.status === "WARNING" ? "가격 계획 확인" : semanticContext ? "가격 기준 구분" : "가격 관계";
+        return (
+        <section className={`scanner-price-consistency ${tone}`}>
+          <div>
+            <strong>{title}</strong>
+            <span>{consistency.status === "OK"
+              ? (consistency.relation_message ?? consistency.message)
+              : consistency.message}</span>
+          </div>
+          <div className="scanner-price-invalidation-inline">
+            <small>전략 무효화 기준</small>
+            <strong>{priceText(candidate.entry_risk_guide.risk.display_invalidation_price ?? candidate.entry_risk_guide.risk.invalidation_price)}</strong>
+            <span>손절 참고구간과 별개의 전략 전제 기준</span>
+          </div>
+        </section>
+        );
+      })()}
+
+      <section className="scanner-selected-strategy">
+        <div>
           <small>현재 가장 맞는 방법</small>
           <strong>{candidate.strategy_easy_name}</strong>
           <span>전문 용어 · {candidate.strategy_name}</span>
-          <p>{candidate.strategy_description}</p>
         </div>
+        <p>{candidate.strategy_description}</p>
+      </section>
 
-        <div className="scanner-judgement-row">
-          <section>
-            <small>현재 판단</small>
-            <strong>{candidate.action_label}</strong>
-            <p>{candidate.headline}</p>
-          </section>
-          <section>
-            <small>진입 준비</small>
-            <strong>{conditionStatusLabel(candidate)}</strong>
-            <p>{candidate.reason}</p>
-          </section>
-          <section>
-            <small>3년 과거 근거</small>
-            <strong>{evidenceLabel}</strong>
-            <p>{evidenceSummary}</p>
-          </section>
-        </div>
-
-        {candidate.entry_risk_guide && <EntryRiskGuideCard guide={candidate.entry_risk_guide} compact />}
-
-        {evidence && (
-          <section className={`scanner-evidence-card evidence-${evidence.status.toLowerCase()}`}>
-            <div className="scanner-section-caption">
-              <strong>같은 전략의 최근 3년 과거 근거</strong>
-              <span>{formatDate(evidence.period.start)} ~ {formatDate(evidence.period.end)}</span>
+      {candidate.priority && (
+        <section className={`scanner-priority-card priority-${candidate.priority.tier.toLowerCase()}`}>
+          <div className="scanner-priority-head">
+            <div>
+              <small>후보 우선순위 근거</small>
+              <strong>{candidate.priority.label}</strong>
+              <p>{candidate.priority.reason}</p>
             </div>
+          </div>
+          <div className="scanner-priority-factors">
+            {candidate.priority.strengths.map((item) => <span className="positive" key={`strength-${item}`}>✓ {item}</span>)}
+            {candidate.priority.facts
+              .filter((item) => !/\b거리\s+[0-9.]+%/.test(item))
+              .map((item) => <span className="neutral" key={`fact-${item}`}>· {item}</span>)}
+            {candidate.priority.penalties.map((item) => <span className="negative" key={`penalty-${item}`}>△ {item}</span>)}
+          </div>
+          <small className="scanner-priority-rule">순위 기준 · {candidate.priority.ranking_rule}</small>
+        </section>
+      )}
+
+      <section className={`scanner-evidence-compact ${evidence?.status ? `evidence-${evidence.status.toLowerCase()}` : ""}`}>
+        <div className="scanner-evidence-compact-head">
+          <div>
+            <small>같은 전략의 최근 3년 과거 근거</small>
+            <strong>{evidenceLabel}</strong>
+            <span>{evidenceSummary}</span>
+          </div>
+          {evidence?.verified && (
+            <div className="scanner-evidence-compact-metrics">
+              <span><small>유사 거래</small><b>{evidence.sample_count}회</b></span>
+              <span><small>평균 순수익</small><b>{formatSignedPct(evidence.average_net_return_pct)}</b></span>
+              <span><small>최대 낙폭</small><b>{formatSignedPct(evidence.max_drawdown_pct)}</b></span>
+            </div>
+          )}
+        </div>
+        {evidence && (
+          <details
+            className="scanner-evidence-details"
+            open={evidenceOpen}
+            onToggle={(event) => onEvidenceToggle(event.currentTarget.open)}
+          >
+            <summary>과거 근거 자세히 보기</summary>
             {evidence.verified ? (
               <>
-                <div className="scanner-evidence-grid">
-                  <div><small>유사 거래</small><strong>{evidence.sample_count}회</strong><span>{evidence.sample_sufficient ? "평가 가능한 표본" : `최소 ${evidence.minimum_sample}회 필요`}</span></div>
-                  <div><small>수익 거래</small><strong>{evidence.wins} / {evidence.sample_count}</strong><span>상승 확률이 아니라 과거 결과입니다.</span></div>
-                  <div><small>평균 순수익</small><strong>{formatSignedPct(evidence.average_net_return_pct)}</strong><span>거래당 과거 평균</span></div>
-                  <div><small>최대 낙폭</small><strong>{formatSignedPct(evidence.max_drawdown_pct)}</strong><span>과거 검증 구간 기준</span></div>
+                <div className="scanner-evidence-detail-grid">
+                  <div><small>Profit Factor</small><strong>{evidence.profit_factor == null ? "-" : evidence.profit_factor.toFixed(2)}</strong></div>
+                  <div><small>수익 거래</small><strong>{evidence.wins} / {evidence.sample_count}</strong></div>
+                  <div><small>손절 종료</small><strong>{evidence.exit_counts.stop}회</strong></div>
+                  <div><small>1차 목표 종료</small><strong>{evidence.exit_counts.target1}회</strong></div>
                 </div>
-                <details
-                  className="scanner-evidence-details"
-                  open={evidenceOpen}
-                  onToggle={(event) => onEvidenceToggle(event.currentTarget.open)}
-                >
-                  <summary>과거 근거 자세히 보기</summary>
-                  <div className="scanner-evidence-detail-grid">
-                    <div><small>Profit Factor</small><strong>{evidence.profit_factor == null ? "-" : evidence.profit_factor.toFixed(2)}</strong></div>
-                    <div><small>손절 종료</small><strong>{evidence.exit_counts.stop}회</strong></div>
-                    <div><small>1차 목표 종료</small><strong>{evidence.exit_counts.target1}회</strong></div>
-                    <div><small>시간 종료</small><strong>{evidence.exit_counts.time_exit}회</strong></div>
+                {evidence.target1_audit?.available && (
+                  <div className="scanner-target1-audit">
+                    <div><small>1차 목표 평균 거리</small><strong>{formatSignedPct(evidence.target1_audit.average_target_distance_pct)}</strong></div>
+                    <div><small>평균 Risk 배수</small><strong>{evidence.target1_audit.average_target_r_multiple == null ? "-" : `${evidence.target1_audit.average_target_r_multiple.toFixed(2)}R`}</strong></div>
+                    <div><small>20거래일 내 Target1 도달</small><strong>{evidence.target1_audit.target_hit_days?.within_20_days ?? 0} / {evidence.target1_audit.sample_count}</strong></div>
+                    <div><small>Target1 도달 평균일</small><strong>{evidence.target1_audit.average_target_hit_days == null ? "-" : `${evidence.target1_audit.average_target_hit_days.toFixed(1)}일`}</strong></div>
+                    <p>과거 동일 진입점 기준 Target1 기록입니다. 미래 성공 확률을 뜻하지 않습니다.</p>
                   </div>
-                  {evidence.market_regime_summary.length > 0 && (
-                    <div className="scanner-regime-evidence">
-                      {evidence.market_regime_summary.map((row) => (
-                        <span key={row.regime}><b>{regimeLabel[row.regime] ?? row.regime}</b> · {row.trades}회 · 평균 {formatSignedPct(row.average_net_return_pct)}</span>
-                      ))}
-                    </div>
-                  )}
-                  {evidence.warnings.length > 0 && <div className="scanner-evidence-warnings">{evidence.warnings.map((warning) => <p key={warning}>{warning}</p>)}</div>}
-                  <p className="scanner-evidence-guardrail">{evidence.guardrail}</p>
-                </details>
+                )}
+                {evidence.market_regime_summary.length > 0 && (
+                  <div className="scanner-regime-evidence">
+                    {evidence.market_regime_summary.map((row) => (
+                      <span key={row.regime}><b>{regimeLabel[row.regime] ?? row.regime}</b> · {row.trades}회 · 평균 {formatSignedPct(row.average_net_return_pct)}</span>
+                    ))}
+                  </div>
+                )}
+                {evidence.warnings.length > 0 && <div className="scanner-evidence-warnings">{evidence.warnings.map((warning) => <p key={warning}>{warning}</p>)}</div>}
+                <p className="scanner-evidence-guardrail">{evidence.guardrail}</p>
               </>
             ) : (
               <div className="scanner-evidence-unavailable">
@@ -226,48 +409,45 @@ function CandidateCard({
                 {evidence.warnings.length > 0 && <small>{evidence.warnings.join(" · ")}</small>}
               </div>
             )}
-          </section>
+          </details>
         )}
+      </section>
 
-        {topMissing.length > 0 && (
-          <div className="scanner-missing-block">
-            <div className="scanner-section-caption">
-              <strong>지금 부족한 핵심 조건</strong>
-              <span>사용자가 계산할 필요는 없습니다.</span>
-            </div>
-            <div className="scanner-missing-grid">
-              {topMissing.map((condition, index) => (
-                <div className="scanner-missing-item" key={`${condition.condition_id ?? condition.raw}-${index}`}>
-                  <strong>{condition.label}</strong>
-                  <p>{condition.detail}</p>
-                  {(condition.current_value || condition.required_value) && (
-                    <div className="scanner-condition-values">
-                      {condition.current_value && <span><small>현재</small><b>{condition.current_value}</b></span>}
-                      {condition.required_value && <span><small>필요</small><b>{condition.required_value}</b></span>}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
+      {topMissing.length > 0 && (
+        <details className="scanner-selected-secondary">
+          <summary>판단 변경 조건 자세히 보기 <b>{topMissing.length}개</b></summary>
+          <div className="scanner-missing-grid">
+            {topMissing.map((condition, index) => (
+              <div className="scanner-missing-item" key={`${condition.condition_id ?? condition.raw}-${index}`}>
+                <strong>{condition.label}</strong>
+                <p>{condition.detail}</p>
+                {(condition.current_value || condition.required_value) && (
+                  <div className="scanner-condition-values">
+                    {condition.current_value && <span><small>현재</small><b>{condition.current_value}</b></span>}
+                    {condition.required_value && <span><small>필요</small><b>{condition.required_value}</b></span>}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
-        )}
+        </details>
+      )}
 
-        <div className="scanner-action-row">
-          <div>
-            <small>지금 행동</small>
-            <strong>{candidate.user_action.title || "현재 판단을 유지하세요."}</strong>
-            <p>{candidate.user_action.detail}</p>
-          </div>
-          <button type="button" className="scanner-detail-button" onClick={onAnalyze}>이 종목 자세히 분석</button>
+      <footer className="scanner-selected-action">
+        <div>
+          <small>지금 행동</small>
+          <strong>{candidate.user_action.title || "현재 판단을 유지하세요."}</strong>
+          <p>{candidate.user_action.detail}</p>
         </div>
+        <button type="button" className="scanner-detail-button" onClick={onAnalyze}>이 종목 자세히 분석</button>
+      </footer>
 
-        {candidate.risk.warning && candidate.risk.warnings.length > 0 && (
-          <div className="scanner-risk-note">
-            <strong>추가 주의</strong>
-            <span>{candidate.risk.warnings.join(" · ")}</span>
-          </div>
-        )}
-      </div>
+      {candidate.risk.warning && candidate.risk.warnings.length > 0 && (
+        <div className="scanner-risk-note">
+          <strong>추가 주의</strong>
+          <span>{candidate.risk.warnings.join(" · ")}</span>
+        </div>
+      )}
     </article>
   );
 }
@@ -277,6 +457,10 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
   const [scope, setScope] = useState<MarketScope>(initialSession?.scope ?? "ALL");
   const [job, setJob] = useState<BacktestJob<ScannerResponse> | null>(null);
   const [result, setResult] = useState<ScannerResponse | null>(initialSession?.result ?? null);
+  const [selectedCandidateKey, setSelectedCandidateKey] = useState<string | null>(
+    initialSession?.selectedCandidateKey
+      ?? (initialSession?.result?.candidates?.[0] ? candidateKey(initialSession.result.candidates[0]) : null),
+  );
   const [error, setError] = useState<string | null>(null);
   const [showMore, setShowMore] = useState(initialSession?.showMore ?? false);
   const [expandedEvidenceIds, setExpandedEvidenceIds] = useState<string[]>(initialSession?.expandedEvidenceIds ?? []);
@@ -314,8 +498,9 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
       scrollY: savedScrollRef.current,
       showMore,
       expandedEvidenceIds,
+      selectedCandidateKey,
     });
-  }, [scope, result, completedAt, showMore, expandedEvidenceIds]);
+  }, [scope, result, completedAt, showMore, expandedEvidenceIds, selectedCandidateKey]);
 
   useEffect(() => {
     if (!initialSession || !result || didRestoreScrollRef.current) return;
@@ -376,6 +561,7 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
       setJob(latest);
       if (latest.status === "completed" && latest.result) {
         setResult(latest.result);
+        setSelectedCandidateKey(latest.result.candidates[0] ? candidateKey(latest.result.candidates[0]) : null);
         setShowMore(false);
         setExpandedEvidenceIds([]);
         setCompletedAt(Date.now());
@@ -465,11 +651,30 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
       scrollY,
       showMore,
       expandedEvidenceIds,
+      selectedCandidateKey,
     });
   }
 
   function analyzeCandidate(candidate: ScannerCandidate) {
     persistBeforeNavigation();
+    try {
+      window.sessionStorage.setItem("stockscope-scanner-analysis-context", JSON.stringify({
+        code: candidate.code,
+        market: candidate.market,
+        data_date: candidate.data_date,
+        strategy: candidate.strategy,
+        strategy_easy_name: candidate.strategy_easy_name,
+        strategy_name: candidate.strategy_name,
+        action: candidate.action,
+        action_label: candidate.action_label,
+        passed: candidate.conditions.passed,
+        total: candidate.conditions.total,
+        risk_status: candidate.risk.status,
+        saved_at: Date.now(),
+      }));
+    } catch {
+      // Navigation still works even when sessionStorage is unavailable.
+    }
     onAnalyzeStock(stockItem(candidate));
   }
 
@@ -480,6 +685,7 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
     setScope(value);
     setJob(null);
     setResult(null);
+    setSelectedCandidateKey(null);
     setError(null);
     setShowMore(false);
     setExpandedEvidenceIds([]);
@@ -497,6 +703,14 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
       if (open) return current.includes(key) ? current : [...current, key];
       return current.filter((item) => item !== key);
     });
+  }
+
+  function toggleMoreCandidates() {
+    const next = !showMore;
+    if (!next && result && selectedCandidateKey && result.more_candidates.some((candidate) => candidateKey(candidate) === selectedCandidateKey)) {
+      setSelectedCandidateKey(result.candidates[0] ? candidateKey(result.candidates[0]) : null);
+    }
+    setShowMore(next);
   }
 
   async function cancel() {
@@ -528,12 +742,37 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
   const analysisDataDate = analysisDateResolution.date;
   const analysisDateMismatch = Boolean(result && !analysisDateResolution.aligned);
   const restoredOnDifferentDay = Boolean(initialSession && restoredFromSession && localDateKey(initialSession.completedAt) !== localDateKey());
+  const allCandidates = useMemo(
+    () => result ? [...result.candidates, ...result.more_candidates] : [],
+    [result],
+  );
+  const selectedCandidate = useMemo(
+    () => allCandidates.find((candidate) => candidateKey(candidate) === selectedCandidateKey) ?? result?.candidates[0] ?? null,
+    [allCandidates, selectedCandidateKey, result],
+  );
+  const selectedRank = selectedCandidate
+    ? Math.max(1, allCandidates.findIndex((candidate) => candidateKey(candidate) === candidateKey(selectedCandidate)) + 1)
+    : 0;
+
+  useEffect(() => {
+    if (!result) {
+      if (selectedCandidateKey != null) setSelectedCandidateKey(null);
+      return;
+    }
+    if (allCandidates.length === 0) {
+      if (selectedCandidateKey != null) setSelectedCandidateKey(null);
+      return;
+    }
+    if (!selectedCandidateKey || !allCandidates.some((candidate) => candidateKey(candidate) === selectedCandidateKey)) {
+      setSelectedCandidateKey(candidateKey(allCandidates[0]));
+    }
+  }, [result, allCandidates, selectedCandidateKey]);
 
   return (
     <div className="scanner-workspace">
       <section className="scanner-hero">
         <div>
-          <span className="eyebrow">STOCK SCANNER · v0.21.4-B.2.1.1</span>
+          <span className="eyebrow">STOCK SCANNER · v0.21.4-B.2.3.2b</span>
           <h1>오늘 어떤 종목을 먼저 볼까요?</h1>
           <p>종목을 직접 고르기 전에 현재 조건을 먼저 보고, Risk·진입 기준까지의 거리·같은 전략의 3년 과거 근거를 순서대로 비교해 먼저 확인할 후보를 정합니다.</p>
         </div>
@@ -734,52 +973,76 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
           <section className="scanner-section-head">
             <div>
               <span>오늘 먼저 볼 후보</span>
-              <h2>{result.candidates.length > 0 ? `${result.candidates.length}개를 먼저 확인하세요.` : noAnalyzedData ? "아직 후보를 판단하지 못했습니다." : "억지로 추천할 종목이 없습니다."}</h2>
+              <h2>{result.candidates.length > 0 ? `${result.candidates.length}개를 먼저 확인하세요.` : noAnalyzedData ? "아직 후보를 판단하지 못했습니다." : "현재 조건에 맞는 후보가 없습니다."}</h2>
               <p>순위는 상승 확률이 아닙니다. 현재 조건을 먼저 보고 Risk, 실제 진입 기준까지의 거리, 같은 전략의 3년 과거 근거 순으로 비교해 먼저 확인할 순서를 정합니다.</p>
             </div>
             <button type="button" className="scanner-refresh-button" onClick={() => void runScanner(true)} disabled={busy}>다시 분석</button>
           </section>
 
           {result.candidates.length === 0 ? (
-            <section className="scanner-no-candidate">
+            <section className="scanner-no-candidate" role="status" aria-live="polite">
               <strong>{noAnalyzedData ? "아직 시장 데이터 준비가 필요합니다." : "현재는 관망이 정상 결과입니다."}</strong>
-              <p>{result.empty_message}</p>
+              <p>{emptyCandidateMessage(result, noAnalyzedData)}</p>
+              {!noAnalyzedData && <small>후보가 없는 것도 정상적인 분석 결과입니다. 현재 조건을 완화해서 종목을 억지로 만들지 않습니다.</small>}
             </section>
           ) : (
-            <div className="scanner-candidate-list">
-              {result.candidates.map((candidate, index) => (
-                <CandidateCard
-                  key={`${candidate.market}-${candidate.code}`}
-                  candidate={candidate}
-                  rank={index + 1}
-                  onAnalyze={() => analyzeCandidate(candidate)}
-                  evidenceOpen={expandedEvidenceIds.includes(evidenceKey(candidate))}
-                  onEvidenceToggle={(open) => toggleEvidence(candidate, open)}
-                />
-              ))}
-            </div>
-          )}
+            <div className="scanner-decision-workspace">
+              <section className="scanner-compare-panel">
+                <header className="scanner-compare-head">
+                  <div>
+                    <span>후보 빠른 비교</span>
+                    <strong>핵심 가격과 현재 판단만 먼저 비교하세요.</strong>
+                  </div>
+                  <small>행을 선택하면 아래 상세 판단만 바뀝니다.</small>
+                </header>
 
-          {result.more_candidates.length > 0 && (
-            <section className="scanner-more-section">
-              <button type="button" onClick={() => setShowMore((value) => !value)}>
-                {showMore ? "다른 후보 숨기기 ▲" : `다른 후보 ${result.more_candidates.length}개 보기 ▼`}
-              </button>
-              {showMore && (
-                <div className="scanner-candidate-list compact">
-                  {result.more_candidates.map((candidate, index) => (
-                    <CandidateCard
-                      key={`more-${candidate.market}-${candidate.code}`}
+                <div className="scanner-compare-labels" aria-hidden="true">
+                  <span>순서</span><span>종목 / 전략</span><span>현재 판단</span><span>핵심 가격</span><span />
+                </div>
+                <div className="scanner-compare-list">
+                  {result.candidates.map((candidate, index) => (
+                    <CandidateCompareRow
+                      key={candidateKey(candidate)}
                       candidate={candidate}
-                      rank={result.candidates.length + index + 1}
-                      onAnalyze={() => analyzeCandidate(candidate)}
-                      evidenceOpen={expandedEvidenceIds.includes(evidenceKey(candidate))}
-                      onEvidenceToggle={(open) => toggleEvidence(candidate, open)}
+                      rank={index + 1}
+                      selected={selectedCandidate ? candidateKey(selectedCandidate) === candidateKey(candidate) : false}
+                      onSelect={() => setSelectedCandidateKey(candidateKey(candidate))}
                     />
                   ))}
                 </div>
+
+                {result.more_candidates.length > 0 && (
+                  <div className="scanner-compare-more">
+                    <button type="button" onClick={toggleMoreCandidates}>
+                      {showMore ? "다른 후보 숨기기 ▲" : `다른 후보 ${result.more_candidates.length}개 보기 ▼`}
+                    </button>
+                    {showMore && (
+                      <div className="scanner-compare-list more">
+                        {result.more_candidates.map((candidate, index) => (
+                          <CandidateCompareRow
+                            key={`more-${candidateKey(candidate)}`}
+                            candidate={candidate}
+                            rank={result.candidates.length + index + 1}
+                            selected={selectedCandidate ? candidateKey(selectedCandidate) === candidateKey(candidate) : false}
+                            onSelect={() => setSelectedCandidateKey(candidateKey(candidate))}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+
+              {selectedCandidate && (
+                <CandidateDetail
+                  candidate={selectedCandidate}
+                  rank={selectedRank}
+                  onAnalyze={() => analyzeCandidate(selectedCandidate)}
+                  evidenceOpen={expandedEvidenceIds.includes(evidenceKey(selectedCandidate))}
+                  onEvidenceToggle={(open) => toggleEvidence(selectedCandidate, open)}
+                />
               )}
-            </section>
+            </div>
           )}
 
           <details className="scanner-details">

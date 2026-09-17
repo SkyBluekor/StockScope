@@ -1422,6 +1422,66 @@ export type ProductionExitPolicyMetadata = {
   };
 };
 
+export type ConcretePricePlanConsistency = {
+  status: "OK" | "WARNING" | "INVALID" | "NOT_APPLICABLE" | string;
+  classification?: "STRATEGY_CONDITION_BAND_OVERLAP" | "DISPLAY_ROUNDING_TOUCH" | "RISK_PLAN_INVALID" | "EXECUTION_PRICE_CONFLICT" | "SEPARATED" | "NOT_APPLICABLE" | string;
+  has_conflict: boolean;
+  message: string;
+  relation_message: string | null;
+  root_cause_summary?: string | null;
+  issue_codes: string[];
+  issues: Array<{ code: string; severity: string; detail: string }>;
+  raw_overlap: boolean;
+  semantic_overlap?: boolean;
+  display_overlap_only: boolean;
+  overlap?: { low: number | null; high: number | null; width: number | null; ratio_pct: number | null };
+  trace_context?: {
+    strategy: string;
+    analysis_date: string | null;
+    decision_reason: string | null;
+    current_price: number | null;
+    strategy_rule_status: string | null;
+    strategy_rule_basis: string | null;
+    strategy_rule_role: string | null;
+    risk_status: string | null;
+    risk_reference_only: boolean;
+    risk_entry_reference: number | null;
+    risk_structural_anchor: number | null;
+    risk_structural_anchor_label: string | null;
+  };
+  raw: {
+    condition_range_low?: number | null;
+    condition_range_high?: number | null;
+    entry_range_low: number | null;
+    entry_range_high: number | null;
+    risk_entry_reference: number | null;
+    invalidation_price: number | null;
+    stop_zone_low: number | null;
+    stop_zone_high: number | null;
+    display_stop_zone_low?: number | null;
+    display_stop_zone_high?: number | null;
+    target1_price: number | null;
+    target2_price: number | null;
+  };
+  display: {
+    condition_range_low?: number | null;
+    condition_range_high?: number | null;
+    entry_range_low: number | null;
+    entry_range_high: number | null;
+    invalidation_price: number | null;
+    stop_zone_low: number | null;
+    stop_zone_high: number | null;
+  };
+  sources: {
+    strategy_price?: string;
+    entry: string;
+    risk_entry: string;
+    stop: string;
+    invalidation: string;
+    targets: string;
+  };
+};
+
 export type ConcreteEntryRiskGuide = {
   strategy: string;
   as_of_date: string | null;
@@ -1442,6 +1502,10 @@ export type ConcreteEntryRiskGuide = {
     display_reference_price?: number | null;
     gap_pct: number | null;
     message: string;
+    semantic_role?: "STRATEGY_CONDITION_BAND" | "STRATEGY_CONDITION_THRESHOLD" | "STRATEGY_REFERENCE" | string;
+    user_label?: string;
+    executable_entry_range?: boolean;
+    semantic_note?: string;
   };
   volume_rule: {
     available: boolean;
@@ -1481,10 +1545,47 @@ export type ConcreteEntryRiskGuide = {
     display_invalidation_price?: number | null;
     stop_zone_low: number | null;
     stop_zone_high: number | null;
+    display_stop_zone_low?: number | null;
+    display_stop_zone_high?: number | null;
     target1_price: number | null;
     display_target1_price?: number | null;
+    target1_basis?: string | null;
     target2_price: number | null;
     display_target2_price?: number | null;
+    target2_basis?: string | null;
+    target1_audit?: {
+      available: boolean;
+      formula_status: "MATCH" | "MISMATCH" | "UNAVAILABLE" | string;
+      message: string;
+      entry_reference_price?: number | null;
+      stop_reference_price?: number | null;
+      risk_amount?: number | null;
+      risk_pct?: number | null;
+      one_r_price?: number | null;
+      one_half_r_price?: number | null;
+      two_r_price?: number | null;
+      target1_price?: number | null;
+      target1_basis?: string | null;
+      target1_basis_code?: string | null;
+      target1_gain_pct?: number | null;
+      target1_r_multiple?: number | null;
+      target2_price?: number | null;
+      target2_gain_pct?: number | null;
+      target2_r_multiple?: number | null;
+      expected_target1_price?: number | null;
+      expected_target1_basis?: string | null;
+      expected_target1_basis_code?: string | null;
+      policy?: string;
+      guardrail?: string;
+      structural_candidates?: Array<{
+        kind: string;
+        label: string;
+        price: number | null;
+        gain_pct: number | null;
+        r_multiple: number | null;
+        selected: boolean;
+      }>;
+    } | null;
     risk_pct: number | null;
     reward1_pct: number | null;
     reward2_pct: number | null;
@@ -1497,6 +1598,7 @@ export type ConcreteEntryRiskGuide = {
     basis_label: string;
     recheck_message: string | null;
   };
+  price_consistency?: ConcretePricePlanConsistency | null;
   action: { status: string; title: string; detail: string };
   historical_verification: { verified: boolean | null; status: string | null; message: string };
   historical_policy?: ProductionExitPolicyMetadata;
@@ -1599,6 +1701,14 @@ export type MultiStrategyRecommendation = {
   market_regime: string;
   guardrail?: string;
   entry_risk_guide?: ConcreteEntryRiskGuide | null;
+  historical_best_strategy?: string | null;
+  historical_best_easy_name?: string | null;
+  historical_best_label?: string | null;
+  historical_best_current_status?: string | null;
+  historical_best_current_label?: string | null;
+  historical_best_passed?: number | null;
+  historical_best_total?: number | null;
+  selection_rule?: string;
 };
 
 export type MultiStrategyBacktestResponse = {
@@ -2145,6 +2255,49 @@ export type ScannerHistoricalEvidence = {
     losses: number;
   }>;
   warnings: string[];
+  target1_audit?: {
+    available: boolean;
+    sample_count: number;
+    skipped_trades?: number;
+    max_holding_days?: number;
+    average_target_distance_pct?: number | null;
+    median_target_distance_pct?: number | null;
+    average_target_r_multiple?: number | null;
+    median_target_r_multiple?: number | null;
+    target_hit_count?: number;
+    target_hit_pct?: number | null;
+    target_hit_days?: { within_5_days: number; within_10_days: number; within_20_days: number };
+    average_target_hit_days?: number | null;
+    median_target_hit_days?: number | null;
+    stop_first_count?: number;
+    time_exit_count?: number;
+    distance_bins?: Array<{ label: string; sample_count: number }>;
+    basis_summary?: Array<{
+      basis_code: string;
+      label: string | null;
+      sample_count: number;
+      average_target_distance_pct: number | null;
+      average_target_r_multiple: number | null;
+    }>;
+    policy_comparison?: Array<{
+      policy_id: string;
+      label: string;
+      sample_count: number;
+      target_hit_count: number;
+      target_hit_pct: number | null;
+      stop_first_count: number;
+      time_exit_count: number;
+      average_net_return_pct: number | null;
+      median_net_return_pct: number | null;
+      profit_factor: number | null;
+      closed_trade_max_drawdown_pct: number | null;
+      average_holding_days: number | null;
+      average_target_hit_days: number | null;
+    }>;
+    comparison_mode?: string;
+    comparison_limitations?: string[];
+    guardrail?: string;
+  } | null;
   guardrail: string;
   signal_count?: number;
   risk_blocked_signals?: number;
