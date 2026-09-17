@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import threading
@@ -418,6 +419,113 @@ class HistoricalMarketStore:
             series = result.setdefault(code, HistorySeries(rows={}, checked_dates=set(checked_dates)))
             series.rows[str(row["bas_dd"])] = self._load(str(row["row_json"]))
         return result
+
+    @staticmethod
+    def _canonical_audit_row(raw: str) -> str:
+        """Canonicalize persisted KRX JSON so row insertion/key order cannot change the hash."""
+        try:
+            value = json.loads(raw)
+        except (TypeError, json.JSONDecodeError):
+            value = raw
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+    def reproducibility_snapshot(
+        self,
+        market: str,
+        start_dd: str,
+        end_dd: str,
+        *,
+        expected_dates: Iterable[str] | None = None,
+    ) -> dict[str, Any]:
+        """Return a deterministic, local-only fingerprint of Scanner history input.
+
+        This method never performs a provider/network call. It hashes the actual rows
+        and day-status markers already persisted in this PC's Market Store so two
+        computers can prove whether Scanner started from the same local input.
+        """
+        market = self._market(market)
+        expected = sorted({str(value) for value in (expected_dates or []) if str(value)})
+        stock_hasher = hashlib.sha256()
+        index_hasher = hashlib.sha256()
+        status_hasher = hashlib.sha256()
+        stock_rows = 0
+        index_rows = 0
+
+        with self._lock, self._connect() as conn:
+            status_rows = conn.execute(
+                "SELECT bas_dd,kind,status FROM day_status "
+                "WHERE market=? AND bas_dd>=? AND bas_dd<=? ORDER BY bas_dd,kind",
+                (market, start_dd, end_dd),
+            ).fetchall()
+            status_map = {
+                (str(row["bas_dd"]), str(row["kind"])): str(row["status"])
+                for row in status_rows
+            }
+
+            stock_cursor = conn.execute(
+                "SELECT bas_dd,stock_code,row_json FROM stock_daily "
+                "WHERE market=? AND bas_dd>=? AND bas_dd<=? ORDER BY bas_dd,stock_code",
+                (market, start_dd, end_dd),
+            )
+            for row in stock_cursor:
+                bas_dd = str(row["bas_dd"])
+                code = str(row["stock_code"])
+                canonical = self._canonical_audit_row(str(row["row_json"]))
+                stock_hasher.update(f"{bas_dd}|{code}|{canonical}\n".encode("utf-8"))
+                stock_rows += 1
+
+            index_cursor = conn.execute(
+                "SELECT bas_dd,row_json FROM main_index_daily "
+                "WHERE market=? AND bas_dd>=? AND bas_dd<=? ORDER BY bas_dd",
+                (market, start_dd, end_dd),
+            )
+            for row in index_cursor:
+                bas_dd = str(row["bas_dd"])
+                canonical = self._canonical_audit_row(str(row["row_json"]))
+                index_hasher.update(f"{bas_dd}|{canonical}\n".encode("utf-8"))
+                index_rows += 1
+
+        kinds: dict[str, Any] = {}
+        dates_for_status = expected or sorted({key[0] for key in status_map})
+        for kind in ("stock", "index"):
+            data_dates: list[str] = []
+            empty_dates: list[str] = []
+            missing_dates: list[str] = []
+            for bas_dd in dates_for_status:
+                status = status_map.get((bas_dd, kind))
+                status_hasher.update(f"{bas_dd}|{kind}|{status or 'missing'}\n".encode("utf-8"))
+                if status == "data":
+                    data_dates.append(bas_dd)
+                elif status == "empty":
+                    empty_dates.append(bas_dd)
+                else:
+                    missing_dates.append(bas_dd)
+            kinds[kind] = {
+                "data_days": len(data_dates),
+                "empty_days": len(empty_dates),
+                "missing_days": len(missing_dates),
+                "data_dates": data_dates,
+                "empty_dates": empty_dates,
+                "missing_dates": missing_dates,
+            }
+
+        combined = hashlib.sha256()
+        combined.update(stock_hasher.hexdigest().encode("ascii"))
+        combined.update(index_hasher.hexdigest().encode("ascii"))
+        combined.update(status_hasher.hexdigest().encode("ascii"))
+        return {
+            "market": market,
+            "start_date": start_dd,
+            "end_date": end_dd,
+            "expected_weekdays": len(dates_for_status),
+            "stock_rows": stock_rows,
+            "index_rows": index_rows,
+            "stock_sha256": stock_hasher.hexdigest(),
+            "index_sha256": index_hasher.hexdigest(),
+            "day_status_sha256": status_hasher.hexdigest(),
+            "combined_sha256": combined.hexdigest(),
+            "status": kinds,
+        }
 
 
     def research_candidates(

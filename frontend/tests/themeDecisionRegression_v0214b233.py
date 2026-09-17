@@ -9,7 +9,7 @@ api=(ROOT/'src/services/api.ts').read_text(encoding='utf-8')
 
 assert 'html[data-theme="dark"]' in css
 assert 'html[data-theme="light"]' in css
-assert '--bg-page: #f3f6fa;' in css
+assert '--bg-page: #dce3ea;' in css
 assert '--bg-page: #10151d;' in css
 assert 'stockscope-theme' in app and 'document.documentElement.dataset.theme = next' in app
 assert 'stockscope-scanner-analysis-context' in scanner

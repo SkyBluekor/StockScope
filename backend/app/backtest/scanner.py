@@ -16,6 +16,7 @@ from app.backtest.entry_risk_guide import build_entry_risk_guide
 from app.backtest.production_exit_policy import production_policy_cache_token
 from app.backtest.historical_evidence import build_historical_evidence, validation_start_for_years
 from app.backtest.market_store import HistoricalMarketStore
+from app.backtest.reproducibility_audit import write_scanner_reproducibility_audit
 from app.backtest.models import BacktestConfig
 from app.backtest.multi_strategy import MultiStrategyBacktestEngine, SUPPORTED_STRATEGIES
 from app.backtest.selector import build_condition_state, current_readiness, strategy_guide
@@ -1249,6 +1250,10 @@ class StockScannerService:
             },
             "_strategy_fit_score": round(float(item.get("quick_score") or 0.0), 4),
             "internal_rank": round(internal_rank, 4),
+            "_repro_condition_details": list(condition_state.get("conditions") or []),
+            "_repro_trade_value": item.get("trade_value"),
+            "_repro_market_cap": item.get("market_cap"),
+            "_repro_history_points": item.get("history_points"),
         }
 
     def _deep_candidate(
@@ -1365,6 +1370,10 @@ class StockScannerService:
             },
             "_strategy_fit_score": round(selector_score, 4),
             "internal_rank": round(internal_rank, 4),
+            "_repro_condition_details": list(current.get("conditions") or []),
+            "_repro_trade_value": item.get("trade_value"),
+            "_repro_market_cap": item.get("market_cap"),
+            "_repro_history_points": item.get("history_points"),
         }
 
     async def _attach_three_year_historical_evidence(
@@ -1513,6 +1522,14 @@ class StockScannerService:
                         cache_hit=True,
                     ),
                 )
+                cached_diagnostics = cached.setdefault("diagnostics", {})
+                cached_diagnostics["reproducibility_audit"] = {
+                    "written": False,
+                    "skipped": "backend_cache",
+                    "analysis_date": stable_end.isoformat(),
+                    "result_source": "backend_cache",
+                    "message": "재현성 비교 파일은 새 계산 결과만 기록합니다. '다시 분석'으로 새 계산을 실행하세요.",
+                }
                 return cached
 
         fast_start = stable_end - timedelta(days=self.FAST_HISTORY_CALENDAR_DAYS)
@@ -1865,13 +1882,34 @@ class StockScannerService:
             ranked_actionable, ranking_changes = rank_candidates(actionable)
             top = ranked_actionable[:candidate_limit]
             more = ranked_actionable[candidate_limit : candidate_limit + self.EXTRA_RESULT_LIMIT]
-            for item in ranked_actionable:
-                item.pop("internal_rank", None)
-                item.pop("_strategy_fit_score", None)
 
             delta = self._stats_delta(provider_before, self.krx.request_stats())
             budget = self.krx.budget_snapshot()
             input_fingerprint = self._build_input_fingerprint(markets, latest_dates)
+            reproducibility_audit = write_scanner_reproducibility_audit(
+                market_store=self.market_store,
+                scanner_version=self.VERSION,
+                market_scope=scope,
+                analysis_date=stable_end,
+                history_start=fast_start,
+                candidate_history_start=validation_start_for_years(stable_end) - timedelta(days=self.THREE_YEAR_WARMUP_DAYS),
+                markets=markets,
+                latest_dates=latest_dates,
+                ranked_candidates=ranked_actionable,
+                input_fingerprint=input_fingerprint,
+                ranking_changes=ranking_changes,
+                result_source="fresh_analysis",
+                candidate_pool_complete=True,
+                project_root_hint=Path(__file__).resolve().parents[3],
+            )
+            for item in ranked_actionable:
+                item.pop("internal_rank", None)
+                item.pop("_strategy_fit_score", None)
+                item.pop("_repro_condition_details", None)
+                item.pop("_repro_trade_value", None)
+                item.pop("_repro_market_cap", None)
+                item.pop("_repro_history_points", None)
+
             timings["total_seconds"] = time.perf_counter() - started_at
             # Do not freeze the same-day Scanner result while a ranked candidate's
             # three-year evidence is still unavailable. If Market Store history is
@@ -1944,6 +1982,7 @@ class StockScannerService:
                         3,
                     ),
                     "ranking_changes": ranking_changes,
+                    "reproducibility_audit": reproducibility_audit,
                     **{key: round(value, 3) for key, value in timings.items()},
                 },
             }

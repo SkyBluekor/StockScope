@@ -6,41 +6,44 @@
 :root {
   font-family: Inter, Pretendard, "Noto Sans KR", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
-  /* canonical surfaces */
-  --bg-page: #f3f6fa;
-  --bg-sidebar: #eef3f8;
-  --bg-surface: #ffffff;
-  --bg-surface-raised: #f7f9fc;
-  --bg-surface-soft: #edf2f7;
-  --bg-input: #ffffff;
-  --bg-selected: #e8f0ff;
-  --bg-hover: #eef4ff;
+  /* canonical surfaces · low-glare light theme */
+  --bg-page: #dce3ea;
+  --bg-sidebar: #e5eaf0;
+  --bg-surface: #e8edf3;
+  --bg-surface-raised: #eff3f7;
+  --bg-surface-soft: #dfe6ed;
+  --bg-input: #e3e9ef;
+  --bg-selected: #cfdef3;
+  --bg-hover: #d8e1ea;
 
   /* canonical text / borders */
-  --border-default: #c7d1df;
-  --border-soft: #dbe3ed;
-  --text-primary: #1b2638;
-  --text-strong: #0f172a;
-  --text-secondary: #526175;
-  --text-muted: #748297;
+  --border-subtle: #c9d2dc;
+  --border-default: #b9c5d1;
+  --border-strong: #96a7b8;
+  --border-soft: var(--border-subtle);
+  --text-primary: #172033;
+  --text-strong: #101827;
+  --text-secondary: #3f4d60;
+  /* Tuned for AA contrast against the darker low-glare page/surface palette. */
+  --text-muted: #566575;
 
   /* action / status */
-  --accent-primary: #2f67e8;
-  --accent-primary-hover: #2457d6;
-  --accent-primary-soft: #e7efff;
-  --status-positive: #137a55;
-  --status-positive-bg: #e5f6ef;
-  --status-warning: #9a6a09;
-  --status-warning-bg: #fff4d6;
-  --status-negative: #c73b4d;
-  --status-negative-bg: #fdecef;
-  --status-info: #2f67b4;
-  --status-info-bg: #eaf3ff;
+  --accent-primary: #2563eb;
+  --accent-primary-hover: #1d4ed8;
+  --accent-primary-soft: #d8e5f7;
+  --status-positive: #256a3e;
+  --status-positive-bg: #dceadf;
+  --status-warning: #795715;
+  --status-warning-bg: #efe4c8;
+  --status-negative: #983640;
+  --status-negative-bg: #efdcdd;
+  --status-info: #2f619c;
+  --status-info-bg: #dce6f1;
 
   /* legacy aliases: new code should prefer the canonical names above */
   --page: var(--bg-page);
   --surface: var(--bg-surface);
-  --surface-muted: var(--bg-surface-raised);
+  --surface-muted: var(--bg-surface-soft);
   --surface-soft: var(--bg-surface-soft);
   --input-surface: var(--bg-input);
   --selected-surface: var(--bg-selected);
@@ -58,7 +61,7 @@
   --warning-bg: var(--status-warning-bg);
   --danger: var(--status-negative);
   --danger-bg: var(--status-negative-bg);
-  --shadow: 0 12px 30px rgba(15, 23, 42, .10);
+  --shadow: none;
 
   /* canonical typography */
   --font-page-title: 1.75rem;      /* 28px */
@@ -115,6 +118,7 @@ html[data-theme="dark"] {
   --status-negative-bg: #3a2228;
   --status-info: #8eb7f1;
   --status-info-bg: #1c3048;
+  --surface-muted: var(--bg-surface-raised);
   --shadow: 0 12px 30px rgba(0, 0, 0, .22);
   color-scheme: dark;
 }
@@ -17077,4 +17081,60 @@ button, input, select, textarea { line-height: var(--line-compact); }
 @media (max-width: 820px) {
   .strategy-current-history-split { grid-template-columns: 1fr; }
   .strategy-current-history-split > p { grid-column: auto; }
+}
+
+
+/* ======================================================================
+   v0.21.4-B.2.3.3b · Low-Glare Light Theme Rebalance
+   Light-only absolute luminance reduction. Dark tokens/components are untouched.
+   ====================================================================== */
+html[data-theme="light"] .sidebar {
+  background: var(--bg-sidebar);
+}
+html[data-theme="light"] .topbar {
+  background: var(--bg-sidebar);
+  border-bottom-color: var(--border-subtle);
+}
+
+/* Legacy component rules often use var(--surface) for controls.
+   Make controls a distinct inset surface in light mode without changing dark mode. */
+html[data-theme="light"] :where(input, select, textarea) {
+  background-color: var(--bg-input);
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+html[data-theme="light"] :where(input, select, textarea):hover {
+  border-color: var(--border-strong);
+}
+html[data-theme="light"] :where(input, select, textarea):focus {
+  background-color: var(--bg-surface-raised);
+}
+html[data-theme="light"] select option {
+  background: var(--bg-surface-raised);
+  color: var(--text-primary);
+}
+
+/* Dense analysis pages should read as one workspace, not as stacked white cards. */
+html[data-theme="light"] :where(
+  .summary-card,
+  .panel,
+  .date-box,
+  .loading-card,
+  .quick-panel,
+  .scanner-selected-detail,
+  .scanner-compare-list,
+  .backtest-workspace
+) {
+  box-shadow: none;
+}
+
+html[data-theme="light"] :where(
+  .sidebar-note,
+  .strategy-origin-context,
+  .strategy-current-history-split,
+  .scanner-target1-audit,
+  .price-plan-consistency,
+  .scanner-price-consistency
+) {
+  background-color: var(--bg-surface-soft);
 }
