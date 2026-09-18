@@ -13,7 +13,7 @@ from typing import Any, Iterable
 from app.backtest.candidate_priority import build_candidate_priority, priority_sort_key
 
 
-AUDIT_VERSION = "v0.21.4-B.2.3.4a"
+AUDIT_VERSION = "v0.21.4-B.2.3.4b"
 KST = timezone(timedelta(hours=9), name="KST")
 
 
@@ -264,8 +264,26 @@ def build_scanner_reproducibility_payload(
         for code, series in series_map.items():
             candidate_input_hashes[f"{market}:{code}"] = _candidate_history_hash(series)
 
+    candidate_row_counts = [
+        int(item.get("row_count") or 0)
+        for item in candidate_input_hashes.values()
+        if isinstance(item, dict)
+    ]
+
     return {
         "audit_version": AUDIT_VERSION,
+        "decision_pipeline": "CURRENT_ONLY_V1",
+        "ranking_policy": "CURRENT_DETERMINISTIC_V1",
+        "historical_evidence_affects_rank": False,
+        "current_history_window": {
+            "start": history_start.isoformat(),
+            "end": analysis_date.isoformat(),
+            "fingerprint": combined.hexdigest(),
+        },
+        "historical_coverage": {
+            "candidate_rows_min": min(candidate_row_counts) if candidate_row_counts else 0,
+            "candidate_rows_max": max(candidate_row_counts) if candidate_row_counts else 0,
+        },
         "machine": machine,
         "generated_at": generated.isoformat(timespec="seconds"),
         "analysis_date": analysis_date.isoformat(),

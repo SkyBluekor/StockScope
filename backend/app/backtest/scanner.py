@@ -38,13 +38,13 @@ class StockScannerService:
     presented to the user as probabilities.
     """
 
-    VERSION = "0.21.3.2"
+    VERSION = "0.21.3.3"
     HISTORY_CALENDAR_DAYS = 485  # local-only historical evidence window
     FAST_HISTORY_CALENDAR_DAYS = 220  # current-condition scan only; ~150 weekdays
     EVIDENCE_CALENDAR_DAYS = 365
     THREE_YEAR_WARMUP_DAYS = 220
     HISTORICAL_EVIDENCE_POLICY_VERSION = "v1"
-    HISTORICAL_VALIDATION_MIN_ROWS = 220
+    HISTORICAL_VALIDATION_MIN_ROWS = 220  # legacy diagnostic only; never selects production current path
     QUICK_LIMIT_PER_MARKET = 160
     DEEP_LIMIT = 18
     EXTRA_RESULT_LIMIT = 10
@@ -769,13 +769,20 @@ class StockScannerService:
 
     def _history_plan(self, *, market: str, start: date, end: date) -> dict[str, Any]:
         dates = self._weekdays(start, end)
+        start_key = self._compact(start)
+        end_key = self._compact(end)
+        if hasattr(self.market_store, "day_status_range"):
+            statuses = self.market_store.day_status_range(market, start_key, end_key)
+        else:
+            statuses = {}
+
         work: list[tuple[str, date]] = []
         for day in dates:
             key = self._compact(day)
-            if not self.market_store.day_complete(market, key, "stock"):
-                work.append(("stock", day))
-            if not self.market_store.day_complete(market, key, "index"):
-                work.append(("index", day))
+            for kind in ("stock", "index"):
+                complete = (key, kind) in statuses if statuses else self.market_store.day_complete(market, key, kind)
+                if not complete:
+                    work.append((kind, day))
         total = len(dates) * 2
         reused = total - len(work)
         estimated = sum(1 for kind, day in work if not self.krx.has_cached_day(market, day, kind))
@@ -1152,7 +1159,7 @@ class StockScannerService:
             "quick_score": round(quick_score, 4),
         }
 
-    def _fast_candidate(self, item: dict[str, Any]) -> dict[str, Any] | None:
+    def _current_candidate(self, item: dict[str, Any]) -> dict[str, Any] | None:
         current = dict(item.get("quick_current") or {})
         guide = dict(item.get("quick_guide") or {})
         condition_state = dict(item.get("quick_condition_state") or {})
@@ -1255,6 +1262,10 @@ class StockScannerService:
             "_repro_market_cap": item.get("market_cap"),
             "_repro_history_points": item.get("history_points"),
         }
+
+    def _fast_candidate(self, item: dict[str, Any]) -> dict[str, Any] | None:
+        """Backward-compatible alias for the canonical current-only candidate builder."""
+        return self._current_candidate(item)
 
     def _deep_candidate(
         self,
@@ -1387,9 +1398,9 @@ class StockScannerService:
 
         This path is intentionally local-only. It never calls KRX and therefore cannot
         turn a fast Scanner request into a multi-hundred-request historical bootstrap.
-        v0.21.3 uses the result only after current conditions and Risk have established
-        the candidate tier; history can refine a tie but cannot convert a current FAIL
-        into a current PASS.
+        B.2.3.4b uses the result only as explanatory evidence after the current
+        candidate and rank are determined. Local history never changes production
+        strategy selection, tier, or rank.
         """
         stats = {"verified": 0, "data_unavailable": 0, "sample_insufficient": 0, "cache_hits": 0}
         if not candidates:
@@ -1557,7 +1568,23 @@ class StockScannerService:
             details=self._progress_payload(overall_percent=4, started_at=started_at),
         )
 
-        plans = {market: self._history_plan(market=market, start=fast_start, end=stable_end) for market in markets}
+        plans: dict[str, dict[str, Any]] = {}
+        for plan_position, market in enumerate(markets, start=1):
+            plans[market] = self._history_plan(market=market, start=fast_start, end=stable_end)
+            self._emit(
+                progress,
+                stage="scanner_plan",
+                message=f"{market} 저장 데이터 상태를 확인했습니다.",
+                current=plan_position,
+                total=max(len(markets), 1),
+                details=self._progress_payload(
+                    overall_percent=4 + 4.0 * plan_position / max(len(markets), 1),
+                    started_at=started_at,
+                    current_item=market,
+                    items_done=plan_position,
+                    items_total=len(markets),
+                ),
+            )
         estimated_total = sum(int(plan["estimated_network_requests"]) for plan in plans.values())
         fast_limit = self.fast_request_limit()
         large_sync_blocked = estimated_total > fast_limit and not allow_large_sync
@@ -1775,21 +1802,8 @@ class StockScannerService:
             verified_count = 0
             current_only_count = 0
 
-            # Historical evidence is local-only here. Scanner never downloads a year of
-            # history merely to finish one search. Existing Market Store data is reused.
-            deep_codes_by_market: dict[str, list[str]] = {}
-            for item in deep_inputs:
-                deep_codes_by_market.setdefault(str(item["market"]), []).append(str(item["code"]))
-            deep_series_by_market: dict[str, dict[str, Any]] = {}
-            deep_index_by_market: dict[str, list[dict[str, Any]]] = {}
-            for market, codes in deep_codes_by_market.items():
-                latest_date = latest_dates.get(market, "").replace("-", "")
-                deep_series_by_market[market] = self.market_store.stock_series_many(
-                    market, codes, self._compact(evidence_start), latest_date
-                )
-                index_series = self.market_store.index_series(market, self._compact(evidence_start), latest_date)
-                deep_index_by_market[market] = sorted(index_series.rows.values(), key=self._row_date)
-
+            # Production current decisions are intentionally history-coverage agnostic.
+            # Optional long history is attached later as Historical Evidence only.
             t_deep = time.perf_counter()
             self._emit(
                 progress,
@@ -1805,28 +1819,10 @@ class StockScannerService:
                 ),
             )
             for position, item in enumerate(deep_inputs, start=1):
-                market = str(item["market"])
                 code = str(item["code"])
-                deep_series = deep_series_by_market.get(market, {}).get(code)
-                deep_stock_rows = list(deep_series.rows.values()) if deep_series is not None else []
-                deep_index_rows = deep_index_by_market.get(market, [])
-                enough_history = (
-                    len(deep_stock_rows) >= self.HISTORICAL_VALIDATION_MIN_ROWS
-                    and len(deep_index_rows) >= self.HISTORICAL_VALIDATION_MIN_ROWS
-                )
-                if enough_history:
-                    deep = self._deep_candidate(
-                        item=item,
-                        stock_rows=deep_stock_rows,
-                        index_rows=deep_index_rows,
-                    )
-                    if deep is not None:
-                        verified_count += 1
-                else:
-                    deep = self._fast_candidate(item)
-                    if deep is not None:
-                        current_only_count += 1
+                deep = self._current_candidate(item)
                 if deep is not None:
+                    current_only_count += 1
                     deep_results.append(deep)
 
                 percent = 65 + 25.0 * position / max(len(deep_inputs), 1)
@@ -1858,10 +1854,9 @@ class StockScannerService:
                 details=self._progress_payload(overall_percent=90, started_at=started_at),
             )
             # Preliminary order is kept only as a diagnostic baseline. v0.21.3 then
-            # validates the bounded actionable pool with local three-year evidence and
-            # applies a tier-first priority rule: current conditions > Risk > concrete
-            # entry proximity > historical evidence > strategy fit. No probability score
-            # is exposed or used to let history override a current condition failure.
+            # attaches local three-year evidence only as explanation, then applies a
+            # deterministic current-only priority rule. Optional local history never
+            # changes today's strategy or production rank.
             deep_results.sort(key=lambda item: float(item.get("internal_rank") or 0.0), reverse=True)
             actionable = [item for item in deep_results if item.get("candidate_state") in {"READY", "WATCH", "VALIDATION"}]
             excluded_deep = len(deep_results) - len(actionable)
@@ -1874,7 +1869,7 @@ class StockScannerService:
             self._emit(
                 progress,
                 stage="scanner_priority_rank",
-                message="현재 조건·Risk·진입 거리·과거 근거 순서로 후보 우선순위를 설명하는 중",
+                message="현재 조건·Risk·진입 거리·현재 전략 적합도로 후보 우선순위를 확정하는 중",
                 current=1,
                 total=1,
                 details=self._progress_payload(overall_percent=99, started_at=started_at),
@@ -1958,9 +1953,9 @@ class StockScannerService:
                     "liquidity": "최근 거래대금이 StockScope 기본 유동성 기준에 미달하면 빠른 후보에서 제외합니다.",
                 },
                 "methodology": {
-                    "meaning": "상승 확률 순위가 아니라 현재 조건을 가장 먼저 보고, Risk와 실제 진입 기준까지의 거리, 같은 전략의 3년 과거 근거를 순서대로 비교해 먼저 확인할 후보를 정합니다.",
-                    "pipeline": ["최근 데이터 확인", "전체 종목 빠른 필터", "현재 10개 전략·Risk 확인", "후보 풀 3년 과거검증", "조건 → Risk → 진입 근접도 → 과거 근거 순으로 최종 우선순위"],
-                    "guardrail": "과거 근거가 좋아도 현재 조건 실패를 통과로 바꾸지 않으며, Risk가 나쁜 종목을 조건 점수만으로 상위에 올리지 않습니다. 이 순위는 미래 상승 확률이나 매수 추천이 아닙니다.",
+                    "meaning": "상승 확률 순위가 아니라 현재 조건, Risk, 실제 진입 기준까지의 거리, 현재 전략 적합도로 먼저 확인할 후보를 정합니다. 3년 과거 근거는 현재 판단과 분리된 참고 정보입니다.",
+                    "pipeline": ["최근 데이터 확인", "전체 종목 빠른 필터", "현재 10개 전략·Risk 확인", "현재 조건 → Risk → 진입 근접도 → 전략 적합도로 최종 우선순위", "후보별 3년 과거 근거를 참고 정보로 부착"],
+                    "guardrail": "로컬 3년 데이터 보유량은 현재 전략·Risk·순위를 바꾸지 않습니다. 이 순위는 미래 상승 확률이나 매수 추천이 아닙니다.",
                 },
                 "diagnostics": {
                     "market_store_reused_items": aggregate_sync["store_hits"],

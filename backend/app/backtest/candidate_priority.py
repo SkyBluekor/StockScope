@@ -178,7 +178,7 @@ def build_candidate_priority(candidate: dict[str, Any]) -> dict[str, Any]:
         "entry_gap_pct": None if gap_pct is None else round(gap_pct, 3),
         "entry_gap_basis": gap_basis,
         "historical_status": historical_status,
-        "ranking_rule": "현재 조건 → Risk → 진입 근접도 → 3년 과거 근거 → 전략 적합도",
+        "ranking_rule": "현재 조건 → Risk → 진입 근접도 → 현재 전략 적합도 → 종목코드",
         "_sort": {
             "tier_order": TIER_ORDER[tier],
             "missing": missing,
@@ -200,14 +200,18 @@ def priority_sort_key(candidate: dict[str, Any]) -> tuple[Any, ...]:
         int(sort.get("risk_quality", 9)),
         int(sort.get("entry_gap_missing", 1)),
         float(sort.get("entry_gap_pct", 999999.0)),
-        int(sort.get("historical_order", 9)),
         -float(sort.get("strategy_fit", 0.0)),
         str(candidate.get("code") or ""),
     )
 
 
 def rank_candidates(candidates: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Rank a bounded Scanner candidate pool without inventing probability scores."""
+    """Rank by current, deterministic inputs only.
+
+    Local-only historical evidence is intentionally excluded from the production
+    sort key so two PCs with different optional history coverage cannot disagree
+    about today's strategy/rank. Historical status remains in the explanation.
+    """
 
     previous_rank = {id(candidate): index for index, candidate in enumerate(candidates, start=1)}
     for candidate in candidates:

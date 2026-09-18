@@ -772,12 +772,12 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
     <div className="scanner-workspace">
       <section className="scanner-hero">
         <div>
-          <span className="eyebrow">STOCK SCANNER · v0.21.4-B.2.3.2b</span>
+          <span className="eyebrow">STOCK SCANNER · v0.21.4-B.2.3.4b</span>
           <h1>오늘 어떤 종목을 먼저 볼까요?</h1>
-          <p>종목을 직접 고르기 전에 현재 조건을 먼저 보고, Risk·진입 기준까지의 거리·같은 전략의 3년 과거 근거를 순서대로 비교해 먼저 확인할 후보를 정합니다.</p>
+          <p>종목을 직접 고르기 전에 현재 조건을 먼저 보고, Risk·진입 기준까지의 거리·현재 전략 적합도로 우선순위를 정합니다. 같은 전략의 3년 과거 근거는 현재 판단과 분리해 참고로 보여줍니다.</p>
         </div>
         <div className="scanner-flow" aria-label="종목 찾기 흐름">
-          <span>1 · 시장 전체 빠른 검사</span><i>→</i><span>2 · 전략·Risk·3년 근거</span><i>→</i><span>3 · 후보 우선순위 설명</span>
+          <span>1 · 시장 전체 빠른 검사</span><i>→</i><span>2 · 현재 전략·Risk 확인</span><i>→</i><span>3 · 우선순위 + 3년 참고 근거</span>
         </div>
       </section>
 

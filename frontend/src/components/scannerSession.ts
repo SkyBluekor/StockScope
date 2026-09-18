@@ -1,7 +1,8 @@
 import type { ScannerResponse } from "../services/api";
 
 export const SCANNER_SESSION_STORAGE_KEY = "stockscope.scanner.session.v0.21.4-A.3";
-export const SCANNER_SESSION_SCHEMA_VERSION = 1;
+export const SCANNER_SESSION_SCHEMA_VERSION = 2;
+export const SCANNER_DECISION_VERSION = "0.21.3.3";
 
 export type ScannerMarketScope = "ALL" | "KOSPI" | "KOSDAQ";
 
@@ -84,6 +85,10 @@ export function readScannerSession(storage: StorageLike | null = browserSessionS
         if (!parsed.result || !parsed.scope || !parsed.completedAt) return null;
         if (!(["ALL", "KOSPI", "KOSDAQ"] as string[]).includes(parsed.scope)) return null;
         if (parsed.result.market_scope !== parsed.scope) return null;
+        if (parsed.result.version !== SCANNER_DECISION_VERSION) {
+          try { storage.removeItem(SCANNER_SESSION_STORAGE_KEY); } catch { /* ignore */ }
+          return null;
+        }
         const restored: ScannerSessionSnapshot = {
           schemaVersion: SCANNER_SESSION_SCHEMA_VERSION,
           scope: parsed.scope,

@@ -309,6 +309,26 @@ class HistoricalMarketStore:
                 (market, code.upper(), bas_dd),
             ).fetchone() is not None
 
+    def day_status_range(self, market: str, start_dd: str, end_dd: str) -> dict[tuple[str, str], str]:
+        """Return day-status markers for a range with one SQLite read.
+
+        Scanner planning used to call day_complete() once for every date/kind,
+        repeatedly opening SQLite hundreds of times. On slower school PCs that made
+        the UI look frozen at "필요 데이터 확인" even when almost everything was
+        already stored.
+        """
+        market = self._market(market)
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                "SELECT bas_dd,kind,status FROM day_status "
+                "WHERE market=? AND bas_dd>=? AND bas_dd<=? ORDER BY bas_dd,kind",
+                (market, start_dd, end_dd),
+            ).fetchall()
+        return {
+            (str(row["bas_dd"]), str(row["kind"])): str(row["status"])
+            for row in rows
+        }
+
     def day_complete(self, market: str, bas_dd: str, kind: str) -> bool:
         market = self._market(market)
         with self._lock, self._connect() as conn:
