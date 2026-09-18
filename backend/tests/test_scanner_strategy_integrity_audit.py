@@ -13,14 +13,17 @@ from app.backtest.scanner_quality.strategy_integrity_audit import (
     BREAKOUT_RS_CONDITION,
     MA120_CONDITION,
     MA120_FIXED,
+    MA120_INPUT_ONLY,
     RS_KEEP_4,
     RS_KEEP_8,
     RS_RESTORE_10_8,
-    _restore_breakout_evaluation,
     StrategyIntegrityAuditor,
     _breakout_rs_definition_from_source,
     _dedup_exact_condition,
     _eligible_threshold_from_source,
+    _restore_breakout_evaluation,
+    _sequence_comparison,
+    _sector_aware_rs_matrix,
     _sma,
     _validate_breakout_rs_definition,
     compact_integrity_payload,
@@ -131,9 +134,9 @@ class Scanner:
         return {
             "source_file": "fixture/app/strategy/engine.py",
             "condition_label": BREAKOUT_RS_CONDITION,
-            "market_weights": [6.0],
             "duplicate_count": len(weights),
             "weights": weights,
+            "market_weights": [6.0],
             "predicate_equivalent": True,
             "entries": [{"weight": value, "predicate_ast": "same"} for value in weights],
             "eligible_score_threshold": 40.0,
@@ -254,15 +257,15 @@ def test_exact_breakout_ast_detection_ignores_unrelated_numbers(tmp_path: Path):
     )
     definition = _breakout_rs_definition_from_source(source)
     assert definition is not None
-    assert definition["market_weights"] == [6.0]
     assert definition["weights"] == [4.0, 8.0]
+    assert definition["market_weights"] == [6.0]
     assert definition["duplicate_count"] == 2
     assert definition["predicate_equivalent"] is True
     assert _eligible_threshold_from_source(source) == 40.0
 
 
 def test_fail_fast_rejects_broad_wrong_weight_candidates():
-    with pytest.raises(RuntimeError, match=r"expected exactly two equivalent Breakout RS conditions"):
+    with pytest.raises(RuntimeError, match=r"expected Breakout market 6"):
         StrategyIntegrityAuditor(Scanner(bad_source=True), Store())
 
 
@@ -328,7 +331,7 @@ def test_future_rows_do_not_change_current_selection():
     auditor_b = StrategyIntegrityAuditor(Scanner(profiles=profiles), Store(codes=("000001",), include_future=True))
     a = auditor_a.run_dates(dates=[date(2026, 1, 30)], market_scope="KOSPI", mode="inspect")
     b = auditor_b.run_dates(dates=[date(2026, 1, 30)], market_scope="KOSPI", mode="inspect")
-    for variant in (BASELINE, MA120_FIXED, RS_KEEP_4, RS_KEEP_8, RS_RESTORE_10_8):
+    for variant in (BASELINE, MA120_FIXED, MA120_INPUT_ONLY, RS_KEEP_4, RS_KEEP_8, RS_RESTORE_10_8):
         assert a["runs"][0]["variants"][variant]["quick_selected_keys"] == b["runs"][0]["variants"][variant]["quick_selected_keys"]
 
 
@@ -349,169 +352,97 @@ def test_output_writer_emits_four_files_and_hotfix_summary(tmp_path: Path):
     )
     compact = compact_integrity_payload(payload)
     paths = write_integrity_outputs(compact, output_dir=tmp_path)
-    assert set(paths) == {"json", "csv", "pairs_csv", "markdown"}
+    assert set(paths) == {"json", "csv", "pairs_csv", "ma120_pairs_csv", "markdown"}
     assert all(Path(path).exists() for path in paths.values())
     summary = Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "Detected duplicate weights: **[4.0, 8.0]**" in summary
     assert "### RS_KEEP_4" in summary
     assert "### RS_KEEP_8" in summary
     assert "### RS_RESTORE_10_8" in summary
-    assert "v0.21.4-B.2.3.4c.4b" in summary
-    assert "Historical intended: market 10 + sector 8" in summary
+    assert "MA120_INPUT_ONLY" in summary
 
 
-@pytest.mark.parametrize("market,sector,baseline_score,restore_score,baseline_passed,restore_passed", [
-    (2, 1, 100, 100, 9, 8),
-    (2, 0, 88, 92, 7, 7),
-    (0, 1, 94, 90, 8, 7),
-    (0, 0, 82, 82, 6, 6),
-    (2, None, 100, 100, 9, 8),
-    (0, None, 82, 82, 6, 6),
-    (2, -1, 88, 92, 7, 7),
-    (-1, 1, 94, 90, 8, 7),
-    (-1, -1, 82, 82, 6, 6),
-])
-def test_restore_sector_cases(market, sector, baseline_score, restore_score, baseline_passed, restore_passed):
-    from app.strategy import StrategyEngine, StrategyInput, MarketRegime
-    data = StrategyInput(code="test", market="KOSPI", current_price=100,
-                         ma20=90, ma20_slope_pct=1, volume_ratio_20=2,
-                         distance_to_20d_high_pct=1, rsi14=60,
-                         market_regime=MarketRegime.TREND_UP,
-                         relative_strength_market_pct=market, relative_strength_sector_pct=sector)
-    baseline = StrategyEngine()._breakout(data)
-    original = baseline.to_dict()
-    restored, metadata = _restore_breakout_evaluation(data, baseline)
-    assert baseline.score == baseline_score and restored.score == restore_score
-    assert (baseline.passed, restored.passed) == (baseline_passed, restore_passed)
-    assert (baseline.total, restored.total) == (9, 8)
-    assert restored.eligible == (restore_score >= 40)
-    assert len(restored.reasons) == restored.passed
-    assert len(restored.reasons) + len(restored.unmet) == restored.total
-    assert (restored.reasons + restored.unmet).count(BREAKOUT_RS_CONDITION) == 1
-    assert metadata["market_weight"] == 10
-    assert metadata["sector_weights"] == [8] and metadata["sector_condition_count"] == 1
-    assert baseline.to_dict() == original
+def test_restore_10_8_fallback_keeps_score_but_reduces_condition_count():
+    original = Eval(
+        "breakout", 100, True,
+        ["20일 시장 대비 상대강도 양호", BREAKOUT_RS_CONDITION, BREAKOUT_RS_CONDITION],
+        [], 3, 3,
+    )
+    restored, meta = _restore_breakout_evaluation(
+        original,
+        relative_strength_market_pct=2.0,
+        relative_strength_sector_pct=None,
+        eligible_threshold=40,
+    )
+    assert restored is not None
+    assert restored.score == 100  # -4 sector +4 market = net zero in fallback
+    assert restored.total == 2 and restored.passed == 2
+    assert meta["sector_fallback_used"] is True
+    assert meta["condition_count_changed"] is True
 
 
-@pytest.mark.parametrize("market_weights", [[], [4], [8], [6, 6]])
-def test_fail_fast_rejects_changed_market_definition(market_weights):
-    report = {"breakout_rs_definition": Scanner()._strategy_integrity_audit_breakout_source()}
-    report["breakout_rs_definition"]["market_weights"] = market_weights
-    with pytest.raises(RuntimeError, match="market_weights"):
-        _validate_breakout_rs_definition(report)
+def test_restore_10_8_divergent_market_sector_changes_weighted_score():
+    original = Eval(
+        "breakout", 6, False,
+        ["20일 시장 대비 상대강도 양호"],
+        [BREAKOUT_RS_CONDITION, BREAKOUT_RS_CONDITION], 1, 3,
+    )
+    restored, meta = _restore_breakout_evaluation(
+        original,
+        relative_strength_market_pct=2.0,
+        relative_strength_sector_pct=-1.0,
+        eligible_threshold=40,
+    )
+    assert restored is not None
+    assert restored.score == 10
+    assert restored.total == 2 and restored.passed == 1
+    assert meta["market_pass"] is True
+    assert meta["sector_pass"] is False
 
 
-def test_actual_baseline_definition_and_production_invariant():
-    import hashlib
-    from app.strategy import StrategyEngine, StrategyInput
-    import inspect
-    path = Path(inspect.getfile(StrategyEngine))
-    before = hashlib.sha256(path.read_bytes()).hexdigest()
-    definition = _breakout_rs_definition_from_source(path)
-    assert definition["market_weights"] == [6]
-    assert definition["weights"] == [4, 8]
-    _validate_breakout_rs_definition({"breakout_rs_definition": definition})
-    data = StrategyInput(code="test", market="KOSPI", current_price=100)
-    baseline = StrategyEngine()._breakout(data)
-    restored, _ = _restore_breakout_evaluation(data, baseline)
-    assert restored.eligible is False
-    assert StrategyEngine()._breakout(data).to_dict() == baseline.to_dict()
-    assert hashlib.sha256(path.read_bytes()).hexdigest() == before
+def test_membership_and_order_are_reported_separately():
+    same_members = _sequence_comparison(["A", "B", "C"], ["B", "A", "C"], prefix="top5")
+    assert same_members["top5_membership_changed"] is False
+    assert same_members["top5_order_changed"] is True
+    assert same_members["top5_order_only_changed"] is True
+
+    changed_members = _sequence_comparison(["A", "B", "C"], ["A", "B", "D"], prefix="top5")
+    assert changed_members["top5_membership_changed"] is True
+    assert changed_members["top5_membership_replacements"] == 1
+    assert changed_members["top5_order_only_changed"] is False
 
 
-class RestorePathScanner(OneSlotScanner):
-    def _strategy_integrity_audit_snapshot(self, **kwargs):
-        from app.strategy import StrategyEngine, StrategyInput, MarketRegime
-        snapshot = super()._strategy_integrity_audit_snapshot(**kwargs)
-        code = kwargs["row"]["code"]
-        data = StrategyInput(code=code, market="KOSPI", current_price=200,
-                             ma20=190, ma60=180, ma20_slope_pct=1, rsi14=60,
-                             volume_ratio_20=2, distance_to_20d_high_pct=1,
-                             market_regime=MarketRegime.TREND_UP,
-                             relative_strength_market_pct=2,
-                             relative_strength_sector_pct=-1 if code == "000001" else 1)
-        snapshot["strategy_input"] = data
-        snapshot["evaluations"]["breakout"] = StrategyEngine()._breakout(data)
-        snapshot["evaluations"]["trend_following"] = replace(snapshot["evaluations"]["trend_following"], score=90)
-        return snapshot
+def test_ma120_input_only_variant_is_present_and_uses_as_of_history():
+    auditor = StrategyIntegrityAuditor(Scanner(), Store(rows_count=130))
+    result = auditor.run_dates(dates=[date(2026, 1, 30)], market_scope="KOSPI", mode="inspect")
+    run = result["runs"][0]
+    assert MA120_INPUT_ONLY in run["variants"]
+    ma = run["integrity"]["ma120"]
+    assert ma["input_only_attempted"] == 2
+    assert ma["input_only_supported"] == 2
+    assert result["strategy_integrity_validation"]["comparison_normalization"]["membership_order_split"] is True
 
 
-def test_restore_reselection_quick18_top5_and_full_metrics():
-    scanner = RestorePathScanner()
-    auditor = StrategyIntegrityAuditor(scanner, Store(include_future=True))
-    payload = auditor.run_dates(dates=[date(2026, 1, 30)], market_scope="KOSPI", mode="full")
-    run = payload["runs"][0]
-    stats = payload["strategy_integrity_validation"]["rs_variants"][RS_RESTORE_10_8]
-    assert stats["condition_count_changed_signals"] == 2
-    assert stats["score_changed_signals"] == 1
-    assert stats["other_to_breakout"] == 1
-    assert run["trace"]["KOSPI:000001"]["baseline_quick_strategy"] == "trend_following"
-    assert run["trace"]["KOSPI:000001"]["rs_restore_quick_strategy"] == "breakout"
-    for horizon in ("5", "10", "20"):
-        metric = stats["impact"]["horizons"][horizon]
-        for key in ("mean_return_delta_pct", "median_return_delta_pct", "trimmed_return_delta_pct",
-                    "mean_r_delta", "median_r_delta", "target1_first_delta_pct", "stop_first_delta_pct",
-                    "mfe_delta_pct", "mae_delta_pct"):
-            assert metric[key] is not None
+def test_restore_variant_is_propagated_and_sector_absence_is_reported():
+    auditor = StrategyIntegrityAuditor(Scanner(), Store(rows_count=130))
+    result = auditor.run_dates(dates=[date(2026, 1, 30)], market_scope="KOSPI", mode="inspect")
+    run = result["runs"][0]
     assert RS_RESTORE_10_8 in run["variants"]
+    restore = result["strategy_integrity_validation"]["rs_variants"][RS_RESTORE_10_8]
+    assert restore["market_weight"] == 10.0
+    assert restore["condition_count_changed"] == 2
+    assert result["strategy_integrity_validation"]["comparison_normalization"]["sector_rs_design_validation"] == "INSUFFICIENT_SECTOR_RS_DATA"
 
 
-def test_restore_changes_pool_and_top5_when_market_and_sector_disagree():
-    class OpposingScanner(RestorePathScanner):
-        def _strategy_integrity_audit_snapshot(self, **kwargs):
-            from app.strategy import StrategyEngine
-            snapshot = super()._strategy_integrity_audit_snapshot(**kwargs)
-            code = kwargs["row"]["code"]
-            data = replace(snapshot["strategy_input"],
-                           relative_strength_market_pct=2 if code == "000001" else -2,
-                           relative_strength_sector_pct=-1 if code == "000001" else 1)
-            snapshot["strategy_input"] = data
-            snapshot["evaluations"]["breakout"] = StrategyEngine()._breakout(data)
-            snapshot["evaluations"]["trend_following"] = replace(snapshot["evaluations"]["trend_following"], score=80)
-            return snapshot
-    payload = StrategyIntegrityAuditor(OpposingScanner(), Store()).run_dates(
-        dates=[date(2026, 1, 30)], market_scope="KOSPI", mode="inspect")
-    run = payload["runs"][0]
-    assert run["variants"][BASELINE]["quick_selected_keys"] == ["KOSPI:000002"]
-    assert run["variants"][RS_RESTORE_10_8]["quick_selected_keys"] == ["KOSPI:000001"]
-    assert run["comparisons"][RS_RESTORE_10_8]["quick_pool_changed"]
-    assert run["comparisons"][RS_RESTORE_10_8]["top5_changed"]
-
-
-@pytest.mark.parametrize("gate", [{"event_risk": True}, {"tradable": False}, {"liquidity_ok": False}])
-def test_restore_preserves_risk_gate(gate):
-    from app.strategy import StrategyEngine, StrategyInput
-    data = StrategyInput(code="test", market="KOSPI", current_price=100, **gate)
-    baseline = next(e for e in StrategyEngine().evaluate_all(data) if str(e.strategy) == "breakout")
-    restored, _ = _restore_breakout_evaluation(data, baseline)
-    assert baseline.eligible is False and restored.eligible is False
-
-
-def test_same_score_fallback_rebuilds_real_readiness_and_quick_score():
-    from app.backtest.scanner import StockScannerService
-    from app.strategy import StrategyEngine, StrategyInput, MarketRegime
-    scanner = StockScannerService(SimpleNamespace(), market_store=Store())
-    auditor = StrategyIntegrityAuditor(scanner, Store())
-    # RSI fails while all RS conditions pass: normalized score stays 90,
-    # but condition ratio changes from 8/9 to 7/8.
-    data = StrategyInput(code="000001", market="KOSPI", current_price=200,
-                         ma20=190, ma60=180, ma20_slope_pct=1, rsi14=80,
-                         volume_ratio_20=2, distance_to_20d_high_pct=1,
-                         market_regime=MarketRegime.TREND_UP,
-                         relative_strength_market_pct=2, relative_strength_sector_pct=None,
-                         support_price=190, resistance_price=210, atr_pct=2)
-    baseline = StrategyEngine()._breakout(data)
-    restored, _ = _restore_breakout_evaluation(data, baseline)
-    row = {"code": "000001", "name": "test", "close": 200, "trade_value": 1000, "market_cap": 100}
-    def quick(evaluation):
-        return auditor._quick_from_snapshot(snapshot={"strategy_input": data, "technical": {},
-                                            "evaluations": {evaluation.strategy: evaluation}},
-                                            market="KOSPI", latest_date="20260130", row=row)[0]
-    old, new = quick(baseline), quick(restored)
-    assert baseline.score == restored.score == 90
-    assert old["quick_condition_state"]["consistency"]["ok"]
-    assert new["quick_condition_state"]["consistency"]["ok"]
-    assert (old["quick_current"]["passed"], old["quick_current"]["total"]) == (8, 9)
-    assert (new["quick_current"]["passed"], new["quick_current"]["total"]) == (7, 8)
-    assert old["quick_score"] != new["quick_score"]
-    assert new["quick_entry_risk_guide"]
+def test_sector_aware_matrix_covers_all_sign_and_fallback_cases():
+    rows = {row["case"]: row for row in _sector_aware_rs_matrix()}
+    assert set(rows) == {
+        "MARKET_POS_SECTOR_POS", "MARKET_POS_SECTOR_NEG",
+        "MARKET_NEG_SECTOR_POS", "MARKET_NEG_SECTOR_NEG",
+        "MARKET_POS_SECTOR_MISSING", "MARKET_NEG_SECTOR_MISSING",
+    }
+    assert rows["MARKET_POS_SECTOR_POS"]["score_delta"] == 0
+    assert rows["MARKET_POS_SECTOR_NEG"]["score_delta"] == 4
+    assert rows["MARKET_NEG_SECTOR_POS"]["score_delta"] == -4
+    assert rows["MARKET_POS_SECTOR_MISSING"]["score_delta"] == 0
+    assert rows["MARKET_NEG_SECTOR_MISSING"]["score_delta"] == 0

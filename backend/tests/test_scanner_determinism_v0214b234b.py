@@ -7,17 +7,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
-# Overlay-only compatibility shim.
-if "app.backtest.history_store" not in sys.modules:
-    history_store = types.ModuleType("app.backtest.history_store")
-
-    @dataclass
-    class HistorySeries:
-        rows: dict[str, dict] = field(default_factory=dict)
-        checked_dates: set[str] = field(default_factory=set)
-
-    history_store.HistorySeries = HistorySeries
-    sys.modules["app.backtest.history_store"] = history_store
+# Use the real project history_store/service modules in an installed project.
 
 from app.backtest.candidate_priority import priority_sort_key, rank_candidates
 from app.backtest.market_store import HistoricalMarketStore
@@ -88,7 +78,7 @@ def test_audit_declares_current_only_policy_and_history_coverage(tmp_path: Path)
     candidate = _candidate("000001", historical_status="DATA_UNAVAILABLE")
     payload = build_scanner_reproducibility_payload(
         market_store=store,
-        scanner_version="0.21.3.3",
+        scanner_version="0.21.3.4",
         market_scope="KOSPI",
         analysis_date=date(2026, 9, 17),
         history_start=date(2026, 9, 16),
@@ -113,7 +103,7 @@ def test_audit_declares_current_only_policy_and_history_coverage(tmp_path: Path)
 
 def test_scanner_source_no_long_history_branch_in_production_loop() -> None:
     source = (Path(__file__).parents[1] / "app" / "backtest" / "scanner.py").read_text(encoding="utf-8")
-    assert 'VERSION = "0.21.3.3"' in source
+    assert 'VERSION = "0.21.3.4"' in source
     assert "enough_history = (" not in source
     assert "deep = self._current_candidate(item)" in source
     assert "day_status_range" in source

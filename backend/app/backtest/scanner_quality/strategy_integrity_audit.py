@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import copy
 import csv
 import inspect
@@ -28,17 +29,21 @@ from app.backtest.scanner_quality.early_pruning_audit import (
 from app.backtest.scanner_quality.models import AuditHorizons
 
 KST = timezone(timedelta(hours=9), name="KST")
-AUDIT_VERSION = "v0.21.4-B.2.3.4c.4b"
+AUDIT_VERSION = "v0.21.4-B.2.3.4c.4c"
 BASELINE = "BASELINE"
 MA120_FIXED = "MA120_FIXED_AUDIT"
+MA120_INPUT_ONLY = "MA120_INPUT_ONLY"
 # Legacy name kept only for import compatibility with c.4 tests/tools.
 RS_DEDUP = "RS_DEDUP_AUDIT"
 RS_KEEP_4 = "RS_KEEP_4"
 RS_KEEP_8 = "RS_KEEP_8"
 RS_RESTORE_10_8 = "RS_RESTORE_10_8"
+RS_DEDUP_VARIANTS = (RS_KEEP_4, RS_KEEP_8)
 RS_VARIANTS = (RS_KEEP_4, RS_KEEP_8, RS_RESTORE_10_8)
 RS_REMOVED_WEIGHT = {RS_KEEP_4: 8.0, RS_KEEP_8: 4.0, RS_RESTORE_10_8: 4.0}
 RS_KEPT_WEIGHT = {RS_KEEP_4: 4.0, RS_KEEP_8: 8.0, RS_RESTORE_10_8: 8.0}
+BASELINE_MARKET_RS_WEIGHT = 6.0
+RESTORED_MARKET_RS_WEIGHT = 10.0
 BREAKOUT_RS_CONDITION = "20일 업종 대비 상대강도 양호"
 EXPECTED_BREAKOUT_RS_WEIGHTS = (4.0, 8.0)
 MA120_CONDITION = "60일선이 120일선 위"
@@ -229,10 +234,11 @@ def _ast_number(node: ast.AST) -> float | None:
 
 
 def _breakout_rs_definition_from_source(path: Path) -> dict[str, Any] | None:
-    """Read only the two duplicated Breakout RS tuples from strategy/engine.py.
+    """Read Breakout market/sector RS tuples from strategy/engine.py.
 
-    c.4 used broad numeric harvesting and accidentally selected 1.0.  c.4a scopes
-    extraction to StrategyEngine._breakout and the exact duplicated label.
+    c.4a scoped duplicate extraction to the exact sector label. c.4c keeps that
+    guarantee and additionally records the market-RS tuple so the 6+4+8 -> 10+8
+    counterfactual can fail fast when Production structure differs.
     """
     try:
         text = path.read_text(encoding="utf-8")
@@ -248,36 +254,43 @@ def _breakout_rs_definition_from_source(path: Path) -> dict[str, Any] | None:
     if breakout is None:
         return None
 
-    entries: list[dict[str, Any]] = []
-    market_entries: list[dict[str, Any]] = []
+    all_entries: list[dict[str, Any]] = []
     for node in ast.walk(breakout):
         if not isinstance(node, ast.Tuple) or len(node.elts) < 3:
             continue
         label_node, weight_node, predicate_node = node.elts[0], node.elts[1], node.elts[2]
-        if not isinstance(label_node, ast.Constant) or label_node.value not in {BREAKOUT_RS_CONDITION, "20일 시장 대비 상대강도 양호"}:
+        if not isinstance(label_node, ast.Constant) or not isinstance(label_node.value, str):
+            continue
+        label = str(label_node.value)
+        if "상대강도" not in label:
             continue
         weight = _ast_number(weight_node)
         if weight is None:
             continue
-        (entries if label_node.value == BREAKOUT_RS_CONDITION else market_entries).append({
-            "label": label_node.value,
+        all_entries.append({
+            "label": label,
             "weight": float(weight),
             "line": int(getattr(node, "lineno", 0) or 0),
             "predicate_ast": ast.dump(predicate_node, annotate_fields=True, include_attributes=False),
             "predicate_source": (ast.get_source_segment(text, predicate_node) or "").strip(),
         })
 
-    entries.sort(key=lambda item: (int(item.get("line") or 0), float(item.get("weight") or 0.0)))
-    predicate_dumps = [str(item.get("predicate_ast") or "") for item in entries]
+    sector_entries = [item for item in all_entries if item["label"] == BREAKOUT_RS_CONDITION]
+    market_entries = [item for item in all_entries if "시장" in item["label"]]
+    sector_entries.sort(key=lambda item: (int(item.get("line") or 0), float(item.get("weight") or 0.0)))
+    market_entries.sort(key=lambda item: (int(item.get("line") or 0), float(item.get("weight") or 0.0)))
+    predicate_dumps = [str(item.get("predicate_ast") or "") for item in sector_entries]
     return {
         "source_file": str(path),
         "condition_label": BREAKOUT_RS_CONDITION,
+        "duplicate_count": len(sector_entries),
+        "weights": [float(item["weight"]) for item in sector_entries],
+        "predicate_equivalent": bool(sector_entries) and len(set(predicate_dumps)) == 1,
+        "entries": sector_entries,
         "market_entries": market_entries,
-        "market_weights": [item["weight"] for item in market_entries],
-        "duplicate_count": len(entries),
-        "weights": [float(item["weight"]) for item in entries],
-        "predicate_equivalent": bool(entries) and len(set(predicate_dumps)) == 1,
-        "entries": entries,
+        "market_weights": [float(item["weight"]) for item in market_entries],
+        "market_condition_labels": [str(item["label"]) for item in market_entries],
+        "all_rs_entries": all_entries,
     }
 
 
@@ -310,6 +323,7 @@ def _validate_breakout_rs_definition(report: dict[str, Any]) -> None:
     count = int(definition.get("duplicate_count") or 0)
     equivalent = bool(definition.get("predicate_equivalent"))
     label = str(definition.get("condition_label") or "")
+    market_weights = tuple(sorted(float(value) for value in (definition.get("market_weights") or [])))
     errors: list[str] = []
     if count != 2:
         errors.append(f"duplicate_count={count}")
@@ -319,60 +333,13 @@ def _validate_breakout_rs_definition(report: dict[str, Any]) -> None:
         errors.append(f"label={label!r}")
     if not equivalent:
         errors.append("predicate_equivalent=False")
-    if definition.get("market_weights") != [6.0]:
-        errors.append(f"market_weights={definition.get('market_weights')}")
+    if market_weights and market_weights != (BASELINE_MARKET_RS_WEIGHT,):
+        errors.append(f"market_weights={list(market_weights)}")
     if errors:
         raise RuntimeError(
-            "RS audit aborted: expected exactly two equivalent Breakout RS conditions "
-            f"with weights [4, 8]; found {', '.join(errors)}"
+            "RS audit aborted: expected Breakout market 6 plus exactly two equivalent sector RS "
+            f"conditions with weights [4, 8]; found {', '.join(errors)}"
         )
-
-
-def _restore_breakout_evaluation(data: Any, original: Any) -> tuple[Any, dict[str, Any]]:
-    """Re-evaluate audit-only conditions; never mutate the production engine."""
-    from dataclasses import fields
-    from app.strategy.engine import StrategyEngine
-    from app.strategy.models import StrategyInput, StrategyName
-
-    class CaptureConditions(StrategyEngine):
-        @classmethod
-        def _evaluate(cls, strategy, data, conditions, **kwargs):
-            return conditions
-
-    conditions = CaptureConditions()._breakout(data)
-    restored = []
-    for label, weight, predicate in conditions:
-        if label == BREAKOUT_RS_CONDITION and weight == 4:
-            continue
-        if label == "20일 시장 대비 상대강도 양호":
-            weight = 10
-        restored.append((label, weight, predicate))
-    market = [w for label, w, _ in restored if label == "20일 시장 대비 상대강도 양호"]
-    sector = [w for label, w, _ in restored if label == BREAKOUT_RS_CONDITION]
-    if market != [10] or sector != [8]:
-        raise RuntimeError("RS restore aborted: expected market=10, sector=[8], count=1")
-    # Minimal audit fixtures may expose only a subset of StrategyInput fields.
-    if not isinstance(data, StrategyInput):
-        values = {f.name: getattr(data, f.name) for f in fields(StrategyInput) if hasattr(data, f.name)}
-        values.setdefault("code", "audit")
-        values.setdefault("market", "KOSPI")
-        data = StrategyInput(**values)
-    if original is None:
-        return None, {"market_weight": 10, "sector_weights": [8], "sector_condition_count": 1}
-    blockers = list(getattr(original, "blockers", None) or [])
-    blockers = list(dict.fromkeys([*blockers, *StrategyEngine._risk_gate(data)]))
-    evaluated = StrategyEngine._evaluate(StrategyName.BREAKOUT, data, restored, blockers=blockers)
-    result = _clone_evaluation(original, score=evaluated.score, eligible=evaluated.eligible,
-                               passed=evaluated.passed, total=evaluated.total,
-                               reasons=evaluated.reasons, unmet=evaluated.unmet)
-    if result is None:
-        raise RuntimeError("RS restore aborted: cannot reconstruct evaluation")
-    return result, {"original_score": getattr(original, "score", None), "new_score": evaluated.score,
-                    "market_weight": 10, "sector_weights": [8], "sector_condition_count": 1,
-                    "original_total": getattr(original, "total", None), "new_total": evaluated.total,
-                    "original_passed": getattr(original, "passed", None), "new_passed": evaluated.passed,
-                    "eligible": evaluated.eligible, "reasons": evaluated.reasons, "unmet": evaluated.unmet,
-                    "passed_duplicate_removed": BREAKOUT_RS_CONDITION in (getattr(original, "reasons", None) or [])}
 
 
 def inspect_strategy_sources(scanner: Any) -> dict[str, Any]:
@@ -655,6 +622,163 @@ def _remove_condition_once(evaluation: Any, condition: str, remove_weight: float
     }
 
 
+def _market_rs_condition(evaluation: Any) -> str | None:
+    reasons, unmet = _evaluation_conditions(evaluation)
+    for condition in reasons + unmet:
+        if "시장" in condition and "상대강도" in condition:
+            return condition
+    return None
+
+
+def _restore_breakout_evaluation(
+    evaluation: Any,
+    *,
+    relative_strength_market_pct: Any,
+    relative_strength_sector_pct: Any,
+    eligible_threshold: float | None = None,
+) -> tuple[Any | None, dict[str, Any]]:
+    """Rebuild the audit-only Breakout RS structure from 6+4+8 to 10+8.
+
+    This is not a Production mutation. It updates score, reasons/unmet, passed,
+    total and eligibility together. The sector predicate preserves current
+    fallback semantics: missing sector RS uses market RS.
+    """
+    reasons, unmet = _evaluation_conditions(evaluation)
+    sector_occurrences = reasons.count(BREAKOUT_RS_CONDITION) + unmet.count(BREAKOUT_RS_CONDITION)
+    if sector_occurrences < 2:
+        return None, {"applied": False, "reason": "sector_duplicate_not_present"}
+
+    # Remove one sector condition (the historical accidental weight-4 entry).
+    reduced, remove_meta = _remove_condition_once(evaluation, BREAKOUT_RS_CONDITION, 4.0)
+    if reduced is None:
+        return None, {"applied": False, "reason": "sector_remove_failed"}
+
+    market_value = _num(relative_strength_market_pct)
+    sector_value = _num(relative_strength_sector_pct)
+    market_pass = market_value is not None and market_value > 0
+    sector_effective = sector_value if sector_value is not None else market_value
+    sector_pass = sector_effective is not None and sector_effective > 0
+
+    reduced_score = _num(getattr(reduced, "score", None))
+    restored_score: Any = getattr(reduced, "score", None)
+    if reduced_score is not None and market_pass:
+        restored_score = reduced_score + (RESTORED_MARKET_RS_WEIGHT - BASELINE_MARKET_RS_WEIGHT)
+        if isinstance(getattr(evaluation, "score", None), int):
+            restored_score = int(round(restored_score))
+
+    changes: dict[str, Any] = {"score": restored_score}
+    if eligible_threshold is not None and hasattr(reduced, "eligible") and _num(restored_score) is not None:
+        changes["eligible"] = bool(float(_num(restored_score)) >= float(eligible_threshold))
+    restored = _clone_evaluation(reduced, **changes)
+    return restored, {
+        "applied": restored is not None,
+        "removed_weight": 4.0,
+        "baseline_market_weight": BASELINE_MARKET_RS_WEIGHT,
+        "restored_market_weight": RESTORED_MARKET_RS_WEIGHT,
+        "market_pass": market_pass,
+        "sector_pass": sector_pass,
+        "sector_fallback_used": sector_value is None,
+        "original_score": _num(getattr(evaluation, "score", None)),
+        "new_score": _num(getattr(restored, "score", None)) if restored is not None else None,
+        "original_passed": int(getattr(evaluation, "passed", len(reasons)) or 0),
+        "new_passed": int(getattr(restored, "passed", 0) or 0) if restored is not None else None,
+        "original_total": int(getattr(evaluation, "total", len(reasons) + len(unmet)) or 0),
+        "new_total": int(getattr(restored, "total", 0) or 0) if restored is not None else None,
+        "eligible_threshold": eligible_threshold,
+        "new_eligible": getattr(restored, "eligible", None) if restored is not None else None,
+        "condition_count_changed": restored is not None and int(getattr(restored, "total", 0) or 0) != int(getattr(evaluation, "total", 0) or 0),
+        "removed_condition_passed": bool(remove_meta.get("passed_condition_removed")),
+    }
+
+
+def _ordered_keys(items: Iterable[dict[str, Any]], *, limit: int | None = None) -> list[str]:
+    values = list(items)
+    if limit is not None:
+        values = values[:limit]
+    return [f"{_candidate_key(item)[0]}:{_candidate_key(item)[1]}" for item in values]
+
+
+def _sequence_comparison(baseline: list[str], variant: list[str], *, prefix: str) -> dict[str, Any]:
+    base_set = set(baseline)
+    var_set = set(variant)
+    membership_changed = base_set != var_set
+    order_changed = baseline != variant
+    replacements = max(len(var_set - base_set), len(base_set - var_set))
+    return {
+        f"{prefix}_membership_changed": membership_changed,
+        f"{prefix}_membership_replacements": replacements,
+        f"{prefix}_membership_added": sorted(var_set - base_set),
+        f"{prefix}_membership_removed": sorted(base_set - var_set),
+        f"{prefix}_order_changed": order_changed,
+        f"{prefix}_order_only_changed": bool(order_changed and not membership_changed),
+        f"{prefix}_baseline_order": list(baseline),
+        f"{prefix}_variant_order": list(variant),
+    }
+
+
+
+def _sector_aware_rs_matrix() -> list[dict[str, Any]]:
+    """Deterministic structural comparison for market/sector sign combinations."""
+    cases = [
+        ("MARKET_POS_SECTOR_POS", 1.0, 1.0),
+        ("MARKET_POS_SECTOR_NEG", 1.0, -1.0),
+        ("MARKET_NEG_SECTOR_POS", -1.0, 1.0),
+        ("MARKET_NEG_SECTOR_NEG", -1.0, -1.0),
+        ("MARKET_POS_SECTOR_MISSING", 1.0, None),
+        ("MARKET_NEG_SECTOR_MISSING", -1.0, None),
+    ]
+    rows: list[dict[str, Any]] = []
+    for name, market, sector in cases:
+        market_pass = market > 0
+        effective_sector = market if sector is None else sector
+        sector_pass = effective_sector > 0
+        baseline_score = (6 if market_pass else 0) + (4 if sector_pass else 0) + (8 if sector_pass else 0)
+        restore_score = (10 if market_pass else 0) + (8 if sector_pass else 0)
+        baseline_passed = int(market_pass) + int(sector_pass) * 2
+        restore_passed = int(market_pass) + int(sector_pass)
+        rows.append({
+            "case": name,
+            "market_value": market,
+            "sector_value": sector,
+            "sector_fallback": sector is None,
+            "baseline_score": baseline_score,
+            "restore_score": restore_score,
+            "score_delta": restore_score - baseline_score,
+            "baseline_passed": baseline_passed,
+            "baseline_total": 3,
+            "restore_passed": restore_passed,
+            "restore_total": 2,
+            "score_changed": baseline_score != restore_score,
+            "condition_count_changed": True,
+        })
+    return rows
+
+def audit_code_fingerprint(project_root: Path) -> dict[str, Any]:
+    """Fingerprint the audit and decision-path source actually used by this run."""
+    candidates = [
+        "backend/app/backtest/scanner_quality/strategy_integrity_audit.py",
+        "backend/tools/run_scanner_strategy_integrity_audit.py",
+        "backend/app/backtest/scanner_quality/early_pruning_audit.py",
+        "backend/app/backtest/candidate_priority.py",
+        "backend/app/backtest/scanner.py",
+        "backend/app/strategy/engine.py",
+    ]
+    files: dict[str, str] = {}
+    digest = hashlib.sha256()
+    for rel in candidates:
+        path = project_root / rel
+        if not path.exists() or not path.is_file():
+            continue
+        raw = path.read_bytes()
+        sha = hashlib.sha256(raw).hexdigest()
+        files[rel] = sha
+        digest.update(rel.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(sha.encode("ascii"))
+        digest.update(b"\n")
+    return {"sha256": digest.hexdigest() if files else None, "files": files}
+
+
 def _candidate_key(item: dict[str, Any]) -> tuple[str, str]:
     return str(item.get("market") or ""), str(item.get("code") or "")
 
@@ -694,8 +818,6 @@ class StrategyIntegrityAuditor:
         self.source_report = inspect_strategy_sources(scanner)
         _validate_breakout_rs_definition(self.source_report)
         definition = self.source_report.get("breakout_rs_definition") or {}
-        from app.strategy.models import StrategyInput
-        _restore_breakout_evaluation(StrategyInput(code="source-check", market="KOSPI", current_price=1), None)
         self.breakout_rs_weights = tuple(sorted(float(value) for value in (definition.get("weights") or [])))
         self.eligible_score_threshold = _num(self.source_report.get("strategy_eligible_score_threshold"))
 
@@ -916,6 +1038,7 @@ class StrategyIntegrityAuditor:
         quick_by_variant: dict[str, list[dict[str, Any]]] = {
             BASELINE: [],
             MA120_FIXED: [],
+            MA120_INPUT_ONLY: [],
             RS_KEEP_4: [],
             RS_KEEP_8: [],
             RS_RESTORE_10_8: [],
@@ -934,6 +1057,9 @@ class StrategyIntegrityAuditor:
             "counterfactual_attempted": 0,
             "counterfactual_supported": 0,
             "counterfactual_changed_quick": 0,
+            "input_only_attempted": 0,
+            "input_only_supported": 0,
+            "input_only_changed_quick": 0,
         }
         rs_stats = {
             "breakout_evaluations": 0,
@@ -951,21 +1077,21 @@ class StrategyIntegrityAuditor:
         rs_variant_stats: dict[str, dict[str, Any]] = {
             RS_KEEP_4: {
                 "kept_weight": 4.0, "removed_weight": 8.0, "dedup_attempted": 0, "dedup_supported": 0,
-                "passed_condition_removed": 0, "score_changed_signals": 0, "strategy_changed_signals": 0,
+                "passed_condition_removed": 0, "condition_count_changed": 0, "score_changed_signals": 0, "strategy_changed_signals": 0,
                 "breakout_to_other": 0, "other_to_breakout": 0, "score_deltas": [],
             },
             RS_KEEP_8: {
                 "kept_weight": 8.0, "removed_weight": 4.0, "dedup_attempted": 0, "dedup_supported": 0,
-                "passed_condition_removed": 0, "score_changed_signals": 0, "strategy_changed_signals": 0,
+                "passed_condition_removed": 0, "condition_count_changed": 0, "score_changed_signals": 0, "strategy_changed_signals": 0,
                 "breakout_to_other": 0, "other_to_breakout": 0, "score_deltas": [],
             },
-        }
-        rs_variant_stats[RS_RESTORE_10_8] = {
-            "kept_weight": 8.0, "removed_weight": 4.0, "market_weight": 10,
-            "sector_condition_count": 1, "dedup_attempted": 0, "dedup_supported": 0,
-            "passed_condition_removed": 0, "score_changed_signals": 0,
-            "condition_count_changed_signals": 0, "strategy_changed_signals": 0,
-            "breakout_to_other": 0, "other_to_breakout": 0, "score_deltas": [],
+            RS_RESTORE_10_8: {
+                "kept_weight": 8.0, "removed_weight": 4.0, "market_weight": 10.0,
+                "dedup_attempted": 0, "dedup_supported": 0, "passed_condition_removed": 0,
+                "condition_count_changed": 0, "score_changed_signals": 0, "strategy_changed_signals": 0,
+                "breakout_to_other": 0, "other_to_breakout": 0, "score_deltas": [],
+                "identical_score_but_condition_count_changed": 0,
+            },
         }
         reeval_paths: dict[str, int] = {}
         duplicate_conditions: dict[str, int] = {}
@@ -1115,7 +1241,8 @@ class StrategyIntegrityAuditor:
                     continue
                 quick_by_variant[BASELINE].append(baseline_quick)
                 ma_quick = baseline_quick
-                rs_quick_by_variant = {variant: baseline_quick for variant in RS_VARIANTS}
+                ma_input_quick = baseline_quick
+                rs_quick_by_variant = {RS_KEEP_4: baseline_quick, RS_KEEP_8: baseline_quick, RS_RESTORE_10_8: baseline_quick}
                 rs_meta_by_variant: dict[str, dict[str, Any]] = {}
 
                 ma_would_pass = (
@@ -1154,25 +1281,55 @@ class StrategyIntegrityAuditor:
                                 ):
                                     ma_stats["counterfactual_changed_quick"] += 1
 
+                # c.4c: production-like MA120 supply experiment. Existing 60-row technical
+                # snapshot remains untouched; only StrategyInput.ma120 is supplied from as-of history.
+                if ma120 is None and computed_ma120 is not None:
+                    patched_input = _replace_input(data, ma120=computed_ma120)
+                    if patched_input is not None:
+                        ma_stats["input_only_attempted"] += 1
+                        patched_evals, resolver = _discover_revaluator(self.scanner, snapshot, patched_input)
+                        if patched_evals:
+                            ma_stats["input_only_supported"] += 1
+                            if resolver:
+                                reeval_paths[resolver] = reeval_paths.get(resolver, 0) + 1
+                            patched_snapshot = dict(snapshot)
+                            patched_snapshot["strategy_input"] = patched_input
+                            original_mapping = snapshot.get("evaluations") or {}
+                            new_mapping: dict[Any, Any] = {}
+                            for eval_key, original in original_mapping.items():
+                                name = _evaluation_name(original) or _strategy_name(eval_key)
+                                new_mapping[eval_key] = patched_evals.get(name, original)
+                            patched_snapshot["evaluations"] = new_mapping
+                            candidate, _ = self._quick_from_snapshot(
+                                snapshot=patched_snapshot, market=market, latest_date=latest_key, row=row, strategy_limit=3
+                            )
+                            if candidate is not None:
+                                ma_input_quick = candidate
+                                if (
+                                    candidate.get("quick_strategy") != baseline_quick.get("quick_strategy")
+                                    or candidate.get("quick_score") != baseline_quick.get("quick_score")
+                                ):
+                                    ma_stats["input_only_changed_quick"] += 1
+
                 if breakout_eval is not None and BREAKOUT_RS_CONDITION in breakout_duplicates:
-                    for variant_name in RS_VARIANTS:
+                    for variant_name in RS_DEDUP_VARIANTS:
                         variant_stats = rs_variant_stats[variant_name]
                         remove_weight = float(RS_REMOVED_WEIGHT[variant_name])
                         variant_stats["dedup_attempted"] += 1
-                        if variant_name == RS_RESTORE_10_8:
-                            cloned, dedup_meta = _restore_breakout_evaluation(data, breakout_eval)
-                            variant_stats["condition_count_changed_signals"] += int(cloned.total != breakout_eval.total)
-                        else:
-                            cloned, dedup_meta = _dedup_exact_condition(
-                                breakout_eval, BREAKOUT_RS_CONDITION, remove_weight,
-                                eligible_threshold=self.eligible_score_threshold,
-                            )
+                        cloned, dedup_meta = _dedup_exact_condition(
+                            breakout_eval,
+                            BREAKOUT_RS_CONDITION,
+                            remove_weight,
+                            eligible_threshold=self.eligible_score_threshold,
+                        )
                         rs_meta_by_variant[variant_name] = dedup_meta
                         if cloned is None:
                             continue
                         variant_stats["dedup_supported"] += 1
                         if dedup_meta.get("passed_duplicate_removed"):
                             variant_stats["passed_condition_removed"] += 1
+                        if int(getattr(cloned, "total", 0) or 0) != int(getattr(breakout_eval, "total", 0) or 0):
+                            variant_stats["condition_count_changed"] += 1
                         original_score = _num(dedup_meta.get("original_score"))
                         new_score = _num(dedup_meta.get("new_score"))
                         if original_score is not None and new_score is not None:
@@ -1202,7 +1359,53 @@ class StrategyIntegrityAuditor:
                             elif baseline_strategy != "breakout" and variant_strategy == "breakout":
                                 variant_stats["other_to_breakout"] += 1
 
+                if breakout_eval is not None and BREAKOUT_RS_CONDITION in breakout_duplicates:
+                    variant_stats = rs_variant_stats[RS_RESTORE_10_8]
+                    variant_stats["dedup_attempted"] += 1
+                    restored, restore_meta = _restore_breakout_evaluation(
+                        breakout_eval,
+                        relative_strength_market_pct=rel_market,
+                        relative_strength_sector_pct=rel_sector,
+                        eligible_threshold=self.eligible_score_threshold,
+                    )
+                    rs_meta_by_variant[RS_RESTORE_10_8] = restore_meta
+                    if restored is not None:
+                        variant_stats["dedup_supported"] += 1
+                        if restore_meta.get("removed_condition_passed"):
+                            variant_stats["passed_condition_removed"] += 1
+                        if restore_meta.get("condition_count_changed"):
+                            variant_stats["condition_count_changed"] += 1
+                        original_score = _num(restore_meta.get("original_score"))
+                        new_score = _num(restore_meta.get("new_score"))
+                        if original_score is not None and new_score is not None:
+                            score_delta = round(new_score - original_score, 6)
+                            variant_stats["score_deltas"].append(score_delta)
+                            if not math.isclose(score_delta, 0.0, abs_tol=1e-12):
+                                variant_stats["score_changed_signals"] += 1
+                            elif restore_meta.get("condition_count_changed"):
+                                variant_stats["identical_score_but_condition_count_changed"] += 1
+                        patched_snapshot = dict(snapshot)
+                        new_mapping = dict(snapshot.get("evaluations") or {})
+                        for eval_key, original in list(new_mapping.items()):
+                            if _evaluation_name(original) == "breakout":
+                                new_mapping[eval_key] = restored
+                        patched_snapshot["evaluations"] = new_mapping
+                        candidate, _ = self._quick_from_snapshot(
+                            snapshot=patched_snapshot, market=market, latest_date=latest_key, row=row, strategy_limit=3
+                        )
+                        if candidate is not None:
+                            rs_quick_by_variant[RS_RESTORE_10_8] = candidate
+                            baseline_strategy = str(baseline_quick.get("quick_strategy") or "")
+                            variant_strategy = str(candidate.get("quick_strategy") or "")
+                            if variant_strategy != baseline_strategy:
+                                variant_stats["strategy_changed_signals"] += 1
+                                if baseline_strategy == "breakout" and variant_strategy != "breakout":
+                                    variant_stats["breakout_to_other"] += 1
+                                elif baseline_strategy != "breakout" and variant_strategy == "breakout":
+                                    variant_stats["other_to_breakout"] += 1
+
                 quick_by_variant[MA120_FIXED].append(ma_quick)
+                quick_by_variant[MA120_INPUT_ONLY].append(ma_input_quick)
                 for variant_name in RS_VARIANTS:
                     quick_by_variant[variant_name].append(rs_quick_by_variant[variant_name])
 
@@ -1229,6 +1432,8 @@ class StrategyIntegrityAuditor:
                         "baseline_quick_score": baseline_quick.get("quick_score"),
                         "ma120_quick_strategy": ma_quick.get("quick_strategy"),
                         "ma120_quick_score": ma_quick.get("quick_score"),
+                        "ma120_input_quick_strategy": ma_input_quick.get("quick_strategy"),
+                        "ma120_input_quick_score": ma_input_quick.get("quick_score"),
                         "rs_group": (
                             "SECTOR_AVAILABLE" if rel_sector is not None
                             else "MARKET_FALLBACK" if rel_market is not None
@@ -1244,10 +1449,11 @@ class StrategyIntegrityAuditor:
                         "rs_keep8_passed_removed": bool((rs_meta_by_variant.get(RS_KEEP_8) or {}).get("passed_duplicate_removed")),
                         "rs_restore_quick_strategy": rs_quick_by_variant[RS_RESTORE_10_8].get("quick_strategy"),
                         "rs_restore_quick_score": rs_quick_by_variant[RS_RESTORE_10_8].get("quick_score"),
-                        "rs_restore_evaluation": rs_meta_by_variant.get(RS_RESTORE_10_8),
-                        "baseline_current": baseline_quick.get("quick_current"),
-                        "rs_restore_current": rs_quick_by_variant[RS_RESTORE_10_8].get("quick_current"),
-                        "rs_restore_condition_state": rs_quick_by_variant[RS_RESTORE_10_8].get("quick_condition_state"),
+                        "rs_restore_score_delta": _delta(
+                            (rs_meta_by_variant.get(RS_RESTORE_10_8) or {}).get("new_score"),
+                            (rs_meta_by_variant.get(RS_RESTORE_10_8) or {}).get("original_score"),
+                        ),
+                        "rs_restore_condition_count_changed": bool((rs_meta_by_variant.get(RS_RESTORE_10_8) or {}).get("condition_count_changed")),
                         "baseline_strategy_trace": baseline_trace,
                     }
 
@@ -1294,30 +1500,31 @@ class StrategyIntegrityAuditor:
             results[variant]["candidates"] = snapshots
             results[variant]["top5_metrics"] = self._aggregate_top_metrics(snapshots[:5], horizons_tuple) if mode == "full" else {"count": len(snapshots[:5]), "horizons": {}}
 
-        baseline_pool = set(results[BASELINE]["quick_selected_keys"])
-        baseline_top5 = {f"{item.get('market')}:{item.get('code')}" for item in results[BASELINE]["candidates"][:5]}
+        baseline_quick_order = list(results[BASELINE]["quick_selected_keys"])
+        baseline_top5_order = _ordered_keys(results[BASELINE]["candidates"], limit=5)
         comparisons: dict[str, Any] = {}
         baseline_current = current_by_variant.get(BASELINE) or {}
-        for variant in (MA120_FIXED, *RS_VARIANTS):
-            pool = set(results[variant]["quick_selected_keys"])
-            top5 = {f"{item.get('market')}:{item.get('code')}" for item in results[variant]["candidates"][:5]}
+        for variant in (MA120_FIXED, MA120_INPUT_ONLY, RS_KEEP_4, RS_KEEP_8, RS_RESTORE_10_8):
+            quick_order = list(results[variant]["quick_selected_keys"])
+            top5_order = _ordered_keys(results[variant]["candidates"], limit=5)
             variant_current = current_by_variant.get(variant) or {}
             shared_keys = sorted(set(baseline_current) & set(variant_current))
             state_changes = sum(1 for key in shared_keys if _status(variant_current.get(key)) != _status(baseline_current.get(key)))
             risk_changes = sum(1 for key in shared_keys if _risk(variant_current.get(key)) != _risk(baseline_current.get(key)))
-            quick_order_changed = results[variant]["quick_selected_keys"] != results[BASELINE]["quick_selected_keys"]
-            top5_order_changed = [(item.get("market"), item.get("code")) for item in results[variant]["candidates"][:5]] != [(item.get("market"), item.get("code")) for item in results[BASELINE]["candidates"][:5]]
+            quick_cmp = _sequence_comparison(baseline_quick_order, quick_order, prefix="quick")
+            top5_cmp = _sequence_comparison(baseline_top5_order, top5_order, prefix="top5")
             comparisons[variant] = {
-                "quick_pool_order_changed": quick_order_changed,
-                "top5_order_changed": top5_order_changed,
-                "quick_pool_changed": (quick_order_changed if variant == RS_RESTORE_10_8 else pool != baseline_pool),
-                "quick_pool_replacements": max(len(pool - baseline_pool), len(baseline_pool - pool)),
-                "quick_pool_added": sorted(pool - baseline_pool),
-                "quick_pool_removed": sorted(baseline_pool - pool),
-                "top5_changed": (top5_order_changed if variant == RS_RESTORE_10_8 else top5 != baseline_top5),
-                "top5_replacements": max(len(top5 - baseline_top5), len(baseline_top5 - top5)),
-                "top5_added": sorted(top5 - baseline_top5),
-                "top5_removed": sorted(baseline_top5 - top5),
+                **quick_cmp,
+                **top5_cmp,
+                # Backward-compatible membership aliases used by c.4a/c.4b reports.
+                "quick_pool_changed": quick_cmp["quick_membership_changed"],
+                "quick_pool_replacements": quick_cmp["quick_membership_replacements"],
+                "quick_pool_added": quick_cmp["quick_membership_added"],
+                "quick_pool_removed": quick_cmp["quick_membership_removed"],
+                "top5_changed": top5_cmp["top5_membership_changed"],
+                "top5_replacements": top5_cmp["top5_membership_replacements"],
+                "top5_added": top5_cmp["top5_membership_added"],
+                "top5_removed": top5_cmp["top5_membership_removed"],
                 "candidate_state_changes": state_changes,
                 "risk_status_changes": risk_changes,
             }
@@ -1406,13 +1613,11 @@ def _sum_nested(valid: list[dict[str, Any]], section: str, key: str) -> int:
 def _aggregate_variant_top5(valid: list[dict[str, Any]], variant: str, horizon: int) -> dict[str, Any]:
     returns: list[float] = []
     rs: list[float] = []
-    mfes: list[float] = []
-    maes: list[float] = []
     stops: list[float] = []
     targets: list[float] = []
     for run in valid:
         metric = (((((run.get("variants") or {}).get(variant) or {}).get("top5_metrics") or {}).get("horizons") or {}).get(str(horizon)) or {})
-        for bucket, key in ((returns, "mean_return_pct"), (rs, "mean_event_r"), (stops, "stop_first_pct"), (targets, "target1_first_pct"), (mfes, "mean_mfe_pct"), (maes, "mean_mae_pct")):
+        for bucket, key in ((returns, "mean_return_pct"), (rs, "mean_event_r"), (stops, "stop_first_pct"), (targets, "target1_first_pct")):
             value = _num(metric.get(key))
             if value is not None:
                 bucket.append(value)
@@ -1422,40 +1627,20 @@ def _aggregate_variant_top5(valid: list[dict[str, Any]], variant: str, horizon: 
         "trimmed_mean_return_pct": _trimmed_mean(returns),
         "mean_event_r": _mean(rs),
         "median_event_r": _median(rs),
-        "mean_mfe_pct": _mean(mfes),
-        "mean_mae_pct": _mean(maes),
         "mean_stop_first_pct": _mean(stops),
         "mean_target1_first_pct": _mean(targets),
     }
 
 
-def _top5_observation_metrics(valid: list[dict[str, Any]], variant: str, horizon: int) -> dict[str, Any]:
-    metrics = [_forward(candidate, horizon) for run in valid
-               for candidate in (run.get("variants", {}).get(variant, {}).get("candidates") or [])[:5]]
-    metrics = [item for item in metrics if item.get("complete")]
-    def values(key):
-        return [value for item in metrics if (value := _num(item.get(key))) is not None]
-    returns, rs = values("return_pct"), values("event_r")
-    return {
-        "complete": len(metrics), "mean_return_pct": _mean(returns),
-        "median_return_pct": _median(returns), "trimmed_mean_return_pct": _trimmed_mean(returns),
-        "mean_event_r": _mean(rs), "median_event_r": _median(rs),
-        "mean_mfe_pct": _mean(values("mfe_pct")), "mean_mae_pct": _mean(values("mae_pct")),
-        "mean_target1_first_pct": _pct(sum((item.get("event") or {}).get("status") == "TARGET1_FIRST" for item in metrics), len(metrics)),
-        "mean_stop_first_pct": _pct(sum((item.get("event") or {}).get("status") == "STOP_FIRST" for item in metrics), len(metrics)),
-    }
-
-
 def _impact_summary(valid: list[dict[str, Any]], variant: str, horizons: tuple[int, ...]) -> dict[str, Any]:
-    quick_changed = [run for run in valid if (((run.get("comparisons") or {}).get(variant) or {}).get("quick_pool_changed"))]
-    top5_changed = [run for run in valid if (((run.get("comparisons") or {}).get(variant) or {}).get("top5_changed"))]
+    quick_changed = [run for run in valid if (((run.get("comparisons") or {}).get(variant) or {}).get("quick_membership_changed", ((run.get("comparisons") or {}).get(variant) or {}).get("quick_pool_changed")))]
+    top5_changed = [run for run in valid if (((run.get("comparisons") or {}).get(variant) or {}).get("top5_membership_changed", ((run.get("comparisons") or {}).get(variant) or {}).get("top5_changed")))]
+    quick_order_changed = [run for run in valid if (((run.get("comparisons") or {}).get(variant) or {}).get("quick_order_changed"))]
+    top5_order_changed = [run for run in valid if (((run.get("comparisons") or {}).get(variant) or {}).get("top5_order_changed"))]
     horizon_result: dict[str, Any] = {}
     for horizon in horizons:
         baseline = _aggregate_variant_top5(valid, BASELINE, horizon)
         changed = _aggregate_variant_top5(valid, variant, horizon)
-        if variant == RS_RESTORE_10_8:
-            baseline = _top5_observation_metrics(valid, BASELINE, horizon)
-            changed = _top5_observation_metrics(valid, variant, horizon)
         horizon_result[str(horizon)] = {
             "baseline": baseline,
             "variant": changed,
@@ -1463,9 +1648,6 @@ def _impact_summary(valid: list[dict[str, Any]], variant: str, horizons: tuple[i
             "median_return_delta_pct": _delta(changed.get("median_return_pct"), baseline.get("median_return_pct")),
             "trimmed_return_delta_pct": _delta(changed.get("trimmed_mean_return_pct"), baseline.get("trimmed_mean_return_pct")),
             "mean_r_delta": _delta(changed.get("mean_event_r"), baseline.get("mean_event_r")),
-            "median_r_delta": _delta(changed.get("median_event_r"), baseline.get("median_event_r")),
-            "mfe_delta_pct": _delta(changed.get("mean_mfe_pct"), baseline.get("mean_mfe_pct")),
-            "mae_delta_pct": _delta(changed.get("mean_mae_pct"), baseline.get("mean_mae_pct")),
             "stop_first_delta_pct": _delta(changed.get("mean_stop_first_pct"), baseline.get("mean_stop_first_pct")),
             "target1_first_delta_pct": _delta(changed.get("mean_target1_first_pct"), baseline.get("mean_target1_first_pct")),
         }
@@ -1473,13 +1655,15 @@ def _impact_summary(valid: list[dict[str, Any]], variant: str, horizons: tuple[i
         "quick_pool_changed_date_count": len(quick_changed),
         "quick_pool_changed_rate_pct": _pct(len(quick_changed), len(valid)),
         "quick_pool_changed_dates": [run.get("analysis_date") for run in quick_changed],
-        "quick_pool_replacements": sum(int((((run.get("comparisons") or {}).get(variant) or {}).get("quick_pool_replacements")) or 0) for run in valid),
+        "quick_pool_replacements": sum(int((((run.get("comparisons") or {}).get(variant) or {}).get("quick_membership_replacements", ((run.get("comparisons") or {}).get(variant) or {}).get("quick_pool_replacements"))) or 0) for run in valid),
+        "quick_order_changed_date_count": len(quick_order_changed),
+        "quick_order_only_changed_date_count": sum(1 for run in valid if (((run.get("comparisons") or {}).get(variant) or {}).get("quick_order_only_changed"))),
         "top5_changed_date_count": len(top5_changed),
         "top5_changed_rate_pct": _pct(len(top5_changed), len(valid)),
         "top5_changed_dates": [run.get("analysis_date") for run in top5_changed],
-        "top5_replacements": sum(int((((run.get("comparisons") or {}).get(variant) or {}).get("top5_replacements")) or 0) for run in valid),
-        "candidate_state_changes": sum(int((run.get("comparisons", {}).get(variant, {}).get("candidate_state_changes")) or 0) for run in valid),
-        "risk_status_changes": sum(int((run.get("comparisons", {}).get(variant, {}).get("risk_status_changes")) or 0) for run in valid),
+        "top5_replacements": sum(int((((run.get("comparisons") or {}).get(variant) or {}).get("top5_membership_replacements", ((run.get("comparisons") or {}).get(variant) or {}).get("top5_replacements"))) or 0) for run in valid),
+        "top5_order_changed_date_count": len(top5_order_changed),
+        "top5_order_only_changed_date_count": sum(1 for run in valid if (((run.get("comparisons") or {}).get(variant) or {}).get("top5_order_only_changed"))),
         "horizons": horizon_result,
     }
 
@@ -1518,6 +1702,8 @@ def build_integrity_validation(payload: dict[str, Any], *, horizons: tuple[int, 
     rs_sector_available = _sum_nested(valid, "breakout_rs", "sector_available_evaluations")
     rs_market_fallback = _sum_nested(valid, "breakout_rs", "market_fallback_evaluations")
     rs_both_missing = _sum_nested(valid, "breakout_rs", "both_missing_evaluations")
+    sector_matrix = _sector_aware_rs_matrix()
+    sector_matrix_divergent = sum(1 for item in sector_matrix if item.get("score_changed"))
     source = payload.get("source_integrity") or {}
     definition = source.get("breakout_rs_definition") or {}
     fallback_source_hits = len(source.get("sector_market_fallback_source_hits") or [])
@@ -1531,19 +1717,20 @@ def build_integrity_validation(payload: dict[str, Any], *, horizons: tuple[int, 
         rs_verdict = "RS_DISTINCT"
 
     ma_impact = _impact_summary(valid, MA120_FIXED, horizons)
+    ma_input_impact = _impact_summary(valid, MA120_INPUT_ONLY, horizons)
     rs_impacts = {variant: _impact_summary(valid, variant, horizons) for variant in RS_VARIANTS}
 
     def aggregate_variant_stats(variant: str) -> dict[str, Any]:
         items = [(((run.get("integrity") or {}).get("breakout_rs_variants") or {}).get(variant) or {}) for run in valid]
         integer_keys = (
-            "dedup_attempted", "dedup_supported", "passed_condition_removed", "score_changed_signals",
-            "strategy_changed_signals", "breakout_to_other", "other_to_breakout", "condition_count_changed_signals",
+            "dedup_attempted", "dedup_supported", "passed_condition_removed", "condition_count_changed", "score_changed_signals",
+            "strategy_changed_signals", "breakout_to_other", "other_to_breakout", "identical_score_but_condition_count_changed",
         )
         result = {key: sum(int(item.get(key) or 0) for item in items) for key in integer_keys}
-        result["kept_weight"] = RS_KEPT_WEIGHT[variant]
-        result["removed_weight"] = RS_REMOVED_WEIGHT[variant]
+        result["kept_weight"] = RS_KEPT_WEIGHT.get(variant)
+        result["removed_weight"] = RS_REMOVED_WEIGHT.get(variant)
         if variant == RS_RESTORE_10_8:
-            result.update(market_weight=10, sector_condition_count=1)
+            result["market_weight"] = RESTORED_MARKET_RS_WEIGHT
         means = [_num(item.get("mean_breakout_score_delta")) for item in items]
         medians = [_num(item.get("median_breakout_score_delta")) for item in items]
         result["mean_breakout_score_delta"] = _mean([value for value in means if value is not None])
@@ -1678,10 +1865,20 @@ def build_integrity_validation(payload: dict[str, Any], *, horizons: tuple[int, 
             "market_fallback_count": rs_market_fallback,
             "both_missing_count": rs_both_missing,
             "source_fallback_hit_count": fallback_source_hits,
+            "sector_aware_matrix": sector_matrix,
+            "sector_aware_score_divergence_cases": sector_matrix_divergent,
             "duplicate_conditions": _merge_count_dicts([((run.get("integrity") or {}).get("duplicate_conditions") or {}) for run in valid]),
             "duplicate_weights_detected": _merge_last_dicts([((run.get("integrity") or {}).get("duplicate_weights_used") or {}) for run in valid]),
         },
         "ma120_impact": ma_impact,
+        "ma120_input_only_impact": ma_input_impact,
+        "comparison_normalization": {
+            "membership_order_split": True,
+            "sector_rs_available_rate_pct": _pct(rs_sector_available, rs_breakouts),
+            "sector_rs_design_validation": "INSUFFICIENT_SECTOR_RS_DATA" if rs_sector_available == 0 else "STRUCTURAL_EFFECT_CONFIRMED",
+            "synthetic_sector_matrix_status": "STRUCTURAL_EFFECT_CONFIRMED" if sector_matrix_divergent > 0 else "NO_STRUCTURAL_SCORE_DIVERGENCE",
+            "production_change_authorized": False,
+        },
         "rs_variants": {
             variant: {**rs_variant_stats[variant], "impact": rs_impacts[variant]}
             for variant in RS_VARIANTS
@@ -1732,7 +1929,7 @@ def _pair_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         variants = run.get("variants") or {}
         baseline_map = {f"{item.get('market')}:{item.get('code')}": item for item in (variants.get(BASELINE) or {}).get("candidates", [])[:5]}
-        for variant_name in (MA120_FIXED, *RS_VARIANTS):
+        for variant_name in (MA120_FIXED, MA120_INPUT_ONLY, RS_KEEP_4, RS_KEEP_8, RS_RESTORE_10_8):
             comparison = ((run.get("comparisons") or {}).get(variant_name) or {})
             if not comparison.get("top5_changed"):
                 continue
@@ -1751,15 +1948,34 @@ def _pair_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
                     "removed_code": old.get("code"),
                     "removed_name": old.get("name"),
                     "removed_strategy": old.get("strategy"),
+                    "removed_rank": old.get("rank"),
+                    "removed_candidate_state": old.get("candidate_state"),
+                    "removed_priority_tier": old.get("priority_tier"),
+                    "removed_entry_gap_pct": old.get("entry_gap_pct"),
+                    "removed_strategy_fit_score": old.get("strategy_fit_score"),
+                    "removed_conditions": json.dumps(old.get("conditions") or {}, ensure_ascii=False),
+                    "removed_risk": (old.get("risk") or {}).get("status") if isinstance(old.get("risk"), dict) else old.get("risk"),
                     "added_market": new.get("market"),
                     "added_code": new.get("code"),
                     "added_name": new.get("name"),
                     "added_strategy": new.get("strategy"),
+                    "added_rank": new.get("rank"),
+                    "added_candidate_state": new.get("candidate_state"),
+                    "added_priority_tier": new.get("priority_tier"),
+                    "added_entry_gap_pct": new.get("entry_gap_pct"),
+                    "added_strategy_fit_score": new.get("strategy_fit_score"),
+                    "added_conditions": json.dumps(new.get("conditions") or {}, ensure_ascii=False),
+                    "added_risk": (new.get("risk") or {}).get("status") if isinstance(new.get("risk"), dict) else new.get("risk"),
+                    "cause": "MA120_INPUT_SUPPLY" if variant_name == MA120_INPUT_ONLY else ("LEGACY_MA120_COUNTERFACTUAL" if variant_name == MA120_FIXED else "RS_STRUCTURE_CHANGE"),
                 }
                 for horizon in (5, 10, 20):
                     old_metric = _forward(old, horizon)
                     new_metric = _forward(new, horizon)
+                    row[f"removed_return_{horizon}d"] = _num(old_metric.get("return_pct"))
+                    row[f"added_return_{horizon}d"] = _num(new_metric.get("return_pct"))
                     row[f"return_{horizon}d_delta"] = _delta(new_metric.get("return_pct"), old_metric.get("return_pct"))
+                    row[f"removed_r_{horizon}d"] = _num(old_metric.get("event_r"))
+                    row[f"added_r_{horizon}d"] = _num(new_metric.get("event_r"))
                     row[f"r_{horizon}d_delta"] = _delta(new_metric.get("event_r"), old_metric.get("event_r"))
                     row[f"removed_event_{horizon}d"] = str((old_metric.get("event") or {}).get("status") or "") or None
                     row[f"added_event_{horizon}d"] = str((new_metric.get("event") or {}).get("status") or "") or None
@@ -1772,6 +1988,7 @@ def write_integrity_outputs(payload: dict[str, Any], *, output_dir: Path) -> dic
     json_path = output_dir / f"scanner-strategy-integrity-audit_{stamp}.json"
     signals_path = output_dir / f"scanner-strategy-integrity-signals_{stamp}.csv"
     pairs_path = output_dir / f"scanner-strategy-integrity-pairs_{stamp}.csv"
+    ma120_pairs_path = output_dir / f"scanner-strategy-integrity-ma120-pairs_{stamp}.csv"
     md_path = output_dir / f"scanner-strategy-integrity-summary_{stamp}.md"
 
     json_path.write_text(json.dumps(_safe_json(payload), ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1781,10 +1998,10 @@ def write_integrity_outputs(payload: dict[str, Any], *, output_dir: Path) -> dic
         "ma_formula_verified", "trend_ma120_condition_missing", "ma120_would_pass",
         "relative_strength_market_pct", "relative_strength_sector_pct", "relative_strength_equal", "rs_group",
         "breakout_exact_duplicates", "baseline_quick_strategy", "baseline_quick_score",
-        "ma120_quick_strategy", "ma120_quick_score",
+        "ma120_quick_strategy", "ma120_quick_score", "ma120_input_quick_strategy", "ma120_input_quick_score",
         "rs_keep4_quick_strategy", "rs_keep4_quick_score", "rs_keep4_removed_weight", "rs_keep4_passed_removed",
         "rs_keep8_quick_strategy", "rs_keep8_quick_score", "rs_keep8_removed_weight", "rs_keep8_passed_removed",
-        "rs_restore_quick_strategy", "rs_restore_quick_score", "rs_restore_evaluation",
+        "rs_restore_quick_strategy", "rs_restore_quick_score", "rs_restore_score_delta", "rs_restore_condition_count_changed",
     ]
     with signals_path.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=signal_fields)
@@ -1799,22 +2016,32 @@ def write_integrity_outputs(payload: dict[str, Any], *, output_dir: Path) -> dic
 
     pair_fields = [
         "analysis_date", "variant", "removed_weight", "pair_index",
-        "removed_market", "removed_code", "removed_name", "removed_strategy",
-        "added_market", "added_code", "added_name", "added_strategy",
-        "return_5d_delta", "r_5d_delta", "removed_event_5d", "added_event_5d",
-        "return_10d_delta", "r_10d_delta", "removed_event_10d", "added_event_10d",
-        "return_20d_delta", "r_20d_delta", "removed_event_20d", "added_event_20d",
+        "removed_market", "removed_code", "removed_name", "removed_strategy", "removed_rank", "removed_candidate_state",
+        "removed_priority_tier", "removed_entry_gap_pct", "removed_strategy_fit_score", "removed_conditions", "removed_risk",
+        "added_market", "added_code", "added_name", "added_strategy", "added_rank", "added_candidate_state",
+        "added_priority_tier", "added_entry_gap_pct", "added_strategy_fit_score", "added_conditions", "added_risk", "cause",
+        "removed_return_5d", "added_return_5d", "return_5d_delta", "removed_r_5d", "added_r_5d", "r_5d_delta", "removed_event_5d", "added_event_5d",
+        "removed_return_10d", "added_return_10d", "return_10d_delta", "removed_r_10d", "added_r_10d", "r_10d_delta", "removed_event_10d", "added_event_10d",
+        "removed_return_20d", "added_return_20d", "return_20d_delta", "removed_r_20d", "added_r_20d", "r_20d_delta", "removed_event_20d", "added_event_20d",
     ]
+    pair_rows = _pair_rows(payload)
     with pairs_path.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=pair_fields)
         writer.writeheader()
-        for row in _pair_rows(payload):
+        for row in pair_rows:
             writer.writerow(row)
+    with ma120_pairs_path.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=pair_fields)
+        writer.writeheader()
+        for row in pair_rows:
+            if row.get("variant") == MA120_INPUT_ONLY:
+                writer.writerow(row)
 
     validation = payload.get("strategy_integrity_validation") or {}
     ma = validation.get("ma120") or {}
     rs = validation.get("breakout_rs") or {}
     ma_imp = validation.get("ma120_impact") or {}
+    ma_input_imp = validation.get("ma120_input_only_impact") or {}
     rs_variants = validation.get("rs_variants") or {}
     source = payload.get("source_integrity") or {}
 
@@ -1839,8 +2066,10 @@ def write_integrity_outputs(payload: dict[str, Any], *, output_dir: Path) -> dic
         f"- `{MA120_CONDITION}` missing: **{ma.get('condition_missing_count')}** / present {ma.get('condition_present_count')}",
         f"- Would pass with local SMA120: **{ma.get('would_pass_if_sma120_available_count')}**",
         f"- Counterfactual supported: **{ma.get('counterfactual_supported')} / {ma.get('counterfactual_attempted')}**",
-        f"- Quick18 changed dates: **{ma_imp.get('quick_pool_changed_date_count')}**",
-        f"- Top5 changed dates: **{ma_imp.get('top5_changed_date_count')}**",
+        f"- Legacy MA120_FIXED Quick18 membership changed dates: **{ma_imp.get('quick_pool_changed_date_count')}**",
+        f"- Legacy MA120_FIXED Top5 membership changed dates: **{ma_imp.get('top5_changed_date_count')}**",
+        f"- MA120_INPUT_ONLY Quick18 membership/order changed dates: **{ma_input_imp.get('quick_pool_changed_date_count')} / {ma_input_imp.get('quick_order_changed_date_count')}**",
+        f"- MA120_INPUT_ONLY Top5 membership/order changed dates: **{ma_input_imp.get('top5_changed_date_count')} / {ma_input_imp.get('top5_order_changed_date_count')}**",
         "",
         "## Breakout relative-strength integrity",
         "",
@@ -1853,23 +2082,20 @@ def write_integrity_outputs(payload: dict[str, Any], *, output_dir: Path) -> dic
         f"- Duplicate metric evaluations: **{rs.get('metric_duplicate_evaluation_count')}**",
         f"- Fallback duplicate evaluations: **{rs.get('fallback_duplicate_evaluation_count')}**",
         f"- Sector available: **{rs.get('sector_available_count')}**",
+        f"- Sector availability rate: **{((validation.get('comparison_normalization') or {}).get('sector_rs_available_rate_pct'))}%**",
+        f"- Real sector-data status: **{((validation.get('comparison_normalization') or {}).get('sector_rs_design_validation'))}**",
+        f"- Synthetic sector-aware matrix: **{((validation.get('comparison_normalization') or {}).get('synthetic_sector_matrix_status'))}** ({rs.get('sector_aware_score_divergence_cases')} score-divergent cases)",
         f"- Market fallback: **{rs.get('market_fallback_count')}**",
         f"- Both RS missing: **{rs.get('both_missing_count')}**",
         f"- Duplicate conditions: `{json.dumps(rs.get('duplicate_conditions') or {}, ensure_ascii=False)}`",
         "",
     ]
 
-    lines[2:2] = ["Current: market 6 + sector 4 + sector 8", "Historical intended: market 10 + sector 8", ""]
     for variant_name in RS_VARIANTS:
         item = rs_variants.get(variant_name) or {}
         impact = item.get("impact") or {}
         lines.extend([
             f"### {variant_name}",
-            "",
-            f"- Market weight: **{item.get('market_weight', 6)}**",
-            f"- Condition count changed signals: **{item.get('condition_count_changed_signals', 0)}**",
-            f"- Candidate state changes: **{impact.get('candidate_state_changes')}**",
-            f"- Risk status changes: **{impact.get('risk_status_changes')}**",
             "",
             f"- Kept weight: **{item.get('kept_weight')}**",
             f"- Removed weight: **{item.get('removed_weight')}**",
@@ -1880,28 +2106,20 @@ def write_integrity_outputs(payload: dict[str, Any], *, output_dir: Path) -> dic
             f"- Strategy changed signals: **{item.get('strategy_changed_signals')}**",
             f"- Breakout→other: **{item.get('breakout_to_other')}**",
             f"- Other→breakout: **{item.get('other_to_breakout')}**",
-            f"- Quick18 changed dates: **{impact.get('quick_pool_changed_date_count')}**",
-            f"- Quick18 replacements: **{impact.get('quick_pool_replacements')}**",
-            f"- Top5 changed dates: **{impact.get('top5_changed_date_count')}**",
-            f"- Top5 replacements: **{impact.get('top5_replacements')}**",
+            f"- Quick18 membership/order changed dates: **{impact.get('quick_pool_changed_date_count')} / {impact.get('quick_order_changed_date_count')}**",
+            f"- Quick18 membership replacements: **{impact.get('quick_pool_replacements')}**",
+            f"- Top5 membership/order changed dates: **{impact.get('top5_changed_date_count')} / {impact.get('top5_order_changed_date_count')}**",
+            f"- Top5 membership replacements: **{impact.get('top5_replacements')}**",
             "",
         ])
 
-    restore_horizons = (rs_variants.get(RS_RESTORE_10_8) or {}).get("impact", {}).get("horizons", {})
-    lines.extend(["#### RS_RESTORE_10_8 forward metrics", "",
-                  "| Horizon | Mean return Δ | Median return Δ | Trimmed mean Δ | Mean R Δ | Median R Δ | Target1-first Δ | Stop-first Δ | MFE Δ | MAE Δ |",
-                  "|---|---|---|---|---|---|---|---|---|---|"])
-    for horizon, metric in restore_horizons.items():
-        keys = ("mean_return_delta_pct", "median_return_delta_pct", "trimmed_return_delta_pct", "mean_r_delta", "median_r_delta", "target1_first_delta_pct", "stop_first_delta_pct", "mfe_delta_pct", "mae_delta_pct")
-        lines.append("| " + " | ".join([f"{horizon}D"] + [str(metric.get(key)) for key in keys]) + " |")
-    lines.append("")
     lines.extend([
         "## Counterfactual Top5 delta",
         "",
         "| Variant | Horizon | Mean return Δ | Median return Δ | Trimmed return Δ | Mean R Δ | Stop-first Δ |",
         "|---|---:|---:|---:|---:|---:|---:|",
     ])
-    table_variants = [("MA120_FIXED", ma_imp)] + [
+    table_variants = [("MA120_FIXED", ma_imp), ("MA120_INPUT_ONLY", ma_input_imp)] + [
         (variant_name, (rs_variants.get(variant_name) or {}).get("impact") or {}) for variant_name in RS_VARIANTS
     ]
     for label, impact in table_variants:
@@ -1922,4 +2140,4 @@ def write_integrity_outputs(payload: dict[str, Any], *, output_dir: Path) -> dic
         "The audit does not modify Production strategy definitions. Counterfactual variants exist only inside this offline runner.",
     ])
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return {"json": str(json_path), "csv": str(signals_path), "pairs_csv": str(pairs_path), "markdown": str(md_path)}
+    return {"json": str(json_path), "csv": str(signals_path), "pairs_csv": str(pairs_path), "ma120_pairs_csv": str(ma120_pairs_path), "markdown": str(md_path)}

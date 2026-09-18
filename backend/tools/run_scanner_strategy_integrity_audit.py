@@ -14,12 +14,13 @@ from app.backtest.scanner import StockScannerService
 from app.backtest.scanner_quality.early_pruning_audit import add_audit_metadata, discover_temporal_evaluation_dates
 from app.backtest.scanner_quality.models import AuditHorizons
 from app.backtest.scanner_quality.strategy_integrity_audit import (
-    AUDIT_VERSION,
-    RS_RESTORE_10_8,
     MA120_FIXED,
+    MA120_INPUT_ONLY,
     RS_KEEP_4,
     RS_KEEP_8,
+    RS_RESTORE_10_8,
     StrategyIntegrityAuditor,
+    audit_code_fingerprint,
     compact_integrity_payload,
     write_integrity_outputs,
 )
@@ -56,7 +57,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--market-store", type=Path, default=None, help="market_history.db path")
     parser.add_argument("--market-scope", default="ALL", choices=["ALL", "KOSPI", "KOSDAQ"])
     parser.add_argument("--mode", default="full", choices=["inspect", "full"])
-    parser.add_argument("--dates", default="", help="comma-separated YYYY-MM-DD dates")
+    parser.add_argument("--dates", default="", help="legacy alias: comma-separated YYYY-MM-DD dates")
+    parser.add_argument("--evaluation-dates", default="", help="comma-separated YYYY-MM-DD dates")
+    parser.add_argument("--evaluation-dates-file", type=Path, default=None, help="text file with one YYYY-MM-DD date per line or comma-separated dates")
     parser.add_argument("--sample-size", type=int, default=None)
     parser.add_argument("--min-date-gap", type=int, default=3)
     parser.add_argument("--min-required-dates", type=int, default=None)
@@ -68,9 +71,24 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+
+def _explicit_dates(args: argparse.Namespace) -> list[date]:
+    sources = [bool(args.dates.strip()), bool(args.evaluation_dates.strip()), args.evaluation_dates_file is not None]
+    if sum(sources) > 1:
+        raise ValueError("Use only one of --dates, --evaluation-dates, --evaluation-dates-file")
+    raw = args.evaluation_dates.strip() or args.dates.strip()
+    if args.evaluation_dates_file is not None:
+        raw = args.evaluation_dates_file.read_text(encoding="utf-8-sig")
+    if not raw.strip():
+        return []
+    tokens = [item.strip() for item in raw.replace("\n", ",").split(",") if item.strip() and not item.strip().startswith("#")]
+    result = [date.fromisoformat(value) for value in tokens]
+    if len(set(result)) != len(result):
+        raise ValueError("Explicit evaluation dates contain duplicates")
+    return result
+
 def main() -> int:
     args = parse_args()
-    print(f"Audit version: {AUDIT_VERSION}", flush=True)
     sample_size = int(args.sample_size if args.sample_size is not None else (10 if args.mode == "inspect" else 80))
     min_required = int(args.min_required_dates if args.min_required_dates is not None else (1 if args.mode == "inspect" else 60))
 
@@ -82,8 +100,14 @@ def main() -> int:
         print(str(exc))
         return 2
 
-    if args.dates.strip():
-        dates = [date.fromisoformat(value.strip()) for value in args.dates.split(",") if value.strip()]
+    try:
+        explicit_dates = _explicit_dates(args)
+    except (OSError, ValueError) as exc:
+        print(f"Invalid explicit evaluation dates: {exc}")
+        return 2
+
+    if explicit_dates:
+        dates = explicit_dates
         sampling = {
             "source": "explicit_dates",
             "requested_sample_size": len(dates),
@@ -134,6 +158,8 @@ def main() -> int:
         ma_cmp = comparisons.get("MA120_FIXED_AUDIT") or {}
         keep4_cmp = comparisons.get(RS_KEEP_4) or {}
         keep8_cmp = comparisons.get(RS_KEEP_8) or {}
+        restore_cmp = comparisons.get(RS_RESTORE_10_8) or {}
+        ma_input_cmp = comparisons.get(MA120_INPUT_ONLY) or {}
         print(
             f"[{index:>3}/{total}] {as_of.isoformat()} {run.get('status')} "
             f"maMissing={ma.get('ma120_unavailable', 0)} "
@@ -142,6 +168,8 @@ def main() -> int:
             f"maQΔ={ma_cmp.get('quick_pool_replacements', 0)} "
             f"k4QΔ={keep4_cmp.get('quick_pool_replacements', 0)} "
             f"k8QΔ={keep8_cmp.get('quick_pool_replacements', 0)} "
+            f"restoreQΔ={restore_cmp.get('quick_pool_replacements', 0)} "
+            f"maInputQΔ={ma_input_cmp.get('quick_pool_replacements', 0)} "
             f"{run.get('runtime_seconds')}s",
             flush=True,
         )
@@ -156,18 +184,22 @@ def main() -> int:
     payload["sampling"] = sampling
     payload = compact_integrity_payload(payload)
     payload = add_audit_metadata(payload, market_store=store, project_root=BACKEND_ROOT.parent)
+    payload["audit_code_fingerprint"] = audit_code_fingerprint(BACKEND_ROOT.parent)
     paths = write_integrity_outputs(payload, output_dir=args.output_dir)
 
     validation = payload.get("strategy_integrity_validation") or {}
     ma = validation.get("ma120") or {}
     rs = validation.get("breakout_rs") or {}
     ma_imp = validation.get("ma120_impact") or {}
+    ma_input_imp = validation.get("ma120_input_only_impact") or {}
     rs_variants = validation.get("rs_variants") or {}
     print(f"Audit complete: {payload.get('valid_date_count')} valid dates")
     print(
         f"MA120: verdict={ma.get('verdict')}, availability={ma.get('availability_rate_pct')}%, "
         f"missing={ma.get('condition_missing_count')}, wouldPass={ma.get('would_pass_if_sma120_available_count')}, "
-        f"Quick18Δ={ma_imp.get('quick_pool_changed_date_count')}, Top5Δ={ma_imp.get('top5_changed_date_count')}"
+        f"Quick18Δ={ma_imp.get('quick_pool_changed_date_count')}, Top5Δ={ma_imp.get('top5_changed_date_count')}; "
+        f"INPUT_ONLY Quick18 membership/order={ma_input_imp.get('quick_pool_changed_date_count')}/{ma_input_imp.get('quick_order_changed_date_count')}, "
+        f"Top5 membership/order={ma_input_imp.get('top5_changed_date_count')}/{ma_input_imp.get('top5_order_changed_date_count')}"
     )
     print(
         f"Breakout RS: verdict={rs.get('verdict')}, weights={rs.get('detected_duplicate_weights')}, "
@@ -178,8 +210,6 @@ def main() -> int:
         impact = item.get("impact") or {}
         print(
             f"{variant_name}: removed={item.get('removed_weight')}, scoreChanged={item.get('score_changed_signals')}, "
-            f"market={item.get('market_weight', 6)}, sector={item.get('kept_weight')}, "
-            f"conditionCountChanged={item.get('condition_count_changed_signals', 0)}, "
             f"strategyChanged={item.get('strategy_changed_signals')}, "
             f"Quick18Δ={impact.get('quick_pool_changed_date_count')}, Top5Δ={impact.get('top5_changed_date_count')}"
         )

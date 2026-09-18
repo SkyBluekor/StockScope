@@ -5,6 +5,7 @@ from typing import Any, Callable
 
 from app.backtest.audit import WIDE_STOP_PCT, build_accuracy_audit
 from app.backtest.metrics import grouped_trade_metrics, score_bucket, summarize_trades
+from app.backtest.ma120_input import ma120_from_rows_asof
 from app.backtest.models import BacktestConfig, BacktestTrade
 from app.backtest.policy_lab import (
     POLICY_BLOCK_ALL_CAUTION,
@@ -98,6 +99,15 @@ class BacktestEngine:
         extended_history = stock_rows[max(0, index - self.RELATIVE_STRENGTH_POINTS + 1) : index + 1]
 
         technical = self.technical.analyze(history)
+        # Production integrity fix: keep the existing 60-row technical window intact
+        # and supply only the missing long-term SMA from the as-of price history.
+        # ma120_from_rows_asof() never reads rows after ``index``.
+        if technical.get("ma120") is None:
+            ma120 = ma120_from_rows_asof(stock_rows, index)
+            if ma120 is not None:
+                technical = dict(technical)
+                technical["ma120"] = ma120
+
         index_until = [row for row in index_rows if self._date(row) <= signal_date]
         index_history = index_until[-self.RELATIVE_STRENGTH_POINTS :]
         index_row = self._index_row_for_date(index_rows, signal_date)
