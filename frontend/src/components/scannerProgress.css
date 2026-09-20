@@ -1,0 +1,117 @@
+.scanner-progress-card.progress-v24 {
+  display: grid;
+  gap: 14px;
+}
+
+.progress-v24 .scanner-progress-head {
+  align-items: flex-start;
+}
+
+.progress-v24 .scanner-progress-stage-count {
+  color: var(--text-secondary);
+  font-size: 0.86rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.progress-v24 .scanner-progress-current {
+  display: grid;
+  gap: 3px;
+  padding: 11px 0 12px;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.progress-v24 .scanner-progress-current span,
+.progress-v24 .scanner-progress-row small,
+.progress-v24 .scanner-progress-connection,
+.progress-v24 .scanner-progress-diagnostics summary {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.progress-v24 .scanner-progress-current strong {
+  color: var(--text-primary);
+  font-size: 0.98rem;
+}
+
+.progress-v24 .scanner-progress-stages {
+  display: grid;
+  gap: 7px;
+}
+
+.progress-v24 .scanner-progress-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+}
+
+.progress-v24 .scanner-progress-row > i {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  font-style: normal;
+  color: var(--text-subtle);
+}
+
+.progress-v24 .scanner-progress-row.done > i,
+.progress-v24 .scanner-progress-row.reused > i {
+  color: var(--success-text, var(--text-secondary));
+}
+
+.progress-v24 .scanner-progress-row.active > i {
+  color: var(--accent);
+}
+
+.progress-v24 .scanner-progress-row.failed > i {
+  color: var(--danger-text, var(--text-primary));
+}
+
+.progress-v24 .scanner-progress-row.waiting {
+  opacity: 0.66;
+}
+
+.progress-v24 .scanner-progress-prepared-summary {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-weight: 700;
+}
+
+.progress-v24 .scanner-progress-prepared-summary i {
+  font-style: normal;
+}
+
+.progress-v24 .scanner-progress-meta {
+  margin-top: 0;
+}
+
+.progress-v24 .scanner-progress-connection {
+  margin: 0;
+}
+
+.progress-v24 .scanner-progress-diagnostics {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 9px;
+}
+
+.progress-v24 .scanner-progress-diagnostics summary {
+  cursor: pointer;
+  user-select: none;
+}
+
+.progress-v24 .scanner-progress-diagnostics > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 14px;
+  padding-top: 8px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}

@@ -765,6 +765,13 @@ def _risk_payload(risk_plan: Any, *, decision_reason: str | None) -> dict[str, A
         "target1_price": target1,
         "display_target1_price": _krx_display_price(target1),
         "target1_basis": _get(risk_plan, "target1_basis"),
+        "structural_target1_price": _number(_get(risk_plan, "structural_target1_price")),
+        "display_structural_target1_price": _krx_display_price(_number(_get(risk_plan, "structural_target1_price"))),
+        "structural_target1_basis": _get(risk_plan, "structural_target1_basis"),
+        "target1_cap_price": _number(_get(risk_plan, "target1_cap_price")),
+        "display_target1_cap_price": _krx_display_price(_number(_get(risk_plan, "target1_cap_price"))),
+        "target1_cap_applied": bool(_get(risk_plan, "target1_cap_applied", False)),
+        "target1_fallback_used": bool(_get(risk_plan, "target1_fallback_used", False)),
         "target2_price": target2,
         "display_target2_price": _krx_display_price(target2),
         "target2_basis": _get(risk_plan, "target2_basis"),
@@ -780,6 +787,44 @@ def _risk_payload(risk_plan: Any, *, decision_reason: str | None) -> dict[str, A
         "basis_label": "현재 조건상 진입 후보 기준" if final_candidate else "현재 확정 종가 기준 참고값",
         "recheck_message": None if final_candidate else "가격·거래량 등 남은 조건이 바뀌면 손절과 목표도 다시 계산해야 합니다.",
     }
+
+
+def _hydrate_target1_explainability_metadata(risk: dict[str, Any], audit: dict[str, Any] | None) -> dict[str, Any]:
+    """Keep Target1 explainability metadata alive across legacy/partial serialization paths.
+
+    B.2.3.2d moved Production Target1 to the 1.5R-cap policy, while older
+    intermediate payloads may still carry only the price/basis fields. The
+    independently reconstructed Target1 audit already contains the same structural
+    trace. When that audit MATCHes Production, use it only to backfill missing
+    explainability fields. Decision prices and ratios are never changed here.
+    """
+
+    if not isinstance(audit, dict) or audit.get("formula_status") != "MATCH":
+        return risk
+
+    structural_price = _number(risk.get("structural_target1_price"))
+    if structural_price is None:
+        structural_price = _number(audit.get("structural_target1_price"))
+        if structural_price is not None:
+            risk["structural_target1_price"] = structural_price
+            risk["display_structural_target1_price"] = _krx_display_price(structural_price)
+
+    if not risk.get("structural_target1_basis") and audit.get("structural_target1_basis"):
+        risk["structural_target1_basis"] = audit.get("structural_target1_basis")
+
+    cap_price = _number(risk.get("target1_cap_price"))
+    if cap_price is None:
+        cap_price = _number(audit.get("target1_cap_price"))
+        if cap_price is not None:
+            risk["target1_cap_price"] = cap_price
+            risk["display_target1_cap_price"] = _krx_display_price(cap_price)
+
+    if audit.get("target1_cap_applied") is True:
+        risk["target1_cap_applied"] = True
+    if audit.get("target1_fallback_used") is True:
+        risk["target1_fallback_used"] = True
+
+    return risk
 
 
 def build_entry_risk_guide(
@@ -804,11 +849,13 @@ def build_entry_risk_guide(
     trend_strength = _trend_strength(data, condition_state)
     rebound = _rebound_rule(strategy, data, entry_timing)
     risk = _risk_payload(risk_plan, decision_reason=decision_reason)
-    risk["target1_audit"] = build_current_target1_audit(
+    target1_audit = build_current_target1_audit(
         risk_plan=risk_plan,
         data=data,
         technical=technical,
     )
+    risk["target1_audit"] = target1_audit
+    _hydrate_target1_explainability_metadata(risk, target1_audit)
     price_consistency = _price_plan_consistency(price, risk)
     price_consistency["trace_context"] = {
         "strategy": str(_get(strategy, "value", strategy) or ""),

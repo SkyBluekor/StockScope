@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.risk.models import RiskPlan, RiskPlanStatus
+from app.risk.target1_policy import select_target1
 from app.strategy.models import StrategyInput, StrategyName
 
 
@@ -203,22 +204,25 @@ class RiskEngine:
 
         resistance = self._valid_above(entry, data.resistance_price)
         high20 = self._valid_above(entry, technical.get("high20"))
-        technical_targets = []
+        structural_targets: list[tuple[float, str, str]] = []
         if resistance is not None:
-            technical_targets.append((resistance, "최근 저항 후보"))
+            structural_targets.append((resistance, "최근 저항 후보", "RESISTANCE"))
         if high20 is not None:
-            technical_targets.append((high20, "최근 20일 고점"))
-        technical_targets.sort(key=lambda item: item[0])
+            structural_targets.append((high20, "최근 20일 고점", "HIGH20"))
 
-        if technical_targets:
-            target1, target1_basis = technical_targets[0]
-        else:
-            target1 = entry + risk_amount * 1.5
-            target1_basis = "1.5R 손익 구조 참고"
+        target1_decision = select_target1(
+            entry=entry,
+            risk_amount=risk_amount,
+            structural_candidates=structural_targets,
+        )
+        target1 = target1_decision.target1_price
+        target1_basis = target1_decision.target1_basis
 
-        # 2차 목표는 최소 2R 이상이며 1차 목표보다 위에 위치하게 합니다.
+        # Target1만 현실성 상한을 적용합니다. Target2는 기존 Production 정의를
+        # 보존하기 위해 cap 전 legacy Target1을 기준으로 계산합니다.
+        legacy_target1 = target1_decision.legacy_target1_price
         target2_r = entry + risk_amount * 2.0
-        target2 = max(target2_r, target1 + risk_amount * 0.5)
+        target2 = max(target2_r, legacy_target1 + risk_amount * 0.5)
         target2_basis = "2R 이상 확장 시나리오"
 
         reward1 = target1 - entry
@@ -233,8 +237,13 @@ class RiskEngine:
             f"{anchor_label} {anchor:,.0f}원을 전략 무효화의 구조적 기준으로 사용했습니다.",
             f"ATR({atr_pct:.2f}%)를 이용해 단순 지지선 바로 아래가 아닌 변동성 여유를 반영했습니다.",
             f"1차 목표는 {target1_basis}을 기준으로 잡았습니다.",
-            "2차 목표는 최소 2R 손익 구조를 확인하기 위한 확장 시나리오입니다.",
+            "2차 목표는 기존 Production 확장 시나리오를 그대로 유지합니다.",
         ]
+        if target1_decision.cap_applied and target1_decision.structural_target1_price is not None:
+            reasons.append(
+                f"구조 목표 {target1_decision.structural_target1_price:,.0f}원이 1.5R보다 멀어 "
+                "1차 목표에만 현실성 상한을 적용했습니다."
+            )
 
         if risk_pct >= 12:
             warnings.append("현재 가격에서 무효화 기준까지 거리가 12% 이상으로 넓어 신규 진입 리스크가 큽니다.")
@@ -284,4 +293,9 @@ class RiskEngine:
             reasons=reasons,
             warnings=warnings,
             assumptions=assumptions,
+            structural_target1_price=self._round_price(target1_decision.structural_target1_price),
+            structural_target1_basis=target1_decision.structural_target1_basis,
+            target1_cap_price=self._round_price(target1_decision.cap_price),
+            target1_cap_applied=target1_decision.cap_applied,
+            target1_fallback_used=target1_decision.fallback_used,
         )

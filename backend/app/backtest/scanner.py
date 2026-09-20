@@ -14,6 +14,8 @@ from app.backtest.engine import BacktestEngine
 from app.backtest.candidate_priority import rank_candidates
 from app.backtest.entry_risk_guide import build_entry_risk_guide
 from app.backtest.production_exit_policy import production_policy_cache_token
+from app.backtest.sector_rs_input import HistoricalSectorInput
+from app.backtest.sector_rs_prefetch import HistoricalSectorInputPrefetcher
 from app.backtest.historical_evidence import build_historical_evidence, validation_start_for_years
 from app.backtest.market_store import HistoricalMarketStore
 from app.backtest.reproducibility_audit import write_scanner_reproducibility_audit
@@ -38,12 +40,12 @@ class StockScannerService:
     presented to the user as probabilities.
     """
 
-    VERSION = "0.21.3.4"
+    VERSION = "0.21.3.7"
     HISTORY_CALENDAR_DAYS = 485  # local-only historical evidence window
     FAST_HISTORY_CALENDAR_DAYS = 220  # current-condition scan only; ~150 weekdays
     EVIDENCE_CALENDAR_DAYS = 365
     THREE_YEAR_WARMUP_DAYS = 220
-    HISTORICAL_EVIDENCE_POLICY_VERSION = "v1"
+    HISTORICAL_EVIDENCE_POLICY_VERSION = "v2"
     HISTORICAL_VALIDATION_MIN_ROWS = 220  # legacy diagnostic only; never selects production current path
     QUICK_LIMIT_PER_MARKET = 160
     DEEP_LIMIT = 18
@@ -64,11 +66,19 @@ class StockScannerService:
         *,
         market_store: HistoricalMarketStore | None = None,
         engine: BacktestEngine | None = None,
+        sector_company_provider: Any | None = None,
+        sector_prefetcher: HistoricalSectorInputPrefetcher | None = None,
     ) -> None:
         self.krx = krx
         self.market_store = market_store or HistoricalMarketStore()
         self.engine = engine or BacktestEngine()
         self.multi = MultiStrategyBacktestEngine(self.engine)
+        # c.4f: optional audit-only sector input source. Current OpenDART metadata is
+        # STATIC_CURRENT, so the temporal gate in BacktestEngine prevents it from
+        # changing Production strategy scores. Scanner itself never calls DART.
+        self.sector_prefetcher = sector_prefetcher
+        if self.sector_prefetcher is None and sector_company_provider is not None:
+            self.sector_prefetcher = HistoricalSectorInputPrefetcher(self.krx, sector_company_provider)
 
     @staticmethod
     def _emit(callback: ProgressCallback | None, **payload: Any) -> None:
@@ -456,6 +466,7 @@ class StockScannerService:
         *,
         market_scope: str = "ALL",
         known_data_date: str | None = None,
+        progress: ProgressCallback | None = None,
     ) -> dict[str, Any]:
         """Resolve one effective EOD date without ever regressing a valid current date.
 
@@ -468,9 +479,75 @@ class StockScannerService:
         if scope not in {"ALL", "KOSPI", "KOSDAQ"}:
             raise ValueError("market_scope은 ALL, KOSPI, KOSDAQ 중 하나여야 합니다.")
         markets = ["KOSPI", "KOSDAQ"] if scope == "ALL" else [scope]
+        prepare_total = 3 + 2 * len(markets)
         today = self.krx._today_kst()  # noqa: SLF001 - provider and Scanner share KST boundary
         requested_end = today - timedelta(days=1)
         normalized_known = self._normalize_iso_date(known_data_date)
+        prepare_started_at = time.perf_counter()
+        completed_stages: list[str] = []
+        reused_stages: list[str] = []
+        current_prepare_stage = "scanner_prepare_local"
+
+        def prepare_details(*, status: str, current_item: str | None = None, **extra: Any) -> dict[str, Any]:
+            return {
+                "stage_status": status,
+                "market_scope": scope,
+                "completed_stages": list(completed_stages),
+                "reused_stages": list(reused_stages),
+                "current_item": current_item,
+                "elapsed_seconds": round(max(0.0, time.perf_counter() - prepare_started_at), 1),
+                "heartbeat_at": datetime.now().isoformat(timespec="seconds"),
+                **extra,
+            }
+
+        def emit_prepare(
+            stage: str,
+            message: str,
+            *,
+            status: str = "RUNNING",
+            current_item: str | None = None,
+            reused: bool = False,
+            complete: bool = False,
+            **extra: Any,
+        ) -> None:
+            nonlocal current_prepare_stage
+            current_prepare_stage = stage
+            if complete and stage not in completed_stages:
+                completed_stages.append(stage)
+            if reused and stage not in reused_stages:
+                reused_stages.append(stage)
+            self._emit(
+                progress,
+                stage=stage,
+                message=message,
+                current=len(completed_stages),
+                total=prepare_total,
+                details=prepare_details(
+                    status="REUSED" if reused else ("COMPLETED" if complete else status),
+                    current_item=current_item,
+                    **extra,
+                ),
+            )
+
+        async def await_with_heartbeat(awaitable: Any, *, stage: str, message: str, current_item: str | None = None) -> Any:
+            task = asyncio.create_task(awaitable)
+            while True:
+                try:
+                    return await asyncio.wait_for(asyncio.shield(task), timeout=2.0)
+                except asyncio.TimeoutError:
+                    emit_prepare(
+                        stage,
+                        message,
+                        status="RUNNING",
+                        current_item=current_item,
+                        waiting_for_provider=True,
+                    )
+
+        emit_prepare(
+            "scanner_prepare_local",
+            "로컬 저장 데이터를 확인하는 중",
+            current_item="Market Store",
+        )
 
         previous_stock_dates = {
             market: (
@@ -494,6 +571,12 @@ class StockScannerService:
         )
         current_valid_date = normalized_known if known_date_valid_before else None
         effective_before = current_valid_date or stored_common_before
+        emit_prepare(
+            "scanner_prepare_local",
+            "로컬 저장 데이터 확인 완료",
+            current_item=effective_before or "저장 데이터 없음",
+            complete=True,
+        )
 
         before = self.krx.request_stats()
         updated_dates: set[str] = set()
@@ -520,16 +603,40 @@ class StockScannerService:
             # Fast path only when every selected market has both stock and index data
             # for the requested date. Stock-only presence is not sufficient.
             requested_iso = requested_end.isoformat()
+            emit_prepare(
+                "scanner_prepare_probe",
+                "최신 확정 거래일을 확인하는 중",
+                current_item=requested_iso,
+            )
             if self._date_complete_for_markets(markets, requested_iso):
                 resolved_day = requested_end
+                emit_prepare(
+                    "scanner_prepare_probe",
+                    f"최신 분석 기준일 {requested_iso} 확인",
+                    current_item=requested_iso,
+                    reused=True,
+                    complete=True,
+                )
             else:
                 for candidate in self.krx._candidate_dates(
                     requested_end, self.LATEST_CONFIRM_LOOKBACK_DAYS
                 ):  # noqa: SLF001
-                    probe = await self._krx_stock_daily(primary_market, candidate, force_refresh=True)
+                    candidate_iso = candidate.isoformat()
+                    probe = await await_with_heartbeat(
+                        self._krx_stock_daily(primary_market, candidate, force_refresh=True),
+                        stage="scanner_prepare_probe",
+                        message="최신 확정 거래일을 확인하는 중",
+                        current_item=candidate_iso,
+                    )
                     if int(probe.get("count") or 0) > 0:
                         primary_result = probe
                         resolved_day = candidate
+                        emit_prepare(
+                            "scanner_prepare_probe",
+                            f"최신 분석 기준일 {candidate_iso} 확인",
+                            current_item=candidate_iso,
+                            complete=True,
+                        )
                         break
 
             if resolved_day is None:
@@ -544,6 +651,28 @@ class StockScannerService:
             # current analysis move backward. Keep the locally verified date and report
             # that no newer confirmed day was adopted.
             if current_valid_date and resolved_iso < current_valid_date:
+                for market in markets:
+                    emit_prepare(
+                        f"scanner_prepare_{market.lower()}_stock",
+                        f"{market} 종목 데이터 · 현재 저장 데이터 유지",
+                        current_item=f"{market} 종목",
+                        reused=True,
+                        complete=True,
+                    )
+                    emit_prepare(
+                        f"scanner_prepare_{market.lower()}_index",
+                        f"{market} 지수 · 현재 저장 데이터 유지",
+                        current_item=f"{market} 지수",
+                        reused=True,
+                        complete=True,
+                    )
+                emit_prepare(
+                    "scanner_prepare_store",
+                    "현재 분석 기준 데이터를 유지합니다.",
+                    current_item=current_valid_date,
+                    reused=True,
+                    complete=True,
+                )
                 return {
                     "status": "READY",
                     "market_scope": scope,
@@ -569,6 +698,13 @@ class StockScannerService:
 
             integrity_markets: dict[str, dict[str, Any]] = {}
             for market in markets:
+                stock_stage = f"scanner_prepare_{market.lower()}_stock"
+                index_stage = f"scanner_prepare_{market.lower()}_index"
+                emit_prepare(
+                    stock_stage,
+                    f"{market} 종목 데이터를 확인하는 중",
+                    current_item=f"{market} 종목",
+                )
                 previous_rows = await self._store_stock_rows(market, resolved_key)
                 previous_index = await self._store_index_row(market, resolved_key)
                 verification = (
@@ -593,6 +729,20 @@ class StockScannerService:
                 )
 
                 if verification_matches_store:
+                    emit_prepare(
+                        stock_stage,
+                        f"{market} 종목 데이터 · 저장 데이터 재사용",
+                        current_item=f"{market} 종목",
+                        reused=True,
+                        complete=True,
+                    )
+                    emit_prepare(
+                        index_stage,
+                        f"{market} 지수 · 저장 데이터 재사용",
+                        current_item=f"{market} 지수",
+                        reused=True,
+                        complete=True,
+                    )
                     integrity_markets[market] = {
                         "mode": "VERIFIED_REUSE",
                         "krx_rows": len(previous_rows),
@@ -607,7 +757,12 @@ class StockScannerService:
                 stock_result = (
                     primary_result
                     if market == primary_market and primary_result is not None
-                    else await self._krx_stock_daily(market, resolved_day, force_refresh=True)
+                    else await await_with_heartbeat(
+                        self._krx_stock_daily(market, resolved_day, force_refresh=True),
+                        stage=stock_stage,
+                        message=f"{market} 종목 데이터를 KRX에서 확인하는 중",
+                        current_item=f"{market} {resolved_iso} 종목",
+                    )
                 )
                 stock_rows = list(stock_result.get("rows") or [])
                 if not stock_rows:
@@ -615,14 +770,38 @@ class StockScannerService:
                 wrong_stock_dates = [row for row in stock_rows if self._iso(str(row.get("date") or "")) != resolved_iso]
                 if wrong_stock_dates:
                     raise ProviderError(f"{market} {resolved_iso} KRX 주식 응답의 기준일이 요청일과 일치하지 않습니다.")
+                emit_prepare(
+                    stock_stage,
+                    f"{market} 종목 데이터 확인 완료",
+                    current_item=f"{market} {len(stock_rows)}종목",
+                    complete=True,
+                    source="KRX",
+                )
 
-                index_result = await self._krx_index_daily(market, resolved_day, force_refresh=True)
+                emit_prepare(
+                    index_stage,
+                    f"{market} 지수를 확인하는 중",
+                    current_item=f"{market} 지수",
+                )
+                index_result = await await_with_heartbeat(
+                    self._krx_index_daily(market, resolved_day, force_refresh=True),
+                    stage=index_stage,
+                    message=f"{market} 지수를 KRX에서 확인하는 중",
+                    current_item=f"{market} {resolved_iso} 지수",
+                )
                 index_rows = list(index_result.get("rows") or [])
                 main_index = self.krx._select_main_index(index_rows, market) if index_rows else None  # noqa: SLF001
                 if main_index is None:
                     raise ProviderError(f"{market} {resolved_iso} 확정 시장지수를 확인하지 못했습니다.")
                 if self._iso(str(main_index.get("date") or "")) != resolved_iso:
                     raise ProviderError(f"{market} {resolved_iso} KRX 지수 응답의 기준일이 요청일과 일치하지 않습니다.")
+                emit_prepare(
+                    index_stage,
+                    f"{market} 지수 확인 완료",
+                    current_item=f"{market} {resolved_iso} 지수",
+                    complete=True,
+                    source="KRX",
+                )
 
                 await self._replace_stock_snapshot(market, resolved_key, stock_rows)
                 await self._replace_index_snapshot(market, resolved_key, main_index)
@@ -671,8 +850,19 @@ class StockScannerService:
                     "verified_at": datetime.now().isoformat(timespec="seconds"),
                 }
 
+            emit_prepare(
+                "scanner_prepare_store",
+                "저장 데이터를 최종 검증하는 중",
+                current_item=resolved_iso,
+            )
             if not self._date_complete_for_markets(markets, resolved_iso):
                 raise ProviderError("최신 시세 저장 후 공통 분석 기준일을 확인하지 못했습니다.")
+            emit_prepare(
+                "scanner_prepare_store",
+                "최신 확정 시세 준비 완료",
+                current_item=resolved_iso,
+                complete=True,
+            )
 
             stored_common_after = self._latest_common_complete_date(markets, end_date=requested_end)
             effective_date = resolved_iso
@@ -702,7 +892,14 @@ class StockScannerService:
                 "market_data_updated": bool(updated_dates),
                 "date_changed": date_changed,
                 "updated_dates": sorted(updated_dates),
-                "diagnostics": {**diagnostics(), "data_integrity": integrity_markets},
+                "diagnostics": {
+                    **diagnostics(),
+                    "data_integrity": integrity_markets,
+                    "progress": {
+                        "completed_stages": list(completed_stages),
+                        "reused_stages": list(reused_stages),
+                    },
+                },
                 "failure_reason": None,
                 "message": (
                     f"새로운 확정 시세를 확인했습니다. {effective_date} 기준으로 분석합니다."
@@ -760,7 +957,14 @@ class StockScannerService:
                 "market_data_updated": False,
                 "date_changed": False,
                 "updated_dates": [],
-                "diagnostics": diagnostics(),
+                "diagnostics": {
+                    **diagnostics(),
+                    "progress": {
+                        "completed_stages": list(completed_stages),
+                        "reused_stages": list(reused_stages),
+                        "failed_stage": current_prepare_stage,
+                    },
+                },
                 "failure_reason": str(exc),
                 "message": message,
             }
@@ -1056,6 +1260,71 @@ class StockScannerService:
     def _row_date(row: dict[str, Any]) -> str:
         return str(row.get("date") or "").replace("-", "")
 
+    async def _prepare_sector_inputs_for_quick_pool(
+        self,
+        *,
+        quick_inputs: list[tuple[str, dict[str, Any]]],
+        latest_dates: dict[str, str],
+    ) -> tuple[dict[tuple[str, str], HistoricalSectorInput], dict[str, Any]]:
+        """Prefetch current-metadata Sector RS inputs once per code/date for audit.
+
+        Disabled by default. When enabled, company metadata is resolved once per
+        unique code and KRX index_daily is fetched once per market/date, then shared
+        by every sector mapping. BacktestEngine receives only prepared rows and does
+        no network I/O.
+        """
+        if self.sector_prefetcher is None:
+            return {}, {"enabled": False, "temporal_status": None, "markets": {}}
+
+        by_market: dict[str, list[str]] = {}
+        for market, row in quick_inputs:
+            code = str(row.get("code") or "").strip()
+            if code:
+                by_market.setdefault(str(market), []).append(code)
+
+        prepared: dict[tuple[str, str], HistoricalSectorInput] = {}
+        market_stats: dict[str, Any] = {}
+        totals = {
+            "unique_codes": 0,
+            "company_requests": 0,
+            "company_cache_hits": 0,
+            "industry_code_available": 0,
+            "industry_mapped": 0,
+            "industry_unmapped": 0,
+            "unique_sector_alias_sets": 0,
+            "index_daily_calls": 0,
+            "index_cache_hits": 0,
+            "index_days_with_data": 0,
+            "benchmark_resolved": 0,
+            "sector_history_available": 0,
+            "errors": 0,
+        }
+        for market, codes in by_market.items():
+            as_of = latest_dates.get(market)
+            if not as_of:
+                continue
+            sector_map, stats = await self.sector_prefetcher.prepare(
+                market=market,
+                codes=codes,
+                as_of=as_of,
+                points=self.engine.RELATIVE_STRENGTH_POINTS,
+                lookback_days=140,
+            )
+            market_stats[market] = stats
+            for code, sector_input in sector_map.items():
+                prepared[(market, code)] = sector_input
+            for key in totals:
+                totals[key] += int(stats.get(key) or 0)
+
+        return prepared, {
+            "enabled": True,
+            "temporal_status": "STATIC_CURRENT",
+            "production_enabled": False,
+            "production_gate": "POINT_IN_TIME_REQUIRED",
+            "totals": totals,
+            "markets": market_stats,
+        }
+
     def _quick_current_candidate(
         self,
         *,
@@ -1064,6 +1333,7 @@ class StockScannerService:
         row: dict[str, Any],
         stock_rows: list[dict[str, Any]],
         index_rows: list[dict[str, Any]],
+        sector_input: HistoricalSectorInput | None = None,
     ) -> dict[str, Any] | None:
         if len(stock_rows) < self.MIN_HISTORY_ROWS:
             return None
@@ -1083,6 +1353,7 @@ class StockScannerService:
             index_rows=indices,
             index=len(rows) - 1,
             config=config,
+            sector_input=sector_input,
         )
         if snapshot is None:
             return None
@@ -1093,8 +1364,23 @@ class StockScannerService:
             reverse=True,
         )
         best: dict[str, Any] | None = None
-        for evaluation in evaluations[:3]:
+        strategy_trace: list[dict[str, Any]] = []
+        for index, evaluation in enumerate(evaluations):
             strategy = evaluation.strategy
+            strategy_name = str(getattr(strategy, "value", strategy) or "")
+            trace_row: dict[str, Any] = {
+                "strategy": strategy_name,
+                "selector_rank": index + 1,
+                "selector_eligible": bool(getattr(evaluation, "eligible", False)),
+                "selector_score": int(getattr(evaluation, "score", 0) or 0),
+                "selector_reasons": [str(item) for item in (getattr(evaluation, "reasons", None) or [])],
+                "selector_unmet": [str(item) for item in (getattr(evaluation, "unmet", None) or [])],
+                "current_evaluated": index < 3,
+            }
+            if index >= 3:
+                strategy_trace.append(trace_row)
+                continue
+
             condition_state = build_condition_state(
                 evaluation,
                 data=snapshot.get("strategy_input"),
@@ -1107,9 +1393,28 @@ class StockScannerService:
                 condition_state=condition_state,
             )
             score = float(current.get("internal_score") or 0.0)
+            trace_row.update({
+                "current_status": str(current.get("status") or ""),
+                "current_internal_score": round(score, 4),
+                "passed": int(current.get("passed") or condition_state.get("passed") or 0),
+                "total": int(current.get("total") or condition_state.get("total") or 0),
+                "missing": int(
+                    current.get("missing")
+                    or condition_state.get("missing")
+                    or max(
+                        0,
+                        int(current.get("total") or condition_state.get("total") or 0)
+                        - int(current.get("passed") or condition_state.get("passed") or 0),
+                    )
+                ),
+                "risk_status": current.get("risk_status"),
+                "risk_warning": bool(current.get("risk_warning")),
+                "warnings": [str(item) for item in (current.get("warnings") or [])],
+            })
+            strategy_trace.append(trace_row)
             if best is None or score > float(best["current"].get("internal_score") or 0.0):
                 best = {
-                    "strategy": strategy.value,
+                    "strategy": strategy_name,
                     "guide": strategy_guide(strategy),
                     "current": current,
                     "condition_state": condition_state,
@@ -1157,6 +1462,15 @@ class StockScannerService:
             "quick_condition_state": best.get("condition_state") or {},
             "quick_entry_risk_guide": entry_risk_guide,
             "quick_score": round(quick_score, 4),
+            "_strategy_trace": {
+                "selection_method": "selector eligible/score 상위 3개를 현재 조건·Risk로 재평가한 뒤 current_internal_score 최대 전략 선택",
+                "selected_strategy": best["strategy"],
+                "evaluations": [
+                    {**row, "selected": str(row.get("strategy") or "") == str(best["strategy"])}
+                    for row in strategy_trace
+                ],
+            },
+            "_sector_input_audit": dict(snapshot.get("sector_input_audit") or {}),
         }
 
     def _current_candidate(self, item: dict[str, Any]) -> dict[str, Any] | None:
@@ -1261,6 +1575,7 @@ class StockScannerService:
             "_repro_trade_value": item.get("trade_value"),
             "_repro_market_cap": item.get("market_cap"),
             "_repro_history_points": item.get("history_points"),
+            "_repro_strategy_trace": item.get("_strategy_trace") or {},
         }
 
     def _fast_candidate(self, item: dict[str, Any]) -> dict[str, Any] | None:
@@ -1744,6 +2059,11 @@ class StockScannerService:
                     latest_date,
                 )
 
+            sector_inputs_by_code, sector_prefetch_stats = await self._prepare_sector_inputs_for_quick_pool(
+                quick_inputs=quick_inputs,
+                latest_dates=latest_dates,
+            )
+
             t_quick = time.perf_counter()
             self._emit(
                 progress,
@@ -1772,6 +2092,7 @@ class StockScannerService:
                     row=row,
                     stock_rows=stock_rows,
                     index_rows=index_rows_by_market.get(market, []),
+                    sector_input=sector_inputs_by_code.get((market, code)),
                 )
                 if quick is None:
                     data_insufficient += 1
@@ -1904,6 +2225,8 @@ class StockScannerService:
                 item.pop("_repro_trade_value", None)
                 item.pop("_repro_market_cap", None)
                 item.pop("_repro_history_points", None)
+                item.pop("_repro_strategy_trace", None)
+                item.pop("_sector_input_audit", None)
 
             timings["total_seconds"] = time.perf_counter() - started_at
             # Do not freeze the same-day Scanner result while a ranked candidate's
@@ -1977,6 +2300,7 @@ class StockScannerService:
                         3,
                     ),
                     "ranking_changes": ranking_changes,
+                    "sector_rs_prefetch": sector_prefetch_stats,
                     "reproducibility_audit": reproducibility_audit,
                     **{key: round(value, 3) for key, value in timings.items()},
                 },

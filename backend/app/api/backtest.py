@@ -28,6 +28,7 @@ router = APIRouter(prefix="/backtest", tags=["backtest"])
 class ScannerRequest(BaseModel):
     market_scope: Literal["ALL", "KOSPI", "KOSDAQ"] = "ALL"
     as_of_date: str | None = None
+    known_data_date: str | None = None
     candidate_limit: int = Field(default=5, ge=1, le=10)
     force_refresh: bool = False
     allow_large_sync: bool = False
@@ -477,16 +478,72 @@ async def create_multi_strategy_backtest_job(payload: PullbackBacktestRequest) -
 
 async def _run_scanner_job(job_id: str, payload: ScannerRequest, api_key: str | None) -> None:
     service = StockScannerService(KrxProvider(api_key))
+    progress_context: dict[str, object] = {
+        "completed_stages": [],
+        "reused_stages": [],
+        "market_scope": payload.market_scope,
+    }
 
     def update_progress(progress_payload: dict) -> None:
         if backtest_jobs.is_cancelled(job_id):
             raise BacktestJobCancelled()
-        backtest_jobs.update_progress(job_id, progress_payload)
+        forwarded = dict(progress_payload)
+        details = dict(forwarded.get("details") or {})
+        for key in (
+            "completed_stages",
+            "reused_stages",
+            "failed_stage",
+            "market_scope",
+            "resolved_as_of_date",
+            "date_changed",
+        ):
+            if key in details:
+                progress_context[key] = details[key]
+            elif key in progress_context:
+                details[key] = progress_context[key]
+        forwarded["details"] = details
+        backtest_jobs.update_progress(job_id, forwarded)
 
     try:
+        resolved_as_of_date = payload.as_of_date
+        if not resolved_as_of_date:
+            freshness = await service.prepare_latest_confirmed_data(
+                market_scope=payload.market_scope,
+                known_data_date=payload.known_data_date,
+                progress=update_progress,
+            )
+            resolved_as_of_date = freshness.get("resolved_as_of_date")
+            if freshness.get("status") not in {"READY", "UPDATED"} or not resolved_as_of_date:
+                progress_meta = ((freshness.get("diagnostics") or {}).get("progress") or {})
+                update_progress({
+                    "stage": "scanner_prepare_failed",
+                    "message": freshness.get("message") or "최신 확정 시세 준비에 실패했습니다.",
+                    "current": 0,
+                    "total": 1,
+                    "details": {
+                        **progress_meta,
+                        "stage_status": "FAILED",
+                        "freshness_failure": freshness,
+                    },
+                })
+                backtest_jobs.fail(job_id, freshness.get("message") or "최신 확정 시세 준비에 실패했습니다.")
+                return
+            update_progress({
+                "stage": "scanner_prepare_complete",
+                "message": freshness.get("message") or "최신 확정 시세 준비 완료",
+                "current": 1,
+                "total": 1,
+                "details": {
+                    **(((freshness.get("diagnostics") or {}).get("progress") or {})),
+                    "stage_status": "COMPLETED",
+                    "resolved_as_of_date": resolved_as_of_date,
+                    "date_changed": bool(freshness.get("date_changed")),
+                },
+            })
+
         result = await service.run(
             market_scope=payload.market_scope,
-            as_of_date=payload.as_of_date,
+            as_of_date=resolved_as_of_date,
             candidate_limit=payload.candidate_limit,
             force_refresh=payload.force_refresh,
             allow_large_sync=payload.allow_large_sync,

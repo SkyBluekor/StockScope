@@ -45,10 +45,23 @@ function goalPositionText(current: number | null | undefined, target: number | n
 
 function targetBasisText(guide: ConcreteEntryRiskGuide) {
   const raw = String(guide.risk.target1_audit?.target1_basis ?? guide.risk.target1_basis ?? "");
+  if (raw.includes("현실성 상한")) return "1.5R 현실성 상한";
   if (raw.includes("저항")) return "최근 저항";
   if (raw.includes("20일") && raw.includes("고점")) return "20일 고점";
   if (raw.includes("1.5R")) return "1.5R 손익 구조";
   return raw || "근거 확인";
+}
+
+function targetStructuralNote(guide: ConcreteEntryRiskGuide) {
+  const risk = guide.risk;
+  const audit = risk.target1_audit;
+  const capApplied = risk.target1_cap_applied === true || audit?.target1_cap_applied === true;
+  const structuralRaw = risk.structural_target1_price ?? audit?.structural_target1_price;
+  if (!capApplied || structuralRaw == null) return null;
+  const structural = displayPrice(structuralRaw, risk.display_structural_target1_price);
+  const structuralBasis = risk.structural_target1_basis ?? audit?.structural_target1_basis;
+  const basis = structuralBasis ? ` · ${structuralBasis}` : "";
+  return `1.5R 현실성 상한 적용 · 구조 목표 ${structural}${basis}`;
 }
 
 function priceRuleText(guide: ConcreteEntryRiskGuide) {
@@ -128,6 +141,7 @@ function compactPricePlan(guide: ConcreteEntryRiskGuide) {
           <small>1차 목표 · {targetBasisText(guide)}</small>
           <strong>{displayPrice(risk.target1_price, risk.display_target1_price)}</strong>
           <span>{goalPositionText(guide.current_price, risk.target1_price, "1차 목표")}</span>
+          {targetStructuralNote(guide) && <span>{targetStructuralNote(guide)}</span>}
           {risk.rr1 != null && <b>손익비 1 : {risk.rr1.toFixed(2)}</b>}
         </article>
 
@@ -214,6 +228,7 @@ export default function EntryRiskGuideCard({ guide, compact = false }: Props) {
           <small>1차 목표 · {targetBasisText(guide)}</small>
           <strong>{displayPrice(risk.target1_price, risk.display_target1_price)}</strong>
           <span>{[rawPriceNote(risk.target1_price, risk.display_target1_price), risk.reward1_pct != null ? `참고 진입가 대비 ${pct(risk.reward1_pct)}` : "계산 가능한 목표가 없음"].filter(Boolean).join(" · ")}</span>
+          {targetStructuralNote(guide) && <span>{targetStructuralNote(guide)}</span>}
           {risk.rr1 != null && <b>손익비 1 : {risk.rr1.toFixed(2)}</b>}
         </article>
 

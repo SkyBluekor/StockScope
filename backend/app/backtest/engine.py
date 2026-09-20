@@ -7,6 +7,7 @@ from app.backtest.audit import WIDE_STOP_PCT, build_accuracy_audit
 from app.backtest.metrics import grouped_trade_metrics, score_bucket, summarize_trades
 from app.backtest.ma120_input import ma120_from_rows_asof
 from app.backtest.models import BacktestConfig, BacktestTrade
+from app.backtest.sector_rs_input import HistoricalSectorInput, evaluate_historical_sector_input
 from app.backtest.policy_lab import (
     POLICY_BLOCK_ALL_CAUTION,
     POLICY_BLOCK_WIDE_STOP,
@@ -16,6 +17,7 @@ from app.backtest.policy_lab import (
 )
 from app.market.pullback_confirmation import PullbackConfirmationAnalyzer
 from app.market.relative_strength import RelativeStrengthAnalyzer
+from app.market.sector_relative_strength import SectorRelativeStrengthAnalyzer
 from app.market.technical import TechnicalAnalyzer
 from app.strategy.context import build_strategy_input, regime_from_index
 from app.strategy.engine import StrategyEngine
@@ -48,6 +50,7 @@ class BacktestEngine:
         risk: Any | None = None,
         pullback: PullbackConfirmationAnalyzer | None = None,
         relative_strength: RelativeStrengthAnalyzer | None = None,
+        sector_relative_strength: SectorRelativeStrengthAnalyzer | None = None,
     ) -> None:
         self.technical = technical or TechnicalAnalyzer()
         self.strategy = strategy or StrategyEngine()
@@ -59,6 +62,7 @@ class BacktestEngine:
         self.risk = risk
         self.pullback = pullback or PullbackConfirmationAnalyzer()
         self.relative_strength = relative_strength or RelativeStrengthAnalyzer()
+        self.sector_relative_strength = sector_relative_strength or SectorRelativeStrengthAnalyzer()
 
     @staticmethod
     def _date(row: dict[str, Any]) -> str:
@@ -85,6 +89,7 @@ class BacktestEngine:
         index_rows: list[dict[str, Any]],
         index: int,
         config: BacktestConfig,
+        sector_input: HistoricalSectorInput | None = None,
     ) -> dict[str, Any] | None:
         signal_row = stock_rows[index]
         signal_date = self._date(signal_row)
@@ -127,6 +132,18 @@ class BacktestEngine:
             else None
         )
 
+        sector_evaluation = evaluate_historical_sector_input(
+            analyzer=self.sector_relative_strength,
+            prepared=sector_input,
+            stock_rows_asof=extended_history,
+            signal_date=signal_date,
+            market=config.market,
+            market_relative=relative,
+            position_mode="NOT_HELD",
+        )
+        relative_sector = sector_evaluation.production_relative_strength_pct
+        sector_relative_context = sector_evaluation.production_context
+
         trade_value = signal_row.get("trade_value")
         liquidity_ok = trade_value is not None and float(trade_value) >= self.LIQUIDITY_THRESHOLD
         strategy_input = build_strategy_input(
@@ -150,9 +167,9 @@ class BacktestEngine:
             history_points=len(history),
             event_risk=False,
             relative_strength_market_pct=(float(relative_market) if relative_market is not None else None),
-            relative_strength_sector_pct=None,
+            relative_strength_sector_pct=relative_sector,
             relative_strength_context=relative,
-            sector_relative_strength_context=None,
+            sector_relative_strength_context=sector_relative_context,
         )
         evaluations = self.strategy.evaluate_all(strategy_input)
         evaluation_map = {item.strategy.value: item for item in evaluations if item.strategy != StrategyName.NO_TRADE}
@@ -177,9 +194,11 @@ class BacktestEngine:
         stock_history_start = self._date(history[0]) if history else None
         stock_history_end = self._date(history[-1]) if history else None
         index_history_end = self._date(index_history[-1]) if index_history else None
+        sector_history_end = sector_evaluation.audit.get("sector_history_end_date")
         future_data_used = bool(
             (stock_history_end and stock_history_end > signal_date)
             or (index_history_end and index_history_end > signal_date)
+            or (sector_history_end and sector_history_end > signal_date)
         )
 
         return {
@@ -197,10 +216,18 @@ class BacktestEngine:
             "entry_timing_total": int(progress.get("total") or confirmation.get("total_checks") or 7),
             "market_regime": regime.value,
             "relative_strength_market_pct": relative_market,
+            "relative_strength_sector_pct": relative_sector,
+            "sector_relative_strength_context": sector_relative_context,
+            "sector_relative_strength_audit_context": sector_evaluation.audit_context,
+            "sector_input_audit": sector_evaluation.audit,
             "audit_context": {
                 "stock_history_start_date": stock_history_start,
                 "stock_history_end_date": stock_history_end,
                 "index_history_end_date": index_history_end,
+                "sector_history_end_date": sector_history_end,
+                "sector_future_rows_ignored": sector_evaluation.audit.get("future_rows_ignored", 0),
+                "sector_temporal_status": sector_evaluation.audit.get("temporal_status"),
+                "sector_production_safe": sector_evaluation.audit.get("production_safe", False),
                 "market_regime_source_date": signal_date if index_row is not None else None,
                 "future_data_used": future_data_used,
                 "signal_close": float(strategy_input.current_price),
@@ -704,6 +731,7 @@ class BacktestEngine:
         stock_rows: list[dict[str, Any]],
         index_rows: list[dict[str, Any]],
         config: BacktestConfig,
+        sector_input: HistoricalSectorInput | None = None,
         progress_callback: Callable[[dict[str, Any]], None] | None = None,
         actual_trade_simulator: Callable[..., tuple[BacktestTrade | None, int | None]] | None = None,
     ) -> dict[str, Any]:
@@ -724,6 +752,7 @@ class BacktestEngine:
                 index_rows=indices,
                 index=i,
                 config=config,
+                sector_input=sector_input,
             )
             if snapshot is not None:
                 signals.append(snapshot)

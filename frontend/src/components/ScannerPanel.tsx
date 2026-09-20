@@ -11,13 +11,18 @@ import {
   cancelBacktestJob,
   createScannerJob,
   fetchBacktestJob,
-  prepareScannerLatestData,
   type BacktestJob,
   type ScannerCandidate,
   type ScannerFreshnessResponse,
   type ScannerResponse,
   type StockSearchItem,
 } from "../services/api";
+import {
+  ANALYSIS_STAGES,
+  progressStatusMark,
+  scannerProgressView,
+} from "./scannerProgress";
+import "./scannerProgress.css";
 
 type MarketScope = "ALL" | "KOSPI" | "KOSDAQ";
 
@@ -66,23 +71,6 @@ function formatLocalTime(value: number | null | undefined) {
 
 function evidenceKey(candidate: ScannerCandidate) {
   return `${candidate.market}-${candidate.code}`;
-}
-
-const scannerStages = [
-  { key: "scanner_plan", label: "필요 데이터 확인" },
-  { key: "scanner_data_prepare", label: "최근 시장 데이터 준비" },
-  { key: "scanner_quick_filter", label: "전체 종목 빠른 검사" },
-  { key: "scanner_deep_analysis", label: "상위 후보 전략·위험 확인" },
-  { key: "scanner_finalize", label: "후보 풀 확정" },
-  { key: "scanner_historical_evidence", label: "후보 풀 3년 근거" },
-  { key: "scanner_priority_rank", label: "최종 우선순위 설명" },
-];
-
-function stageIndex(stage: string | undefined) {
-  if (!stage) return 0;
-  if (stage === "scanner_cache" || stage === "scanner_complete") return scannerStages.length;
-  if (stage === "scanner_fast_budget" || stage === "scanner_universe") return 1;
-  return Math.max(0, scannerStages.findIndex((item) => item.key === stage));
 }
 
 function candidateTone(candidate: ScannerCandidate) {
@@ -153,6 +141,7 @@ function targetPriceText(candidate: ScannerCandidate, level: 1 | 2) {
 function targetBasisLabel(candidate: ScannerCandidate) {
   const risk = candidate.entry_risk_guide?.risk;
   const audit = risk?.target1_audit;
+  if (risk?.target1_cap_applied === true || audit?.target1_cap_applied === true) return "1.5R";
   const raw = String(audit?.target1_basis ?? risk?.target1_basis ?? "");
   if (raw.includes("저항")) return "최근 저항";
   if (raw.includes("20일") && raw.includes("고점")) return "20일 고점";
@@ -174,6 +163,21 @@ function targetRMultiple(candidate: ScannerCandidate) {
   const risk = candidate.entry_risk_guide?.risk;
   const value = risk?.target1_audit?.target1_r_multiple ?? risk?.rr1;
   return value != null && Number.isFinite(value) ? value : null;
+}
+
+function targetCapExplanation(candidate: ScannerCandidate) {
+  const risk = candidate.entry_risk_guide?.risk;
+  const audit = risk?.target1_audit;
+  const capApplied = risk?.target1_cap_applied === true || audit?.target1_cap_applied === true;
+  const structuralRaw = risk?.structural_target1_price ?? audit?.structural_target1_price;
+  if (!capApplied || structuralRaw == null) return null;
+
+  const structuralPrice = risk?.display_structural_target1_price ?? structuralRaw;
+  const structuralBasis = String(risk?.structural_target1_basis ?? audit?.structural_target1_basis ?? "").trim();
+  return {
+    capLabel: "1.5R 현실성 상한 적용",
+    structuralLabel: `구조 목표 ${priceText(structuralPrice)}${structuralBasis ? ` · ${structuralBasis}` : ""}`,
+  };
 }
 
 function evidenceCompactText(candidate: ScannerCandidate) {
@@ -251,6 +255,7 @@ function CandidateDetail({
   const evidence = candidate.historical_evidence;
   const evidenceLabel = evidence?.label ?? (candidate.historical_fit.verified === false ? "과거 검증 전" : candidate.historical_fit.label);
   const evidenceSummary = evidence?.summary ?? candidate.historical_fit.summary;
+  const targetCap = targetCapExplanation(candidate);
   const changeSummary = candidate.user_action.next_transition
     || (topMissing.length > 0 ? topMissing.slice(0, 2).map((item) => item.label).join(" · ") : "현재 조건이 유지되는지 확인하세요.");
 
@@ -298,7 +303,20 @@ function CandidateDetail({
         <div><small>현재가</small><strong>{priceText(candidate.current_price)}</strong></div>
         <div><small>{strategyPriceLabel(candidate)}</small><strong>{interestPriceText(candidate)}</strong></div>
         <div className="stop"><small>손절 참고구간</small><strong>{stopPriceText(candidate)}</strong></div>
-        <div className="target"><small>1차 목표 · {targetBasisLabel(candidate)}</small><strong>{targetPriceText(candidate, 1)}</strong><span>{targetGainPct(candidate) == null ? "거리 계산 불가" : `현재가 대비 ${formatSignedPct(targetGainPct(candidate))}`}{targetRMultiple(candidate) == null ? "" : ` · ${targetRMultiple(candidate)!.toFixed(2)}R`}</span></div>
+        <div className="target">
+          <small>1차 목표 · {targetBasisLabel(candidate)}</small>
+          <strong>{targetPriceText(candidate, 1)}</strong>
+          <span>
+            {targetGainPct(candidate) == null ? "거리 계산 불가" : `현재가 대비 ${formatSignedPct(targetGainPct(candidate))}`}
+            {targetRMultiple(candidate) == null ? "" : ` · ${targetRMultiple(candidate)!.toFixed(2)}R`}
+          </span>
+          {targetCap && (
+            <>
+              <span>{targetCap.capLabel}</span>
+              <span>{targetCap.structuralLabel}</span>
+            </>
+          )}
+        </div>
         <div><small>2차 목표</small><strong>{targetPriceText(candidate, 2)}</strong></div>
       </section>
 
@@ -467,7 +485,6 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
   const [completedAt, setCompletedAt] = useState<number | null>(initialSession?.completedAt ?? null);
   const [restoredFromSession, setRestoredFromSession] = useState(Boolean(initialSession));
   const [clock, setClock] = useState(Date.now());
-  const [freshnessBusy, setFreshnessBusy] = useState(false);
   const [freshnessFailure, setFreshnessFailure] = useState<ScannerFreshnessResponse | null>(null);
   const [dateNotice, setDateNotice] = useState<string | null>(null);
   const pollRef = useRef<number | null>(null);
@@ -478,7 +495,7 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
   const didRestoreScrollRef = useRef(false);
 
   const jobBusy = job?.status === "queued" || job?.status === "running";
-  const busy = freshnessBusy || jobBusy;
+  const busy = jobBusy;
   const progress = job?.progress;
 
   useEffect(() => {
@@ -559,6 +576,13 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
         lastProgressAtRef.current = Date.now();
       }
       setJob(latest);
+      const latestDetails = latest.progress?.details ?? {};
+      const resolvedProgressDate = typeof latestDetails.resolved_as_of_date === "string"
+        ? latestDetails.resolved_as_of_date
+        : null;
+      if (latestDetails.date_changed === true && resolvedProgressDate) {
+        setDateNotice(resolvedProgressDate);
+      }
       if (latest.status === "completed" && latest.result) {
         setResult(latest.result);
         setSelectedCandidateKey(latest.result.candidates[0] ? candidateKey(latest.result.candidates[0]) : null);
@@ -570,7 +594,20 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
         return;
       }
       if (latest.status === "failed") {
-        setError(latest.error || "종목 찾기 중 오류가 발생했습니다.");
+        const freshnessValue: unknown = latestDetails.freshness_failure;
+        const freshness = (
+          freshnessValue !== null
+          && typeof freshnessValue === "object"
+          && !Array.isArray(freshnessValue)
+        )
+          ? freshnessValue as ScannerFreshnessResponse
+          : undefined;
+        if (freshness) {
+          setFreshnessFailure(freshness);
+          setError(null);
+        } else {
+          setError(latest.error || "종목 찾기 중 오류가 발생했습니다.");
+        }
         return;
       }
       if (latest.status === "cancelled") return;
@@ -599,40 +636,20 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
     lastProgressSignatureRef.current = "";
     setClock(started);
 
-    let resolvedAsOfDate = pinnedAsOfDate;
-    if (!pinnedAsOfDate) {
-      setFreshnessBusy(true);
-      try {
-        const freshness = await prepareScannerLatestData({
-          market_scope: scope,
-          // requested_as_of is the date the previous Scanner result claimed to use.
-          // Backend validates that claim against Market Store before preserving it.
-          known_data_date: result?.requested_as_of ?? latestScannerDataDate(result),
-        });
-        if (!(["READY", "UPDATED"] as string[]).includes(freshness.status) || !freshness.resolved_as_of_date) {
-          setFreshnessFailure(freshness);
-          return;
-        }
-        resolvedAsOfDate = freshness.resolved_as_of_date;
-        if (freshness.date_changed) {
-          setDateNotice(freshness.resolved_as_of_date);
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "최신 확정 시세를 확인하지 못했습니다.");
-        return;
-      } finally {
-        setFreshnessBusy(false);
-      }
-    }
-
     try {
-      const created = await createScannerJob({
+      const request = {
         market_scope: scope,
-        as_of_date: resolvedAsOfDate ?? undefined,
+        as_of_date: pinnedAsOfDate ?? undefined,
+        // The scanner job now owns freshness preparation so the same cancellable
+        // progress stream covers latest-EOD verification and candidate analysis.
+        known_data_date: pinnedAsOfDate
+          ? undefined
+          : (result?.requested_as_of ?? latestScannerDataDate(result)),
         candidate_limit: 5,
         force_refresh: forceRefresh,
         allow_large_sync: allowLargeSync,
-      });
+      } as Parameters<typeof createScannerJob>[0] & { known_data_date?: string | null };
+      const created = await createScannerJob(request);
       setJob(created);
       void poll(created.job_id);
     } catch (err) {
@@ -729,12 +746,15 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
     return result.market_summary.map((item) => `${item.market} ${regimeLabel[item.regime] ?? item.regime}`).join(" · ");
   }, [result]);
 
-  const progressDetails = progress?.details ?? {};
-  const overallPercentRaw = Number(progressDetails.overall_percent ?? progress?.percent ?? 0);
-  const overallPercent = Number.isFinite(overallPercentRaw) ? Math.max(0, Math.min(100, overallPercentRaw)) : 0;
+  const progressDetails = (progress?.details ?? {}) as Record<string, unknown>;
   const elapsedSeconds = startedAtRef.current == null ? 0 : Math.max(0, (clock - startedAtRef.current) / 1000);
   const staleSeconds = lastProgressAtRef.current == null ? 0 : Math.max(0, (clock - lastProgressAtRef.current) / 1000);
-  const currentStageIndex = stageIndex(job?.stage);
+  const progressView = scannerProgressView(job?.stage, progressDetails);
+  const activeRows = progressView.analysisStarted ? progressView.analysisRows : progressView.prepRows;
+  const activeStage = activeRows.find((item) => item.status === "active" || item.status === "failed");
+  const stageCountText = progressView.analysisStarted
+    ? `분석 단계 ${progressView.analysisDone} / ${ANALYSIS_STAGES.length}`
+    : `준비 단계 ${progressView.prepDone} / ${progressView.prepRows.length}`;
   const preparationItems = result?.preparation_required ?? [];
   const preparationRequests = preparationItems.reduce((sum, item) => sum + Number(item.estimated_network_requests || 0), 0);
   const noAnalyzedData = Boolean(result && result.summary.universe_total === 0 && preparationItems.length > 0);
@@ -772,7 +792,7 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
     <div className="scanner-workspace">
       <section className="scanner-hero">
         <div>
-          <span className="eyebrow">STOCK SCANNER · v0.21.4-B.2.3.4b</span>
+          <span className="eyebrow">STOCK SCANNER · v0.21.4-B.2.4</span>
           <h1>오늘 어떤 종목을 먼저 볼까요?</h1>
           <p>종목을 직접 고르기 전에 현재 조건을 먼저 보고, Risk·진입 기준까지의 거리·현재 전략 적합도로 우선순위를 정합니다. 같은 전략의 3년 과거 근거는 현재 판단과 분리해 참고로 보여줍니다.</p>
         </div>
@@ -802,7 +822,7 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
             </div>
           ) : (
             <button type="button" className="scanner-run-button" onClick={() => void runScanner(false)} disabled={busy}>
-              {freshnessBusy ? "최신 시세 확인 중..." : jobBusy ? "후보 찾는 중..." : "오늘의 후보 찾기"}
+              {jobBusy && String(job?.stage || "").startsWith("scanner_prepare") ? "최신 시세 확인 중..." : jobBusy ? "후보 찾는 중..." : "오늘의 후보 찾기"}
             </button>
           )}
           {jobBusy && <button type="button" className="scanner-cancel-button" onClick={() => void cancel()}>중지</button>}
@@ -847,59 +867,77 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
       )}
 
       {jobBusy && progress && (
-        <section className="scanner-progress-card">
+        <section className="scanner-progress-card progress-v24" aria-live="polite">
           <div className="scanner-progress-head">
             <div>
-              <span>StockScope가 자동으로 확인 중</span>
+              <span>종목 찾기 진행 중</span>
               <strong>{progress.message || "시장 데이터를 확인하고 있습니다."}</strong>
             </div>
-            <b>{Math.round(overallPercent)}%</b>
+            <span className="scanner-progress-stage-count">{stageCountText}</span>
           </div>
-          <div className="scanner-progress-track"><i style={{ width: `${Math.max(2, overallPercent)}%` }} /></div>
+
+          <div className="scanner-progress-current">
+            <span>현재 작업</span>
+            <strong>{activeStage?.label || progress.message || "작업 상태 확인 중"}</strong>
+            {progressDetails.current_item != null
+              ? <small>{String(progressDetails.current_item)}</small>
+              : null}
+          </div>
 
           <div className="scanner-progress-stages">
-            {scannerStages.map((item, index) => {
-              const done = currentStageIndex > index || job?.stage === "scanner_complete" || job?.stage === "scanner_cache";
-              const active = currentStageIndex === index && !done;
-              return (
-                <div key={item.key} className={done ? "done" : active ? "active" : "waiting"}>
-                  <i>{done ? "✓" : active ? "●" : "○"}</i>
-                  <span>{item.label}</span>
-                </div>
-              );
-            })}
+            {progressView.analysisStarted && (
+              <div className="scanner-progress-prepared-summary">
+                <i>✓</i><span>최신 확정 시세 준비 완료</span>
+              </div>
+            )}
+            {activeRows.map((item) => (
+              <div key={item.id} className={`scanner-progress-row ${item.status}`}>
+                <i>{progressStatusMark(item.status)}</i>
+                <span>{item.label}</span>
+                {item.status === "reused" && <small>저장 데이터 재사용</small>}
+                {item.status === "active" && progressDetails.items_done != null && progressDetails.items_total != null && (
+                  <small>{formatNumber(Number(progressDetails.items_done))} / {formatNumber(Number(progressDetails.items_total))}</small>
+                )}
+              </div>
+            ))}
           </div>
 
           <div className="scanner-progress-meta">
             <span>경과 <b>{formatElapsed(elapsedSeconds)}</b></span>
-            <span>마지막 진행 <b>{staleSeconds < 2 ? "방금" : `${Math.floor(staleSeconds)}초 전`}</b></span>
-            {progressDetails.current_item && <span>현재 <b>{String(progressDetails.current_item)}</b></span>}
-            {progressDetails.items_done != null && progressDetails.items_total != null && (
-              <span>처리 <b>{formatNumber(Number(progressDetails.items_done))} / {formatNumber(Number(progressDetails.items_total))}</b></span>
-            )}
             {progressDetails.shortlisted != null && <span>현재 후보 <b>{String(progressDetails.shortlisted)}개</b></span>}
-            {progressDetails.estimated_network_requests != null && <span>예상 KRX 신규 요청 <b>{String(progressDetails.estimated_network_requests)}회</b></span>}
-            {progressDetails.network_requests_so_far != null && <span>실제 KRX 요청 <b>{String(progressDetails.network_requests_so_far)}회</b></span>}
-            {progressDetails.processing_rate != null && <span>처리 속도 <b>{Number(progressDetails.processing_rate).toFixed(1)}건/초</b></span>}
-            {progressDetails.eta_seconds != null && Number(progressDetails.eta_seconds) >= 0 && <span>예상 남은 시간 <b>약 {formatElapsed(Number(progressDetails.eta_seconds))}</b></span>}
-            {progressDetails.active_requests != null && progressDetails.concurrency_limit != null && (
-              <span>동시 처리 <b>{String(progressDetails.active_requests)} / {String(progressDetails.concurrency_limit)}</b></span>
+            {progressDetails.eta_seconds != null && Number(progressDetails.eta_seconds) >= 0 && (
+              <span>예상 남은 시간 <b>약 {formatElapsed(Number(progressDetails.eta_seconds))}</b></span>
             )}
-            {progressDetails.retry_count != null && Number(progressDetails.retry_count) > 0 && <span>재시도 <b>{String(progressDetails.retry_count)}회</b></span>}
           </div>
 
-          {staleSeconds >= 30 && staleSeconds < 90 && (
+          {staleSeconds >= 8 && staleSeconds < 45 && (
+            <p className="scanner-progress-connection">데이터 제공처 응답을 기다리고 있습니다 · 연결 상태를 계속 확인 중입니다.</p>
+          )}
+          {staleSeconds >= 45 && staleSeconds < 120 && (
             <div className="scanner-progress-warning">
-              <strong>처리가 평소보다 오래 걸리고 있습니다.</strong>
-              <span>마지막 진행이 {Math.floor(staleSeconds)}초 전입니다. 작업은 자동으로 계속 확인합니다.</span>
+              <strong>응답이 평소보다 오래 걸리고 있습니다.</strong>
+              <span>작업은 계속 진행 중입니다. 중지해도 이미 정상 저장된 시장 데이터는 유지됩니다.</span>
             </div>
           )}
-          {staleSeconds >= 90 && (
+          {staleSeconds >= 120 && (
             <div className="scanner-progress-warning danger">
-              <strong>최근 진행 상태가 오래 갱신되지 않았습니다.</strong>
-              <span>계속 기다리거나 위의 중지 버튼으로 안전하게 취소할 수 있습니다. 이미 저장된 시장 데이터는 유지됩니다.</span>
+              <strong>진행 상태 갱신이 오래 지연되고 있습니다.</strong>
+              <span>계속 기다리거나 위의 중지 버튼으로 안전하게 취소할 수 있습니다.</span>
             </div>
           )}
+
+          <details className="scanner-progress-diagnostics">
+            <summary>진행 상세</summary>
+            <div>
+              {progressDetails.estimated_network_requests != null && <span>예상 KRX 신규 요청 {String(progressDetails.estimated_network_requests)}회</span>}
+              {progressDetails.network_requests_so_far != null && <span>실제 KRX 요청 {String(progressDetails.network_requests_so_far)}회</span>}
+              {progressDetails.processing_rate != null && <span>처리 속도 {Number(progressDetails.processing_rate).toFixed(1)}건/초</span>}
+              {progressDetails.active_requests != null && progressDetails.concurrency_limit != null && (
+                <span>동시 처리 {String(progressDetails.active_requests)} / {String(progressDetails.concurrency_limit)}</span>
+              )}
+              {progressDetails.retry_count != null && Number(progressDetails.retry_count) > 0 && <span>재시도 {String(progressDetails.retry_count)}회</span>}
+            </div>
+          </details>
         </section>
       )}
 

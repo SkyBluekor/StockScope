@@ -276,8 +276,7 @@ class StrategyEngine:
             ("현재가가 20일선 위", 15, lambda x: x.ma20 is not None and x.current_price > x.ma20),
             ("20일선 기울기 상승", 12, lambda x: x.ma20_slope_pct is not None and x.ma20_slope_pct > 0),
             ("RSI 과열 전 구간", 10, lambda x: x.rsi14 is not None and 50 <= x.rsi14 < 75),
-            ("20일 시장 대비 상대강도 양호", 6, lambda x: x.relative_strength_market_pct is not None and x.relative_strength_market_pct > 0),
-            ("20일 업종 대비 상대강도 양호", 4, lambda x: (x.relative_strength_sector_pct > 0) if x.relative_strength_sector_pct is not None else (x.relative_strength_market_pct is not None and x.relative_strength_market_pct > 0)),
+            ("20일 시장 대비 상대강도 양호", 10, lambda x: x.relative_strength_market_pct is not None and x.relative_strength_market_pct > 0),
             ("20일 업종 대비 상대강도 양호", 8, lambda x: (x.relative_strength_sector_pct > 0) if x.relative_strength_sector_pct is not None else (x.relative_strength_market_pct is not None and x.relative_strength_market_pct > 0)),
             ("상승 시장", 5, lambda x: x.market_regime == MarketRegime.TREND_UP),
         ], note="주요 고점 부근에서 거래량이 동반되는 돌파 후보를 평가합니다.")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import sys
 from datetime import date
 from pathlib import Path
@@ -19,6 +20,10 @@ from app.backtest.scanner_quality.strategy_integrity_audit import (
     RS_KEEP_4,
     RS_KEEP_8,
     RS_RESTORE_10_8,
+    RS_AUDIT_CURRENT,
+    RS_AUDIT_KEEP_4,
+    RS_AUDIT_KEEP_8,
+    RS_AUDIT_RESTORE_10_8,
     StrategyIntegrityAuditor,
     audit_code_fingerprint,
     compact_integrity_payload,
@@ -68,6 +73,15 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=BACKEND_ROOT / "runtime" / "quality_audit" / "strategy_integrity",
     )
+    parser.add_argument(
+        "--sector-rs-audit-live",
+        action="store_true",
+        help=(
+            "Enable c.4g audit-only historical Sector RS verification using current OpenDART industry metadata "
+            "and historical KRX EOD sector indices. Production StrategyInput remains gated because "
+            "the mapping is STATIC_CURRENT, not point-in-time."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -93,7 +107,27 @@ def main() -> int:
     min_required = int(args.min_required_dates if args.min_required_dates is not None else (1 if args.mode == "inspect" else 60))
 
     store = HistoricalMarketStore(args.market_store) if args.market_store else HistoricalMarketStore()
-    scanner = StockScannerService(OfflineAuditKrx(), market_store=store)
+    live_krx = None
+    if args.sector_rs_audit_live:
+        # Import lazily so the default strategy-integrity audit stays fully offline and
+        # keeps its existing zero-network guarantee.
+        from app.core.config import get_settings
+        from app.market.providers import KrxProvider, OpenDartProvider
+
+        settings = get_settings()
+        live_krx = KrxProvider(settings.krx_api_key)
+        dart = OpenDartProvider(settings.dart_api_key)
+        scanner = StockScannerService(
+            live_krx,
+            market_store=store,
+            sector_company_provider=dart,
+        )
+        print(
+            "c.4g Sector RS live verification enabled: current OpenDART industry metadata is "
+            "STATIC_CURRENT and remains audit-only; Production strategy input is not activated."
+        )
+    else:
+        scanner = StockScannerService(OfflineAuditKrx(), market_store=store)
     try:
         auditor = StrategyIntegrityAuditor(scanner, store)
     except RuntimeError as exc:
@@ -146,7 +180,8 @@ def main() -> int:
         "Source inspection: "
         f"files={source.get('files_scanned')}, "
         f"signal-window-candidates={source.get('signal_snapshot_window_candidates')}, "
-        f"duplicate-weights={(source.get('breakout_rs_definition') or {}).get('weights')}, "
+        f"market-weights={(source.get('breakout_rs_definition') or {}).get('market_weights')}, "
+        f"sector-weights={(source.get('breakout_rs_definition') or {}).get('weights')}, "
         f"sector->market-fallback-hits={len(source.get('sector_market_fallback_source_hits') or [])}"
     )
 
@@ -160,6 +195,10 @@ def main() -> int:
         keep8_cmp = comparisons.get(RS_KEEP_8) or {}
         restore_cmp = comparisons.get(RS_RESTORE_10_8) or {}
         ma_input_cmp = comparisons.get(MA120_INPUT_ONLY) or {}
+        sector_input = integrity.get("sector_rs_input") or {}
+        sector_cmp = integrity.get("sector_rs_counterfactual") or {}
+        sector_comparisons = run.get("sector_comparisons") or {}
+        sector_keep8_cmp = sector_comparisons.get(RS_AUDIT_KEEP_8) or {}
         print(
             f"[{index:>3}/{total}] {as_of.isoformat()} {run.get('status')} "
             f"maMissing={ma.get('ma120_unavailable', 0)} "
@@ -170,6 +209,9 @@ def main() -> int:
             f"k8QΔ={keep8_cmp.get('quick_pool_replacements', 0)} "
             f"restoreQΔ={restore_cmp.get('quick_pool_replacements', 0)} "
             f"maInputQΔ={ma_input_cmp.get('quick_pool_replacements', 0)} "
+            f"sector20={sector_input.get('sector_20d_available', 0)}/{sector_input.get('evaluations', 0)} "
+            f"sectorCF={sector_cmp.get('supported', 0)}/{sector_cmp.get('attempted', 0)} "
+            f"sectorK8QΔ={sector_keep8_cmp.get('quick_pool_replacements', 0)} "
             f"{run.get('runtime_seconds')}s",
             flush=True,
         )
@@ -190,10 +232,20 @@ def main() -> int:
     validation = payload.get("strategy_integrity_validation") or {}
     ma = validation.get("ma120") or {}
     rs = validation.get("breakout_rs") or {}
+    sector_input = validation.get("sector_rs_input") or {}
     ma_imp = validation.get("ma120_impact") or {}
     ma_input_imp = validation.get("ma120_input_only_impact") or {}
     rs_variants = validation.get("rs_variants") or {}
+    acceptance = validation.get("c4g_production_rs_acceptance") or {}
     print(f"Audit complete: {payload.get('valid_date_count')} valid dates")
+    print(
+        "c.4g Production RS: "
+        f"verdict={acceptance.get('verdict')}, definition={acceptance.get('production_definition')}, "
+        f"market={acceptance.get('market_weights')}, sector={acceptance.get('sector_weights')}, "
+        f"sectorConditions={acceptance.get('sector_condition_count')}, duplicate={acceptance.get('duplicate_present')}, "
+        f"futureViolations={acceptance.get('future_boundary_violations')}, "
+        f"historicalSectorActivation={acceptance.get('historical_sector_activation_allowed')}"
+    )
     print(
         f"MA120: verdict={ma.get('verdict')}, availability={ma.get('availability_rate_pct')}%, "
         f"missing={ma.get('condition_missing_count')}, wouldPass={ma.get('would_pass_if_sma120_available_count')}, "
@@ -202,21 +254,58 @@ def main() -> int:
         f"Top5 membership/order={ma_input_imp.get('top5_changed_date_count')}/{ma_input_imp.get('top5_order_changed_date_count')}"
     )
     print(
-        f"Breakout RS: verdict={rs.get('verdict')}, weights={rs.get('detected_duplicate_weights')}, "
+        "Sector RS input: "
+        f"20D={sector_input.get('sector_20d_available')}/{sector_input.get('evaluations')} "
+        f"({sector_input.get('sector_20d_availability_rate_pct')}%), "
+        f"temporal={sector_input.get('temporal_status_counts')}, "
+        f"productionSafe={sector_input.get('production_safe')}, "
+        f"futureViolations={sector_input.get('future_boundary_violations')}"
+    )
+    sector_cf = validation.get("sector_rs_counterfactual") or {}
+    print(
+        "Sector-aware CF: "
+        f"supported={sector_cf.get('supported')}/{sector_cf.get('attempted')}, "
+        f"realSector={sector_cf.get('real_sector_available')}, "
+        f"signDivergence={sector_cf.get('market_sector_sign_divergent')} "
+        f"({sector_cf.get('market_sector_sign_divergence_rate_pct')}%), "
+        f"breakoutScoreChanged={sector_cf.get('production_10_8_breakout_score_changed_signals')}, "
+        f"strategyChanged={sector_cf.get('production_10_8_strategy_changed_signals')}, "
+        f"ready={sector_cf.get('ready_for_production_validation')}"
+    )
+    if acceptance.get("verdict") != "PASS":
+        for variant_name in (RS_AUDIT_KEEP_4, RS_AUDIT_KEEP_8, RS_AUDIT_RESTORE_10_8):
+            item = (sector_cf.get("variants") or {}).get(variant_name) or {}
+            impact = item.get("impact") or {}
+            print(
+                f"{variant_name}: removed={item.get('removed_weight')}, scoreChanged={item.get('score_changed_signals')}, "
+                f"strategyChanged={item.get('strategy_changed_signals')}, "
+                f"Quick18 membership/order={impact.get('quick_pool_changed_date_count')}/{impact.get('quick_order_changed_date_count')}, "
+                f"Top5 membership/order={impact.get('top5_changed_date_count')}/{impact.get('top5_order_changed_date_count')}"
+            )
+    else:
+        print("Legacy 6+4+8/KEEP_4/KEEP_8 comparison: not applicable after c.4g Production 10+8 correction")
+    print(
+        f"Breakout RS: verdict={rs.get('verdict')}, sectorWeights={rs.get('production_sector_weights')}, "
         f"exactDup={rs.get('exact_duplicate_evaluation_count')}, fallback={rs.get('market_fallback_count')}"
     )
-    for variant_name in (RS_KEEP_4, RS_KEEP_8, RS_RESTORE_10_8):
-        item = rs_variants.get(variant_name) or {}
-        impact = item.get("impact") or {}
-        print(
-            f"{variant_name}: removed={item.get('removed_weight')}, scoreChanged={item.get('score_changed_signals')}, "
-            f"strategyChanged={item.get('strategy_changed_signals')}, "
-            f"Quick18Δ={impact.get('quick_pool_changed_date_count')}, Top5Δ={impact.get('top5_changed_date_count')}"
-        )
+    if acceptance.get("verdict") != "PASS":
+        for variant_name in (RS_KEEP_4, RS_KEEP_8, RS_RESTORE_10_8):
+            item = rs_variants.get(variant_name) or {}
+            impact = item.get("impact") or {}
+            print(
+                f"{variant_name}: removed={item.get('removed_weight')}, scoreChanged={item.get('score_changed_signals')}, "
+                f"strategyChanged={item.get('strategy_changed_signals')}, "
+                f"Quick18Δ={impact.get('quick_pool_changed_date_count')}, Top5Δ={impact.get('top5_changed_date_count')}"
+            )
     print(f"RS policy verdict={validation.get('rs_policy_verdict')}")
     print(f"Overall verdict={validation.get('overall_verdict')}")
     for kind, path in paths.items():
         print(f"{kind}: {path}")
+    if live_krx is not None and hasattr(live_krx, "close_session"):
+        try:
+            asyncio.run(live_krx.close_session())
+        except Exception as exc:
+            print(f"Warning: failed to close KRX audit session cleanly: {exc}")
     return 0
 
 

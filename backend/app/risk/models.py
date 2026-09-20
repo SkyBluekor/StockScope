@@ -38,6 +38,11 @@ class RiskPlan:
     reasons: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     assumptions: list[str] = field(default_factory=list)
+    structural_target1_price: float | None = None
+    structural_target1_basis: str | None = None
+    target1_cap_price: float | None = None
+    target1_cap_applied: bool = False
+    target1_fallback_used: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -65,4 +70,9 @@ class RiskPlan:
             "reasons": self.reasons,
             "warnings": self.warnings,
             "assumptions": self.assumptions,
+            "structural_target1_price": self.structural_target1_price,
+            "structural_target1_basis": self.structural_target1_basis,
+            "target1_cap_price": self.target1_cap_price,
+            "target1_cap_applied": self.target1_cap_applied,
+            "target1_fallback_used": self.target1_fallback_used,
         }

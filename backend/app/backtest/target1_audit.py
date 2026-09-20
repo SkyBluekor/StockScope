@@ -5,6 +5,8 @@ from math import isfinite
 from statistics import mean, median
 from typing import Any
 
+from app.risk.target1_policy import TARGET1_CAP_BASIS, TARGET1_FALLBACK_BASIS, select_target1
+
 
 TARGET1_POLICY_BASELINE = "BASELINE_STRUCTURAL"
 TARGET1_POLICY_CAP_1_5R = "CAP_AT_1_5R"
@@ -52,6 +54,8 @@ def _risk_multiple(entry: float | None, stop: float | None, target: float | None
 
 def normalize_target1_basis(value: Any) -> str:
     text = str(value or "").strip()
+    if "현실성 상한" in text:
+        return "RISK_1_5R_CAP"
     if "저항" in text:
         return "RESISTANCE"
     if "20일" in text and "고점" in text:
@@ -102,10 +106,19 @@ def build_current_target1_audit(*, risk_plan: Any, data: Any, technical: dict[st
         structural.append((high20, "최근 20일 고점", "HIGH20"))
     structural.sort(key=lambda item: item[0])
 
-    if structural:
-        expected, expected_basis, expected_code = structural[0]
+    decision = select_target1(
+        entry=entry,
+        risk_amount=risk_amount,
+        structural_candidates=structural,
+    )
+    expected = decision.target1_price
+    expected_basis = decision.target1_basis
+    if decision.cap_applied:
+        expected_code = "RISK_1_5R_CAP"
+    elif decision.fallback_used:
+        expected_code = "RISK_1_5R"
     else:
-        expected, expected_basis, expected_code = one_half_r, "1.5R 손익 구조 참고", "RISK_1_5R"
+        expected_code = str(decision.structural_target1_kind or "UNKNOWN")
 
     tolerance = max(0.02, abs(expected) * 1e-9)
     price_match = abs(actual - expected) <= tolerance
@@ -120,17 +133,22 @@ def build_current_target1_audit(*, risk_plan: Any, data: Any, technical: dict[st
             "price": _round(price),
             "gain_pct": _round(_pct_distance(entry, price)),
             "r_multiple": _round(_risk_multiple(entry, stop, price)),
-            "selected": abs(price - actual) <= tolerance,
+            "selected": (
+                not decision.cap_applied
+                and not decision.fallback_used
+                and abs(price - actual) <= tolerance
+                and abs(price - expected) <= tolerance
+            ),
         }
         for price, label, code in structural
     ]
     candidates.append({
-        "kind": "RISK_1_5R",
-        "label": "1.5R 손익 구조 참고",
+        "kind": "RISK_1_5R_CAP" if decision.cap_applied else "RISK_1_5R",
+        "label": TARGET1_CAP_BASIS if decision.cap_applied else TARGET1_FALLBACK_BASIS,
         "price": _round(one_half_r),
         "gain_pct": _round(_pct_distance(entry, one_half_r)),
         "r_multiple": 1.5,
-        "selected": not structural and abs(one_half_r - actual) <= tolerance,
+        "selected": (decision.cap_applied or decision.fallback_used) and abs(one_half_r - actual) <= tolerance,
     })
 
     return {
@@ -159,9 +177,15 @@ def build_current_target1_audit(*, risk_plan: Any, data: Any, technical: dict[st
         "expected_target1_price": _round(expected),
         "expected_target1_basis": expected_basis,
         "expected_target1_basis_code": expected_code,
+        "structural_target1_price": _round(decision.structural_target1_price),
+        "structural_target1_basis": decision.structural_target1_basis,
+        "structural_target1_kind": decision.structural_target1_kind,
+        "target1_cap_price": _round(decision.cap_price),
+        "target1_cap_applied": decision.cap_applied,
+        "target1_fallback_used": decision.fallback_used,
         "structural_candidates": candidates,
-        "policy": "가까운 유효 저항/20일 고점을 우선하고, 구조 목표가 없을 때만 1.5R을 사용합니다.",
-        "guardrail": "이 감사값은 Target1 계산 근거를 설명하기 위한 진단값이며 Production 목표가격을 변경하지 않습니다.",
+        "policy": "가까운 구조 목표는 유지하되 1.5R보다 멀면 Target1만 1.5R로 제한하고, 구조 목표가 없으면 1.5R을 사용합니다.",
+        "guardrail": "이 감사값은 Production Target1 계산과 설명값의 일치 여부를 확인하는 진단값입니다.",
     }
 
 
@@ -417,8 +441,8 @@ def build_historical_target1_audit(
     }
 
     policy_comparison = [
-        _policy_metrics(replay[TARGET1_POLICY_BASELINE], TARGET1_POLICY_BASELINE, "기존 구조적 Target1"),
-        _policy_metrics(replay[TARGET1_POLICY_CAP_1_5R], TARGET1_POLICY_CAP_1_5R, "구조 목표와 1.5R 중 가까운 값"),
+        _policy_metrics(replay[TARGET1_POLICY_BASELINE], TARGET1_POLICY_BASELINE, "현재 Production Target1"),
+        _policy_metrics(replay[TARGET1_POLICY_CAP_1_5R], TARGET1_POLICY_CAP_1_5R, "1.5R 상한 비교"),
         _policy_metrics(replay[TARGET1_POLICY_FIXED_1_5R], TARGET1_POLICY_FIXED_1_5R, "1.5R 고정 1차 목표"),
     ]
 
@@ -447,5 +471,5 @@ def build_historical_target1_audit(
             "목표가 변경으로 청산일이 달라지면 이후 신규 신호의 진입 가능 시점도 달라질 수 있으므로 Production 정책 선택용 완전 백테스트와 동일하지 않습니다.",
             "Target1 도달 비율은 과거 관측값이며 미래 성공 확률이 아닙니다.",
         ],
-        "guardrail": "Target1 현실성 감사는 기존 Production Target1 공식을 자동 변경하지 않습니다.",
+        "guardrail": "Target1 현실성 감사는 표시용 비교이며 현재 Production Target1 정책을 추가 변경하지 않습니다.",
     }

@@ -2,7 +2,7 @@ import type { ScannerResponse } from "../services/api";
 
 export const SCANNER_SESSION_STORAGE_KEY = "stockscope.scanner.session.v0.21.4-A.3";
 export const SCANNER_SESSION_SCHEMA_VERSION = 2;
-export const SCANNER_DECISION_VERSION = "0.21.3.4";
+export const SCANNER_DECISION_VERSION = "0.21.3.6";
 
 export type ScannerMarketScope = "ALL" | "KOSPI" | "KOSDAQ";
 

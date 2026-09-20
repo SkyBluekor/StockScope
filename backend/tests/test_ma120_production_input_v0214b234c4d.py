@@ -75,8 +75,9 @@ def test_engine_keeps_existing_60_row_technical_path_and_only_supplies_ma120() -
     assert 'if technical.get("ma120") is None:' in source
     assert "ma120 = ma120_from_rows_asof(stock_rows, index)" in source
     assert 'technical["ma120"] = ma120' in source
-    # c.4d must not change the known sector-RS issue; that belongs to c.4e.
-    assert "relative_strength_sector_pct=None" in source
+    # c.4d regression scope ends at the MA120 input path. Later stages may
+    # intentionally restore sector-RS plumbing, so this test must not pin the
+    # historical c.4d `relative_strength_sector_pct=None` implementation.
 
 
 def test_scanner_cache_version_is_bumped_for_changed_decisions() -> None:

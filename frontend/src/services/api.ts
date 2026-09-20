@@ -220,6 +220,11 @@ export type RiskPlan = {
   stop_zone_high: number | null;
   target1_price: number | null;
   target1_basis: string | null;
+  structural_target1_price?: number | null;
+  structural_target1_basis?: string | null;
+  target1_cap_price?: number | null;
+  target1_cap_applied?: boolean;
+  target1_fallback_used?: boolean;
   target2_price: number | null;
   target2_basis: string | null;
   risk_pct: number | null;
@@ -1550,6 +1555,13 @@ export type ConcreteEntryRiskGuide = {
     target1_price: number | null;
     display_target1_price?: number | null;
     target1_basis?: string | null;
+    structural_target1_price?: number | null;
+    display_structural_target1_price?: number | null;
+    structural_target1_basis?: string | null;
+    target1_cap_price?: number | null;
+    display_target1_cap_price?: number | null;
+    target1_cap_applied?: boolean;
+    target1_fallback_used?: boolean;
     target2_price: number | null;
     display_target2_price?: number | null;
     target2_basis?: string | null;
@@ -1575,6 +1587,12 @@ export type ConcreteEntryRiskGuide = {
       expected_target1_price?: number | null;
       expected_target1_basis?: string | null;
       expected_target1_basis_code?: string | null;
+      structural_target1_price?: number | null;
+      structural_target1_basis?: string | null;
+      structural_target1_kind?: string | null;
+      target1_cap_price?: number | null;
+      target1_cap_applied?: boolean;
+      target1_fallback_used?: boolean;
       policy?: string;
       guardrail?: string;
       structural_candidates?: Array<{
