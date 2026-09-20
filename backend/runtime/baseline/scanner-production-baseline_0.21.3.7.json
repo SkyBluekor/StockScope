@@ -1,0 +1,311 @@
+{
+  "schema_version": "stockscope.sim0.v1",
+  "baseline_id": "SS-SCANNER-0.21.3.7-5a3c96ec9e30fe83",
+  "scanner_version": "0.21.3.7",
+  "created_at": "2026-09-20T21:56:18+09:00",
+  "production_changed": false,
+  "git": {
+    "available": true,
+    "head": "949c8b3c1d65022ee6afb31f6dd9a96f393efad5",
+    "branch": "main",
+    "working_tree_dirty": true,
+    "status_porcelain": [
+      "?? IMPLEMENTATION_SIM.0.md",
+      "?? README_SIM0.md",
+      "?? WORKSPEC_SIM.0.md",
+      "?? apply_sim0_production_baseline.py",
+      "?? backend/app/baseline/__init__.py",
+      "?? backend/app/baseline/scanner_production_baseline.py",
+      "?? backend/tests/test_scanner_production_baseline_sim0.py",
+      "?? backend/tools/freeze_scanner_production_baseline.py",
+      "?? backend/tools/verify_scanner_production_baseline.py",
+      "?? sim0_payload/IMPLEMENTATION_SIM.0.md",
+      "?? sim0_payload/README_SIM0.md",
+      "?? sim0_payload/WORKSPEC_SIM.0.md",
+      "?? sim0_payload/backend/app/baseline/__init__.py",
+      "?? sim0_payload/backend/app/baseline/scanner_production_baseline.py",
+      "?? sim0_payload/backend/tests/test_scanner_production_baseline_sim0.py",
+      "?? sim0_payload/backend/tools/freeze_scanner_production_baseline.py",
+      "?? sim0_payload/backend/tools/verify_scanner_production_baseline.py"
+    ]
+  },
+  "production_scope": {
+    "discovery": "recursive local app.* import graph from production entrypoints + static app configs",
+    "entrypoints": [
+      "backend/app/backtest/scanner.py",
+      "backend/app/backtest/candidate_priority.py",
+      "backend/app/backtest/market_store.py"
+    ],
+    "excluded_parts": [
+      "__pycache__",
+      "baseline",
+      "runtime",
+      "scanner_quality",
+      "simulation",
+      "simulator",
+      "test",
+      "tests"
+    ],
+    "file_count": 55
+  },
+  "production_files": [
+    {
+      "path": "backend/app/__init__.py",
+      "sha256": "1a47375d0427129f7dce5d6205d0240bd0dd5c09977131cf269fcf1a5de3e4cf"
+    },
+    {
+      "path": "backend/app/backtest/__init__.py",
+      "sha256": "6fe6ced2e3aabb244b59470928f1b32981d89879a1edcf86eb56b203b462590d"
+    },
+    {
+      "path": "backend/app/backtest/audit.py",
+      "sha256": "8c230808ae91863442492b3efdef80ec55fedf4a44a0bf3e6670667e9d636027"
+    },
+    {
+      "path": "backend/app/backtest/candidate_priority.py",
+      "sha256": "cf1ac7d72878c8c9181ef2604b5d6312ba8cdcc5e217bc019edcc51692f0b490"
+    },
+    {
+      "path": "backend/app/backtest/engine.py",
+      "sha256": "0b89a296ae6be5e9620e3cd4f5243e505fe7a19f91806a3aed9e44baebd64316"
+    },
+    {
+      "path": "backend/app/backtest/entry_risk_guide.py",
+      "sha256": "36105520a52798ec3ddb87ea8d442a85f8ff497fecbb3093e3070eece0cca3fa"
+    },
+    {
+      "path": "backend/app/backtest/exit_policy_catalog.py",
+      "sha256": "72556171995be31d686f17f4a9128b5ccbeef31c72f06d172295aa9576d65d5c"
+    },
+    {
+      "path": "backend/app/backtest/exit_policy_research.py",
+      "sha256": "adb35873844fb7aea3056f2d112fde48e6d07011db0dda19da43a112b40492d0"
+    },
+    {
+      "path": "backend/app/backtest/exit_policy_selection.py",
+      "sha256": "43601124183541d005a98b498e6578b4855c6fad946dfddf4a2f979ef390b910"
+    },
+    {
+      "path": "backend/app/backtest/exit_policy_simulator.py",
+      "sha256": "ea7e4ec13c7833e2b8f64737e83e2c03e85e7b6b14ba57b07c7fdc602d681ee7"
+    },
+    {
+      "path": "backend/app/backtest/exit_policy_validation_runner.py",
+      "sha256": "0428a40da027271dcdea1b2b6bdbc1ff3935699a8fc7ffe9defd4a5730c39a4c"
+    },
+    {
+      "path": "backend/app/backtest/historical_evidence.py",
+      "sha256": "39ae285587f294ff88d0f294e271ae1000155f0397edcfbad566e757627b09a7"
+    },
+    {
+      "path": "backend/app/backtest/history_store.py",
+      "sha256": "4cc04822e566db0595360beba2a12e71118e875c4a93db8b7dbaae74c04a9d0f"
+    },
+    {
+      "path": "backend/app/backtest/interpreter.py",
+      "sha256": "578bc8be1c5dfc928fa8a489490ac27c58ce8208741ad66f269c66e58995ccf2"
+    },
+    {
+      "path": "backend/app/backtest/ma120_input.py",
+      "sha256": "e6f5a4f7e3b20e050aa6a451c0596f80c32d4ccdc2a02ebc7a103d8361c05a72"
+    },
+    {
+      "path": "backend/app/backtest/market_store.py",
+      "sha256": "2162fd30a1ae2b4cacbb7205ea3ba774f8d1b8b57d7fe0d56eb9934cb2200d94"
+    },
+    {
+      "path": "backend/app/backtest/metrics.py",
+      "sha256": "ffda4d58def44c8bd6efb0a95ec63cb740e603104f800179b4aa4aab17e8f8f0"
+    },
+    {
+      "path": "backend/app/backtest/models.py",
+      "sha256": "7ba93aa7ae811272e46e72735f5886b28dfc6006f2254b3c122ccbe5270c2f3a"
+    },
+    {
+      "path": "backend/app/backtest/multi_strategy.py",
+      "sha256": "6696d49491d321bfc299189ec2243ff5c3b1d0d8197c086160e187005fdf576f"
+    },
+    {
+      "path": "backend/app/backtest/policy_lab.py",
+      "sha256": "c6f81a24baf1b1284ac2f76ba5e618870a6b1dfde0457f0e2ebc3fd4df372ab4"
+    },
+    {
+      "path": "backend/app/backtest/production_exit_policy.py",
+      "sha256": "d25bc242cc1a8cfb6cc516804edafc068cc4b3cb2039658798bd8ff51537faf0"
+    },
+    {
+      "path": "backend/app/backtest/reproducibility_audit.py",
+      "sha256": "5fa03749f3a92d2a50114d9a2a8eb0b132b6de19c4a994a059b4ffa7a86f31d1"
+    },
+    {
+      "path": "backend/app/backtest/scanner.py",
+      "sha256": "6d8d4fae6cd3f57a2eef1a229a04d94b333ed163833676b5905a3ecb1941384c"
+    },
+    {
+      "path": "backend/app/backtest/sector_rs_input.py",
+      "sha256": "95eee623560c76eb2181760c05384263afec02369b759e47bdb76cf2d6ab41b0"
+    },
+    {
+      "path": "backend/app/backtest/sector_rs_prefetch.py",
+      "sha256": "42cc123fd550e6f168b9ba64bd850d22283d16c666727385e46b65719d62c450"
+    },
+    {
+      "path": "backend/app/backtest/selector.py",
+      "sha256": "a996e23707d87e46b3ba8ba39da305e62c6d2bdcf4019f00fcb24fa8f2e8528c"
+    },
+    {
+      "path": "backend/app/backtest/service.py",
+      "sha256": "1e5c4d556793272fc107ad4ccdcadc14d9c8eb2a3a96f2629b378d9e4a1e8103"
+    },
+    {
+      "path": "backend/app/backtest/target1_audit.py",
+      "sha256": "d9de5004bcc10ee220993fa919eee8785d7a892e02dba80a8d9900645e68c359"
+    },
+    {
+      "path": "backend/app/core/__init__.py",
+      "sha256": "2a4ea6af2a224f9d46d7b999bd17368b62830563c84a8075f0babb1fa7bde216"
+    },
+    {
+      "path": "backend/app/core/auto_check.py",
+      "sha256": "35cba3a928097da04b66c37c35543d0494a854bbf77db8e79f56d62847f5ece7"
+    },
+    {
+      "path": "backend/app/core/stock_code.py",
+      "sha256": "9f5fb604d0024e0a4b07a8c9c64b90e70242663ead8928e6b5ea880873927942"
+    },
+    {
+      "path": "backend/app/market/__init__.py",
+      "sha256": "c7ca79d653d8a64e0d5bab176e035a157c40296e3917d939cbfded9154ce4edf"
+    },
+    {
+      "path": "backend/app/market/event_risk.py",
+      "sha256": "8f83c30294325e7538d7f083f59485cf4016a6fdd08f42a59fcaab8a0f249749"
+    },
+    {
+      "path": "backend/app/market/fundamental.py",
+      "sha256": "fb9874aedfcbdb4a39139a221c8d9db7fb3bf081117bd539737059913c3dd4c3"
+    },
+    {
+      "path": "backend/app/market/investor_style.py",
+      "sha256": "95ac8d8aa614b131c6de2e37e4d88fee870bfce3c4fd28347c796eb670ef4ca1"
+    },
+    {
+      "path": "backend/app/market/krx_budget.py",
+      "sha256": "4a6d41ca5e61f778e724ad23303f0a2f886cda3d5e69cfaf12c04bb19d2df83b"
+    },
+    {
+      "path": "backend/app/market/kst.py",
+      "sha256": "1b775effb39168e2cdeabe141b0c1f0a24f2aac5524dc99512500e51bc39dd69"
+    },
+    {
+      "path": "backend/app/market/providers/__init__.py",
+      "sha256": "af62358987d4d28773b15f90dca15500d86ff3e5049fc3d8bc4ce42dbb79c92e"
+    },
+    {
+      "path": "backend/app/market/providers/base.py",
+      "sha256": "c4225a181ec93e24e68a4b1fa3644bdd9bb368fcf42076f04cdc555ed1251f7d"
+    },
+    {
+      "path": "backend/app/market/providers/dart.py",
+      "sha256": "e93d39eee27c6730ccc205bdcc7fdc0954ac9ba035b42645496e70b192065f52"
+    },
+    {
+      "path": "backend/app/market/providers/krx.py",
+      "sha256": "aa7c63d66ab71c6b28c0f5d2eb01cbdc0aa6070bd46a6fb4103fbdeb01e196c8"
+    },
+    {
+      "path": "backend/app/market/pullback_confirmation.py",
+      "sha256": "803cf0caa1d125b49ab5bfc7e92d81b4ad16b4e1794ad2cef6d47bc510af150e"
+    },
+    {
+      "path": "backend/app/market/relative_strength.py",
+      "sha256": "e16e25799a7972a57edc0ea0549a77af25bdac75803e1e3e14839757d66ad7a4"
+    },
+    {
+      "path": "backend/app/market/sector_relative_strength.py",
+      "sha256": "71c54d05ac5d3b3a7b189325980e76ee84b70f5df1ffac3d9621364893ab3aa8"
+    },
+    {
+      "path": "backend/app/market/technical.py",
+      "sha256": "27df55a3a5589ec6020fdf9cfb86c00e1cc0de6686d0509e9b7edb70fbe76fb3"
+    },
+    {
+      "path": "backend/app/risk/__init__.py",
+      "sha256": "59ddb7f213927212c77ba1e0c54bd10dec77af946f022348964ec3f559da1336"
+    },
+    {
+      "path": "backend/app/risk/engine.py",
+      "sha256": "c0823bf184eb803ebb7367dfa73ee41aae3d7980c673ea657a7ea91b9d9ac882"
+    },
+    {
+      "path": "backend/app/risk/models.py",
+      "sha256": "af581e61151980caac63bd34b098f72df0afb5af0b8cc8bb29b2262c9f0774da"
+    },
+    {
+      "path": "backend/app/risk/target1_policy.py",
+      "sha256": "9a180fda05cb8e5098b3ef4a36cc003f2dfe03c732ceb6db0b6707c31446acf7"
+    },
+    {
+      "path": "backend/app/strategy/__init__.py",
+      "sha256": "4da64a1be9049eab75838306d69c465b029d45000519e31742f5ccf8b234ebfa"
+    },
+    {
+      "path": "backend/app/strategy/analysis_hub.py",
+      "sha256": "cbc4ce27b654d31fe4a4bc95372b142e0c7fbe4af617ac10c0e6c40d7466f3e1"
+    },
+    {
+      "path": "backend/app/strategy/context.py",
+      "sha256": "f34c278cfbdb93821826f3205c9c68b67ef20ece174935fc24c094a6a52463e6"
+    },
+    {
+      "path": "backend/app/strategy/engine.py",
+      "sha256": "87a89c81caa759fac3915cf72541fd478a82f381e16429c8bd78b371cc16d363"
+    },
+    {
+      "path": "backend/app/strategy/models.py",
+      "sha256": "f4c3a9a87f86abafcebcd35d4dd54d155b16025170d460c6ad59a96889fd5bde"
+    },
+    {
+      "path": "backend/app/strategy/service.py",
+      "sha256": "1465c976994c16b31b9f34f8cc9dd6b54e203e610a3b59db45b3690a06ec4c9d"
+    }
+  ],
+  "production_fingerprint": "aa75a65aa3ded0c18f0f1217dd2c7de0af672df537a703fe1aa5d43cccc64ee1",
+  "policies": {
+    "scanner_version": "0.21.3.7",
+    "ma120": "NO_LOOKAHEAD",
+    "historical_sector_rs": "TEMPORAL_GATE",
+    "candidate_state": "READY_WATCH_RISK_CURRENT_PRODUCTION",
+    "target1": "CAP_1_5R",
+    "target1_explainability": true,
+    "ranking_tie_break": "STRUCTURAL_TARGET_NEAREST_PROMOTE_ONE_EXACT_BASE_PRIORITY_TIE",
+    "overextension_guard": "NOT_PRODUCTION",
+    "volume_low_guard": "REJECTED_NOT_PRODUCTION"
+  },
+  "policy_fingerprint": "8834473e4d7ca56e103095353fe849484d41a788e40d7cbcf791910c93784c09",
+  "research_status": {
+    "B.2.5": {
+      "status": "CLOSED",
+      "production": "STRUCTURAL_TARGET_TIE_BREAK_RETAINED"
+    },
+    "B.2.6": {
+      "status": "CLOSED",
+      "production": false,
+      "result": "OVEREXTENSION_RESEARCH_ONLY"
+    },
+    "B.2.7": {
+      "status": "CLOSED",
+      "production": false,
+      "result": "VOLUME_LOW_GUARD_REJECTED_FRESH_HOLDOUT"
+    }
+  },
+  "simulation_contract": {
+    "required_reference": "scanner_baseline_id",
+    "recommended_fields": [
+      "scanner_version",
+      "scanner_baseline_id",
+      "production_fingerprint",
+      "policy_fingerprint"
+    ]
+  }
+}
