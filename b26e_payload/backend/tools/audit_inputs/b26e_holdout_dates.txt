@@ -1,2 +1,0 @@
-# AUTO-SELECT ON FIRST B.2.6-E RUN.
-# The runner writes 20 deterministic, previously-unused holdout dates here before outcomes are evaluated.

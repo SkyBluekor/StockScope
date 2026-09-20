@@ -64,6 +64,9 @@ build/
 
 .vite/
 .vite-cache/
+*.tsbuildinfo
+/frontend/vite.config.js
+/frontend/vite.config.d.ts
 
 npm-debug.log*
 yarn-debug.log*
@@ -93,9 +96,14 @@ pnpm-debug.log*
 *.sqlite3
 
 data/
-runtime/
 tmp/
 temp/
+
+/backend/runtime/*
+!/backend/runtime/baseline/
+/backend/runtime/baseline/*
+!/backend/runtime/baseline/README.md
+!/backend/runtime/baseline/scanner-production-baseline_*.json
 
 
 # ---------------------------------------------------------
@@ -116,6 +124,11 @@ backtest_results/
 analysis_results/
 cache/
 exports/
+
+/scanner-repro/
+/b*_payload/
+/sim*_payload/
+/payload/
 
 
 # ---------------------------------------------------------

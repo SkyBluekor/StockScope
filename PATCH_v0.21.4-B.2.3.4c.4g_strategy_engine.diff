@@ -1,7 +1,0 @@
---- a/backend/app/strategy/engine.py
-+++ b/backend/app/strategy/engine.py
-@@
--            ("20일 시장 대비 상대강도 양호", 6, lambda x: x.relative_strength_market_pct is not None and x.relative_strength_market_pct > 0),
--            ("20일 업종 대비 상대강도 양호", 4, lambda x: (x.relative_strength_sector_pct > 0) if x.relative_strength_sector_pct is not None else (x.relative_strength_market_pct is not None and x.relative_strength_market_pct > 0)),
-+            ("20일 시장 대비 상대강도 양호", 10, lambda x: x.relative_strength_market_pct is not None and x.relative_strength_market_pct > 0),
-             ("20일 업종 대비 상대강도 양호", 8, lambda x: (x.relative_strength_sector_pct > 0) if x.relative_strength_sector_pct is not None else (x.relative_strength_market_pct is not None and x.relative_strength_market_pct > 0)),
