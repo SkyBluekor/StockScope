@@ -6,6 +6,7 @@ import { FundamentalPanel } from "./components/FundamentalPanel";
 import { InvestorStylePanel } from "./components/InvestorStylePanel";
 import BacktestPanel from "./components/BacktestPanel";
 import ScannerPanel from "./components/ScannerPanel";
+import SimulationWorkspace from "./components/SimulationWorkspace";
 import {
   fetchHealth,
   fetchMarketDashboard,
@@ -22,7 +23,7 @@ import {
   type StockSearchItem,
 } from "./services/api";
 
-type AppPage = "analysis" | "backtest" | "scanner";
+type AppPage = "analysis" | "backtest" | "scanner" | "simulation";
 type ThemeMode = "light" | "dark";
 
 function initialTheme(): ThemeMode {
@@ -39,6 +40,7 @@ function initialTheme(): ThemeMode {
 
 function pageFromPathname(pathname: string): AppPage {
   const lower = pathname.toLowerCase();
+  if (lower.startsWith("/simulation")) return "simulation";
   if (lower.startsWith("/scanner")) return "scanner";
   if (lower.startsWith("/backtest")) return "backtest";
   return "analysis";
@@ -461,7 +463,7 @@ const strategyName: Record<string, string> = {
   }
 
   function navigateApp(page: AppPage) {
-    const pathname = page === "analysis" ? "/analysis" : page === "scanner" ? "/scanner" : "/backtest";
+    const pathname = page === "analysis" ? "/analysis" : `/${page}`;
     if (window.location.pathname !== pathname) window.history.pushState({}, "", pathname);
     setAppPage(page);
     window.scrollTo({ top: 0, behavior: "auto" });
@@ -482,7 +484,7 @@ const strategyName: Record<string, string> = {
           <button className={`nav-item ${appPage === "analysis" ? "active" : ""}`} onClick={() => navigateApp("analysis")}>빠른 조회</button>
           <button className={`nav-item ${appPage === "backtest" ? "active" : ""}`} onClick={() => navigateApp("backtest")}>과거 성과 검증</button>
           <button className={`nav-item ${appPage === "scanner" ? "active" : ""}`} onClick={() => navigateApp("scanner")}>종목 찾기</button>
-          <button className="nav-item" disabled>시뮬레이션 <em>준비중</em></button>
+          <button className={`nav-item ${appPage === "simulation" ? "active" : ""}`} onClick={() => navigateApp("simulation")}>시뮬레이션</button>
         </nav>
         <div className="header-actions">
           <button
@@ -1936,13 +1938,15 @@ const strategyName: Record<string, string> = {
               stockName={selectedStockName}
               onSelectStock={chooseStock}
             />
-          ) : (
+          ) : appPage === "scanner" ? (
             <ScannerPanel
               onAnalyzeStock={(item) => {
                 chooseStock(item);
                 navigateApp("backtest");
               }}
             />
+          ) : (
+            <SimulationWorkspace />
           )}
 
           <footer>
