@@ -5,6 +5,7 @@ import {
   resolveScannerDataDate,
   localDateKey,
   readScannerSession,
+  useScannerSession,
   writeScannerSession,
 } from "./scannerSession";
 import {
@@ -472,6 +473,7 @@ function CandidateDetail({
 
 export default function ScannerPanel({ onAnalyzeStock }: Props) {
   const initialSession = useMemo(() => readScannerSession(), []);
+  const sharedSession = useScannerSession();
   const [scope, setScope] = useState<MarketScope>(initialSession?.scope ?? "ALL");
   const [job, setJob] = useState<BacktestJob<ScannerResponse> | null>(null);
   const [result, setResult] = useState<ScannerResponse | null>(initialSession?.result ?? null);
@@ -497,6 +499,23 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
   const jobBusy = job?.status === "queued" || job?.status === "running";
   const busy = jobBusy;
   const progress = job?.progress;
+
+  useEffect(() => {
+    // TRACK.1.10.1: accept Scanner results completed from another entry point
+    // (for example Stock Tracking) without requiring a page round-trip.
+    if (!sharedSession?.result || jobBusy || sharedSession.result === result) return;
+    setScope(sharedSession.scope);
+    setResult(sharedSession.result);
+    setSelectedCandidateKey(
+      sharedSession.selectedCandidateKey
+        ?? (sharedSession.result.candidates?.[0] ? candidateKey(sharedSession.result.candidates[0]) : null),
+    );
+    setShowMore(sharedSession.showMore);
+    setExpandedEvidenceIds(sharedSession.expandedEvidenceIds);
+    setCompletedAt(sharedSession.completedAt);
+    setRestoredFromSession(true);
+    savedScrollRef.current = sharedSession.scrollY;
+  }, [sharedSession, jobBusy, result]);
 
   useEffect(() => {
     const onScroll = () => {
@@ -584,11 +603,23 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
         setDateNotice(resolvedProgressDate);
       }
       if (latest.status === "completed" && latest.result) {
+        const completedAtValue = Date.now();
+        // TRACK.1.9: commit completed Scanner result synchronously so Tracking
+        // sees the same result even if the user navigates before React effects run.
+        writeScannerSession({
+          scope,
+          result: latest.result,
+          completedAt: completedAtValue,
+          scrollY: window.scrollY,
+          showMore: false,
+          expandedEvidenceIds: [],
+          selectedCandidateKey: latest.result.candidates[0] ? candidateKey(latest.result.candidates[0]) : null,
+        });
         setResult(latest.result);
         setSelectedCandidateKey(latest.result.candidates[0] ? candidateKey(latest.result.candidates[0]) : null);
         setShowMore(false);
         setExpandedEvidenceIds([]);
-        setCompletedAt(Date.now());
+        setCompletedAt(completedAtValue);
         setRestoredFromSession(false);
         savedScrollRef.current = window.scrollY;
         return;

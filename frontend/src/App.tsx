@@ -6,7 +6,7 @@ import { FundamentalPanel } from "./components/FundamentalPanel";
 import { InvestorStylePanel } from "./components/InvestorStylePanel";
 import BacktestPanel from "./components/BacktestPanel";
 import ScannerPanel from "./components/ScannerPanel";
-import SimulationWorkspace from "./components/SimulationWorkspace";
+import TrackingWorkspace from "./components/TrackingWorkspace";
 import {
   fetchHealth,
   fetchMarketDashboard,
@@ -482,9 +482,9 @@ const strategyName: Record<string, string> = {
         </div>
         <nav className="topnav" aria-label="주요 기능">
           <button className={`nav-item ${appPage === "analysis" ? "active" : ""}`} onClick={() => navigateApp("analysis")}>빠른 조회</button>
-          <button className={`nav-item ${appPage === "backtest" ? "active" : ""}`} onClick={() => navigateApp("backtest")}>과거 성과 검증</button>
+          <button className={`nav-item ${appPage === "backtest" ? "active" : ""}`} onClick={() => navigateApp("backtest")}>종목별 과거 근거</button>
           <button className={`nav-item ${appPage === "scanner" ? "active" : ""}`} onClick={() => navigateApp("scanner")}>종목 찾기</button>
-          <button className={`nav-item ${appPage === "simulation" ? "active" : ""}`} onClick={() => navigateApp("simulation")}>시뮬레이션</button>
+          <button className={`nav-item ${appPage === "simulation" ? "active" : ""}`} onClick={() => navigateApp("simulation")}>종목 성과 추적</button>
         </nav>
         <div className="header-actions">
           <button
@@ -548,7 +548,7 @@ const strategyName: Record<string, string> = {
 
           <div className="trade-lock">
             <strong>실제 매매 기능 없음</strong>
-            <span>조회 · 분석 · 과거 성과 검증 · 시뮬레이션 전용이며 증권사 주문을 전송하지 않습니다.</span>
+            <span>조회 · 분석 · 종목별 과거 근거 · 시뮬레이션 전용이며 증권사 주문을 전송하지 않습니다.</span>
           </div>
 
           {loading && <div className="loading-card">KRX 시장 데이터를 불러오는 중입니다...</div>}
@@ -1939,14 +1939,21 @@ const strategyName: Record<string, string> = {
               onSelectStock={chooseStock}
             />
           ) : appPage === "scanner" ? (
-            <ScannerPanel
+            <>
+              <div className="feature-page-guide" data-ux1="scanner">
+                <strong>종목 찾기</strong>
+                <span>현재 시장 데이터에서 Scanner 조건에 맞는 후보를 찾습니다. 순위와 전략 정보를 확인한 뒤 원하는 종목을 성과 추적에 추가할 수 있습니다.</span>
+                <small>시장 선택 → 후보 찾기 → 결과 확인 → 성과 추적</small>
+              </div>
+              <ScannerPanel
               onAnalyzeStock={(item) => {
                 chooseStock(item);
                 navigateApp("backtest");
               }}
             />
+            </>
           ) : (
-            <SimulationWorkspace />
+            <TrackingWorkspace />
           )}
 
           <footer>
@@ -1958,3 +1965,5 @@ const strategyName: Record<string, string> = {
     </div>
   );
 }
+
+/* UX.1 feature orientation: App navigation + scanner guide */

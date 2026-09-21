@@ -17138,3 +17138,13 @@ html[data-theme="light"] :where(
 ) {
   background-color: var(--bg-surface-soft);
 }
+/* UX.1 — compact feature orientation, intentionally non-card/editorial */
+.feature-page-guide{margin:0 0 16px;padding:0 0 12px;border-bottom:1px solid var(--border-subtle,#30343b);display:grid;gap:3px;max-width:980px}
+.feature-page-guide strong{color:var(--text-primary,#e6e8eb);font-size:16px;font-weight:750}
+.feature-page-guide span{color:var(--text-secondary,#9aa1ab);font-size:14px;line-height:1.6}
+.feature-page-guide small{color:var(--text-muted,#7f8792);font-size:12px;line-height:1.5}
+.feature-orientation-copy{max-width:880px;margin:6px 0 0;color:var(--text-secondary,#9aa1ab);font-size:14px;line-height:1.65}
+.feature-flow-line{margin:8px 0 18px;color:var(--text-muted,#7f8792);font-size:12px;letter-spacing:.01em}
+.feature-section-help{margin:-5px 0 14px;color:var(--text-secondary,#9aa1ab);font-size:13px;line-height:1.6}
+.feature-definition-line{display:flex;flex-wrap:wrap;gap:8px 22px;margin:-2px 0 10px;padding:0 0 10px;border-bottom:1px solid var(--border-subtle,#30343b);color:var(--text-muted,#7f8792);font-size:12px;line-height:1.55}
+.feature-definition-line strong{color:var(--text-secondary,#9aa1ab);font-weight:700;margin-right:5px}

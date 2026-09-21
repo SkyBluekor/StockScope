@@ -1,141 +1,209 @@
+import { useSyncExternalStore } from "react";
 import type { ScannerResponse } from "../services/api";
 
-export const SCANNER_SESSION_STORAGE_KEY = "stockscope.scanner.session.v0.21.4-A.3";
-export const SCANNER_SESSION_SCHEMA_VERSION = 2;
-export const SCANNER_DECISION_VERSION = "0.21.3.6";
+export const SCANNER_SESSION_SCHEMA_VERSION = 1;
+const STORAGE_KEY = "stockscope.scanner.session.v0.21.4-A.3";
 
-export type ScannerMarketScope = "ALL" | "KOSPI" | "KOSDAQ";
-
-type StorageLike = {
-  getItem: (key: string) => string | null;
-  setItem: (key: string, value: string) => void;
-  removeItem: (key: string) => void;
-};
+type MarketScope = "ALL" | "KOSPI" | "KOSDAQ";
 
 export type ScannerSessionSnapshot = {
   schemaVersion: number;
-  scope: ScannerMarketScope;
+  scope: MarketScope;
   result: ScannerResponse;
   completedAt: number;
-  savedAt: number;
-  savedLocalDate: string;
   scrollY: number;
   showMore: boolean;
   expandedEvidenceIds: string[];
-  selectedCandidateKey?: string | null;
+  selectedCandidateKey: string | null;
 };
 
+export type ScannerSessionInput = Omit<ScannerSessionSnapshot, "schemaVersion">;
+
+type UnknownRecord = Record<string, unknown>;
+
+const listeners = new Set<() => void>();
 let memorySnapshot: ScannerSessionSnapshot | null = null;
+let hydrated = false;
 
-function browserSessionStorage(): StorageLike | null {
+function asRecord(value: unknown): UnknownRecord {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as UnknownRecord : {};
+}
+
+function normalizeScope(value: unknown): MarketScope {
+  return value === "KOSPI" || value === "KOSDAQ" ? value : "ALL";
+}
+
+function finiteNumber(value: unknown, fallback: number) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function normalizeSnapshot(value: unknown): ScannerSessionSnapshot | null {
+  const raw = asRecord(value);
+  const result = raw.result;
+  if (!result || typeof result !== "object") return null;
+
+  // Legacy payloads used Scanner algorithm version as a storage compatibility
+  // gate. We intentionally ignore that field: algorithm version belongs to the
+  // saved result, while browser persistence compatibility is schema-versioned.
+  const expanded = Array.isArray(raw.expandedEvidenceIds)
+    ? raw.expandedEvidenceIds.filter((item): item is string => typeof item === "string")
+    : [];
+
+  return {
+    schemaVersion: SCANNER_SESSION_SCHEMA_VERSION,
+    scope: normalizeScope(raw.scope),
+    result: result as ScannerResponse,
+    completedAt: finiteNumber(raw.completedAt, Date.now()),
+    scrollY: Math.max(0, finiteNumber(raw.scrollY, 0)),
+    showMore: raw.showMore === true,
+    expandedEvidenceIds: expanded,
+    selectedCandidateKey: typeof raw.selectedCandidateKey === "string" ? raw.selectedCandidateKey : null,
+  };
+}
+
+function loadStorage(): ScannerSessionSnapshot | null {
   if (typeof window === "undefined") return null;
-  return window.sessionStorage;
+  try {
+    const raw = window.sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const normalized = normalizeSnapshot(JSON.parse(raw));
+    if (!normalized) window.sessionStorage.removeItem(STORAGE_KEY);
+    return normalized;
+  } catch {
+    return null;
+  }
 }
 
-export function localDateKey(value: number | Date = Date.now()) {
-  const date = value instanceof Date ? value : new Date(value);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+function persist(snapshot: ScannerSessionSnapshot | null) {
+  if (typeof window === "undefined") return;
+  try {
+    if (snapshot) window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+    else window.sessionStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // sessionStorage is recovery persistence only. The in-memory SPA snapshot
+    // remains valid even when storage is blocked/quota-limited.
+  }
 }
 
-export type ScannerDateResolution = {
-  date: string | null;
-  aligned: boolean;
-  requestedDate: string | null;
-  marketDates: Partial<Record<"KOSPI" | "KOSDAQ", string>>;
-};
-
-export function resolveScannerDataDate(result: ScannerResponse | null | undefined): ScannerDateResolution {
-  if (!result) {
-    return { date: null, aligned: false, requestedDate: null, marketDates: {} };
-  }
-  const requestedDate = result.requested_as_of || null;
-  const markets: Array<"KOSPI" | "KOSDAQ"> = result.market_scope === "ALL"
-    ? ["KOSPI", "KOSDAQ"]
-    : [result.market_scope];
-  const marketDates = result.data_dates ?? {};
-  const values = markets.map((market) => marketDates[market]).filter((value): value is string => Boolean(value));
-  if (values.length !== markets.length) {
-    return { date: null, aligned: false, requestedDate, marketDates };
-  }
-  const unique = new Set(values);
-  if (unique.size !== 1) {
-    return { date: null, aligned: false, requestedDate, marketDates };
-  }
-  const commonDate = values[0] ?? null;
-  if (requestedDate && commonDate !== requestedDate) {
-    return { date: null, aligned: false, requestedDate, marketDates };
-  }
-  return { date: commonDate, aligned: Boolean(commonDate), requestedDate, marketDates };
+function emit() {
+  listeners.forEach((listener) => listener());
 }
 
-export function latestScannerDataDate(result: ScannerResponse | null | undefined) {
-  return resolveScannerDataDate(result).date;
+function hydrateOnce() {
+  if (hydrated) return;
+  hydrated = true;
+  memorySnapshot = loadStorage();
 }
 
-export function readScannerSession(storage: StorageLike | null = browserSessionStorage()): ScannerSessionSnapshot | null {
-  if (storage) {
-    try {
-      const raw = storage.getItem(SCANNER_SESSION_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as Partial<ScannerSessionSnapshot>;
-        if (parsed.schemaVersion !== SCANNER_SESSION_SCHEMA_VERSION) return null;
-        if (!parsed.result || !parsed.scope || !parsed.completedAt) return null;
-        if (!(["ALL", "KOSPI", "KOSDAQ"] as string[]).includes(parsed.scope)) return null;
-        if (parsed.result.market_scope !== parsed.scope) return null;
-        if (parsed.result.version !== SCANNER_DECISION_VERSION) {
-          try { storage.removeItem(SCANNER_SESSION_STORAGE_KEY); } catch { /* ignore */ }
-          return null;
-        }
-        const restored: ScannerSessionSnapshot = {
-          schemaVersion: SCANNER_SESSION_SCHEMA_VERSION,
-          scope: parsed.scope,
-          result: parsed.result,
-          completedAt: Number(parsed.completedAt),
-          savedAt: Number(parsed.savedAt ?? parsed.completedAt),
-          savedLocalDate: String(parsed.savedLocalDate ?? localDateKey(Number(parsed.completedAt))),
-          scrollY: Math.max(0, Number(parsed.scrollY ?? 0)),
-          showMore: Boolean(parsed.showMore),
-          expandedEvidenceIds: Array.isArray(parsed.expandedEvidenceIds)
-            ? parsed.expandedEvidenceIds.filter((value): value is string => typeof value === "string")
-            : [],
-          selectedCandidateKey: typeof parsed.selectedCandidateKey === "string" ? parsed.selectedCandidateKey : null,
-        };
-        memorySnapshot = restored;
-        return restored;
-      }
-    } catch {
-      return memorySnapshot;
-    }
-  }
+export function getScannerSessionSnapshot(): ScannerSessionSnapshot | null {
+  hydrateOnce();
   return memorySnapshot;
 }
 
-export function writeScannerSession(snapshot: Omit<ScannerSessionSnapshot, "schemaVersion" | "savedAt" | "savedLocalDate">, storage: StorageLike | null = browserSessionStorage()) {
-  if (!storage) return;
-  const now = Date.now();
-  const payload: ScannerSessionSnapshot = {
-    ...snapshot,
-    schemaVersion: SCANNER_SESSION_SCHEMA_VERSION,
-    savedAt: now,
-    savedLocalDate: localDateKey(now),
-  };
-  memorySnapshot = payload;
-  try {
-    storage.setItem(SCANNER_SESSION_STORAGE_KEY, JSON.stringify(payload));
-  } catch {
-    // sessionStorage quota/privacy failures should never break Scanner rendering.
-  }
+export function subscribeScannerSession(listener: () => void) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
 }
 
-export function clearScannerSession(storage: StorageLike | null = browserSessionStorage()) {
+export function commitScannerSession(input: ScannerSessionInput | ScannerSessionSnapshot) {
+  const normalized = normalizeSnapshot({ ...input, schemaVersion: SCANNER_SESSION_SCHEMA_VERSION });
+  if (!normalized) return;
+  hydrated = true;
+  memorySnapshot = normalized;
+  persist(normalized);
+  emit();
+}
+
+// Backward-compatible names used by ScannerPanel and existing callers.
+export function writeScannerSession(input: ScannerSessionInput | ScannerSessionSnapshot) {
+  commitScannerSession(input);
+}
+
+export function readScannerSession() {
+  return getScannerSessionSnapshot();
+}
+
+export function clearScannerSession() {
+  hydrated = true;
   memorySnapshot = null;
-  if (!storage) return;
-  try {
-    storage.removeItem(SCANNER_SESSION_STORAGE_KEY);
-  } catch {
-    // Ignore browser storage failures and fall back to in-memory state.
+  persist(null);
+  emit();
+}
+
+export function useScannerSession() {
+  return useSyncExternalStore(
+    subscribeScannerSession,
+    getScannerSessionSnapshot,
+    () => null,
+  );
+}
+
+function normalizeDate(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const compact = value.trim().replace(/\./g, "-");
+  if (/^\d{8}$/.test(compact)) return `${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6, 8)}`;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(compact)) return compact;
+  return null;
+}
+
+function resultDates(result: ScannerResponse | null | undefined) {
+  if (!result) return [] as string[];
+  const dates: string[] = [];
+  const record = result as unknown as UnknownRecord;
+  const requested = normalizeDate(record.requested_as_of);
+  if (requested) dates.push(requested);
+  const candidates = [
+    ...(Array.isArray(record.candidates) ? record.candidates : []),
+    ...(Array.isArray(record.more_candidates) ? record.more_candidates : []),
+  ];
+  for (const raw of candidates) {
+    const day = normalizeDate(asRecord(raw).data_date);
+    if (day) dates.push(day);
   }
+  const summaries = Array.isArray(record.market_summary) ? record.market_summary : [];
+  for (const raw of summaries) {
+    const row = asRecord(raw);
+    const day = normalizeDate(row.data_date ?? row.as_of_date ?? row.latest_complete_date);
+    if (day) dates.push(day);
+  }
+  return dates;
+}
+
+export function latestScannerDataDate(result: ScannerResponse | null | undefined): string | null {
+  const dates = resultDates(result);
+  if (!dates.length) return null;
+  const ordered = [...dates].sort();
+  return ordered[ordered.length - 1] ?? null;
+}
+
+export function resolveScannerDataDate(result: ScannerResponse | null | undefined) {
+  if (!result) return { date: null as string | null, aligned: true };
+  const record = result as unknown as UnknownRecord;
+  const requested = normalizeDate(record.requested_as_of);
+  const candidateDates = [
+    ...(Array.isArray(record.candidates) ? record.candidates : []),
+    ...(Array.isArray(record.more_candidates) ? record.more_candidates : []),
+  ].map((item) => normalizeDate(asRecord(item).data_date)).filter((item): item is string => Boolean(item));
+  const unique = [...new Set(candidateDates)];
+  const date = unique[0] ?? requested ?? latestScannerDataDate(result);
+  const aligned = unique.length <= 1 && (!requested || !date || requested === date);
+  return { date, aligned };
+}
+
+export function localDateKey(timestamp: number = Date.now()) {
+  const day = new Date(timestamp);
+  const year = day.getFullYear();
+  const month = String(day.getMonth() + 1).padStart(2, "0");
+  const date = String(day.getDate()).padStart(2, "0");
+  return `${year}-${month}-${date}`;
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (event) => {
+    if (event.storageArea !== window.sessionStorage || event.key !== STORAGE_KEY) return;
+    hydrated = true;
+    memorySnapshot = loadStorage();
+    emit();
+  });
 }

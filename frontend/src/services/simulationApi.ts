@@ -52,6 +52,13 @@ export type PositionMark = {
   source_bar_date: string | null;
 };
 
+
+export type SimulationQuote = {
+  stock_code: string;
+  market: string;
+  trading_date: string;
+  close: string;
+};
 export type PlaybackResult = {
   session_id: string;
   previous_date: string;
@@ -144,4 +151,119 @@ export function getSimulationSession(portfolioId: string) {
 
 export function nextSimulationDay(portfolioId: string) {
   return apiJson<PlaybackResult>(`/api/simulation/portfolios/${encodeURIComponent(portfolioId)}/next-day`, { method: "POST" });
+}
+
+export function getSimulationQuote(portfolioId: string, stockCode: string, market = "KRX") {
+  const query = new URLSearchParams({ market });
+  return apiJson<SimulationQuote>(
+    `/api/simulation/portfolios/${encodeURIComponent(portfolioId)}/quote/${encodeURIComponent(stockCode)}?${query.toString()}`,
+  );
+}
+
+
+export type ValidationPeriodPreview = {
+  market_scope: "ALL" | "KOSPI" | "KOSDAQ" | string;
+  preset: "6m" | "1y" | "2y" | null;
+  requested_start_month: string;
+  requested_end_month: string;
+  resolved_start_date: string;
+  resolved_end_date: string;
+  trading_days: number;
+  minimum_trading_days: number;
+  valid: boolean;
+  market_data_latest_date: string;
+  partial_end_month: boolean;
+};
+
+export type LegacyValidation = {
+  portfolio_id: string;
+  name: string;
+  legacy_status: "LEGACY_SAVED" | string;
+  portfolio_status: string;
+  session_status: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  current_date: string | null;
+  initial_cash: string;
+  position_count: number;
+  trade_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export function previewValidationPeriod(input: {
+  preset?: "6m" | "1y" | "2y";
+  start_month?: string;
+  end_month?: string;
+  market_scope?: "ALL" | "KOSPI" | "KOSDAQ";
+}) {
+  const query = new URLSearchParams();
+  if (input.preset) query.set("preset", input.preset);
+  if (input.start_month) query.set("start_month", input.start_month);
+  if (input.end_month) query.set("end_month", input.end_month);
+  query.set("market_scope", input.market_scope ?? "ALL");
+  return apiJson<ValidationPeriodPreview>(`/api/simulation/validation-periods/preview?${query.toString()}`);
+}
+
+export function validateValidationPeriod(input: {
+  preset?: "6m" | "1y" | "2y";
+  start_month?: string;
+  end_month?: string;
+  market_scope?: "ALL" | "KOSPI" | "KOSDAQ";
+}) {
+  return apiJson<ValidationPeriodPreview>("/api/simulation/validation-periods/validate", json({
+    ...input,
+    market_scope: input.market_scope ?? "ALL",
+  }));
+}
+
+export function listLegacyValidations() {
+  return apiJson<LegacyValidation[]>("/api/simulation/legacy-validations");
+}
+
+export type HistoricalValidationDraft = {
+  id: string;
+  name: string;
+  validation_target: "PRODUCTION_SCANNER" | string;
+  market_scope: "ALL" | "KOSPI" | "KOSDAQ" | string;
+  scanner_version: string;
+  scanner_baseline: string | null;
+  requested_period_type: "6m" | "1y" | "2y" | "custom" | string;
+  requested_start_month: string;
+  requested_end_month: string;
+  resolved_start_date: string;
+  resolved_end_date: string;
+  trading_day_count: number;
+  status: "DRAFT" | "RUNNING" | "COMPLETED" | "FAILED" | string;
+  created_at: string;
+  updated_at: string;
+};
+
+export function createValidationDraft(input: {
+  name: string;
+  preset?: "6m" | "1y" | "2y";
+  start_month?: string;
+  end_month?: string;
+  market_scope?: "ALL" | "KOSPI" | "KOSDAQ";
+}) {
+  return apiJson<HistoricalValidationDraft>("/api/simulation/validations", json({
+    ...input,
+    market_scope: input.market_scope ?? "ALL",
+  }));
+}
+
+export function listValidationDrafts() {
+  return apiJson<HistoricalValidationDraft[]>("/api/simulation/validations");
+}
+
+export function getValidationDraft(id: string) {
+  return apiJson<HistoricalValidationDraft>(`/api/simulation/validations/${encodeURIComponent(id)}`);
+}
+
+export function deleteValidationDraft(id: string) {
+  return apiJson<{ deleted: boolean; id: string }>(`/api/simulation/validations/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function deleteLegacyValidation(portfolioId: string) {
+  return apiJson<{ deleted: boolean; portfolio_id: string }>(`/api/simulation/legacy-validations/${encodeURIComponent(portfolioId)}`, { method: "DELETE" });
 }
