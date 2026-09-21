@@ -216,8 +216,8 @@ export default function EmbeddedScanner() {
     <section className="tracking-source tracking-embedded-scanner">
       <div className="tracking-section-head">
         <div>
-          <span>종목 찾기</span>
-          <h2>이 화면에서 바로 추천 후보 찾기</h2>
+          <span>추천 후보 찾기</span>
+          <h2>Scanner 후보를 바로 추가</h2>
         </div>
         <small>기존 종목 찾기와 같은 Scanner · 같은 결과 공유</small>
       </div>
@@ -243,7 +243,7 @@ export default function EmbeddedScanner() {
             disabled={busy}
             onClick={() => void startRunner(runner.scope, resultForScope, { forceRefresh: Boolean(resultForScope) })}
           >
-            {busy ? "후보 찾는 중…" : resultForScope ? "후보 다시 찾기" : "종목 찾기 실행"}
+            {busy ? "후보 찾는 중…" : resultForScope ? "후보 다시 찾기" : "후보 찾기"}
           </button>
           {busy && <button type="button" className="tracking-scanner-cancel" onClick={() => void cancelRunner()}>중지</button>}
         </div>

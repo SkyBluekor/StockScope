@@ -9,14 +9,14 @@ def test_tracking_embeds_scanner_plus_manual_search_plus_visible_list():
     api = (ROOT / "src/services/trackingApi.ts").read_text(encoding="utf-8")
     assert 'import EmbeddedScanner from "./EmbeddedScanner"' in tracking
     assert "<EmbeddedScanner />" in tracking
-    assert "이 화면에서 Scanner 종목 찾기를 직접 실행" in tracking
+    assert "Scanner 후보를 찾거나" in tracking
     assert "원하는 종목 직접 찾기" in tracking
     assert "searchStocks" in tracking
     assert "최근 추천 후보" in tracking
     assert "candidates.map" in tracking
     assert "candidates.slice" not in tracking
     assert "more_candidates" in tracking
-    assert "종목 찾기 실행" in embedded
+    assert "후보 찾기" in embedded
     assert "createScannerJob" in embedded
     assert "fetchBacktestJob" in embedded
     assert "commitScannerSession" in embedded

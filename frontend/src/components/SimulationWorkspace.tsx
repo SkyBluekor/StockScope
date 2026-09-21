@@ -163,12 +163,11 @@ export default function SimulationWorkspace() {
   return (
     <section className="simulation-workspace sim-validation-foundation">
       <header className="sim-page-head">
-        <div><span className="sim-eyebrow">Scanner 전략 연구</span><h1>과거 전략 검증</h1><p>현재 Scanner 전략을 과거 시장 전체에 다시 적용해 성능을 검증합니다. 개별 종목을 계속 관찰하는 성과 추적과 달리 Scanner 전략 자체를 평가하는 연구 기능입니다.</p></div>
+        <div><span className="sim-eyebrow">Scanner 전략 전체 검증</span><h1>전략 성과 검증</h1><p>Scanner 전략을 과거 시장에 적용해 전체 성과를 검증합니다.</p></div>
         {preview && <div className="sim-date-block"><span>Market Store 최신</span><strong>{dateText(preview.market_data_latest_date)}</strong><small>{preview.partial_end_month ? "현재 월은 확보된 거래일까지" : "확정 데이터 기준"}</small></div>}
       </header>
-      <p className="feature-flow-line">시장·기간 설정 → 과거 전략 검증 → 결과 비교 → Scanner 개선 근거</p>
 
-      <div className="sim-validation-tabs" role="tablist" aria-label="과거 전략 검증">
+      <div className="sim-validation-tabs" role="tablist" aria-label="전략 성과 검증">
         <button className={mode === "new" ? "active" : ""} onClick={startNew}>새 검증</button>
         <button className={mode === "saved" ? "active" : ""} onClick={() => setMode("saved")}>저장된 검증 <small>{drafts.length + legacy.length || ""}</small></button>
       </div>
@@ -235,7 +234,7 @@ export default function SimulationWorkspace() {
 
           <div className="sim-saved-group sim-legacy-group">
             <div className="sim-saved-group-head"><strong>이전 수동 Simulation</strong><span>{legacy.length}개</span></div>
-            <p className="sim-legacy-note">새 과거 전략 검증과 구조가 다른 이전 데이터입니다. 전략 정보가 없으면 없는 그대로 표시합니다.</p>
+            <p className="sim-legacy-note">새 전략 성과 검증과 구조가 다른 이전 데이터입니다. 전략 정보가 없으면 없는 그대로 표시합니다.</p>
             {legacy.length === 0 ? <div className="sim-empty"><strong>이전 Simulation 기록이 없습니다.</strong></div> : <div className="sim-table-wrap"><table className="sim-table sim-saved-table"><thead><tr><th>이름</th><th>전략</th><th>기간</th><th>포지션</th><th>거래</th><th>초기 자금</th><th>관리</th></tr></thead><tbody>{legacy.map((row) => <tr key={row.portfolio_id} className={selectedLegacy?.portfolio_id === row.portfolio_id ? "selected" : undefined}><td><strong>{row.name}</strong><small>Legacy · 자동 활성화 안 함</small></td><td>정보 없음</td><td>{row.start_date ? `${dateText(row.start_date)} ~ ${dateText(row.end_date ?? row.current_date)}` : "설정 기록 없음"}</td><td>{row.position_count}</td><td>{row.trade_count}</td><td>{money(row.initial_cash)}</td><td><button className="sim-text-button" onClick={() => { setSelectedLegacy(row); setSelectedDraft(null); }}>보기</button><button className="sim-text-button danger" onClick={() => void removeLegacy(row)}>삭제</button></td></tr>)}</tbody></table></div>}
           </div>
 

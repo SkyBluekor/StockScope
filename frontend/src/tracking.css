@@ -38,5 +38,3 @@
 
 /* TRACK.1.10.3 — manual tracking completion */
 .tracking-manual-preview-wrap{margin-top:18px}.tracking-manual-preview-wrap .tracking-manual-preview{margin-top:0}.tracking-manual-policy-note{margin:0;padding:9px 0 0;color:var(--text-secondary,#9aa1ab);font-size:12px}.tracking-table td:last-child{min-width:180px}.tracking-table td:last-child .tracking-text-button+ .tracking-text-button{margin-left:12px}
-/* UX.1 — relationship between performance tracking and historical validation */
-.tracking-mode-guide{margin:-12px 0 18px;color:var(--text-muted,#7f8792);font-size:12px;line-height:1.55}

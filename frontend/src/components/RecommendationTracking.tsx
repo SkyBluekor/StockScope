@@ -331,11 +331,10 @@ export default function RecommendationTracking() {
   return (
     <section className="tracking-workspace tracking-unified">
       <header className="tracking-head">
-        <div><span>성과 데이터 축적</span><h1>종목 성과 추적</h1><p>이 화면에서 Scanner 종목 찾기를 직접 실행하거나 원하는 종목을 직접 추가해 이후 가격 움직임과 성과를 기록합니다. 쌓인 데이터는 Scanner가 어떤 조건에서 잘 작동했는지 분석하고 개선하는 데 사용됩니다.</p></div>
+        <div><span>종목 성과 기록</span><h1>종목 성과 추적</h1><p>Scanner 후보를 찾거나 원하는 종목을 직접 추가해 이후 성과를 기록하고 Scanner 개선에 활용합니다.</p></div>
         <div className="tracking-summary"><div><strong>{activeCount}</strong><span>추적 중</span></div><button disabled={bulkBusy || activeCount === 0} onClick={() => void refreshAll()}>{bulkBusy ? "반영 중…" : "최신 데이터 반영"}</button></div>
       </header>
 
-      <p className="feature-flow-line">종목 추가 → 이후 움직임 기록 → 성과 축적 → Scanner 개선 자료</p>
       <div className="tracking-meta-line"><span>최근 반영 {dateText(lastMarketDate)}</span><span>시작일 다음 거래일부터 성과 계산</span></div>
       {message && <div className="tracking-notice">{message}</div>}
 
@@ -365,7 +364,6 @@ export default function RecommendationTracking() {
 
       <section className="tracking-source tracking-search-primary">
         <div className="tracking-section-head"><div><span>직접 추가</span><h2>원하는 종목 직접 찾기</h2></div><small>종목명 또는 코드만 입력 · 기준일과 기준가는 자동</small></div>
-        <p className="feature-section-help">Scanner 추천이 아니어도 관심 있는 종목을 직접 추가해 같은 기준으로 관찰할 수 있습니다.</p>
         <div className="tracking-manual-search"><input value={manualQuery} onChange={(e) => setManualQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void runManualSearch(); }} placeholder="예: 삼성전자 또는 005930" /><button disabled={manualBusy} onClick={() => void runManualSearch()}>{manualBusy ? "검색 중…" : "검색"}</button></div>
         {manualRows.length > 0 && <div className="tracking-search-results">{manualRows.map((item) => {
           const key = `${item.market}:${item.code}`;
@@ -378,8 +376,7 @@ export default function RecommendationTracking() {
 
       <section className="tracking-list tracking-list-always">
         <div className="tracking-section-head"><div><span>저장된 기록</span><h2>추적 중인 종목과 기록</h2></div><small>종목 · 출처 · 시작 기준 · 현재 상태를 한 화면에서 확인</small></div>
-        <div className="feature-definition-line"><span><strong>추천</strong> Scanner가 찾은 종목</span><span><strong>직접</strong> 사용자가 추가한 종목</span><span><strong>추천 · 직접</strong> 같은 기준일·가격에서 두 조건이 모두 해당</span></div>
-        <div className="tracking-list-filters"><div>{(["ALL", "SCANNER", "MANUAL"] as SourceFilter[]).map((value) => <button key={value} className={sourceFilter === value ? "active" : ""} onClick={() => setSourceFilter(value)}>{value === "ALL" ? "전체" : value === "SCANNER" ? "추천" : "직접"} <small>{sourceCounts[value]}</small></button>)}</div><div>{(["ALL", "ACTIVE", "CLOSED"] as StatusFilter[]).map((value) => <button key={value} className={statusFilter === value ? "active" : ""} onClick={() => setStatusFilter(value)}>{value === "ALL" ? "전체 상태" : value === "ACTIVE" ? "추적 중" : "종료"} <small>{statusCounts[value]}</small></button>)}</div></div>
+        <div className="tracking-list-filters"><div>{(["ALL", "SCANNER", "MANUAL"] as SourceFilter[]).map((value) => <button key={value} title={value === "SCANNER" ? "Scanner가 찾은 종목" : value === "MANUAL" ? "직접 추가한 종목" : "모든 추적 종목"} className={sourceFilter === value ? "active" : ""} onClick={() => setSourceFilter(value)}>{value === "ALL" ? "전체" : value === "SCANNER" ? "추천" : "직접"} <small>{sourceCounts[value]}</small></button>)}</div><div>{(["ALL", "ACTIVE", "CLOSED"] as StatusFilter[]).map((value) => <button key={value} className={statusFilter === value ? "active" : ""} onClick={() => setStatusFilter(value)}>{value === "ALL" ? "전체 상태" : value === "ACTIVE" ? "추적 중" : "종료"} <small>{statusCounts[value]}</small></button>)}</div></div>
         {visibleRows.length === 0 ? <div className="tracking-empty tracking-empty-action"><strong>{rows.length === 0 ? "아직 추적 중인 종목이 없습니다." : "현재 필터에 맞는 추적 기록이 없습니다."}</strong><span>{rows.length === 0 ? "위 종목 찾기에서 추천 후보를 선택하거나 원하는 종목을 직접 추가해 추적을 시작할 수 있습니다." : "다른 출처 또는 상태 필터를 선택해보세요."}</span></div> : (
           <div className="tracking-table-wrap"><table className="tracking-table"><thead><tr><th>종목</th><th>출처</th><th>시작일</th><th title="추적을 시작한 거래일의 확정 종가">기준가</th><th title="가장 최근 반영된 확정 종가">현재가</th><th title="기준가 대비 최신 성과">현재</th><th title="추적 시작 이후 가장 많이 상승했던 폭">최대 상승</th><th title="추적 시작 이후 가장 많이 하락했던 폭">최대 하락</th><th>경과</th><th>상태</th><th>관리</th></tr></thead><tbody>
             {visibleRows.map((row) => <Fragment key={row.id}>

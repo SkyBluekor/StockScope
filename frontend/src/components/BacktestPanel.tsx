@@ -362,6 +362,9 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
   const activeValidationJobId = useRef<string | null>(null);
   const workspaceTopRef = useRef<HTMLDivElement | null>(null);
   const [scannerContext, setScannerContext] = useState<ScannerAnalysisContext | null>(() => readScannerAnalysisContext(code));
+  const [showStrategyGuides, setShowStrategyGuides] = useState(false);
+  const [showComparisonCriteria, setShowComparisonCriteria] = useState(false);
+  const [showAdvancedResearch, setShowAdvancedResearch] = useState(false);
 
   useEffect(() => {
     setStockQuery(stockName ? `${stockName} (${code})` : code);
@@ -585,40 +588,20 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
     <section className="backtest-workspace multi-strategy-workspace" ref={workspaceTopRef}>
       <header className="multi-strategy-header">
         <div>
-          <span>STRATEGY SELECTOR · v0.21.4-B.1.1</span>
-          <h1>10가지 투자 방법 자동 비교</h1>
-          <p>현재 가능한 전략을 먼저 찾고, 같은 과거 데이터의 성과는 그 다음 비교 근거로 사용합니다. 현재 판단과 과거 1위를 같은 의미로 섞지 않습니다.</p>
-        </div>
-        <div className="multi-strategy-flow" aria-label="전략 자동 검증 흐름">
-          <span>1 · 종목 선택</span><i>→</i><span>2 · 현재 가능 전략 확인</span><i>→</i><span>3 · 과거 성과 비교</span>
+          <h1>종목 과거 성과</h1>
+          <p>같은 종목과 기간에서 10가지 전략의 과거 성과를 비교합니다.</p>
         </div>
       </header>
 
-      <nav className="backtest-subnav" aria-label="전략 검증 단계">
-        <button type="button" className={view === "setup" ? "active" : ""} onClick={() => { setView("setup"); scrollTop(); }}>1 · 설정</button>
-        <button type="button" className={view === "result" ? "active" : ""} disabled={!busy && !result && !error} onClick={() => { setView("result"); scrollTop(); }}>2 · 결과</button>
+      <nav className="backtest-subnav" aria-label="과거 성과 비교 화면">
+        <button type="button" className={view === "setup" ? "active" : ""} onClick={() => { setView("setup"); scrollTop(); }}>설정</button>
+        <button type="button" className={view === "result" ? "active" : ""} disabled={!busy && !result && !error} onClick={() => { setView("result"); scrollTop(); }}>결과</button>
       </nav>
 
       {view === "setup" && (
         <div className="multi-strategy-setup">
-          <section className="multi-strategy-purpose">
-            <div>
-              <span>이 기능으로 무엇을 해결하나요?</span>
-              <strong>“이 종목에서는 어떤 방법을 쓰는 게 맞지?”를 사용자가 직접 고르지 않게 합니다.</strong>
-              <p>과거에 잘 맞았는지, 지금 시장과 맞는지, 현재 진입 조건이 준비됐는지를 StockScope가 계산한 뒤 쉬운 행동 안내로 정리합니다.</p>
-            </div>
-            <div className="multi-strategy-chip-list">
-              {strategyGuides.map((guide) => (
-                <span key={guide.professional}>
-                  <b>{guide.easy}</b>
-                  <small>{guide.professional} 전략</small>
-                </span>
-              ))}
-            </div>
-          </section>
-
           <section className="backtest-settings-card">
-            <div className="backtest-section-title"><span>검증 설정</span><strong>10가지 방법은 StockScope가 자동으로 전부 비교합니다.</strong></div>
+            <div className="backtest-section-title"><span>검증 설정</span><strong>종목과 기간을 정하고 과거 성과를 비교합니다.</strong></div>
             <div className="backtest-stock-picker">
               <label htmlFor="backtest-stock-search">검증 종목</label>
               <div className="backtest-stock-search-box">
@@ -667,8 +650,20 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
               <p className="holding-explanation">{holdingDescription}</p>
             </div>
 
-            <details className="backtest-policy-details">
-              <summary><span>공정하게 비교하기 위해 어떤 조건을 같게 하나요?</span><DetailToggleText closed="기준 보기 ▼" open="기준 숨기기 ▲" /></summary>
+            <details className="backtest-policy-details" open={showStrategyGuides}>
+              <summary onClick={(event) => { event.preventDefault(); setShowStrategyGuides((open) => !open); }}><span>비교할 전략 10개 보기</span><DetailToggleText closed="전략 보기 ▼" open="전략 숨기기 ▲" /></summary>
+              <div className="multi-strategy-chip-list">
+                {strategyGuides.map((guide) => (
+                  <span key={guide.professional}>
+                    <b>{guide.easy}</b>
+                    <small>{guide.professional} 전략</small>
+                  </span>
+                ))}
+              </div>
+            </details>
+
+            <details className="backtest-policy-details" open={showComparisonCriteria}>
+              <summary onClick={(event) => { event.preventDefault(); setShowComparisonCriteria((open) => !open); }}><span>공정 비교 기준</span><DetailToggleText closed="기준 보기 ▼" open="기준 숨기기 ▲" /></summary>
               <div className="multi-strategy-method-brief">
                 <p><b>과거 데이터</b> 10개 전략이 같은 KRX 데이터 한 벌을 사용합니다.</p>
                 <p><b>진입 가격</b> 신호 다음 거래일 시가를 사용합니다.</p>
@@ -678,13 +673,12 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
             </details>
 
             <div className="backtest-run-row multi-strategy-run-row">
-              <div><strong>투자 방법을 직접 고를 필요가 없습니다.</strong><span>10가지 방법을 자동으로 비교하고 결과 화면에서 왜 이 방법이 맞는지와 지금 사용자가 해야 할 일을 보여줍니다.</span></div>
-              <button type="button" disabled={busy || !code.trim() || stockSelectionDirty} onClick={() => void runBacktest()}>{busy ? "10가지 방법 분석 중..." : "10가지 방법 자동 비교 시작"}</button>
+              <button type="button" disabled={busy || !code.trim() || stockSelectionDirty} onClick={() => void runBacktest()}>{busy ? "과거 성과 비교 중..." : "과거 성과 비교"}</button>
             </div>
             {error && <div className="backtest-error"><strong>실행 실패</strong><span>{error}</span></div>}
           </section>
-          <details className="exit-validation-panel">
-            <summary><span>연구용 · Exit 정책 검증</span><DetailToggleText closed="검증 열기 ▼" open="검증 닫기 ▲" /></summary>
+          <details className="exit-validation-panel" open={showAdvancedResearch}>
+            <summary onClick={(event) => { event.preventDefault(); setShowAdvancedResearch((open) => !open); }}><span>고급 검증 · Exit 정책 연구</span><DetailToggleText closed="열기 ▼" open="닫기 ▲" /></summary>
             <div className="exit-validation-body">
               <div className="exit-validation-intro">
                 <div><strong>Target2 이후 어떤 Exit 방식이 실제로 더 나은지 검증합니다.</strong><p>로컬 Market Store에 충분한 데이터가 있는 종목만 자동 선택합니다. 이 검증은 KRX 네트워크를 추가 호출하지 않으며 현재 실제 매도 정책도 바꾸지 않습니다.</p></div>

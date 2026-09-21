@@ -821,22 +821,17 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
 
   return (
     <div className="scanner-workspace">
-      <section className="scanner-hero">
+      <section className="scanner-hero ux13-scanner-header">
         <div>
-          <span className="eyebrow">STOCK SCANNER · v0.21.4-B.2.4</span>
-          <h1>오늘 어떤 종목을 먼저 볼까요?</h1>
-          <p>종목을 직접 고르기 전에 현재 조건을 먼저 보고, Risk·진입 기준까지의 거리·현재 전략 적합도로 우선순위를 정합니다. 같은 전략의 3년 과거 근거는 현재 판단과 분리해 참고로 보여줍니다.</p>
-        </div>
-        <div className="scanner-flow" aria-label="종목 찾기 흐름">
-          <span>1 · 시장 전체 빠른 검사</span><i>→</i><span>2 · 현재 전략·Risk 확인</span><i>→</i><span>3 · 우선순위 + 3년 참고 근거</span>
+          <h1>종목 후보 찾기</h1>
+          <p>현재 시장 조건에 맞는 후보를 찾습니다.</p>
         </div>
       </section>
 
       <section className="scanner-control-card">
         <div>
-          <span>검색 시장</span>
-          <strong>일반 주식 중심으로 찾습니다.</strong>
-          <p>우선주·SPAC·ETF·ETN·거래정지·데이터 부족 종목은 기본 후보에서 제외합니다.</p>
+          <strong>시장 선택</strong>
+          <p>일반 상장주 중심 · ETF·ETN·SPAC 등은 기본 후보에서 제외합니다.</p>
         </div>
         <div className="scanner-market-tabs" role="group" aria-label="검색 시장 선택">
           {(["ALL", "KOSPI", "KOSDAQ"] as MarketScope[]).map((value) => (
@@ -853,7 +848,7 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
             </div>
           ) : (
             <button type="button" className="scanner-run-button" onClick={() => void runScanner(false)} disabled={busy}>
-              {jobBusy && String(job?.stage || "").startsWith("scanner_prepare") ? "최신 시세 확인 중..." : jobBusy ? "후보 찾는 중..." : "오늘의 후보 찾기"}
+              {jobBusy && String(job?.stage || "").startsWith("scanner_prepare") ? "최신 시세 확인 중..." : jobBusy ? "후보 찾는 중..." : "후보 찾기"}
             </button>
           )}
           {jobBusy && <button type="button" className="scanner-cancel-button" onClick={() => void cancel()}>중지</button>}
@@ -981,9 +976,9 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
       )}
 
       {!result && !busy && !error && !freshnessFailure && (
-        <section className="scanner-empty-start">
-          <strong>전략을 먼저 고를 필요가 없습니다.</strong>
-          <p>버튼 한 번으로 시장 전체를 빠르게 거른 뒤, 조건이 좋은 종목만 10가지 전략과 Risk Engine으로 다시 확인합니다.</p>
+        <section className="scanner-empty-start ux13-scanner-empty">
+          <strong>후보 결과</strong>
+          <p>아직 후보가 없습니다.</p>
         </section>
       )}
 
@@ -1041,7 +1036,7 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
 
           <section className="scanner-section-head">
             <div>
-              <span>오늘 먼저 볼 후보</span>
+              <span>후보 결과</span>
               <h2>{result.candidates.length > 0 ? `${result.candidates.length}개를 먼저 확인하세요.` : noAnalyzedData ? "아직 후보를 판단하지 못했습니다." : "현재 조건에 맞는 후보가 없습니다."}</h2>
               <p>순위는 상승 확률이 아닙니다. 현재 조건을 먼저 보고 Risk, 실제 진입 기준까지의 거리, 같은 전략의 3년 과거 근거 순으로 비교해 먼저 확인할 순서를 정합니다.</p>
             </div>
