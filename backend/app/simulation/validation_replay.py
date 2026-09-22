@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 from time import perf_counter
+from types import FunctionType
 from typing import Any, Callable
 
 from app.backtest.market_store import HistoricalMarketStore
@@ -16,6 +17,52 @@ from .validation_catalog import (
 
 
 ProgressCallback = Callable[[dict[str, Any]], None]
+
+
+# PERF.1 — isolate Production reproducibility audit from Historical Replay
+def _skip_replay_reproducibility_audit(**kwargs: Any) -> dict[str, Any]:
+    analysis_date = kwargs.get("analysis_date")
+    analysis_text = (
+        analysis_date.isoformat()
+        if hasattr(analysis_date, "isoformat")
+        else str(analysis_date or "")
+    )
+    return {
+        "written": False,
+        "skipped": "historical_validation_replay",
+        "analysis_date": analysis_text,
+        "result_source": "historical_validation_replay",
+    }
+
+
+def _clone_scanner_run_for_replay():
+    # Exact frozen Production Scanner.run code object; only this clone's
+    # globals map replaces the heavy reproducibility-audit writer.
+    production_run = StockScannerService.run
+    replay_globals = dict(production_run.__globals__)
+    if "write_scanner_reproducibility_audit" not in replay_globals:
+        raise RuntimeError("Production Scanner.run audit dependency was not found.")
+
+    replay_globals["write_scanner_reproducibility_audit"] = (
+        _skip_replay_reproducibility_audit
+    )
+    replay_run = FunctionType(
+        production_run.__code__,
+        replay_globals,
+        name=production_run.__name__,
+        argdefs=production_run.__defaults__,
+        closure=production_run.__closure__,
+    )
+    replay_run.__kwdefaults__ = dict(production_run.__kwdefaults__ or {})
+    replay_run.__annotations__ = dict(production_run.__annotations__)
+    replay_run.__doc__ = production_run.__doc__
+    replay_run.__module__ = __name__
+    replay_run.__qualname__ = "_ReplayStockScannerService.run"
+    return replay_run
+
+
+class _ReplayStockScannerService(StockScannerService):
+    run = _clone_scanner_run_for_replay()
 
 
 class HistoricalValidationReplayError(RuntimeError):
@@ -68,7 +115,7 @@ class HistoricalValidationReplayService:
         self.scanner_factory = scanner_factory or self._production_scanner
 
     def _production_scanner(self) -> StockScannerService:
-        return StockScannerService(
+        return _ReplayStockScannerService(
             _ReplayLocalOnlyKrxProvider(),
             market_store=self.market_store,
         )

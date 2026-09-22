@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import asdict
 import os
 from pathlib import Path
 
@@ -20,6 +21,13 @@ from app.simulation.validation_catalog import HistoricalValidationCatalog, Valid
 from app.simulation.validation_replay import (
     HistoricalValidationReplayError,
     HistoricalValidationReplayService,
+)
+from app.backtest.production_exit_policy import production_policy_cache_token
+from app.simulation.execution_catalog import ExecutionCatalogError, HistoricalExecutionCatalog
+from app.simulation.execution_engine import HistoricalExecutionEngine
+from app.simulation.execution_service import (
+    ExecutionValidationError,
+    HistoricalExecutionValidationService,
 )
 
 router = APIRouter()
@@ -392,8 +400,296 @@ def list_validation_days(validation_id: str):
     return [_validation_day_payload(day) for day in catalog.list_days(validation_id)]
 
 
+# --- VAL.2-D: execution validation API lifecycle ---------------------------
+
+_execution_validation_tasks: dict[str, asyncio.Task] = {}
+
+
+def _execution_catalog() -> HistoricalExecutionCatalog:
+    catalog = HistoricalExecutionCatalog(_repository().db_path)
+    catalog.initialize()
+    return catalog
+
+
+def _execution_validation_service() -> HistoricalExecutionValidationService:
+    provider = HistoricalMarketStoreProvider()
+    catalog = _execution_catalog()
+    engine = HistoricalExecutionEngine(catalog, provider.store)
+    return HistoricalExecutionValidationService(catalog, engine)
+
+
+def _execution_task_active(execution_run_id: str) -> bool:
+    task = _execution_validation_tasks.get(execution_run_id)
+    if task is None:
+        return False
+    if task.done():
+        _execution_validation_tasks.pop(execution_run_id, None)
+        return False
+    return True
+
+
+def _execution_run_payload(item):
+    payload = asdict(item)
+    payload["runtime_active"] = _execution_task_active(item.id)
+    return payload
+
+
+def _execution_outcome_payload(item):
+    return asdict(item)
+
+
+def _execution_http_error(code: str, message: str) -> None:
+    if code in {"VAL2_RUN_NOT_FOUND", "VAL2_SOURCE_NOT_FOUND"}:
+        status = 404
+    elif code in {
+        "VAL2_SOURCE_NOT_COMPLETED",
+        "VAL2_RUN_ALREADY_RUNNING",
+        "VAL2_RUN_ALREADY_COMPLETED",
+        "VAL2_RUN_INVALID_STATUS",
+        "VAL2_RUN_INCOMPLETE",
+    }:
+        status = 409
+    else:
+        status = 422
+    raise HTTPException(
+        status_code=status,
+        detail={"code": code, "message": message},
+    )
+
+
+async def _run_execution_background(execution_run_id: str) -> None:
+    try:
+        await _execution_validation_service().run(
+            execution_run_id,
+            preclaimed=True,
+        )
+    except asyncio.CancelledError:
+        catalog = _execution_catalog()
+        item = catalog.get_run(execution_run_id)
+        if item is not None and item.status == "RUNNING":
+            catalog.mark_failed(
+                execution_run_id,
+                "VAL2_RUN_INTERRUPTED",
+                "Execution Validation background task가 중단되었습니다. "
+                "완료된 candidate부터 이어 실행할 수 있습니다.",
+            )
+        raise
+    except ExecutionValidationError:
+        pass
+    except Exception as exc:
+        catalog = _execution_catalog()
+        item = catalog.get_run(execution_run_id)
+        if item is not None and item.status == "RUNNING":
+            catalog.mark_failed(
+                execution_run_id,
+                "VAL2_EXECUTION_UNEXPECTED",
+                f"Execution Validation background task에서 예상하지 못한 오류가 발생했습니다: {exc}",
+            )
+    finally:
+        current = asyncio.current_task()
+        if _execution_validation_tasks.get(execution_run_id) is current:
+            _execution_validation_tasks.pop(execution_run_id, None)
+
+
+class ExecutionValidationRequest(BaseModel):
+    market_data_cutoff_date: str
+
+
+@router.post(
+    "/simulation/validations/{validation_id}/executions",
+    status_code=201,
+    tags=["simulation-execution-validation"],
+)
+def create_execution_validation(
+    validation_id: str,
+    request: ExecutionValidationRequest,
+):
+    try:
+        run = _execution_catalog().create_run(
+            validation_id=validation_id,
+            market_data_cutoff_date=request.market_data_cutoff_date,
+            production_exit_policy_token=production_policy_cache_token(),
+        )
+    except ExecutionCatalogError as exc:
+        _execution_http_error(exc.code, exc.message)
+    return _execution_run_payload(run)
+
+
+@router.get(
+    "/simulation/validations/{validation_id}/executions",
+    tags=["simulation-execution-validation"],
+)
+def list_execution_validations(validation_id: str):
+    validation = _validation_catalog().get(validation_id)
+    if validation is None:
+        _execution_http_error(
+            "VAL2_SOURCE_NOT_FOUND",
+            "VAL.2 source Historical Validation을 찾을 수 없습니다.",
+        )
+    return [
+        _execution_run_payload(item)
+        for item in _execution_catalog().list_runs(validation_id)
+    ]
+
+
+@router.get(
+    "/simulation/executions/{execution_run_id}",
+    tags=["simulation-execution-validation"],
+)
+def get_execution_validation(execution_run_id: str):
+    item = _execution_catalog().get_run(execution_run_id)
+    if item is None:
+        _execution_http_error(
+            "VAL2_RUN_NOT_FOUND",
+            "Execution Validation run을 찾을 수 없습니다.",
+        )
+    return _execution_run_payload(item)
+
+
+@router.post(
+    "/simulation/executions/{execution_run_id}/run",
+    status_code=202,
+    tags=["simulation-execution-validation"],
+)
+async def run_execution_validation(execution_run_id: str):
+    catalog = _execution_catalog()
+    item = catalog.get_run(execution_run_id)
+    if item is None:
+        _execution_http_error(
+            "VAL2_RUN_NOT_FOUND",
+            "Execution Validation run을 찾을 수 없습니다.",
+        )
+
+    if _execution_task_active(execution_run_id):
+        _execution_http_error(
+            "VAL2_RUN_ALREADY_RUNNING",
+            "이미 실행 중인 Execution Validation입니다.",
+        )
+
+    if item.status == "COMPLETED":
+        _execution_http_error(
+            "VAL2_RUN_ALREADY_COMPLETED",
+            "이미 완료된 Execution Validation입니다.",
+        )
+
+    if item.status == "RUNNING":
+        catalog.mark_failed(
+            execution_run_id,
+            "VAL2_RUN_INTERRUPTED",
+            "이전 서버 프로세스에서 실행이 중단되었습니다. "
+            "완료된 candidate부터 이어 실행합니다.",
+        )
+
+    try:
+        claimed = catalog.begin_run(execution_run_id)
+    except ExecutionCatalogError as exc:
+        _execution_http_error(exc.code, exc.message)
+
+    try:
+        task = asyncio.create_task(
+            _run_execution_background(execution_run_id),
+            name=f"execution-validation:{execution_run_id}",
+        )
+        _execution_validation_tasks[execution_run_id] = task
+    except Exception as exc:
+        catalog.mark_failed(
+            execution_run_id,
+            "VAL2_EXECUTION_UNEXPECTED",
+            f"Execution Validation background task를 시작하지 못했습니다: {exc}",
+        )
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "VAL2_EXECUTION_UNEXPECTED",
+                "message": "Execution Validation background task를 시작하지 못했습니다.",
+            },
+        ) from exc
+
+    return {
+        "accepted": True,
+        "id": execution_run_id,
+        "status": claimed.status,
+    }
+
+
+@router.post(
+    "/simulation/executions/{execution_run_id}/cancel",
+    status_code=202,
+    tags=["simulation-execution-validation"],
+)
+async def cancel_execution_validation(execution_run_id: str):
+    catalog = _execution_catalog()
+    item = catalog.get_run(execution_run_id)
+    if item is None:
+        _execution_http_error(
+            "VAL2_RUN_NOT_FOUND",
+            "Execution Validation run을 찾을 수 없습니다.",
+        )
+    if item.status != "RUNNING":
+        _execution_http_error(
+            "VAL2_RUN_INVALID_STATUS",
+            f"실행 중인 Execution Validation만 중지할 수 있습니다: {item.status}",
+        )
+
+    if _execution_task_active(execution_run_id):
+        updated = catalog.request_cancel(execution_run_id)
+        return {
+            "accepted": True,
+            "id": execution_run_id,
+            "status": updated.status,
+            "cancel_requested": updated.cancel_requested,
+        }
+
+    updated = catalog.mark_cancelled(execution_run_id)
+    return {
+        "accepted": True,
+        "id": execution_run_id,
+        "status": updated.status,
+        "cancel_requested": updated.cancel_requested,
+    }
+
+
+@router.get(
+    "/simulation/executions/{execution_run_id}/outcomes",
+    tags=["simulation-execution-validation"],
+)
+def list_execution_outcomes(
+    execution_run_id: str,
+    outcome_status: str | None = Query(default=None),
+):
+    catalog = _execution_catalog()
+    if catalog.get_run(execution_run_id) is None:
+        _execution_http_error(
+            "VAL2_RUN_NOT_FOUND",
+            "Execution Validation run을 찾을 수 없습니다.",
+        )
+    return [
+        _execution_outcome_payload(item)
+        for item in catalog.list_outcomes(
+            execution_run_id,
+            outcome_status=outcome_status,
+        )
+    ]
+
+
 @router.delete("/simulation/validations/{validation_id}", tags=["simulation-validation"])
 def delete_validation_draft(validation_id: str):
+    running_execution = next(
+        (
+            item
+            for item in _execution_catalog().list_runs(validation_id)
+            if item.status == "RUNNING"
+        ),
+        None,
+    )
+    if running_execution is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "VAL2_SOURCE_EXECUTION_RUNNING",
+                "message": "실행 중인 Execution Validation이 있어 VAL.1을 삭제할 수 없습니다.",
+            },
+        )
     try:
         deleted = _validation_catalog().delete(validation_id)
     except ValidationCatalogError as error:
