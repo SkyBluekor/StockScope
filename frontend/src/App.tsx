@@ -7,6 +7,7 @@ import { InvestorStylePanel } from "./components/InvestorStylePanel";
 import BacktestPanel from "./components/BacktestPanel";
 import ScannerPanel from "./components/ScannerPanel";
 import TrackingWorkspace from "./components/TrackingWorkspace";
+import HoldingsWorkspace from "./components/HoldingsWorkspace";
 import {
   fetchHealth,
   fetchMarketDashboard,
@@ -23,7 +24,7 @@ import {
   type StockSearchItem,
 } from "./services/api";
 
-type AppPage = "analysis" | "backtest" | "scanner" | "simulation";
+type AppPage = "analysis" | "backtest" | "scanner" | "simulation" | "holdings";
 type ThemeMode = "light" | "dark";
 
 function initialTheme(): ThemeMode {
@@ -40,6 +41,7 @@ function initialTheme(): ThemeMode {
 
 function pageFromPathname(pathname: string): AppPage {
   const lower = pathname.toLowerCase();
+  if (lower.startsWith("/holdings")) return "holdings";
   if (lower.startsWith("/simulation")) return "simulation";
   if (lower.startsWith("/scanner")) return "scanner";
   if (lower.startsWith("/backtest")) return "backtest";
@@ -485,6 +487,7 @@ const strategyName: Record<string, string> = {
           <button className={`nav-item ${appPage === "backtest" ? "active" : ""}`} onClick={() => navigateApp("backtest")}>종목 과거 성과</button>
           <button className={`nav-item ${appPage === "scanner" ? "active" : ""}`} onClick={() => navigateApp("scanner")}>종목 후보 찾기</button>
           <button className={`nav-item ${appPage === "simulation" ? "active" : ""}`} onClick={() => navigateApp("simulation")}>종목 성과 추적</button>
+          <button className={`nav-item ${appPage === "holdings" ? "active" : ""}`} onClick={() => navigateApp("holdings")}>내 종목 분석</button>
         </nav>
         <div className="header-actions">
           <button
@@ -1945,8 +1948,10 @@ const strategyName: Record<string, string> = {
                 navigateApp("backtest");
               }}
             />
-          ) : (
+          ) : appPage === "simulation" ? (
             <TrackingWorkspace />
+          ) : (
+            <HoldingsWorkspace />
           )}
 
           <footer>
