@@ -42,19 +42,27 @@ def test_simulation_api_exposes_draft_and_delete_contracts():
     for token in [
         "/api/simulation/validation-periods/preview",
         "/api/simulation/validations",
+        "/api/simulation/validations/${encodeURIComponent(id)}/run",
+        "/api/simulation/validations/${encodeURIComponent(id)}/cancel",
+        "/api/simulation/validations/${encodeURIComponent(id)}/days",
         "/api/simulation/legacy-validations",
         "createValidationDraft",
+        "runValidationReplay",
+        "cancelValidationReplay",
+        "listValidationDays",
         "deleteValidationDraft",
         "deleteLegacyValidation",
     ]:
         assert token in text
 
 
-def test_historical_validation_does_not_pretend_old_manual_execution_is_new_engine():
+def test_historical_validation_exposes_replay_lifecycle_without_execution_simulation():
     text = workspace_text()
-    assert "검증 실행 · 준비 중" in text
-    assert "D 신호 → D+1 체결" in text
-    assert "Gap" in text and "Slippage" in text
+    for token in ["과거 Scanner 재생 시작", "이어 실행", "중지", "재생 중…", "processed_day_count", "candidate_count", "runtime_active"]:
+        assert token in text
+    assert "검증 실행 · 준비 중" not in text
+    assert "D 신호 → D+1 체결" not in text
+    assert "Gap·Slippage" not in text
     assert "buySimulationPosition" not in text
     assert "sellSimulationPosition" not in text
 

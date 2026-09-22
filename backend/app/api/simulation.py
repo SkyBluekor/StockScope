@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from pathlib import Path
 
@@ -16,6 +17,10 @@ from app.simulation.sim3_market_provider import HistoricalMarketStoreProvider
 from app.simulation.sim3_store import SimulationPlaybackStore
 from app.simulation.validation_period import HistoricalValidationPeriodResolver, ValidationPeriodError
 from app.simulation.validation_catalog import HistoricalValidationCatalog, ValidationCatalogError
+from app.simulation.validation_replay import (
+    HistoricalValidationReplayError,
+    HistoricalValidationReplayService,
+)
 
 router = APIRouter()
 
@@ -91,6 +96,105 @@ def _validation_catalog() -> HistoricalValidationCatalog:
     catalog = HistoricalValidationCatalog(_repository().db_path)
     catalog.initialize()
     return catalog
+
+
+# VAL.1-C — replay API lifecycle
+_validation_replay_tasks: dict[str, asyncio.Task] = {}
+
+
+def _validation_task_active(validation_id: str) -> bool:
+    task = _validation_replay_tasks.get(validation_id)
+    if task is None:
+        return False
+    if task.done():
+        _validation_replay_tasks.pop(validation_id, None)
+        return False
+    return True
+
+
+def _validation_payload(item):
+    payload = item.to_dict()
+    payload["runtime_active"] = _validation_task_active(item.id)
+    return payload
+
+
+def _validation_day_payload(day):
+    return {
+        "validation_id": day.validation_id,
+        "trading_date": day.trading_date,
+        "status": day.status,
+        "scanner_version": day.scanner_version,
+        "market_scope": day.market_scope,
+        "candidate_count": day.candidate_count,
+        "scanner_cache_hit": day.scanner_cache_hit,
+        "partial_data": day.partial_data,
+        "input_fingerprint": day.input_fingerprint,
+        "result_hash": day.result_hash,
+        "duration_ms": day.duration_ms,
+        "market_summary": day.market_summary,
+        "summary": day.summary,
+        "methodology": day.methodology,
+        "diagnostics": day.diagnostics,
+        "error_code": day.error_code,
+        "error_message": day.error_message,
+        "started_at": day.started_at,
+        "completed_at": day.completed_at,
+    }
+
+
+def _validation_replay_service() -> HistoricalValidationReplayService:
+    provider = HistoricalMarketStoreProvider()
+    return HistoricalValidationReplayService(
+        _validation_catalog(),
+        provider.store,
+    )
+
+
+def _validation_replay_http_error(code: str, message: str) -> None:
+    if code == "VAL_REPLAY_NOT_FOUND":
+        status = 404
+    elif code in {
+        "VAL_REPLAY_ALREADY_RUNNING",
+        "VAL_REPLAY_ALREADY_COMPLETED",
+        "VAL_REPLAY_NOT_RUNNING",
+        "VAL_REPLAY_INVALID_STATUS",
+        "VAL_REPLAY_SCANNER_VERSION_MISMATCH",
+    }:
+        status = 409
+    else:
+        status = 422
+    raise HTTPException(status_code=status, detail={"code": code, "message": message})
+
+
+async def _run_validation_background(validation_id: str) -> None:
+    try:
+        await _validation_replay_service().run(validation_id, preclaimed=True)
+    except asyncio.CancelledError:
+        catalog = _validation_catalog()
+        item = catalog.get(validation_id)
+        if item is not None and item.status == "RUNNING":
+            catalog.mark_replay_failed(
+                validation_id,
+                "VAL_REPLAY_INTERRUPTED",
+                "Historical Validation background task가 중단되었습니다. 완료된 날짜부터 이어 실행할 수 있습니다.",
+            )
+        raise
+    except HistoricalValidationReplayError:
+        # ReplayService records expected replay failures in the validation row.
+        pass
+    except Exception as exc:
+        catalog = _validation_catalog()
+        item = catalog.get(validation_id)
+        if item is not None and item.status == "RUNNING":
+            catalog.mark_replay_failed(
+                validation_id,
+                "VAL_REPLAY_UNEXPECTED",
+                f"Historical Validation background task에서 예상하지 못한 오류가 발생했습니다: {exc}",
+            )
+    finally:
+        current = asyncio.current_task()
+        if _validation_replay_tasks.get(validation_id) is current:
+            _validation_replay_tasks.pop(validation_id, None)
 
 
 def _validation_catalog_error(error: ValidationCatalogError) -> None:
@@ -171,7 +275,7 @@ def create_validation_draft(request: ValidationDraftRequest):
 
 @router.get("/simulation/validations", tags=["simulation-validation"])
 def list_validation_drafts():
-    return [item.to_dict() for item in _validation_catalog().list()]
+    return [_validation_payload(item) for item in _validation_catalog().list()]
 
 
 @router.get("/simulation/validations/{validation_id}", tags=["simulation-validation"])
@@ -179,7 +283,113 @@ def get_validation_draft(validation_id: str):
     item = _validation_catalog().get(validation_id)
     if item is None:
         raise HTTPException(status_code=404, detail={"code": "SIM_VALIDATION_NOT_FOUND", "message": "저장된 검증을 찾을 수 없습니다."})
-    return item.to_dict()
+    return _validation_payload(item)
+
+
+@router.post(
+    "/simulation/validations/{validation_id}/run",
+    status_code=202,
+    tags=["simulation-validation"],
+)
+async def run_validation_replay(validation_id: str):
+    catalog = _validation_catalog()
+    item = catalog.get(validation_id)
+    if item is None:
+        _validation_replay_http_error("VAL_REPLAY_NOT_FOUND", "저장된 검증을 찾을 수 없습니다.")
+
+    if _validation_task_active(validation_id):
+        _validation_replay_http_error("VAL_REPLAY_ALREADY_RUNNING", "이미 실행 중인 검증입니다.")
+
+    if item.status == "COMPLETED":
+        _validation_replay_http_error("VAL_REPLAY_ALREADY_COMPLETED", "이미 완료된 검증입니다.")
+
+    if item.status == "RUNNING":
+        catalog.mark_replay_failed(
+            validation_id,
+            "VAL_REPLAY_INTERRUPTED",
+            "이전 서버 프로세스에서 실행이 중단되었습니다. 완료된 날짜부터 이어 실행합니다.",
+        )
+
+    try:
+        claimed = catalog.begin_replay(validation_id)
+    except ValidationCatalogError as exc:
+        _validation_replay_http_error(exc.code, exc.message)
+
+    try:
+        task = asyncio.create_task(
+            _run_validation_background(validation_id),
+            name=f"historical-validation:{validation_id}",
+        )
+        _validation_replay_tasks[validation_id] = task
+    except Exception as exc:
+        catalog.mark_replay_failed(
+            validation_id,
+            "VAL_REPLAY_UNEXPECTED",
+            f"Historical Validation background task를 시작하지 못했습니다: {exc}",
+        )
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "VAL_REPLAY_UNEXPECTED",
+                "message": "Historical Validation background task를 시작하지 못했습니다.",
+            },
+        ) from exc
+
+    return {
+        "accepted": True,
+        "id": validation_id,
+        "status": claimed.status,
+    }
+
+
+@router.post(
+    "/simulation/validations/{validation_id}/cancel",
+    status_code=202,
+    tags=["simulation-validation"],
+)
+async def cancel_validation_replay(validation_id: str):
+    catalog = _validation_catalog()
+    item = catalog.get(validation_id)
+    if item is None:
+        _validation_replay_http_error("VAL_REPLAY_NOT_FOUND", "저장된 검증을 찾을 수 없습니다.")
+
+    if item.status != "RUNNING":
+        _validation_replay_http_error(
+            "VAL_REPLAY_NOT_RUNNING",
+            f"실행 중인 검증만 중지할 수 있습니다: {item.status}",
+        )
+
+    if _validation_task_active(validation_id):
+        updated = catalog.request_cancel(validation_id)
+        return {
+            "accepted": True,
+            "id": validation_id,
+            "status": updated.status,
+            "cancel_requested": updated.cancel_requested,
+        }
+
+    updated = catalog.mark_replay_cancelled(validation_id)
+    return {
+        "accepted": True,
+        "id": validation_id,
+        "status": updated.status,
+        "cancel_requested": updated.cancel_requested,
+    }
+
+
+@router.get(
+    "/simulation/validations/{validation_id}/days",
+    tags=["simulation-validation"],
+)
+def list_validation_days(validation_id: str):
+    catalog = _validation_catalog()
+    item = catalog.get(validation_id)
+    if item is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "VAL_REPLAY_NOT_FOUND", "message": "저장된 검증을 찾을 수 없습니다."},
+        )
+    return [_validation_day_payload(day) for day in catalog.list_days(validation_id)]
 
 
 @router.delete("/simulation/validations/{validation_id}", tags=["simulation-validation"])

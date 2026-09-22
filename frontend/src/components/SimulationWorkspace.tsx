@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  cancelValidationReplay,
   createValidationDraft,
   deleteLegacyValidation,
   deleteValidationDraft,
+  getValidationDraft,
   listLegacyValidations,
   listValidationDrafts,
   previewValidationPeriod,
+  runValidationReplay,
   SimulationApiError,
   type HistoricalValidationDraft,
   type LegacyValidation,
@@ -33,7 +36,16 @@ function statusLabel(value: string) {
   if (value === "RUNNING") return "실행 중";
   if (value === "COMPLETED") return "완료";
   if (value === "FAILED") return "실패";
+  if (value === "CANCELLED") return "중지됨";
   return value;
+}
+function replayPercent(row: HistoricalValidationDraft) {
+  if (row.trading_day_count <= 0) return 0;
+  return Math.max(0, Math.min(100, Math.round((row.processed_day_count / row.trading_day_count) * 100)));
+}
+function replayStatusLabel(row: HistoricalValidationDraft) {
+  if (row.status === "RUNNING" && row.runtime_active === false) return "실행 중단됨";
+  return statusLabel(row.status);
 }
 
 export default function SimulationWorkspace() {
@@ -50,6 +62,7 @@ export default function SimulationWorkspace() {
   const [selectedLegacy, setSelectedLegacy] = useState<LegacyValidation | null>(null);
   const [busy, setBusy] = useState(false);
   const [savedBusy, setSavedBusy] = useState(false);
+  const [replayBusy, setReplayBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   function defaultName(nextPreset: Preset, nextMarket: "ALL" | "KOSPI" | "KOSDAQ", nextPreview?: ValidationPeriodPreview | null) {
@@ -96,6 +109,35 @@ export default function SimulationWorkspace() {
   useEffect(() => { void loadPreview("1y", "ALL", "", "", true); }, []);
   useEffect(() => { if (mode === "saved") void loadSaved(); }, [mode]);
 
+  useEffect(() => {
+    if (mode !== "saved" || !selectedDraft || selectedDraft.status !== "RUNNING") return;
+    let disposed = false;
+    const validationId = selectedDraft.id;
+
+    async function pollReplay() {
+      try {
+        const next = await getValidationDraft(validationId);
+        if (disposed) return;
+        setSelectedDraft(next);
+        setDrafts((rows) => rows.map((row) => row.id === next.id ? next : row));
+        if (next.status !== "RUNNING") {
+          if (next.status === "COMPLETED") setMessage(`'${next.name}' 과거 Scanner 재생이 완료되었습니다.`);
+          else if (next.status === "CANCELLED") setMessage(`'${next.name}' 과거 Scanner 재생을 중지했습니다.`);
+          else if (next.status === "FAILED") setMessage(next.error_message || `'${next.name}' 과거 Scanner 재생에 실패했습니다.`);
+        }
+      } catch (error) {
+        if (!disposed) setMessage(errorText(error));
+      }
+    }
+
+    void pollReplay();
+    const timer = window.setInterval(() => void pollReplay(), 1500);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [mode, selectedDraft?.id, selectedDraft?.status]);
+
   const periodHint = useMemo(() => {
     if (!preview) return "Market Store의 확정 거래일을 기준으로 실제 범위를 계산합니다.";
     if (!preview.valid) return `현재 ${preview.trading_days} 거래일 · 최소 ${preview.minimum_trading_days} 거래일이 필요합니다.`;
@@ -120,14 +162,54 @@ export default function SimulationWorkspace() {
     if (!preview?.valid || !draftName.trim()) return;
     setBusy(true); setMessage(null);
     try {
-      await createValidationDraft(preset === "custom"
+      const created = await createValidationDraft(preset === "custom"
         ? { name: draftName.trim(), start_month: startMonth, end_month: endMonth, market_scope: marketScope }
         : { name: draftName.trim(), preset, market_scope: marketScope });
+      setSelectedDraft(created);
+      setSelectedLegacy(null);
+      setDrafts((rows) => [created, ...rows.filter((row) => row.id !== created.id)]);
       setMessage(`'${draftName.trim()}' 검증 설정을 저장했습니다.`);
       setMode("saved");
     } catch (error) {
       setMessage(errorText(error));
     } finally { setBusy(false); }
+  }
+
+  async function runReplay(row: HistoricalValidationDraft) {
+    if (replayBusy || row.status === "COMPLETED") return;
+    setReplayBusy(true); setMessage(null);
+    try {
+      await runValidationReplay(row.id);
+      const next = await getValidationDraft(row.id);
+      setSelectedDraft(next);
+      setDrafts((rows) => rows.map((item) => item.id === next.id ? next : item));
+      setMessage(row.status === "DRAFT"
+        ? `'${row.name}' 과거 Scanner 재생을 시작했습니다.`
+        : `'${row.name}' 과거 Scanner 재생을 이어서 시작했습니다.`);
+    } catch (error) {
+      setMessage(errorText(error));
+      try {
+        const next = await getValidationDraft(row.id);
+        setSelectedDraft(next);
+        setDrafts((rows) => rows.map((item) => item.id === next.id ? next : item));
+      } catch { /* request error already shown */ }
+    } finally { setReplayBusy(false); }
+  }
+
+  async function cancelReplay(row: HistoricalValidationDraft) {
+    if (replayBusy || row.status !== "RUNNING") return;
+    setReplayBusy(true); setMessage(null);
+    try {
+      await cancelValidationReplay(row.id);
+      const next = await getValidationDraft(row.id);
+      setSelectedDraft(next);
+      setDrafts((rows) => rows.map((item) => item.id === next.id ? next : item));
+      setMessage(next.status === "CANCELLED"
+        ? `'${row.name}' 과거 Scanner 재생을 중지했습니다.`
+        : `'${row.name}' 중지를 요청했습니다. 현재 거래일 처리 후 멈춥니다.`);
+    } catch (error) {
+      setMessage(errorText(error));
+    } finally { setReplayBusy(false); }
   }
 
   async function removeDraft(row: HistoricalValidationDraft) {
@@ -163,7 +245,7 @@ export default function SimulationWorkspace() {
   return (
     <section className="simulation-workspace sim-validation-foundation">
       <header className="sim-page-head">
-        <div><span className="sim-eyebrow">Scanner 전략 전체 검증</span><h1>전략 성과 검증</h1><p>Scanner 전략을 과거 시장에 적용해 전체 성과를 검증합니다.</p></div>
+        <div><span className="sim-eyebrow">Scanner 전략 전체 검증</span><h1>전략 성과 검증</h1><p>과거 시점의 Production Scanner 판단을 실제 거래일별로 재현합니다.</p></div>
         {preview && <div className="sim-date-block"><span>Market Store 최신</span><strong>{dateText(preview.market_data_latest_date)}</strong><small>{preview.partial_end_month ? "현재 월은 확보된 거래일까지" : "확정 데이터 기준"}</small></div>}
       </header>
 
@@ -216,9 +298,8 @@ export default function SimulationWorkspace() {
           <button className="sim-primary" disabled={busy || !preview?.valid || !draftName.trim()} onClick={() => void saveDraft()}>{busy ? "처리 중…" : "설정 저장"}</button>
         </section>
 
-        <section className="sim-validation-block sim-execution-pending">
-          <div><span className="sim-section-kicker">실행 정책</span><h2>실제 검증 실행은 다음 단계에서 연결합니다.</h2><p>D 신호 → D+1 체결, Gap·Slippage·수수료·Stop/Target 우선순위를 고정한 실행 정책이 완성되기 전에는 기존 수동 체결을 새 전략 검증처럼 실행하지 않습니다.</p></div>
-          <button className="sim-primary" disabled>검증 실행 · 준비 중</button>
+        <section className="sim-validation-block sim-replay-intro">
+          <div><span className="sim-section-kicker">과거 Scanner 재생</span><h2>저장 후 실제 거래일별 판단을 재현합니다.</h2><p>선택한 날짜 당시까지 Market Store에 저장된 데이터만 사용합니다. 거래 체결과 수익률 평가는 다음 검증 단계에서 수행합니다.</p></div>
         </section>
       </> : <section className="sim-validation-block">
         <div className="sim-section-head"><div><span className="sim-section-kicker">보존 데이터</span><h2>저장된 검증</h2></div><button className="sim-secondary" onClick={startNew}>+ 새 검증</button></div>
@@ -227,10 +308,34 @@ export default function SimulationWorkspace() {
         {savedBusy ? <div className="sim-empty">불러오는 중…</div> : <>
           <div className="sim-saved-group">
             <div className="sim-saved-group-head"><strong>새 Historical Validation</strong><span>{drafts.length}개</span></div>
-            {drafts.length === 0 ? <div className="sim-empty"><strong>저장된 새 검증이 없습니다.</strong><span>+ 새 검증에서 설정을 저장하면 여기에 나타납니다.</span></div> : <div className="sim-table-wrap"><table className="sim-table sim-saved-table"><thead><tr><th>이름</th><th>대상</th><th>시장</th><th>기간</th><th>거래일</th><th>상태</th><th>관리</th></tr></thead><tbody>{drafts.map((row) => <tr key={row.id} className={selectedDraft?.id === row.id ? "selected" : undefined}><td><strong>{row.name}</strong><small>Scanner {row.scanner_version}</small></td><td>Production Scanner</td><td>{marketLabel(row.market_scope)}</td><td>{row.requested_start_month} ~ {row.requested_end_month}</td><td>{row.trading_day_count}</td><td>{statusLabel(row.status)}</td><td><button className="sim-text-button" onClick={() => { setSelectedDraft(row); setSelectedLegacy(null); }}>열기</button><button className="sim-text-button danger" onClick={() => void removeDraft(row)}>삭제</button></td></tr>)}</tbody></table></div>}
+            {drafts.length === 0 ? <div className="sim-empty"><strong>저장된 새 검증이 없습니다.</strong><span>+ 새 검증에서 설정을 저장하면 여기에 나타납니다.</span></div> : <div className="sim-table-wrap"><table className="sim-table sim-saved-table"><thead><tr><th>이름</th><th>대상</th><th>시장</th><th>기간</th><th>진행</th><th>상태</th><th>관리</th></tr></thead><tbody>{drafts.map((row) => <tr key={row.id} className={selectedDraft?.id === row.id ? "selected" : undefined}><td><strong>{row.name}</strong><small>Scanner {row.scanner_version}</small></td><td>Production Scanner</td><td>{marketLabel(row.market_scope)}</td><td>{row.requested_start_month} ~ {row.requested_end_month}</td><td>{row.processed_day_count ?? 0} / {row.trading_day_count}</td><td>{replayStatusLabel(row)}</td><td><button className="sim-text-button" onClick={() => { setSelectedDraft(row); setSelectedLegacy(null); }}>열기</button><button className="sim-text-button danger" disabled={row.status === "RUNNING"} onClick={() => void removeDraft(row)}>삭제</button></td></tr>)}</tbody></table></div>}
           </div>
 
-          {selectedDraft && <div className="sim-saved-detail"><div className="sim-saved-detail-head"><div><span>저장된 검증</span><h3>{selectedDraft.name}</h3></div><strong>{statusLabel(selectedDraft.status)}</strong></div><dl><dt>검증 대상</dt><dd>Production Scanner {selectedDraft.scanner_version}</dd><dt>시장</dt><dd>{marketLabel(selectedDraft.market_scope)}</dd><dt>요청 기간</dt><dd>{selectedDraft.requested_start_month} ~ {selectedDraft.requested_end_month}</dd><dt>실제 기간</dt><dd>{dateText(selectedDraft.resolved_start_date)} ~ {dateText(selectedDraft.resolved_end_date)}</dd><dt>검증 대상</dt><dd>{selectedDraft.trading_day_count} 거래일</dd><dt>생성일</dt><dd>{dateText(selectedDraft.created_at.slice(0, 10))}</dd></dl></div>}
+          {selectedDraft && <div className="sim-saved-detail sim-replay-detail">
+            <div className="sim-saved-detail-head"><div><span>저장된 검증</span><h3>{selectedDraft.name}</h3></div><strong>{replayStatusLabel(selectedDraft)}</strong></div>
+            <dl><dt>검증 대상</dt><dd>Production Scanner {selectedDraft.scanner_version}</dd><dt>시장</dt><dd>{marketLabel(selectedDraft.market_scope)}</dd><dt>실제 기간</dt><dd>{dateText(selectedDraft.resolved_start_date)} ~ {dateText(selectedDraft.resolved_end_date)}</dd><dt>생성일</dt><dd>{dateText(selectedDraft.created_at.slice(0, 10))}</dd></dl>
+
+            <div className="sim-replay-status">
+              <div className="sim-replay-progress-head"><span>과거 Scanner 재생</span><strong>{selectedDraft.processed_day_count ?? 0} / {selectedDraft.trading_day_count} 거래일 · {replayPercent(selectedDraft)}%</strong></div>
+              <div className="sim-replay-progress" aria-label={`재생 진행률 ${replayPercent(selectedDraft)}%`}><span style={{ width: `${replayPercent(selectedDraft)}%` }} /></div>
+              <div className="sim-replay-metrics">
+                <div><span>최근 완료일</span><strong>{dateText(selectedDraft.last_completed_date)}</strong></div>
+                <div><span>누적 후보</span><strong>{selectedDraft.candidate_count ?? 0}</strong></div>
+                <div><span>실행 상태</span><strong>{replayStatusLabel(selectedDraft)}</strong></div>
+              </div>
+
+              {selectedDraft.status === "FAILED" && <div className="sim-replay-error"><strong>{selectedDraft.error_code || "VAL_REPLAY_FAILED"}</strong><span>{selectedDraft.error_message || "과거 Scanner 재생에 실패했습니다."}</span></div>}
+              {selectedDraft.status === "RUNNING" && selectedDraft.runtime_active === false && <p className="sim-replay-note">이전 실행 프로세스가 종료되었습니다. 완료된 날짜는 보존되어 있으며 이어서 실행할 수 있습니다.</p>}
+              {selectedDraft.status === "CANCELLED" && <p className="sim-replay-note">완료된 날짜까지 저장되었습니다. 이어 실행하면 다음 미완료 거래일부터 계속합니다.</p>}
+              {selectedDraft.status === "COMPLETED" && <p className="sim-replay-note">모든 대상 거래일의 Scanner 판단 저장이 완료되었습니다. 체결·수익률 평가는 다음 검증 단계에서 수행합니다.</p>}
+
+              <div className="sim-replay-actions">
+                {selectedDraft.status === "DRAFT" && <button className="sim-primary" disabled={replayBusy} onClick={() => void runReplay(selectedDraft)}>{replayBusy ? "시작 중…" : "과거 Scanner 재생 시작"}</button>}
+                {(selectedDraft.status === "FAILED" || selectedDraft.status === "CANCELLED" || (selectedDraft.status === "RUNNING" && selectedDraft.runtime_active === false)) && <button className="sim-primary" disabled={replayBusy} onClick={() => void runReplay(selectedDraft)}>{replayBusy ? "시작 중…" : "이어 실행"}</button>}
+                {selectedDraft.status === "RUNNING" && selectedDraft.runtime_active !== false && <><span className="sim-replay-running">재생 중…</span><button className="sim-secondary" disabled={replayBusy || selectedDraft.cancel_requested} onClick={() => void cancelReplay(selectedDraft)}>{selectedDraft.cancel_requested ? "중지 요청됨" : replayBusy ? "처리 중…" : "중지"}</button></>}
+              </div>
+            </div>
+          </div>}
 
           <div className="sim-saved-group sim-legacy-group">
             <div className="sim-saved-group-head"><strong>이전 수동 Simulation</strong><span>{legacy.length}개</span></div>

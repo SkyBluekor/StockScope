@@ -234,9 +234,47 @@ export type HistoricalValidationDraft = {
   resolved_start_date: string;
   resolved_end_date: string;
   trading_day_count: number;
-  status: "DRAFT" | "RUNNING" | "COMPLETED" | "FAILED" | string;
+  status: "DRAFT" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED" | string;
   created_at: string;
   updated_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  processed_day_count: number;
+  candidate_count: number;
+  last_completed_date: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  cancel_requested: boolean;
+  runtime_active?: boolean;
+};
+
+export type HistoricalValidationDay = {
+  validation_id: string;
+  trading_date: string;
+  status: string;
+  scanner_version: string;
+  market_scope: string;
+  candidate_count: number;
+  scanner_cache_hit: boolean;
+  partial_data: boolean;
+  input_fingerprint: unknown;
+  result_hash: string | null;
+  duration_ms: number;
+  market_summary: unknown;
+  summary: unknown;
+  methodology: unknown;
+  diagnostics: unknown;
+  error_code: string | null;
+  error_message: string | null;
+  started_at: string;
+  completed_at: string | null;
+};
+
+export type ValidationReplayResponse = {
+  accepted: boolean;
+  id: string;
+  status: string;
+  cancel_requested?: boolean;
 };
 
 export function createValidationDraft(input: {
@@ -258,6 +296,26 @@ export function listValidationDrafts() {
 
 export function getValidationDraft(id: string) {
   return apiJson<HistoricalValidationDraft>(`/api/simulation/validations/${encodeURIComponent(id)}`);
+}
+
+export function runValidationReplay(id: string) {
+  return apiJson<ValidationReplayResponse>(
+    `/api/simulation/validations/${encodeURIComponent(id)}/run`,
+    { method: "POST" },
+  );
+}
+
+export function cancelValidationReplay(id: string) {
+  return apiJson<ValidationReplayResponse>(
+    `/api/simulation/validations/${encodeURIComponent(id)}/cancel`,
+    { method: "POST" },
+  );
+}
+
+export function listValidationDays(id: string) {
+  return apiJson<HistoricalValidationDay[]>(
+    `/api/simulation/validations/${encodeURIComponent(id)}/days`,
+  );
 }
 
 export function deleteValidationDraft(id: string) {
