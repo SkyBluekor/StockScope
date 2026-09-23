@@ -82,4 +82,4 @@ def test_engine_keeps_existing_60_row_technical_path_and_only_supplies_ma120() -
 
 def test_scanner_cache_version_is_bumped_for_changed_decisions() -> None:
     source = SCANNER.read_text(encoding="utf-8")
-    assert 'VERSION = "0.21.3.4"' in source
+    assert 'VERSION = "0.21.3.7"' in source
