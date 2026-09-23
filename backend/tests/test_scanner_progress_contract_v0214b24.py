@@ -51,7 +51,7 @@ def test_prepare_latest_confirmed_data_has_real_progress_and_heartbeat() -> None
 def test_scanner_job_owns_freshness_then_analysis_without_decision_version_bump() -> None:
     scanner_source = _source(SCANNER)
     api_source = _source(API)
-    assert re.search(r'VERSION\s*=\s*"0\.21\.3\.5"', scanner_source)
+    assert re.search(r'VERSION\s*=\s*"0\.21\.3\.7"', scanner_source)
     assert "known_data_date: str | None = None" in api_source
     job_start = api_source.index("async def _run_scanner_job")
     job_end = api_source.index('@router.post("/scanner/freshness")', job_start)
