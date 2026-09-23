@@ -62,6 +62,8 @@ class _FakeEngine:
             "market": config.market,
             "period": {"start": config.start_date, "end": config.end_date},
             "summary": {"trades": 0},
+            "config": {},
+            "methodology": {},
         }
 
 
