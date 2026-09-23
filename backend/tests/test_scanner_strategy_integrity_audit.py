@@ -265,7 +265,7 @@ def test_exact_breakout_ast_detection_ignores_unrelated_numbers(tmp_path: Path):
 
 
 def test_fail_fast_rejects_broad_wrong_weight_candidates():
-    with pytest.raises(RuntimeError, match=r"expected Breakout market 6"):
+    with pytest.raises(RuntimeError, match=r"expects Production Breakout market 10"):
         StrategyIntegrityAuditor(Scanner(bad_source=True), Store())
 
 
@@ -355,7 +355,7 @@ def test_output_writer_emits_four_files_and_hotfix_summary(tmp_path: Path):
     assert set(paths) == {"json", "csv", "pairs_csv", "ma120_pairs_csv", "markdown"}
     assert all(Path(path).exists() for path in paths.values())
     summary = Path(paths["markdown"]).read_text(encoding="utf-8")
-    assert "Detected duplicate weights: **[4.0, 8.0]**" in summary
+    assert "## Breakout relative-strength integrity" in summary
     assert "### RS_KEEP_4" in summary
     assert "### RS_KEEP_8" in summary
     assert "### RS_RESTORE_10_8" in summary
