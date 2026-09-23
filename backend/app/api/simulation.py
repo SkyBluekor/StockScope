@@ -22,6 +22,10 @@ from app.simulation.validation_replay import (
     HistoricalValidationReplayError,
     HistoricalValidationReplayService,
 )
+from app.simulation.validation_outcome import (
+    HistoricalValidationOutcomeError,
+    HistoricalValidationOutcomeService,
+)
 from app.backtest.production_exit_policy import production_policy_cache_token
 from app.simulation.execution_catalog import ExecutionCatalogError, HistoricalExecutionCatalog
 from app.simulation.execution_engine import HistoricalExecutionEngine
@@ -155,6 +159,27 @@ def _validation_replay_service() -> HistoricalValidationReplayService:
     return HistoricalValidationReplayService(
         _validation_catalog(),
         provider.store,
+    )
+
+
+def _validation_outcome_service() -> HistoricalValidationOutcomeService:
+    raw = os.getenv("STOCKSCOPE_MARKET_STORE_DB")
+    return HistoricalValidationOutcomeService(
+        _validation_catalog(),
+        Path(raw) if raw else None,
+    )
+
+
+def _validation_outcome_http_error(error: HistoricalValidationOutcomeError) -> None:
+    if error.code == "VAL3_VALIDATION_NOT_FOUND":
+        status = 404
+    elif error.code == "VAL3_REPLAY_NOT_COMPLETED":
+        status = 409
+    else:
+        status = 422
+    raise HTTPException(
+        status_code=status,
+        detail={"code": error.code, "message": error.message},
     )
 
 
@@ -398,6 +423,39 @@ def list_validation_days(validation_id: str):
             detail={"code": "VAL_REPLAY_NOT_FOUND", "message": "저장된 검증을 찾을 수 없습니다."},
         )
     return [_validation_day_payload(day) for day in catalog.list_days(validation_id)]
+
+
+@router.get(
+    "/simulation/validations/{validation_id}/outcomes/summary",
+    tags=["simulation-validation"],
+)
+def get_validation_outcome_summary(validation_id: str):
+    try:
+        return _validation_outcome_service().summary(validation_id)
+    except HistoricalValidationOutcomeError as error:
+        _validation_outcome_http_error(error)
+
+
+@router.post(
+    "/simulation/validations/{validation_id}/outcomes/refresh",
+    tags=["simulation-validation"],
+)
+def refresh_validation_outcomes(validation_id: str):
+    try:
+        return _validation_outcome_service().refresh(validation_id)
+    except HistoricalValidationOutcomeError as error:
+        _validation_outcome_http_error(error)
+
+
+@router.get(
+    "/simulation/validations/{validation_id}/outcomes/breakdown",
+    tags=["simulation-validation"],
+)
+def get_validation_outcome_breakdown(validation_id: str):
+    try:
+        return _validation_outcome_service().breakdown(validation_id)
+    except HistoricalValidationOutcomeError as error:
+        _validation_outcome_http_error(error)
 
 
 # --- VAL.2-D: execution validation API lifecycle ---------------------------

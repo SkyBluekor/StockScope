@@ -9,6 +9,8 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from app.core.config import get_settings
+
 from app.holdings.analysis_history import (
     HoldingAnalysisHistoryService,
     HoldingsAnalysisHistoryError,
@@ -20,6 +22,11 @@ from app.holdings.catalog import (
     HoldingsCatalogError,
 )
 from app.holdings.chart import HoldingsChartError, HoldingsChartService
+from app.holdings.decision_context import HoldingDecisionContextService
+from app.holdings.freshness import (
+    HoldingsMarketFreshnessError,
+    HoldingsMarketFreshnessService,
+)
 from app.holdings.kis_sync import (
     HoldingsKisSyncError,
     KisAccountSyncService,
@@ -80,13 +87,32 @@ def _catalog() -> HoldingsCatalog:
     return catalog
 
 
+def _market_store_path() -> Path | None:
+    raw = os.getenv("STOCKSCOPE_MARKET_STORE_DB")
+    return Path(raw) if raw else None
+
+
 def _history_service(catalog: HoldingsCatalog) -> HoldingAnalysisHistoryService:
-    return HoldingAnalysisHistoryService(catalog)
+    return HoldingAnalysisHistoryService(
+        catalog,
+        market_store_db=_market_store_path(),
+    )
 
 
 def _chart_service() -> HoldingsChartService:
-    raw = os.getenv("STOCKSCOPE_MARKET_STORE_DB")
-    return HoldingsChartService(Path(raw) if raw else None)
+    return HoldingsChartService(_market_store_path())
+
+
+def _decision_service(catalog: HoldingsCatalog) -> HoldingDecisionContextService:
+    return HoldingDecisionContextService(catalog)
+
+
+def _freshness_service() -> HoldingsMarketFreshnessService:
+    settings = get_settings()
+    return HoldingsMarketFreshnessService(
+        krx_api_key=settings.krx_api_key,
+        market_store_db=_market_store_path(),
+    )
 
 
 def _lifecycle_service(catalog: HoldingsCatalog) -> PositionLifecycleService:
@@ -122,6 +148,7 @@ def _http_status(code: str) -> int:
         return 409
     if code in {
         "HOLD_KIS_SYNC_BALANCE_FAILED",
+        "HOLD_MARKET_FRESHNESS_UPDATE_FAILED",
     }:
         return 502
     return 400
@@ -265,6 +292,7 @@ def _stock_payload(
         "is_held": bool(positions),
         "positions": [_position_payload(catalog, item) for item in positions],
         "current_analysis": _current_analysis_payload(catalog, stock.id),
+        "decision_context": _decision_service(catalog).build(stock.id),
     }
     if include_latest_event:
         with catalog.connection() as conn:
@@ -566,14 +594,57 @@ def current_analysis(stock_id: str) -> dict[str, Any]:
 
 
 @router.post("/stocks/{stock_id}/analysis/refresh")
-def refresh_analysis(stock_id: str) -> dict[str, Any]:
+async def refresh_analysis(
+    stock_id: str,
+    prepare_latest: bool = Query(default=False),
+) -> dict[str, Any]:
     catalog = _catalog()
     try:
+        # Existing API callers keep the HOLD.1-F behavior and make no external
+        # freshness request. The UI opts in only when the user clicks 새로고침.
+        if not prepare_latest:
+            stored = _history_service(catalog).analyze_latest_confirmed(
+                monitored_stock_id=stock_id,
+            )
+            return _stored_analysis_payload(catalog, stored)
+
+        stock = catalog.get_monitored_stock(stock_id)
+        if stock is None:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "HOLD_STOCK_NOT_FOUND",
+                    "message": "등록된 종목을 찾을 수 없습니다.",
+                },
+            )
+
+        current = _current_analysis_payload(catalog, stock_id)
+        known_data_date = current.get("market_date") if current else None
+        freshness = await _freshness_service().prepare(
+            market=stock.market,
+            known_data_date=known_data_date,
+        )
+
+        # Freshness updates the same Market Store first. Reuse the established
+        # HOLD.1-E/F latest-confirmed analysis contract instead of introducing
+        # a second analysis path.
         stored = _history_service(catalog).analyze_latest_confirmed(
             monitored_stock_id=stock_id,
         )
-        return _stored_analysis_payload(catalog, stored)
-    except (HoldingsCatalogError, HoldingsAnalysisHistoryError) as error:
+        payload = _stored_analysis_payload(catalog, stored)
+        if payload.get("market_date") != freshness.resolved_as_of_date:
+            raise HoldingsMarketFreshnessError(
+                "HOLD_ANALYSIS_HISTORY_CONFLICT",
+                "최신 확정 시세 준비일과 실제 분석 기준일이 일치하지 않습니다.",
+            )
+        payload["previous_analysis_date"] = known_data_date
+        payload["data_freshness"] = freshness.to_dict()
+        return payload
+    except (
+        HoldingsCatalogError,
+        HoldingsAnalysisHistoryError,
+        HoldingsMarketFreshnessError,
+    ) as error:
         _raise_holdings_error(error)
 
 

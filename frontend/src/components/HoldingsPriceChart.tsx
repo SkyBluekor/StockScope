@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type PointerEvent } from "react";
 import {
   getHoldingChart,
   type HoldingAnalysis,
+  type HoldingDecisionContext,
   type HoldingChartBar,
   type HoldingChartRange,
   type HoldingChartResponse,
@@ -17,7 +18,7 @@ const RANGE_OPTIONS: Array<{ key: HoldingChartRange; label: string }> = [
 const W = 920;
 const H = 292;
 const LEFT = 58;
-const RIGHT = 96;
+const RIGHT = 74;
 const TOP = 18;
 const PRICE_BOTTOM = 210;
 const VOLUME_TOP = 229;
@@ -53,9 +54,17 @@ type Props = {
   stockId: string;
   analysis: HoldingAnalysis | null;
   liveBar?: HoldingChartBar | null;
+  refreshKey?: number;
+  decisionContext?: HoldingDecisionContext | null;
 };
 
-export default function HoldingsPriceChart({ stockId, analysis, liveBar = null }: Props) {
+export default function HoldingsPriceChart({
+  stockId,
+  analysis,
+  liveBar = null,
+  refreshKey = 0,
+  decisionContext = null,
+}: Props) {
   const [range, setRange] = useState<HoldingChartRange>("1m");
   const [chart, setChart] = useState<HoldingChartResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -66,7 +75,6 @@ export default function HoldingsPriceChart({ stockId, analysis, liveBar = null }
     let cancelled = false;
     setLoading(true);
     setError(null);
-    setChart(null);
     setHoverIndex(null);
     void getHoldingChart(stockId, range)
       .then((result) => {
@@ -83,7 +91,7 @@ export default function HoldingsPriceChart({ stockId, analysis, liveBar = null }
     return () => {
       cancelled = true;
     };
-  }, [stockId, range]);
+  }, [stockId, range, refreshKey]);
 
   const bars = useMemo(() => mergeBars(chart?.bars ?? [], liveBar), [chart, liveBar]);
 
@@ -103,17 +111,16 @@ export default function HoldingsPriceChart({ stockId, analysis, liveBar = null }
 
     const levels = [
       { key: "reference", label: "기준가", value: number(analysis?.reference_price) },
-      { key: "stop", label: "손절 기준", value: number(analysis?.stop_price) },
+      { key: "stop", label: "손절", value: number(analysis?.stop_price) },
       { key: "target1", label: "1차 목표", value: number(analysis?.target1_price) },
       { key: "target2", label: "2차 목표", value: number(analysis?.target2_price) },
     ].filter((item): item is { key: string; label: string; value: number } => item.value != null);
 
-    const priceValues = numeric.flatMap((bar) => [bar.h!, bar.l!]).concat(levels.map((item) => item.value));
-    let minPrice = Math.min(...priceValues);
-    let maxPrice = Math.max(...priceValues);
-    const rawRange = Math.max(maxPrice - minPrice, maxPrice * 0.015, 1);
-    minPrice -= rawRange * 0.08;
-    maxPrice += rawRange * 0.08;
+    const lowest = Math.min(...numeric.map((bar) => bar.l!));
+    const highest = Math.max(...numeric.map((bar) => bar.h!));
+    const visibleRange = Math.max(highest - lowest, highest * 0.015, 1);
+    const minPrice = lowest - visibleRange * 0.08;
+    const maxPrice = highest + visibleRange * 0.08;
     const priceRange = maxPrice - minPrice || 1;
     const maxVolume = Math.max(...numeric.map((bar) => bar.v!), 1);
     const plotWidth = W - LEFT - RIGHT;
@@ -142,9 +149,14 @@ export default function HoldingsPriceChart({ stockId, analysis, liveBar = null }
       ? numeric.findIndex((bar) => bar.date === analysis.market_date)
       : -1;
 
+    const plottedLevels = levels.map((level) => ({
+      ...level,
+      position: level.value > maxPrice ? "above" : level.value < minPrice ? "below" : "inside",
+    }));
+
     return {
       numeric,
-      levels,
+      levels: plottedLevels,
       xAt,
       yPrice,
       volumeY,
@@ -168,15 +180,16 @@ export default function HoldingsPriceChart({ stockId, analysis, liveBar = null }
   }
 
   const hovered = model && hoverIndex != null ? model.numeric[hoverIndex] : null;
+  const chartDate = chart?.to_date ?? null;
+  const analysisDate = analysis?.market_date ?? null;
+  const analysisBehindChart = Boolean(chartDate && analysisDate && analysisDate < chartDate);
 
   return (
     <section className="holdings-chart-panel">
       <div className="holdings-chart-head">
         <div>
           <h3>확정 일봉</h3>
-          <span>
-            {liveBar ? "오늘 캔들 실시간 반영" : chart?.to_date ? `${chart.to_date.replace(/-/g, ".")}까지` : "Market Store 기준"}
-          </span>
+          <span>{chartDate ? `${chartDate.replace(/-/g, ".")}까지` : "저장된 확정 데이터 기준"}</span>
         </div>
         <div className="holdings-chart-ranges" aria-label="차트 기간">
           {RANGE_OPTIONS.map((option) => (
@@ -191,6 +204,30 @@ export default function HoldingsPriceChart({ stockId, analysis, liveBar = null }
           ))}
         </div>
       </div>
+
+      {decisionContext && ["STOP_BREACHED", "TARGET1_REACHED", "TARGET2_REACHED"].includes(
+        decisionContext.previous_plan.state,
+      ) && (
+        <div className={`holdings-chart-plan-event ${decisionContext.previous_plan.state.toLowerCase()}`}>
+          <span>이전 계획</span>
+          <strong>{decisionContext.previous_plan.label}</strong>
+          {decisionContext.previous_plan.previous_market_date && (
+            <small>{decisionContext.previous_plan.previous_market_date.replace(/-/g, ".")} 기준</small>
+          )}
+        </div>
+      )}
+
+      {model && (
+        <div className="holdings-chart-levels" aria-label="분석 가격 기준">
+          {model.levels.map((level) => (
+            <span key={level.key} className={`holdings-chart-level ${level.key}`}>
+              <i aria-hidden="true" />
+              <b>{level.position === "above" ? "↑ " : level.position === "below" ? "↓ " : ""}{level.label}</b>
+              <strong>{formatPrice(level.value)}</strong>
+            </span>
+          ))}
+        </div>
+      )}
 
       {loading && !chart ? (
         <div className="holdings-chart-state">확정 일봉을 불러오는 중입니다.</div>
@@ -216,26 +253,30 @@ export default function HoldingsPriceChart({ stockId, analysis, liveBar = null }
               <line x1={LEFT} x2={W - RIGHT} y1={VOLUME_TOP - 8} y2={VOLUME_TOP - 8} />
             </g>
 
-            {model.levels.map((level) => {
-              const y = model.yPrice(level.value);
-              return (
-                <g key={level.key} className={`holdings-level ${level.key}`}>
-                  <line className="holdings-level-line" x1={LEFT} x2={W - RIGHT} y1={y} y2={y} />
-                  <text className="holdings-level-label" x={W - RIGHT + 8} y={y - 4}>{level.label}</text>
-                </g>
-              );
-            })}
+            {model.levels
+              .filter((level) => level.position === "inside")
+              .map((level) => {
+                const y = model.yPrice(level.value);
+                return (
+                  <line
+                    key={level.key}
+                    className={`holdings-level-line ${level.key}`}
+                    x1={LEFT}
+                    x2={W - RIGHT}
+                    y1={y}
+                    y2={y}
+                  />
+                );
+              })}
 
             {model.analysisIndex >= 0 && (
-              <g className="holdings-analysis-marker">
-                <line
-                  x1={model.xAt(model.analysisIndex)}
-                  x2={model.xAt(model.analysisIndex)}
-                  y1={TOP}
-                  y2={VOLUME_BOTTOM}
-                />
-                <text x={model.xAt(model.analysisIndex)} y={TOP + 12}>분석 기준일</text>
-              </g>
+              <line
+                className="holdings-analysis-marker"
+                x1={model.xAt(model.analysisIndex)}
+                x2={model.xAt(model.analysisIndex)}
+                y1={TOP}
+                y2={VOLUME_BOTTOM}
+              />
             )}
 
             <g className="holdings-candles">
@@ -310,8 +351,13 @@ export default function HoldingsPriceChart({ stockId, analysis, liveBar = null }
       )}
 
       <div className="holdings-chart-foot">
-        <span>과거 구간은 로컬 Market Store의 확정 일봉만 사용합니다.</span>
-        {analysis && <span>분석 기준일 {analysis.market_date.replace(/-/g, ".")}</span>}
+        <span>{chartDate ? `차트 최신일 ${chartDate.replace(/-/g, ".")}` : "저장된 확정 일봉을 사용합니다."}</span>
+        {analysisDate && (
+          <span className={analysisBehindChart ? "stale" : ""}>
+            분석 기준일 {analysisDate.replace(/-/g, ".")}
+            {analysisBehindChart ? " · 새로고침 필요" : ""}
+          </span>
+        )}
       </div>
     </section>
   );

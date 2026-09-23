@@ -277,6 +277,46 @@ export type ValidationReplayResponse = {
   cancel_requested?: boolean;
 };
 
+export type ValidationOutcomeMetric = {
+  sample_count: number;
+  average_pct: number | null;
+  median_pct: number | null;
+};
+
+export type ValidationOutcomeTouch = {
+  comparable_count: number;
+  touched_count: number;
+  touched_pct: number | null;
+};
+
+export type HistoricalValidationOutcomeSummary = {
+  validation_id: string;
+  status: "NOT_CALCULATED" | "READY" | string;
+  replay: {
+    target_trading_days: number;
+    processed_trading_days: number;
+    consistent: boolean | null;
+    last_completed_date: string | null;
+  };
+  total_candidates: number;
+  outcome_count: number;
+  evaluated_candidates: number;
+  horizons: {
+    "5d": ValidationOutcomeMetric;
+    "10d": ValidationOutcomeMetric;
+    "20d": ValidationOutcomeMetric;
+  };
+  mfe_20d: ValidationOutcomeMetric;
+  mae_20d: ValidationOutcomeMetric;
+  touches: {
+    entry: ValidationOutcomeTouch;
+    stop: ValidationOutcomeTouch;
+    target1: ValidationOutcomeTouch;
+    target2: ValidationOutcomeTouch;
+  };
+  computed_at: string | null;
+};
+
 export function createValidationDraft(input: {
   name: string;
   preset?: "6m" | "1y" | "2y";
@@ -315,6 +355,50 @@ export function cancelValidationReplay(id: string) {
 export function listValidationDays(id: string) {
   return apiJson<HistoricalValidationDay[]>(
     `/api/simulation/validations/${encodeURIComponent(id)}/days`,
+  );
+}
+
+export type ValidationOutcomeBreakdownRow = {
+  key: string;
+  candidate_count: number;
+  horizons: {
+    "5d": ValidationOutcomeMetric;
+    "10d": ValidationOutcomeMetric;
+    "20d": ValidationOutcomeMetric;
+  };
+  mfe_20d: ValidationOutcomeMetric;
+  mae_20d: ValidationOutcomeMetric;
+  touches: {
+    entry: ValidationOutcomeTouch;
+    stop: ValidationOutcomeTouch;
+    target1: ValidationOutcomeTouch;
+    target2: ValidationOutcomeTouch;
+  };
+};
+
+export type HistoricalValidationOutcomeBreakdown = {
+  validation_id: string;
+  status: "NOT_CALCULATED" | "READY" | string;
+  strategy: ValidationOutcomeBreakdownRow[];
+  decision_status: ValidationOutcomeBreakdownRow[];
+};
+
+export function getValidationOutcomeSummary(id: string) {
+  return apiJson<HistoricalValidationOutcomeSummary>(
+    `/api/simulation/validations/${encodeURIComponent(id)}/outcomes/summary`,
+  );
+}
+
+export function getValidationOutcomeBreakdown(id: string) {
+  return apiJson<HistoricalValidationOutcomeBreakdown>(
+    `/api/simulation/validations/${encodeURIComponent(id)}/outcomes/breakdown`,
+  );
+}
+
+export function refreshValidationOutcomes(id: string) {
+  return apiJson<HistoricalValidationOutcomeSummary>(
+    `/api/simulation/validations/${encodeURIComponent(id)}/outcomes/refresh`,
+    { method: "POST" },
   );
 }
 

@@ -425,49 +425,535 @@
 }
 
 
-/* HOLD.1-G.1/G.2 — list removal + confirmed EOD chart */
-.holdings-text-action,.holdings-remove-button,.holdings-remove-confirm{font:inherit;font-weight:800}
-.holdings-text-action{border:0;background:transparent;color:var(--accent-primary);padding:8px 4px}
-.holdings-remove-button{border:1px solid var(--border-default);background:transparent;color:var(--text-secondary);padding:9px 11px}
-.holdings-remove-button:hover{border-color:var(--status-negative);color:var(--status-negative);background:var(--status-negative-bg)}
-.holdings-remove-confirm{border:1px solid var(--status-negative);background:var(--status-negative-bg);color:var(--status-negative);padding:9px 13px}
-.holdings-remove-copy{padding:14px 0;color:var(--text-secondary);font-size:var(--font-body-small);line-height:var(--line-body)}
-.holdings-remove-dialog{width:min(500px,100%)}
-.holdings-chart-panel{margin-top:18px;padding:16px 0 10px;border-top:1px solid var(--border-default);border-bottom:1px solid var(--border-default)}
-.holdings-chart-head,.holdings-chart-foot{display:flex;align-items:center;justify-content:space-between;gap:16px}
-.holdings-chart-head h3{margin:0;color:var(--text-primary);font-size:var(--font-card-title)}
-.holdings-chart-head span,.holdings-chart-foot{color:var(--text-muted);font-size:var(--font-meta)}
-.holdings-chart-ranges{display:flex;border-bottom:1px solid var(--border-default)}
-.holdings-chart-ranges button{border:0;border-bottom:2px solid transparent;background:transparent;color:var(--text-secondary);padding:6px 9px;font:inherit;font-size:var(--font-meta);font-weight:800}
-.holdings-chart-ranges button.active{border-bottom-color:var(--accent-primary);color:var(--text-primary)}
-.holdings-chart-canvas{position:relative;margin-top:10px;min-height:250px}
-.holdings-chart-canvas svg{display:block;width:100%;height:auto;min-height:250px;overflow:visible}
-.holdings-chart-grid line{stroke:var(--border-subtle);stroke-width:1;vector-effect:non-scaling-stroke}
-.holdings-chart-grid text,.holdings-chart-dates text{fill:var(--text-muted);font-size:11px}
-.holdings-chart-dates text{text-anchor:middle}
-.holdings-candle line{stroke-width:1.25;vector-effect:non-scaling-stroke}
-.holdings-candle rect{stroke-width:0}
-.holdings-candle.up line,.holdings-candle.up rect{stroke:var(--status-positive);fill:var(--status-positive)}
-.holdings-candle.down line,.holdings-candle.down rect{stroke:var(--status-negative);fill:var(--status-negative)}
-.holdings-candle.flat line,.holdings-candle.flat rect{stroke:var(--text-muted);fill:var(--text-muted)}
-.holdings-candle .volume{opacity:.28}
-.holdings-level-line{stroke-width:1;stroke-dasharray:5 4;vector-effect:non-scaling-stroke}
-.holdings-level-label{font-size:10px;font-weight:800}
-.holdings-level.reference .holdings-level-line{stroke:var(--status-info)}
-.holdings-level.reference .holdings-level-label{fill:var(--status-info)}
-.holdings-level.stop .holdings-level-line{stroke:var(--status-negative)}
-.holdings-level.stop .holdings-level-label{fill:var(--status-negative)}
-.holdings-level.target1 .holdings-level-line,.holdings-level.target2 .holdings-level-line{stroke:var(--status-positive)}
-.holdings-level.target1 .holdings-level-label,.holdings-level.target2 .holdings-level-label{fill:var(--status-positive)}
-.holdings-analysis-marker line{stroke:var(--accent-primary);stroke-width:1;stroke-dasharray:3 5;opacity:.7;vector-effect:non-scaling-stroke}
-.holdings-analysis-marker text{fill:var(--accent-primary);font-size:10px;text-anchor:middle;font-weight:800}
-.holdings-chart-hover-line{stroke:var(--text-muted);stroke-width:1;stroke-dasharray:2 3;opacity:.55;pointer-events:none;vector-effect:non-scaling-stroke}
-.holdings-chart-hit{fill:transparent;cursor:crosshair}
-.holdings-chart-tooltip{position:absolute;right:12px;top:10px;display:grid;grid-template-columns:auto auto;gap:3px 12px;min-width:150px;padding:9px 10px;border:1px solid var(--border-strong);background:var(--bg-surface-raised);color:var(--text-secondary);font-size:11px;box-shadow:var(--shadow);pointer-events:none}
-.holdings-chart-tooltip>strong{grid-column:1/-1;color:var(--text-primary);margin-bottom:2px}
-.holdings-chart-tooltip span{display:contents}
-.holdings-chart-tooltip b{color:var(--text-primary);text-align:right}
-.holdings-chart-state{display:flex;align-items:center;justify-content:center;min-height:250px;color:var(--text-secondary);font-size:var(--font-body-small)}
-.holdings-chart-state.error{color:var(--status-negative)}
-.holdings-chart-foot{margin-top:5px;padding-top:8px;border-top:1px solid var(--border-subtle)}
-@media(max-width:700px){.holdings-chart-head,.holdings-chart-foot{align-items:flex-start;flex-direction:column}.holdings-chart-ranges{width:100%;overflow-x:auto}.holdings-chart-canvas{overflow-x:auto}.holdings-chart-canvas svg{min-width:720px}.holdings-chart-tooltip{position:sticky;left:10px;right:auto;width:160px}}
+/* HOLD.1-G.1/G.2/G.3 — list removal + readable confirmed EOD chart */
+.holdings-text-action,
+.holdings-remove-button,
+.holdings-remove-confirm {
+  font: inherit;
+  font-weight: 800;
+}
+.holdings-text-action {
+  border: 0;
+  background: transparent;
+  color: var(--accent-primary);
+  padding: 8px 4px;
+}
+.holdings-remove-button {
+  border: 1px solid var(--border-default);
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 9px 11px;
+}
+.holdings-remove-button:hover {
+  border-color: var(--status-negative);
+  color: var(--status-negative);
+  background: var(--status-negative-bg);
+}
+.holdings-remove-confirm {
+  border: 1px solid var(--status-negative);
+  background: var(--status-negative-bg);
+  color: var(--status-negative);
+  padding: 9px 13px;
+}
+.holdings-remove-copy {
+  padding: 14px 0;
+  color: var(--text-secondary);
+  font-size: var(--font-body-small);
+  line-height: var(--line-body);
+}
+.holdings-remove-dialog { width: min(500px, 100%); }
+
+.holdings-chart-panel {
+  margin-top: 18px;
+  padding: 16px 0 10px;
+  border-top: 1px solid var(--border-default);
+  border-bottom: 1px solid var(--border-default);
+}
+.holdings-chart-head,
+.holdings-chart-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.holdings-chart-head h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--font-card-title);
+}
+.holdings-chart-head span,
+.holdings-chart-foot {
+  color: var(--text-muted);
+  font-size: var(--font-meta);
+}
+.holdings-chart-ranges {
+  display: flex;
+  border-bottom: 1px solid var(--border-default);
+}
+.holdings-chart-ranges button {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 6px 9px;
+  font: inherit;
+  font-size: var(--font-meta);
+  font-weight: 800;
+}
+.holdings-chart-ranges button.active {
+  border-bottom-color: var(--accent-primary);
+  color: var(--text-primary);
+}
+
+.holdings-chart-levels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 16px;
+  margin-top: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.holdings-chart-level {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-meta);
+}
+.holdings-chart-level i {
+  display: inline-block;
+  width: 18px;
+  height: 0;
+  border-top: 2px dashed currentColor;
+}
+.holdings-chart-level b { font-weight: 800; }
+.holdings-chart-level strong {
+  color: var(--text-primary);
+  font-weight: 800;
+}
+.holdings-chart-level.reference { color: var(--status-info); }
+.holdings-chart-level.stop { color: var(--status-negative); }
+.holdings-chart-level.target1,
+.holdings-chart-level.target2 { color: var(--status-positive); }
+
+.holdings-chart-canvas {
+  position: relative;
+  margin-top: 8px;
+  min-height: 250px;
+}
+.holdings-chart-canvas svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 250px;
+  overflow: visible;
+}
+.holdings-chart-grid line {
+  stroke: var(--border-subtle);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.holdings-chart-grid text,
+.holdings-chart-dates text {
+  fill: var(--text-muted);
+  font-size: 11px;
+}
+.holdings-chart-dates text { text-anchor: middle; }
+
+.holdings-candle line {
+  stroke-width: 1.25;
+  vector-effect: non-scaling-stroke;
+}
+.holdings-candle rect { stroke-width: 0; }
+.holdings-candle.up line,
+.holdings-candle.up rect {
+  stroke: var(--status-positive);
+  fill: var(--status-positive);
+}
+.holdings-candle.down line,
+.holdings-candle.down rect {
+  stroke: var(--status-negative);
+  fill: var(--status-negative);
+}
+.holdings-candle.flat line,
+.holdings-candle.flat rect {
+  stroke: var(--text-muted);
+  fill: var(--text-muted);
+}
+.holdings-candle .volume { opacity: .28; }
+
+.holdings-level-line {
+  stroke-width: 1;
+  stroke-dasharray: 5 4;
+  vector-effect: non-scaling-stroke;
+}
+.holdings-level-line.reference { stroke: var(--status-info); }
+.holdings-level-line.stop { stroke: var(--status-negative); }
+.holdings-level-line.target1,
+.holdings-level-line.target2 { stroke: var(--status-positive); }
+
+.holdings-analysis-marker {
+  stroke: var(--accent-primary);
+  stroke-width: 1;
+  stroke-dasharray: 3 5;
+  opacity: .72;
+  vector-effect: non-scaling-stroke;
+}
+.holdings-chart-hover-line {
+  stroke: var(--text-muted);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+  opacity: .55;
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
+}
+.holdings-chart-hit {
+  fill: transparent;
+  cursor: crosshair;
+}
+.holdings-chart-tooltip {
+  position: absolute;
+  right: 12px;
+  top: 10px;
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 3px 12px;
+  min-width: 150px;
+  padding: 9px 10px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-surface-raised);
+  color: var(--text-secondary);
+  font-size: 11px;
+  box-shadow: var(--shadow);
+  pointer-events: none;
+}
+.holdings-chart-tooltip > strong {
+  grid-column: 1 / -1;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+.holdings-chart-tooltip span { display: contents; }
+.holdings-chart-tooltip b {
+  color: var(--text-primary);
+  text-align: right;
+}
+.holdings-chart-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 250px;
+  color: var(--text-secondary);
+  font-size: var(--font-body-small);
+}
+.holdings-chart-state.error { color: var(--status-negative); }
+.holdings-chart-foot {
+  margin-top: 5px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+}
+.holdings-chart-foot .stale {
+  color: var(--status-warning);
+  font-weight: 800;
+}
+
+@media (max-width: 700px) {
+  .holdings-chart-head,
+  .holdings-chart-foot {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .holdings-chart-ranges {
+    width: 100%;
+    overflow-x: auto;
+  }
+  .holdings-chart-levels { gap: 7px 12px; }
+  .holdings-chart-canvas { overflow-x: auto; }
+  .holdings-chart-canvas svg { min-width: 720px; }
+  .holdings-chart-tooltip {
+    position: sticky;
+    left: 10px;
+    right: auto;
+    width: 160px;
+  }
+}
+
+/* HOLD.1-G.4 — richer decision context without new strategy/risk thresholds */
+.holdings-decision-cell strong,
+.holdings-decision-cell small { display:block; }
+.holdings-decision-cell strong { color:var(--text-primary); font-weight:800; }
+.holdings-decision-cell small {
+  margin-top:3px;
+  color:var(--status-warning);
+  font-size:var(--font-badge);
+  font-weight:750;
+}
+.holdings-decision-summary {
+  margin:10px 0 0;
+  padding-top:9px;
+  border-top:1px solid var(--border-subtle);
+  color:var(--text-secondary);
+  font-size:var(--font-meta);
+  line-height:var(--line-body);
+}
+.holdings-plan-text.alert { color:var(--status-negative); font-weight:850; }
+.holdings-plan-text.target { color:var(--status-positive); font-weight:850; }
+.holdings-chart-plan-event {
+  display:flex;
+  align-items:baseline;
+  gap:8px;
+  margin-top:9px;
+  padding:7px 0 7px 10px;
+  border-left:2px solid var(--status-warning);
+  color:var(--text-secondary);
+  font-size:var(--font-meta);
+}
+.holdings-chart-plan-event span,
+.holdings-chart-plan-event small { color:var(--text-muted); }
+.holdings-chart-plan-event strong { color:var(--text-primary); }
+.holdings-chart-plan-event.stop_breached { border-left-color:var(--status-negative); }
+.holdings-chart-plan-event.target1_reached,
+.holdings-chart-plan-event.target2_reached { border-left-color:var(--status-positive); }
+
+/* HOLD.1-G.4.1 — explain decision reasons and plan continuity */
+.holdings-decision-explain {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border-subtle);
+}
+.holdings-decision-explain p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-meta);
+  line-height: var(--line-body);
+}
+.holdings-decision-explain p + p { margin-top: 7px; }
+.holdings-plan-guidance { color: var(--text-muted) !important; }
+.holdings-decision-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 10px;
+}
+.holdings-inline-toggle {
+  border: 0;
+  border-bottom: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--accent-primary);
+  padding: 2px 0 3px;
+  font: inherit;
+  font-size: var(--font-meta);
+  font-weight: 800;
+}
+.holdings-inline-toggle:hover { border-bottom-color: var(--accent-primary); }
+.holdings-decision-expand {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+}
+.holdings-decision-expand > strong {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--text-primary);
+  font-size: var(--font-meta);
+}
+.holdings-condition-row {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.holdings-condition-row:last-child { border-bottom: 0; }
+.holdings-condition-row strong,
+.holdings-condition-row span,
+.holdings-condition-row small { display: block; }
+.holdings-condition-row strong {
+  color: var(--text-primary);
+  font-size: var(--font-meta);
+}
+.holdings-condition-row span {
+  margin-top: 3px;
+  color: var(--text-secondary);
+  font-size: var(--font-badge);
+}
+.holdings-condition-row small {
+  margin-top: 3px;
+  color: var(--text-muted);
+  line-height: var(--line-body);
+}
+.holdings-previous-plan {
+  display: grid;
+  grid-template-columns: minmax(92px, .7fr) 1fr;
+  gap: 0 16px;
+}
+.holdings-previous-plan div { display: contents; }
+.holdings-previous-plan dt,
+.holdings-previous-plan dd {
+  margin: 0;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--font-meta);
+}
+.holdings-previous-plan dt { color: var(--text-muted); }
+.holdings-previous-plan dd {
+  color: var(--text-primary);
+  font-weight: 800;
+  text-align: right;
+}
+
+/* HOLD.1-G.5 — holdings list + position action UX */
+.holdings-stock-table th:first-child,
+.holdings-stock-table td:first-child {
+  width: 46%;
+}
+.holdings-stock-table th:last-child,
+.holdings-stock-table td:last-child {
+  text-align: right;
+  white-space: nowrap;
+}
+.holdings-list-position-summary {
+  display: block;
+  margin-top: 5px;
+  color: var(--text-secondary);
+  font-size: var(--font-badge);
+  line-height: var(--line-body);
+  word-break: keep-all;
+}
+.holdings-list-action {
+  border: 0;
+  border-bottom: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--accent-primary);
+  padding: 2px 0 3px;
+  font: inherit;
+  font-size: var(--font-meta);
+  font-weight: 800;
+}
+.holdings-list-action:hover { border-bottom-color: var(--accent-primary); }
+.holdings-list-action.remove { color: var(--text-secondary); }
+.holdings-list-action.remove:hover {
+  color: var(--status-negative);
+  border-bottom-color: var(--status-negative);
+}
+.holdings-position-row {
+  grid-template-columns: minmax(170px, 1.35fr) minmax(90px, .55fr) minmax(120px, .75fr) minmax(215px, 1.1fr);
+  align-items: center;
+}
+.holdings-position-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.holdings-position-actions button {
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-primary);
+  padding: 7px 9px;
+  font: inherit;
+  font-size: var(--font-meta);
+  font-weight: 800;
+}
+.holdings-position-actions button:hover { background: var(--bg-hover); }
+.holdings-position-actions button.primary {
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+}
+.holdings-position-broker-note {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--font-meta);
+  line-height: var(--line-body);
+  text-align: right;
+}
+.holdings-position-empty-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+.holdings-manual-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 16px;
+  border-top: 1px solid var(--border-default);
+  border-bottom: 1px solid var(--border-default);
+}
+.holdings-manual-summary > div {
+  min-width: 0;
+  padding: 10px 12px;
+  border-right: 1px solid var(--border-subtle);
+}
+.holdings-manual-summary > div:last-child { border-right: 0; }
+.holdings-manual-summary span,
+.holdings-manual-summary strong { display: block; }
+.holdings-manual-summary span {
+  color: var(--text-muted);
+  font-size: var(--font-meta);
+}
+.holdings-manual-summary strong {
+  margin-top: 4px;
+  color: var(--text-primary);
+}
+.holdings-quantity-stepper {
+  display: grid;
+  grid-template-columns: 40px minmax(90px, 1fr) 40px;
+}
+.holdings-quantity-stepper button {
+  border: 1px solid var(--border-default);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 850;
+}
+.holdings-quantity-stepper button:hover:not(:disabled) { background: var(--bg-hover); }
+.holdings-quantity-stepper input {
+  border-left: 0;
+  border-right: 0;
+  text-align: center;
+}
+.holdings-form-preview {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  grid-column: 1 / -1;
+  padding: 10px 0;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.holdings-form-preview span {
+  color: var(--text-muted);
+  font-size: var(--font-meta);
+}
+.holdings-form-preview strong { color: var(--text-primary); }
+.holdings-manual-account-fixed {
+  padding: 9px 10px;
+  border: 1px solid var(--border-default);
+  background: var(--bg-soft);
+  color: var(--text-secondary);
+  font-size: var(--font-body-small);
+}
+.holdings-dialog.manual .holdings-order-note { line-height: var(--line-body); }
+@media (max-width: 1180px) {
+  .holdings-position-row {
+    grid-template-columns: minmax(170px, 1.2fr) minmax(90px, .55fr) minmax(120px, .75fr);
+  }
+  .holdings-position-actions,
+  .holdings-position-broker-note {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    text-align: left;
+  }
+}
+@media (max-width: 700px) {
+  .holdings-stock-table { min-width: 720px; }
+  .holdings-position-row { grid-template-columns: 1fr 1fr; }
+  .holdings-position-row > div:first-child,
+  .holdings-position-actions,
+  .holdings-position-broker-note { grid-column: 1 / -1; }
+  .holdings-manual-summary { grid-template-columns: 1fr; }
+  .holdings-manual-summary > div {
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .holdings-manual-summary > div:last-child { border-bottom: 0; }
+}

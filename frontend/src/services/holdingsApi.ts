@@ -33,6 +33,50 @@ export type HoldingPosition = {
   last_observed_at: string | null;
 };
 
+export type HoldingConditionDetail = {
+  label: string;
+  detail: string | null;
+  current_value: string | null;
+  required_value: string | null;
+  raw: string | null;
+};
+
+export type HoldingDecisionEntry = {
+  state: "READY" | "WATCH" | "NOT_READY" | "BLOCKED" | "CAUTION" | "NO_TRADE" | "UNKNOWN" | string;
+  label: string;
+  summary: string | null;
+  decision_reason: string | null;
+  passed: number | null;
+  missing: number | null;
+  total: number | null;
+  warnings: string[];
+  missing_details: HoldingConditionDetail[];
+};
+
+export type HoldingStrategyContext = {
+  state: "INITIAL" | "UNCHANGED" | "CHANGED" | string;
+  current: string | null;
+  previous: string | null;
+  previous_market_date: string | null;
+};
+
+export type HoldingPreviousPlanContext = {
+  state: "FIRST_PLAN" | "PREVIOUS_PLAN_UNAVAILABLE" | "WITHIN_PLAN" | "STOP_BREACHED" | "TARGET1_REACHED" | "TARGET2_REACHED" | string;
+  label: string;
+  previous_market_date: string | null;
+  previous_reference_price: string | null;
+  previous_stop_price: string | null;
+  previous_target1_price: string | null;
+  previous_target2_price: string | null;
+  current_close: string | null;
+};
+
+export type HoldingDecisionContext = {
+  entry: HoldingDecisionEntry;
+  strategy: HoldingStrategyContext;
+  previous_plan: HoldingPreviousPlanContext;
+};
+
 export type HoldingStock = {
   stock_id: string;
   market: "KOSPI" | "KOSDAQ" | string;
@@ -42,6 +86,7 @@ export type HoldingStock = {
   is_held: boolean;
   positions: HoldingPosition[];
   current_analysis: HoldingAnalysis | null;
+  decision_context: HoldingDecisionContext | null;
   latest_position_event?: HoldingPositionEvent | null;
 };
 
@@ -121,6 +166,26 @@ export type HoldingChartResponse = {
   requested_bars: number;
   count: number;
   bars: HoldingChartBar[];
+};
+
+export type HoldingDataFreshness = {
+  status: "READY" | "UPDATED" | string;
+  market: string;
+  requested_date: string | null;
+  latest_confirmed_date: string | null;
+  resolved_as_of_date: string;
+  known_data_date: string | null;
+  market_data_updated: boolean;
+  date_changed: boolean;
+  network_requests: number;
+  message: string;
+};
+
+export type HoldingAnalysisRefreshResponse = HoldingAnalysis & {
+  created_revision: boolean;
+  promoted_current: boolean;
+  previous_analysis_date: string | null;
+  data_freshness: HoldingDataFreshness;
 };
 
 type ApiErrorBody = {
@@ -231,9 +296,11 @@ export function getCurrentHoldingAnalysis(stockId: string): Promise<CurrentAnaly
   );
 }
 
-export function refreshHoldingAnalysis(stockId: string): Promise<unknown> {
-  return requestJson(
-    `/api/holdings/stocks/${encodeURIComponent(stockId)}/analysis/refresh`,
+export function refreshHoldingAnalysis(
+  stockId: string,
+): Promise<HoldingAnalysisRefreshResponse> {
+  return requestJson<HoldingAnalysisRefreshResponse>(
+    `/api/holdings/stocks/${encodeURIComponent(stockId)}/analysis/refresh?prepare_latest=true`,
     jsonInit("POST"),
   );
 }

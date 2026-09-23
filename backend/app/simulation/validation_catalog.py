@@ -237,6 +237,47 @@ class HistoricalValidationCatalog:
                         ON DELETE CASCADE
                 );
 
+                CREATE TABLE IF NOT EXISTS historical_validation_candidate_outcome (
+                    validation_id TEXT NOT NULL,
+                    trading_date TEXT NOT NULL,
+                    market TEXT NOT NULL,
+                    ticker TEXT NOT NULL,
+                    reference_price TEXT,
+                    entry_rule_json TEXT,
+                    stop_price TEXT,
+                    target1_price TEXT,
+                    target2_price TEXT,
+                    available_trading_days INTEGER NOT NULL DEFAULT 0,
+                    evaluated_through TEXT,
+                    return_5d REAL,
+                    return_10d REAL,
+                    return_20d REAL,
+                    mfe_pct REAL,
+                    mae_pct REAL,
+                    entry_comparable INTEGER NOT NULL DEFAULT 0,
+                    entry_touched INTEGER NOT NULL DEFAULT 0,
+                    entry_touch_date TEXT,
+                    stop_comparable INTEGER NOT NULL DEFAULT 0,
+                    stop_touched INTEGER NOT NULL DEFAULT 0,
+                    stop_touch_date TEXT,
+                    target1_comparable INTEGER NOT NULL DEFAULT 0,
+                    target1_touched INTEGER NOT NULL DEFAULT 0,
+                    target1_touch_date TEXT,
+                    target2_comparable INTEGER NOT NULL DEFAULT 0,
+                    target2_touched INTEGER NOT NULL DEFAULT 0,
+                    target2_touch_date TEXT,
+                    computed_at TEXT NOT NULL,
+                    PRIMARY KEY(validation_id,trading_date,market,ticker),
+                    FOREIGN KEY(validation_id,trading_date,market,ticker)
+                        REFERENCES historical_validation_candidate(
+                            validation_id,trading_date,market,ticker
+                        )
+                        ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_validation_outcome_validation_date
+                    ON historical_validation_candidate_outcome(validation_id,trading_date);
+
                 CREATE INDEX IF NOT EXISTS idx_historical_validation_day_status_date
                     ON historical_validation_day(validation_id, status, trading_date);
 
