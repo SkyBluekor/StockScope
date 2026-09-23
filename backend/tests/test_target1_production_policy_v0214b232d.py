@@ -173,7 +173,8 @@ def test_scanner_decision_versions_are_bumped_without_session_schema_change():
     repo_root = Path(__file__).resolve().parents[2]
     scanner_source = (repo_root / "backend/app/backtest/scanner.py").read_text(encoding="utf-8")
     session_source = (repo_root / "frontend/src/components/scannerSession.ts").read_text(encoding="utf-8")
-    assert 'VERSION = "0.21.3.6"' in scanner_source
+    assert 'VERSION = "0.21.3.7"' in scanner_source
     assert 'HISTORICAL_EVIDENCE_POLICY_VERSION = "v2"' in scanner_source
-    assert 'SCANNER_DECISION_VERSION = "0.21.3.6"' in session_source
-    assert "SCANNER_SESSION_SCHEMA_VERSION = 2" in session_source
+    assert "SCANNER_DECISION_VERSION" not in session_source
+    assert "SCANNER_SESSION_SCHEMA_VERSION = 1" in session_source
+    assert "algorithm version belongs to the" in session_source
