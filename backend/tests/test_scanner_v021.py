@@ -178,11 +178,11 @@ def test_v0212_evidence_cache_key_separates_strategy_and_data_end(tmp_path: Path
     )
     assert first != second
     assert first != third
-    assert "v1" in first.name
+    assert StockScannerService.HISTORICAL_EVIDENCE_POLICY_VERSION in first.name
 
 
 def test_v0213_scanner_version_invalidates_old_daily_cache() -> None:
-    assert StockScannerService.VERSION == "0.21.3"
+    assert StockScannerService.VERSION == "0.21.3.7"
 
 
 def test_v0212_unverified_evidence_is_not_frozen_in_cache(tmp_path: Path, monkeypatch) -> None:
