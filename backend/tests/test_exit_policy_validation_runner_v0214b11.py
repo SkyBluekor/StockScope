@@ -141,6 +141,10 @@ async def test_runner_is_local_only_and_reuses_checkpoint(monkeypatch: pytest.Mo
 
     class DummyAuditEngine:
         calls: list[str] = []
+
+        def __init__(self, *args, **kwargs):
+            pass
+
         def run(self, *, config, **kwargs):
             self.calls.append(config.code)
             return _audit(config.code, config.market)
