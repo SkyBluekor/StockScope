@@ -13,7 +13,7 @@ async def test_latest_stock_falls_back_to_previous_business_day(monkeypatch):
     provider = KrxProvider("test-key")
     calls = []
 
-    async def fake_get_rows(endpoint, bas_dd):
+    async def fake_get_rows(endpoint, bas_dd, **kwargs):
         calls.append(bas_dd)
         if bas_dd == "20260908":
             return []
