@@ -1,4 +1,14 @@
+param(
+    [switch]$RecreateVenv
+)
+
 $ErrorActionPreference = "Stop"
+
+try { chcp.com 65001 | Out-Null } catch {}
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+$env:PYTHONUTF8 = "1"
+$env:PYTHONIOENCODING = "utf-8"
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $root
@@ -10,21 +20,28 @@ function Require-Command {
     )
 
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
-        throw "[StockScope] '$Name' 명령을 찾을 수 없습니다. $InstallHint"
+        throw "[StockScope] Command '$Name' was not found. $InstallHint"
     }
 }
 
 function Assert-LastExitCode {
     param([Parameter(Mandatory = $true)][string]$Step)
     if ($LASTEXITCODE -ne 0) {
-        throw "[StockScope] $Step 실패 (exit code: $LASTEXITCODE)"
+        throw "[StockScope] $Step failed (exit code: $LASTEXITCODE)"
+    }
+}
+
+function Remove-StockScopeVenv {
+    if (Test-Path ".venv") {
+        Write-Host "[StockScope] Removing existing .venv..." -ForegroundColor Yellow
+        Remove-Item ".venv" -Recurse -Force
     }
 }
 
 Write-Host "[StockScope] Checking prerequisites..." -ForegroundColor Cyan
-Require-Command "python" "Python 3.11 이상을 설치하고 새 PowerShell을 여세요."
-Require-Command "node" "Node.js LTS를 설치하세요: winget install OpenJS.NodeJS.LTS"
-Require-Command "npm" "Node.js LTS를 설치한 뒤 PowerShell을 완전히 닫았다가 다시 여세요."
+Require-Command "python" "Install Python 3.11+ and open a new PowerShell window."
+Require-Command "node" "Install Node.js LTS: winget install OpenJS.NodeJS.LTS"
+Require-Command "npm" "Install Node.js LTS, then fully restart PowerShell."
 
 $pythonVersion = (& python --version 2>&1)
 Assert-LastExitCode "Python version check"
@@ -33,17 +50,44 @@ Assert-LastExitCode "Node.js version check"
 $npmVersion = (& npm --version 2>&1)
 Assert-LastExitCode "npm version check"
 
+$systemPythonMajorMinor = (& python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>&1)
+Assert-LastExitCode "Python major/minor version check"
+
 Write-Host "  Python: $pythonVersion"
 Write-Host "  Node  : $nodeVersion"
 Write-Host "  npm   : $npmVersion"
 
+$venvPython = Join-Path $root ".venv\Scripts\python.exe"
+
+if ($RecreateVenv) {
+    Remove-StockScopeVenv
+}
+elseif (Test-Path $venvPython) {
+    $venvPythonMajorMinor = (& $venvPython -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>&1)
+    if ($LASTEXITCODE -ne 0 -or $venvPythonMajorMinor -ne $systemPythonMajorMinor) {
+        Write-Host "[StockScope] Existing .venv uses a different or broken Python runtime." -ForegroundColor Yellow
+        Write-Host "  System Python: $systemPythonMajorMinor"
+        Write-Host "  .venv Python : $venvPythonMajorMinor"
+        Remove-StockScopeVenv
+    }
+}
+elseif (Test-Path ".venv") {
+    Write-Host "[StockScope] Existing .venv is incomplete. Recreating it..." -ForegroundColor Yellow
+    Remove-StockScopeVenv
+}
+
 Write-Host "[StockScope] Setting up backend..." -ForegroundColor Cyan
-if (-not (Test-Path ".venv\Scripts\python.exe")) {
+if (-not (Test-Path $venvPython)) {
+    Write-Host "[StockScope] Creating .venv with Python $systemPythonMajorMinor..." -ForegroundColor DarkCyan
     & python -m venv .venv
     Assert-LastExitCode "virtual environment creation"
 }
 
-$python = Join-Path $root ".venv\Scripts\python.exe"
+$python = $venvPython
+
+$venvVersion = (& $python --version 2>&1)
+Assert-LastExitCode "virtual environment Python version check"
+Write-Host "  .venv: $venvVersion"
 
 & $python -m pip install --upgrade pip
 Assert-LastExitCode "pip upgrade"
