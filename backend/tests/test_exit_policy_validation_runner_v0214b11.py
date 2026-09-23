@@ -145,9 +145,10 @@ async def test_runner_is_local_only_and_reuses_checkpoint(monkeypatch: pytest.Mo
             self.calls.append(config.code)
             return _audit(config.code, config.market)
 
+    DummyAuditEngine.calls.clear()
+    monkeypatch.setattr("app.backtest.service.ExitPolicyResearchEngine", DummyAuditEngine)
     service = BacktestService(DummyKrx(), market_store=DummyMarketStore())  # type: ignore[arg-type]
     dummy = DummyAuditEngine()
-    service.exit_policy_research = dummy  # type: ignore[assignment]
     checkpoint = ExitPolicyValidationCheckpoint(tmp_path)
     cfg = ExitPolicyValidationRunnerConfig(
         start_date="2024-01-01",
