@@ -55,7 +55,8 @@ def test_current_audit_detects_formula_mismatch_without_changing_price():
     )
     assert audit["formula_status"] == "MISMATCH"
     assert audit["target1_price"] == 120.0
-    assert audit["expected_target1_price"] == 110.0
+    assert audit["expected_target1_price"] == 107.5
+    assert audit["expected_target1_basis_code"] == "RISK_1_5R_CAP"
 
 
 def test_observed_scanner_target_distance_math_is_reproducible():
