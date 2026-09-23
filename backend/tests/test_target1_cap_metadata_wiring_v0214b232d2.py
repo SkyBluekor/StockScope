@@ -101,4 +101,4 @@ def test_scanner_decision_version_stays_02136():
     scanner_path = repo_root / "backend/app/backtest/scanner.py"
     if scanner_path.exists():
         scanner = scanner_path.read_text(encoding="utf-8")
-        assert 'VERSION = "0.21.3.6"' in scanner
+        assert 'VERSION = "0.21.3.7"' in scanner
