@@ -103,7 +103,7 @@ def test_audit_declares_current_only_policy_and_history_coverage(tmp_path: Path)
 
 def test_scanner_source_no_long_history_branch_in_production_loop() -> None:
     source = (Path(__file__).parents[1] / "app" / "backtest" / "scanner.py").read_text(encoding="utf-8")
-    assert 'VERSION = "0.21.3.4"' in source
+    assert 'VERSION = "0.21.3.7"' in source
     assert "enough_history = (" not in source
     assert "deep = self._current_candidate(item)" in source
     assert "day_status_range" in source
