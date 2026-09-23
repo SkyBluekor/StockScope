@@ -1,24 +1,3 @@
-import sys, types
-from enum import Enum
-
-class _StrategyName(str, Enum):
-    TREND_FOLLOWING='TREND_FOLLOWING'
-    PULLBACK='PULLBACK'
-    BREAKOUT='BREAKOUT'
-    SUPPORT_BOUNCE='SUPPORT_BOUNCE'
-    OVERSOLD_BOUNCE='OVERSOLD_BOUNCE'
-    RANGE_TRADING='RANGE_TRADING'
-    MOMENTUM_CONTINUATION='MOMENTUM_CONTINUATION'
-    VOLATILITY_SQUEEZE='VOLATILITY_SQUEEZE'
-    MA20_REBOUND='MA20_REBOUND'
-    TREND_RECOVERY='TREND_RECOVERY'
-
-strategy_pkg=types.ModuleType('app.strategy')
-strategy_models=types.ModuleType('app.strategy.models')
-strategy_models.StrategyName=_StrategyName
-sys.modules.setdefault('app.strategy', strategy_pkg)
-sys.modules['app.strategy.models']=strategy_models
-
 from app.backtest.selector import select_strategy
 
 
