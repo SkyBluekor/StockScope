@@ -98,14 +98,8 @@ Write-Host "[StockScope] Backend versions..." -ForegroundColor DarkCyan
 & $python -c "import fastapi, starlette, tzdata; print('  FastAPI:', fastapi.__version__); print('  Starlette:', starlette.__version__); print('  tzdata:', tzdata.__version__)"
 Assert-LastExitCode "backend version check"
 
-Push-Location backend
-try {
-    & $python -m pytest
-    Assert-LastExitCode "backend tests"
-}
-finally {
-    Pop-Location
-}
+& $python -m pytest -c ".\backend\pyproject.toml" ".\backend\tests"
+Assert-LastExitCode "backend tests"
 
 Write-Host "[StockScope] Setting up frontend..." -ForegroundColor Cyan
 Push-Location frontend
