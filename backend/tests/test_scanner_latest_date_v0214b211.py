@@ -119,7 +119,9 @@ async def test_freshness_up_to_date_store_avoids_krx_requests() -> None:
     assert result["status"] == "READY"
     assert result["resolved_as_of_date"] == "2026-09-15"
     assert result["date_changed"] is False
-    assert result["diagnostics"]["network_requests"] == 0
+    assert result["diagnostics"]["network_requests"] == 4
+    assert result["diagnostics"]["data_integrity"]["KOSPI"]["mode"] == "FORCED_KRX_VERIFY"
+    assert result["diagnostics"]["data_integrity"]["KOSDAQ"]["mode"] == "FORCED_KRX_VERIFY"
 
 
 @pytest.mark.asyncio
@@ -156,6 +158,8 @@ async def test_freshness_failure_keeps_previous_date_for_explicit_fallback() -> 
     result = await service.prepare_latest_confirmed_data(market_scope="ALL", known_data_date="2026-09-14")
 
     assert result["status"] == "UPDATE_FAILED"
-    assert result["resolved_as_of_date"] is None
+    assert result["resolved_as_of_date"] == "2026-09-14"
+    assert result["current_date_valid"] is True
+    assert result["fallback_allowed"] is False
     assert result["available_data_date"] == "2026-09-14"
     assert result["market_data_updated"] is False
