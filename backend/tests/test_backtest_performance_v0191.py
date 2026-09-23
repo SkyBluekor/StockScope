@@ -46,7 +46,7 @@ class _FakeEngine:
     LIVE_HISTORY_POINTS = 60
     RELATIVE_STRENGTH_POINTS = 61
 
-    def run(self, *, stock_rows, index_rows, config, progress_callback=None):
+    def run(self, *, stock_rows, index_rows, config, progress_callback=None, **kwargs):
         if progress_callback:
             progress_callback({
                 "stage": "strategy_calculation",
