@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from time import monotonic
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
@@ -489,24 +489,33 @@ class KrxProvider:
             self._request_stats["memory_hits"] += 1
             return cached
 
-        if not self._is_volatile_date(bas_dd):
-            disk_cached = await asyncio.to_thread(self._load_disk_cache, endpoint, bas_dd)
-            if disk_cached is not None:
-                self._request_stats["disk_hits"] += 1
-                self._rows_cache[cache_key] = disk_cached
-                return disk_cached
-            if self._has_empty_marker(endpoint, bas_dd):
-                self._request_stats["empty_marker_hits"] += 1
-                self._rows_cache[cache_key] = []
-                return []
+        async def resolve_rows() -> list[dict[str, Any]]:
+            # Reserve the shared in-flight slot before the first await. Otherwise two
+            # provider instances can both yield to disk-cache I/O and race to become
+            # the network requester on faster Linux runners.
+            if not self._is_volatile_date(bas_dd):
+                disk_cached = await asyncio.to_thread(self._load_disk_cache, endpoint, bas_dd)
+                if disk_cached is not None:
+                    self._request_stats["disk_hits"] += 1
+                    return disk_cached
+                if self._has_empty_marker(endpoint, bas_dd):
+                    self._request_stats["empty_marker_hits"] += 1
+                    return []
+            return await self._request_rows(endpoint, bas_dd)
 
         loop = asyncio.get_running_loop()
         with self._inflight_guard:
+            cached = self._rows_cache.get(cache_key)
+            if cached is not None:
+                self._request_stats["memory_hits"] += 1
+                return cached
+
             task = self._inflight_tasks.get(cache_key)
             # FastAPI requests normally share one loop. If a test/worker uses another
-            # loop, do not await a task bound to the wrong loop.
-            if task is None or task.done() or task.get_loop() is not loop:
-                task = loop.create_task(self._request_rows(endpoint, bas_dd))
+            # loop, do not await a task bound to the wrong loop. A completed same-loop
+            # task remains reusable until its result has been copied into the cache.
+            if task is None or task.get_loop() is not loop:
+                task = loop.create_task(resolve_rows())
                 self._inflight_tasks[cache_key] = task
 
         try:
@@ -765,6 +774,7 @@ class KrxProvider:
         points: int = 30,
         lookback_days: int = 60,
         concurrency: int = 5,
+        progress: Callable[[int, int], None] | None = None,
     ) -> list[dict[str, Any]]:
         """최근 거래일 OHLCV를 오래된 날짜 -> 최신 날짜 순으로 반환합니다.
 
@@ -788,6 +798,8 @@ class KrxProvider:
                 row = result["rows"][0]
                 if row.get("close") is not None:
                     found.append(row)
+            if progress is not None:
+                progress(min(len(found), wanted), wanted)
             if len(found) >= wanted:
                 break
 
@@ -836,6 +848,7 @@ class KrxProvider:
         points: int = 7,
         lookback_days: int = 30,
         concurrency: int = 5,
+        progress: Callable[[int, int], None] | None = None,
     ) -> list[dict[str, Any]]:
         market_key = market.upper().strip()
         wanted = min(max(points, 2), 120)
@@ -860,6 +873,8 @@ class KrxProvider:
                     continue
                 seen_dates.add(row_date)
                 found.append(main)
+            if progress is not None:
+                progress(min(len(found), wanted), wanted)
             if len(found) >= wanted:
                 break
 

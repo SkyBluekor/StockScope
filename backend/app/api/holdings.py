@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import os
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -7,6 +9,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
@@ -22,10 +25,18 @@ from app.holdings.catalog import (
     HoldingsCatalogError,
 )
 from app.holdings.chart import HoldingsChartError, HoldingsChartService
+from app.holdings.chart_prepare import (
+    HoldingsChartPrepareError,
+    HoldingsChartPrepareService,
+)
 from app.holdings.decision_context import HoldingDecisionContextService
 from app.holdings.freshness import (
     HoldingsMarketFreshnessError,
     HoldingsMarketFreshnessService,
+)
+from app.holdings.history_prepare import (
+    HoldingsHistoryPrepareError,
+    HoldingsHistoryPrepareService,
 )
 from app.holdings.kis_sync import (
     HoldingsKisSyncError,
@@ -36,6 +47,8 @@ from app.holdings.lifecycle import (
     PositionLifecycleResult,
     PositionLifecycleService,
 )
+from app.holdings.performance import HoldingsPerformanceError, HoldingPerformanceService
+from app.holdings.management import HoldingsManagementError, HoldingManagementService
 
 
 router = APIRouter(prefix="/holdings", tags=["holdings"])
@@ -47,8 +60,23 @@ class WatchStockRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
 
 
+class HeldStockRegistrationRequest(BaseModel):
+    market: Literal["KOSPI", "KOSDAQ"]
+    ticker: str = Field(pattern=r"^\d{6}$")
+    name: str = Field(min_length=1, max_length=100)
+    quantity: str = Field(min_length=1, max_length=80)
+    average_price: str = Field(min_length=1, max_length=80)
+    effective_at: str = Field(min_length=1, max_length=80)
+    account_id: str | None = None
+
+
 class WatchStateRequest(BaseModel):
     enabled: bool
+
+
+class ApplyManagementPlanRequest(BaseModel):
+    analysis_revision_id: str = Field(min_length=1)
+    change_reason: str | None = Field(default=None, max_length=500)
 
 
 class ManualBuyRequest(BaseModel):
@@ -103,6 +131,28 @@ def _chart_service() -> HoldingsChartService:
     return HoldingsChartService(_market_store_path())
 
 
+def _performance_service(catalog: HoldingsCatalog) -> HoldingPerformanceService:
+    return HoldingPerformanceService(
+        catalog,
+        market_store_db=_market_store_path(),
+    )
+
+
+def _management_service(catalog: HoldingsCatalog) -> HoldingManagementService:
+    return HoldingManagementService(
+        catalog,
+        market_store_db=_market_store_path(),
+    )
+
+
+def _chart_prepare_service() -> HoldingsChartPrepareService:
+    settings = get_settings()
+    return HoldingsChartPrepareService(
+        krx_api_key=settings.krx_api_key,
+        market_store_db=_market_store_path(),
+    )
+
+
 def _decision_service(catalog: HoldingsCatalog) -> HoldingDecisionContextService:
     return HoldingDecisionContextService(catalog)
 
@@ -110,6 +160,14 @@ def _decision_service(catalog: HoldingsCatalog) -> HoldingDecisionContextService
 def _freshness_service() -> HoldingsMarketFreshnessService:
     settings = get_settings()
     return HoldingsMarketFreshnessService(
+        krx_api_key=settings.krx_api_key,
+        market_store_db=_market_store_path(),
+    )
+
+
+def _history_prepare_service() -> HoldingsHistoryPrepareService:
+    settings = get_settings()
+    return HoldingsHistoryPrepareService(
         krx_api_key=settings.krx_api_key,
         market_store_db=_market_store_path(),
     )
@@ -137,6 +195,11 @@ def _http_status(code: str) -> int:
         "HOLD_POSITION_REVISION_FROM_FUTURE",
         "HOLD_POSITION_REVISION_MISMATCH",
         "HOLD_POSITION_CONFLICT",
+        "HOLD_PLAN_POSITION_CLOSED",
+        "HOLD_PLAN_REVISION_MISMATCH",
+        "HOLD_PLAN_REVISION_FROM_FUTURE",
+        "HOLD_PLAN_STOP_LOOSENING_BLOCKED",
+        "HOLD_PLAN_CONFLICT",
         "HOLD_KIS_SYNC_CONFIGURATION_ERROR",
         "HOLD_KIS_SYNC_ACCOUNT_CONFLICT",
         "HOLD_KIS_SYNC_INCOMPLETE",
@@ -149,17 +212,29 @@ def _http_status(code: str) -> int:
     if code in {
         "HOLD_KIS_SYNC_BALANCE_FAILED",
         "HOLD_MARKET_FRESHNESS_UPDATE_FAILED",
+        "HOLD_ANALYSIS_HISTORY_PREPARE_FAILED",
     }:
         return 502
     return 400
 
 
 def _raise_holdings_error(error: Exception) -> None:
-    code = getattr(error, "code", "HOLD_API_ERROR")
-    message = getattr(error, "message", str(error))
+    wrapper_code = str(getattr(error, "code", "HOLD_API_ERROR"))
+    cause_code = getattr(error, "cause_code", None)
+    code = str(cause_code or wrapper_code)
+    cause = getattr(error, "__cause__", None)
+    message = getattr(cause, "message", None) if cause_code else None
+    if not message:
+        message = getattr(error, "message", str(error))
+    detail: dict[str, Any] = {"code": code, "message": str(message)}
+    if cause_code:
+        detail["source_code"] = wrapper_code
+    details = getattr(error, "details", None)
+    if isinstance(details, dict):
+        detail.update(_json_safe(details))
     raise HTTPException(
-        status_code=_http_status(str(code)),
-        detail={"code": str(code), "message": str(message)},
+        status_code=_http_status(code),
+        detail=detail,
     ) from error
 
 
@@ -425,6 +500,38 @@ def stock_detail(stock_id: str) -> dict[str, Any]:
         _raise_holdings_error(error)
 
 
+@router.get("/stocks/{stock_id}/management")
+def stock_management(stock_id: str) -> dict[str, Any]:
+    catalog = _catalog()
+    try:
+        return _management_service(catalog).build(stock_id)
+    except (HoldingsCatalogError, HoldingsManagementError) as error:
+        _raise_holdings_error(error)
+
+
+@router.post("/positions/{position_id}/plans/apply")
+def apply_management_plan(position_id: str, request: ApplyManagementPlanRequest) -> dict[str, Any]:
+    catalog = _catalog()
+    try:
+        plan = _management_service(catalog).apply_analysis_plan(
+            position_id=position_id,
+            analysis_revision_id=request.analysis_revision_id,
+            change_reason=request.change_reason,
+        )
+        return {"plan": plan.to_dict()}
+    except (HoldingsCatalogError, HoldingsManagementError) as error:
+        _raise_holdings_error(error)
+
+
+@router.get("/stocks/{stock_id}/performance")
+def stock_performance(stock_id: str) -> dict[str, Any]:
+    catalog = _catalog()
+    try:
+        return _performance_service(catalog).calculate(stock_id).to_dict()
+    except (HoldingsCatalogError, HoldingsPerformanceError) as error:
+        _raise_holdings_error(error)
+
+
 @router.get("/stocks/{stock_id}/chart")
 def stock_chart(
     stock_id: str,
@@ -449,6 +556,59 @@ def stock_chart(
         return result.to_dict()
     except (HoldingsCatalogError, HoldingsChartError) as error:
         _raise_holdings_error(error)
+
+
+@router.post("/stocks/{stock_id}/chart/prepare-stream")
+async def prepare_stock_chart_stream(
+    stock_id: str,
+    chart_range: Literal["1m", "3m", "6m", "1y"] = Query(alias="range"),
+) -> StreamingResponse:
+    async def event_stream():
+        catalog = _catalog()
+
+        def line(payload: dict[str, Any]) -> str:
+            return json.dumps(_json_safe(payload), ensure_ascii=False, separators=(",", ":")) + "\n"
+
+        try:
+            stock = catalog.get_monitored_stock(stock_id)
+            queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+
+            def on_progress(payload: dict[str, Any]) -> None:
+                queue.put_nowait({"type": "progress", **payload})
+
+            prepare_task = asyncio.create_task(
+                _chart_prepare_service().prepare(
+                    market=stock.market,
+                    ticker=stock.ticker,
+                    chart_range=chart_range,
+                    progress=on_progress,
+                )
+            )
+
+            while not prepare_task.done() or not queue.empty():
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=0.15)
+                except asyncio.TimeoutError:
+                    continue
+                yield line(item)
+
+            result = await prepare_task
+            yield line({"type": "complete", "stage": "complete", "message": result.message, "result": result.to_dict()})
+        except (HoldingsCatalogError, HoldingsChartPrepareError) as error:
+            detail: dict[str, Any] = {
+                "code": str(getattr(error, "code", "HOLD_CHART_PREPARE_FAILED")),
+                "message": str(getattr(error, "message", str(error))),
+            }
+            details = getattr(error, "details", None)
+            if isinstance(details, dict):
+                detail.update(_json_safe(details))
+            yield line({"type": "error", "stage": "error", **detail})
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/watch")
@@ -494,6 +654,39 @@ def register_watch(request: WatchStockRequest) -> dict[str, Any]:
     except HoldingsCatalogError as error:
         _raise_holdings_error(error)
 
+
+
+
+@router.post("/held")
+def register_held_stock(request: HeldStockRegistrationRequest) -> dict[str, Any]:
+    catalog = _catalog()
+    try:
+        account_id = request.account_id
+        if account_id is None:
+            account_id = _ensure_default_manual_account(catalog).id
+        result = _lifecycle_service(catalog).register_initial_holding(
+            market=request.market,
+            ticker=request.ticker,
+            name=request.name,
+            position_account_id=account_id,
+            quantity=request.quantity,
+            average_price=request.average_price,
+            effective_at=request.effective_at,
+        )
+        stock = catalog.get_monitored_stock(result.stock_id)
+        if stock is None:
+            raise HoldingsLifecycleError(
+                "HOLD_POSITION_CONFLICT",
+                "등록된 보유 종목을 다시 확인할 수 없습니다.",
+            )
+        payload = _lifecycle_payload(result)
+        return {
+            "created": result.created_stock,
+            "stock": _stock_payload(catalog, stock),
+            **payload,
+        }
+    except (HoldingsCatalogError, HoldingsLifecycleError) as error:
+        _raise_holdings_error(error)
 
 @router.patch("/stocks/{stock_id}/watch")
 def set_watch_state(
@@ -597,6 +790,7 @@ def current_analysis(stock_id: str) -> dict[str, Any]:
 async def refresh_analysis(
     stock_id: str,
     prepare_latest: bool = Query(default=False),
+    prepare_history: bool = Query(default=False),
 ) -> dict[str, Any]:
     catalog = _catalog()
     try:
@@ -625,9 +819,16 @@ async def refresh_analysis(
             known_data_date=known_data_date,
         )
 
-        # Freshness updates the same Market Store first. Reuse the established
-        # HOLD.1-E/F latest-confirmed analysis contract instead of introducing
-        # a second analysis path.
+        history_prepare = None
+        if prepare_history:
+            history_prepare = await _history_prepare_service().prepare(
+                market=stock.market,
+                ticker=stock.ticker,
+                market_date=freshness.resolved_as_of_date,
+            )
+
+        # Freshness/history preparation only fill data. The established HOLD.1-E/F
+        # analysis path remains the single source of strategy/risk decisions.
         stored = _history_service(catalog).analyze_latest_confirmed(
             monitored_stock_id=stock_id,
         )
@@ -639,13 +840,122 @@ async def refresh_analysis(
             )
         payload["previous_analysis_date"] = known_data_date
         payload["data_freshness"] = freshness.to_dict()
+        if history_prepare is not None:
+            payload["history_prepare"] = history_prepare.to_dict()
         return payload
     except (
         HoldingsCatalogError,
         HoldingsAnalysisHistoryError,
         HoldingsMarketFreshnessError,
+        HoldingsHistoryPrepareError,
     ) as error:
         _raise_holdings_error(error)
+
+
+@router.post("/stocks/{stock_id}/analysis/prepare-stream")
+async def prepare_analysis_stream(stock_id: str) -> StreamingResponse:
+    async def event_stream():
+        catalog = _catalog()
+
+        def line(payload: dict[str, Any]) -> str:
+            return json.dumps(_json_safe(payload), ensure_ascii=False, separators=(",", ":")) + "\n"
+
+        try:
+            stock = catalog.get_monitored_stock(stock_id)
+            current = _current_analysis_payload(catalog, stock_id)
+            known_data_date = current.get("market_date") if current else None
+
+            yield line({
+                "type": "progress",
+                "stage": "latest_check",
+                "message": "최신 확정 거래일을 확인하고 있습니다.",
+            })
+            freshness = await _freshness_service().prepare(
+                market=stock.market,
+                known_data_date=known_data_date,
+            )
+            yield line({
+                "type": "progress",
+                "stage": "latest_ready",
+                "message": f"{freshness.resolved_as_of_date} 확정 일봉을 확인했습니다.",
+            })
+
+            queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+
+            def on_progress(payload: dict[str, Any]) -> None:
+                queue.put_nowait({"type": "progress", **payload})
+
+            prepare_task = asyncio.create_task(
+                _history_prepare_service().prepare(
+                    market=stock.market,
+                    ticker=stock.ticker,
+                    market_date=freshness.resolved_as_of_date,
+                    progress=on_progress,
+                )
+            )
+
+            while not prepare_task.done() or not queue.empty():
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=0.15)
+                except asyncio.TimeoutError:
+                    continue
+                yield line(item)
+
+            history_prepare = await prepare_task
+            yield line({
+                "type": "progress",
+                "stage": "analysis",
+                "message": "준비한 데이터로 종목 분석을 실행하고 있습니다.",
+                "stock_current": history_prepare.final_rows,
+                "stock_required": history_prepare.required_rows,
+                "index_current": history_prepare.required_rows,
+                "index_required": history_prepare.required_rows,
+            })
+
+            stored = _history_service(catalog).analyze_latest_confirmed(
+                monitored_stock_id=stock_id,
+            )
+            payload = _stored_analysis_payload(catalog, stored)
+            if payload.get("market_date") != freshness.resolved_as_of_date:
+                raise HoldingsMarketFreshnessError(
+                    "HOLD_ANALYSIS_HISTORY_CONFLICT",
+                    "최신 확정 시세 준비일과 실제 분석 기준일이 일치하지 않습니다.",
+                )
+            payload["previous_analysis_date"] = known_data_date
+            payload["data_freshness"] = freshness.to_dict()
+            payload["history_prepare"] = history_prepare.to_dict()
+            yield line({
+                "type": "complete",
+                "stage": "complete",
+                "message": "분석을 완료했습니다.",
+                "result": payload,
+            })
+        except (
+            HoldingsCatalogError,
+            HoldingsAnalysisHistoryError,
+            HoldingsMarketFreshnessError,
+            HoldingsHistoryPrepareError,
+        ) as error:
+            wrapper_code = str(getattr(error, "code", "HOLD_API_ERROR"))
+            cause_code = getattr(error, "cause_code", None)
+            code = str(cause_code or wrapper_code)
+            cause = getattr(error, "__cause__", None)
+            message = getattr(cause, "message", None) if cause_code else None
+            if not message:
+                message = getattr(error, "message", str(error))
+            detail: dict[str, Any] = {"code": code, "message": str(message)}
+            if cause_code:
+                detail["source_code"] = wrapper_code
+            details = getattr(error, "details", None)
+            if isinstance(details, dict):
+                detail.update(_json_safe(details))
+            yield line({"type": "error", "stage": "error", **detail})
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/stocks/{stock_id}/analysis/timeline")

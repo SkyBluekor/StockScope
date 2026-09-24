@@ -145,20 +145,29 @@ class HoldingsChartService:
         limit = RANGE_BARS[chart_range]
 
         with self._connect() as conn:
+            confirmed = conn.execute(
+                """
+                SELECT MAX(bas_dd) AS bas_dd
+                FROM day_status
+                WHERE market=? AND kind='stock' AND status='data'
+                """,
+                (clean_market,),
+            ).fetchone()
+            confirmed_end = str(confirmed["bas_dd"] or "") if confirmed else ""
+            if len(confirmed_end) != 8 or not confirmed_end.isdigit():
+                raise HoldingsChartError(
+                    "HOLD_CHART_CONFIRMED_DATE_NOT_FOUND",
+                    f"{clean_market}의 최신 확정 일봉 기준일을 찾을 수 없습니다.",
+                )
             rows = conn.execute(
                 """
-                SELECT s.bas_dd,s.row_json
-                FROM stock_daily s
-                JOIN day_status d
-                  ON d.market=s.market
-                 AND d.bas_dd=s.bas_dd
-                 AND d.kind='stock'
-                 AND d.status='data'
-                WHERE s.market=? AND s.stock_code=?
-                ORDER BY s.bas_dd DESC
+                SELECT bas_dd,row_json
+                FROM stock_daily
+                WHERE market=? AND stock_code=? AND bas_dd<=?
+                ORDER BY bas_dd DESC
                 LIMIT ?
                 """,
-                (clean_market, clean_ticker, limit),
+                (clean_market, clean_ticker, confirmed_end, limit),
             ).fetchall()
 
         if not rows:

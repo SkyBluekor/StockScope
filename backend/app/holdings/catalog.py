@@ -103,6 +103,121 @@ class HoldingsCatalog:
         finally:
             conn.close()
 
+    @staticmethod
+    def _ensure_opening_balance_event_type(conn: sqlite3.Connection) -> None:
+        # HOLD-LEDGER.1: preserve ambiguous BUY rows; convert only the deterministic
+        # G.5.2R initial-registration marker while rebuilding the SQLite CHECK.
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='holding_position_event'"
+        ).fetchone()
+        if row is None or "OPENING_BALANCE" in str(row["sql"] or ""):
+            return
+
+        legacy = "holding_position_event_hold_ledger1_legacy"
+        if conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (legacy,)
+        ).fetchone() is not None:
+            raise HoldingsCatalogError(
+                "HOLD_LEDGER_MIGRATION_CONFLICT",
+                "HOLD-LEDGER.1 임시 migration 테이블이 남아 있어 자동 진행하지 않습니다.",
+            )
+
+        before_count = int(conn.execute("SELECT COUNT(*) FROM holding_position_event").fetchone()[0])
+        conn.execute("DROP TRIGGER IF EXISTS trg_holding_position_event_no_update")
+        conn.execute("DROP TRIGGER IF EXISTS trg_holding_position_event_no_delete")
+        conn.execute("DROP INDEX IF EXISTS ux_holding_event_external_key")
+        conn.execute("DROP INDEX IF EXISTS idx_holding_event_position_created")
+        conn.execute(f"ALTER TABLE holding_position_event RENAME TO {legacy}")
+
+        conn.execute("""
+            CREATE TABLE holding_position_event (
+                id TEXT PRIMARY KEY,
+                position_id TEXT NOT NULL,
+                event_type TEXT NOT NULL
+                    CHECK(event_type IN (
+                        'OPENING_BALANCE','BUY','SELL','CORRECTION','BALANCE_OBSERVED','RECONCILED'
+                    )),
+                quantity_delta TEXT,
+                unit_price TEXT,
+                before_quantity TEXT,
+                after_quantity TEXT,
+                before_average_price TEXT,
+                after_average_price TEXT,
+                observed_at TEXT,
+                effective_at TEXT,
+                analysis_revision_id TEXT,
+                account_sync_run_id TEXT,
+                external_event_key TEXT,
+                note TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(position_id) REFERENCES holding_position(id) ON DELETE RESTRICT,
+                FOREIGN KEY(analysis_revision_id) REFERENCES stock_analysis_revision(id) ON DELETE RESTRICT,
+                FOREIGN KEY(account_sync_run_id) REFERENCES account_sync_run(id) ON DELETE RESTRICT
+            )
+        """)
+        conn.execute(f"""
+            INSERT INTO holding_position_event(
+                id,position_id,event_type,quantity_delta,unit_price,
+                before_quantity,after_quantity,before_average_price,after_average_price,
+                observed_at,effective_at,analysis_revision_id,account_sync_run_id,
+                external_event_key,note,created_at
+            )
+            SELECT
+                e.id,e.position_id,
+                CASE
+                    WHEN e.event_type='BUY'
+                     AND COALESCE(e.note,'')='보유종목 최초 등록'
+                     AND COALESCE(e.before_quantity,'')='0'
+                     AND e.analysis_revision_id IS NULL
+                     AND e.id=(SELECT e2.id FROM {legacy} e2
+                               WHERE e2.position_id=e.position_id
+                               ORDER BY e2.created_at,e2.id LIMIT 1)
+                    THEN 'OPENING_BALANCE'
+                    ELSE e.event_type
+                END,
+                e.quantity_delta,e.unit_price,e.before_quantity,e.after_quantity,
+                e.before_average_price,e.after_average_price,e.observed_at,e.effective_at,
+                e.analysis_revision_id,e.account_sync_run_id,e.external_event_key,e.note,e.created_at
+            FROM {legacy} e
+            ORDER BY e.created_at,e.id
+        """)
+        after_count = int(conn.execute("SELECT COUNT(*) FROM holding_position_event").fetchone()[0])
+        if before_count != after_count:
+            raise HoldingsCatalogError(
+                "HOLD_LEDGER_MIGRATION_COUNT_MISMATCH",
+                "Position Event migration 전후 row 수가 일치하지 않습니다.",
+            )
+
+        conn.execute("""
+            CREATE UNIQUE INDEX ux_holding_event_external_key
+                ON holding_position_event(position_id, external_event_key)
+                WHERE external_event_key IS NOT NULL
+        """)
+        conn.execute("""
+            CREATE INDEX idx_holding_event_position_created
+                ON holding_position_event(position_id, created_at, id)
+        """)
+        conn.execute("""
+            CREATE TRIGGER trg_holding_position_event_no_update
+            BEFORE UPDATE ON holding_position_event
+            BEGIN
+                SELECT RAISE(ABORT, 'holding_position_event is append-only');
+            END
+        """)
+        conn.execute("""
+            CREATE TRIGGER trg_holding_position_event_no_delete
+            BEFORE DELETE ON holding_position_event
+            BEGIN
+                SELECT RAISE(ABORT, 'holding_position_event is append-only');
+            END
+        """)
+        if conn.execute("PRAGMA foreign_key_check").fetchall():
+            raise HoldingsCatalogError(
+                "HOLD_LEDGER_MIGRATION_FOREIGN_KEY",
+                "Position Event migration 후 foreign key 검증에 실패했습니다.",
+            )
+        conn.execute(f"DROP TABLE {legacy}")
+
     def initialize(self) -> None:
         with self.connection() as conn:
             conn.executescript(
@@ -250,7 +365,7 @@ class HoldingsCatalog:
                     position_id TEXT NOT NULL,
                     event_type TEXT NOT NULL
                         CHECK(event_type IN (
-                            'BUY','SELL','CORRECTION','BALANCE_OBSERVED','RECONCILED'
+                            'OPENING_BALANCE','BUY','SELL','CORRECTION','BALANCE_OBSERVED','RECONCILED'
                         )),
                     quantity_delta TEXT,
                     unit_price TEXT,
@@ -273,6 +388,49 @@ class HoldingsCatalog:
                         REFERENCES account_sync_run(id) ON DELETE RESTRICT
                 );
 
+                CREATE TABLE IF NOT EXISTS holding_management_plan (
+                    id TEXT PRIMARY KEY,
+                    position_id TEXT NOT NULL,
+                    plan_version INTEGER NOT NULL CHECK(plan_version >= 1),
+                    status TEXT NOT NULL CHECK(status IN ('ACTIVE','SUPERSEDED','CLOSED')),
+                    source_type TEXT NOT NULL CHECK(source_type IN ('ANALYSIS_REVISION')),
+                    source_analysis_revision_id TEXT NOT NULL,
+                    reference_price TEXT,
+                    stop_price TEXT NOT NULL,
+                    target1_price TEXT,
+                    target2_price TEXT,
+                    confirmation_policy TEXT NOT NULL,
+                    applied_at TEXT NOT NULL,
+                    change_reason TEXT,
+                    previous_plan_id TEXT,
+                    superseded_at TEXT,
+                    closed_at TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(position_id, plan_version),
+                    FOREIGN KEY(position_id) REFERENCES holding_position(id) ON DELETE RESTRICT,
+                    FOREIGN KEY(source_analysis_revision_id) REFERENCES stock_analysis_revision(id) ON DELETE RESTRICT,
+                    FOREIGN KEY(previous_plan_id) REFERENCES holding_management_plan(id) ON DELETE RESTRICT
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_holding_management_plan_active
+                    ON holding_management_plan(position_id)
+                    WHERE status='ACTIVE';
+
+                CREATE INDEX IF NOT EXISTS idx_holding_management_plan_position_version
+                    ON holding_management_plan(position_id, plan_version DESC);
+
+                CREATE TRIGGER IF NOT EXISTS trg_holding_position_close_management_plan
+                AFTER UPDATE OF status ON holding_position
+                WHEN OLD.status='OPEN' AND NEW.status='CLOSED'
+                BEGIN
+                    UPDATE holding_management_plan
+                    SET status='CLOSED',
+                        closed_at=COALESCE(NEW.closed_at,NEW.updated_at),
+                        updated_at=NEW.updated_at
+                    WHERE position_id=NEW.id AND status='ACTIVE';
+                END;
+
                 CREATE UNIQUE INDEX IF NOT EXISTS ux_holding_event_external_key
                     ON holding_position_event(position_id, external_event_key)
                     WHERE external_event_key IS NOT NULL;
@@ -293,6 +451,7 @@ class HoldingsCatalog:
                 END;
                 """
             )
+            self._ensure_opening_balance_event_type(conn)
 
     @staticmethod
     def _account_from_row(row: sqlite3.Row) -> PositionAccount:
