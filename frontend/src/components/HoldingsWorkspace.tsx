@@ -175,7 +175,7 @@ function planGuidanceText(
 function previousPlanActionLabel(context: HoldingDecisionContext | null | undefined) {
   const plan = context?.previous_plan;
   if (!plan || plan.state === "FIRST_PLAN" || !plan.previous_market_date) return null;
-  return plan.state === "PREVIOUS_PLAN_UNAVAILABLE" ? "과거 분석 보기" : "이전 계획 보기";
+  return plan.state === "PREVIOUS_PLAN_UNAVAILABLE" ? "과거 분석 보기" : "이전 분석과 비교";
 }
 
 function money(value: string | null | undefined) {
@@ -362,9 +362,9 @@ function timelineLabel(item: HoldingTimelineItem) {
     case "BUY":
       return "추가 매수";
     case "SELL":
-      return "보유 감소";
+      return "매도";
     case "CORRECTION":
-      return "수동 수정";
+      return "보유 정보 수정";
     case "BALANCE_OBSERVED":
       return "잔고 확인";
     case "RECONCILED":
@@ -389,9 +389,9 @@ function timelineDescription(item: HoldingTimelineItem) {
     case "BUY":
       return "실제 추가 매수 거래를 StockScope 보유 원장에 기록했습니다.";
     case "SELL":
-      return "StockScope 수동 보유 기록에서 수량을 줄였습니다.";
+      return "실제 매도 거래를 StockScope 보유 원장에 기록했습니다.";
     case "CORRECTION":
-      return "수동 보유 정보의 수량 또는 평균단가를 수정했습니다.";
+      return "거래가 아닌 보유 정보 정정으로 현재 수량 또는 평균단가를 바로잡았습니다.";
     case "BALANCE_OBSERVED":
       return "한국투자증권에서 확인한 잔고를 기록했습니다.";
     case "RECONCILED":
@@ -606,12 +606,35 @@ export default function HoldingsWorkspace() {
   const manualDialogTitle = manualMode === "buy"
     ? manualPosition ? "추가 매수 기록" : "보유 등록"
     : manualMode === "sell"
-      ? "부분 매도 기록"
-      : "정보 수정";
+      ? "매도 기록"
+      : "보유 정보 수정";
 
   const manualRemainingQuantity = manualMode === "sell" && manualPosition
     ? Math.max(0, quantityNumber(manualPosition.quantity) - quantityNumber(manualQuantity))
     : null;
+
+  const manualSellRealizedPnl = manualMode === "sell"
+    && manualPosition
+    && manualPosition.average_price != null
+    && quantityNumber(manualQuantity) > 0
+    && quantityNumber(manualPrice) > 0
+      ? quantityNumber(manualQuantity)
+        * (quantityNumber(manualPrice) - quantityNumber(manualPosition.average_price))
+      : null;
+
+  const manualBuyProjectedAverage = manualMode === "buy"
+    && manualPosition
+    && manualPosition.average_price != null
+    && quantityNumber(manualPosition.quantity) > 0
+    && quantityNumber(manualQuantity) > 0
+    && quantityNumber(manualPrice) > 0
+      ? (
+          quantityNumber(manualPosition.quantity) * quantityNumber(manualPosition.average_price)
+          + quantityNumber(manualQuantity) * quantityNumber(manualPrice)
+        ) / (
+          quantityNumber(manualPosition.quantity) + quantityNumber(manualQuantity)
+        )
+      : null;
 
   async function refreshSelected() {
     if (!selectedStockId) return;
@@ -1058,7 +1081,7 @@ export default function HoldingsWorkspace() {
       return;
     }
     if (manualMode === "sell" && manualPosition && quantityNumber(manualQuantity) > quantityNumber(manualPosition.quantity)) {
-      setError(`감소 수량은 현재 보유 ${quantity(manualPosition.quantity)}주를 넘을 수 없습니다.`);
+      setError(`매도 수량은 현재 보유 ${quantity(manualPosition.quantity)}주를 넘을 수 없습니다.`);
       return;
     }
     if (manualMode !== "correction" && !manualPrice.trim()) {
@@ -1110,8 +1133,8 @@ export default function HoldingsWorkspace() {
             ? `${manualQuantity}주를 추가했습니다. 보유 현황을 갱신했습니다.`
             : `${manualQuantity}주를 보유 종목으로 등록했습니다.`
           : manualMode === "sell"
-            ? `${manualQuantity}주를 감소했습니다. 보유 현황을 갱신했습니다.`
-            : "StockScope에 저장된 보유 정보를 수정했습니다.",
+            ? `${manualQuantity}주 매도를 기록했습니다. 보유 현황을 갱신했습니다.`
+            : "StockScope에 저장된 보유 정보를 바로잡았습니다.",
       );
     } catch (manualError) {
       setError(readableError(manualError, "수동 기록을 저장하지 못했습니다."));
@@ -1126,9 +1149,9 @@ export default function HoldingsWorkspace() {
     <div className="holdings-workspace">
       <section className="holdings-page-head">
         <div>
-          <span className="eyebrow">HOLDINGS · EOD ANALYSIS</span>
-          <h1>내 종목 분석</h1>
-          <p>관심 종목과 보유 종목을 한곳에서 확인합니다.</p>
+          <span className="eyebrow">HOLDINGS</span>
+          <h1>내 종목 관리</h1>
+          <p>관심 종목과 실제 보유 상태, 손익과 관리 계획을 확인합니다.</p>
         </div>
         <button type="button" className="holdings-secondary" onClick={() => setAddOpen(true)}>
           + 종목 추가
@@ -1378,11 +1401,37 @@ export default function HoldingsWorkspace() {
                   )}
                 </div>
 
+                <div className="holdings-position-actions-primary" aria-label="보유 작업">
+                  <span>보유 작업</span>
+                  {detail.positions.length === 1 && singleEditablePosition ? (
+                    <div>
+                      <button type="button" onClick={() => void openManual("buy", singleEditablePosition)}>추가 매수 기록</button>
+                      <button type="button" onClick={() => void openManual("sell", singleEditablePosition)}>매도 기록</button>
+                      <button type="button" onClick={() => void openManual("correction", singleEditablePosition)}>보유 정보 수정</button>
+                    </div>
+                  ) : detail.positions.length === 1 && singlePosition ? (
+                    <div>
+                      <button type="button" onClick={() => void syncKis()} disabled={syncingKis}>
+                        {syncingKis ? "동기화 중" : "잔고 동기화"}
+                      </button>
+                      <small>증권사 연동 보유는 직접 수정하지 않습니다.</small>
+                    </div>
+                  ) : detail.positions.length > 1 ? (
+                    <div>
+                      <button type="button" onClick={() => document.getElementById("holdings-position-details")?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+                        계좌별 보유 보기
+                      </button>
+                    </div>
+                  ) : (
+                    <small>현재 보유 기록이 없습니다.</small>
+                  )}
+                </div>
+
                 {management && management.positions.length > 0 && (
                   <div className="holdings-management-block" aria-label="보유 관리 계획">
                     <div className="holdings-management-head">
                       <div>
-                        <strong>현재 관리</strong>
+                        <strong>현재 관리 계획</strong>
                         <span>{management.valuation.market_date ? `${compactDate(management.valuation.market_date)} 확정 종가 기준` : "현재 가격 데이터 확인 필요"}</span>
                       </div>
                     </div>
@@ -1402,14 +1451,18 @@ export default function HoldingsWorkspace() {
                         ) : <div className="holdings-management-empty">아직 적용한 보유 관리 계획이 없습니다.</div>}
                         <div className="holdings-management-proposal">
                           <div>
-                            <span>{proposalStateText(item.proposal.state)}</span>
+                            <span>최신 분석 제안 · {proposalStateText(item.proposal.state)}</span>
                             {item.proposal.analysis_revision_id && <strong>손절 {money(item.proposal.stop_price)} · 1차 {money(item.proposal.target1_price)} · 2차 {money(item.proposal.target2_price)}</strong>}
                             {item.proposal.reason && <small>{item.proposal.reason}</small>}
                           </div>
                           {item.proposal.analysis_revision_id && item.proposal.state !== "SAME_AS_ACTIVE" && (
                             <button type="button" className="holdings-secondary-button" disabled={!item.proposal.can_apply || applyingPlanId === item.position_id}
                               onClick={() => void applyLatestManagementPlan(item.position_id, item.proposal.analysis_revision_id as string)}>
-                              {applyingPlanId === item.position_id ? "적용 중..." : "이 계획 적용"}
+                              {applyingPlanId === item.position_id
+                                ? "적용 중..."
+                                : !item.proposal.can_apply
+                                  ? "적용 불가"
+                                  : "이 계획 적용"}
                             </button>
                           )}
                         </div>
@@ -1439,7 +1492,7 @@ export default function HoldingsWorkspace() {
                           <div className="holdings-pnl-metrics">
                             <div><span>잔여 원가</span><strong>{money(pnl.cost_basis)}</strong></div>
                             <div><span>평가 금액</span><strong>{money(pnl.market_value)}</strong></div>
-                            <div>
+                            <div className="holdings-pnl-focus">
                               <span>평가 손익</span>
                               <strong className={pnlSignClass(pnl.unrealized_pnl)}>
                                 {signedMoney(pnl.unrealized_pnl)}
@@ -1609,7 +1662,7 @@ export default function HoldingsWorkspace() {
               <div className="holdings-analysis-grid">
                 <section className="holdings-analysis-block">
                   <div className="holdings-block-title">
-                    <h3>현재 분석</h3>
+                    <h3>최신 EOD 분석</h3>
                   </div>
                   {selectedAnalysis ? (
                     <>
@@ -1664,7 +1717,7 @@ export default function HoldingsWorkspace() {
                               onClick={() => setShowPreviousPlan((value) => !value)}
                             >
                               {showPreviousPlan
-                                ? "이전 계획 닫기"
+                                ? "이전 분석 비교 닫기"
                                 : previousPlanActionLabel(detail.decision_context)}
                             </button>
                           )}
@@ -1692,7 +1745,7 @@ export default function HoldingsWorkspace() {
                         {showPreviousPlan && detail.decision_context?.previous_plan.previous_market_date && (
                           <div className="holdings-decision-expand">
                             <strong>
-                              이전 계획 · {compactDate(detail.decision_context.previous_plan.previous_market_date)}
+                              이전 분석 · {compactDate(detail.decision_context.previous_plan.previous_market_date)}
                             </strong>
                             <dl className="holdings-previous-plan">
                               <div><dt>기준가</dt><dd>{money(detail.decision_context.previous_plan.previous_reference_price)}</dd></div>
@@ -1725,14 +1778,14 @@ export default function HoldingsWorkspace() {
               </div>
 
               <div className="holdings-basis-note">
-                실시간 판단이 아니라 최신 확정 일봉 기준 분석입니다.
+                최신 EOD 분석은 제안 정보이며 적용 중인 보유 관리 계획을 자동으로 바꾸지 않습니다.
               </div>
 
-              <section className="holdings-positions" id="holdings-position-details">
+              <section className={`holdings-positions ${detail.positions.length <= 1 ? "single-hidden" : ""}`} id="holdings-position-details">
                 <div className="holdings-block-title">
                   <div>
-                    <h3>보유 상세</h3>
-                    <span>계좌별 보유 기록과 실제 수량 추가·감소 내역을 관리합니다.</span>
+                    <h3>계좌별 보유</h3>
+                    <span>계좌별 보유 상태와 거래 기록을 구분해 관리합니다.</span>
                   </div>
                 </div>
 
@@ -1755,7 +1808,7 @@ export default function HoldingsWorkspace() {
                         ) : (
                           <div className="holdings-position-actions">
                             <button type="button" onClick={() => void openManual("buy", position)}>추가 매수 기록</button>
-                            <button type="button" onClick={() => void openManual("sell", position)}>부분 매도 기록</button>
+                            <button type="button" onClick={() => void openManual("sell", position)}>매도 기록</button>
                           </div>
                         )}
                       </article>
@@ -2010,7 +2063,7 @@ export default function HoldingsWorkspace() {
                   {manualMode === "buy"
                     ? manualPosition ? "추가 수량" : "보유 수량"
                     : manualMode === "sell"
-                      ? "감소 수량"
+                      ? "매도 수량"
                       : "보유 수량"}
                 </span>
                 {manualMode === "sell" ? (
@@ -2053,7 +2106,7 @@ export default function HoldingsWorkspace() {
                   {manualMode === "correction"
                     ? "평균단가"
                     : manualMode === "sell"
-                      ? "감소 가격 (기록용)"
+                      ? "매도가"
                       : manualPosition ? "추가 매수가" : "평균 매수가"}
                 </span>
                 {manualMode === "buy" ? (
@@ -2086,16 +2139,29 @@ export default function HoldingsWorkspace() {
               )}
 
               {manualMode === "sell" && manualPosition && (
-                <div className="holdings-form-preview">
-                  <span>감소 후 보유 수량</span>
-                  <strong>{quantity(String(manualRemainingQuantity ?? 0))}주</strong>
+                <div className="holdings-trade-preview">
+                  <div><span>매도 후 보유</span><strong>{quantity(String(manualRemainingQuantity ?? 0))}주</strong></div>
+                  <div>
+                    <span>기록될 실현손익</span>
+                    <strong className={pnlSignClass(manualSellRealizedPnl == null ? null : String(manualSellRealizedPnl))}>
+                      {manualSellRealizedPnl == null ? "계산 불가" : signedMoney(String(manualSellRealizedPnl))}
+                    </strong>
+                  </div>
+                  <small>매도 직전 평균단가 기준 · 비용 제외</small>
                 </div>
               )}
 
               {manualMode === "buy" && manualPosition && manualQuantity.trim() && (
-                <div className="holdings-form-preview">
-                  <span>추가 후 보유 수량</span>
-                  <strong>{quantity(String(quantityNumber(manualPosition.quantity) + quantityNumber(manualQuantity)))}주</strong>
+                <div className="holdings-trade-preview">
+                  <div>
+                    <span>추가 후 보유</span>
+                    <strong>{quantity(String(quantityNumber(manualPosition.quantity) + quantityNumber(manualQuantity)))}주</strong>
+                  </div>
+                  <div>
+                    <span>예상 평균단가</span>
+                    <strong>{manualBuyProjectedAverage == null ? "계산 불가" : money(String(manualBuyProjectedAverage))}</strong>
+                  </div>
+                  <small>현재 평균단가와 입력한 추가 매수가 기준</small>
                 </div>
               )}
 
@@ -2111,10 +2177,10 @@ export default function HoldingsWorkspace() {
 
             <div className="holdings-order-note">
               {manualMode === "correction"
-                ? "실제 주문 내역을 만드는 것이 아니라 StockScope에 저장된 보유 수량과 평균단가를 바로잡습니다."
+                ? "실제 매수·매도 거래가 아니라 StockScope에 저장된 현재 수량과 평균단가를 바로잡습니다. 이전 실현손익은 다시 계산하지 않습니다."
                 : manualMode === "sell"
-                  ? "실제 매도 주문은 실행되지 않습니다. 선택한 내부 보유 기록의 수량만 감소시킵니다."
-                  : "실제 매수 주문은 실행되지 않습니다. StockScope 내부 보유 기록만 추가합니다."}
+                  ? "StockScope에 실제 매도 내역을 기록합니다. 증권사 주문은 실행되지 않습니다."
+                  : "StockScope에 실제 추가 매수 내역을 기록합니다. 증권사 주문은 실행되지 않습니다."}
             </div>
 
             <div className="holdings-dialog-actions">
@@ -2125,7 +2191,7 @@ export default function HoldingsWorkspace() {
                   : manualMode === "buy"
                     ? manualPosition ? "수량 추가" : "보유 등록"
                     : manualMode === "sell"
-                      ? "감소 적용"
+                      ? "매도 기록"
                       : "정보 수정"}
               </button>
             </div>
