@@ -1510,3 +1510,280 @@ button.holdings-direct-value:hover { border-bottom-color: var(--accent-primary);
 .holdings-management-proposal strong { font-size:var(--font-body-small); }
 .holdings-management-proposal small { display:block; margin-top:3px; }
 @media (max-width:1000px) { .holdings-management-plan-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+
+
+/* UX-HOLD.1 — holdings management hierarchy */
+.holdings-summary {
+  border-left: 0;
+  border-right: 0;
+  background: transparent;
+}
+
+.holdings-detail-head {
+  margin-bottom: 4px;
+}
+
+.holdings-position-management {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 0;
+}
+
+.holdings-position-management .holdings-position-quickbar {
+  order: 1;
+  margin-top: 14px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border-default);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.holdings-position-management .holdings-pnl-block {
+  order: 2;
+  margin-top: 0;
+  padding: 17px 0 16px;
+  border-top: 0;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.holdings-position-management .holdings-management-block {
+  order: 3;
+  margin-top: 0;
+  padding: 17px 0 16px;
+  border-top: 0;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.holdings-position-management .holdings-position-actions-primary {
+  order: 4;
+}
+
+.holdings-position-management .holdings-inline-position-editor {
+  order: 5;
+}
+
+.holdings-position-actions-primary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.holdings-position-actions-primary > span {
+  color: var(--text-muted);
+  font-size: var(--font-meta);
+  font-weight: 800;
+}
+
+.holdings-position-actions-primary > div {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.holdings-position-actions-primary button {
+  border: 0;
+  border-bottom: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-primary);
+  padding: 6px 1px 4px;
+  font: inherit;
+  font-size: var(--font-meta);
+  font-weight: 800;
+}
+
+.holdings-position-actions-primary button:hover:not(:disabled) {
+  border-bottom-color: var(--accent-primary);
+  color: var(--accent-primary);
+}
+
+.holdings-position-actions-primary small {
+  color: var(--text-muted);
+  font-size: var(--font-meta);
+}
+
+.holdings-pnl-head > div > strong,
+.holdings-management-head > div > strong {
+  font-size: var(--font-card-title);
+  letter-spacing: -.01em;
+}
+
+.holdings-pnl-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.holdings-pnl-metrics > div {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.holdings-pnl-metrics > .holdings-pnl-focus {
+  order: -1;
+  grid-column: span 2;
+  padding-left: 0;
+}
+
+.holdings-pnl-focus > strong {
+  font-size: clamp(1.4rem, 2vw, 1.9rem);
+  line-height: 1.05;
+  letter-spacing: -.025em;
+}
+
+.holdings-pnl-focus > strong small {
+  display: inline !important;
+  margin-left: 8px;
+  font-size: .72em !important;
+}
+
+.holdings-management-position {
+  padding: 12px 0 0;
+}
+
+.holdings-management-status {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.holdings-management-status strong {
+  font-size: 1.08rem;
+}
+
+.holdings-management-plan-grid {
+  border-top: 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.holdings-management-proposal {
+  margin-top: 0;
+  padding: 12px 0 0;
+  border-top: 0;
+}
+
+.holdings-management-proposal > div > span {
+  color: var(--text-secondary);
+  font-weight: 800;
+}
+
+.holdings-management-proposal > div > strong {
+  margin-top: 5px;
+}
+
+.holdings-management-proposal button:disabled {
+  opacity: .58;
+  cursor: not-allowed;
+}
+
+.holdings-chart-panel {
+  margin-top: 22px;
+}
+
+.holdings-analysis-grid {
+  margin-top: 22px;
+}
+
+.holdings-analysis-grid::before {
+  content: "최신 확정 일봉 기준";
+  grid-column: 1 / -1;
+  color: var(--text-muted);
+  font-size: var(--font-meta);
+  font-weight: 800;
+  letter-spacing: .02em;
+}
+
+.holdings-analysis-block {
+  padding-top: 11px;
+}
+
+.holdings-positions.single-hidden {
+  display: none;
+}
+
+.holdings-positions {
+  padding-top: 2px;
+  border-top: 1px solid var(--border-default);
+}
+
+.holdings-trade-preview {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  border-top: 1px solid var(--border-default);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.holdings-trade-preview > div {
+  padding: 11px 12px;
+  border-right: 1px solid var(--border-subtle);
+}
+
+.holdings-trade-preview > div:nth-child(2) {
+  border-right: 0;
+}
+
+.holdings-trade-preview span,
+.holdings-trade-preview strong {
+  display: block;
+}
+
+.holdings-trade-preview span {
+  color: var(--text-muted);
+  font-size: var(--font-meta);
+}
+
+.holdings-trade-preview strong {
+  margin-top: 4px;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.holdings-trade-preview .positive { color: var(--status-positive); }
+.holdings-trade-preview .negative { color: var(--status-negative); }
+
+.holdings-trade-preview > small {
+  grid-column: 1 / -1;
+  padding: 7px 12px 8px;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: var(--font-meta);
+}
+
+@media (max-width: 1180px) {
+  .holdings-pnl-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .holdings-position-actions-primary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .holdings-position-actions-primary > div {
+    justify-content: flex-start;
+  }
+
+  .holdings-pnl-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .holdings-pnl-metrics > .holdings-pnl-focus {
+    grid-column: 1 / -1;
+  }
+
+  .holdings-trade-preview {
+    grid-template-columns: 1fr;
+  }
+
+  .holdings-trade-preview > div {
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .holdings-trade-preview > div:nth-child(2) {
+    border-bottom: 0;
+  }
+}
