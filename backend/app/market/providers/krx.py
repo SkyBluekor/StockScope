@@ -502,6 +502,14 @@ class KrxProvider:
 
         loop = asyncio.get_running_loop()
         with self._inflight_guard:
+            # Another caller may have populated the shared cache while this coroutine
+            # was awaiting disk I/O above. Re-check under the same guard used for
+            # in-flight task creation so a late caller cannot start a duplicate request.
+            cached = self._rows_cache.get(cache_key)
+            if cached is not None:
+                self._request_stats["memory_hits"] += 1
+                return cached
+
             task = self._inflight_tasks.get(cache_key)
             # FastAPI requests normally share one loop. If a test/worker uses another
             # loop, do not await a task bound to the wrong loop.
