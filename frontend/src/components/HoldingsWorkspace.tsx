@@ -107,11 +107,11 @@ function holdingManagementText(context: HoldingDecisionContext | null | undefine
     case "TARGET2_REACHED":
       return "목표 가격 도달 구간";
     case "WITHIN_PLAN":
-      return "이전 계획 범위 내";
+      return "이전 분석 범위 내";
     case "FIRST_PLAN":
       return "첫 계획 기준 저장됨";
     case "PREVIOUS_PLAN_UNAVAILABLE":
-      return "이전 계획 정보 확인 필요";
+      return "이전 분석 정보 확인 필요";
     default:
       return "가격 계획 확인 필요";
   }
@@ -160,13 +160,13 @@ function planGuidanceText(
         ? `${previousDate} 분석은 있지만 비교 가능한 손절·목표 가격 정보가 충분하지 않습니다.`
         : "이전 분석의 가격 계획 정보를 확인할 수 없습니다.";
     case "STOP_BREACHED":
-      return `${previousDate ?? "이전"} 계획의 손절 기준 ${money(plan.previous_stop_price)}보다 현재 확정 종가 ${money(plan.current_close)}가 낮거나 같습니다.`;
+      return `${previousDate ?? "이전"} 분석의 손절 기준 ${money(plan.previous_stop_price)}보다 현재 확정 종가 ${money(plan.current_close)}가 낮거나 같습니다.`;
     case "TARGET2_REACHED":
-      return `현재 확정 종가 ${money(plan.current_close)}가 ${previousDate ?? "이전"} 계획의 2차 목표 ${money(plan.previous_target2_price)} 이상입니다.`;
+      return `현재 확정 종가 ${money(plan.current_close)}가 ${previousDate ?? "이전"} 분석의 2차 목표 ${money(plan.previous_target2_price)} 이상입니다.`;
     case "TARGET1_REACHED":
-      return `현재 확정 종가 ${money(plan.current_close)}가 ${previousDate ?? "이전"} 계획의 1차 목표 ${money(plan.previous_target1_price)} 이상입니다.`;
+      return `현재 확정 종가 ${money(plan.current_close)}가 ${previousDate ?? "이전"} 분석의 1차 목표 ${money(plan.previous_target1_price)} 이상입니다.`;
     case "WITHIN_PLAN":
-      return `${previousDate ?? "이전"} 계획과 현재 확정 종가를 비교했으며 현재는 이전 계획 범위 안에 있습니다.`;
+      return `${previousDate ?? "이전"} 분석과 현재 확정 종가를 비교했으며 현재는 이전 분석의 가격 범위 안에 있습니다.`;
     default:
       return null;
   }
@@ -1093,7 +1093,7 @@ export default function HoldingsWorkspace() {
       return;
     }
     if (manualMode === "correction" && !manualNote.trim()) {
-      setError("정보 수정에는 수정 사유가 필요합니다.");
+      setError("보유 정보 수정에는 수정 사유가 필요합니다.");
       return;
     }
 
@@ -1395,7 +1395,7 @@ export default function HoldingsWorkspace() {
                         className="holdings-text-button holdings-nowrap-action"
                         onClick={() => document.getElementById("holdings-position-details")?.scrollIntoView({ behavior: "smooth", block: "start" })}
                       >
-                        보유 상세 보기
+                        계좌별 보유 보기
                       </button>
                     </>
                   )}
@@ -2189,10 +2189,10 @@ export default function HoldingsWorkspace() {
                 {manualBusy
                   ? "저장 중"
                   : manualMode === "buy"
-                    ? manualPosition ? "수량 추가" : "보유 등록"
+                    ? manualPosition ? "추가 매수 기록" : "보유 등록"
                     : manualMode === "sell"
                       ? "매도 기록"
-                      : "정보 수정"}
+                      : "보유 정보 수정"}
               </button>
             </div>
           </div>
