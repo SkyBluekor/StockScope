@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState, type PointerEvent } from "react";
 import {
   getHoldingChart,
+  prepareHoldingChartWithProgress,
   type HoldingAnalysis,
   type HoldingDecisionContext,
   type HoldingChartBar,
+  type HoldingChartPrepareProgress,
+  type HoldingChartPrepareResult,
   type HoldingChartRange,
   type HoldingChartResponse,
 } from "../services/holdingsApi";
@@ -70,6 +73,10 @@ export default function HoldingsPriceChart({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const [preparingRange, setPreparingRange] = useState(false);
+  const [prepareProgress, setPrepareProgress] = useState<HoldingChartPrepareProgress | null>(null);
+  const [prepareResult, setPrepareResult] = useState<HoldingChartPrepareResult | null>(null);
+  const [prepareError, setPrepareError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -92,6 +99,12 @@ export default function HoldingsPriceChart({
       cancelled = true;
     };
   }, [stockId, range, refreshKey]);
+
+  useEffect(() => {
+    setPrepareProgress(null);
+    setPrepareResult(null);
+    setPrepareError(null);
+  }, [stockId, range]);
 
   const bars = useMemo(() => mergeBars(chart?.bars ?? [], liveBar), [chart, liveBar]);
 
@@ -169,6 +182,39 @@ export default function HoldingsPriceChart({
     };
   }, [bars, analysis]);
 
+  async function prepareSelectedRange() {
+    if (!chart || preparingRange) return;
+    setPreparingRange(true);
+    setPrepareError(null);
+    setPrepareResult(null);
+    setPrepareProgress({
+      type: "progress",
+      stage: "local_check",
+      message: `저장된 차트 데이터 ${chart.count} / ${chart.requested_bars}거래일을 확인했습니다.`,
+      current: chart.count,
+      required: chart.requested_bars,
+    });
+
+    try {
+      const result = await prepareHoldingChartWithProgress(stockId, range, (progress) => setPrepareProgress(progress));
+      setPrepareResult(result);
+      const refreshed = await getHoldingChart(stockId, range);
+      setChart(refreshed);
+    } catch (prepareLoadError) {
+      setPrepareError(prepareLoadError instanceof Error ? prepareLoadError.message : "차트 데이터를 준비하지 못했습니다.");
+      // A failed provider call may still have saved a valid partial batch.
+      // Reload the chart so the notice reflects the actual persisted row count.
+      try {
+        const refreshed = await getHoldingChart(stockId, range);
+        setChart(refreshed);
+      } catch {
+        // Keep the currently visible chart if the refresh itself fails.
+      }
+    } finally {
+      setPreparingRange(false);
+    }
+  }
+
   function handlePointerMove(event: PointerEvent<SVGRectElement>) {
     if (!model) return;
     const rect = event.currentTarget.getBoundingClientRect();
@@ -183,6 +229,12 @@ export default function HoldingsPriceChart({
   const chartDate = chart?.to_date ?? null;
   const analysisDate = analysis?.market_date ?? null;
   const analysisBehindChart = Boolean(chartDate && analysisDate && analysisDate < chartDate);
+  const chartPartial = Boolean(chart && chart.count < chart.requested_bars);
+  const activeRangeLabel = RANGE_OPTIONS.find((option) => option.key === range)?.label ?? range;
+  const maxAvailable = prepareResult?.status === "PARTIAL_MAX_AVAILABLE";
+  const progressCurrent = prepareProgress?.current ?? chart?.count ?? 0;
+  const progressRequired = prepareProgress?.required ?? chart?.requested_bars ?? 0;
+  const progressRatio = progressRequired > 0 ? Math.max(0, Math.min(1, progressCurrent / progressRequired)) : 0;
 
   return (
     <section className="holdings-chart-panel">
@@ -198,12 +250,52 @@ export default function HoldingsPriceChart({
               type="button"
               className={range === option.key ? "active" : ""}
               onClick={() => setRange(option.key)}
+              disabled={preparingRange}
             >
               {option.label}
             </button>
           ))}
         </div>
       </div>
+
+      {chartPartial && (
+        <div className="holdings-chart-coverage" aria-live="polite">
+          <div className="holdings-chart-coverage-copy">
+            {preparingRange ? (
+              <>
+                <strong>{activeRangeLabel} 데이터 준비 중</strong>
+                <span>{prepareProgress?.message ?? "과거 가격 데이터를 확인하고 있습니다."}</span>
+              </>
+            ) : maxAvailable ? (
+              <>
+                <strong>현재 확보 가능한 전체 기간을 표시 중</strong>
+                <span>{chart?.count ?? 0} / {chart?.requested_bars ?? 0}거래일 · 이 종목에서 현재 확보 가능한 데이터까지만 표시합니다.</span>
+              </>
+            ) : prepareError ? (
+              <>
+                <strong>차트 데이터를 모두 준비하지 못했습니다</strong>
+                <span>{prepareError} · 현재 {chart?.count ?? 0} / {chart?.requested_bars ?? 0}거래일은 계속 볼 수 있습니다.</span>
+              </>
+            ) : (
+              <>
+                <strong>일부 기간만 표시 중</strong>
+                <span>현재 {chart?.count ?? 0} / {chart?.requested_bars ?? 0}거래일만 저장되어 있습니다.</span>
+              </>
+            )}
+          </div>
+
+          {preparingRange ? (
+            <div className="holdings-chart-coverage-progress">
+              <span>{progressCurrent} / {progressRequired}거래일</span>
+              <div aria-hidden="true"><i style={{ width: `${progressRatio * 100}%` }} /></div>
+            </div>
+          ) : !maxAvailable ? (
+            <button type="button" className="holdings-chart-prepare-button" onClick={() => void prepareSelectedRange()}>
+              {prepareError ? "다시 시도" : `${activeRangeLabel} 데이터 준비`}
+            </button>
+          ) : null}
+        </div>
+      )}
 
       {decisionContext && ["STOP_BREACHED", "TARGET1_REACHED", "TARGET2_REACHED"].includes(
         decisionContext.previous_plan.state,

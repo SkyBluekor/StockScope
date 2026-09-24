@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from time import monotonic
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
@@ -765,6 +765,7 @@ class KrxProvider:
         points: int = 30,
         lookback_days: int = 60,
         concurrency: int = 5,
+        progress: Callable[[int, int], None] | None = None,
     ) -> list[dict[str, Any]]:
         """최근 거래일 OHLCV를 오래된 날짜 -> 최신 날짜 순으로 반환합니다.
 
@@ -788,6 +789,8 @@ class KrxProvider:
                 row = result["rows"][0]
                 if row.get("close") is not None:
                     found.append(row)
+            if progress is not None:
+                progress(min(len(found), wanted), wanted)
             if len(found) >= wanted:
                 break
 
@@ -836,6 +839,7 @@ class KrxProvider:
         points: int = 7,
         lookback_days: int = 30,
         concurrency: int = 5,
+        progress: Callable[[int, int], None] | None = None,
     ) -> list[dict[str, Any]]:
         market_key = market.upper().strip()
         wanted = min(max(points, 2), 120)
@@ -860,6 +864,8 @@ class KrxProvider:
                     continue
                 seen_dates.add(row_date)
                 found.append(main)
+            if progress is not None:
+                progress(min(len(found), wanted), wanted)
             if len(found) >= wanted:
                 break
 

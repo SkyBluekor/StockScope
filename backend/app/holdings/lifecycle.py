@@ -25,6 +25,14 @@ class PositionLifecycleResult:
     event: HoldingPositionEvent
 
 
+@dataclass(frozen=True, slots=True)
+class InitialHoldingRegistrationResult:
+    stock_id: str
+    created_stock: bool
+    position: HoldingPosition
+    event: HoldingPositionEvent
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -368,6 +376,110 @@ class PositionLifecycleService:
             (event_id,),
         ).fetchone()
         return self.catalog._event_from_row(row)  # noqa: SLF001
+
+    def register_initial_holding(
+        self,
+        *,
+        market: str,
+        ticker: str,
+        name: str,
+        position_account_id: str,
+        quantity: Decimal | int | str,
+        average_price: Decimal | int | str,
+        effective_at: str,
+        note: str | None = None,
+    ) -> InitialHoldingRegistrationResult:
+        """Register an already-held position as an OPENING_BALANCE observation."""
+        HOLD_LEDGER_1_OPENING_BALANCE = True
+        market_value = (market or "").strip().upper()
+        ticker_value = (ticker or "").strip()
+        name_value = (name or "").strip()
+        if market_value not in {"KOSPI", "KOSDAQ"}:
+            raise HoldingsLifecycleError("HOLD_STOCK_MARKET_INVALID", "market은 KOSPI 또는 KOSDAQ이어야 합니다.")
+        if len(ticker_value) != 6 or not ticker_value.isdigit():
+            raise HoldingsLifecycleError("HOLD_STOCK_TICKER_INVALID", "국내주식 종목코드는 6자리 숫자여야 합니다.")
+        if not name_value:
+            raise HoldingsLifecycleError("HOLD_STOCK_REQUIRED", "종목명이 필요합니다.")
+
+        opening_quantity = _positive_decimal(quantity, code="HOLD_POSITION_QUANTITY_INVALID", label="보유 수량")
+        opening_price = _positive_decimal(average_price, code="HOLD_POSITION_PRICE_INVALID", label="평균단가")
+        effective_text, _ = _canonical_time(effective_at, code="HOLD_POSITION_TIME_INVALID", label="effective_at")
+
+        try:
+            with self._transaction() as conn:
+                stock = conn.execute(
+                    "SELECT * FROM monitored_stock WHERE market=? AND ticker=?",
+                    (market_value, ticker_value),
+                ).fetchone()
+                now = _now()
+                created_stock = stock is None
+                if stock is None:
+                    stock_id = str(uuid4())
+                    conn.execute("""
+                        INSERT INTO monitored_stock(
+                            id,market,ticker,name,watch_enabled,archived_at,created_at,updated_at
+                        ) VALUES(?,?,?,?,?,?,?,?)
+                    """, (stock_id, market_value, ticker_value, name_value, 0, None, now, now))
+                else:
+                    stock_id = str(stock["id"])
+                    if stock["archived_at"] is not None:
+                        conn.execute(
+                            "UPDATE monitored_stock SET archived_at=NULL,name=?,updated_at=? WHERE id=?",
+                            (name_value, now, stock_id),
+                        )
+
+                existing_open = conn.execute(
+                    "SELECT id FROM holding_position WHERE monitored_stock_id=? AND status='OPEN' LIMIT 1",
+                    (stock_id,),
+                ).fetchone()
+                if existing_open is not None:
+                    raise HoldingsLifecycleError(
+                        "HOLD_OPEN_POSITION_DUPLICATE",
+                        "이미 보유 중인 종목입니다. 기존 보유 정보를 수정해주세요.",
+                    )
+
+                account = self._account_row(conn, position_account_id)
+                self._assert_internal_account(account)
+                position_id = str(uuid4())
+                opening_cost = opening_quantity * opening_price
+                conn.execute("""
+                    INSERT INTO holding_position(
+                        id,monitored_stock_id,position_account_id,status,
+                        opened_at,closed_at,current_quantity,current_average_price,
+                        current_cost_basis,opened_reason,last_observed_at,last_sync_run_id,
+                        created_at,updated_at
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """, (
+                    position_id,stock_id,position_account_id,"OPEN",effective_text,None,
+                    _decimal_text(opening_quantity),_decimal_text(opening_price),_decimal_text(opening_cost),
+                    self._opened_reason(account),None,None,now,now,
+                ))
+                event = self._insert_event(
+                    conn,
+                    position_id=position_id,
+                    event_type="OPENING_BALANCE",
+                    quantity_delta=opening_quantity,
+                    unit_price=opening_price,
+                    before_quantity=Decimal("0"),
+                    after_quantity=opening_quantity,
+                    before_average_price=None,
+                    after_average_price=opening_price,
+                    effective_at=effective_text,
+                    analysis_revision_id=None,
+                    note=note or "StockScope 추적 시작 당시 보유 상태",
+                )
+                stored = conn.execute("SELECT * FROM holding_position WHERE id=?", (position_id,)).fetchone()
+                return InitialHoldingRegistrationResult(
+                    stock_id=stock_id,
+                    created_stock=created_stock,
+                    position=self.catalog._position_from_row(stored),  # noqa: SLF001
+                    event=event,
+                )
+        except sqlite3.IntegrityError as exc:
+            raise HoldingsLifecycleError(
+                "HOLD_POSITION_CONFLICT",
+                "보유종목 등록 중 원장 충돌이 발생했습니다.",
+            ) from exc
 
     def record_buy(
         self,

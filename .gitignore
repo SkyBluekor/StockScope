@@ -173,3 +173,15 @@ desktop.ini
 *.swp
 *.swo
 *~
+
+
+# StockScope runtime/data management tools are source code
+!/tools/data/
+!/tools/data/*.py
+
+# Local one-off apply/repair scripts
+/apply_*.py
+/repair_*.py
+
+# Local generated planning documents
+/StockScope_*_Brief_*.docx

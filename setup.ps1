@@ -120,6 +120,15 @@ finally {
     Pop-Location
 }
 
+
+Write-Host "[StockScope] DATA.1 runtime bootstrap..." -ForegroundColor Cyan
+& $python ".\tools\data\bootstrap_runtime.py"
+Assert-LastExitCode "DATA.1 runtime bootstrap"
+
+Write-Host "[StockScope] DATA.1 read-only doctor..." -ForegroundColor Cyan
+& $python ".\tools\data\doctor.py"
+Assert-LastExitCode "DATA.1 data doctor"
+
 Write-Host ""
 Write-Host "[StockScope] Setup complete." -ForegroundColor Green
 Write-Host "Run .\run-dev.ps1 and open http://127.0.0.1:5173"
