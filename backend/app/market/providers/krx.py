@@ -513,7 +513,10 @@ class KrxProvider:
             task = self._inflight_tasks.get(cache_key)
             # FastAPI requests normally share one loop. If a test/worker uses another
             # loop, do not await a task bound to the wrong loop.
-            if task is None or task.done() or task.get_loop() is not loop:
+            # A completed task can still be the shared result while its first
+            # waiter is populating the cache. Reuse it instead of opening a tiny
+            # duplicate-request window between HTTP completion and cache write.
+            if task is None or task.get_loop() is not loop:
                 task = loop.create_task(self._request_rows(endpoint, bas_dd))
                 self._inflight_tasks[cache_key] = task
 
