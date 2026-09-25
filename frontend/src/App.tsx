@@ -1997,6 +1997,7 @@ const strategyName: Record<string, string> = {
                 chooseStock(item, { loadContext: true, origin: "scanner" });
                 navigateApp("analysis");
               }}
+              onOpenHoldings={(target) => openHoldingsForStock(target)}
             />
           ) : appPage === "simulation" ? (
             <TrackingWorkspace />
