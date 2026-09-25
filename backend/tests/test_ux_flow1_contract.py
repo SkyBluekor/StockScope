@@ -63,3 +63,14 @@ def test_ux_flow1_does_not_add_backend_or_database_surface() -> None:
     assert "VITE_" not in actions
     assert "/api/holdings/watch" not in actions
     assert "/api/holdings/held" not in actions
+
+
+
+def test_checkpoint2_legacy_expert_analysis_is_secondary() -> None:
+    workspace = Path("frontend/src/components/StockAnalysisWorkspace.tsx").read_text(encoding="utf-8")
+    css = Path("frontend/src/stock-analysis.css").read_text(encoding="utf-8")
+
+    assert '<details className="stock-analysis-expert-details">' in workspace
+    assert "전문 분석·세부 설정" in workspace
+    assert workspace.index("StockNewsPanel") < workspace.index("stock-analysis-expert-details")
+    assert ".stock-analysis-expert-details" in css
