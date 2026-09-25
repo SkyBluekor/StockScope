@@ -2717,3 +2717,25 @@ export async function createScannerJob(payload: ScannerRequest): Promise<Backtes
     }),
   );
 }
+
+
+export type ScannerEvidencePrepareRequest = {
+  market: "KOSPI" | "KOSDAQ";
+  code: string;
+  strategy: string;
+  data_end: string;
+  market_scope: "ALL" | "KOSPI" | "KOSDAQ";
+  candidate_limit?: number;
+};
+
+export async function createScannerEvidenceJob(
+  payload: ScannerEvidencePrepareRequest,
+): Promise<BacktestJob<ScannerResponse>> {
+  return asJson<BacktestJob<ScannerResponse>>(
+    await fetch("/api/backtest/scanner/evidence/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  );
+}
