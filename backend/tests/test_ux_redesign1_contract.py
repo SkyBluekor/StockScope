@@ -15,7 +15,8 @@ def test_ux_redesign1_header_uses_unified_data_status() -> None:
 
     for provider in ("KRX", "DART", "NAVER NEWS", "KIS"):
         assert provider in panel
-    assert "마지막 연결 성공" not in panel
+    assert "last_success" not in panel
+    assert "lastSuccess" not in panel
     assert "사용 안 함" in panel
 
 
