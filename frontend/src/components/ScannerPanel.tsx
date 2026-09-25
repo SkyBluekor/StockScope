@@ -413,7 +413,9 @@ function CandidateDetail({
           {evidence?.verified && (
             <div className="scanner-evidence-compact-metrics">
               <span><small>유사 거래</small><b>{evidence.sample_count}회</b></span>
+              <span><small>승률</small><b>{formatSignedPct(evidence.win_rate_pct)}</b></span>
               <span><small>평균 순수익</small><b>{formatSignedPct(evidence.average_net_return_pct)}</b></span>
+              <span><small>기대수익</small><b>{formatSignedPct(evidence.expectancy_pct)}</b></span>
               <span><small>최대 낙폭</small><b>{formatSignedPct(evidence.max_drawdown_pct)}</b></span>
             </div>
           )}
@@ -542,7 +544,11 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
   const jobBusy = job?.status === "queued" || job?.status === "running";
   const busy = jobBusy;
   const progress = job?.progress;
-  const evidenceJobStage = String(job?.stage || "").startsWith("evidence_");
+  const evidenceJobStage = Boolean(
+    jobBusy
+    && preferredCandidateKeyRef.current
+    && (job?.stage === "queued" || String(job?.stage || "").startsWith("evidence_")),
+  );
 
   useEffect(() => {
     // TRACK.1.10.1: accept Scanner results completed from another entry point
@@ -610,19 +616,30 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
         setJob(latest);
         if (latest.status === "completed" && latest.result) {
           const completedAtValue = Date.now();
+          const latestCandidates = [...latest.result.candidates, ...latest.result.more_candidates];
+          const preferredKey = saved.selectedCandidateKey ?? null;
+          const preferredCandidate = preferredKey
+            ? latestCandidates.find((candidate) => candidateKey(candidate) === preferredKey) ?? null
+            : null;
+          const nextSelectedKey = preferredCandidate
+            ? candidateKey(preferredCandidate)
+            : (latest.result.candidates[0] ? candidateKey(latest.result.candidates[0]) : null);
+          const nextExpandedEvidenceIds = preferredCandidate ? [evidenceKey(preferredCandidate)] : [];
           writeScannerSession({
             scope: saved.scope,
             result: latest.result,
             completedAt: completedAtValue,
             scrollY: 0,
             showMore: false,
-            expandedEvidenceIds: [],
-            selectedCandidateKey: latest.result.candidates[0] ? candidateKey(latest.result.candidates[0]) : null,
+            expandedEvidenceIds: nextExpandedEvidenceIds,
+            selectedCandidateKey: nextSelectedKey,
           });
           setResult(latest.result);
-          setSelectedCandidateKey(latest.result.candidates[0] ? candidateKey(latest.result.candidates[0]) : null);
+          setSelectedCandidateKey(nextSelectedKey);
+          setExpandedEvidenceIds(nextExpandedEvidenceIds);
           setCompletedAt(completedAtValue);
           setRestoredFromSession(false);
+          preferredCandidateKeyRef.current = null;
           clearActiveDataTask();
           return;
         }
@@ -758,7 +775,9 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
           setFreshnessFailure(freshness);
           setError(null);
         } else {
-          setError(latest.error || "종목 찾기 중 오류가 발생했습니다.");
+          setError(latest.error || (preferredCandidateKeyRef.current
+            ? "3년 검증 데이터 준비 또는 재분석 중 오류가 발생했습니다."
+            : "종목 찾기 중 오류가 발생했습니다."));
         }
         clearActiveDataTask();
         return;
@@ -772,7 +791,9 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
         700,
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "종목 찾기 상태를 확인하지 못했습니다.");
+      setError(err instanceof Error ? err.message : (preferredCandidateKeyRef.current
+        ? "3년 검증 데이터 준비 상태를 확인하지 못했습니다."
+        : "종목 찾기 상태를 확인하지 못했습니다."));
     }
   }
 
