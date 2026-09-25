@@ -14,6 +14,7 @@ export type DataTaskSnapshot = {
   percent: number | null;
   updatedAt: string | null;
   startedAt: number;
+  selectedCandidateKey?: string | null;
 };
 
 export function readActiveDataTask(): DataTaskSnapshot | null {
@@ -36,6 +37,7 @@ export function readActiveDataTask(): DataTaskSnapshot | null {
       percent: typeof parsed.percent === "number" && Number.isFinite(parsed.percent) ? parsed.percent : null,
       updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : null,
       startedAt: typeof parsed.startedAt === "number" && Number.isFinite(parsed.startedAt) ? parsed.startedAt : Date.now(),
+      selectedCandidateKey: typeof parsed.selectedCandidateKey === "string" ? parsed.selectedCandidateKey : null,
     };
   } catch {
     return null;
