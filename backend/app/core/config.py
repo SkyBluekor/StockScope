@@ -15,6 +15,12 @@ class Settings(BaseSettings):
     dart_api_key: str | None = None
     llm_api_key: str | None = None
 
+    # NAVER Search News API credentials are backend-only.
+    # provider_kind: "api_hub" (NCP) or "developer_center" (legacy).
+    naver_news_client_id: str | None = None
+    naver_news_client_secret: str | None = None
+    naver_news_provider_kind: str = "api_hub"
+
     # KIS Open API credentials are loaded only from the project-root .env.
     # Never expose these values through frontend VITE_* variables.
     kis_app_key: str | None = None
