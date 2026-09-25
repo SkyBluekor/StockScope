@@ -1022,8 +1022,16 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock, 
       {view === "result" && (
         <div className="backtest-result-view multi-strategy-result-view">
           <div className="backtest-result-toolbar">
-            <div><span>검증 대상</span><strong>{stockName || code || "종목 미선택"} · 전체 전략</strong><small>{formatCompactDate(startDate)} ~ {formatCompactDate(endDate)}</small></div>
-            <button type="button" disabled={busy} onClick={() => { setView("setup"); scrollTop(); }}>설정 변경</button>
+            <div>
+              <span>과거 성과 결과 · 선택적 검증</span>
+              <strong>{stockName || code || "종목 미선택"} · {result?.market ?? market}</strong>
+              <small>{formatCompactDate(displayedConfig.startDate)} ~ {formatCompactDate(displayedConfig.endDate)} · 최대 보유 {displayedConfig.maxHoldingDays}거래일</small>
+            </div>
+            <div className="backtest-result-toolbar-actions">
+              <button type="button" disabled={busy} onClick={() => { setView("setup"); scrollTop(); }}>조건 변경</button>
+              {result && <button type="button" disabled={busy} onClick={rerunDisplayedResult}>같은 조건 다시 계산</button>}
+              {onBackToAnalysis && <button type="button" onClick={onBackToAnalysis}>종목 분석으로</button>}
+            </div>
           </div>
 
           {busy && job && (
@@ -1031,14 +1039,51 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock, 
               <div className="backtest-progress-head"><div><strong>{job.progress.message}</strong><span>{job.progress.current.toLocaleString()} / {job.progress.total.toLocaleString()} · {job.progress.percent.toFixed(1)}%</span></div><b>{job.elapsed_seconds.toFixed(1)}초</b></div>
               <progress max={100} value={job.progress.percent} />
               <div className="backtest-progress-stats"><span><b>처리 경로</b>{job.progress.details.cold_start_fast_path ? "Cold Start Fast Path" : job.progress.details.single_stock_fast_path ? "단일 종목 Fast Path" : "기본 경로"}</span><span><b>과거 저장소</b>{Number(job.progress.details.history_store_hits ?? 0).toLocaleString()} hit</span><span><b>선택종목 캐시</b>{Number(job.progress.details.cached_symbol_fast_path_hits ?? 0).toLocaleString()}일</span><span><b>KRX 캐시</b>{Number(job.progress.details.raw_cache_hits ?? 0).toLocaleString()} hit</span><span><b>실제 요청</b>{Number(job.progress.details.network_requests ?? 0).toLocaleString()}회</span><span><b>동시 처리</b>{Number(job.progress.details.concurrency ?? 0).toLocaleString()}</span><span><b>재시도</b>{Number(job.progress.details.retries ?? 0).toLocaleString()}회</span><span><b>현재 전략</b>{String(job.progress.details.strategy ?? "-")}</span></div>
+              {result && <p className="backtest-preserved-result-note">기존 완료 결과는 아래에 유지됩니다. 새 계산이 끝나면 새 결과로 교체합니다.</p>}
               <button type="button" className="backtest-cancel-button" onClick={() => void cancelRunning()}>분석 취소</button>
             </div>
           )}
           {busy && !job && <div className="loading-card">10가지 방법 비교를 준비하고 있습니다...</div>}
-          {error && <div className="backtest-error"><strong>실행 실패</strong><span>{error}</span><button type="button" onClick={() => { setView("setup"); scrollTop(); }}>설정으로 돌아가기</button></div>}
+          {error && (
+            <div className="backtest-error backtest-result-error">
+              <strong>{result ? "새 계산을 완료하지 못했습니다." : "실행 실패"}</strong>
+              <span>{error}</span>
+              {result && <small>기존 완료 결과는 그대로 유지됩니다.</small>}
+              <div>
+                {result && <button type="button" disabled={busy} onClick={rerunDisplayedResult}>다시 시도</button>}
+                <button type="button" onClick={() => { setView("setup"); scrollTop(); }}>조건 확인</button>
+                {onBackToAnalysis && <button type="button" onClick={onBackToAnalysis}>종목 분석으로</button>}
+              </div>
+            </div>
+          )}
 
           {result && (
             <div className="multi-strategy-results">
+              <section className="backtest-result-context" aria-label="과거 성과 검증 범위">
+                <div className="backtest-result-context-head">
+                  <div>
+                    <span>검증 범위</span>
+                    <strong>요청 조건과 실제 사용한 데이터 범위를 구분해 표시합니다.</strong>
+                  </div>
+                  <small>{resultCompletedAt ? `이번 세션 ${formatCompletedAt(resultCompletedAt)} 완료` : "완료 시각 확인 불가"}</small>
+                </div>
+                <div className="backtest-result-context-grid">
+                  <div><span>요청한 검증 기간</span><strong>{formatCompactDate(resultRequestedStart)} ~ {formatCompactDate(resultRequestedEnd)}</strong></div>
+                  <div><span>실제 종목 데이터</span><strong>{resultActualStart && resultActualEnd ? `${formatCompactDate(resultActualStart)} ~ ${formatCompactDate(resultActualEnd)}` : "-"}</strong></div>
+                  <div><span>종목 데이터</span><strong>{Number(result.data_window?.stock_rows ?? 0).toLocaleString()} 거래일</strong></div>
+                  <div><span>시장지수 데이터</span><strong>{Number(result.data_window?.index_rows ?? 0).toLocaleString()} 거래일</strong></div>
+                  <div><span>최대 보유기간</span><strong>{displayedConfig.maxHoldingDays} 거래일</strong></div>
+                  <div><span>왕복 비용률</span><strong>{displayedConfig.roundTripCostPct}%</strong></div>
+                </div>
+                {resultRangeIncomplete && (
+                  <div className="backtest-result-range-warning">
+                    <strong>요청한 기간 전체와 실제 확보된 종목 데이터 범위가 다릅니다.</strong>
+                    <span>상장 기간 또는 확보 가능한 과거 데이터 범위를 확인해주세요. 현재 화면은 실제 확보된 데이터로 계산된 결과입니다.</span>
+                  </div>
+                )}
+                <p>이 결과는 과거 같은 조건의 비교 결과입니다. 과거 성과 1위가 현재 매수해야 할 전략이라는 뜻은 아닙니다.</p>
+              </section>
+
               <section className={`strategy-selector-hero action-${result.recommendation.action.toLowerCase()}`}>
                 <div className="strategy-selector-kicker">
                   <span>{formatCompactDate(result.as_of_date)} 확정 일봉 기준</span>
