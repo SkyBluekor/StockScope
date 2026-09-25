@@ -23,6 +23,7 @@ type Props = {
   market: Market;
   stockName?: string;
   onSelectStock: (item: StockSearchItem) => void;
+  onBackToAnalysis?: () => void;
 };
 
 type ScannerAnalysisContext = {
@@ -39,6 +40,118 @@ type ScannerAnalysisContext = {
   risk_status: string | null;
   saved_at: number;
 };
+
+
+type BacktestCacheConfig = {
+  code: string;
+  market: Market;
+  startDate: string;
+  endDate: string;
+  initialCapital: number;
+  maxHoldingDays: number;
+  roundTripCostPct: number;
+};
+
+type BacktestCacheEntry = {
+  version: 1;
+  signature: string;
+  config: BacktestCacheConfig;
+  completedAt: number;
+  result: MultiStrategyBacktestResponse;
+};
+
+const BACKTEST_RESULT_PREFIX = "stockscope-multi-strategy-result:";
+const BACKTEST_LATEST_PREFIX = "stockscope-multi-strategy-latest:";
+
+function normalizedNumber(value: number) {
+  return Number.isFinite(value) ? Number(value.toFixed(6)) : 0;
+}
+
+function backtestResultSignature(config: BacktestCacheConfig) {
+  return [
+    config.market,
+    config.code.trim().toUpperCase(),
+    config.startDate,
+    config.endDate,
+    normalizedNumber(config.initialCapital),
+    Math.trunc(config.maxHoldingDays),
+    normalizedNumber(config.roundTripCostPct),
+  ].join("|");
+}
+
+function resultStorageKey(signature: string) {
+  return `${BACKTEST_RESULT_PREFIX}${signature}`;
+}
+
+function latestStorageKey(market: Market, code: string) {
+  return `${BACKTEST_LATEST_PREFIX}${market}:${code.trim().toUpperCase()}`;
+}
+
+function isBacktestCacheEntry(value: unknown): value is BacktestCacheEntry {
+  if (!value || typeof value !== "object") return false;
+  const entry = value as Partial<BacktestCacheEntry>;
+  return entry.version === 1
+    && typeof entry.signature === "string"
+    && typeof entry.completedAt === "number"
+    && Boolean(entry.config)
+    && Boolean(entry.result)
+    && entry.result?.code === entry.config?.code
+    && entry.result?.market === entry.config?.market;
+}
+
+function readBacktestCache(signature: string): BacktestCacheEntry | null {
+  try {
+    const raw = window.sessionStorage.getItem(resultStorageKey(signature));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isBacktestCacheEntry(parsed) || parsed.signature !== signature) {
+      window.sessionStorage.removeItem(resultStorageKey(signature));
+      return null;
+    }
+    return parsed;
+  } catch {
+    try { window.sessionStorage.removeItem(resultStorageKey(signature)); } catch { /* ignore */ }
+    return null;
+  }
+}
+
+function readLatestBacktestCache(market: Market, code: string): BacktestCacheEntry | null {
+  try {
+    const signature = window.sessionStorage.getItem(latestStorageKey(market, code));
+    return signature ? readBacktestCache(signature) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeBacktestCache(entry: BacktestCacheEntry) {
+  try {
+    window.sessionStorage.setItem(resultStorageKey(entry.signature), JSON.stringify(entry));
+    window.sessionStorage.setItem(latestStorageKey(entry.config.market, entry.config.code), entry.signature);
+  } catch {
+    // A large result can exceed browser session storage. The completed result
+    // remains usable in memory even when persistence is unavailable.
+  }
+}
+
+function formatCompletedAt(value: number | null | undefined) {
+  if (!value || !Number.isFinite(value)) return "-";
+  return new Intl.DateTimeFormat("ko-KR", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(value));
+}
+
+function dateKey(value: string | null | undefined) {
+  return String(value ?? "").replace(/[^0-9]/g, "").slice(0, 8);
+}
+
+function configSummary(config: BacktestCacheConfig) {
+  return `${formatCompactDate(config.startDate)} ~ ${formatCompactDate(config.endDate)} · 보유 ${config.maxHoldingDays}일 · 비용 ${config.roundTripCostPct}%`;
+}
 
 function readScannerAnalysisContext(code: string): ScannerAnalysisContext | null {
   try {
@@ -338,7 +451,7 @@ function StrategyMiniCard({ row }: { row: MultiStrategyRow }) {
   );
 }
 
-export default function BacktestPanel({ code, market, stockName, onSelectStock }: Props) {
+export default function BacktestPanel({ code, market, stockName, onSelectStock, onBackToAnalysis }: Props) {
   const [view, setView] = useState<"setup" | "result">("setup");
   const [stockQuery, setStockQuery] = useState(stockName ? `${stockName} (${code})` : code);
   const [stockSearchResults, setStockSearchResults] = useState<StockSearchItem[]>([]);
@@ -354,6 +467,10 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
   const [error, setError] = useState<string | null>(null);
   const [job, setJob] = useState<BacktestJob<MultiStrategyBacktestResponse> | null>(null);
   const [result, setResult] = useState<MultiStrategyBacktestResponse | null>(null);
+  const [resultConfig, setResultConfig] = useState<BacktestCacheConfig | null>(null);
+  const [resultCompletedAt, setResultCompletedAt] = useState<number | null>(null);
+  const [exactCachedResult, setExactCachedResult] = useState<BacktestCacheEntry | null>(null);
+  const [latestCachedResult, setLatestCachedResult] = useState<BacktestCacheEntry | null>(null);
   const [validationBusy, setValidationBusy] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [validationJob, setValidationJob] = useState<BacktestJob<ExitPolicyValidationReport> | null>(null);
@@ -417,17 +534,43 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
     setBusy(false);
     setJob(null);
     setResult(null);
+    setResultConfig(null);
+    setResultCompletedAt(null);
     setError(null);
     setView("setup");
   }, [code, market]);
 
   const selectedHolding = customHolding ? Number(customHolding) : maxHoldingDays;
+  const currentConfig = useMemo<BacktestCacheConfig>(() => ({
+    code: code.trim().toUpperCase(),
+    market,
+    startDate,
+    endDate,
+    initialCapital: Number(initialCapital),
+    maxHoldingDays: Number(selectedHolding),
+    roundTripCostPct: Number(costPct),
+  }), [code, costPct, endDate, initialCapital, market, selectedHolding, startDate]);
+  const currentSignature = useMemo(() => backtestResultSignature(currentConfig), [currentConfig]);
   const selectedStockLabel = stockName ? `${stockName} (${code})` : "";
   const stockSelectionDirty = Boolean(stockQuery.trim() && stockQuery.trim() !== selectedStockLabel);
   const holdingDescription = useMemo(() => {
     if (customHolding) return "직접 입력한 거래일 수를 모든 전략에 동일하게 적용합니다.";
     return holdingOptions.find((item) => item.days === maxHoldingDays)?.description ?? "";
   }, [customHolding, maxHoldingDays]);
+
+  useEffect(() => {
+    setExactCachedResult(readBacktestCache(currentSignature));
+    setLatestCachedResult(readLatestBacktestCache(market, code));
+  }, [code, currentSignature, market]);
+
+  function showCachedResult(entry: BacktestCacheEntry) {
+    setResult(entry.result);
+    setResultConfig(entry.config);
+    setResultCompletedAt(entry.completedAt);
+    setError(null);
+    setView("result");
+    scrollTop();
+  }
 
   function chooseStock(item: StockSearchItem) {
     onSelectStock(item);
