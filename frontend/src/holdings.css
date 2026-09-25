@@ -2020,3 +2020,178 @@ button.holdings-direct-value:hover { border-bottom-color: var(--accent-primary);
     text-align: left;
   }
 }
+
+
+/* UX-REDESIGN.1F · separate watch and held perspectives ---------------- */
+.holdings-stock-table .holdings-price-cell strong,
+.holdings-stock-table .holdings-price-cell small,
+.holdings-stock-table .holdings-state-cell strong,
+.holdings-stock-table .holdings-state-cell small {
+  display: block;
+}
+
+.holdings-stock-table .holdings-price-cell small,
+.holdings-stock-table .holdings-state-cell small {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: var(--font-badge);
+  line-height: 1.35;
+}
+
+.holdings-stock-table .holdings-state-cell .holdings-list-action {
+  margin-top: 5px;
+}
+
+.holdings-watch-overview {
+  margin-top: 14px;
+  padding: 16px 0;
+  border-top: 1px solid var(--border-default);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.holdings-watch-overview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.holdings-watch-overview-head > div:first-child {
+  min-width: 0;
+}
+
+.holdings-watch-overview-head span,
+.holdings-watch-metrics span,
+.holdings-watch-held-bridge span {
+  color: var(--text-muted);
+  font-size: var(--font-meta);
+}
+
+.holdings-watch-overview-head strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-strong);
+  font-size: var(--font-result-title);
+}
+
+.holdings-watch-overview-head p {
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--font-body-small);
+  line-height: var(--line-body);
+}
+
+.holdings-watch-date {
+  flex: 0 0 auto;
+  text-align: right;
+}
+
+.holdings-watch-date strong {
+  font-size: var(--font-card-title);
+}
+
+.holdings-watch-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 13px;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.holdings-watch-metrics > div {
+  min-width: 0;
+  padding: 10px 12px;
+  border-right: 1px solid var(--border-subtle);
+}
+
+.holdings-watch-metrics > div:first-child {
+  padding-left: 0;
+}
+
+.holdings-watch-metrics > div:last-child {
+  border-right: 0;
+}
+
+.holdings-watch-metrics strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-primary);
+  font-size: var(--font-body-small);
+}
+
+.holdings-watch-held-bridge {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 11px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.holdings-management-version {
+  display: block;
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-size: var(--font-badge);
+}
+
+.holdings-management-proposal {
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.holdings-management-proposal-kicker {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--text-primary) !important;
+  font-weight: 850;
+}
+
+.holdings-entry-guardrail {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--status-info);
+  background: var(--status-info-bg);
+  color: var(--text-secondary);
+  font-size: var(--font-meta);
+  line-height: 1.45;
+}
+
+.holdings-perspective-empty {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.holdings-perspective-empty strong {
+  color: var(--text-primary);
+}
+
+.holdings-perspective-empty .holdings-secondary {
+  margin-top: 4px;
+}
+
+@media (max-width: 700px) {
+  .holdings-watch-overview-head,
+  .holdings-watch-held-bridge {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .holdings-watch-date {
+    text-align: left;
+  }
+
+  .holdings-watch-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .holdings-watch-metrics > div {
+    padding: 9px 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .holdings-watch-metrics > div:last-child {
+    border-bottom: 0;
+  }
+}
