@@ -17562,15 +17562,8 @@ html[data-theme="dark"] .backtest-workspace.multi-strategy-workspace > .backtest
   border-bottom: 1px solid var(--line);
 }
 
-.data-status-head > div > span {
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: .08em;
-}
-
 .data-status-head h2 {
-  margin: 5px 0 5px;
+  margin: 0 0 5px;
   font-size: 26px;
 }
 
@@ -17653,19 +17646,23 @@ html[data-theme="dark"] .backtest-workspace.multi-strategy-workspace > .backtest
 .data-status-task.running > div > span { color: var(--primary); }
 .data-status-task.failed > div > span { color: var(--danger); }
 
-.data-status-capabilities h3,
-.data-status-providers h3 {
+.data-status-capabilities h3 {
   margin: 0 0 12px;
   font-size: 15px;
 }
 
 .data-status-capability-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 18px;
-  min-height: 38px;
+  min-height: 56px;
+  padding: 10px 0;
   border-top: 1px solid var(--line-soft);
+}
+
+.data-status-capability-row > div {
+  min-width: 0;
 }
 
 .data-status-capability-row:first-of-type {
@@ -17673,21 +17670,56 @@ html[data-theme="dark"] .backtest-workspace.multi-strategy-workspace > .backtest
 }
 
 .data-status-capability-row span {
-  color: var(--text-subtle);
+  display: block;
+  color: var(--text);
   font-size: 14px;
+  font-weight: 800;
+}
+
+.data-status-capability-row small {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-subtle);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .data-status-capability-row strong,
 .data-status-providers dd strong {
+  flex: 0 0 auto;
   font-size: 13px;
+}
+
+.data-status-capability-row > strong {
+  max-width: 156px;
+  text-align: right;
+  line-height: 1.35;
 }
 
 .data-status-panel .tone-ok { color: var(--success); }
 .data-status-panel .tone-warn { color: var(--warning); }
 .data-status-panel .tone-idle { color: var(--text-subtle); }
 
+.data-status-providers {
+  padding: 0;
+}
+
+.data-status-providers > summary {
+  padding: 15px 0;
+  color: var(--text-subtle);
+  font-size: 13px;
+  font-weight: 850;
+  cursor: pointer;
+  list-style-position: inside;
+}
+
+.data-status-providers[open] > summary {
+  color: var(--text);
+}
+
 .data-status-providers dl {
   margin: 0;
+  padding: 0 0 12px;
 }
 
 .data-status-providers dl > div {
@@ -17746,6 +17778,17 @@ html[data-theme="dark"] .backtest-workspace.multi-strategy-workspace > .backtest
   .data-status-task {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .data-status-capability-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .data-status-capability-row > strong {
+    max-width: none;
+    text-align: left;
   }
 }
 
