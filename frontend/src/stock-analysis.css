@@ -335,3 +335,85 @@
     border-bottom: 0;
   }
 }
+
+
+/* UX-STOCK.1 optional scenario */
+.stock-reference-scenario {
+  margin: 16px 0 0;
+  border-top: 1px solid var(--border-default);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.stock-reference-scenario > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.stock-reference-scenario > summary::-webkit-details-marker {
+  display: none;
+}
+
+.stock-reference-scenario > summary span,
+.stock-reference-scenario > summary strong,
+.stock-reference-scenario > summary small {
+  display: block;
+}
+
+.stock-reference-scenario > summary strong {
+  color: var(--text-primary);
+  font-size: var(--font-card-title);
+}
+
+.stock-reference-scenario > summary small {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: var(--font-meta);
+}
+
+.stock-reference-scenario > summary b {
+  color: var(--accent-primary);
+  font-size: var(--font-meta);
+}
+
+.stock-reference-scenario[open] > summary b {
+  font-size: 0;
+}
+
+.stock-reference-scenario[open] > summary b::after {
+  content: "접기";
+  font-size: var(--font-meta);
+}
+
+.stock-reference-scenario-body {
+  padding: 0 0 16px;
+}
+
+.stock-reference-scenario-body .reference-price-editor,
+.stock-reference-scenario-body .position-context-editor {
+  margin-top: 0;
+}
+
+.stock-reference-scenario-body .position-context-editor {
+  margin-top: 14px;
+}
+
+.stock-analysis-body .strategy-test-head {
+  align-items: flex-start;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 12px;
+}
+
+.stock-analysis-body .strategy-test-head h3 {
+  font-size: var(--font-section-title);
+}
+
+@media (max-width: 700px) {
+  .stock-reference-scenario > summary {
+    align-items: flex-start;
+  }
+}
