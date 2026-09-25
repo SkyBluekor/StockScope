@@ -1022,6 +1022,71 @@
   line-height: 1.5;
 }
 
+
+/* UX-REDESIGN.1E · compact news context for Scanner / Holdings */
+.stock-news-panel.compact {
+  padding: 15px 0;
+}
+
+.stock-news-panel.compact .stock-news-head {
+  align-items: center;
+}
+
+.stock-news-panel.compact .stock-news-head h3 {
+  font-size: 1rem;
+}
+
+.stock-news-panel.compact .stock-news-head p {
+  margin-top: 3px;
+  font-size: var(--font-meta);
+}
+
+.stock-news-panel.compact .stock-news-list {
+  margin-top: 9px;
+}
+
+.stock-news-panel.compact .stock-news-item {
+  padding: 10px 0 11px;
+}
+
+.stock-news-panel.compact .stock-news-item h4 {
+  margin-top: 4px;
+  font-size: .95rem;
+}
+
+.stock-news-panel.compact .stock-news-item p {
+  display: -webkit-box;
+  margin-top: 4px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: var(--font-meta);
+  line-height: 1.45;
+}
+
+.stock-news-panel.compact .stock-news-origin {
+  margin-top: 5px;
+}
+
+.stock-news-panel.compact .stock-news-state {
+  min-height: 68px;
+  margin-top: 9px;
+}
+
+.stock-news-panel.compact .stock-news-more {
+  margin-top: 9px;
+}
+
+.stock-news-panel.compact .stock-news-footnote {
+  margin-top: 9px;
+}
+
+@media (max-width: 720px) {
+  .stock-news-panel.compact .stock-news-head {
+    align-items: flex-start;
+  }
+}
+
 .stock-analysis-style-section {
   padding: 20px 0;
   border-bottom: 1px solid var(--border-default);
