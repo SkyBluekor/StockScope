@@ -228,10 +228,23 @@ function CandidateCompareRow({
         <small>{candidate.candidate_label} · {conditionStatusLabel(candidate)}</small>
       </span>
       <span className="scanner-compare-metrics">
-        <span><small>현재가</small><strong>{priceText(candidate.current_price)}</strong></span>
-        <span><small>{strategyPriceLabel(candidate)}</small><strong>{interestPriceText(candidate)}</strong></span>
-        <span><small>손절 참고구간</small><strong>{stopPriceText(candidate)}</strong></span>
-        <span className="scanner-target-cell"><small>1차 목표 · {targetBasisLabel(candidate)}</small><strong>{targetPriceText(candidate, 1)}</strong><em>{targetGainPct(candidate) == null ? "-" : `현재가 대비 ${formatSignedPct(targetGainPct(candidate))}`}</em></span>
+        <span className="scanner-compare-metric current">
+          <small>현재가</small>
+          <strong>{priceText(candidate.current_price)}</strong>
+        </span>
+        <span className="scanner-compare-metric entry">
+          <small>{strategyPriceLabel(candidate)}</small>
+          <strong>{interestPriceText(candidate)}</strong>
+        </span>
+        <span className="scanner-compare-metric stop">
+          <small>손절 참고구간</small>
+          <strong>{stopPriceText(candidate)}</strong>
+        </span>
+        <span className="scanner-compare-metric target scanner-target-cell">
+          <small>1차 목표</small>
+          <strong>{targetPriceText(candidate, 1)}</strong>
+          <em>{targetGainPct(candidate) == null ? "-" : `현재가 대비 ${formatSignedPct(targetGainPct(candidate))}`}</em>
+        </span>
       </span>
       <span className="scanner-compare-arrow" aria-hidden="true">›</span>
     </button>
