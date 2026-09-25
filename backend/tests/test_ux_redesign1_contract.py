@@ -304,3 +304,52 @@ def test_ux_redesign1g_past_performance_reuses_exact_session_result_without_rean
     assert "createMultiStrategyBacktestJob" in backtest
     assert ".backtest-cache-panel" in styles
     assert ".backtest-result-context" in styles
+
+
+def test_ux_redesign1h_news1_is_compact_and_does_not_impersonate_news2_analysis() -> None:
+    panel = Path("frontend/src/components/StockNewsPanel.tsx").read_text(encoding="utf-8")
+    styles = Path("frontend/src/stock-analysis.css").read_text(encoding="utf-8")
+    workspace = Path("frontend/src/components/StockAnalysisWorkspace.tsx").read_text(encoding="utf-8")
+    scanner = Path("frontend/src/components/ScannerPanel.tsx").read_text(encoding="utf-8")
+    holdings = Path("frontend/src/components/HoldingsWorkspace.tsx").read_text(encoding="utf-8")
+
+    # Existing NEWS.1 result-count contracts remain intact.
+    assert 'variant = "full"' in panel
+    assert "requestLimit = compact ? 5 : 10" in panel
+    assert "collapsedLimit = compact ? 3 : 5" in panel
+    assert "expandedLimit = compact ? 5 : 10" in panel
+
+    # Company-name search results are described accurately, not as validated relevance.
+    assert "이름으로 조회한 최근 네이버 뉴스 검색 결과입니다." in panel
+    assert "와 직접 관련된 네이버 검색 결과" not in panel
+    assert "현재 조회된 최근 뉴스가 없습니다." in panel
+
+    # NEWS.2-style interpretation is explicitly not fabricated in NEWS.1.
+    assert "현재 뉴스 목록은 기사 검색 결과이며 호재·악재 또는 주가 방향을 판정하지 않습니다." in panel
+    assert "현재 이 화면에서는 제공하지 않습니다." in panel
+    assert 'className="stock-news-scope-details"' in panel
+    assert "{!compact && (" in panel
+    assert "fetchStockNews" in panel
+    assert "fetchNewsAnalysis" not in panel
+    assert "newsImpact" not in panel
+
+    # Articles stay editorial, concise, and leave the full article at the source.
+    assert "stock-news-item-copy" in panel
+    assert "원문 ↗" in panel
+    assert 'target="_blank"' in panel
+    assert 'rel="noopener noreferrer"' in panel
+    assert ".stock-news-item p" in styles
+    assert "-webkit-line-clamp: 2" in styles
+    assert "grid-template-columns: minmax(0, 1fr) auto" in styles
+
+    # Full news remains after company analysis and before investor-style analysis.
+    rendered_news = workspace.index("<StockNewsPanel", workspace.index("stock-analysis-company-summary"))
+    assert workspace.index("stock-analysis-company-summary") < rendered_news
+    assert rendered_news < workspace.index("stock-analysis-style-section")
+
+    # Scanner and Holdings keep the compact NEWS.1 mode from UX-REDESIGN.1E.
+    assert 'variant="compact"' in scanner
+    assert 'variant="compact"' in holdings
+
+    # The existing protected calculation disclaimer remains visible.
+    assert "Strategy·Scanner·Ranking·Risk 계산을 변경하지 않습니다." in panel
