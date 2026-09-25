@@ -526,22 +526,8 @@ const strategyName: Record<string, string> = {
         </div>
       </header>
 
-      <div className={`layout ${appPage !== "analysis" ? "backtest-layout" : ""}`}>
-        {appPage === "analysis" && (
-          <aside className="sidebar">
-            <button className="side-item active"><span>⌂</span>오늘의 시장</button>
-            <button className="side-item" disabled><span>◉</span>추천 전략</button>
-            <button className="side-item" disabled><span>☆</span>관심 종목</button>
-            <button className="side-item" disabled><span>◷</span>최근 분석</button>
-            <div className="sidebar-note">
-              <strong>분석 전용</strong>
-              <p>실제 주문 API를 구현하지 않습니다.</p>
-              <span>KRX + OpenDART</span>
-            </div>
-          </aside>
-        )}
-
-        <main className={`content ${appPage !== "analysis" ? "backtest-page-content" : ""}`}>
+      <div className="layout backtest-layout">
+        <main className="content backtest-page-content">
           {appPage === "analysis" ? (
             <StockAnalysisWorkspace
               stockQuery={stockQuery}
@@ -567,12 +553,11 @@ const strategyName: Record<string, string> = {
               <div className="strategy-test">
                 <div className="strategy-test-head">
                   <div>
-                    <span className="panel-kicker">STRATEGY ENGINE · INPUT UX v0.15.2</span>
-                    <h3>확정 EOD vs 현재 참고가격 시나리오</h3>
+                    <h3>분석 세부 설정</h3>
                     <p>{strategyMessage}</p>
                   </div>
                   <button type="button" disabled={strategyBusy} onClick={() => void runStrategyAnalysis()}>
-                    {strategyBusy ? "분석 중..." : analysisOutdated ? "변경값 다시 분석" : "전략 분석 실행"}
+                    {strategyBusy ? "분석 중..." : analysisOutdated ? "변경값 다시 분석" : "분석 실행"}
                   </button>
                 </div>
 
@@ -583,9 +568,18 @@ const strategyName: Record<string, string> = {
                   </div>
                 )}
 
+                <details className="stock-reference-scenario">
+                  <summary>
+                    <span>
+                      <strong>현재 참고가격·보유상태 시나리오</strong>
+                      <small>선택 · 공식 확정 일봉 분석을 덮어쓰지 않습니다.</small>
+                    </span>
+                    <b>펼치기</b>
+                  </summary>
+                  <div className="stock-reference-scenario-body">
                 <div className="reference-price-editor">
                   <div className="reference-copy">
-                    <strong>현재 참고정보 빠른 입력 <span>선택</span></strong>
+                    <strong>현재 참고가격 입력 <span>선택</span></strong>
                     <p>
                       현재가격은 직접 입력하거나 호가·누적 퍼센트 버튼으로 빠르게 맞출 수 있습니다.
                       장중 고가·저가·누적 거래량은 선택 항목이며, 입력하지 않아도 KRX 확정 일봉 기준으로 분석할 수 있습니다.
@@ -710,7 +704,7 @@ const strategyName: Record<string, string> = {
                   <div className="position-context-head">
                     <div>
                       <strong>내 현재 상태 가정</strong>
-                      <p>실제 증권계좌와 연결하지 않고, 전략 설명을 내 상황에 맞게 바꾸기 위한 분석용 입력입니다.</p>
+                      <p>실제 증권계좌와 연결하지 않고, 참고 시나리오를 내 상황에 맞게 비교하기 위한 입력입니다.</p>
                     </div>
                     <span>실제 주문 없음</span>
                   </div>
@@ -760,6 +754,8 @@ const strategyName: Record<string, string> = {
                     </div>
                   )}
                 </div>
+                  </div>
+                </details>
 
                 {strategyAnalysis && (
                   <>
