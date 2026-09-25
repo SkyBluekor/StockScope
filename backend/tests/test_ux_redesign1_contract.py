@@ -195,3 +195,57 @@ def test_ux_redesign1e_news_context_connects_scanner_and_holdings_without_changi
 
     assert ".stock-news-panel.compact" in styles
     assert "뉴스 검색 결과는 참고 정보이며 StockScope의 Strategy·Scanner·Ranking·Risk 계산을 변경하지 않습니다." in news_panel
+
+
+def test_ux_redesign1f_watch_and_held_views_are_semantically_separated() -> None:
+    holdings = Path("frontend/src/components/HoldingsWorkspace.tsx").read_text(encoding="utf-8")
+    styles = Path("frontend/src/holdings.css").read_text(encoding="utf-8")
+
+    # The list and detail perspective follow the active tab instead of reusing one layout.
+    assert 'detailPerspective: "watch" | "held"' in holdings
+    assert 'stockFilter === "watch"' in holdings
+    assert 'stockFilter === "held"' in holdings
+    assert 'perspective-${stockFilter}' in holdings
+    assert "<th>현재 판단</th>" in holdings
+    assert "<th>보유 수량</th>" in holdings
+    assert "<th>평균단가</th>" in holdings
+
+    # Interest view emphasizes observation and never renders the position/P&L block by default.
+    assert 'detailPerspective === "watch"' in holdings
+    assert 'className="holdings-watch-overview"' in holdings
+    assert "현재 판단" in holdings
+    assert "보유 관리 보기" in holdings
+    assert "관심 해제" in holdings
+
+    # Held view is anchored to the actual ledger and applied management state.
+    assert 'detailPerspective === "held"' in holdings
+    assert 'className="holdings-position-management"' in holdings
+    assert 'aria-label="보유 손익"' in holdings
+    assert 'aria-label="보유분 관리 기준"' in holdings
+    assert "<strong>보유분 관리 기준</strong>" in holdings
+    assert "적용 기준일" in holdings
+    assert "최신 분석 제안" in holdings
+    assert "적용된 보유분 관리 기준이 없습니다." in holdings
+
+    # New-entry analysis must not be presented as a held-position sell instruction.
+    assert "신규 진입 관점 분석" in holdings
+    assert "현재 보유분에 대한 매도 판단이 아닙니다." in holdings
+    assert "현재 보유분의 매도를 지시하지 않습니다." in holdings
+
+    # Filter changes cannot leave a hidden stock selected in the detail pane.
+    assert "visibleStocks.some((stock) => stock.stock_id === selectedStockId)" in holdings
+    assert "setSelectedStockId(visibleStocks[0].stock_id)" in holdings
+
+    # Interest removal remains a watch-state mutation only; ledger mutation APIs are separate.
+    change_watch = holdings[holdings.index("async function changeWatch"):holdings.index("function requestListWatchChange")]
+    assert "setWatchEnabled" in change_watch
+    assert "recordManualSell" not in change_watch
+    assert "recordManualCorrection" not in change_watch
+
+    # UX-REDESIGN.1E news context is retained in the same workspace.
+    assert "<StockNewsPanel" in holdings
+    assert 'variant="compact"' in holdings
+
+    assert ".holdings-watch-overview" in styles
+    assert ".holdings-entry-guardrail" in styles
+    assert ".holdings-management-proposal-kicker" in styles
