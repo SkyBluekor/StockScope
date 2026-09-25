@@ -6,8 +6,10 @@ def test_ux_redesign1_header_uses_unified_data_status() -> None:
     panel = Path("frontend/src/components/DataStatusPanel.tsx").read_text(encoding="utf-8")
 
     header_anchor = app.index('<div className="header-status">')
-    header_block = app[header_anchor : header_anchor + 2400]
-    assert "데이터 상태" in header_block
+    header_end = app.index("</header>", header_anchor)
+    header_block = app[header_anchor:header_end]
+    assert "data-status-trigger" in header_block
+    assert "dataSummary.label" in header_block
     assert ">KRX</span>" not in header_block
     assert ">DART</span>" not in header_block
 
@@ -68,3 +70,15 @@ def test_ux_redesign1_does_not_change_protected_calculation_surfaces() -> None:
         assert "createScannerJob" not in source
         assert "registerHeldStock" not in source
         assert "applyHoldingManagementPlan" not in source
+
+
+
+def test_ux_redesign1_provider_status_uses_real_kis_configuration() -> None:
+    source = Path("backend/app/api/data_sources.py").read_text(encoding="utf-8")
+
+    assert "settings.kis_app_key" in source
+    assert "settings.kis_app_secret" in source
+    assert "settings.kis_account_no" in source
+    assert "settings.kis_account_product_code" in source
+    assert '"enabled": False' not in source
+    assert "실계좌 잔고 · 현재가 · 실시간 시세" in source
