@@ -1990,6 +1990,7 @@ const strategyName: Record<string, string> = {
               market={stockMarket}
               stockName={selectedStockName}
               onSelectStock={chooseStock}
+              onBackToAnalysis={() => navigateApp("analysis")}
             />
           ) : appPage === "scanner" ? (
             <ScannerPanel
