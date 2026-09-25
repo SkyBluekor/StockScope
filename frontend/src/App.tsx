@@ -40,6 +40,84 @@ function initialTheme(): ThemeMode {
   return resolved;
 }
 
+
+function stockScopeFavicon(theme: ThemeMode) {
+  const dark = theme === "dark";
+  const bg = dark ? "%23081624" : "%23f8fbfd";
+  const line = dark ? "%236fffe0" : "%23152b3d";
+  const accent = "%2329d9b0";
+  const muted = dark ? "%23304b60" : "%23cbd7df";
+  return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='${bg}'/%3E%3Cg stroke='${muted}' stroke-width='2' opacity='.85'%3E%3Cpath d='M13 40v8M23 34v10M33 27v12M43 22v13M53 15v12'/%3E%3C/g%3E%3Cpath d='M7 48C13 45 15 41 20 42s7 6 12 2 7-14 12-13 6 6 13-3' fill='none' stroke='${line}' stroke-width='5' stroke-linecap='round'/%3E%3Ccircle cx='39' cy='31' r='9' fill='${bg}' stroke='${accent}' stroke-width='3'/%3E%3Ccircle cx='39' cy='31' r='3.5' fill='${accent}'/%3E%3Cpath d='M39 16v7M39 39v7M24 31h7M47 31h7' stroke='${accent}' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E`;
+}
+
+function StockScopeMark({ theme }: { theme: ThemeMode }) {
+  const dark = theme === "dark";
+  const bg = dark ? "#081624" : "#f8fbfd";
+  const border = dark ? "#173247" : "#dbe5eb";
+  const grid = dark ? "#18384e" : "#dce6ec";
+  const muted = dark ? "#40647b" : "#b9c7d1";
+  const trend = dark ? "#74ffe1" : "#152d40";
+  const accent = "#28d9b0";
+
+  return (
+    <svg
+      className="brand-logo"
+      width="32"
+      height="32"
+      viewBox="0 0 64 64"
+      role="img"
+      aria-label="StockScope"
+    >
+      <defs>
+        <linearGradient id="stockscope-accent" x1="0" y1="1" x2="1" y2="0">
+          <stop offset="0" stopColor={dark ? "#29bfa5" : "#1ab18f"} />
+          <stop offset="1" stopColor={dark ? "#8affea" : "#30ddb5"} />
+        </linearGradient>
+      </defs>
+      <rect x="1" y="1" width="62" height="62" rx="14" fill={bg} stroke={border} strokeWidth="2" />
+      <g stroke={grid} strokeWidth="1" opacity={dark ? 0.8 : 0.9}>
+        <path d="M16 8v48M32 8v48M48 8v48M8 16h48M8 32h48M8 48h48" />
+      </g>
+
+      <g fill={muted} opacity={dark ? 0.72 : 0.68}>
+        <rect x="9" y="47" width="4" height="9" rx="1" />
+        <rect x="16" y="43" width="4" height="13" rx="1" />
+        <rect x="23" y="46" width="4" height="10" rx="1" />
+        <rect x="30" y="39" width="4" height="17" rx="1" />
+        <rect x="37" y="42" width="4" height="14" rx="1" />
+        <rect x="44" y="35" width="4" height="21" rx="1" />
+        <rect x="51" y="31" width="4" height="25" rx="1" />
+      </g>
+
+      <g stroke={muted} strokeWidth="1.6" opacity={0.78}>
+        <path d="M13 29v12M22 25v13M31 21v13M41 17v14M51 11v15" />
+      </g>
+      <g fill={dark ? "#2f6275" : "#d2dde4"} opacity={0.95}>
+        <rect x="10" y="32" width="6" height="6" rx="1" />
+        <rect x="19" y="28" width="6" height="7" rx="1" />
+        <rect x="28" y="24" width="6" height="7" rx="1" />
+        <rect x="38" y="20" width="6" height="8" rx="1" />
+        <rect x="48" y="14" width="6" height="9" rx="1" />
+      </g>
+
+      <path
+        d="M6 48C12 46 15 40 20 41C25 42 26 47 31 44C36 41 36 31 41 30C46 29 47 35 52 31C55 29 57 25 59 21"
+        fill="none"
+        stroke={trend}
+        strokeWidth="5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+
+      <circle cx="41" cy="30" r="10.5" fill={bg} stroke="url(#stockscope-accent)" strokeWidth="3" />
+      <circle cx="41" cy="30" r="4" fill={accent} />
+      <g stroke={accent} strokeWidth="2.6" strokeLinecap="round">
+        <path d="M41 13v8M41 39v8M24 30h8M50 30h8" />
+      </g>
+    </svg>
+  );
+}
+
 function pageFromPathname(pathname: string): AppPage {
   const lower = pathname.toLowerCase();
   if (lower.startsWith("/holdings")) return "holdings";
@@ -130,7 +208,7 @@ export default function App() {
   useEffect(() => {
     const favicon = document.getElementById("stockscope-favicon") as HTMLLinkElement | null;
     if (favicon) {
-      favicon.href = theme === "dark" ? "/stockscope-icon-dark.png" : "/stockscope-icon-light.png";
+      favicon.href = stockScopeFavicon(theme);
     }
   }, [theme]);
   const [providers, setProviders] = useState<ProviderStatus | null>(null);
@@ -504,14 +582,7 @@ const strategyName: Record<string, string> = {
     <div className="app-shell">
       <header className="topbar">
         <div className="brand-wrap">
-          <img
-            src={theme === "dark" ? "/stockscope-icon-dark.png" : "/stockscope-icon-light.png"}
-            alt=""
-            aria-hidden="true"
-            width={30}
-            height={30}
-            style={{ borderRadius: 8, display: "block", flex: "0 0 auto" }}
-          />
+          <StockScopeMark theme={theme} />
           <strong className="brand">StockScope</strong>
         </div>
         <nav className="topnav" aria-label="주요 기능">
