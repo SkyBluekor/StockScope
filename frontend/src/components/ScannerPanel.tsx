@@ -20,6 +20,12 @@ import {
   type StockSearchItem,
 } from "../services/api";
 import {
+  addWatchStock,
+  listHoldingStocks,
+  registerHeldStock,
+  type HoldingStock,
+} from "../services/holdingsApi";
+import {
   ANALYSIS_STAGES,
   progressStatusMark,
   scannerProgressView,
@@ -35,6 +41,7 @@ type MarketScope = "ALL" | "KOSPI" | "KOSDAQ";
 
 type Props = {
   onAnalyzeStock: (item: StockSearchItem) => void;
+  onOpenHoldings?: (target: { market: "KOSPI" | "KOSDAQ"; ticker: string; name: string }) => void;
 };
 
 const evidencePreparationStageLabel: Record<string, string> = {
@@ -213,23 +220,62 @@ function emptyCandidateMessage(result: ScannerResponse, noAnalyzedData: boolean)
   return raw;
 }
 
+function managedStockKey(market: string, ticker: string) {
+  return `${market.toUpperCase()}-${ticker.trim().toUpperCase()}`;
+}
+
+function localDateTimeInputValue() {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
+function effectiveAtIso(value: string) {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
 function CandidateCompareRow({
   candidate,
   rank,
   selected,
+  managedStock,
+  holdingsLoading,
+  actionBusyKey,
   onSelect,
+  onAddWatch,
+  onRegisterHeld,
 }: {
   candidate: ScannerCandidate;
   rank: number;
   selected: boolean;
+  managedStock: HoldingStock | null;
+  holdingsLoading: boolean;
+  actionBusyKey: string | null;
   onSelect: () => void;
+  onAddWatch: () => void;
+  onRegisterHeld: () => void;
 }) {
   const tone = candidateTone(candidate);
+  const key = candidateKey(candidate);
+  const watchBusy = actionBusyKey === `watch:${key}`;
+  const heldBusy = actionBusyKey === `held:${key}`;
+  const isWatched = managedStock?.watch_enabled === true;
+  const isHeld = managedStock?.is_held === true;
+
   return (
-    <button
-      type="button"
+    <div
       className={`scanner-compare-row tone-${tone} ${selected ? "selected" : ""}`}
+      role="button"
+      tabIndex={0}
       onClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.currentTarget !== event.target) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
       aria-pressed={selected}
     >
       <span className="scanner-compare-rank" aria-label={`후보 우선순위 ${rank}`}>{rank}</span>
@@ -260,8 +306,46 @@ function CandidateCompareRow({
           <em>{targetGainPct(candidate) == null ? "-" : `현재가 대비 ${formatSignedPct(targetGainPct(candidate))}`}</em>
         </span>
       </span>
+      <span
+        className="scanner-compare-manage"
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+      >
+        {holdingsLoading ? (
+          <span className="scanner-manage-state loading">확인 중</span>
+        ) : isWatched ? (
+          <span className="scanner-manage-state watched">★ 관심</span>
+        ) : (
+          <button
+            type="button"
+            className="scanner-manage-button watch"
+            disabled={Boolean(actionBusyKey)}
+            onClick={(event) => {
+              event.stopPropagation();
+              onAddWatch();
+            }}
+          >
+            {watchBusy ? "추가 중..." : "☆ 관심"}
+          </button>
+        )}
+        {holdingsLoading ? null : isHeld ? (
+          <span className="scanner-manage-state held">보유 중</span>
+        ) : (
+          <button
+            type="button"
+            className="scanner-manage-button held"
+            disabled={Boolean(actionBusyKey)}
+            onClick={(event) => {
+              event.stopPropagation();
+              onRegisterHeld();
+            }}
+          >
+            {heldBusy ? "등록 중..." : "+ 보유"}
+          </button>
+        )}
+      </span>
       <span className="scanner-compare-arrow" aria-hidden="true">›</span>
-    </button>
+    </div>
   );
 }
 
@@ -273,6 +357,12 @@ function CandidateDetail({
   evidenceBusy,
   evidenceOpen,
   onEvidenceToggle,
+  managedStock,
+  holdingsLoading,
+  holdingActionBusyKey,
+  onAddWatch,
+  onRegisterHeld,
+  onOpenHoldings,
 }: {
   candidate: ScannerCandidate;
   rank: number;
@@ -281,6 +371,12 @@ function CandidateDetail({
   evidenceBusy: boolean;
   evidenceOpen: boolean;
   onEvidenceToggle: (open: boolean) => void;
+  managedStock: HoldingStock | null;
+  holdingsLoading: boolean;
+  holdingActionBusyKey: string | null;
+  onAddWatch: () => void;
+  onRegisterHeld: () => void;
+  onOpenHoldings?: () => void;
 }) {
   const tone = candidateTone(candidate);
   const topMissing = candidate.conditions.top_missing ?? [];
@@ -290,6 +386,11 @@ function CandidateDetail({
   const targetCap = targetCapExplanation(candidate);
   const changeSummary = candidate.user_action.next_transition
     || (topMissing.length > 0 ? topMissing.slice(0, 2).map((item) => item.label).join(" · ") : "현재 조건이 유지되는지 확인하세요.");
+  const isWatched = managedStock?.watch_enabled === true;
+  const isHeld = managedStock?.is_held === true;
+  const key = candidateKey(candidate);
+  const watchBusy = holdingActionBusyKey === `watch:${key}`;
+  const heldBusy = holdingActionBusyKey === `held:${key}`;
 
   return (
     <article className={`scanner-selected-detail tone-${tone}`}>
@@ -500,7 +601,40 @@ function CandidateDetail({
           <strong>{candidate.user_action.title || "현재 판단을 유지하세요."}</strong>
           <p>{candidate.user_action.detail}</p>
         </div>
-        <button type="button" className="scanner-detail-button" onClick={onAnalyze}>이 종목 자세히 분석</button>
+        <div className="scanner-selected-action-buttons">
+          <button type="button" className="scanner-detail-button" onClick={onAnalyze}>이 종목 자세히 분석</button>
+          {holdingsLoading ? (
+            <span className="scanner-manage-state loading">내 종목 상태 확인 중</span>
+          ) : isWatched ? (
+            <span className="scanner-manage-state watched">★ 관심 등록됨</span>
+          ) : (
+            <button
+              type="button"
+              className="scanner-manage-button watch"
+              onClick={onAddWatch}
+              disabled={Boolean(holdingActionBusyKey)}
+            >
+              {watchBusy ? "추가 중..." : "☆ 관심 추가"}
+            </button>
+          )}
+          {!holdingsLoading && (isHeld ? (
+            <span className="scanner-manage-state held">보유 중</span>
+          ) : (
+            <button
+              type="button"
+              className="scanner-manage-button held"
+              onClick={onRegisterHeld}
+              disabled={Boolean(holdingActionBusyKey)}
+            >
+              {heldBusy ? "등록 중..." : "+ 보유 등록"}
+            </button>
+          ))}
+          {(isWatched || isHeld) && onOpenHoldings && (
+            <button type="button" className="scanner-manage-button open" onClick={onOpenHoldings}>
+              내 종목에서 보기
+            </button>
+          )}
+        </div>
       </footer>
 
       {candidate.risk.warning && candidate.risk.warnings.length > 0 && (
@@ -513,7 +647,7 @@ function CandidateDetail({
   );
 }
 
-export default function ScannerPanel({ onAnalyzeStock }: Props) {
+export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) {
   const initialSession = useMemo(() => readScannerSession(), []);
   const sharedSession = useScannerSession();
   const [scope, setScope] = useState<MarketScope>(initialSession?.scope ?? "ALL");
@@ -531,6 +665,15 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
   const [clock, setClock] = useState(Date.now());
   const [freshnessFailure, setFreshnessFailure] = useState<ScannerFreshnessResponse | null>(null);
   const [dateNotice, setDateNotice] = useState<string | null>(null);
+  const [managedStocks, setManagedStocks] = useState<HoldingStock[]>([]);
+  const [holdingsLoading, setHoldingsLoading] = useState(false);
+  const [holdingActionBusyKey, setHoldingActionBusyKey] = useState<string | null>(null);
+  const [holdingNotice, setHoldingNotice] = useState<{ message: string; candidate: ScannerCandidate } | null>(null);
+  const [holdingError, setHoldingError] = useState<string | null>(null);
+  const [holdingDialogCandidate, setHoldingDialogCandidate] = useState<ScannerCandidate | null>(null);
+  const [holdingQuantity, setHoldingQuantity] = useState("1");
+  const [holdingAveragePrice, setHoldingAveragePrice] = useState("");
+  const [holdingEffectiveAt, setHoldingEffectiveAt] = useState(localDateTimeInputValue());
   const pollRef = useRef<number | null>(null);
   const startedAtRef = useRef<number | null>(null);
   const lastProgressAtRef = useRef<number | null>(null);
@@ -544,6 +687,10 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
   const jobBusy = job?.status === "queued" || job?.status === "running";
   const busy = jobBusy;
   const progress = job?.progress;
+  const managedStockMap = useMemo(
+    () => new Map(managedStocks.map((stock) => [managedStockKey(stock.market, stock.ticker), stock])),
+    [managedStocks],
+  );
   const evidenceJobStage = Boolean(
     jobBusy
     && preferredCandidateKeyRef.current
@@ -566,6 +713,31 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
     setRestoredFromSession(true);
     savedScrollRef.current = sharedSession.scrollY;
   }, [sharedSession, jobBusy, result]);
+
+  useEffect(() => {
+    if (!result) {
+      setManagedStocks([]);
+      return undefined;
+    }
+    let cancelled = false;
+    setHoldingsLoading(true);
+    setHoldingError(null);
+    void listHoldingStocks()
+      .then((stocks) => {
+        if (!cancelled) setManagedStocks(stocks);
+      })
+      .catch((loadError) => {
+        if (!cancelled) {
+          setHoldingError(loadError instanceof Error ? loadError.message : "내 종목 등록 상태를 불러오지 못했습니다.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setHoldingsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [result?.generated_at]);
 
   useEffect(() => {
     const onScroll = () => {
@@ -909,6 +1081,111 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
       preferredCandidateKeyRef.current = null;
       setError(err instanceof Error ? err.message : "3년 검증 데이터 준비를 시작하지 못했습니다.");
     }
+  }
+
+  function upsertManagedStock(stock: HoldingStock) {
+    setManagedStocks((current) => {
+      const key = managedStockKey(stock.market, stock.ticker);
+      const existingIndex = current.findIndex((item) => managedStockKey(item.market, item.ticker) === key);
+      if (existingIndex < 0) return [...current, stock];
+      const next = [...current];
+      next[existingIndex] = stock;
+      return next;
+    });
+  }
+
+  async function addCandidateToWatch(candidate: ScannerCandidate) {
+    const key = candidateKey(candidate);
+    const existing = managedStockMap.get(key);
+    if (existing?.watch_enabled || holdingActionBusyKey) return;
+    setHoldingActionBusyKey(`watch:${key}`);
+    setHoldingError(null);
+    setHoldingNotice(null);
+    try {
+      const response = await addWatchStock({
+        market: candidate.market,
+        ticker: candidate.code,
+        name: candidate.name,
+      });
+      upsertManagedStock(response.stock);
+      setHoldingNotice({
+        message: response.created
+          ? `${candidate.name}을(를) 관심 종목에 추가했습니다.`
+          : `${candidate.name}을(를) 관심 상태로 변경했습니다.`,
+        candidate,
+      });
+    } catch (watchError) {
+      setHoldingError(watchError instanceof Error ? watchError.message : "관심 종목을 추가하지 못했습니다.");
+    } finally {
+      setHoldingActionBusyKey(null);
+    }
+  }
+
+  function openHoldingRegistration(candidate: ScannerCandidate) {
+    const existing = managedStockMap.get(candidateKey(candidate));
+    if (existing?.is_held || holdingActionBusyKey) return;
+    setHoldingError(null);
+    setHoldingQuantity("1");
+    setHoldingAveragePrice(
+      candidate.current_price != null && Number.isFinite(candidate.current_price)
+        ? String(Math.max(1, Math.round(candidate.current_price)))
+        : "",
+    );
+    setHoldingEffectiveAt(localDateTimeInputValue());
+    setHoldingDialogCandidate(candidate);
+  }
+
+  async function submitHoldingRegistration() {
+    const candidate = holdingDialogCandidate;
+    if (!candidate || holdingActionBusyKey) return;
+    const quantity = Number(holdingQuantity);
+    const averagePrice = Number(holdingAveragePrice);
+    const effectiveAt = effectiveAtIso(holdingEffectiveAt);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      setHoldingError("보유 수량은 0보다 커야 합니다.");
+      return;
+    }
+    if (!Number.isFinite(averagePrice) || averagePrice <= 0) {
+      setHoldingError("평균단가를 입력해주세요.");
+      return;
+    }
+    if (!effectiveAt) {
+      setHoldingError("매수 시점을 확인해주세요.");
+      return;
+    }
+
+    const key = candidateKey(candidate);
+    setHoldingActionBusyKey(`held:${key}`);
+    setHoldingError(null);
+    setHoldingNotice(null);
+    try {
+      const response = await registerHeldStock({
+        market: candidate.market,
+        ticker: candidate.code,
+        name: candidate.name,
+        quantity: String(quantity),
+        average_price: String(averagePrice),
+        effective_at: effectiveAt,
+      });
+      upsertManagedStock(response.stock);
+      setHoldingDialogCandidate(null);
+      setHoldingNotice({
+        message: `${candidate.name}을(를) ${formatNumber(quantity)}주 보유 종목으로 등록했습니다.`,
+        candidate,
+      });
+    } catch (heldError) {
+      setHoldingError(heldError instanceof Error ? heldError.message : "보유 종목을 등록하지 못했습니다.");
+    } finally {
+      setHoldingActionBusyKey(null);
+    }
+  }
+
+  function openCandidateInHoldings(candidate: ScannerCandidate) {
+    onOpenHoldings?.({
+      market: candidate.market,
+      ticker: candidate.code,
+      name: candidate.name,
+    });
   }
 
   function persistBeforeNavigation() {
@@ -1321,6 +1598,28 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
             <button type="button" className="scanner-refresh-button" onClick={() => void runScanner(true)} disabled={busy}>다시 분석</button>
           </section>
 
+          {(holdingNotice || (holdingError && !holdingDialogCandidate)) && (
+            <div className={`scanner-holdings-notice ${holdingError ? "error" : "success"}`} role="status">
+              <span>{holdingError ?? holdingNotice?.message}</span>
+              {holdingNotice && onOpenHoldings && (
+                <button type="button" onClick={() => openCandidateInHoldings(holdingNotice.candidate)}>
+                  내 종목에서 보기
+                </button>
+              )}
+              <button
+                type="button"
+                className="dismiss"
+                aria-label="내 종목 등록 알림 닫기"
+                onClick={() => {
+                  setHoldingNotice(null);
+                  setHoldingError(null);
+                }}
+              >
+                ×
+              </button>
+            </div>
+          )}
+
           {result.candidates.length === 0 ? (
             <section className="scanner-no-candidate" role="status" aria-live="polite">
               <strong>{noAnalyzedData ? "아직 시장 데이터 준비가 필요합니다." : "현재는 관망이 정상 결과입니다."}</strong>
@@ -1339,7 +1638,7 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
                 </header>
 
                 <div className="scanner-compare-labels" aria-hidden="true">
-                  <span>순서</span><span>종목 / 전략</span><span>현재 판단</span><span>핵심 가격</span><span />
+                  <span>순서</span><span>종목 / 전략</span><span>현재 판단</span><span>핵심 가격</span><span>내 종목</span><span />
                 </div>
                 <div className="scanner-compare-list">
                   {result.candidates.map((candidate, index) => (
@@ -1348,7 +1647,12 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
                       candidate={candidate}
                       rank={index + 1}
                       selected={selectedCandidate ? candidateKey(selectedCandidate) === candidateKey(candidate) : false}
+                      managedStock={managedStockMap.get(candidateKey(candidate)) ?? null}
+                      holdingsLoading={holdingsLoading}
+                      actionBusyKey={holdingActionBusyKey}
                       onSelect={() => setSelectedCandidateKey(candidateKey(candidate))}
+                      onAddWatch={() => void addCandidateToWatch(candidate)}
+                      onRegisterHeld={() => openHoldingRegistration(candidate)}
                     />
                   ))}
                 </div>
@@ -1366,7 +1670,12 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
                             candidate={candidate}
                             rank={result.candidates.length + index + 1}
                             selected={selectedCandidate ? candidateKey(selectedCandidate) === candidateKey(candidate) : false}
+                            managedStock={managedStockMap.get(candidateKey(candidate)) ?? null}
+                            holdingsLoading={holdingsLoading}
+                            actionBusyKey={holdingActionBusyKey}
                             onSelect={() => setSelectedCandidateKey(candidateKey(candidate))}
+                            onAddWatch={() => void addCandidateToWatch(candidate)}
+                            onRegisterHeld={() => openHoldingRegistration(candidate)}
                           />
                         ))}
                       </div>
@@ -1384,6 +1693,12 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
                   evidenceBusy={busy}
                   evidenceOpen={expandedEvidenceIds.includes(evidenceKey(selectedCandidate))}
                   onEvidenceToggle={(open) => toggleEvidence(selectedCandidate, open)}
+                  managedStock={managedStockMap.get(candidateKey(selectedCandidate)) ?? null}
+                  holdingsLoading={holdingsLoading}
+                  holdingActionBusyKey={holdingActionBusyKey}
+                  onAddWatch={() => void addCandidateToWatch(selectedCandidate)}
+                  onRegisterHeld={() => openHoldingRegistration(selectedCandidate)}
+                  onOpenHoldings={onOpenHoldings ? () => openCandidateInHoldings(selectedCandidate) : undefined}
                 />
               )}
             </div>
@@ -1420,6 +1735,118 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
             </div>
           </details>
         </>
+      )}
+
+      {holdingDialogCandidate && (
+        <div
+          className="scanner-holding-dialog-backdrop"
+          role="presentation"
+          onMouseDown={() => {
+            if (!holdingActionBusyKey) setHoldingDialogCandidate(null);
+          }}
+        >
+          <section
+            className="scanner-holding-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="scanner-holding-dialog-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header>
+              <div>
+                <span>보유 종목 등록</span>
+                <h3 id="scanner-holding-dialog-title">{holdingDialogCandidate.name}</h3>
+                <p>{holdingDialogCandidate.market} · {holdingDialogCandidate.code}</p>
+              </div>
+              <button
+                type="button"
+                aria-label="보유 종목 등록 닫기"
+                disabled={Boolean(holdingActionBusyKey)}
+                onClick={() => setHoldingDialogCandidate(null)}
+              >
+                ×
+              </button>
+            </header>
+
+            <div className="scanner-holding-reference">
+              <span>현재 참고 가격</span>
+              <strong>{priceText(holdingDialogCandidate.current_price)}</strong>
+              <small>현재가는 입력 편의를 위한 참고값입니다. 실제 평균 매수단가를 확인해 수정하세요.</small>
+            </div>
+
+            <label className="scanner-holding-field">
+              <span>보유 수량</span>
+              <div className="scanner-holding-stepper">
+                <button
+                  type="button"
+                  onClick={() => setHoldingQuantity((value) => String(Math.max(1, Math.floor(Number(value) || 1) - 1)))}
+                >
+                  −
+                </button>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  inputMode="numeric"
+                  value={holdingQuantity}
+                  onChange={(event) => setHoldingQuantity(event.target.value)}
+                />
+                <button
+                  type="button"
+                  onClick={() => setHoldingQuantity((value) => String(Math.max(1, Math.floor(Number(value) || 0) + 1)))}
+                >
+                  +
+                </button>
+              </div>
+            </label>
+
+            <label className="scanner-holding-field">
+              <span>평균단가</span>
+              <div className="scanner-holding-price-input">
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  inputMode="numeric"
+                  value={holdingAveragePrice}
+                  onChange={(event) => setHoldingAveragePrice(event.target.value)}
+                  placeholder="실제 평균 매수가"
+                />
+                <b>원</b>
+              </div>
+            </label>
+
+            <label className="scanner-holding-field">
+              <span>매수 시점</span>
+              <input
+                type="datetime-local"
+                value={holdingEffectiveAt}
+                onChange={(event) => setHoldingEffectiveAt(event.target.value)}
+              />
+            </label>
+
+            {holdingError && <p className="scanner-holding-dialog-error">{holdingError}</p>}
+
+            <footer>
+              <button
+                type="button"
+                className="secondary"
+                disabled={Boolean(holdingActionBusyKey)}
+                onClick={() => setHoldingDialogCandidate(null)}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                className="primary"
+                disabled={Boolean(holdingActionBusyKey)}
+                onClick={() => void submitHoldingRegistration()}
+              >
+                {holdingActionBusyKey?.startsWith("held:") ? "등록 중..." : "보유 종목 등록"}
+              </button>
+            </footer>
+          </section>
+        </div>
       )}
     </div>
   );
