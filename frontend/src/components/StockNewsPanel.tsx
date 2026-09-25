@@ -100,9 +100,10 @@ export default function StockNewsPanel({ code, market, companyLabel, variant = "
     <section className={`stock-news-panel ${compact ? "compact" : "full"}`} aria-label="최근 뉴스">
       <div className="stock-news-head">
         <div>
-          <span>NEWS</span>
           <h3>최근 뉴스</h3>
-          <p>{compact ? `${title} 관련 최신 기사만 간단히 확인합니다.` : `${title}와 직접 관련된 네이버 검색 결과를 최신순으로 표시합니다.`}</p>
+          <p>{compact
+            ? `${title} 이름으로 조회한 최근 기사입니다.`
+            : `${title} 이름으로 조회한 최근 네이버 뉴스 검색 결과입니다.`}</p>
         </div>
         <div>
           {news?.fetched_at && <small>마지막 확인 {formatTimestamp(news.fetched_at)}</small>}
@@ -113,7 +114,7 @@ export default function StockNewsPanel({ code, market, companyLabel, variant = "
       </div>
 
       {loading && !news ? (
-        <div className="stock-news-state">최근 뉴스를 불러오는 중입니다.</div>
+        <div className="stock-news-state">최근 뉴스를 불러오는 중입니다...</div>
       ) : error ? (
         <div className="stock-news-state error">
           <strong>최근 뉴스를 불러오지 못했습니다.</strong>
@@ -121,23 +122,25 @@ export default function StockNewsPanel({ code, market, companyLabel, variant = "
         </div>
       ) : news && news.count === 0 ? (
         <div className="stock-news-state">
-          <strong>최근 검색 결과가 없습니다.</strong>
-          <span>뉴스가 없다는 뜻과 뉴스 서비스 오류는 구분해서 표시합니다.</span>
+          <strong>현재 조회된 최근 뉴스가 없습니다.</strong>
+          <span>검색 결과 없음은 뉴스 서비스 오류와 별개의 상태입니다.</span>
         </div>
       ) : (
         <>
           <div className="stock-news-list">
             {visibleItems.map((item) => (
               <article key={item.id} className="stock-news-item">
-                <div className="stock-news-meta">
-                  <time dateTime={item.published_at ?? undefined}>{formatTimestamp(item.published_at)}</time>
-                  <span>{sourceLabel(item.source_name, item.source_domain)}</span>
+                <div className="stock-news-item-copy">
+                  <div className="stock-news-meta">
+                    <time dateTime={item.published_at ?? undefined}>{formatTimestamp(item.published_at)}</time>
+                    <span>{sourceLabel(item.source_name, item.source_domain)}</span>
+                  </div>
+                  <h4>
+                    <a href={item.url} target="_blank" rel="noopener noreferrer">{item.title}</a>
+                  </h4>
+                  {item.description && <p>{item.description}</p>}
                 </div>
-                <h4>
-                  <a href={item.url} target="_blank" rel="noopener noreferrer">{item.title}</a>
-                </h4>
-                {item.description && <p>{item.description}</p>}
-                <a className="stock-news-origin" href={item.url} target="_blank" rel="noopener noreferrer">원문 보기</a>
+                <a className="stock-news-origin" href={item.url} target="_blank" rel="noopener noreferrer" aria-label={`${item.title} 원문 새 탭에서 열기`}>원문 ↗</a>
               </article>
             ))}
           </div>
@@ -149,9 +152,22 @@ export default function StockNewsPanel({ code, market, companyLabel, variant = "
           )}
 
           {news && (
-            <p className="stock-news-footnote">
-              뉴스 검색 결과는 참고 정보이며 StockScope의 Strategy·Scanner·Ranking·Risk 계산을 변경하지 않습니다.
-            </p>
+            <>
+              <p className="stock-news-footnote">
+                뉴스 검색 결과는 참고 정보이며 StockScope의 Strategy·Scanner·Ranking·Risk 계산을 변경하지 않습니다.
+                현재 뉴스 목록은 기사 검색 결과이며 호재·악재 또는 주가 방향을 판정하지 않습니다.
+              </p>
+              {!compact && (
+                <details className="stock-news-scope-details">
+                  <summary>뉴스 분석 범위 보기</summary>
+                  <div>
+                    <strong>현재 제공 범위</strong>
+                    <p>기업명 기반 최근 기사 검색 결과만 제공합니다.</p>
+                    <p>업종·정책·국제 이슈와 종목의 영향 연결, 주가 방향 예측은 현재 이 화면에서는 제공하지 않습니다. 관련성과 영향 방향을 검증할 수 있는 별도 데이터가 마련된 경우에만 별도 분석으로 표시합니다.</p>
+                  </div>
+                </details>
+              )}
+            </>
           )}
         </>
       )}
