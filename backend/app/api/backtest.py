@@ -34,6 +34,15 @@ class ScannerRequest(BaseModel):
     allow_large_sync: bool = False
 
 
+class ScannerEvidencePrepareRequest(BaseModel):
+    market: Literal["KOSPI", "KOSDAQ"]
+    code: str = Field(..., min_length=1, max_length=12)
+    strategy: str = Field(default="", max_length=80)
+    data_end: str = Field(..., min_length=10, max_length=10)
+    market_scope: Literal["ALL", "KOSPI", "KOSDAQ"] = "ALL"
+    candidate_limit: int = Field(default=5, ge=1, le=10)
+
+
 class ScannerFreshnessRequest(BaseModel):
     market_scope: Literal["ALL", "KOSPI", "KOSDAQ"] = "ALL"
     known_data_date: str | None = None
@@ -595,6 +604,71 @@ async def scanner_data_integrity_audit(payload: ScannerDataIntegrityAuditRequest
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ProviderError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+async def _run_scanner_evidence_job(
+    job_id: str,
+    payload: ScannerEvidencePrepareRequest,
+    api_key: str | None,
+) -> None:
+    service = StockScannerService(KrxProvider(api_key))
+
+    def update_progress(progress_payload: dict) -> None:
+        if backtest_jobs.is_cancelled(job_id):
+            raise BacktestJobCancelled()
+        backtest_jobs.update_progress(job_id, progress_payload)
+
+    try:
+        preparation = await service.prepare_three_year_evidence_data(
+            market=payload.market,
+            code=payload.code,
+            data_end=payload.data_end,
+            progress=update_progress,
+        )
+        update_progress({
+            "stage": "evidence_reanalyze",
+            "message": "준비된 3년 데이터를 반영해 후보 분석을 다시 계산하는 중",
+            "current": 1,
+            "total": 1,
+            "details": {
+                "overall_percent": 100,
+                "market": payload.market,
+                "code": payload.code.strip().upper(),
+                "strategy": payload.strategy,
+                "validation_start": preparation.get("validation_start"),
+                "validation_end": preparation.get("validation_end"),
+                "evidence_data_ready": preparation.get("status") == "READY",
+                "evidence_readiness": preparation.get("readiness"),
+            },
+        })
+        result = await service.run(
+            market_scope=payload.market_scope,
+            as_of_date=payload.data_end,
+            candidate_limit=payload.candidate_limit,
+            force_refresh=True,
+            allow_large_sync=False,
+            progress=update_progress,
+        )
+    except BacktestJobCancelled:
+        backtest_jobs.mark_cancelled(job_id)
+    except asyncio.CancelledError:
+        backtest_jobs.mark_cancelled(job_id)
+        raise
+    except (ProviderNotConfigured, ProviderError, ValueError) as exc:
+        backtest_jobs.fail(job_id, str(exc))
+    except Exception as exc:  # pragma: no cover
+        backtest_jobs.fail(job_id, f"3년 검증 데이터 준비 중 예상하지 못한 오류가 발생했습니다: {exc}")
+    else:
+        backtest_jobs.complete(job_id, result)
+
+
+@router.post("/scanner/evidence/jobs", status_code=202)
+async def create_scanner_evidence_job(payload: ScannerEvidencePrepareRequest) -> dict:
+    settings = get_settings()
+    job = backtest_jobs.create()
+    task = asyncio.create_task(_run_scanner_evidence_job(job.job_id, payload, settings.krx_api_key))
+    backtest_jobs.attach_task(job.job_id, task)
+    return job.public()
 
 
 @router.post("/scanner/jobs", status_code=202)
