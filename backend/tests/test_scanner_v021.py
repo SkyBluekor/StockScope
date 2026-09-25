@@ -227,6 +227,10 @@ def test_three_year_evidence_prepare_uses_real_three_year_window_and_rechecks_re
         def day_status_range(market: str, start_key: str, end_key: str) -> dict:
             return {}
 
+        @staticmethod
+        def day_complete(market: str, key: str, kind: str) -> bool:
+            return False
+
         def stock_series(self, market: str, code: str, start_key: str, end_key: str) -> HistorySeries:
             return HistorySeries(rows=dict(self.stock_rows), checked_dates=set(self.stock_rows))
 
