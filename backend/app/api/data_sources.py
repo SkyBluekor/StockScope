@@ -65,6 +65,11 @@ async def provider_status() -> dict[str, Any]:
     return {
         "krx": {"configured": bool(settings.krx_api_key), "role": "시장/일별 시세/지수"},
         "dart": {"configured": bool(settings.dart_api_key), "role": "기업/공시/재무"},
+        "naver_news": {
+            "configured": bool((settings.naver_news_client_id or "").strip() and (settings.naver_news_client_secret or "").strip()),
+            "provider_kind": settings.naver_news_provider_kind,
+            "role": "종목 최근 뉴스",
+        },
         "kis": {"enabled": False, "role": "optional provider - 현재 비활성"},
         "real_trading": False,
     }
