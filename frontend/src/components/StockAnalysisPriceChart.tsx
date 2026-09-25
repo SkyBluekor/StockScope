@@ -199,7 +199,7 @@ export default function StockAnalysisPriceChart({ code, market, analysis }: Prop
               })}
             </g>
             <text className="stock-chart-date start" x={LEFT} y={HEIGHT - 5}>{model.bars[0]?.date.slice(5).replace("-", ".")}</text>
-            <text className="stock-chart-date end" x={WIDTH - RIGHT} y={HEIGHT - 5}>{model.bars.at(-1)?.date.slice(5).replace("-", ".")}</text>
+            <text className="stock-chart-date end" x={WIDTH - RIGHT} y={HEIGHT - 5}>{model.bars[model.bars.length - 1]?.date.slice(5).replace("-", ".")}</text>
           </svg>
         </div>
       )}
