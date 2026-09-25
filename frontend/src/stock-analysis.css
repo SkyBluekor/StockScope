@@ -1006,6 +1006,12 @@
   color: var(--text-primary);
 }
 
+.stock-news-state small {
+  color: var(--text-muted);
+  font-size: var(--font-meta);
+  line-height: 1.45;
+}
+
 .stock-news-state.error strong,
 .stock-news-state.error span {
   color: var(--status-negative);
