@@ -1077,12 +1077,22 @@ export default function HoldingsWorkspace() {
   }
 
   function adjustManualQuantity(delta: number) {
-    const current = quantityNumber(manualQuantity);
-    let next = Math.max(0, current + delta);
-    if (manualMode === "sell" && manualPosition) {
-      next = Math.min(next, quantityNumber(manualPosition.quantity));
-    }
-    setManualQuantity(String(next));
+    setManualQuantity((value) => {
+      const current = quantityNumber(value);
+      let next = Math.max(0, current + delta);
+      if (manualMode === "sell" && manualPosition) {
+        next = Math.min(next, quantityNumber(manualPosition.quantity));
+      }
+      return String(next);
+    });
+  }
+
+  function adjustManualPrice(percent: number) {
+    setManualPrice((value) => {
+      const current = quantityNumber(value) || quantityNumber(manualReferencePrice);
+      if (current <= 0) return value;
+      return String(Math.max(1, Math.round(current * (1 + percent / 100))));
+    });
   }
 
   async function saveManual() {
@@ -2113,9 +2123,27 @@ export default function HoldingsWorkspace() {
                 </span>
                 {manualMode === "sell" ? (
                   <div className="holdings-quantity-stepper">
-                    <button type="button" onClick={() => adjustManualQuantity(-1)} disabled={quantityNumber(manualQuantity) <= 0}>−</button>
+                    <button
+                      type="button"
+                      onPointerDown={() => startHoldRepeat(() => adjustManualQuantity(-1))}
+                      onPointerUp={() => stopHoldRepeat(false)}
+                      onPointerLeave={() => stopHoldRepeat(true)}
+                      onPointerCancel={() => stopHoldRepeat(true)}
+                      onClick={() => runClickUnlessHeld(() => adjustManualQuantity(-1))}
+                      onContextMenu={(event) => event.preventDefault()}
+                      disabled={quantityNumber(manualQuantity) <= 0}
+                    >−</button>
                     <input value={manualQuantity} onChange={(event) => setManualQuantity(event.target.value)} inputMode="decimal" />
-                    <button type="button" onClick={() => adjustManualQuantity(1)} disabled={!!manualPosition && quantityNumber(manualQuantity) >= quantityNumber(manualPosition.quantity)}>+</button>
+                    <button
+                      type="button"
+                      onPointerDown={() => startHoldRepeat(() => adjustManualQuantity(1))}
+                      onPointerUp={() => stopHoldRepeat(false)}
+                      onPointerLeave={() => stopHoldRepeat(true)}
+                      onPointerCancel={() => stopHoldRepeat(true)}
+                      onClick={() => runClickUnlessHeld(() => adjustManualQuantity(1))}
+                      onContextMenu={(event) => event.preventDefault()}
+                      disabled={!!manualPosition && quantityNumber(manualQuantity) >= quantityNumber(manualPosition.quantity)}
+                    >+</button>
                   </div>
                 ) : manualMode === "buy" ? (
                   <div className="holdings-direct-adjust">
@@ -2140,6 +2168,7 @@ export default function HoldingsWorkspace() {
                       <input value={manualQuantity} onChange={(event) => setManualQuantity(event.target.value)} inputMode="decimal" aria-label="보유 수량 직접 입력" />
                       <span>주</span>
                     </div>
+                    <small className="holdings-hold-hint">+ / - 버튼을 길게 누르면 같은 단위로 계속 증감합니다.</small>
                   </div>
                 ) : (
                   <input value={manualQuantity} onChange={(event) => setManualQuantity(event.target.value)} inputMode="decimal" placeholder="예: 5" />
@@ -2157,11 +2186,37 @@ export default function HoldingsWorkspace() {
                 {manualMode === "buy" ? (
                   <div className="holdings-direct-adjust">
                     <div className="holdings-adjust-buttons price" aria-label="가격 빠른 조정">
-                      <button type="button" onClick={() => setManualPriceByPercent(-5)} disabled={!manualReferencePrice}>-5%</button>
-                      <button type="button" onClick={() => setManualPriceByPercent(-1)} disabled={!manualReferencePrice}>-1%</button>
+                      {[-5, -1].map((percent) => (
+                        <button
+                          key={percent}
+                          type="button"
+                          onPointerDown={() => startHoldRepeat(() => adjustManualPrice(percent))}
+                          onPointerUp={() => stopHoldRepeat(false)}
+                          onPointerLeave={() => stopHoldRepeat(true)}
+                          onPointerCancel={() => stopHoldRepeat(true)}
+                          onClick={() => runClickUnlessHeld(() => adjustManualPrice(percent))}
+                          onContextMenu={(event) => event.preventDefault()}
+                          disabled={!manualReferencePrice}
+                        >
+                          {percent}%
+                        </button>
+                      ))}
                       <button type="button" onClick={() => setManualPrice(manualReferencePrice)} disabled={!manualReferencePrice}>기준가</button>
-                      <button type="button" onClick={() => setManualPriceByPercent(1)} disabled={!manualReferencePrice}>+1%</button>
-                      <button type="button" onClick={() => setManualPriceByPercent(5)} disabled={!manualReferencePrice}>+5%</button>
+                      {[1, 5].map((percent) => (
+                        <button
+                          key={percent}
+                          type="button"
+                          onPointerDown={() => startHoldRepeat(() => adjustManualPrice(percent))}
+                          onPointerUp={() => stopHoldRepeat(false)}
+                          onPointerLeave={() => stopHoldRepeat(true)}
+                          onPointerCancel={() => stopHoldRepeat(true)}
+                          onClick={() => runClickUnlessHeld(() => adjustManualPrice(percent))}
+                          onContextMenu={(event) => event.preventDefault()}
+                          disabled={!manualReferencePrice}
+                        >
+                          +{percent}%
+                        </button>
+                      ))}
                     </div>
                     <div className="holdings-editable-number">
                       <input value={manualPrice} onChange={(event) => setManualPrice(event.target.value)} inputMode="decimal" aria-label="가격 직접 입력" placeholder="가격 직접 입력" />
