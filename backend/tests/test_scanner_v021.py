@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from datetime import date
+import asyncio
+from datetime import date, timedelta
 from pathlib import Path
+
+from app.backtest.history_store import HistorySeries
 
 from app.backtest.market_store import HistoricalMarketStore
 from app.backtest.scanner import StockScannerService
@@ -199,3 +202,82 @@ def test_v0212_unverified_evidence_is_not_frozen_in_cache(tmp_path: Path, monkey
         market="KOSPI", code="005930", strategy="breakout", data_end=data_end
     ) is None
     assert not list((tmp_path / "historical_evidence").glob("*.json"))
+
+
+def test_three_year_evidence_prepare_uses_real_three_year_window_and_rechecks_readiness() -> None:
+    class FakeKrx:
+        opened = False
+
+        async def open_session(self) -> None:
+            self.opened = True
+
+        async def close_session(self) -> None:
+            self.opened = False
+
+        @staticmethod
+        def has_cached_day(market: str, day: date, kind: str) -> bool:
+            return False
+
+    class FakeStore:
+        def __init__(self) -> None:
+            self.stock_rows: dict[str, dict] = {}
+            self.index_rows: dict[str, dict] = {}
+
+        @staticmethod
+        def day_status_range(market: str, start_key: str, end_key: str) -> dict:
+            return {}
+
+        def stock_series(self, market: str, code: str, start_key: str, end_key: str) -> HistorySeries:
+            return HistorySeries(rows=dict(self.stock_rows), checked_dates=set(self.stock_rows))
+
+        def index_series(self, market: str, start_key: str, end_key: str) -> HistorySeries:
+            return HistorySeries(rows=dict(self.index_rows), checked_dates=set(self.index_rows))
+
+    service = object.__new__(StockScannerService)
+    service.krx = FakeKrx()
+    service.market_store = FakeStore()
+    captured: dict[str, date] = {}
+
+    async def fake_ensure_market_history(**kwargs):
+        start = kwargs["start"]
+        end = kwargs["end"]
+        captured["start"] = start
+        captured["end"] = end
+        cursor = start
+        while cursor <= end:
+            if cursor.weekday() < 5:
+                key = cursor.strftime("%Y%m%d")
+                row = {"date": key, "code": "005930", "close": 100_000}
+                service.market_store.stock_rows[key] = row
+                service.market_store.index_rows[key] = {"date": key, "close": 2_500}
+            cursor += timedelta(days=1)
+        return {
+            "store_hits": 0,
+            "estimated_network_requests": 0,
+            "network_requests": 0,
+            "raw_cache_hits": 0,
+            "errors": 0,
+            "processed_items": 0,
+            "sync_seconds": 0.0,
+            "processing_rate": 0.0,
+            "peak_concurrency": 0,
+            "final_concurrency_limit": 4,
+        }
+
+    service._ensure_market_history = fake_ensure_market_history
+    result = asyncio.run(
+        service.prepare_three_year_evidence_data(
+            market="KOSPI",
+            code="005930",
+            data_end="2026-09-24",
+        )
+    )
+
+    expected_validation_start = date(2023, 9, 24)
+    assert captured["end"] == date(2026, 9, 24)
+    assert captured["start"] == expected_validation_start - timedelta(days=StockScannerService.THREE_YEAR_WARMUP_DAYS)
+    assert result["validation_start"] == expected_validation_start.isoformat()
+    assert result["status"] == "READY"
+    assert result["readiness"]["ready"] is True
+    assert result["readiness"]["stock_warmup_rows"] >= 120
+    assert result["readiness"]["index_warmup_rows"] >= 120
