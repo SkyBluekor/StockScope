@@ -3,6 +3,7 @@ export type HealthResponse = { status: string };
 export type ProviderStatus = {
   krx: { configured: boolean; role: string };
   dart: { configured: boolean; role: string };
+  naver_news: { configured: boolean; provider_kind: string; role: string };
   kis: { enabled: boolean; role: string };
   real_trading: boolean;
 };
@@ -140,16 +141,86 @@ export type StockContext = {
   sources: Record<string, string>;
 };
 
+export type StockNewsItem = {
+  id: string;
+  title: string;
+  description: string;
+  url: string;
+  source_url: string;
+  source_name: string | null;
+  source_domain: string | null;
+  provider: string;
+  published_at: string | null;
+  timestamp_kind: string;
+  query: string;
+  fetched_at: string;
+};
+
+export type StockNewsResponse = {
+  code: string;
+  market: "KOSPI" | "KOSDAQ";
+  company_name: string;
+  query: string;
+  fetched_at: string;
+  status: "ok" | string;
+  items: StockNewsItem[];
+  count: number;
+  cache: { hit: boolean; stale: boolean };
+  discarded_items: number;
+};
+
+export class ApiError extends Error {
+  status: number;
+  code: string | null;
+  retryable: boolean;
+  retryAfter: number | null;
+  requestId: string | null;
+
+  constructor(
+    message: string,
+    options: {
+      status: number;
+      code?: string | null;
+      retryable?: boolean;
+      retryAfter?: number | null;
+      requestId?: string | null;
+    },
+  ) {
+    super(message);
+    this.name = "ApiError";
+    this.status = options.status;
+    this.code = options.code ?? null;
+    this.retryable = options.retryable ?? false;
+    this.retryAfter = options.retryAfter ?? null;
+    this.requestId = options.requestId ?? null;
+  }
+}
+
 async function asJson<T>(response: Response): Promise<T> {
   if (response.ok) return response.json() as Promise<T>;
   let message = `요청 실패 (${response.status})`;
+  let code: string | null = null;
+  let retryable = false;
+  let retryAfter: number | null = null;
+  let requestId: string | null = null;
   try {
-    const body = (await response.json()) as { detail?: string };
-    if (body.detail) message = body.detail;
+    const body = (await response.json()) as {
+      detail?: string | { error?: { code?: string; message?: string; retryable?: boolean; retry_after?: number | null; request_id?: string } };
+      error?: { code?: string; message?: string; retryable?: boolean; retry_after?: number | null; request_id?: string };
+    };
+    const structured = typeof body.detail === "object" ? body.detail?.error : body.error;
+    if (typeof body.detail === "string") message = body.detail;
+    if (structured) {
+      message = structured.message ?? message;
+      code = structured.code ?? null;
+      retryable = Boolean(structured.retryable);
+      retryAfter = structured.retry_after ?? null;
+      requestId = structured.request_id ?? null;
+    }
   } catch {
     // Keep fallback message.
   }
-  throw new Error(message);
+  throw new ApiError(message, { status: response.status, code, retryable, retryAfter, requestId });
 }
 
 export async function fetchHealth(): Promise<HealthResponse> {
@@ -175,6 +246,23 @@ export async function fetchStockContext(
   const query = new URLSearchParams({ market });
   return asJson<StockContext>(
     await fetch(`/api/stocks/${encodeURIComponent(code.trim().toUpperCase())}/context?${query.toString()}`),
+  );
+}
+
+export async function fetchStockNews(
+  code: string,
+  market: "KOSPI" | "KOSDAQ",
+  options: { limit?: number; signal?: AbortSignal } = {},
+): Promise<StockNewsResponse> {
+  const query = new URLSearchParams({
+    market,
+    limit: String(options.limit ?? 10),
+  });
+  return asJson<StockNewsResponse>(
+    await fetch(
+      `/api/stocks/${encodeURIComponent(code.trim().toUpperCase())}/news?${query.toString()}`,
+      { signal: options.signal },
+    ),
   );
 }
 
