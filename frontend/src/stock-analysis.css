@@ -1023,6 +1023,120 @@
 }
 
 
+/* UX-REDESIGN.1H · compact editorial NEWS.1 presentation */
+.stock-news-panel.full {
+  padding: 17px 0;
+}
+
+.stock-news-panel.full .stock-news-head {
+  align-items: center;
+}
+
+.stock-news-panel.full .stock-news-head h3 {
+  margin: 0;
+}
+
+.stock-news-panel.full .stock-news-head > div:last-child {
+  align-items: center;
+  flex-direction: row;
+}
+
+.stock-news-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: start;
+  padding: 10px 0 11px;
+}
+
+.stock-news-item-copy {
+  min-width: 0;
+}
+
+.stock-news-item h4 {
+  margin-top: 4px;
+}
+
+.stock-news-item p {
+  display: -webkit-box;
+  margin-top: 4px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-height: 1.45;
+}
+
+.stock-news-origin {
+  align-self: end;
+  margin-top: 0;
+  padding-bottom: 1px;
+  white-space: nowrap;
+}
+
+.stock-news-panel.full .stock-news-state {
+  min-height: 68px;
+  margin-top: 9px;
+}
+
+.stock-news-panel.full .stock-news-list {
+  margin-top: 9px;
+}
+
+.stock-news-panel.full .stock-news-more {
+  margin-top: 9px;
+}
+
+.stock-news-panel.full .stock-news-footnote {
+  margin-top: 9px;
+}
+
+.stock-news-scope-details {
+  margin-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.stock-news-scope-details > summary {
+  padding: 9px 0 0;
+  color: var(--text-muted);
+  font-size: var(--font-meta);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.stock-news-scope-details > div {
+  padding: 9px 0 1px;
+  color: var(--text-muted);
+  font-size: var(--font-meta);
+  line-height: 1.5;
+}
+
+.stock-news-scope-details strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text-secondary);
+}
+
+.stock-news-scope-details p {
+  margin: 3px 0 0;
+}
+
+@media (max-width: 720px) {
+  .stock-news-panel.full .stock-news-head > div:last-child {
+    align-items: flex-start;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .stock-news-item {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+
+  .stock-news-origin {
+    align-self: start;
+  }
+}
+
 /* UX-REDESIGN.1E · compact news context for Scanner / Holdings */
 .stock-news-panel.compact {
   padding: 15px 0;
