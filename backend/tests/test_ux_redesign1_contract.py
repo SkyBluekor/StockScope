@@ -157,3 +157,41 @@ def test_ux_redesign1d_scanner_can_add_candidates_to_holdings_without_reanalysis
 
     # The dedicated three-year evidence recovery remains connected.
     assert "onPrepareEvidence={() => void prepareCandidateEvidence(selectedCandidate)}" in scanner
+
+
+def test_ux_redesign1e_news_context_connects_scanner_and_holdings_without_changing_analysis() -> None:
+    news_panel = Path("frontend/src/components/StockNewsPanel.tsx").read_text(encoding="utf-8")
+    scanner = Path("frontend/src/components/ScannerPanel.tsx").read_text(encoding="utf-8")
+    holdings = Path("frontend/src/components/HoldingsWorkspace.tsx").read_text(encoding="utf-8")
+    analysis = Path("frontend/src/components/StockAnalysisWorkspace.tsx").read_text(encoding="utf-8")
+    api = Path("frontend/src/services/api.ts").read_text(encoding="utf-8")
+    styles = Path("frontend/src/stock-analysis.css").read_text(encoding="utf-8")
+
+    assert 'variant?: "full" | "compact"' in news_panel
+    assert 'variant = "full"' in news_panel
+    assert "requestLimit = compact ? 5 : 10" in news_panel
+    assert "collapsedLimit = compact ? 3 : 5" in news_panel
+    assert "expandedLimit = compact ? 5 : 10" in news_panel
+    assert "AbortController" in news_panel
+    assert "requestIdRef" in news_panel
+
+    assert 'variant="compact"' in scanner
+    assert "code={candidate.code}" in scanner
+    assert "market={candidate.market}" in scanner
+    assert 'variant="compact"' in holdings
+    assert "code={detail.ticker}" in holdings
+    assert "market={detail.market}" in holdings
+
+    # Existing stock analysis keeps the default full-mode panel.
+    assert "<StockNewsPanel" in analysis
+    assert 'variant="compact"' not in analysis
+
+    # Reuse the existing news API; no Scanner rerun is connected to news display.
+    assert "fetchStockNews" in api
+    assert "/news?" in api
+    candidate_detail = scanner[scanner.index("function CandidateDetail"):scanner.index("export default function ScannerPanel")]
+    assert "StockNewsPanel" in candidate_detail
+    assert "runScanner(" not in candidate_detail
+
+    assert ".stock-news-panel.compact" in styles
+    assert "뉴스 검색 결과는 참고 정보이며 StockScope의 Strategy·Scanner·Ranking·Risk 계산을 변경하지 않습니다." in news_panel
