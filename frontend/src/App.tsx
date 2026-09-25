@@ -10,8 +10,17 @@ import TrackingWorkspace from "./components/TrackingWorkspace";
 import HoldingsWorkspace from "./components/HoldingsWorkspace";
 import StockAnalysisWorkspace from "./components/StockAnalysisWorkspace";
 import MarketOverviewWorkspace from "./components/MarketOverviewWorkspace";
+import DataStatusPanel, { dataStatusSummary } from "./components/DataStatusPanel";
+import {
+  DATA_TASK_EVENT,
+  dataTaskIsRunning,
+  readActiveDataTask,
+  writeActiveDataTask,
+  type DataTaskSnapshot,
+} from "./services/dataTask";
 import {
   fetchHealth,
+  fetchBacktestJob,
   fetchMarketDashboard,
   fetchMarketHistory,
   fetchProviderStatus,
@@ -129,6 +138,9 @@ export default function App() {
   const [apiStatus, setApiStatus] = useState("확인 중");
   const [theme, setTheme] = useState<ThemeMode>(initialTheme);
   const [providers, setProviders] = useState<ProviderStatus | null>(null);
+  const [dataStatusOpen, setDataStatusOpen] = useState(false);
+  const [providerRefreshing, setProviderRefreshing] = useState(false);
+  const [activeDataTask, setActiveDataTask] = useState<DataTaskSnapshot | null>(() => readActiveDataTask());
   const [dashboard, setDashboard] = useState<MarketDashboard | null>(null);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -179,6 +191,25 @@ export default function App() {
     : 0;
   const selectedStrategy = strategyAnalysis?.strategies[selectedStrategyIndexSafe] ?? null;
 
+  async function refreshSystemStatus() {
+    setProviderRefreshing(true);
+    const [healthResult, providerResult] = await Promise.allSettled([
+      fetchHealth(),
+      fetchProviderStatus(),
+    ]);
+    if (healthResult.status === "fulfilled") {
+      setApiStatus(healthResult.value.status === "ok" ? "정상" : "오류");
+    } else {
+      setApiStatus("연결 실패");
+    }
+    if (providerResult.status === "fulfilled") {
+      setProviders(providerResult.value);
+    } else {
+      setProviders(null);
+    }
+    setProviderRefreshing(false);
+  }
+
   async function loadDashboard() {
     setLoading(true);
     setDashboardError(null);
@@ -211,10 +242,7 @@ export default function App() {
   }
 
   useEffect(() => {
-    fetchHealth()
-      .then((data) => setApiStatus(data.status === "ok" ? "정상" : "오류"))
-      .catch(() => setApiStatus("연결 실패"));
-    fetchProviderStatus().then(setProviders).catch(() => setProviders(null));
+    void refreshSystemStatus();
 
     if (window.location.pathname === "/") {
       window.history.replaceState({}, "", "/dashboard");
@@ -233,6 +261,56 @@ export default function App() {
       void loadDashboard();
     }
   }, [appPage]);
+
+  useEffect(() => {
+    const syncTask = () => setActiveDataTask(readActiveDataTask());
+    window.addEventListener(DATA_TASK_EVENT, syncTask);
+    return () => window.removeEventListener(DATA_TASK_EVENT, syncTask);
+  }, []);
+
+  useEffect(() => {
+    if (!activeDataTask || !dataTaskIsRunning(activeDataTask)) return undefined;
+    let cancelled = false;
+    let timer: number | null = null;
+
+    const pollGlobalTask = async () => {
+      try {
+        const latest = await fetchBacktestJob(activeDataTask.jobId);
+        if (cancelled) return;
+        const total = latest.progress?.total ?? null;
+        const next: DataTaskSnapshot = {
+          ...activeDataTask,
+          status: latest.status,
+          stage: latest.stage,
+          message: latest.error || latest.progress?.message || activeDataTask.message,
+          current: latest.progress?.current ?? null,
+          total,
+          percent: total != null && total > 0 ? latest.progress?.percent ?? null : null,
+          updatedAt: latest.updated_at ?? null,
+        };
+        setActiveDataTask(next);
+        writeActiveDataTask(next);
+        if (dataTaskIsRunning(next)) {
+          timer = window.setTimeout(() => void pollGlobalTask(), 1200);
+        }
+      } catch {
+        if (cancelled) return;
+        const next: DataTaskSnapshot = {
+          ...activeDataTask,
+          status: "unknown",
+          message: "진행 상태를 확인하지 못했습니다. 새 작업을 시작하지 말고 상태를 다시 확인하세요.",
+        };
+        setActiveDataTask(next);
+        writeActiveDataTask(next);
+      }
+    };
+
+    void pollGlobalTask();
+    return () => {
+      cancelled = true;
+      if (timer != null) window.clearTimeout(timer);
+    };
+  }, [activeDataTask?.jobId, activeDataTask?.status]);
 
   useEffect(() => {
     const query = stockQuery.trim();
@@ -517,6 +595,14 @@ const strategyName: Record<string, string> = {
     navigateApp("analysis");
   }
 
+  function openActiveDataTask() {
+    setDataStatusOpen(false);
+    navigateApp("scanner");
+  }
+
+  const dataSummary = dataStatusSummary(apiStatus, providers);
+  const dataTaskRunning = dataTaskIsRunning(activeDataTask);
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -544,12 +630,39 @@ const strategyName: Record<string, string> = {
             <b>{theme === "dark" ? "라이트" : "다크"}</b>
           </button>
           <div className="header-status">
-            <span className={`dot-status ${apiStatus === "정상" ? "ok" : ""}`}>API {apiStatus}</span>
-            <span className={`dot-status ${providers?.krx.configured ? "ok" : ""}`}>KRX</span>
-            <span className={`dot-status ${providers?.dart.configured ? "ok" : ""}`}>DART</span>
+            {activeDataTask && (
+              <button
+                type="button"
+                className={`data-task-chip ${dataTaskRunning ? "running" : activeDataTask.status}`}
+                onClick={openActiveDataTask}
+              >
+                <span>{dataTaskRunning ? "데이터 작업 중" : activeDataTask.status === "completed" ? "데이터 작업 완료" : "데이터 작업 확인"}</span>
+                <b>{dataTaskRunning ? "진행 보기" : "결과 보기"}</b>
+              </button>
+            )}
+            <button
+              type="button"
+              className={`data-status-trigger tone-${dataSummary.tone}`}
+              onClick={() => setDataStatusOpen(true)}
+              aria-haspopup="dialog"
+            >
+              <span className="status-dot" aria-hidden="true" />
+              <b>{dataSummary.label}</b>
+            </button>
           </div>
         </div>
       </header>
+
+      <DataStatusPanel
+        open={dataStatusOpen}
+        apiStatus={apiStatus}
+        providers={providers}
+        task={activeDataTask}
+        refreshing={providerRefreshing}
+        onClose={() => setDataStatusOpen(false)}
+        onRefresh={() => void refreshSystemStatus()}
+        onOpenTask={openActiveDataTask}
+      />
 
       <div className="layout backtest-layout">
         <main className="content backtest-page-content">
@@ -607,8 +720,8 @@ const strategyName: Record<string, string> = {
                 <details className="stock-reference-scenario">
                   <summary>
                     <span>
-                      <strong>현재 참고가격·보유상태 시나리오</strong>
-                      <small>선택 · 공식 확정 일봉 분석을 덮어쓰지 않습니다.</small>
+                      <strong>가상 분석 조건</strong>
+                      <small>선택 · 실제 보유 수량·평균단가와 원장을 변경하지 않습니다.</small>
                     </span>
                     <b>펼치기</b>
                   </summary>
