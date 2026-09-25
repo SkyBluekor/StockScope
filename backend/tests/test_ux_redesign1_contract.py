@@ -249,3 +249,58 @@ def test_ux_redesign1f_watch_and_held_views_are_semantically_separated() -> None
     assert ".holdings-watch-overview" in styles
     assert ".holdings-entry-guardrail" in styles
     assert ".holdings-management-proposal-kicker" in styles
+
+
+def test_ux_redesign1g_past_performance_reuses_exact_session_result_without_reanalysis() -> None:
+    backtest = Path("frontend/src/components/BacktestPanel.tsx").read_text(encoding="utf-8")
+    app = Path("frontend/src/App.tsx").read_text(encoding="utf-8")
+    styles = Path("frontend/src/styles.css").read_text(encoding="utf-8")
+
+    # Past performance is explicitly optional and can return to stock analysis.
+    assert "선택적 과거 검증" in backtest
+    assert "이 검증을 실행하지 않아도 종목 분석과 관심·보유 관리는 사용할 수 있습니다." in backtest
+    assert "onBackToAnalysis?: () => void" in backtest
+    assert 'onBackToAnalysis={() => navigateApp("analysis")}' in app
+
+    # Completed results are keyed by the exact user-visible calculation config.
+    assert "type BacktestCacheConfig" in backtest
+    assert "backtestResultSignature" in backtest
+    assert "config.startDate" in backtest
+    assert "config.endDate" in backtest
+    assert "config.initialCapital" in backtest
+    assert "config.maxHoldingDays" in backtest
+    assert "config.roundTripCostPct" in backtest
+    assert "window.sessionStorage.setItem(resultStorageKey(entry.signature)" in backtest
+    assert "readBacktestCache(currentSignature)" in backtest
+
+    # Revisiting the screen only discovers the cache; it does not start a POST job.
+    cache_effect = backtest[backtest.index("setExactCachedResult(readBacktestCache(currentSignature))"):backtest.index("function showCachedResult")]
+    assert "createMultiStrategyBacktestJob" not in cache_effect
+    assert "기존 결과 보기" in backtest
+    assert "재방문만으로 자동 계산하지 않습니다." in backtest
+
+    # Starting a new calculation no longer clears the completed result.
+    run_block = backtest[backtest.index("async function runBacktest"):backtest.index("async function runExitPolicyValidation")]
+    assert "setResult(null)" not in run_block
+    assert "const previousExact = readBacktestCache(runSignature)" in run_block
+    assert "writeBacktestCache(entry)" in run_block
+    assert "기존 완료 결과는 아래에 유지됩니다." in backtest
+    assert "기존 완료 결과는 그대로 유지됩니다." in backtest
+
+    # Requested period and actual prepared data window remain distinct.
+    assert "요청한 검증 기간" in backtest
+    assert "실제 종목 데이터" in backtest
+    assert "result.data_window?.stock_rows" in backtest
+    assert "result.data_window?.index_rows" in backtest
+    assert "요청한 기간 전체와 실제 확보된 종목 데이터 범위가 다릅니다." in backtest
+
+    # Existing Scanner context and advanced Exit research are still retained.
+    assert "종목 찾기에서 넘어온 현재 판단" in backtest
+    assert "scannerContextMatchesDate" in backtest
+    assert "고급 검증 · Exit 정책 연구" in backtest
+    assert "createExitPolicyValidationJob" in backtest
+
+    # No backend calculation contract is reimplemented in this UX layer.
+    assert "createMultiStrategyBacktestJob" in backtest
+    assert ".backtest-cache-panel" in styles
+    assert ".backtest-result-context" in styles
