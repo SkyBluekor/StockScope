@@ -10,6 +10,7 @@ import {
 } from "./scannerSession";
 import {
   cancelBacktestJob,
+  createScannerEvidenceJob,
   createScannerJob,
   fetchBacktestJob,
   type BacktestJob,
@@ -34,6 +35,14 @@ type MarketScope = "ALL" | "KOSPI" | "KOSDAQ";
 
 type Props = {
   onAnalyzeStock: (item: StockSearchItem) => void;
+};
+
+const evidencePreparationStageLabel: Record<string, string> = {
+  evidence_plan: "필요한 3년 데이터 범위 확인",
+  evidence_prepare: "부족한 과거 시장 데이터 준비",
+  evidence_validate: "3년 검증 가능 여부 확인",
+  evidence_complete: "과거 데이터 준비 완료",
+  evidence_reanalyze: "준비된 데이터로 후보 분석 재계산",
 };
 
 const regimeLabel: Record<string, string> = {
@@ -524,6 +533,7 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
   const startedAtRef = useRef<number | null>(null);
   const lastProgressAtRef = useRef<number | null>(null);
   const lastProgressSignatureRef = useRef("");
+  const preferredCandidateKeyRef = useRef<string | null>(null);
   const savedScrollRef = useRef(initialSession?.scrollY ?? 0);
   const didRestoreScrollRef = useRef(false);
   const didResumeJobRef = useRef(false);
@@ -532,6 +542,7 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
   const jobBusy = job?.status === "queued" || job?.status === "running";
   const busy = jobBusy;
   const progress = job?.progress;
+  const evidenceJobStage = String(job?.stage || "").startsWith("evidence_");
 
   useEffect(() => {
     // TRACK.1.10.1: accept Scanner results completed from another entry point
@@ -591,6 +602,7 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
     if (!saved || saved.kind !== "scanner") return;
 
     setScope(saved.scope);
+    preferredCandidateKeyRef.current = saved.selectedCandidateKey ?? null;
     startedAtRef.current = saved.startedAt;
     lastProgressAtRef.current = Date.now();
     void fetchBacktestJob<ScannerResponse>(saved.jobId)
@@ -690,6 +702,7 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
         percent: latest.progress?.total > 0 ? latest.progress?.percent ?? null : null,
         updatedAt: latest.updated_at ?? null,
         startedAt,
+        selectedCandidateKey: preferredCandidateKeyRef.current,
       });
       const latestDetails = latest.progress?.details ?? {};
       const resolvedProgressDate = typeof latestDetails.resolved_as_of_date === "string"
@@ -700,6 +713,15 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
       }
       if (latest.status === "completed" && latest.result) {
         const completedAtValue = Date.now();
+        const latestCandidates = [...latest.result.candidates, ...latest.result.more_candidates];
+        const preferredKey = preferredCandidateKeyRef.current;
+        const preferredCandidate = preferredKey
+          ? latestCandidates.find((candidate) => candidateKey(candidate) === preferredKey) ?? null
+          : null;
+        const nextSelectedKey = preferredCandidate
+          ? candidateKey(preferredCandidate)
+          : (latest.result.candidates[0] ? candidateKey(latest.result.candidates[0]) : null);
+        const nextExpandedEvidenceIds = preferredCandidate ? [evidenceKey(preferredCandidate)] : [];
         // TRACK.1.9: commit completed Scanner result synchronously so Tracking
         // sees the same result even if the user navigates before React effects run.
         writeScannerSession({
@@ -708,17 +730,18 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
           completedAt: completedAtValue,
           scrollY: window.scrollY,
           showMore: false,
-          expandedEvidenceIds: [],
-          selectedCandidateKey: latest.result.candidates[0] ? candidateKey(latest.result.candidates[0]) : null,
+          expandedEvidenceIds: nextExpandedEvidenceIds,
+          selectedCandidateKey: nextSelectedKey,
         });
         setScope(jobScope);
         setResult(latest.result);
-        setSelectedCandidateKey(latest.result.candidates[0] ? candidateKey(latest.result.candidates[0]) : null);
+        setSelectedCandidateKey(nextSelectedKey);
         setShowMore(false);
-        setExpandedEvidenceIds([]);
+        setExpandedEvidenceIds(nextExpandedEvidenceIds);
         setCompletedAt(completedAtValue);
         setRestoredFromSession(false);
         savedScrollRef.current = window.scrollY;
+        preferredCandidateKeyRef.current = null;
         clearActiveDataTask();
         return;
       }
@@ -759,6 +782,7 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
     pinnedAsOfDate: string | null = null,
   ) {
     if (busy) return;
+    preferredCandidateKeyRef.current = null;
     if (pollRef.current != null) window.clearTimeout(pollRef.current);
     setError(null);
     setFreshnessFailure(null);
@@ -812,6 +836,57 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
       void poll(created.job_id, scope, allowLargeSync, started);
     } catch (err) {
       setError(err instanceof Error ? err.message : "종목 찾기를 시작하지 못했습니다.");
+    }
+  }
+
+  async function prepareCandidateEvidence(candidate: ScannerCandidate) {
+    if (busy || !result) return;
+    if (pollRef.current != null) window.clearTimeout(pollRef.current);
+    setError(null);
+    setFreshnessFailure(null);
+    const started = Date.now();
+    const selectionKey = candidateKey(candidate);
+    preferredCandidateKeyRef.current = selectionKey;
+    startedAtRef.current = started;
+    lastProgressAtRef.current = started;
+    lastProgressSignatureRef.current = "";
+    setClock(started);
+
+    try {
+      const created = await createScannerEvidenceJob({
+        market: candidate.market,
+        code: candidate.code,
+        strategy: candidate.strategy,
+        data_end: candidate.data_date,
+        market_scope: scope,
+        candidate_limit: 5,
+      });
+      setJob(created);
+      writeActiveDataTask({
+        kind: "scanner",
+        jobId: created.job_id,
+        scope,
+        allowLargeSync: false,
+        status: created.status,
+        stage: created.stage,
+        message: created.progress?.message || "3년 검증 데이터 준비를 시작합니다.",
+        current: created.progress?.current ?? null,
+        total: created.progress?.total ?? null,
+        percent: created.progress?.total > 0 ? created.progress?.percent ?? null : null,
+        updatedAt: created.updated_at ?? null,
+        startedAt: started,
+        selectedCandidateKey: selectionKey,
+      });
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          progressRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+          progressRef.current?.focus({ preventScroll: true });
+        });
+      });
+      void poll(created.job_id, scope, false, started);
+    } catch (err) {
+      preferredCandidateKeyRef.current = null;
+      setError(err instanceof Error ? err.message : "3년 검증 데이터 준비를 시작하지 못했습니다.");
     }
   }
 
@@ -976,7 +1051,7 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
             </div>
           ) : (
             <button type="button" className="scanner-run-button" onClick={() => void runScanner(false)} disabled={busy}>
-              {jobBusy && String(job?.stage || "").startsWith("scanner_prepare") ? "최신 시세 확인 중..." : jobBusy ? "후보 찾는 중..." : "후보 찾기"}
+              {evidenceJobStage ? "3년 검증 데이터 준비 중..." : jobBusy && String(job?.stage || "").startsWith("scanner_prepare") ? "최신 시세 확인 중..." : jobBusy ? "후보 찾는 중..." : "후보 찾기"}
             </button>
           )}
           {jobBusy && <button type="button" className="scanner-cancel-button" onClick={() => void cancel()}>중지</button>}
@@ -1020,7 +1095,55 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
         </section>
       )}
 
-      {jobBusy && progress && (
+      {jobBusy && progress && evidenceJobStage && (
+        <section
+          ref={progressRef}
+          tabIndex={-1}
+          className="scanner-progress-card progress-v24"
+          aria-live="polite"
+          aria-label="3년 검증 데이터 준비 진행 상황"
+        >
+          <div className="scanner-progress-head">
+            <div>
+              <span>3년 과거 근거 준비 중</span>
+              <strong>{progress.message || "과거 시장 데이터를 준비하고 있습니다."}</strong>
+            </div>
+            <span className="scanner-progress-stage-count">Historical Evidence</span>
+          </div>
+          <div className="scanner-progress-current">
+            <span>현재 작업</span>
+            <strong>{evidencePreparationStageLabel[String(job?.stage || "")] || progress.message || "작업 상태 확인 중"}</strong>
+            {progressDetails.current_item != null
+              ? <small>{String(progressDetails.current_item)}</small>
+              : null}
+          </div>
+          <div className="scanner-progress-meta">
+            <span>경과 <b>{formatElapsed(elapsedSeconds)}</b></span>
+            {progressDetails.items_done != null && progressDetails.items_total != null && (
+              <span>준비 항목 <b>{formatNumber(Number(progressDetails.items_done))} / {formatNumber(Number(progressDetails.items_total))}</b></span>
+            )}
+            {progressDetails.estimated_network_requests != null && (
+              <span>예상 KRX 신규 요청 <b>{formatNumber(Number(progressDetails.estimated_network_requests))}회</b></span>
+            )}
+            {progressDetails.eta_seconds != null && Number(progressDetails.eta_seconds) >= 0 && (
+              <span>예상 남은 시간 <b>약 {formatElapsed(Number(progressDetails.eta_seconds))}</b></span>
+            )}
+          </div>
+          <details className="scanner-progress-diagnostics">
+            <summary>진행 상세</summary>
+            <div>
+              {progressDetails.warmup_start != null && <span>준비 시작 {formatDate(String(progressDetails.warmup_start))}</span>}
+              {progressDetails.validation_start != null && <span>3년 검증 시작 {formatDate(String(progressDetails.validation_start))}</span>}
+              {progressDetails.validation_end != null && <span>검증 종료 {formatDate(String(progressDetails.validation_end))}</span>}
+              {progressDetails.reused_items != null && <span>저장 데이터 재사용 {formatNumber(Number(progressDetails.reused_items))}건</span>}
+              {progressDetails.network_requests_so_far != null && <span>실제 KRX 요청 {formatNumber(Number(progressDetails.network_requests_so_far))}회</span>}
+              {progressDetails.retry_count != null && Number(progressDetails.retry_count) > 0 && <span>재시도 {formatNumber(Number(progressDetails.retry_count))}회</span>}
+            </div>
+          </details>
+        </section>
+      )}
+
+      {jobBusy && progress && !evidenceJobStage && (
         <section
           ref={progressRef}
           tabIndex={-1}
@@ -1236,7 +1359,7 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
                   candidate={selectedCandidate}
                   rank={selectedRank}
                   onAnalyze={() => analyzeCandidate(selectedCandidate)}
-                  onPrepareEvidence={() => void runScanner(true, true)}
+                  onPrepareEvidence={() => void prepareCandidateEvidence(selectedCandidate)}
                   evidenceBusy={busy}
                   evidenceOpen={expandedEvidenceIds.includes(evidenceKey(selectedCandidate))}
                   onEvidenceToggle={(open) => toggleEvidence(selectedCandidate, open)}
