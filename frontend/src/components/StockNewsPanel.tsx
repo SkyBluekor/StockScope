@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { ApiError, fetchStockNews, type StockNewsResponse } from "../services/api";
+import "../stock-analysis.css";
 
 type Props = {
   code: string;
   market: "KOSPI" | "KOSDAQ";
   companyLabel?: string;
+  variant?: "full" | "compact";
 };
 
 function formatTimestamp(value: string | null | undefined) {
@@ -25,13 +27,32 @@ function sourceLabel(sourceName: string | null, sourceDomain: string | null) {
   return sourceName || sourceDomain || "출처 확인";
 }
 
-export default function StockNewsPanel({ code, market, companyLabel }: Props) {
+function errorMessage(code: string | null, message: string) {
+  switch (code) {
+    case "NEWS_NOT_CONFIGURED":
+      return "뉴스 API 설정을 확인해주세요.";
+    case "NEWS_AUTH_FAILED":
+      return "뉴스 API 인증 정보를 확인해주세요.";
+    case "NEWS_RATE_LIMITED":
+      return "뉴스 API 호출 한도에 도달했습니다. 잠시 후 다시 확인해주세요.";
+    case "NEWS_TIMEOUT":
+      return "뉴스 서비스 응답이 지연되고 있습니다. 잠시 후 다시 시도해주세요.";
+    default:
+      return message;
+  }
+}
+
+export default function StockNewsPanel({ code, market, companyLabel, variant = "full" }: Props) {
   const [news, setNews] = useState<StockNewsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<{ message: string; code: string | null } | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [refreshToken, setRefreshToken] = useState(0);
   const requestIdRef = useRef(0);
+  const compact = variant === "compact";
+  const requestLimit = compact ? 5 : 10;
+  const collapsedLimit = compact ? 3 : 5;
+  const expandedLimit = compact ? 5 : 10;
 
   useEffect(() => {
     if (!code) {
@@ -48,7 +69,7 @@ export default function StockNewsPanel({ code, market, companyLabel }: Props) {
     setExpanded(false);
     setLoading(true);
 
-    void fetchStockNews(code, market, { limit: 10, signal: controller.signal })
+    void fetchStockNews(code, market, { limit: requestLimit, signal: controller.signal })
       .then((result) => {
         if (requestId !== requestIdRef.current || controller.signal.aborted) return;
         setNews(result);
@@ -70,18 +91,18 @@ export default function StockNewsPanel({ code, market, companyLabel }: Props) {
       });
 
     return () => controller.abort();
-  }, [code, market, refreshToken]);
+  }, [code, market, refreshToken, requestLimit]);
 
-  const visibleItems = news?.items.slice(0, expanded ? 10 : 5) ?? [];
+  const visibleItems = news?.items.slice(0, expanded ? expandedLimit : collapsedLimit) ?? [];
   const title = news?.company_name || companyLabel || code;
 
   return (
-    <section className="stock-news-panel" aria-label="최근 뉴스">
+    <section className={`stock-news-panel ${compact ? "compact" : "full"}`} aria-label="최근 뉴스">
       <div className="stock-news-head">
         <div>
           <span>NEWS</span>
           <h3>최근 뉴스</h3>
-          <p>{title}와 직접 관련된 네이버 검색 결과를 최신순으로 표시합니다.</p>
+          <p>{compact ? `${title} 관련 최신 기사만 간단히 확인합니다.` : `${title}와 직접 관련된 네이버 검색 결과를 최신순으로 표시합니다.`}</p>
         </div>
         <div>
           {news?.fetched_at && <small>마지막 확인 {formatTimestamp(news.fetched_at)}</small>}
@@ -96,7 +117,7 @@ export default function StockNewsPanel({ code, market, companyLabel }: Props) {
       ) : error ? (
         <div className="stock-news-state error">
           <strong>최근 뉴스를 불러오지 못했습니다.</strong>
-          <span>{error.code === "NEWS_NOT_CONFIGURED" ? "뉴스 API 설정을 확인해주세요." : error.message}</span>
+          <span>{errorMessage(error.code, error.message)}</span>
         </div>
       ) : news && news.count === 0 ? (
         <div className="stock-news-state">
@@ -121,9 +142,9 @@ export default function StockNewsPanel({ code, market, companyLabel }: Props) {
             ))}
           </div>
 
-          {(news?.count ?? 0) > 5 && (
+          {(news?.count ?? 0) > collapsedLimit && (
             <button type="button" className="stock-news-more" onClick={() => setExpanded((value) => !value)}>
-              {expanded ? "간단히 보기" : "최근 뉴스 더 보기 (" + Math.min(news?.count ?? 0, 10) + "건)"}
+              {expanded ? "간단히 보기" : "최근 뉴스 더 보기 (" + Math.min(news?.count ?? 0, expandedLimit) + "건)"}
             </button>
           )}
 
