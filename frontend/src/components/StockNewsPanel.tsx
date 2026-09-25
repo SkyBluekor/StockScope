@@ -117,8 +117,9 @@ export default function StockNewsPanel({ code, market, companyLabel, variant = "
         <div className="stock-news-state">최근 뉴스를 불러오는 중입니다...</div>
       ) : error ? (
         <div className="stock-news-state error">
-          <strong>최근 뉴스를 불러오지 못했습니다.</strong>
+          <strong>최근 뉴스만 불러오지 못했습니다.</strong>
           <span>{errorMessage(error.code, error.message)}</span>
+          <small>종목 분석과 전략 계산 결과에는 영향을 주지 않습니다.</small>
         </div>
       ) : news && news.count === 0 ? (
         <div className="stock-news-state">
