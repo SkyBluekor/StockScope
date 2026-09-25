@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { StockContext, StockSearchItem, StrategyAnalysis } from "../services/api";
 import StockAnalysisPriceChart from "./StockAnalysisPriceChart";
 import StockNewsPanel from "./StockNewsPanel";
+import StockTrackingActions from "./StockTrackingActions";
 import "../stock-analysis.css";
 
 type Props = {
@@ -23,6 +24,9 @@ type Props = {
   onChooseStock: (item: StockSearchItem) => void;
   onLoadContext: () => void;
   onRunAnalysis: () => void;
+  scannerOrigin: boolean;
+  onBackToScanner: () => void;
+  onOpenHoldings: (target: { market: "KOSPI" | "KOSDAQ"; ticker: string; name: string }) => void;
   children?: ReactNode;
 };
 
@@ -112,6 +116,9 @@ export default function StockAnalysisWorkspace({
   onChooseStock,
   onLoadContext,
   onRunAnalysis,
+  scannerOrigin,
+  onBackToScanner,
+  onOpenHoldings,
   children,
 }: Props) {
   const selectedStrategy = strategyAnalysis?.top_strategy ?? strategyAnalysis?.best_regular_strategy ?? null;
@@ -134,6 +141,13 @@ export default function StockAnalysisWorkspace({
           <p>종목의 현재 상태와 전략 근거를 최신 확정 일봉 기준으로 확인합니다.</p>
         </div>
       </header>
+
+      {scannerOrigin && (
+        <div className="stock-analysis-origin" role="status">
+          <span>종목 후보 찾기에서 선택한 종목입니다.</span>
+          <button type="button" onClick={onBackToScanner}>후보 목록으로 돌아가기</button>
+        </div>
+      )}
 
       <section className="stock-analysis-search" aria-label="분석 종목 검색">
         <div className="stock-search-box">
@@ -221,6 +235,14 @@ export default function StockAnalysisWorkspace({
               <small>공식 분석은 최신 확정 일봉을 기준으로 합니다.</small>
             </div>
           </section>
+
+          <StockTrackingActions
+            code={stock.code}
+            market={stock.market}
+            name={stock.company.corp_name ?? stock.stock.name ?? selectedStockName}
+            referencePrice={stock.stock.close}
+            onOpenHoldings={onOpenHoldings}
+          />
 
           {strategyAnalysis && summary && (
             <>
@@ -369,9 +391,21 @@ export default function StockAnalysisWorkspace({
             </section>
           )}
 
-          <div className="stock-analysis-body">
-            {children}
-          </div>
+          {children && (
+            <details className="stock-analysis-expert-details">
+              <summary>
+                <span>
+                  <small>ADVANCED</small>
+                  <strong>전문 분석·세부 설정</strong>
+                  <em>참고가격·보유 시나리오와 기존 전문 분석은 필요할 때만 펼쳐봅니다.</em>
+                </span>
+                <b>펼치기</b>
+              </summary>
+              <div className="stock-analysis-body">
+                {children}
+              </div>
+            </details>
+          )}
         </>
       )}
     </section>

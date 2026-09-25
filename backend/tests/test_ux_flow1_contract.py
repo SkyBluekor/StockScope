@@ -1,0 +1,109 @@
+from pathlib import Path
+
+
+def test_ux_flow1_scanner_routes_to_stock_analysis() -> None:
+    app = Path("frontend/src/App.tsx").read_text(encoding="utf-8")
+
+    scanner_anchor = app.index("<ScannerPanel")
+    scanner_block = app[scanner_anchor : scanner_anchor + 800]
+    assert 'chooseStock(item, { loadContext: true, origin: "scanner" })' in scanner_block
+    assert 'navigateApp("analysis")' in scanner_block
+    assert 'navigateApp("backtest")' not in scanner_block
+
+
+def test_ux_flow1_analysis_has_tracking_actions_without_strategy_coupling() -> None:
+    workspace = Path("frontend/src/components/StockAnalysisWorkspace.tsx").read_text(encoding="utf-8")
+    actions = Path("frontend/src/components/StockTrackingActions.tsx").read_text(encoding="utf-8")
+
+    tracking_position = workspace.index("<StockTrackingActions")
+    verdict_position = workspace.index("strategyAnalysis && summary")
+    assert tracking_position < verdict_position
+
+    assert "listHoldingStocks" in actions
+    assert "addWatchStock" in actions
+    assert "registerHeldStock" in actions
+    assert "관심종목에 추가" in actions
+    assert "보유종목으로 등록" in actions
+    assert "내 종목 관리" in actions
+    assert "Strategy·Scanner·Risk 계산을 변경하지 않습니다." in actions
+    assert "fetchStrategyAnalysis" not in actions
+    assert "Scanner" not in actions.split("Strategy·Scanner·Risk 계산을 변경하지 않습니다.")[0]
+
+
+def test_ux_flow1_holding_registration_preserves_opening_balance_contract() -> None:
+    actions = Path("frontend/src/components/StockTrackingActions.tsx").read_text(encoding="utf-8")
+    holdings_api = Path("frontend/src/services/holdingsApi.ts").read_text(encoding="utf-8")
+    holdings_lifecycle = Path("backend/app/holdings/lifecycle.py").read_text(encoding="utf-8")
+
+    assert "registerHeldStock" in actions
+    assert '"/api/holdings/held"' in holdings_api
+    assert 'event_type="OPENING_BALANCE"' in holdings_lifecycle
+    assert "신규 매수 주문이나 BUY 이벤트를 생성하는 기능이 아닙니다." in actions
+
+
+def test_ux_flow1_analysis_and_holdings_are_bidirectionally_linked() -> None:
+    app = Path("frontend/src/App.tsx").read_text(encoding="utf-8")
+    holdings = Path("frontend/src/components/HoldingsWorkspace.tsx").read_text(encoding="utf-8")
+    workspace = Path("frontend/src/components/StockAnalysisWorkspace.tsx").read_text(encoding="utf-8")
+
+    assert "stockscope-holdings-target" in app
+    assert "stockscope-holdings-target" in holdings
+    assert "navigationTargetId" in holdings
+    assert "종목 분석 보기" in holdings
+    assert "onAnalyzeStock={openAnalysisFromHoldings}" in app
+    assert "onOpenHoldings={openHoldingsForStock}" in app
+    assert "후보 목록으로 돌아가기" in workspace
+
+
+def test_ux_flow1_does_not_add_backend_or_database_surface() -> None:
+    app = Path("frontend/src/App.tsx").read_text(encoding="utf-8")
+    actions = Path("frontend/src/components/StockTrackingActions.tsx").read_text(encoding="utf-8")
+
+    assert "stockscope-holdings-target" in app
+    assert "VITE_" not in actions
+    assert "/api/holdings/watch" not in actions
+    assert "/api/holdings/held" not in actions
+
+
+
+def test_checkpoint2_legacy_expert_analysis_is_secondary() -> None:
+    workspace = Path("frontend/src/components/StockAnalysisWorkspace.tsx").read_text(encoding="utf-8")
+    css = Path("frontend/src/stock-analysis.css").read_text(encoding="utf-8")
+
+    assert '<details className="stock-analysis-expert-details">' in workspace
+    assert "전문 분석·세부 설정" in workspace
+    assert workspace.index("StockNewsPanel") < workspace.index("stock-analysis-expert-details")
+    assert ".stock-analysis-expert-details" in css
+
+
+
+def test_checkpoint2_market_overview_is_default_entry() -> None:
+    app = Path("frontend/src/App.tsx").read_text(encoding="utf-8")
+    overview = Path("frontend/src/components/MarketOverviewWorkspace.tsx").read_text(encoding="utf-8")
+
+    assert 'type AppPage = "dashboard"' in app
+    assert 'if (lower.startsWith("/analysis")) return "analysis";' in app
+    assert 'return "dashboard";' in app
+    assert 'window.history.replaceState({}, "", "/dashboard")' in app
+    assert 'appPage === "dashboard" && dashboard == null' in app
+    assert '>시장 현황</button>' in app
+    assert '<MarketOverviewWorkspace' in app
+    assert "<h1>시장 현황</h1>" in overview
+    assert "오늘 시장의 흐름" not in overview
+    assert "종목 후보 찾기" in overview
+    assert "종목 분석" in overview
+    assert "내 종목 관리" in overview
+
+
+def test_checkpoint2_market_overview_reuses_existing_market_contract() -> None:
+    overview = Path("frontend/src/components/MarketOverviewWorkspace.tsx").read_text(encoding="utf-8")
+    api = Path("frontend/src/services/api.ts").read_text(encoding="utf-8")
+
+    assert "MarketDashboard" in overview
+    assert "dashboard.indices.kospi" in overview
+    assert "dashboard.indices.kosdaq" in overview
+    assert "dashboard.market.breadth" in overview
+    assert "dashboard.strong_groups" in overview
+    assert "dashboard.top_turnover" in overview
+    assert 'fetch("/api/market/dashboard")' in api
+    assert 'fetch("/api/market/history?points=7")' in api

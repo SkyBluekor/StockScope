@@ -31,6 +31,16 @@ import {
 } from "../services/holdingsApi";
 import "../holdings.css";
 
+type Props = {
+  onAnalyzeStock?: (item: StockSearchItem) => void;
+};
+
+type HoldingsNavigationTarget = {
+  market: "KOSPI" | "KOSDAQ";
+  ticker: string;
+  name?: string;
+};
+
 type StockFilter = "all" | "watch" | "held";
 type TimelineFilter = "all" | "analysis" | "position";
 type ManualMode = "buy" | "sell" | "correction";
@@ -40,6 +50,25 @@ type HistoryRecoveryState = {
   requiredRows: number | null;
   exhausted: boolean;
 };
+
+function readHoldingsNavigationTarget(): HoldingsNavigationTarget | null {
+  try {
+    const raw = window.sessionStorage.getItem("stockscope-holdings-target");
+    if (!raw) return null;
+    window.sessionStorage.removeItem("stockscope-holdings-target");
+    const parsed = JSON.parse(raw) as Partial<HoldingsNavigationTarget>;
+    const market = parsed.market === "KOSPI" || parsed.market === "KOSDAQ" ? parsed.market : null;
+    const ticker = typeof parsed.ticker === "string" ? parsed.ticker.trim().toUpperCase() : "";
+    if (!market || !ticker) return null;
+    return {
+      market,
+      ticker,
+      name: typeof parsed.name === "string" ? parsed.name : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
 
 const strategyLabel: Record<string, string> = {
   trend_following: "상승 흐름 유지",
@@ -401,8 +430,10 @@ function timelineDescription(item: HoldingTimelineItem) {
   }
 }
 
-export default function HoldingsWorkspace() {
+export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
   const [stocks, setStocks] = useState<HoldingStock[]>([]);
+  const [navigationTarget] = useState<HoldingsNavigationTarget | null>(readHoldingsNavigationTarget);
+  const navigationTargetConsumedRef = useRef(false);
   const [selectedStockId, setSelectedStockId] = useState<string | null>(null);
   const [detail, setDetail] = useState<HoldingStock | null>(null);
   const [timeline, setTimeline] = useState<HoldingTimelineItem[]>([]);
@@ -467,11 +498,20 @@ export default function HoldingsWorkspace() {
     try {
       const rows = await listHoldingStocks();
       setStocks(rows);
+      const navigationTargetId = !navigationTargetConsumedRef.current && navigationTarget
+        ? rows.find(
+            (row) => row.market === navigationTarget.market
+              && row.ticker.trim().toUpperCase() === navigationTarget.ticker,
+          )?.stock_id ?? null
+        : null;
+      if (!navigationTargetConsumedRef.current) navigationTargetConsumedRef.current = true;
+
       const keep = preferredId && rows.some((row) => row.stock_id === preferredId)
         ? preferredId
-        : selectedStockId && rows.some((row) => row.stock_id === selectedStockId)
-          ? selectedStockId
-          : rows[0]?.stock_id ?? null;
+        : navigationTargetId
+          ?? (selectedStockId && rows.some((row) => row.stock_id === selectedStockId)
+            ? selectedStockId
+            : rows[0]?.stock_id ?? null);
       setSelectedStockId(keep);
       if (!keep) {
         setDetail(null);
@@ -1173,6 +1213,26 @@ export default function HoldingsWorkspace() {
 
   const selectedAnalysis = detail?.current_analysis ?? null;
 
+  function openSelectedStockAnalysis() {
+    if (!detail || !onAnalyzeStock) return;
+    const market: "KOSPI" | "KOSDAQ" = detail.market === "KOSDAQ" ? "KOSDAQ" : "KOSPI";
+    onAnalyzeStock({
+      code: detail.ticker,
+      standard_code: detail.ticker,
+      name: detail.name,
+      full_name: detail.name,
+      english_name: "",
+      market,
+      market_name: market,
+      security_group: "주식",
+      section: "",
+      stock_type: "보통주",
+      listed_date: "",
+      listed_shares: null,
+      analysis_as_of_date: detail.current_analysis?.market_date ?? null,
+    });
+  }
+
   return (
     <div className="holdings-workspace">
       <section className="holdings-page-head">
@@ -1533,6 +1593,11 @@ export default function HoldingsWorkspace() {
                   </div>
                 </div>
                 <div className="holdings-actions">
+                  {onAnalyzeStock && (
+                    <button className="holdings-secondary" type="button" onClick={openSelectedStockAnalysis}>
+                      종목 분석 보기
+                    </button>
+                  )}
                   <button className="holdings-primary" type="button" onClick={refreshSelected} disabled={refreshingAnalysis}>
                     {refreshingAnalysis ? "분석 확인 중" : "분석 새로고침"}
                   </button>
