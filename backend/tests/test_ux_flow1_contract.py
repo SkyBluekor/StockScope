@@ -74,3 +74,36 @@ def test_checkpoint2_legacy_expert_analysis_is_secondary() -> None:
     assert "전문 분석·세부 설정" in workspace
     assert workspace.index("StockNewsPanel") < workspace.index("stock-analysis-expert-details")
     assert ".stock-analysis-expert-details" in css
+
+
+
+def test_checkpoint2_market_overview_is_default_entry() -> None:
+    app = Path("frontend/src/App.tsx").read_text(encoding="utf-8")
+    overview = Path("frontend/src/components/MarketOverviewWorkspace.tsx").read_text(encoding="utf-8")
+
+    assert 'type AppPage = "dashboard"' in app
+    assert 'if (lower.startsWith("/analysis")) return "analysis";' in app
+    assert 'return "dashboard";' in app
+    assert 'window.history.replaceState({}, "", "/dashboard")' in app
+    assert 'appPage === "dashboard" && dashboard == null' in app
+    assert '>시장 현황</button>' in app
+    assert '<MarketOverviewWorkspace' in app
+    assert "<h1>시장 현황</h1>" in overview
+    assert "오늘 시장의 흐름" not in overview
+    assert "종목 후보 찾기" in overview
+    assert "종목 분석" in overview
+    assert "내 종목 관리" in overview
+
+
+def test_checkpoint2_market_overview_reuses_existing_market_contract() -> None:
+    overview = Path("frontend/src/components/MarketOverviewWorkspace.tsx").read_text(encoding="utf-8")
+    api = Path("frontend/src/services/api.ts").read_text(encoding="utf-8")
+
+    assert "MarketDashboard" in overview
+    assert "dashboard.indices.kospi" in overview
+    assert "dashboard.indices.kosdaq" in overview
+    assert "dashboard.market.breadth" in overview
+    assert "dashboard.strong_groups" in overview
+    assert "dashboard.top_turnover" in overview
+    assert 'fetch("/api/market/dashboard")' in api
+    assert 'fetch("/api/market/history?points=7")' in api
