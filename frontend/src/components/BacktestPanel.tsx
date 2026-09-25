@@ -776,14 +776,30 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock, 
     ? result.strategies.find((row) => row.strategy === result.recommendation.historical_best_strategy) ?? null
     : null;
   const scannerContextMatchesDate = Boolean(scannerContext && result && scannerContext.data_date.replace(/-/g, "") === result.as_of_date.replace(/-/g, ""));
+  const latestCachedDiffers = Boolean(latestCachedResult && latestCachedResult.signature !== currentSignature);
+  const displayedConfig = resultConfig ?? currentConfig;
+  const resultRequestedStart = result?.data_window?.requested_start ?? displayedConfig.startDate;
+  const resultRequestedEnd = result?.data_window?.requested_end ?? displayedConfig.endDate;
+  const resultActualStart = result?.data_window?.first_stock_date ?? "";
+  const resultActualEnd = result?.data_window?.last_stock_date ?? "";
+  const resultRangeIncomplete = Boolean(
+    result
+    && resultActualStart
+    && resultActualEnd
+    && (dateKey(resultActualStart) > dateKey(resultRequestedStart) || dateKey(resultActualEnd) < dateKey(resultRequestedEnd)),
+  );
 
   return (
     <section className="backtest-workspace multi-strategy-workspace" ref={workspaceTopRef}>
       <header className="multi-strategy-header">
         <div>
-          <h1>종목 과거 성과</h1>
-          <p>같은 종목과 기간에서 10가지 전략의 과거 성과를 비교합니다.</p>
+          <span>선택적 과거 검증</span>
+          <h1>{stockName ? `${stockName} 과거 성과` : "종목 과거 성과"}</h1>
+          <p>현재 검토 중인 조건이 과거에는 어떻게 작동했는지 확인합니다. 이 검증을 실행하지 않아도 종목 분석과 관심·보유 관리는 사용할 수 있습니다.</p>
         </div>
+        {onBackToAnalysis && (
+          <button type="button" className="backtest-back-analysis" onClick={onBackToAnalysis}>종목 분석으로</button>
+        )}
       </header>
 
       <nav className="backtest-subnav" aria-label="과거 성과 비교 화면">
@@ -793,8 +809,68 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock, 
 
       {view === "setup" && (
         <div className="multi-strategy-setup">
+          <section className="backtest-question-panel">
+            <div>
+              <span>이번에 확인하는 질문</span>
+              <strong>{stockName || code || "선택 종목"} · {market}</strong>
+              <p>
+                {formatCompactDate(startDate)} ~ {formatCompactDate(endDate)} 동안 StockScope의 10가지 전략이
+                같은 데이터에서 어떻게 작동했는지 비교합니다.
+              </p>
+            </div>
+            <div className="backtest-question-context">
+              {scannerContext ? (
+                <>
+                  <span>종목 찾기에서 넘어온 현재 판단</span>
+                  <strong>{scannerContext.strategy_easy_name} · {scannerContext.action_label}</strong>
+                  <small>{scannerContext.data_date} 기준 · {scannerContext.passed}/{scannerContext.total} 조건 충족</small>
+                </>
+              ) : (
+                <>
+                  <span>검증의 역할</span>
+                  <strong>현재 판단을 보완하는 참고 근거</strong>
+                  <small>과거 성과 1위가 현재 매수 신호를 의미하지 않습니다.</small>
+                </>
+              )}
+            </div>
+          </section>
+
+          <section className={`backtest-cache-panel ${exactCachedResult ? "exact" : latestCachedDiffers ? "different" : "empty"}`}>
+            <div className="backtest-cache-copy">
+              <span>이번 세션의 기존 결과</span>
+              {exactCachedResult ? (
+                <>
+                  <strong>같은 조건으로 완료된 결과가 있습니다.</strong>
+                  <small>{formatCompletedAt(exactCachedResult.completedAt)} 완료 · {configSummary(exactCachedResult.config)}</small>
+                </>
+              ) : latestCachedDiffers && latestCachedResult ? (
+                <>
+                  <strong>이전에 계산한 결과가 있지만 현재 설정과 다릅니다.</strong>
+                  <small>이전: {configSummary(latestCachedResult.config)}</small>
+                  <small>현재: {configSummary(currentConfig)}</small>
+                </>
+              ) : (
+                <>
+                  <strong>같은 조건의 기존 결과가 없습니다.</strong>
+                  <small>처음 확인하려면 과거 성과 계산을 실행하세요. 재방문만으로 자동 계산하지 않습니다.</small>
+                </>
+              )}
+            </div>
+            <div className="backtest-cache-actions">
+              {exactCachedResult && (
+                <>
+                  <button type="button" onClick={() => showCachedResult(exactCachedResult)}>기존 결과 보기</button>
+                  <button type="button" className="secondary" disabled={busy} onClick={() => void runBacktest(exactCachedResult.config)}>같은 조건으로 다시 계산</button>
+                </>
+              )}
+              {!exactCachedResult && latestCachedDiffers && latestCachedResult && (
+                <button type="button" className="secondary" onClick={() => showCachedResult(latestCachedResult)}>이전 결과 보기</button>
+              )}
+            </div>
+          </section>
+
           <section className="backtest-settings-card">
-            <div className="backtest-section-title"><span>검증 설정</span><strong>종목과 기간을 정하고 과거 성과를 비교합니다.</strong></div>
+            <div className="backtest-section-title"><span>검증 조건</span><strong>필요할 때만 조건을 정해 과거 성과를 계산합니다.</strong></div>
             <div className="backtest-stock-picker">
               <label htmlFor="backtest-stock-search">검증 종목</label>
               <div className="backtest-stock-search-box">
@@ -866,11 +942,15 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock, 
             </details>
 
             <div className="backtest-run-row multi-strategy-run-row">
-              <button type="button" disabled={busy || !code.trim() || stockSelectionDirty} onClick={() => void runBacktest()}>{busy ? "과거 성과 비교 중..." : "과거 성과 비교"}</button>
+              <button type="button" disabled={busy || !code.trim() || stockSelectionDirty} onClick={() => void runBacktest()}>{busy ? "과거 성과 계산 중..." : "과거 성과 계산"}</button>
             </div>
             {error && <div className="backtest-error"><strong>실행 실패</strong><span>{error}</span></div>}
           </section>
-          <details className="exit-validation-panel" open={showAdvancedResearch}>
+          <div className="backtest-optional-note">
+            <strong>과거 검증은 선택 사항입니다.</strong>
+            <span>결과가 없거나 실행하지 않아도 현재 종목 분석과 관심·보유 기능은 그대로 사용할 수 있습니다.</span>
+          </div>
+                    <details className="exit-validation-panel" open={showAdvancedResearch}>
             <summary onClick={(event) => { event.preventDefault(); setShowAdvancedResearch((open) => !open); }}><span>고급 검증 · Exit 정책 연구</span><DetailToggleText closed="열기 ▼" open="닫기 ▲" /></summary>
             <div className="exit-validation-body">
               <div className="exit-validation-intro">
