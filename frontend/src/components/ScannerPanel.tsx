@@ -23,6 +23,11 @@ import {
   progressStatusMark,
   scannerProgressView,
 } from "./scannerProgress";
+import {
+  clearActiveDataTask,
+  readActiveDataTask,
+  writeActiveDataTask,
+} from "../services/dataTask";
 import "./scannerProgress.css";
 
 type MarketScope = "ALL" | "KOSPI" | "KOSDAQ";
@@ -508,6 +513,8 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
   const lastProgressSignatureRef = useRef("");
   const savedScrollRef = useRef(initialSession?.scrollY ?? 0);
   const didRestoreScrollRef = useRef(false);
+  const didResumeJobRef = useRef(false);
+  const progressRef = useRef<HTMLElement | null>(null);
 
   const jobBusy = job?.status === "queued" || job?.status === "running";
   const busy = jobBusy;
@@ -565,6 +572,50 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
   }, []);
 
   useEffect(() => {
+    if (didResumeJobRef.current) return;
+    didResumeJobRef.current = true;
+    const saved = readActiveDataTask();
+    if (!saved || saved.kind !== "scanner") return;
+
+    setScope(saved.scope);
+    startedAtRef.current = saved.startedAt;
+    lastProgressAtRef.current = Date.now();
+    void fetchBacktestJob<ScannerResponse>(saved.jobId)
+      .then((latest) => {
+        setJob(latest);
+        if (latest.status === "completed" && latest.result) {
+          const completedAtValue = Date.now();
+          writeScannerSession({
+            scope: saved.scope,
+            result: latest.result,
+            completedAt: completedAtValue,
+            scrollY: 0,
+            showMore: false,
+            expandedEvidenceIds: [],
+            selectedCandidateKey: latest.result.candidates[0] ? candidateKey(latest.result.candidates[0]) : null,
+          });
+          setResult(latest.result);
+          setSelectedCandidateKey(latest.result.candidates[0] ? candidateKey(latest.result.candidates[0]) : null);
+          setCompletedAt(completedAtValue);
+          setRestoredFromSession(false);
+          clearActiveDataTask();
+          return;
+        }
+        if (latest.status === "queued" || latest.status === "running") {
+          void poll(saved.jobId, saved.scope, saved.allowLargeSync, saved.startedAt);
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => progressRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+          });
+          return;
+        }
+        clearActiveDataTask();
+      })
+      .catch(() => {
+        setError("진행 중이던 작업 상태를 확인하지 못했습니다. 서버가 재시작되었을 수 있습니다.");
+      });
+  }, []);
+
+  useEffect(() => {
     if (!busy) return undefined;
     const timer = window.setInterval(() => setClock(Date.now()), 1000);
     return () => window.clearInterval(timer);
@@ -594,7 +645,12 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
     };
   }
 
-  async function poll(jobId: string) {
+  async function poll(
+    jobId: string,
+    jobScope: MarketScope = scope,
+    allowLargeSync = false,
+    startedAt = startedAtRef.current ?? Date.now(),
+  ) {
     try {
       const latest = await fetchBacktestJob<ScannerResponse>(jobId);
       const signature = JSON.stringify({
@@ -608,6 +664,20 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
         lastProgressAtRef.current = Date.now();
       }
       setJob(latest);
+      writeActiveDataTask({
+        kind: "scanner",
+        jobId,
+        scope: jobScope,
+        allowLargeSync,
+        status: latest.status,
+        stage: latest.stage,
+        message: latest.error || latest.progress?.message || "작업 상태 확인 중",
+        current: latest.progress?.current ?? null,
+        total: latest.progress?.total ?? null,
+        percent: latest.progress?.total > 0 ? latest.progress?.percent ?? null : null,
+        updatedAt: latest.updated_at ?? null,
+        startedAt,
+      });
       const latestDetails = latest.progress?.details ?? {};
       const resolvedProgressDate = typeof latestDetails.resolved_as_of_date === "string"
         ? latestDetails.resolved_as_of_date
@@ -620,7 +690,7 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
         // TRACK.1.9: commit completed Scanner result synchronously so Tracking
         // sees the same result even if the user navigates before React effects run.
         writeScannerSession({
-          scope,
+          scope: jobScope,
           result: latest.result,
           completedAt: completedAtValue,
           scrollY: window.scrollY,
@@ -628,6 +698,7 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
           expandedEvidenceIds: [],
           selectedCandidateKey: latest.result.candidates[0] ? candidateKey(latest.result.candidates[0]) : null,
         });
+        setScope(jobScope);
         setResult(latest.result);
         setSelectedCandidateKey(latest.result.candidates[0] ? candidateKey(latest.result.candidates[0]) : null);
         setShowMore(false);
@@ -635,6 +706,7 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
         setCompletedAt(completedAtValue);
         setRestoredFromSession(false);
         savedScrollRef.current = window.scrollY;
+        clearActiveDataTask();
         return;
       }
       if (latest.status === "failed") {
@@ -652,10 +724,17 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
         } else {
           setError(latest.error || "종목 찾기 중 오류가 발생했습니다.");
         }
+        clearActiveDataTask();
         return;
       }
-      if (latest.status === "cancelled") return;
-      pollRef.current = window.setTimeout(() => void poll(jobId), 700);
+      if (latest.status === "cancelled") {
+        clearActiveDataTask();
+        return;
+      }
+      pollRef.current = window.setTimeout(
+        () => void poll(jobId, jobScope, allowLargeSync, startedAt),
+        700,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "종목 찾기 상태를 확인하지 못했습니다.");
     }
@@ -695,7 +774,29 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
       } as Parameters<typeof createScannerJob>[0] & { known_data_date?: string | null };
       const created = await createScannerJob(request);
       setJob(created);
-      void poll(created.job_id);
+      writeActiveDataTask({
+        kind: "scanner",
+        jobId: created.job_id,
+        scope,
+        allowLargeSync,
+        status: created.status,
+        stage: created.stage,
+        message: created.progress?.message || (allowLargeSync ? "시장 데이터 준비를 시작합니다." : "종목 찾기를 시작합니다."),
+        current: created.progress?.current ?? null,
+        total: created.progress?.total ?? null,
+        percent: created.progress?.total > 0 ? created.progress?.percent ?? null : null,
+        updatedAt: created.updated_at ?? null,
+        startedAt: started,
+      });
+      if (allowLargeSync) {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            progressRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+            progressRef.current?.focus({ preventScroll: true });
+          });
+        });
+      }
+      void poll(created.job_id, scope, allowLargeSync, started);
     } catch (err) {
       setError(err instanceof Error ? err.message : "종목 찾기를 시작하지 못했습니다.");
     }
@@ -780,6 +881,7 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
     try {
       const cancelled = await cancelBacktestJob<ScannerResponse>(job.job_id);
       setJob(cancelled);
+      clearActiveDataTask();
     } catch (err) {
       setError(err instanceof Error ? err.message : "작업 취소에 실패했습니다.");
     }
@@ -906,7 +1008,13 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
       )}
 
       {jobBusy && progress && (
-        <section className="scanner-progress-card progress-v24" aria-live="polite">
+        <section
+          ref={progressRef}
+          tabIndex={-1}
+          className="scanner-progress-card progress-v24"
+          aria-live="polite"
+          aria-label={String(job?.stage || "").startsWith("scanner_prepare") ? "시장 데이터 준비 진행 상황" : "종목 찾기 진행 상황"}
+        >
           <div className="scanner-progress-head">
             <div>
               <span>종목 찾기 진행 중</span>
