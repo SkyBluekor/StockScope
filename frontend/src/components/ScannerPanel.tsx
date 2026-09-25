@@ -35,6 +35,7 @@ import {
   readActiveDataTask,
   writeActiveDataTask,
 } from "../services/dataTask";
+import StockNewsPanel from "./StockNewsPanel";
 import "./scannerProgress.css";
 
 type MarketScope = "ALL" | "KOSPI" | "KOSDAQ";
@@ -580,6 +581,13 @@ function CandidateDetail({
           </details>
         )}
       </section>
+
+      <StockNewsPanel
+        code={candidate.code}
+        market={candidate.market}
+        companyLabel={candidate.name}
+        variant="compact"
+      />
 
       {topMissing.length > 0 && (
         <details className="scanner-selected-secondary">
