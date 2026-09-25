@@ -584,28 +584,58 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock, 
     window.requestAnimationFrame(() => workspaceTopRef.current?.scrollIntoView({ behavior: "auto", block: "start" }));
   }
 
-  async function runBacktest(endDateOverride?: string) {
+  function applyConfigToForm(config: BacktestCacheConfig) {
+    setStartDate(config.startDate);
+    setEndDate(config.endDate);
+    setInitialCapital(String(config.initialCapital));
+    setCostPct(String(config.roundTripCostPct));
+    if (holdingOptions.some((option) => option.days === config.maxHoldingDays)) {
+      setCustomHolding("");
+      setMaxHoldingDays(config.maxHoldingDays);
+    } else {
+      setCustomHolding(String(config.maxHoldingDays));
+    }
+  }
+
+  async function runBacktest(configOverride?: BacktestCacheConfig) {
     if (!code.trim() || stockSelectionDirty || busy) return;
-    const holding = Number(selectedHolding);
+    const runConfig = configOverride ?? currentConfig;
+    const holding = Number(runConfig.maxHoldingDays);
     if (!Number.isFinite(holding) || holding < 1 || holding > 120) {
       setError("최대 보유기간은 1~120 거래일로 입력해 주세요.");
       return;
     }
+    if (!Number.isFinite(runConfig.initialCapital) || runConfig.initialCapital <= 0) {
+      setError("초기 자본은 0보다 큰 값으로 입력해 주세요.");
+      return;
+    }
+    if (!Number.isFinite(runConfig.roundTripCostPct) || runConfig.roundTripCostPct < 0 || runConfig.roundTripCostPct > 5) {
+      setError("왕복 비용률은 0~5% 범위로 입력해 주세요.");
+      return;
+    }
+
+    const runSignature = backtestResultSignature(runConfig);
+    const previousExact = readBacktestCache(runSignature);
+    if (!result && previousExact) {
+      setResult(previousExact.result);
+      setResultConfig(previousExact.config);
+      setResultCompletedAt(previousExact.completedAt);
+    }
+
     setBusy(true);
     setError(null);
-    setResult(null);
     setView("result");
     scrollTop();
 
     try {
       const created = await createMultiStrategyBacktestJob({
-        code,
-        market,
-        start_date: startDate,
-        end_date: endDateOverride ?? endDate,
-        initial_capital: Number(initialCapital),
+        code: runConfig.code,
+        market: runConfig.market,
+        start_date: runConfig.startDate,
+        end_date: runConfig.endDate,
+        initial_capital: runConfig.initialCapital,
         max_holding_days: holding,
-        round_trip_cost_pct: Number(costPct),
+        round_trip_cost_pct: runConfig.roundTripCostPct,
       });
       setJob(created);
       activeJobId.current = created.job_id;
@@ -615,7 +645,20 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock, 
         const latest = await fetchBacktestJob<MultiStrategyBacktestResponse>(created.job_id);
         setJob(latest);
         if (latest.status === "completed" && latest.result) {
+          const completedAt = Date.now();
+          const entry: BacktestCacheEntry = {
+            version: 1,
+            signature: runSignature,
+            config: runConfig,
+            completedAt,
+            result: latest.result,
+          };
+          writeBacktestCache(entry);
           setResult(latest.result);
+          setResultConfig(runConfig);
+          setResultCompletedAt(completedAt);
+          setLatestCachedResult(entry);
+          if (runSignature === currentSignature) setExactCachedResult(entry);
           setBusy(false);
           activeJobId.current = null;
           scrollTop();
@@ -702,8 +745,15 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock, 
   function rerunLatest() {
     if (busy) return;
     const latest = isoDate(new Date());
+    const config = { ...currentConfig, endDate: latest };
     setEndDate(latest);
-    void runBacktest(latest);
+    void runBacktest(config);
+  }
+
+  function rerunDisplayedResult() {
+    if (!resultConfig || busy) return;
+    applyConfigToForm(resultConfig);
+    void runBacktest(resultConfig);
   }
 
   async function cancelRunning() {
