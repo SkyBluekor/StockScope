@@ -1610,14 +1610,14 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
               {historyRecovery?.stockId === detail.stock_id && (
                 <div className={`holdings-history-recovery ${historyRecovery.exhausted ? "exhausted" : ""}`} role="status">
                   <div>
-                    <strong>{detail.name} 분석 데이터 준비가 필요합니다.</strong>
+                    <strong>분석에 필요한 과거 가격 데이터가 부족합니다.</strong>
                     <p>
                       {historyRecovery.exhausted
-                        ? "현재 확보할 수 있는 과거 가격 이력이 아직 분석 기준에 부족합니다. 신규 상장 종목 등은 거래 이력이 더 쌓여야 할 수 있습니다."
-                        : "현재 분석에 필요한 과거 가격 이력이 충분하지 않습니다. 이 종목에 필요한 데이터만 준비한 뒤 분석을 이어갈 수 있습니다."}
+                        ? "현재 준비 가능한 범위를 확인했지만 분석 기준에는 아직 부족합니다. 신규 상장 종목처럼 실제 거래 이력이 짧은 경우에는 더 많은 기간을 만들 수 없습니다."
+                        : "이 종목에 필요한 과거 가격 데이터만 준비한 뒤 분석을 이어갈 수 있습니다."}
                     </p>
                     {historyRecovery.currentRows != null && historyRecovery.requiredRows != null && (
-                      <small>현재 {historyRecovery.currentRows}거래일 · 필요 {historyRecovery.requiredRows}거래일</small>
+                      <small>확보 {historyRecovery.currentRows}거래일 · 필요 {historyRecovery.requiredRows}거래일</small>
                     )}
                   </div>
                   <div className="holdings-history-recovery-action">
