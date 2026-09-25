@@ -487,7 +487,7 @@ const strategyName: Record<string, string> = {
           <button className={`nav-item ${appPage === "backtest" ? "active" : ""}`} onClick={() => navigateApp("backtest")}>종목 과거 성과</button>
           <button className={`nav-item ${appPage === "scanner" ? "active" : ""}`} onClick={() => navigateApp("scanner")}>종목 후보 찾기</button>
           <button className={`nav-item ${appPage === "simulation" ? "active" : ""}`} onClick={() => navigateApp("simulation")}>종목 성과 추적</button>
-          <button className={`nav-item ${appPage === "holdings" ? "active" : ""}`} onClick={() => navigateApp("holdings")}>내 종목 분석</button>
+          <button className={`nav-item ${appPage === "holdings" ? "active" : ""}`} onClick={() => navigateApp("holdings")}>내 종목 관리</button>
         </nav>
         <div className="header-actions">
           <button
