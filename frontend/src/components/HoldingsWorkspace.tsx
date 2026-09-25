@@ -1201,6 +1201,7 @@ export default function HoldingsWorkspace() {
       )}
 
       <section className="holdings-main-grid">
+        <div className="holdings-left-column">
         <div className="holdings-list-pane">
           <div className="holdings-section-head">
             <div>
@@ -1294,6 +1295,223 @@ export default function HoldingsWorkspace() {
               {visibleStocks.length === 0 && <div className="holdings-empty compact">조건에 맞는 종목이 없습니다.</div>}
             </div>
           )}
+        </div>
+          {detail ? (
+            <div className="holdings-left-management">
+                {management && management.positions.length > 0 && (
+                  <div className="holdings-management-block" aria-label="보유 관리 계획">
+                    <div className="holdings-management-head">
+                      <div>
+                        <strong>현재 관리 계획</strong>
+                        <span>{management.valuation.market_date ? `${compactDate(management.valuation.market_date)} 확정 종가 기준` : "현재 가격 데이터 확인 필요"}</span>
+                      </div>
+                    </div>
+                    {management.positions.map((item) => (
+                      <div className="holdings-management-position" key={item.position_id}>
+                        <div className="holdings-management-status">
+                          <div><span>{item.account_name || item.provider || "보유 기록"}</span><strong>{managementStateText(item.management_state)}</strong></div>
+                          {management.valuation.price && <span>기준 가격 {money(management.valuation.price)}</span>}
+                        </div>
+                        {item.active_plan ? (
+                          <div className="holdings-management-plan-grid">
+                            <div><span>적용 계획</span><strong>v{item.active_plan.version}</strong></div>
+                            <div><span>손절</span><strong>{money(item.active_plan.stop_price)}</strong></div>
+                            <div><span>1차 목표</span><strong>{money(item.active_plan.target1_price)}</strong></div>
+                            <div><span>2차 목표</span><strong>{money(item.active_plan.target2_price)}</strong></div>
+                          </div>
+                        ) : <div className="holdings-management-empty">아직 적용한 보유 관리 계획이 없습니다.</div>}
+                        <div className="holdings-management-proposal">
+                          <div>
+                            <span>최신 분석 제안 · {proposalStateText(item.proposal.state)}</span>
+                            {item.proposal.analysis_revision_id && <strong>손절 {money(item.proposal.stop_price)} · 1차 {money(item.proposal.target1_price)} · 2차 {money(item.proposal.target2_price)}</strong>}
+                            {item.proposal.reason && <small>{item.proposal.reason}</small>}
+                          </div>
+                          {item.proposal.analysis_revision_id && item.proposal.state !== "SAME_AS_ACTIVE" && (
+                            <button type="button" className="holdings-secondary-button" disabled={!item.proposal.can_apply || applyingPlanId === item.position_id}
+                              onClick={() => void applyLatestManagementPlan(item.position_id, item.proposal.analysis_revision_id as string)}>
+                              {applyingPlanId === item.position_id
+                                ? "적용 중..."
+                                : !item.proposal.can_apply
+                                  ? "적용 불가"
+                                  : "이 계획 적용"}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="holdings-position-actions-primary" aria-label="보유 작업">
+                  <span>보유 작업</span>
+                  {detail.positions.length === 1 && singleEditablePosition ? (
+                    <div>
+                      <button type="button" className="holdings-action-button buy" onClick={() => void openManual("buy", singleEditablePosition)}>+ 추가 매수</button>
+                      <button type="button" className="holdings-action-button sell" onClick={() => void openManual("sell", singleEditablePosition)}>매도 기록</button>
+                      <button type="button" className="holdings-action-button correction" onClick={() => void openManual("correction", singleEditablePosition)}>보유 정보 수정</button>
+                    </div>
+                  ) : detail.positions.length === 1 && singlePosition ? (
+                    <div>
+                      <button type="button" onClick={() => void syncKis()} disabled={syncingKis}>
+                        {syncingKis ? "동기화 중" : "잔고 동기화"}
+                      </button>
+                      <small>증권사 연동 보유는 직접 수정하지 않습니다.</small>
+                    </div>
+                  ) : detail.positions.length > 1 ? (
+                    <div>
+                      <button type="button" onClick={() => document.getElementById("holdings-position-details")?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+                        계좌별 보유 보기
+                      </button>
+                    </div>
+                  ) : (
+                    <small>현재 보유 기록이 없습니다.</small>
+                  )}
+                </div>
+
+                {quickEditField && quickEditPositionId && singleEditablePosition?.position_id === quickEditPositionId && (
+                  <div
+                    ref={quickEditPanelRef}
+                    className="holdings-inline-position-editor"
+                    tabIndex={-1}
+                    aria-label={quickEditField === "quantity" ? "보유 수량 바로 수정" : "평균단가 바로 수정"}
+                  >
+                    <div className="holdings-inline-editor-head">
+                      <strong>{quickEditField === "quantity" ? "보유 수량 바로 수정" : "평균단가 바로 수정"}</strong>
+                      <button type="button" className="holdings-inline-close" onClick={closeQuickEdit} disabled={quickEditBusy}>닫기</button>
+                    </div>
+
+                    {quickEditField === "quantity" ? (
+                      <>
+                        <div className="holdings-adjust-buttons" aria-label="보유 수량 빠른 조정">
+                          {[-10, -5, -1, 1, 5, 10].map((delta) => (
+                            <button
+                              key={delta}
+                              type="button"
+                              onPointerDown={() => startHoldRepeat(() => adjustQuickQuantity(delta))}
+                              onPointerUp={() => stopHoldRepeat(false)}
+                              onPointerLeave={() => stopHoldRepeat(true)}
+                              onPointerCancel={() => stopHoldRepeat(true)}
+                              onClick={() => runClickUnlessHeld(() => adjustQuickQuantity(delta))}
+                              onContextMenu={(event) => event.preventDefault()}
+                              disabled={delta < 0 && quantityNumber(quickEditValue) <= 0}
+                            >
+                              {delta > 0 ? `+${delta}` : delta}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="holdings-editable-number inline">
+                          <input
+                            ref={quickEditInputRef}
+                            value={quickEditValue}
+                            onChange={(event) => { setQuickEditValue(event.target.value); setQuickZeroConfirm(false); }}
+                            inputMode="decimal"
+                            aria-label="변경할 보유 수량"
+                          />
+                          <span>주</span>
+                        </div>
+                        <small className="holdings-hold-hint">버튼은 짧게 누르면 1회, 약 0.35초 이상 누르면 연속으로 증감합니다.</small>
+                      </>
+                    ) : (
+                      <>
+                        <div className="holdings-adjust-buttons price" aria-label="평균단가 빠른 조정">
+                          {[-5, -1].map((percent) => (
+                            <button
+                              key={percent}
+                              type="button"
+                              onPointerDown={() => startHoldRepeat(() => adjustQuickPrice(percent))}
+                              onPointerUp={() => stopHoldRepeat(false)}
+                              onPointerLeave={() => stopHoldRepeat(true)}
+                              onPointerCancel={() => stopHoldRepeat(true)}
+                              onClick={() => runClickUnlessHeld(() => adjustQuickPrice(percent))}
+                              onContextMenu={(event) => event.preventDefault()}
+                            >
+                              {percent}%
+                            </button>
+                          ))}
+                          <button type="button" onClick={() => setQuickEditValue(quickEditBaseValue)}>현재값</button>
+                          {[1, 5].map((percent) => (
+                            <button
+                              key={percent}
+                              type="button"
+                              onPointerDown={() => startHoldRepeat(() => adjustQuickPrice(percent))}
+                              onPointerUp={() => stopHoldRepeat(false)}
+                              onPointerLeave={() => stopHoldRepeat(true)}
+                              onPointerCancel={() => stopHoldRepeat(true)}
+                              onClick={() => runClickUnlessHeld(() => adjustQuickPrice(percent))}
+                              onContextMenu={(event) => event.preventDefault()}
+                            >
+                              +{percent}%
+                            </button>
+                          ))}
+                        </div>
+                        <div className="holdings-editable-number inline">
+                          <input ref={quickEditInputRef} value={quickEditValue} onChange={(event) => setQuickEditValue(event.target.value)} inputMode="decimal" aria-label="변경할 평균단가" />
+                          <span>원</span>
+                        </div>
+                        <small className="holdings-hold-hint">평균단가 +/- 버튼도 약 0.35초 이상 누르면 현재 표시값 기준으로 계속 증감합니다.</small>
+                      </>
+                    )}
+
+                    <small className="holdings-editor-meaning">
+                      실제 매수·매도 기록이 아니라 StockScope의 현재 보유 정보를 바로잡습니다.
+                    </small>
+
+                    {quickZeroConfirm ? (
+                      <div className="holdings-zero-confirm">
+                        <span>0주로 변경하면 현재 수동 보유 기록이 종료됩니다.</span>
+                        <div>
+                          <button type="button" className="holdings-secondary small" onClick={() => setQuickZeroConfirm(false)}>계속 수정</button>
+                          <button type="button" className="holdings-remove-confirm" onClick={() => void saveQuickEdit(true)} disabled={quickEditBusy}>0주로 변경</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="holdings-inline-editor-actions">
+                        <button type="button" className="holdings-secondary small" onClick={closeQuickEdit} disabled={quickEditBusy}>취소</button>
+                        <button type="button" className="holdings-primary small holdings-nowrap-action" onClick={() => void saveQuickEdit()} disabled={quickEditBusy}>
+                          {quickEditBusy ? "적용 중" : "적용"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              <section className={`holdings-positions ${detail.positions.length <= 1 ? "single-hidden" : ""}`} id="holdings-position-details">
+                <div className="holdings-block-title">
+                  <div>
+                    <h3>계좌별 보유</h3>
+                    <span>계좌별 보유 상태와 거래 기록을 구분해 관리합니다.</span>
+                  </div>
+                </div>
+
+                {detail.positions.length === 0 ? (
+                  <div className="holdings-inline-empty">
+                    <span>현재 보유 기록이 없습니다. 위의 보유 등록에서 바로 추가할 수 있습니다.</span>
+                  </div>
+                ) : (
+                  <div className="holdings-position-list">
+                    {detail.positions.map((position) => (
+                      <article key={position.position_id} className="holdings-position-row">
+                        <div>
+                          <strong>{position.account_name || (position.provider === "KIS" ? "한국투자증권" : "수동 기록")}</strong>
+                          <small>{position.account_kind === "BROKER" ? "증권사 연동 보유" : "StockScope 내부 보유 기록"}</small>
+                        </div>
+                        <div><span>수량</span><strong>{quantity(position.quantity)}주</strong></div>
+                        <div><span>평균단가</span><strong>{money(position.average_price)}</strong></div>
+                        {position.account_kind === "BROKER" ? (
+                          <span className="holdings-position-broker-note">잔고 동기화로 갱신됩니다.</span>
+                        ) : (
+                          <div className="holdings-position-actions">
+                            <button type="button" onClick={() => void openManual("buy", position)}>추가 매수 기록</button>
+                            <button type="button" onClick={() => void openManual("sell", position)}>매도 기록</button>
+                          </div>
+                        )}
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+            </div>
+          ) : null}
         </div>
 
         <div className="holdings-detail-pane">
@@ -1524,186 +1742,6 @@ export default function HoldingsWorkspace() {
 
               </div>
 
-              <div className="holdings-management-layout">
-                <div className="holdings-management-left">
-                {management && management.positions.length > 0 && (
-                  <div className="holdings-management-block" aria-label="보유 관리 계획">
-                    <div className="holdings-management-head">
-                      <div>
-                        <strong>현재 관리 계획</strong>
-                        <span>{management.valuation.market_date ? `${compactDate(management.valuation.market_date)} 확정 종가 기준` : "현재 가격 데이터 확인 필요"}</span>
-                      </div>
-                    </div>
-                    {management.positions.map((item) => (
-                      <div className="holdings-management-position" key={item.position_id}>
-                        <div className="holdings-management-status">
-                          <div><span>{item.account_name || item.provider || "보유 기록"}</span><strong>{managementStateText(item.management_state)}</strong></div>
-                          {management.valuation.price && <span>기준 가격 {money(management.valuation.price)}</span>}
-                        </div>
-                        {item.active_plan ? (
-                          <div className="holdings-management-plan-grid">
-                            <div><span>적용 계획</span><strong>v{item.active_plan.version}</strong></div>
-                            <div><span>손절</span><strong>{money(item.active_plan.stop_price)}</strong></div>
-                            <div><span>1차 목표</span><strong>{money(item.active_plan.target1_price)}</strong></div>
-                            <div><span>2차 목표</span><strong>{money(item.active_plan.target2_price)}</strong></div>
-                          </div>
-                        ) : <div className="holdings-management-empty">아직 적용한 보유 관리 계획이 없습니다.</div>}
-                        <div className="holdings-management-proposal">
-                          <div>
-                            <span>최신 분석 제안 · {proposalStateText(item.proposal.state)}</span>
-                            {item.proposal.analysis_revision_id && <strong>손절 {money(item.proposal.stop_price)} · 1차 {money(item.proposal.target1_price)} · 2차 {money(item.proposal.target2_price)}</strong>}
-                            {item.proposal.reason && <small>{item.proposal.reason}</small>}
-                          </div>
-                          {item.proposal.analysis_revision_id && item.proposal.state !== "SAME_AS_ACTIVE" && (
-                            <button type="button" className="holdings-secondary-button" disabled={!item.proposal.can_apply || applyingPlanId === item.position_id}
-                              onClick={() => void applyLatestManagementPlan(item.position_id, item.proposal.analysis_revision_id as string)}>
-                              {applyingPlanId === item.position_id
-                                ? "적용 중..."
-                                : !item.proposal.can_apply
-                                  ? "적용 불가"
-                                  : "이 계획 적용"}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div className="holdings-position-actions-primary" aria-label="보유 작업">
-                  <span>보유 작업</span>
-                  {detail.positions.length === 1 && singleEditablePosition ? (
-                    <div>
-                      <button type="button" className="holdings-action-button buy" onClick={() => void openManual("buy", singleEditablePosition)}>+ 추가 매수</button>
-                      <button type="button" className="holdings-action-button sell" onClick={() => void openManual("sell", singleEditablePosition)}>매도 기록</button>
-                      <button type="button" className="holdings-action-button correction" onClick={() => void openManual("correction", singleEditablePosition)}>보유 정보 수정</button>
-                    </div>
-                  ) : detail.positions.length === 1 && singlePosition ? (
-                    <div>
-                      <button type="button" onClick={() => void syncKis()} disabled={syncingKis}>
-                        {syncingKis ? "동기화 중" : "잔고 동기화"}
-                      </button>
-                      <small>증권사 연동 보유는 직접 수정하지 않습니다.</small>
-                    </div>
-                  ) : detail.positions.length > 1 ? (
-                    <div>
-                      <button type="button" onClick={() => document.getElementById("holdings-position-details")?.scrollIntoView({ behavior: "smooth", block: "start" })}>
-                        계좌별 보유 보기
-                      </button>
-                    </div>
-                  ) : (
-                    <small>현재 보유 기록이 없습니다.</small>
-                  )}
-                </div>
-
-                {quickEditField && quickEditPositionId && singleEditablePosition?.position_id === quickEditPositionId && (
-                  <div
-                    ref={quickEditPanelRef}
-                    className="holdings-inline-position-editor"
-                    tabIndex={-1}
-                    aria-label={quickEditField === "quantity" ? "보유 수량 바로 수정" : "평균단가 바로 수정"}
-                  >
-                    <div className="holdings-inline-editor-head">
-                      <strong>{quickEditField === "quantity" ? "보유 수량 바로 수정" : "평균단가 바로 수정"}</strong>
-                      <button type="button" className="holdings-inline-close" onClick={closeQuickEdit} disabled={quickEditBusy}>닫기</button>
-                    </div>
-
-                    {quickEditField === "quantity" ? (
-                      <>
-                        <div className="holdings-adjust-buttons" aria-label="보유 수량 빠른 조정">
-                          {[-10, -5, -1, 1, 5, 10].map((delta) => (
-                            <button
-                              key={delta}
-                              type="button"
-                              onPointerDown={() => startHoldRepeat(() => adjustQuickQuantity(delta))}
-                              onPointerUp={() => stopHoldRepeat(false)}
-                              onPointerLeave={() => stopHoldRepeat(true)}
-                              onPointerCancel={() => stopHoldRepeat(true)}
-                              onClick={() => runClickUnlessHeld(() => adjustQuickQuantity(delta))}
-                              onContextMenu={(event) => event.preventDefault()}
-                              disabled={delta < 0 && quantityNumber(quickEditValue) <= 0}
-                            >
-                              {delta > 0 ? `+${delta}` : delta}
-                            </button>
-                          ))}
-                        </div>
-                        <div className="holdings-editable-number inline">
-                          <input
-                            ref={quickEditInputRef}
-                            value={quickEditValue}
-                            onChange={(event) => { setQuickEditValue(event.target.value); setQuickZeroConfirm(false); }}
-                            inputMode="decimal"
-                            aria-label="변경할 보유 수량"
-                          />
-                          <span>주</span>
-                        </div>
-                        <small className="holdings-hold-hint">버튼은 짧게 누르면 1회, 약 0.35초 이상 누르면 연속으로 증감합니다.</small>
-                      </>
-                    ) : (
-                      <>
-                        <div className="holdings-adjust-buttons price" aria-label="평균단가 빠른 조정">
-                          {[-5, -1].map((percent) => (
-                            <button
-                              key={percent}
-                              type="button"
-                              onPointerDown={() => startHoldRepeat(() => adjustQuickPrice(percent))}
-                              onPointerUp={() => stopHoldRepeat(false)}
-                              onPointerLeave={() => stopHoldRepeat(true)}
-                              onPointerCancel={() => stopHoldRepeat(true)}
-                              onClick={() => runClickUnlessHeld(() => adjustQuickPrice(percent))}
-                              onContextMenu={(event) => event.preventDefault()}
-                            >
-                              {percent}%
-                            </button>
-                          ))}
-                          <button type="button" onClick={() => setQuickEditValue(quickEditBaseValue)}>현재값</button>
-                          {[1, 5].map((percent) => (
-                            <button
-                              key={percent}
-                              type="button"
-                              onPointerDown={() => startHoldRepeat(() => adjustQuickPrice(percent))}
-                              onPointerUp={() => stopHoldRepeat(false)}
-                              onPointerLeave={() => stopHoldRepeat(true)}
-                              onPointerCancel={() => stopHoldRepeat(true)}
-                              onClick={() => runClickUnlessHeld(() => adjustQuickPrice(percent))}
-                              onContextMenu={(event) => event.preventDefault()}
-                            >
-                              +{percent}%
-                            </button>
-                          ))}
-                        </div>
-                        <div className="holdings-editable-number inline">
-                          <input ref={quickEditInputRef} value={quickEditValue} onChange={(event) => setQuickEditValue(event.target.value)} inputMode="decimal" aria-label="변경할 평균단가" />
-                          <span>원</span>
-                        </div>
-                        <small className="holdings-hold-hint">평균단가 +/- 버튼도 약 0.35초 이상 누르면 현재 표시값 기준으로 계속 증감합니다.</small>
-                      </>
-                    )}
-
-                    <small className="holdings-editor-meaning">
-                      실제 매수·매도 기록이 아니라 StockScope의 현재 보유 정보를 바로잡습니다.
-                    </small>
-
-                    {quickZeroConfirm ? (
-                      <div className="holdings-zero-confirm">
-                        <span>0주로 변경하면 현재 수동 보유 기록이 종료됩니다.</span>
-                        <div>
-                          <button type="button" className="holdings-secondary small" onClick={() => setQuickZeroConfirm(false)}>계속 수정</button>
-                          <button type="button" className="holdings-remove-confirm" onClick={() => void saveQuickEdit(true)} disabled={quickEditBusy}>0주로 변경</button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="holdings-inline-editor-actions">
-                        <button type="button" className="holdings-secondary small" onClick={closeQuickEdit} disabled={quickEditBusy}>취소</button>
-                        <button type="button" className="holdings-primary small holdings-nowrap-action" onClick={() => void saveQuickEdit()} disabled={quickEditBusy}>
-                          {quickEditBusy ? "적용 중" : "적용"}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-                </div>
-                <div className="holdings-management-right">
               <HoldingsPriceChart
                 stockId={detail.stock_id}
                 analysis={selectedAnalysis}
@@ -1833,44 +1871,6 @@ export default function HoldingsWorkspace() {
                 최신 EOD 분석은 제안 정보이며 적용 중인 보유 관리 계획을 자동으로 바꾸지 않습니다.
               </div>
 
-                </div>
-              </div>
-
-              <section className={`holdings-positions ${detail.positions.length <= 1 ? "single-hidden" : ""}`} id="holdings-position-details">
-                <div className="holdings-block-title">
-                  <div>
-                    <h3>계좌별 보유</h3>
-                    <span>계좌별 보유 상태와 거래 기록을 구분해 관리합니다.</span>
-                  </div>
-                </div>
-
-                {detail.positions.length === 0 ? (
-                  <div className="holdings-inline-empty">
-                    <span>현재 보유 기록이 없습니다. 위의 보유 등록에서 바로 추가할 수 있습니다.</span>
-                  </div>
-                ) : (
-                  <div className="holdings-position-list">
-                    {detail.positions.map((position) => (
-                      <article key={position.position_id} className="holdings-position-row">
-                        <div>
-                          <strong>{position.account_name || (position.provider === "KIS" ? "한국투자증권" : "수동 기록")}</strong>
-                          <small>{position.account_kind === "BROKER" ? "증권사 연동 보유" : "StockScope 내부 보유 기록"}</small>
-                        </div>
-                        <div><span>수량</span><strong>{quantity(position.quantity)}주</strong></div>
-                        <div><span>평균단가</span><strong>{money(position.average_price)}</strong></div>
-                        {position.account_kind === "BROKER" ? (
-                          <span className="holdings-position-broker-note">잔고 동기화로 갱신됩니다.</span>
-                        ) : (
-                          <div className="holdings-position-actions">
-                            <button type="button" onClick={() => void openManual("buy", position)}>추가 매수 기록</button>
-                            <button type="button" onClick={() => void openManual("sell", position)}>매도 기록</button>
-                          </div>
-                        )}
-                      </article>
-                    ))}
-                  </div>
-                )}
-              </section>
             </>
           ) : null}
         </div>
