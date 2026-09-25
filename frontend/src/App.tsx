@@ -128,6 +128,13 @@ function IndexCard({
 export default function App() {
   const [apiStatus, setApiStatus] = useState("확인 중");
   const [theme, setTheme] = useState<ThemeMode>(initialTheme);
+
+  useEffect(() => {
+    const favicon = document.getElementById("stockscope-favicon") as HTMLLinkElement | null;
+    if (favicon) {
+      favicon.href = theme === "dark" ? "/stockscope-icon-dark.png" : "/stockscope-icon-light.png";
+    }
+  }, [theme]);
   const [providers, setProviders] = useState<ProviderStatus | null>(null);
   const [dashboard, setDashboard] = useState<MarketDashboard | null>(null);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
@@ -521,7 +528,14 @@ const strategyName: Record<string, string> = {
     <div className="app-shell">
       <header className="topbar">
         <div className="brand-wrap">
-          <div className="brand-mark"><i /><i /><i /></div>
+          <img
+            src={theme === "dark" ? "/stockscope-icon-dark.png" : "/stockscope-icon-light.png"}
+            alt=""
+            aria-hidden="true"
+            width={30}
+            height={30}
+            style={{ borderRadius: 8, display: "block", flex: "0 0 auto" }}
+          />
           <strong className="brand">StockScope</strong>
         </div>
         <nav className="topnav" aria-label="주요 기능">
