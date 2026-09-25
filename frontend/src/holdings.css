@@ -1980,3 +1980,51 @@ button.holdings-direct-value:hover { border-bottom-color: var(--accent-primary);
     text-align: left;
   }
 }
+
+
+/* UX-HOLD.1B — capped stock list above detail */
+.holdings-main-grid {
+  grid-template-columns: 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.holdings-list-pane,
+.holdings-detail-pane {
+  min-height: 0;
+}
+
+.holdings-list-pane {
+  align-self: start;
+}
+
+.holdings-stock-table-wrap {
+  max-height: min(540px, 56vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.holdings-stock-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg-surface);
+}
+
+.holdings-detail-pane {
+  width: 100%;
+}
+
+@media (max-width: 1180px) {
+  .holdings-main-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 920px) {
+  .holdings-stock-table-wrap {
+    max-height: min(480px, 56vh);
+  }
+}
