@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { StockContext, StockSearchItem, StrategyAnalysis } from "../services/api";
 import StockAnalysisPriceChart from "./StockAnalysisPriceChart";
+import StockNewsPanel from "./StockNewsPanel";
 import "../stock-analysis.css";
 
 type Props = {
@@ -179,10 +180,15 @@ export default function StockAnalysisWorkspace({
       </section>
 
       {!stock ? (
-        <div className="stock-analysis-empty">
-          <strong>{selectedStockName ? stockMessage : "분석할 종목을 선택하세요."}</strong>
-          <p>종목을 선택하면 최근 확정 종가와 기업 기본정보를 먼저 불러옵니다.</p>
-        </div>
+        <>
+          <div className="stock-analysis-empty">
+            <strong>{selectedStockName ? stockMessage : "분석할 종목을 선택하세요."}</strong>
+            <p>종목을 선택하면 최근 확정 종가와 기업 기본정보를 먼저 불러옵니다.</p>
+          </div>
+          {selectedStockName && stockCode && (
+            <StockNewsPanel code={stockCode} market={stockMarket} companyLabel={selectedStockName} />
+          )}
+        </>
       ) : (
         <>
           <section className="stock-analysis-stock-head">
@@ -336,22 +342,31 @@ export default function StockAnalysisWorkspace({
                   <small>세부 재무·공시 분석은 아래 전문 분석에서 확인합니다.</small>
                 </article>
 
-                <article className="stock-analysis-style-summary">
-                  <div className="stock-analysis-section-heading">
-                    <span>INVESTOR STYLE</span>
-                    <h3>투자 관점별 분석</h3>
-                  </div>
-                  {styleContext?.label ? (
-                    <>
-                      <strong>{styleContext.label}</strong>
-                      <p>{styleContext.summary}</p>
-                      <span>{styleContext.fit_label}{styleContext.score == null ? "" : ` · 조건 충족도 ${Math.round(styleContext.score)} / 100`}</span>
-                    </>
-                  ) : <p>투자 스타일 적합도는 상세 분석에서 확인할 수 있습니다.</p>}
-                  <small>조건 충족도는 해당 스타일 규칙과의 적합도이며 매수 확률이 아닙니다.</small>
-                </article>
               </section>
             </>
+          )}
+
+          <StockNewsPanel
+            code={stock.code}
+            market={stock.market}
+            companyLabel={stock.company.corp_name ?? stock.stock.name ?? selectedStockName}
+          />
+
+          {strategyAnalysis && (
+            <section className="stock-analysis-style-summary stock-analysis-style-section">
+              <div className="stock-analysis-section-heading">
+                <span>INVESTOR STYLE</span>
+                <h3>투자 관점별 분석</h3>
+              </div>
+              {styleContext?.label ? (
+                <>
+                  <strong>{styleContext.label}</strong>
+                  <p>{styleContext.summary}</p>
+                  <span>{styleContext.fit_label}{styleContext.score == null ? "" : ` · 조건 충족도 ${Math.round(styleContext.score)} / 100`}</span>
+                </>
+              ) : <p>투자 스타일 적합도는 상세 분석에서 확인할 수 있습니다.</p>}
+              <small>조건 충족도는 해당 스타일 규칙과의 적합도이며 매수 확률이 아닙니다.</small>
+            </section>
           )}
 
           <div className="stock-analysis-body">
