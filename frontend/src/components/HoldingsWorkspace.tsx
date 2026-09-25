@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { searchStocks, type StockSearchItem } from "../services/api";
 import HoldingsPriceChart from "./HoldingsPriceChart";
+import StockNewsPanel from "./StockNewsPanel";
 import {
   addWatchStock,
   getHoldingStock,
@@ -1812,6 +1813,13 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                 analysis={selectedAnalysis}
                 refreshKey={chartRefreshKey}
                 decisionContext={detail.decision_context}
+              />
+
+              <StockNewsPanel
+                code={detail.ticker}
+                market={detail.market}
+                companyLabel={detail.name}
+                variant="compact"
               />
 
               <div className="holdings-analysis-grid">
