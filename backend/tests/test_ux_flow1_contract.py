@@ -33,11 +33,11 @@ def test_ux_flow1_analysis_has_tracking_actions_without_strategy_coupling() -> N
 def test_ux_flow1_holding_registration_preserves_opening_balance_contract() -> None:
     actions = Path("frontend/src/components/StockTrackingActions.tsx").read_text(encoding="utf-8")
     holdings_api = Path("frontend/src/services/holdingsApi.ts").read_text(encoding="utf-8")
-    holdings_backend = Path("backend/app/api/holdings.py").read_text(encoding="utf-8")
+    holdings_lifecycle = Path("backend/app/holdings/lifecycle.py").read_text(encoding="utf-8")
 
     assert "registerHeldStock" in actions
     assert '"/api/holdings/held"' in holdings_api
-    assert "OPENING_BALANCE" in holdings_backend
+    assert 'event_type="OPENING_BALANCE"' in holdings_lifecycle
     assert "신규 매수 주문이나 BUY 이벤트를 생성하는 기능이 아닙니다." in actions
 
 
