@@ -273,7 +273,7 @@ function pnlSignClass(value: string | null | undefined) {
 
 function managementStateText(state: string) {
   switch (state) {
-    case "NO_ACTIVE_PLAN": return "적용 중인 관리 계획 없음";
+    case "NO_ACTIVE_PLAN": return "적용 중인 보유분 관리 기준 없음";
     case "WITHIN_PLAN": return "현재 계획 범위 안";
     case "STOP_BREACHED": return "손절 기준 확인 필요";
     case "TARGET1_REACHED": return "1차 목표 구간 도달";
@@ -335,6 +335,29 @@ function stockDecisionText(stock: HoldingStock) {
   return stock.decision_context?.entry.label
     ?? actionLabel[stock.current_analysis.action_state]
     ?? stock.current_analysis.action_state;
+}
+
+function stockPositionListSummary(stock: HoldingStock) {
+  const positions = stock.positions ?? [];
+  if (positions.length === 0) return { quantity: "-", average: "-" };
+  if (positions.length === 1) {
+    return {
+      quantity: `${quantity(positions[0].quantity)}주`,
+      average: money(positions[0].average_price),
+    };
+  }
+  const total = positions.reduce((sum, position) => sum + quantityNumber(position.quantity), 0);
+  return {
+    quantity: `총 ${quantity(String(total))}주`,
+    average: `${positions.length}개 보유 기록`,
+  };
+}
+
+function stockStateLabel(stock: HoldingStock) {
+  if (stock.watch_enabled && stock.is_held) return "관심 · 보유";
+  if (stock.is_held) return "보유";
+  if (stock.watch_enabled) return "관심";
+  return "등록 상태 없음";
 }
 
 function compactDate(value: string | null | undefined) {
@@ -554,10 +577,10 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
     setError(null);
     try {
       await applyHoldingManagementPlan(positionId, revisionId);
-      setMessage("최신 분석의 가격 계획을 현재 보유 관리 계획으로 적용했습니다.");
+      setMessage("최신 분석의 가격 계획을 현재 보유분 관리 기준으로 적용했습니다.");
       if (selectedStockId) await loadSelected(selectedStockId);
     } catch (applyError) {
-      setError(readableError(applyError, "관리 계획을 적용하지 못했습니다."));
+      setError(readableError(applyError, "보유분 관리 기준을 적용하지 못했습니다."));
     } finally {
       setApplyingPlanId(null);
     }
@@ -618,6 +641,17 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
       return stock.name.toLowerCase().includes(needle) || stock.ticker.includes(needle);
     });
   }, [stocks, stockFilter, query]);
+
+  useEffect(() => {
+    if (loadingStocks) return;
+    if (visibleStocks.length === 0) {
+      if (selectedStockId != null) setSelectedStockId(null);
+      return;
+    }
+    if (!selectedStockId || !visibleStocks.some((stock) => stock.stock_id === selectedStockId)) {
+      setSelectedStockId(visibleStocks[0].stock_id);
+    }
+  }, [loadingStocks, selectedStockId, visibleStocks]);
 
   const visibleTimeline = useMemo(() => {
     if (timelineFilter === "analysis") return timeline.filter((item) => item.kind === "ANALYSIS");
@@ -1213,6 +1247,13 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
   }
 
   const selectedAnalysis = detail?.current_analysis ?? null;
+  const detailPerspective: "watch" | "held" = stockFilter === "held"
+    ? "held"
+    : stockFilter === "watch"
+      ? "watch"
+      : detail?.is_held
+        ? "held"
+        : "watch";
 
   function openSelectedStockAnalysis() {
     if (!detail || !onAnalyzeStock) return;
@@ -1240,7 +1281,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
         <div>
           <span className="eyebrow">HOLDINGS</span>
           <h1>내 종목 관리</h1>
-          <p>관심 종목과 실제 보유 상태, 손익과 관리 계획을 확인합니다.</p>
+          <p>관심 종목의 현재 판단과 실제 보유 상태, 손익과 보유분 관리 기준을 확인합니다.</p>
         </div>
         <button type="button" className="holdings-secondary" onClick={() => setAddOpen(true)}>
           + 종목 추가
@@ -1302,69 +1343,169 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
             </div>
           ) : (
             <div className="holdings-stock-table-wrap">
-              <table className="holdings-stock-table">
+              <table className={`holdings-stock-table perspective-${stockFilter}`}>
                 <thead>
-                  <tr>
-                    <th>종목</th>
-                    <th>보유 현황</th>
-                    <th>현재 판단</th>
-                    <th>분석일</th>
-                    <th>관리</th>
-                  </tr>
+                  {stockFilter === "watch" ? (
+                    <tr>
+                      <th>종목</th>
+                      <th>최근 가격</th>
+                      <th>현재 판단</th>
+                      <th>마지막 분석</th>
+                      <th>상태</th>
+                    </tr>
+                  ) : stockFilter === "held" ? (
+                    <tr>
+                      <th>종목</th>
+                      <th>보유 수량</th>
+                      <th>평균단가</th>
+                      <th>최근 가격</th>
+                      <th>관리 상태</th>
+                    </tr>
+                  ) : (
+                    <tr>
+                      <th>종목</th>
+                      <th>상태</th>
+                      <th>현재 판단</th>
+                      <th>분석일</th>
+                      <th>관리</th>
+                    </tr>
+                  )}
                 </thead>
                 <tbody>
                   {visibleStocks.map((stock) => {
                     const holdingSummary = stockHoldingSummary(stock);
+                    const positionSummary = stockPositionListSummary(stock);
                     return (
-                    <tr
-                      key={stock.stock_id}
-                      className={selectedStockId === stock.stock_id ? "selected" : ""}
-                      onClick={() => setSelectedStockId(stock.stock_id)}
-                    >
-                      <td>
-                        <strong>{stock.name}</strong>
-                        <small>{stock.ticker} · {stock.market}</small>
-                      </td>
-                      <td className="holdings-holding-cell">
-                        <strong>{holdingSummary.primary}</strong>
-                        {holdingSummary.secondary && <small>{holdingSummary.secondary}</small>}
-                      </td>
-                      <td className="holdings-decision-cell">
-                        <strong>{historyRecovery?.stockId === stock.stock_id ? "데이터 준비 필요" : stockDecisionText(stock)}</strong>
-                        {stock.decision_context && isPlanEvent(stock.decision_context) && (
-                          <small>{stock.decision_context.previous_plan.label}</small>
+                      <tr
+                        key={stock.stock_id}
+                        className={selectedStockId === stock.stock_id ? "selected" : ""}
+                        onClick={() => setSelectedStockId(stock.stock_id)}
+                      >
+                        <td>
+                          <strong>{stock.name}</strong>
+                          <small>{stock.ticker} · {stock.market}</small>
+                        </td>
+
+                        {stockFilter === "watch" ? (
+                          <>
+                            <td className="holdings-price-cell">
+                              <strong>{money(stock.current_analysis?.reference_price)}</strong>
+                              <small>{compactDate(stock.current_analysis?.market_date)} 기준</small>
+                            </td>
+                            <td className="holdings-decision-cell">
+                              <strong>{historyRecovery?.stockId === stock.stock_id ? "데이터 준비 필요" : stockDecisionText(stock)}</strong>
+                              {stock.decision_context && isPlanEvent(stock.decision_context) && (
+                                <small>{stock.decision_context.previous_plan.label}</small>
+                              )}
+                            </td>
+                            <td>{compactDate(stock.current_analysis?.market_date)}</td>
+                            <td className="holdings-state-cell">
+                              <strong>{stock.is_held ? "관심 · 보유" : "관심"}</strong>
+                              {stock.is_held ? (
+                                <button
+                                  type="button"
+                                  className="holdings-list-action"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    setSelectedStockId(stock.stock_id);
+                                    setStockFilter("held");
+                                  }}
+                                >
+                                  보유 관리
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="holdings-list-action remove"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    requestListWatchChange(stock);
+                                  }}
+                                >
+                                  관심 해제
+                                </button>
+                              )}
+                            </td>
+                          </>
+                        ) : stockFilter === "held" ? (
+                          <>
+                            <td className="holdings-holding-cell"><strong>{positionSummary.quantity}</strong></td>
+                            <td className="holdings-holding-cell"><strong>{positionSummary.average}</strong></td>
+                            <td className="holdings-price-cell">
+                              <strong>{money(stock.current_analysis?.reference_price)}</strong>
+                              <small>{compactDate(stock.current_analysis?.market_date)} 기준</small>
+                            </td>
+                            <td className="holdings-state-cell">
+                              <strong>{stock.current_analysis ? "보유 관리 확인" : "분석 필요"}</strong>
+                              <small>평가손익·적용 기준은 선택 후 확인</small>
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="holdings-state-cell"><strong>{stockStateLabel(stock)}</strong></td>
+                            <td className="holdings-decision-cell">
+                              <strong>{historyRecovery?.stockId === stock.stock_id ? "데이터 준비 필요" : stockDecisionText(stock)}</strong>
+                              {stock.decision_context && isPlanEvent(stock.decision_context) && (
+                                <small>{stock.decision_context.previous_plan.label}</small>
+                              )}
+                            </td>
+                            <td>{compactDate(stock.current_analysis?.market_date)}</td>
+                            <td>
+                              <button
+                                type="button"
+                                className={`holdings-list-action ${stock.watch_enabled && !stock.is_held ? "remove" : ""}`}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  requestListWatchChange(stock);
+                                }}
+                              >
+                                {!stock.watch_enabled ? "관심 등록" : stock.is_held ? "관심 해제" : "제거"}
+                              </button>
+                            </td>
+                          </>
                         )}
-                      </td>
-                      <td>{compactDate(stock.current_analysis?.market_date)}</td>
-                      <td>
-                        <button
-                          type="button"
-                          className={`holdings-list-action ${stock.watch_enabled && !stock.is_held ? "remove" : ""}`}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            requestListWatchChange(stock);
-                          }}
-                        >
-                          {!stock.watch_enabled ? "관심 등록" : stock.is_held ? "관심 해제" : "제거"}
-                        </button>
-                      </td>
-                    </tr>
+                      </tr>
                     );
                   })}
                 </tbody>
               </table>
-              {visibleStocks.length === 0 && <div className="holdings-empty compact">조건에 맞는 종목이 없습니다.</div>}
+              {visibleStocks.length === 0 && (
+                <div className="holdings-empty compact holdings-perspective-empty">
+                  <strong>
+                    {stockFilter === "watch"
+                      ? "관심 종목이 없습니다."
+                      : stockFilter === "held"
+                        ? "등록된 보유 종목이 없습니다."
+                        : "조건에 맞는 종목이 없습니다."}
+                  </strong>
+                  <span>
+                    {stockFilter === "watch"
+                      ? "종목 후보 찾기에서 관심 종목을 추가하거나 직접 종목을 등록할 수 있습니다."
+                      : stockFilter === "held"
+                        ? "실제 보유 수량과 평균단가를 입력해 보유 관리를 시작할 수 있습니다."
+                        : "검색어나 필터를 바꿔 다시 확인해주세요."}
+                  </span>
+                  {stockFilter !== "all" && (
+                    <button className="holdings-secondary small" type="button" onClick={() => setAddOpen(true)}>
+                      종목 추가
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
-          {detail ? (
+          {detail && detailPerspective === "held" ? (
             <div className="holdings-left-management">
                 {management && management.positions.length > 0 && (
-                  <div className="holdings-management-block" aria-label="보유 관리 계획">
+                  <div className="holdings-management-block" aria-label="보유분 관리 기준">
                     <div className="holdings-management-head">
                       <div>
-                        <strong>현재 관리 계획</strong>
-                        <span>{management.valuation.market_date ? `${compactDate(management.valuation.market_date)} 확정 종가 기준` : "현재 가격 데이터 확인 필요"}</span>
+                        <strong>보유분 관리 기준</strong>
+                        <span>
+                          현재 보유분에 실제 적용된 손절·목표 가격
+                          {management.valuation.market_date ? ` · ${compactDate(management.valuation.market_date)} 확정 종가 기준` : " · 현재 가격 데이터 확인 필요"}
+                        </span>
                       </div>
                     </div>
                     {management.positions.map((item) => (
@@ -1375,15 +1516,17 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                         </div>
                         {item.active_plan ? (
                           <div className="holdings-management-plan-grid">
-                            <div><span>적용 계획</span><strong>v{item.active_plan.version}</strong></div>
+                            <div><span>적용 기준일</span><strong>{compactDate(item.active_plan.applied_at)}</strong></div>
                             <div><span>손절</span><strong>{money(item.active_plan.stop_price)}</strong></div>
                             <div><span>1차 목표</span><strong>{money(item.active_plan.target1_price)}</strong></div>
                             <div><span>2차 목표</span><strong>{money(item.active_plan.target2_price)}</strong></div>
                           </div>
-                        ) : <div className="holdings-management-empty">아직 적용한 보유 관리 계획이 없습니다.</div>}
+                        ) : <div className="holdings-management-empty">적용된 보유분 관리 기준이 없습니다. 최신 분석 제안을 확인한 뒤 필요할 때만 적용할 수 있습니다.</div>}
+                        {item.active_plan && <small className="holdings-management-version">내부 기준 v{item.active_plan.version}</small>}
                         <div className="holdings-management-proposal">
                           <div>
-                            <span>최신 분석 제안 · {proposalStateText(item.proposal.state)}</span>
+                            <span className="holdings-management-proposal-kicker">최신 분석 제안</span>
+                            <span>{proposalStateText(item.proposal.state)}</span>
                             {item.proposal.analysis_revision_id && <strong>손절 {money(item.proposal.stop_price)} · 1차 {money(item.proposal.target1_price)} · 2차 {money(item.proposal.target2_price)}</strong>}
                             {item.proposal.reason && <small>{item.proposal.reason}</small>}
                           </div>
@@ -1602,9 +1745,28 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                   <button className="holdings-primary" type="button" onClick={refreshSelected} disabled={refreshingAnalysis}>
                     {refreshingAnalysis ? "분석 확인 중" : "분석 새로고침"}
                   </button>
-                  <button className="holdings-secondary" type="button" onClick={syncKis} disabled={syncingKis}>
-                    {syncingKis ? "동기화 중" : "잔고 동기화"}
-                  </button>
+                  {detailPerspective === "watch" ? (
+                    <>
+                      {detail.is_held ? (
+                        <button className="holdings-secondary" type="button" onClick={() => setStockFilter("held")}>
+                          보유 관리 보기
+                        </button>
+                      ) : (
+                        <button className="holdings-secondary" type="button" onClick={() => void openManual("buy")}>
+                          보유 등록
+                        </button>
+                      )}
+                      {detail.watch_enabled && (
+                        <button className="holdings-text-button" type="button" onClick={() => requestListWatchChange(detail)}>
+                          관심 해제
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <button className="holdings-secondary" type="button" onClick={syncKis} disabled={syncingKis}>
+                      {syncingKis ? "동기화 중" : "잔고 동기화"}
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -1653,160 +1815,190 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                 </div>
               )}
 
-              <div className="holdings-position-management" ref={holdingOverviewRef}>
-                <div className="holdings-position-quickbar" aria-label="보유 빠른 관리">
-                  {detail.positions.length === 0 ? (
-                    <>
-                      <div className="holdings-position-quick-status">
-                        <span>보유 상태</span>
-                        <strong>미보유</strong>
-                      </div>
-                      <small className="holdings-quickbar-note">신규 종목은 ‘종목 추가’에서 관심/보유를 처음부터 선택할 수 있습니다.</small>
-                    </>
-                  ) : detail.positions.length === 1 && singlePosition ? (
-                    <>
-                      {singleEditablePosition ? (
-                        <>
-                          <button
-                            type="button"
-                            className={`holdings-direct-value ${quickEditField === "quantity" && quickEditPositionId === singleEditablePosition.position_id ? "active-edit" : ""}`}
-                            aria-pressed={quickEditField === "quantity" && quickEditPositionId === singleEditablePosition.position_id}
-                            onClick={() => openQuickEdit("quantity", singleEditablePosition)}
-                          >
-                            <span>보유 수량</span>
-                            <strong>{quantity(singleEditablePosition.quantity)}주</strong>
-                            <small>숫자를 눌러 바로 수정</small>
-                          </button>
-                          <button
-                            type="button"
-                            className={`holdings-direct-value ${quickEditField === "average_price" && quickEditPositionId === singleEditablePosition.position_id ? "active-edit" : ""}`}
-                            aria-pressed={quickEditField === "average_price" && quickEditPositionId === singleEditablePosition.position_id}
-                            onClick={() => openQuickEdit("average_price", singleEditablePosition)}
-                          >
-                            <span>평균단가</span>
-                            <strong>{money(singleEditablePosition.average_price)}</strong>
-                            <small>숫자를 눌러 바로 수정</small>
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <div className="holdings-direct-value readonly">
-                            <span>보유 수량</span>
-                            <strong>{quantity(singlePosition.quantity)}주</strong>
-                          </div>
-                          <div className="holdings-direct-value readonly">
-                            <span>평균단가</span>
-                            <strong>{money(singlePosition.average_price)}</strong>
-                          </div>
-                          <small className="holdings-quickbar-note">증권사 연동 보유는 잔고 동기화로 갱신됩니다.</small>
-                        </>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <div className="holdings-position-quick-status">
-                        <span>총 보유</span>
-                        <strong>{quantity(String(totalHeldQuantity))}주</strong>
-                      </div>
-                      <div className="holdings-position-quick-status">
-                        <span>보유 기록</span>
-                        <strong>{detail.positions.length}개</strong>
-                      </div>
-                      <button
-                        type="button"
-                        className="holdings-text-button holdings-nowrap-action"
-                        onClick={() => document.getElementById("holdings-position-details")?.scrollIntoView({ behavior: "smooth", block: "start" })}
-                      >
-                        계좌별 보유 보기
-                      </button>
-                    </>
-                  )}
-                </div>
-
-                {performance && performance.positions.length > 0 && (
-                  <div className="holdings-pnl-block" aria-label="보유 손익">
-                    <div className="holdings-pnl-head">
-                      <div>
-                        <strong>보유 손익</strong>
-                        <span>비용 제외 · {performanceStatusText(performance.calculation_status)}</span>
-                      </div>
-                      <span>
-                        {performance.valuation.available && performance.valuation.market_date
-                          ? `${compactDate(performance.valuation.market_date)} 확정 종가 기준`
-                          : "최신 확정 가격 없음"}
-                      </span>
+              {detailPerspective === "watch" && (
+                <section className="holdings-watch-overview" aria-label="관심 종목 현재 판단">
+                  <div className="holdings-watch-overview-head">
+                    <div>
+                      <span>현재 판단</span>
+                      <strong>{detail.decision_context?.entry.label ?? stockDecisionText(detail)}</strong>
+                      <p>{detail.decision_context?.entry.summary || detail.decision_context?.entry.decision_reason || "최신 분석에서 현재 조건을 확인하세요."}</p>
                     </div>
+                    <div className="holdings-watch-date">
+                      <span>분석 기준일</span>
+                      <strong>{compactDate(selectedAnalysis?.market_date)}</strong>
+                    </div>
+                  </div>
+                  <div className="holdings-watch-metrics">
+                    <div><span>최근 분석 가격</span><strong>{money(selectedAnalysis?.reference_price)}</strong></div>
+                    <div><span>전략</span><strong>{selectedAnalysis ? (strategyLabel[selectedAnalysis.strategy_key] ?? selectedAnalysis.strategy_key) : "분석 필요"}</strong></div>
+                    <div><span>마지막 분석</span><strong>{compactDate(selectedAnalysis?.market_date)}</strong></div>
+                  </div>
+                  {detail.is_held && (
+                    <div className="holdings-watch-held-bridge">
+                      <span>이 종목은 현재 보유 중입니다. 관심 관점과 실제 보유 관리는 분리해서 확인합니다.</span>
+                      <button type="button" className="holdings-text-button" onClick={() => setStockFilter("held")}>보유 관리 보기</button>
+                    </div>
+                  )}
+                </section>
+              )}
 
-                    {performance.positions.length === 1 ? (() => {
-                      const pnl = performance.positions[0];
-                      return (
-                        <>
-                          <div className="holdings-pnl-metrics">
-                            <div><span>잔여 원가</span><strong>{money(pnl.cost_basis)}</strong></div>
-                            <div><span>평가 금액</span><strong>{money(pnl.market_value)}</strong></div>
-                            <div className="holdings-pnl-focus">
-                              <span>평가 손익</span>
-                              <strong className={pnlSignClass(pnl.unrealized_pnl)}>
-                                {signedMoney(pnl.unrealized_pnl)}
-                                {pnl.unrealized_return_pct != null && <small>{signedPercent(pnl.unrealized_return_pct)}</small>}
-                              </strong>
+              {detailPerspective === "held" && (
+                <div className="holdings-position-management" ref={holdingOverviewRef}>
+                  <div className="holdings-position-quickbar" aria-label="보유 빠른 관리">
+                    {detail.positions.length === 0 ? (
+                      <>
+                        <div className="holdings-position-quick-status">
+                          <span>보유 상태</span>
+                          <strong>미보유</strong>
+                        </div>
+                        <small className="holdings-quickbar-note">신규 종목은 ‘종목 추가’에서 관심/보유를 처음부터 선택할 수 있습니다.</small>
+                      </>
+                    ) : detail.positions.length === 1 && singlePosition ? (
+                      <>
+                        {singleEditablePosition ? (
+                          <>
+                            <button
+                              type="button"
+                              className={`holdings-direct-value ${quickEditField === "quantity" && quickEditPositionId === singleEditablePosition.position_id ? "active-edit" : ""}`}
+                              aria-pressed={quickEditField === "quantity" && quickEditPositionId === singleEditablePosition.position_id}
+                              onClick={() => openQuickEdit("quantity", singleEditablePosition)}
+                            >
+                              <span>보유 수량</span>
+                              <strong>{quantity(singleEditablePosition.quantity)}주</strong>
+                              <small>숫자를 눌러 바로 수정</small>
+                            </button>
+                            <button
+                              type="button"
+                              className={`holdings-direct-value ${quickEditField === "average_price" && quickEditPositionId === singleEditablePosition.position_id ? "active-edit" : ""}`}
+                              aria-pressed={quickEditField === "average_price" && quickEditPositionId === singleEditablePosition.position_id}
+                              onClick={() => openQuickEdit("average_price", singleEditablePosition)}
+                            >
+                              <span>평균단가</span>
+                              <strong>{money(singleEditablePosition.average_price)}</strong>
+                              <small>숫자를 눌러 바로 수정</small>
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <div className="holdings-direct-value readonly">
+                              <span>보유 수량</span>
+                              <strong>{quantity(singlePosition.quantity)}주</strong>
                             </div>
-                            <div>
-                              <span>확인된 실현손익</span>
-                              <strong className={pnlSignClass(pnl.confirmed_realized_pnl)}>
-                                {pnl.confirmed_realized_pnl == null ? "미확인" : signedMoney(pnl.confirmed_realized_pnl)}
-                              </strong>
+                            <div className="holdings-direct-value readonly">
+                              <span>평균단가</span>
+                              <strong>{money(singlePosition.average_price)}</strong>
                             </div>
-                            <div>
-                              <span>기록 기준 손익</span>
-                              <strong className={pnlSignClass(pnl.tracked_pnl)}>
-                                {pnl.tracked_pnl == null ? "-" : signedMoney(pnl.tracked_pnl)}
-                              </strong>
-                            </div>
-                          </div>
-                          <div className="holdings-pnl-note">
-                            <span>{pnl.calculation_message}</span>
-                            {performance.valuation.available && performance.valuation.price && (
-                              <span>평가가격 {money(performance.valuation.price)}</span>
-                            )}
-                          </div>
-                        </>
-                      );
-                    })() : (
-                      <div className="holdings-pnl-position-table-wrap">
-                        <table className="holdings-pnl-position-table">
-                          <thead><tr><th>계좌</th><th>수량</th><th>평가손익</th><th>실현손익</th><th>범위</th></tr></thead>
-                          <tbody>
-                            {performance.positions.map((pnl) => (
-                              <tr key={pnl.position_id}>
-                                <td>{pnl.account_name || pnl.provider}</td>
-                                <td>{quantity(pnl.quantity)}주</td>
-                                <td className={pnlSignClass(pnl.unrealized_pnl)}>{signedMoney(pnl.unrealized_pnl)}</td>
-                                <td className={pnlSignClass(pnl.confirmed_realized_pnl)}>
-                                  {pnl.confirmed_realized_pnl == null ? "미확인" : signedMoney(pnl.confirmed_realized_pnl)}
-                                </td>
-                                <td>{performanceStatusText(pnl.calculation_status)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                        {performance.aggregate.potential_overlap && (
-                          <div className="holdings-pnl-warning">
-                            수동 보유와 증권사 보유가 함께 있어 종목 합계를 실제 자산 합계로 단정하지 않습니다.
-                          </div>
+                            <small className="holdings-quickbar-note">증권사 연동 보유는 잔고 동기화로 갱신됩니다.</small>
+                          </>
                         )}
-                      </div>
-                    )}
-
-                    {!performance.valuation.available && (
-                      <div className="holdings-pnl-warning">
-                        평가손익을 0원으로 대체하지 않았습니다. {performance.valuation.message || "최신 확정 가격이 필요합니다."}
-                      </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="holdings-position-quick-status">
+                          <span>총 보유</span>
+                          <strong>{quantity(String(totalHeldQuantity))}주</strong>
+                        </div>
+                        <div className="holdings-position-quick-status">
+                          <span>보유 기록</span>
+                          <strong>{detail.positions.length}개</strong>
+                        </div>
+                        <button
+                          type="button"
+                          className="holdings-text-button holdings-nowrap-action"
+                          onClick={() => document.getElementById("holdings-position-details")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                        >
+                          계좌별 보유 보기
+                        </button>
+                      </>
                     )}
                   </div>
+  
+                  {performance && performance.positions.length > 0 && (
+                    <div className="holdings-pnl-block" aria-label="보유 손익">
+                      <div className="holdings-pnl-head">
+                        <div>
+                          <strong>보유 손익</strong>
+                          <span>비용 제외 · {performanceStatusText(performance.calculation_status)}</span>
+                        </div>
+                        <span>
+                          {performance.valuation.available && performance.valuation.market_date
+                            ? `${compactDate(performance.valuation.market_date)} 확정 종가 기준`
+                            : "최신 확정 가격 없음"}
+                        </span>
+                      </div>
+  
+                      {performance.positions.length === 1 ? (() => {
+                        const pnl = performance.positions[0];
+                        return (
+                          <>
+                            <div className="holdings-pnl-metrics">
+                              <div><span>잔여 원가</span><strong>{money(pnl.cost_basis)}</strong></div>
+                              <div><span>평가 금액</span><strong>{money(pnl.market_value)}</strong></div>
+                              <div className="holdings-pnl-focus">
+                                <span>평가 손익</span>
+                                <strong className={pnlSignClass(pnl.unrealized_pnl)}>
+                                  {signedMoney(pnl.unrealized_pnl)}
+                                  {pnl.unrealized_return_pct != null && <small>{signedPercent(pnl.unrealized_return_pct)}</small>}
+                                </strong>
+                              </div>
+                              <div>
+                                <span>확인된 실현손익</span>
+                                <strong className={pnlSignClass(pnl.confirmed_realized_pnl)}>
+                                  {pnl.confirmed_realized_pnl == null ? "미확인" : signedMoney(pnl.confirmed_realized_pnl)}
+                                </strong>
+                              </div>
+                              <div>
+                                <span>기록 기준 손익</span>
+                                <strong className={pnlSignClass(pnl.tracked_pnl)}>
+                                  {pnl.tracked_pnl == null ? "-" : signedMoney(pnl.tracked_pnl)}
+                                </strong>
+                              </div>
+                            </div>
+                            <div className="holdings-pnl-note">
+                              <span>{pnl.calculation_message}</span>
+                              {performance.valuation.available && performance.valuation.price && (
+                                <span>평가가격 {money(performance.valuation.price)}</span>
+                              )}
+                            </div>
+                          </>
+                        );
+                      })() : (
+                        <div className="holdings-pnl-position-table-wrap">
+                          <table className="holdings-pnl-position-table">
+                            <thead><tr><th>계좌</th><th>수량</th><th>평가손익</th><th>실현손익</th><th>범위</th></tr></thead>
+                            <tbody>
+                              {performance.positions.map((pnl) => (
+                                <tr key={pnl.position_id}>
+                                  <td>{pnl.account_name || pnl.provider}</td>
+                                  <td>{quantity(pnl.quantity)}주</td>
+                                  <td className={pnlSignClass(pnl.unrealized_pnl)}>{signedMoney(pnl.unrealized_pnl)}</td>
+                                  <td className={pnlSignClass(pnl.confirmed_realized_pnl)}>
+                                    {pnl.confirmed_realized_pnl == null ? "미확인" : signedMoney(pnl.confirmed_realized_pnl)}
+                                  </td>
+                                  <td>{performanceStatusText(pnl.calculation_status)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          {performance.aggregate.potential_overlap && (
+                            <div className="holdings-pnl-warning">
+                              수동 보유와 증권사 보유가 함께 있어 종목 합계를 실제 자산 합계로 단정하지 않습니다.
+                            </div>
+                          )}
+                        </div>
+                      )}
+  
+                      {!performance.valuation.available && (
+                        <div className="holdings-pnl-warning">
+                          평가손익을 0원으로 대체하지 않았습니다. {performance.valuation.message || "최신 확정 가격이 필요합니다."}
+                        </div>
+                      )}
+                    </div>
+                  )}
+  
+                </div>
+  
                 )}
-
-              </div>
 
               <HoldingsPriceChart
                 stockId={detail.stock_id}
@@ -1825,10 +2017,15 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
               <div className="holdings-analysis-grid">
                 <section className="holdings-analysis-block">
                   <div className="holdings-block-title">
-                    <h3>최신 EOD 분석</h3>
+                    <h3>{detailPerspective === "held" ? "신규 진입 관점 분석" : "현재 판단 상세"}</h3>
                   </div>
                   {selectedAnalysis ? (
                     <>
+                      {detailPerspective === "held" && (
+                        <div className="holdings-entry-guardrail">
+                          이 결과는 새로 진입하는 관점의 분석이며 현재 보유분에 대한 매도 판단이 아닙니다.
+                        </div>
+                      )}
                       <dl className="holdings-key-values">
                         <div>
                           <dt>진입 상태</dt>
@@ -1941,7 +2138,9 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
               </div>
 
               <div className="holdings-basis-note">
-                최신 EOD 분석은 제안 정보이며 적용 중인 보유 관리 계획을 자동으로 바꾸지 않습니다.
+                {detailPerspective === "held"
+                  ? "신규 진입 관점 분석은 제안 정보이며 적용 중인 보유분 관리 기준을 자동으로 바꾸거나 현재 보유분의 매도를 지시하지 않습니다."
+                  : "현재 판단은 최신 EOD 분석 기준이며 실제 매수 여부는 사용자가 별도로 결정합니다."}
               </div>
 
             </>
@@ -1953,7 +2152,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
         <div className="holdings-section-head">
           <div>
             <h2>최근 변화</h2>
-            <span>선택한 종목의 분석과 보유 기록</span>
+            <span>선택한 종목의 분석과 실제 보유 기록을 시간순으로 확인합니다.</span>
           </div>
           <div className="holdings-tabs compact" role="tablist" aria-label="최근 변화 필터">
             <button className={timelineFilter === "all" ? "active" : ""} onClick={() => setTimelineFilter("all")}>전체</button>
