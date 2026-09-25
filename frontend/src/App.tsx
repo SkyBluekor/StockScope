@@ -8,6 +8,7 @@ import BacktestPanel from "./components/BacktestPanel";
 import ScannerPanel from "./components/ScannerPanel";
 import TrackingWorkspace from "./components/TrackingWorkspace";
 import HoldingsWorkspace from "./components/HoldingsWorkspace";
+import StockAnalysisWorkspace from "./components/StockAnalysisWorkspace";
 import {
   fetchHealth,
   fetchMarketDashboard,
@@ -274,6 +275,27 @@ export default function App() {
     setAveragePriceInput("");
     setHoldingQuantityInput("");
     setStockMessage(`${item.market} · ${item.name} 선택됨`);
+
+    if (appPage === "analysis") {
+      setStockBusy(true);
+      setStockMessage(`${item.name} 기본 정보 불러오는 중...`);
+      void fetchStockContext(item.code.trim().toUpperCase(), item.market)
+        .then((result) => {
+          setStock(result);
+          setStrategyAnalysis(null);
+          setSelectedStrategyIndex(0);
+          setLastAnalysisInputSignature("");
+          setStockMessage(`${result.company.corp_name ?? result.stock.name ?? item.code} 조회 완료`);
+        })
+        .catch((error) => {
+          setStock(null);
+          setStrategyAnalysis(null);
+          setSelectedStrategyIndex(0);
+          setLastAnalysisInputSignature("");
+          setStockMessage(error instanceof Error ? error.message : "종목 조회 실패");
+        })
+        .finally(() => setStockBusy(false));
+    }
   }
 
   function changeStockQuery(value: string) {
@@ -471,10 +493,6 @@ const strategyName: Record<string, string> = {
     window.scrollTo({ top: 0, behavior: "auto" });
   }
 
-  const breadth = dashboard?.market.breadth;
-  const upPercent = breadth?.total ? (breadth.up / breadth.total) * 100 : 0;
-  const downPercent = breadth?.total ? (breadth.down / breadth.total) * 100 : 0;
-
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -508,249 +526,38 @@ const strategyName: Record<string, string> = {
         </div>
       </header>
 
-      <div className={`layout ${appPage !== "analysis" ? "backtest-layout" : ""}`}>
-        {appPage === "analysis" && (
-          <aside className="sidebar">
-            <button className="side-item active"><span>⌂</span>오늘의 시장</button>
-            <button className="side-item" disabled><span>◉</span>추천 전략</button>
-            <button className="side-item" disabled><span>☆</span>관심 종목</button>
-            <button className="side-item" disabled><span>◷</span>최근 분석</button>
-            <div className="sidebar-note">
-              <strong>분석 전용</strong>
-              <p>실제 주문 API를 구현하지 않습니다.</p>
-              <span>KRX + OpenDART</span>
-            </div>
-          </aside>
-        )}
-
-        <main className={`content ${appPage !== "analysis" ? "backtest-page-content" : ""}`}>
+      <div className="layout backtest-layout">
+        <main className="content backtest-page-content">
           {appPage === "analysis" ? (
-            <>
-          <section className="page-head">
-            <div>
-              <span className="eyebrow">MARKET DASHBOARD · v0.7</span>
-              <h1>오늘의 시장</h1>
-              <p>최근 사용 가능한 KRX 거래일 데이터를 자동으로 찾아 시장 상태를 요약합니다.</p>
-            </div>
-            <div className="date-box">
-              <span>시장 요약 기준</span>
-              <strong>{formatDate(dashboard?.data_date)}</strong>
-              {dashboard?.fallback_used && <small>최근 확정 거래일 사용 중</small>}
-            </div>
-          </section>
-
-          {dashboard?.data_freshness.status === "FALLBACK" && (
-            <div className="freshness-notice">
-              <div>
-                <strong>최근 확정 거래일 사용 중</strong>
-                <span>{dashboard.data_freshness.message}</span>
-              </div>
-              <small>{dashboard.data_freshness.retry_note}</small>
-            </div>
-          )}
-
-          <div className="trade-lock">
-            <strong>실제 매매 기능 없음</strong>
-            <span>조회 · 분석 · 종목 과거 성과 · 시뮬레이션 전용이며 증권사 주문을 전송하지 않습니다.</span>
-          </div>
-
-          {loading && <div className="loading-card">KRX 시장 데이터를 불러오는 중입니다...</div>}
-          {dashboardError && (
-            <div className="error-card">
-              <strong>시장 데이터 조회 실패</strong>
-              <span>{dashboardError}</span>
-              <button onClick={() => void loadDashboard()}>다시 조회</button>
-            </div>
-          )}
-
-          {dashboard && (
-            <>
-              <section className="summary-grid">
-                <IndexCard name="KOSPI" point={dashboard.indices.kospi} history={dashboard.history.kospi} />
-                <IndexCard name="KOSDAQ" point={dashboard.indices.kosdaq} history={dashboard.history.kosdaq} />
-                <article className="summary-card">
-                  <span className="summary-label">시장 상태</span>
-                  <strong className="summary-value text-value">{dashboard.market.regime}</strong>
-                  <span className="summary-sub">상승 종목 비율 {(dashboard.market.breadth.up_ratio * 100).toFixed(1)}%</span>
-                </article>
-                <article className="summary-card">
-                  <span className="summary-label">변동성 프록시</span>
-                  <strong className="summary-value text-value">{dashboard.market.volatility_proxy}</strong>
-                  <span className="summary-sub">평균 절대 등락 {dashboard.market.breadth.avg_abs_change_rate.toFixed(2)}%</span>
-                </article>
-              </section>
-
-              <section className="dashboard-grid">
-                <article className="panel market-panel">
-                  <div className="panel-head">
-                    <div>
-                      <span className="panel-kicker">MARKET BREADTH</span>
-                      <h2>시장 폭</h2>
-                    </div>
-                    <span className="source-chip">KRX 공식 데이터</span>
-                  </div>
-                  <div className="breadth-stats">
-                    <div><strong className="positive">{number(breadth?.up)}</strong><span>상승</span></div>
-                    <div><strong>{number(breadth?.flat)}</strong><span>보합</span></div>
-                    <div><strong className="negative">{number(breadth?.down)}</strong><span>하락</span></div>
-                  </div>
-                  <div className="breadth-bar" aria-label="상승 하락 종목 비중">
-                    <div className="breadth-up" style={{ width: `${upPercent}%` }} />
-                    <div className="breadth-flat" style={{ width: `${Math.max(0, 100 - upPercent - downPercent)}%` }} />
-                    <div className="breadth-down" style={{ width: `${downPercent}%` }} />
-                  </div>
-                  <p className="muted">총 {number(breadth?.total)}개 종목의 당일 등락률을 집계한 값입니다.</p>
-                </article>
-
-                <article className="panel group-panel">
-                  <div className="panel-head">
-                    <div>
-                      <span className="panel-kicker">RELATIVE STRENGTH</span>
-                      <h2>강한 업종 / 지수</h2>
-                    </div>
-                  </div>
-                  <div className="group-list">
-                    {dashboard.strong_groups.map((group, index) => (
-                      <div className="group-row" key={`${group.name}-${index}`}>
-                        <span className="rank">{index + 1}</span>
-                        <div><strong>{group.name ?? "-"}</strong><small>{group.kind} · {group.class ?? "KRX"}</small></div>
-                        <b className="positive">{signedRate(group.change_rate)}</b>
-                      </div>
-                    ))}
-                    {dashboard.strong_groups.length === 0 && <p className="muted">양(+)의 업종/지수 그룹이 없습니다.</p>}
-                  </div>
-                </article>
-
-                <article className="panel turnover-panel">
-                  <div className="panel-head">
-                    <div>
-                      <span className="panel-kicker">TURNOVER</span>
-                      <h2>거래대금 상위 종목</h2>
-                    </div>
-                    <span className="source-chip">KOSPI + KOSDAQ</span>
-                  </div>
-                  <div className="table-wrap">
-                    <table>
-                      <thead><tr><th>순위</th><th>종목</th><th>시장</th><th>현재 기준가</th><th>등락률</th><th>거래대금</th></tr></thead>
-                      <tbody>
-                        {dashboard.top_turnover.map((row, index) => (
-                          <tr key={`${row.code}-${index}`}>
-                            <td>{index + 1}</td>
-                            <td><strong>{row.name ?? row.code}</strong><small>{row.code}</small></td>
-                            <td>{row.market ?? "-"}</td>
-                            <td>{number(row.close, "원")}</td>
-                            <td className={rateClass(row.change_rate)}>{signedRate(row.change_rate)}</td>
-                            <td>{compactMoney(row.trade_value)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </article>
-
-                <article className="panel summary-panel">
-                  <div className="panel-head">
-                    <div>
-                      <span className="panel-kicker">RULE-BASED SUMMARY</span>
-                      <h2>현재 상황 요약</h2>
-                    </div>
-                    <span className="source-chip purple">AI 아님</span>
-                  </div>
-                  <div className="summary-copy">
-                    <strong>{dashboard.market.regime}</strong>
-                    <p>{dashboard.summary}</p>
-                  </div>
-                  <div className="engine-status">
-                    <div><span>시장 데이터</span><b>동작 중</b></div>
-                    <div><span>전략 엔진</span><b className="pending">다음 단계</b></div>
-                    <div><span>위험 관리</span><b className="pending">대기</b></div>
-                  </div>
-                </article>
-              </section>
-            </>
-          )}
-
-          <section className="panel quick-panel">
-            <div className="panel-head">
-              <div>
-                <span className="panel-kicker">QUICK ANALYSIS</span>
-                <h2>종목 종목 분석</h2>
-              </div>
-              <span className="source-chip">KRX + OpenDART</span>
-            </div>
-            <div className="stock-search-line">
-              <div className="stock-search-box">
-                <input
-                  value={stockQuery}
-                  onChange={(event) => changeStockQuery(event.target.value)}
-                  onFocus={() => stockSearchResults.length > 0 && setStockSearchOpen(true)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && stockSearchResults[0]) {
-                      event.preventDefault();
-                      chooseStock(stockSearchResults[0]);
-                    }
-                  }}
-                  placeholder="종목명 또는 6자리 코드 검색 · 예: 삼성전자, 005930, 0011A0"
-                  autoComplete="off"
-                />
-                {stockSearchBusy && <span className="search-spinner">검색 중</span>}
-                {stockSearchOpen && stockQuery.trim().length >= 2 && (
-                  <div className="stock-suggestions">
-                    {stockSearchResults.map((item) => (
-                      <button type="button" key={`${item.market}-${item.code}`} onMouseDown={() => chooseStock(item)}>
-                        <span className={`market-badge ${item.market.toLowerCase()}`}>{item.market}</span>
-                        <div>
-                          <strong>{item.name}</strong>
-                          <small>{item.code} · {item.stock_type || item.security_group || "주식"}</small>
-                        </div>
-                        <em>선택</em>
-                      </button>
-                    ))}
-                    {!stockSearchBusy && stockSearchResults.length === 0 && (
-                      <div className="search-empty">검색 결과가 없습니다.</div>
-                    )}
-                  </div>
-                )}
-              </div>
-              <span className="selected-market">{selectedStockName ? `${stockMarket} · ${stockCode}` : "종목을 검색해 선택하세요"}</span>
-              <button className="analyze-button" disabled={stockBusy || stockCode.length !== 6 || !selectedStockName} onClick={() => void quickAnalyze()}>
-                {stockBusy ? "조회 중..." : "통합 조회"}
-              </button>
-            </div>
-            <span className="quick-message">{stockMessage}</span>
-            {stock && (
-              <div className="stock-preview">
-                <div className="stock-main">
-                  <span>{stock.market} · KRX EOD</span>
-                  <h3>{stock.company.corp_name ?? stock.stock.name} <small>{stock.code}</small></h3>
-                  <div className="confirmed-price-line">
-                    <div>
-                      <small>최근 확정 종가</small>
-                      <strong>{number(stock.stock.close, "원")}</strong>
-                    </div>
-                    <b className={rateClass(stock.stock.change_rate)}>{signedRate(stock.stock.change_rate)}</b>
-                  </div>
-                  <em className="confirmed-date">분석 기준 거래일 · {formatDate(stock.data_date)}</em>
-                </div>
-                <div className="stock-facts">
-                  <div><span>대표자</span><strong>{stock.company.ceo ?? "-"}</strong></div>
-                  <div><span>거래량</span><strong>{number(stock.stock.volume)}</strong></div>
-                  <div><span>시가총액</span><strong>{compactMoney(stock.stock.market_cap)}</strong></div>
-                  <div><span>최근 공시</span><strong>{stock.disclosures.count}건</strong></div>
-                </div>
-              </div>
-            )}
-
+            <StockAnalysisWorkspace
+              stockQuery={stockQuery}
+              stockSearchBusy={stockSearchBusy}
+              stockSearchOpen={stockSearchOpen}
+              stockSearchResults={stockSearchResults}
+              selectedStockName={selectedStockName}
+              stockCode={stockCode}
+              stockMarket={stockMarket}
+              stockBusy={stockBusy}
+              stockMessage={stockMessage}
+              stock={stock}
+              strategyAnalysis={strategyAnalysis}
+              strategyBusy={strategyBusy}
+              analysisOutdated={analysisOutdated}
+              onQueryChange={changeStockQuery}
+              onSearchFocus={() => stockSearchResults.length > 0 && setStockSearchOpen(true)}
+              onChooseStock={chooseStock}
+              onLoadContext={() => void quickAnalyze()}
+              onRunAnalysis={() => void runStrategyAnalysis()}
+            >
             {stock && (
               <div className="strategy-test">
                 <div className="strategy-test-head">
                   <div>
-                    <span className="panel-kicker">STRATEGY ENGINE · INPUT UX v0.15.2</span>
-                    <h3>확정 EOD vs 현재 참고가격 시나리오</h3>
+                    <h3>분석 세부 설정</h3>
                     <p>{strategyMessage}</p>
                   </div>
                   <button type="button" disabled={strategyBusy} onClick={() => void runStrategyAnalysis()}>
-                    {strategyBusy ? "분석 중..." : analysisOutdated ? "변경값 다시 분석" : "전략 분석 실행"}
+                    {strategyBusy ? "분석 중..." : analysisOutdated ? "변경값 다시 분석" : "분석 실행"}
                   </button>
                 </div>
 
@@ -761,9 +568,18 @@ const strategyName: Record<string, string> = {
                   </div>
                 )}
 
+                <details className="stock-reference-scenario">
+                  <summary>
+                    <span>
+                      <strong>현재 참고가격·보유상태 시나리오</strong>
+                      <small>선택 · 공식 확정 일봉 분석을 덮어쓰지 않습니다.</small>
+                    </span>
+                    <b>펼치기</b>
+                  </summary>
+                  <div className="stock-reference-scenario-body">
                 <div className="reference-price-editor">
                   <div className="reference-copy">
-                    <strong>현재 참고정보 빠른 입력 <span>선택</span></strong>
+                    <strong>현재 참고가격 입력 <span>선택</span></strong>
                     <p>
                       현재가격은 직접 입력하거나 호가·누적 퍼센트 버튼으로 빠르게 맞출 수 있습니다.
                       장중 고가·저가·누적 거래량은 선택 항목이며, 입력하지 않아도 KRX 확정 일봉 기준으로 분석할 수 있습니다.
@@ -888,7 +704,7 @@ const strategyName: Record<string, string> = {
                   <div className="position-context-head">
                     <div>
                       <strong>내 현재 상태 가정</strong>
-                      <p>실제 증권계좌와 연결하지 않고, 전략 설명을 내 상황에 맞게 바꾸기 위한 분석용 입력입니다.</p>
+                      <p>실제 증권계좌와 연결하지 않고, 참고 시나리오를 내 상황에 맞게 비교하기 위한 입력입니다.</p>
                     </div>
                     <span>실제 주문 없음</span>
                   </div>
@@ -938,6 +754,8 @@ const strategyName: Record<string, string> = {
                     </div>
                   )}
                 </div>
+                  </div>
+                </details>
 
                 {strategyAnalysis && (
                   <>
@@ -1931,9 +1749,8 @@ const strategyName: Record<string, string> = {
                 )}
               </div>
             )}
-          </section>
 
-            </>
+            </StockAnalysisWorkspace>
           ) : appPage === "backtest" ? (
             <BacktestPanel
               code={stockCode}

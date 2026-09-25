@@ -1,10 +1,17 @@
+import asyncio
+import json
+import os
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 
 from app.core.config import get_settings
+from app.holdings.chart import HoldingsChartError, HoldingsChartService
+from app.holdings.chart_prepare import HoldingsChartPrepareError, HoldingsChartPrepareService
 from app.market.providers import KrxProvider, OpenDartProvider
 from app.market.providers.base import ProviderError, ProviderNotConfigured
 from app.market.service import MarketDataService
@@ -25,6 +32,23 @@ def _providers() -> tuple[KrxProvider, OpenDartProvider]:
 def _service() -> MarketDataService:
     krx, dart = _providers()
     return MarketDataService(krx, dart)
+
+
+def _market_store_path() -> Path | None:
+    raw = os.getenv("STOCKSCOPE_MARKET_STORE_DB")
+    return Path(raw) if raw else None
+
+
+def _stock_chart_service() -> HoldingsChartService:
+    return HoldingsChartService(_market_store_path())
+
+
+def _stock_chart_prepare_service() -> HoldingsChartPrepareService:
+    settings = get_settings()
+    return HoldingsChartPrepareService(
+        krx_api_key=settings.krx_api_key,
+        market_store_db=_market_store_path(),
+    )
 
 
 def _raise_provider_error(exc: Exception) -> None:
@@ -119,6 +143,70 @@ async def market_history(
         return await _service().market_history(as_of, points)
     except (ProviderError, ValueError) as exc:
         _raise_provider_error(exc)
+
+
+@router.get("/stocks/{code}/chart")
+def stock_chart(
+    code: str,
+    market: Literal["KOSPI", "KOSDAQ"] = "KOSPI",
+    chart_range: Literal["1m", "3m", "6m", "1y"] = Query(default="3m", alias="range"),
+) -> dict[str, Any]:
+    """Read confirmed-EOD OHLCV for any stock already present in Market Store."""
+    try:
+        return _stock_chart_service().load(
+            market=market,
+            ticker=code,
+            chart_range=chart_range,
+        ).to_dict()
+    except HoldingsChartError as exc:
+        status = 404 if exc.code in {"HOLD_CHART_STOCK_NOT_FOUND", "HOLD_CHART_CONFIRMED_DATE_NOT_FOUND"} else 400
+        raise HTTPException(status_code=status, detail={"code": exc.code, "message": exc.message}) from exc
+
+
+@router.post("/stocks/{code}/chart/prepare-stream")
+async def prepare_stock_chart_stream(
+    code: str,
+    market: Literal["KOSPI", "KOSDAQ"] = "KOSPI",
+    chart_range: Literal["1m", "3m", "6m", "1y"] = Query(alias="range"),
+) -> StreamingResponse:
+    """Prepare only the selected stock/range; never runs Scanner ranking."""
+    async def event_stream():
+        def line(payload: dict[str, Any]) -> str:
+            return json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
+
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+
+        def on_progress(payload: dict[str, Any]) -> None:
+            queue.put_nowait({"type": "progress", **payload})
+
+        task = asyncio.create_task(
+            _stock_chart_prepare_service().prepare(
+                market=market,
+                ticker=code,
+                chart_range=chart_range,
+                progress=on_progress,
+            )
+        )
+        try:
+            while not task.done() or not queue.empty():
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=0.15)
+                except asyncio.TimeoutError:
+                    continue
+                yield line(item)
+
+            result = await task
+            yield line({"type": "complete", "stage": "complete", "message": result.message, "result": result.to_dict()})
+        except HoldingsChartPrepareError as exc:
+            payload: dict[str, Any] = {"type": "error", "stage": "error", "code": exc.code, "message": exc.message}
+            payload.update(exc.details)
+            yield line(payload)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/dart/company/{corp_code}")
