@@ -116,3 +116,43 @@ def test_ux_redesign1c_three_year_evidence_prepare_recalculates_scanner_result()
     assert 'penalties.append("3년 과거 표본 부족")' in priority
     assert 'penalties.append("3년 유사 사례 없음")' in priority
     assert 'penalties.append("3년 검증 데이터 부족")' in priority
+
+
+def test_ux_redesign1d_scanner_can_add_candidates_to_holdings_without_reanalysis() -> None:
+    scanner = Path("frontend/src/components/ScannerPanel.tsx").read_text(encoding="utf-8")
+    app = Path("frontend/src/App.tsx").read_text(encoding="utf-8")
+    styles = Path("frontend/src/styles.css").read_text(encoding="utf-8")
+
+    assert "listHoldingStocks" in scanner
+    assert "addWatchStock" in scanner
+    assert "registerHeldStock" in scanner
+    assert "managedStockMap" in scanner
+    assert 'className="scanner-compare-manage"' in scanner
+    assert '"☆ 관심"' in scanner
+    assert '"★ 관심"' in scanner
+    assert '"+ 보유"' in scanner
+    assert '"보유 중"' in scanner
+    assert "event.stopPropagation()" in scanner
+
+    assert "openHoldingRegistration" in scanner
+    assert 'type="datetime-local"' in scanner
+    assert "candidate.current_price" in scanner
+    assert "quantity <= 0" in scanner
+    assert "averagePrice <= 0" in scanner
+
+    assert "onOpenHoldings" in scanner
+    assert "내 종목에서 보기" in scanner
+    assert "onOpenHoldings={(target) => openHoldingsForStock(target)}" in app
+    assert "stockscope-holdings-target" in app
+
+    assert ".scanner-holding-dialog-backdrop" in styles
+    assert ".scanner-selected-action-buttons" in styles
+
+    # Holdings actions must not rerun or rewrite Scanner analysis.
+    add_watch_block = scanner[scanner.index("async function addCandidateToWatch"):scanner.index("function openHoldingRegistration")]
+    assert "runScanner(" not in add_watch_block
+    held_block = scanner[scanner.index("async function submitHoldingRegistration"):scanner.index("function openCandidateInHoldings")]
+    assert "runScanner(" not in held_block
+
+    # The dedicated three-year evidence recovery remains connected.
+    assert "onPrepareEvidence={() => void prepareCandidateEvidence(selectedCandidate)}" in scanner
