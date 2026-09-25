@@ -391,9 +391,21 @@ export default function StockAnalysisWorkspace({
             </section>
           )}
 
-          <div className="stock-analysis-body">
-            {children}
-          </div>
+          {children && (
+            <details className="stock-analysis-expert-details">
+              <summary>
+                <span>
+                  <small>ADVANCED</small>
+                  <strong>전문 분석·세부 설정</strong>
+                  <em>참고가격·보유 시나리오와 기존 전문 분석은 필요할 때만 펼쳐봅니다.</em>
+                </span>
+                <b>펼치기</b>
+              </summary>
+              <div className="stock-analysis-body">
+                {children}
+              </div>
+            </details>
+          )}
         </>
       )}
     </section>
