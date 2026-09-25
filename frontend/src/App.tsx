@@ -9,6 +9,7 @@ import ScannerPanel from "./components/ScannerPanel";
 import TrackingWorkspace from "./components/TrackingWorkspace";
 import HoldingsWorkspace from "./components/HoldingsWorkspace";
 import StockAnalysisWorkspace from "./components/StockAnalysisWorkspace";
+import MarketOverviewWorkspace from "./components/MarketOverviewWorkspace";
 import {
   fetchHealth,
   fetchMarketDashboard,
@@ -25,7 +26,7 @@ import {
   type StockSearchItem,
 } from "./services/api";
 
-type AppPage = "analysis" | "backtest" | "scanner" | "simulation" | "holdings";
+type AppPage = "dashboard" | "analysis" | "backtest" | "scanner" | "simulation" | "holdings";
 type ThemeMode = "light" | "dark";
 
 function initialTheme(): ThemeMode {
@@ -46,7 +47,8 @@ function pageFromPathname(pathname: string): AppPage {
   if (lower.startsWith("/simulation")) return "simulation";
   if (lower.startsWith("/scanner")) return "scanner";
   if (lower.startsWith("/backtest")) return "backtest";
-  return "analysis";
+  if (lower.startsWith("/analysis")) return "analysis";
+  return "dashboard";
 }
 
 function number(value: number | null | undefined, suffix = "") {
@@ -215,7 +217,7 @@ export default function App() {
     fetchProviderStatus().then(setProviders).catch(() => setProviders(null));
 
     if (window.location.pathname === "/") {
-      window.history.replaceState({}, "", "/analysis");
+      window.history.replaceState({}, "", "/dashboard");
     }
 
     const handlePopState = () => {
@@ -227,7 +229,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (appPage === "analysis" && dashboard == null && !loading) {
+    if (appPage === "dashboard" && dashboard == null && !loading) {
       void loadDashboard();
     }
   }, [appPage]);
@@ -495,7 +497,7 @@ const strategyName: Record<string, string> = {
   }
 
   function navigateApp(page: AppPage) {
-    const pathname = page === "analysis" ? "/analysis" : `/${page}`;
+    const pathname = `/${page}`;
     if (window.location.pathname !== pathname) window.history.pushState({}, "", pathname);
     setAppPage(page);
     window.scrollTo({ top: 0, behavior: "auto" });
@@ -523,6 +525,7 @@ const strategyName: Record<string, string> = {
           <strong className="brand">StockScope</strong>
         </div>
         <nav className="topnav" aria-label="주요 기능">
+          <button className={`nav-item ${appPage === "dashboard" ? "active" : ""}`} onClick={() => navigateApp("dashboard")}>시장 현황</button>
           <button className={`nav-item ${appPage === "analysis" ? "active" : ""}`} onClick={() => navigateApp("analysis")}>종목 분석</button>
           <button className={`nav-item ${appPage === "backtest" ? "active" : ""}`} onClick={() => navigateApp("backtest")}>종목 과거 성과</button>
           <button className={`nav-item ${appPage === "scanner" ? "active" : ""}`} onClick={() => navigateApp("scanner")}>종목 후보 찾기</button>
@@ -550,7 +553,15 @@ const strategyName: Record<string, string> = {
 
       <div className="layout backtest-layout">
         <main className="content backtest-page-content">
-          {appPage === "analysis" ? (
+          {appPage === "dashboard" ? (
+            <MarketOverviewWorkspace
+              dashboard={dashboard}
+              loading={loading}
+              error={dashboardError}
+              onReload={() => void loadDashboard()}
+              onNavigate={navigateApp}
+            />
+          ) : appPage === "analysis" ? (
             <StockAnalysisWorkspace
               stockQuery={stockQuery}
               stockSearchBusy={stockSearchBusy}
