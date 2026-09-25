@@ -127,11 +127,12 @@ def test_ux_redesign1d_scanner_can_add_candidates_to_holdings_without_reanalysis
     assert "addWatchStock" in scanner
     assert "registerHeldStock" in scanner
     assert "managedStockMap" in scanner
+    assert "holdingsReady" in scanner
     assert 'className="scanner-compare-manage"' in scanner
     assert '"☆ 관심"' in scanner
-    assert '"★ 관심"' in scanner
+    assert "★ 관심" in scanner
     assert '"+ 보유"' in scanner
-    assert '"보유 중"' in scanner
+    assert "보유 중" in scanner
     assert "event.stopPropagation()" in scanner
 
     assert "openHoldingRegistration" in scanner
