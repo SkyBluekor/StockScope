@@ -30,8 +30,10 @@ function taskLabel(task: DataTaskSnapshot) {
 export function dataStatusSummary(apiStatus: string, providers: ProviderStatus | null) {
   if (apiStatus !== "정상") return { label: "데이터 상태 확인 필요", tone: "warn" };
   if (!providers) return { label: "데이터 상태 확인 중", tone: "idle" };
-  const requiredReady = providers.krx.configured && providers.dart.configured;
-  if (!requiredReady) return { label: "데이터 설정 확인 필요", tone: "warn" };
+  if (!providers.krx.configured) return { label: "시장 데이터 설정 필요", tone: "warn" };
+  if (!providers.dart.configured || !providers.naver_news.configured) {
+    return { label: "일부 데이터 설정 확인", tone: "warn" };
+  }
   return { label: "데이터 상태 정상", tone: "ok" };
 }
 
