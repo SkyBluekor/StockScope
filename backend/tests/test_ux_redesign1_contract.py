@@ -353,3 +353,54 @@ def test_ux_redesign1h_news1_is_compact_and_does_not_impersonate_news2_analysis(
 
     # The existing protected calculation disclaimer remains visible.
     assert "Strategy·Scanner·Ranking·Risk 계산을 변경하지 않습니다." in panel
+
+
+def test_ux_redesign1i_data_status_does_not_claim_unverified_connectivity() -> None:
+    panel = Path("frontend/src/components/DataStatusPanel.tsx").read_text(encoding="utf-8")
+    app = Path("frontend/src/App.tsx").read_text(encoding="utf-8")
+    news = Path("frontend/src/components/StockNewsPanel.tsx").read_text(encoding="utf-8")
+    styles = Path("frontend/src/styles.css").read_text(encoding="utf-8")
+
+    # Configuration is not presented as proven provider availability or freshness.
+    assert '"사용 가능"' not in panel
+    assert "데이터 상태 정상" not in panel
+    assert "기본 데이터 설정됨" in panel
+    assert "설정됨 · 연결 확인 전" in panel
+    assert "실제 제공처 연결 성공과 데이터 최신성은 이 상태만으로 판단하지 않습니다." in panel
+    assert "last_success" not in panel
+    assert "lastSuccess" not in panel
+
+    # Core and optional capabilities explain user impact separately.
+    assert "시장 데이터 설정 필요" in panel
+    assert "일부 기능 설정 필요" in panel
+    assert "기업·공시 정보만 제한됩니다. 가격과 전략 분석은 계속 사용할 수 있습니다." in panel
+    assert "최근 뉴스만 제한됩니다. 종목 분석과 전략 계산에는 영향을 주지 않습니다." in panel
+    assert "사용 안 함" in panel
+    assert "직접 등록한 관심·보유 종목은 계속 사용할 수 있습니다." in panel
+
+    # Provider names are kept as technical details instead of the primary status surface.
+    assert '<details className="data-status-providers">' in panel
+    assert "<summary>기술 정보 보기</summary>" in panel
+    for provider in ("KRX", "DART", "NAVER NEWS", "KIS"):
+        assert provider in panel
+
+    # Refresh wording accurately describes a configuration/status re-read, not a live probe.
+    assert "설정 상태 다시 확인" in panel
+    assert "연결 테스트" not in panel
+
+    # The global header consumes the exact same summary.
+    assert "const dataSummary = dataStatusSummary(apiStatus, providers)" in app
+    assert "dataSummary.label" in app
+
+    # Existing resumable data-task status stays visible and accessible.
+    assert 'aria-live="polite"' in panel
+    assert "진행 보기" in panel
+    assert "결과 보기" in panel
+    assert "진행 정보 확인 중" in panel
+
+    # A news-provider failure stays local to NEWS.1.
+    assert "최근 뉴스만 불러오지 못했습니다." in news
+    assert "종목 분석과 전략 계산 결과에는 영향을 주지 않습니다." in news
+
+    assert ".data-status-capability-row small" in styles
+    assert ".data-status-providers > summary" in styles
