@@ -70,7 +70,15 @@ async def provider_status() -> dict[str, Any]:
             "provider_kind": settings.naver_news_provider_kind,
             "role": "종목 최근 뉴스",
         },
-        "kis": {"enabled": False, "role": "optional provider - 현재 비활성"},
+        "kis": {
+            "enabled": bool(
+                (settings.kis_app_key or "").strip()
+                and (settings.kis_app_secret or "").strip()
+                and (settings.kis_account_no or "").strip()
+                and (settings.kis_account_product_code or "").strip()
+            ),
+            "role": "실계좌 잔고 · 현재가 · 실시간 시세",
+        },
         "real_trading": False,
     }
 
