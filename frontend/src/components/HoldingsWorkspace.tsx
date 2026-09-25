@@ -308,28 +308,6 @@ function performanceStatusText(status: string) {
   }
 }
 
-function stockHoldingSummary(stock: HoldingStock) {
-  const positions = stock.positions ?? [];
-  if (positions.length === 0) {
-    return {
-      primary: stock.watch_enabled ? "관심 종목" : "보유 기록 없음",
-      secondary: null as string | null,
-    };
-  }
-  if (positions.length === 1) {
-    const position = positions[0];
-    return {
-      primary: `${quantity(position.quantity)}주`,
-      secondary: `평균 ${money(position.average_price)}`,
-    };
-  }
-  const total = positions.reduce((sum, position) => sum + quantityNumber(position.quantity), 0);
-  return {
-    primary: `총 ${quantity(String(total))}주`,
-    secondary: `${positions.length}개 보유 기록`,
-  };
-}
-
 function stockDecisionText(stock: HoldingStock) {
   if (!stock.current_analysis) return "분석 필요";
   return stock.decision_context?.entry.label
@@ -1348,7 +1326,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                   {stockFilter === "watch" ? (
                     <tr>
                       <th>종목</th>
-                      <th>최근 가격</th>
+                      <th>분석 기준가</th>
                       <th>현재 판단</th>
                       <th>마지막 분석</th>
                       <th>상태</th>
@@ -1358,7 +1336,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                       <th>종목</th>
                       <th>보유 수량</th>
                       <th>평균단가</th>
-                      <th>최근 가격</th>
+                      <th>분석 기준가</th>
                       <th>관리 상태</th>
                     </tr>
                   ) : (
@@ -1373,7 +1351,6 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                 </thead>
                 <tbody>
                   {visibleStocks.map((stock) => {
-                    const holdingSummary = stockHoldingSummary(stock);
                     const positionSummary = stockPositionListSummary(stock);
                     return (
                       <tr
@@ -1829,7 +1806,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                     </div>
                   </div>
                   <div className="holdings-watch-metrics">
-                    <div><span>최근 분석 가격</span><strong>{money(selectedAnalysis?.reference_price)}</strong></div>
+                    <div><span>분석 기준가</span><strong>{money(selectedAnalysis?.reference_price)}</strong></div>
                     <div><span>전략</span><strong>{selectedAnalysis ? (strategyLabel[selectedAnalysis.strategy_key] ?? selectedAnalysis.strategy_key) : "분석 필요"}</strong></div>
                     <div><span>마지막 분석</span><strong>{compactDate(selectedAnalysis?.market_date)}</strong></div>
                   </div>
