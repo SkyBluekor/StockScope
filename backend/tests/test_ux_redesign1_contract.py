@@ -180,7 +180,7 @@ def test_ux_redesign1e_news_context_connects_scanner_and_holdings_without_changi
     assert "market={candidate.market}" in scanner
     assert 'variant="compact"' in holdings
     assert "code={detail.ticker}" in holdings
-    assert "market={detail.market}" in holdings
+    assert 'market={detail.market === "KOSDAQ" ? "KOSDAQ" : "KOSPI"}' in holdings
 
     # Existing stock analysis keeps the default full-mode panel.
     assert "<StockNewsPanel" in analysis
