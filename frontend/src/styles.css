@@ -17748,3 +17748,97 @@ html[data-theme="dark"] .backtest-workspace.multi-strategy-workspace > .backtest
     flex-direction: column;
   }
 }
+
+
+/* UX-REDESIGN.1B — recovery action polish */
+.scanner-evidence-unavailable > span,
+.scanner-evidence-unavailable > small {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-subtle);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.scanner-evidence-recovery {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-soft);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.scanner-evidence-recovery p {
+  margin: 0;
+  color: var(--text-subtle);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.scanner-evidence-recovery button {
+  flex: 0 0 auto;
+  min-height: 38px;
+  border: 1px solid var(--primary);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--primary);
+  padding: 7px 11px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.scanner-evidence-recovery button:disabled {
+  opacity: .55;
+  cursor: default;
+}
+
+/* Data status remains reachable even when the navigation collapses. */
+@media (max-width: 1200px) {
+  .header-status {
+    display: flex;
+  }
+
+  .data-task-chip > span {
+    display: none;
+  }
+
+  .data-task-chip {
+    padding-inline: 8px;
+  }
+
+  .data-status-trigger b {
+    max-width: 118px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 760px) {
+  .scanner-evidence-recovery {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .header-status {
+    gap: 5px;
+  }
+
+  .data-task-chip {
+    display: none;
+  }
+
+  .data-status-trigger {
+    min-width: 38px;
+    justify-content: center;
+    padding-inline: 9px;
+  }
+
+  .data-status-trigger b {
+    display: none;
+  }
+}
