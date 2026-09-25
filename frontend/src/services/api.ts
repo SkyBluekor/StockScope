@@ -207,6 +207,52 @@ export type StrategyEvaluation = {
   }>;
 };
 
+export type StockChartRange = "1m" | "3m" | "6m" | "1y";
+
+export type StockChartBar = {
+  date: string;
+  open: string;
+  high: string;
+  low: string;
+  close: string;
+  volume: string;
+};
+
+export type StockChartResponse = {
+  market: string;
+  ticker: string;
+  range: StockChartRange;
+  source: string;
+  from_date: string;
+  to_date: string;
+  requested_bars: number;
+  count: number;
+  bars: StockChartBar[];
+};
+
+export type StockChartPrepareProgress = {
+  type: "progress" | "complete" | "error" | string;
+  stage: string;
+  message: string;
+  current: number;
+  required: number;
+  status?: string;
+};
+
+export type StockChartPrepareResult = {
+  status: string;
+  market: string;
+  ticker: string;
+  range: StockChartRange;
+  latest_confirmed_date: string;
+  existing_rows: number;
+  prepared_rows: number;
+  final_rows: number;
+  required_rows: number;
+  network_requests: number;
+  message: string;
+};
+
 export type RiskPlan = {
   strategy: string;
   status: "READY" | "CAUTION" | "HOLD" | "UNAVAILABLE";
@@ -888,6 +934,72 @@ export type StrategyAnalysis = {
   };
   limitations: string[];
 };
+
+export async function fetchStockChart(
+  code: string,
+  market: "KOSPI" | "KOSDAQ",
+  range: StockChartRange,
+): Promise<StockChartResponse> {
+  const query = new URLSearchParams({ market, range });
+  const response = await fetch(`/api/stocks/${encodeURIComponent(code)}/chart?${query.toString()}`);
+  if (!response.ok) {
+    let message = `차트 요청 실패 (${response.status})`;
+    try {
+      const body = await response.json() as { detail?: string | { message?: string } };
+      message = typeof body.detail === "string" ? body.detail : body.detail?.message ?? message;
+    } catch {
+      // keep fallback message
+    }
+    throw new Error(message);
+  }
+  return response.json() as Promise<StockChartResponse>;
+}
+
+export async function prepareStockChartWithProgress(
+  code: string,
+  market: "KOSPI" | "KOSDAQ",
+  range: StockChartRange,
+  onProgress: (progress: StockChartPrepareProgress) => void,
+): Promise<StockChartPrepareResult> {
+  const query = new URLSearchParams({ market, range });
+  const response = await fetch(
+    `/api/stocks/${encodeURIComponent(code)}/chart/prepare-stream?${query.toString()}`,
+    { method: "POST", headers: { Accept: "application/x-ndjson" } },
+  );
+  if (!response.ok || !response.body) throw new Error(`차트 데이터 준비 요청 실패 (${response.status})`);
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let completed: StockChartPrepareResult | null = null;
+
+  const consume = (line: string) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    const event = JSON.parse(trimmed) as StockChartPrepareProgress & {
+      code?: string;
+      result?: StockChartPrepareResult;
+    };
+    if (event.type === "progress") {
+      onProgress(event);
+      return;
+    }
+    if (event.type === "error") throw new Error(event.message || "차트 데이터를 준비하지 못했습니다.");
+    if (event.type === "complete" && event.result) completed = event.result;
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) consume(line);
+    if (done) break;
+  }
+  if (buffer.trim()) consume(buffer);
+  if (!completed) throw new Error("차트 데이터 준비가 완료되기 전에 연결이 종료되었습니다.");
+  return completed;
+}
 
 export async function fetchStrategyAnalysis(
   code: string,
