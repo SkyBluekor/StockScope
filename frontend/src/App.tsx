@@ -721,7 +721,7 @@ const strategyName: Record<string, string> = {
                   <summary>
                     <span>
                       <strong>가상 분석 조건</strong>
-                      <small>선택 · 실제 보유 수량·평균단가와 원장을 변경하지 않습니다.</small>
+                      <small>선택 · 공식 확정 일봉 분석을 덮어쓰지 않습니다. 실제 보유 수량·평균단가와 원장도 변경하지 않습니다.</small>
                     </span>
                     <b>펼치기</b>
                   </summary>
