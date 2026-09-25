@@ -154,6 +154,7 @@ export default function App() {
   const [lastAnalysisInputSignature, setLastAnalysisInputSignature] = useState("");
   const [analysisSection, setAnalysisSection] = useState<AnalysisSection>("summary");
   const [selectedStrategyIndex, setSelectedStrategyIndex] = useState(0);
+  const [scannerOrigin, setScannerOrigin] = useState(false);
 
   const analysisInputSignature = [
     stockCode,
@@ -256,8 +257,14 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [stockQuery, stockCode, selectedStockName]);
 
-  function chooseStock(item: StockSearchItem) {
-    setStockCode(item.code.trim().toUpperCase());
+  function chooseStock(
+    item: StockSearchItem,
+    options: { loadContext?: boolean; origin?: "scanner" | null } = {},
+  ) {
+    const normalizedCode = item.code.trim().toUpperCase();
+    const shouldLoadContext = options.loadContext ?? appPage === "analysis";
+    setScannerOrigin(options.origin === "scanner");
+    setStockCode(normalizedCode);
     setStockMarket(item.market);
     setSelectedStockName(item.name);
     setStockQuery(`${item.name} (${item.code})`);
@@ -276,10 +283,10 @@ export default function App() {
     setHoldingQuantityInput("");
     setStockMessage(`${item.market} · ${item.name} 선택됨`);
 
-    if (appPage === "analysis") {
+    if (shouldLoadContext) {
       setStockBusy(true);
       setStockMessage(`${item.name} 기본 정보 불러오는 중...`);
-      void fetchStockContext(item.code.trim().toUpperCase(), item.market)
+      void fetchStockContext(normalizedCode, item.market)
         .then((result) => {
           setStock(result);
           setStrategyAnalysis(null);
@@ -302,6 +309,7 @@ export default function App() {
     setStockQuery(value);
     const selectedLabel = selectedStockName ? `${selectedStockName} (${stockCode})` : "";
     if (value !== selectedLabel) {
+      setScannerOrigin(false);
       setSelectedStockName("");
       setStockCode("");
       setStock(null);
@@ -493,6 +501,20 @@ const strategyName: Record<string, string> = {
     window.scrollTo({ top: 0, behavior: "auto" });
   }
 
+  function openHoldingsForStock(target: { market: "KOSPI" | "KOSDAQ"; ticker: string; name: string }) {
+    try {
+      window.sessionStorage.setItem("stockscope-holdings-target", JSON.stringify(target));
+    } catch {
+      // Direct navigation still works when sessionStorage is unavailable.
+    }
+    navigateApp("holdings");
+  }
+
+  function openAnalysisFromHoldings(item: StockSearchItem) {
+    chooseStock(item, { loadContext: true, origin: null });
+    navigateApp("analysis");
+  }
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -548,6 +570,9 @@ const strategyName: Record<string, string> = {
               onChooseStock={chooseStock}
               onLoadContext={() => void quickAnalyze()}
               onRunAnalysis={() => void runStrategyAnalysis()}
+              scannerOrigin={scannerOrigin}
+              onBackToScanner={() => navigateApp("scanner")}
+              onOpenHoldings={openHoldingsForStock}
             >
             {stock && (
               <div className="strategy-test">
@@ -1761,14 +1786,14 @@ const strategyName: Record<string, string> = {
           ) : appPage === "scanner" ? (
             <ScannerPanel
               onAnalyzeStock={(item) => {
-                chooseStock(item);
-                navigateApp("backtest");
+                chooseStock(item, { loadContext: true, origin: "scanner" });
+                navigateApp("analysis");
               }}
             />
           ) : appPage === "simulation" ? (
             <TrackingWorkspace />
           ) : (
-            <HoldingsWorkspace />
+            <HoldingsWorkspace onAnalyzeStock={openAnalysisFromHoldings} />
           )}
 
           <footer>
