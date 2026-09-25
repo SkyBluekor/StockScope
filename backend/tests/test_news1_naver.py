@@ -280,8 +280,9 @@ def test_news1_frontend_and_env_contract() -> None:
     assert "slice(0, expanded ? 10 : 5)" in panel
     assert "Strategy·Scanner·Ranking·Risk 계산을 변경하지 않습니다." in panel
     assert "StockNewsPanel" in workspace
-    assert workspace.index("stock-analysis-company-summary") < workspace.index("StockNewsPanel")
-    assert workspace.index("StockNewsPanel") < workspace.index("stock-analysis-style-section")
+    rendered_news = workspace.index("<StockNewsPanel", workspace.index("stock-analysis-company-summary"))
+    assert workspace.index("stock-analysis-company-summary") < rendered_news
+    assert rendered_news < workspace.index("stock-analysis-style-section")
     assert "VITE_NAVER_" not in api + panel + workspace
     assert "NAVER_NEWS_CLIENT_ID=" in env_example
     assert "NAVER_NEWS_CLIENT_SECRET=" in env_example
