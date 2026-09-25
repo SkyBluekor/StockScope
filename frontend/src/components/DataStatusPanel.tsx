@@ -13,7 +13,8 @@ type Props = {
   onOpenTask: () => void;
 };
 
-function availability(ok: boolean, optional = false) {
+function availability(ok: boolean | null, optional = false) {
+  if (ok == null) return { label: "확인되지 않음", tone: "idle" };
   if (ok) return { label: "사용 가능", tone: "ok" };
   if (optional) return { label: "사용 안 함", tone: "idle" };
   return { label: "설정 확인 필요", tone: "warn" };
@@ -50,10 +51,10 @@ export default function DataStatusPanel({
   if (!open) return null;
 
   const summary = dataStatusSummary(apiStatus, providers);
-  const krx = availability(Boolean(providers?.krx.configured));
-  const dart = availability(Boolean(providers?.dart.configured));
-  const news = availability(Boolean(providers?.naver_news.configured));
-  const kis = availability(Boolean(providers?.kis.enabled), true);
+  const krx = availability(providers ? providers.krx.configured : null);
+  const dart = availability(providers ? providers.dart.configured : null);
+  const news = availability(providers ? providers.naver_news.configured : null);
+  const kis = availability(providers ? providers.kis.enabled : null, true);
   const running = dataTaskIsRunning(task);
 
   return (
@@ -129,28 +130,28 @@ export default function DataStatusPanel({
             <div>
               <dt>KRX</dt>
               <dd>
-                <strong className={`tone-${krx.tone}`}>{providers?.krx.configured ? "설정됨" : "설정 필요"}</strong>
+                <strong className={`tone-${krx.tone}`}>{providers == null ? "확인되지 않음" : providers.krx.configured ? "설정됨" : "설정 필요"}</strong>
                 <span>{providers?.krx.role ?? "시장/일별 시세/지수"}</span>
               </dd>
             </div>
             <div>
               <dt>DART</dt>
               <dd>
-                <strong className={`tone-${dart.tone}`}>{providers?.dart.configured ? "설정됨" : "설정 필요"}</strong>
+                <strong className={`tone-${dart.tone}`}>{providers == null ? "확인되지 않음" : providers.dart.configured ? "설정됨" : "설정 필요"}</strong>
                 <span>{providers?.dart.role ?? "기업/공시/재무"}</span>
               </dd>
             </div>
             <div>
               <dt>NAVER NEWS</dt>
               <dd>
-                <strong className={`tone-${news.tone}`}>{providers?.naver_news.configured ? "설정됨" : "설정 필요"}</strong>
+                <strong className={`tone-${news.tone}`}>{providers == null ? "확인되지 않음" : providers.naver_news.configured ? "설정됨" : "설정 필요"}</strong>
                 <span>{providers?.naver_news.role ?? "종목 최근 뉴스"}</span>
               </dd>
             </div>
             <div>
               <dt>KIS</dt>
               <dd>
-                <strong className={`tone-${kis.tone}`}>{providers?.kis.enabled ? "활성" : "사용 안 함"}</strong>
+                <strong className={`tone-${kis.tone}`}>{providers == null ? "확인되지 않음" : providers.kis.enabled ? "활성" : "사용 안 함"}</strong>
                 <span>{providers?.kis.role ?? "선택적 증권사 연동"}</span>
               </dd>
             </div>
