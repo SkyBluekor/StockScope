@@ -1817,7 +1817,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
 
               <StockNewsPanel
                 code={detail.ticker}
-                market={detail.market}
+                market={detail.market === "KOSDAQ" ? "KOSDAQ" : "KOSPI"}
                 companyLabel={detail.name}
                 variant="compact"
               />
