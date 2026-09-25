@@ -31,6 +31,9 @@ def test_ux_redesign1_scanner_data_task_is_resumable_and_visible() -> None:
     assert "시장 데이터 준비 진행 상황" in scanner
     assert "stockscope-active-data-task" in task
     assert "sessionStorage" in task
+    assert "3년 검증 데이터 준비" in scanner
+    assert 'evidence.status === "DATA_UNAVAILABLE"' in scanner
+    assert "onPrepareEvidence={() => void runScanner(true, true)}" in scanner
 
 
 def test_ux_redesign1_global_task_poll_uses_existing_job_api() -> None:
