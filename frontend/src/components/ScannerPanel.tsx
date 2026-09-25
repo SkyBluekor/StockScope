@@ -260,12 +260,16 @@ function CandidateDetail({
   candidate,
   rank,
   onAnalyze,
+  onPrepareEvidence,
+  evidenceBusy,
   evidenceOpen,
   onEvidenceToggle,
 }: {
   candidate: ScannerCandidate;
   rank: number;
   onAnalyze: () => void;
+  onPrepareEvidence: () => void;
+  evidenceBusy: boolean;
   evidenceOpen: boolean;
   onEvidenceToggle: (open: boolean) => void;
 }) {
@@ -443,7 +447,16 @@ function CandidateDetail({
               <div className="scanner-evidence-unavailable">
                 <strong>{evidence.label}</strong>
                 <p>{evidence.summary}</p>
-                {evidence.warnings.length > 0 && <small>{evidence.warnings.join(" · ")}</small>}
+                <span>검증 기간 · {formatDate(evidence.period.start)} ~ {formatDate(evidence.period.end)}</span>
+                {evidence.warnings.length > 0 && <small>부족 이유 · {evidence.warnings.join(" · ")}</small>}
+                {evidence.status === "DATA_UNAVAILABLE" && (
+                  <div className="scanner-evidence-recovery">
+                    <p>저장된 데이터가 부족한 경우 시장 데이터를 준비한 뒤 같은 후보를 다시 검증할 수 있습니다.</p>
+                    <button type="button" onClick={onPrepareEvidence} disabled={evidenceBusy}>
+                      {evidenceBusy ? "데이터 준비 중..." : "3년 검증 데이터 준비"}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </details>
@@ -1223,6 +1236,8 @@ export default function ScannerPanel({ onAnalyzeStock }: Props) {
                   candidate={selectedCandidate}
                   rank={selectedRank}
                   onAnalyze={() => analyzeCandidate(selectedCandidate)}
+                  onPrepareEvidence={() => void runScanner(true, true)}
+                  evidenceBusy={busy}
                   evidenceOpen={expandedEvidenceIds.includes(evidenceKey(selectedCandidate))}
                   onEvidenceToggle={(open) => toggleEvidence(selectedCandidate, open)}
                 />
