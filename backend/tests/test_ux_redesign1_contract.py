@@ -86,3 +86,33 @@ def test_ux_redesign1_provider_status_uses_real_kis_configuration() -> None:
     assert "settings.kis_account_product_code" in source
     assert '"enabled": False' not in source
     assert "실계좌 잔고 · 현재가 · 실시간 시세" in source
+
+
+def test_ux_redesign1c_three_year_evidence_prepare_recalculates_scanner_result() -> None:
+    scanner_ui = Path("frontend/src/components/ScannerPanel.tsx").read_text(encoding="utf-8")
+    api_client = Path("frontend/src/services/api.ts").read_text(encoding="utf-8")
+    api_backend = Path("backend/app/api/backtest.py").read_text(encoding="utf-8")
+    scanner_backend = Path("backend/app/backtest/scanner.py").read_text(encoding="utf-8")
+    priority = Path("backend/app/backtest/candidate_priority.py").read_text(encoding="utf-8")
+
+    assert "createScannerEvidenceJob" in api_client
+    assert "/api/backtest/scanner/evidence/jobs" in api_client
+    assert '@router.post("/scanner/evidence/jobs", status_code=202)' in api_backend
+    assert "prepare_three_year_evidence_data" in scanner_backend
+    assert "validation_start_for_years(end)" in scanner_backend
+    assert "THREE_YEAR_WARMUP_DAYS" in scanner_backend
+    assert "force_refresh=True" in api_backend
+    assert "allow_large_sync=False" in api_backend
+
+    assert "onPrepareEvidence={() => void prepareCandidateEvidence(selectedCandidate)}" in scanner_ui
+    assert "onPrepareEvidence={() => void runScanner(true, true)}" not in scanner_ui
+    assert "preferredCandidateKeyRef" in scanner_ui
+    assert "<small>승률</small>" in scanner_ui
+    assert "<small>기대수익</small>" in scanner_ui
+
+    assert 'strengths.append("3년 과거 근거 양호")' in priority
+    assert 'strengths.append("3년 과거 근거 보통")' in priority
+    assert 'penalties.append("3년 과거 근거 약함")' in priority
+    assert 'penalties.append("3년 과거 표본 부족")' in priority
+    assert 'penalties.append("3년 유사 사례 없음")' in priority
+    assert 'penalties.append("3년 검증 데이터 부족")' in priority
