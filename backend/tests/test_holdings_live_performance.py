@@ -371,3 +371,72 @@ def test_live_performance_source_has_no_kis_network_or_token_dependency() -> Non
         "websocket",
     ):
         assert forbidden not in source
+
+def test_live_performance_api_is_registered_and_returns_local_snapshot(monkeypatch) -> None:
+    from fastapi.testclient import TestClient
+
+    import app.api.holdings as holdings_api
+    from app.main import app
+
+    class Result:
+        def to_dict(self):
+            return {
+                "stock_id": "stock-1",
+                "market": "KOSPI",
+                "ticker": "005930",
+                "available": True,
+                "state": "FRESH",
+                "reason_code": None,
+                "quote": {
+                    "provider": "KIS",
+                    "mode": "SNAPSHOT",
+                    "venue": "INTEGRATED",
+                    "price": "84200",
+                    "provider_timestamp": None,
+                    "received_at": NOW,
+                    "age_ms": 100,
+                    "freshness_seconds": 15.0,
+                },
+                "performance": {
+                    "stock_id": "stock-1",
+                    "market": "KOSPI",
+                    "ticker": "005930",
+                    "valuation": {
+                        "available": True,
+                        "market_date": None,
+                        "price": "84200",
+                        "source": "KIS_REST_SNAPSHOT",
+                        "message": None,
+                    },
+                    "positions": [],
+                    "aggregate": {
+                        "available": False,
+                        "mode": "NO_ACTUAL_POSITION",
+                        "position_count": 0,
+                        "potential_overlap": False,
+                    },
+                    "calculation_status": "UNAVAILABLE",
+                    "warnings": [],
+                },
+            }
+
+    class Service:
+        def calculate(self, stock_id: str):
+            assert stock_id == "stock-1"
+            return Result()
+
+    monkeypatch.setattr(
+        holdings_api,
+        "_live_performance_service",
+        lambda: Service(),
+    )
+
+    response = TestClient(app).get("/api/holdings/stocks/stock-1/performance/live")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["available"] is True
+    assert body["state"] == "FRESH"
+    assert body["quote"]["price"] == "84200"
+    assert body["performance"]["valuation"]["source"] == "KIS_REST_SNAPSHOT"
+
