@@ -2307,8 +2307,8 @@ button.holdings-direct-value:hover { border-bottom-color: var(--accent-primary);
   gap: 18px;
   margin: 0 0 18px;
   padding: 10px 0;
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
+  border-top: 1px solid var(--border-default);
+  border-bottom: 1px solid var(--border-default);
 }
 
 .holdings-analysis-state {
@@ -2319,7 +2319,7 @@ button.holdings-direct-value:hover { border-bottom-color: var(--accent-primary);
 
 .holdings-analysis-state + .holdings-analysis-state {
   padding-left: 18px;
-  border-left: 1px solid var(--border);
+  border-left: 1px solid var(--border-default);
 }
 
 .holdings-analysis-state span,
@@ -2327,7 +2327,7 @@ button.holdings-direct-value:hover { border-bottom-color: var(--accent-primary);
   color: var(--text-muted);
 }
 
-.holdings-analysis-state strong.tone-ok { color: var(--positive); }
+.holdings-analysis-state strong.tone-ok { color: var(--success); }
 .holdings-analysis-state strong.tone-warn { color: var(--warning); }
 .holdings-analysis-state strong.tone-muted,
 .holdings-analysis-state strong.tone-idle { color: var(--text-muted); }
@@ -2342,6 +2342,6 @@ button.holdings-direct-value:hover { border-bottom-color: var(--accent-primary);
     padding-left: 0;
     padding-top: 10px;
     border-left: 0;
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--border-default);
   }
 }
