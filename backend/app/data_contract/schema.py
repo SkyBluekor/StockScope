@@ -82,6 +82,9 @@ class RealtimeResourceContract(BaseModel):
     received_at: str | None = None
     age_ms: int | None = None
     freshness_seconds: float | None = None
+    session_phase: str | None = None
+    trading_day: bool | None = None
+    market_active: bool | None = None
     reason_code: str | None = None
 
 
