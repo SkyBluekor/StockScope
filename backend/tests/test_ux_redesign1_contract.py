@@ -626,3 +626,96 @@ def test_ux_redesign1j3_backtest_auto_restores_completed_result_without_new_job(
     # Exit research/job lifecycle remains a separate explicit workflow.
     assert "createExitPolicyValidationJob" in backtest
     assert "cancelBacktestJob<ExitPolicyValidationReport>" in backtest
+
+
+def test_ux_redesign1j4_prioritizes_held_management_and_separates_opening_balance_from_buy() -> None:
+    holdings = Path("frontend/src/components/HoldingsWorkspace.tsx").read_text(encoding="utf-8")
+    tracking = Path("frontend/src/components/StockTrackingActions.tsx").read_text(encoding="utf-8")
+    styles = Path("frontend/src/holdings.css").read_text(encoding="utf-8")
+
+    # Watch -> held registration uses the OPENING_BALANCE registration path, never BUY.
+    helper_start = holdings.index("function openExistingHoldingRegistration")
+    helper_end = holdings.index("async function addSelectedAsWatch", helper_start)
+    helper = holdings[helper_start:helper_end]
+    assert 'setAddMode("held")' in helper
+    assert "openManual" not in helper
+    assert "recordManualBuy" not in helper
+
+    register_start = holdings.index("async function addSelectedAsHeld")
+    register_end = holdings.index("async function changeWatch", register_start)
+    register_block = holdings[register_start:register_end]
+    assert "registerHeldStock" in register_block
+    assert "recordManualBuy" not in register_block
+    assert "effective_at: toIso(addEffectiveAt)" in register_block
+    assert "기존 보유 상태로 등록했습니다." in register_block
+
+    assert "onClick={openExistingHoldingRegistration}" in holdings
+    assert "기존 보유 등록" in holdings
+    assert "새로운 매수 기록(BUY)을 생성하는 기능이 아닙니다." in holdings
+
+    # Existing holdings keep explicit BUY / SELL / CORRECTION ledger mutations.
+    assert "+ 추가 매수 기록" in holdings
+    assert ">추가 매수 기록</button>" in holdings
+    save_start = holdings.index("async function saveManual")
+    save_end = holdings.index("const selectedAnalysis", save_start)
+    save_block = holdings[save_start:save_end]
+    assert 'manualMode === "buy"' in save_block
+    assert "recordManualBuy" in save_block
+    assert "recordManualSell" in save_block
+    assert "recordManualCorrection" in save_block
+
+    # Broker positions remain read-only from manual ledger controls.
+    open_manual_start = holdings.index("async function openManual")
+    open_manual_end = holdings.index("function adjustManualQuantity", open_manual_start)
+    open_manual = holdings[open_manual_start:open_manual_end]
+    assert 'position?.account_kind === "BROKER"' in open_manual
+    assert "잔고 동기화로만 변경할 수 있습니다." in open_manual
+    assert "증권사 연동 보유는 직접 수정하지 않습니다." in holdings
+
+    # Held detail reads position/P&L/management before optional entry analysis.
+    quickbar = holdings.index('className="holdings-position-quickbar"')
+    pnl = holdings.index('className="holdings-pnl-block"', quickbar)
+    management = holdings.index('className="holdings-management-block"', pnl)
+    held_actions = holdings.index('className="holdings-position-actions-primary"', management)
+    chart = holdings.index("<HoldingsPriceChart", held_actions)
+    news = holdings.index("<StockNewsPanel", chart)
+    disclosure = holdings.index("holdings-analysis-disclosure", news)
+    assert quickbar < pnl < management < held_actions < chart < news < disclosure
+    assert 'className="holdings-left-management"' not in holdings
+
+    # Entry analysis is default-collapsed only for held perspective and is display-only.
+    assert "추가 매수·신규 진입 관점 보기" in holdings
+    assert "기존 보유분 관리와 분리된 보조 분석" in holdings
+    assert 'open={detailPerspective === "watch" ? true : undefined}' in holdings
+    assert "신규 진입 기준 가격" in holdings
+    assert "현재 시점에 새 물량을 추가한다고 가정한 분석입니다." in holdings
+    disclosure_start = holdings.index("<details", news)
+    disclosure_end = holdings.index("</details>", disclosure_start)
+    disclosure_block = holdings[disclosure_start:disclosure_end]
+    assert "refreshSelected" not in disclosure_block
+    assert "applyLatestManagementPlan" not in disclosure_block
+    assert "registerHeldStock" not in disclosure_block
+    assert "recordManualBuy" not in disclosure_block
+
+    # Active management remains explicit and non-applicable proposals explain themselves.
+    assert "현재 보유분에 실제 적용 중인 손절·목표 가격" in holdings
+    assert "현재 적용 중인 보유분 관리 기준이 없습니다." in holdings
+    assert "기술 정보 · 내부 기준" in holdings
+    assert "현재 적용할 수 없는 제안입니다." in holdings
+    assert "item.proposal.can_apply &&" in holdings
+    assert "이 계획 적용" in holdings
+    assert "applyLatestManagementPlan" in holdings
+
+    # Stock analysis uses the same opening-balance language and guardrail.
+    assert "기존 보유 등록" in tracking
+    assert "보유종목으로 등록" not in tracking
+    assert "보유종목 등록" not in tracking
+    assert "registerHeldStock" in tracking
+    assert "신규 매수 주문이나 BUY 이벤트를 생성하는 기능이 아닙니다." in tracking
+
+    # Editorial disclosure and management layout are explicit.
+    assert "UX-REDESIGN.1J-4" in styles
+    assert ".holdings-analysis-disclosure.perspective-held" in styles
+    assert ".holdings-position-management .holdings-positions" in styles
+    assert "order: 6" in styles
+    assert ".holdings-opening-balance-note" in styles
