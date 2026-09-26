@@ -274,10 +274,14 @@ def test_ux_redesign1g_past_performance_reuses_exact_session_result_without_rean
     assert "window.sessionStorage.setItem(resultStorageKey(entry.signature)" in backtest
     assert "readBacktestCache(currentSignature)" in backtest
 
-    # Revisiting the screen only discovers the cache; it does not start a POST job.
-    cache_effect = backtest[backtest.index("setExactCachedResult(readBacktestCache(currentSignature))"):backtest.index("function showCachedResult")]
-    assert "createMultiStrategyBacktestJob" not in cache_effect
-    assert "기존 결과 보기" in backtest
+    # Revisiting the screen may restore a completed cache result, but never starts a POST job.
+    restore_effect_start = backtest.index("const restored = readLatestBacktestCache(market, code)")
+    restore_effect = backtest[restore_effect_start:backtest.index("const selectedHolding", restore_effect_start)]
+    assert "applyConfigToForm(restored.config)" in restore_effect
+    assert 'setResultRestoreMode("auto-cache")' in restore_effect
+    assert 'setView("result")' in restore_effect
+    assert "createMultiStrategyBacktestJob" not in restore_effect
+    assert "기존 결과 보기" not in backtest
     assert "재방문만으로 자동 계산하지 않습니다." in backtest
 
     # Starting a new calculation no longer clears the completed result.
@@ -549,3 +553,76 @@ def test_ux_redesign1j2_preserves_ui_context_and_rejects_stale_async_results() -
     assert "useState<TrackingMode>(readTrackingMode)" in tracking
     assert "writeTrackingMode(next)" in tracking
     assert "create" not in tracking.lower()
+
+
+def test_ux_redesign1j3_backtest_auto_restores_completed_result_without_new_job() -> None:
+    backtest = Path("frontend/src/components/BacktestPanel.tsx").read_text(encoding="utf-8")
+
+    # Exact config remains the seven user-visible calculation inputs.
+    signature_start = backtest.index("function backtestResultSignature")
+    signature_end = backtest.index("function resultStorageKey", signature_start)
+    signature = backtest[signature_start:signature_end]
+    for field in (
+        "config.market",
+        "config.code",
+        "config.startDate",
+        "config.endDate",
+        "config.initialCapital",
+        "config.maxHoldingDays",
+        "config.roundTripCostPct",
+    ):
+        assert field in signature
+
+    # Entry/stock change restores the most recent completed config/result locally.
+    restore_start = backtest.index("const restored = readLatestBacktestCache(market, code)")
+    restore_end = backtest.index("const selectedHolding", restore_start)
+    restore = backtest[restore_start:restore_end]
+    assert "restored.config.market === market" in restore
+    assert "restored.config.code.trim().toUpperCase() === code.trim().toUpperCase()" in restore
+    assert "applyConfigToForm(restored.config)" in restore
+    assert "setResult(restored.result)" in restore
+    assert "setResultConfig(restored.config)" in restore
+    assert "setResultCompletedAt(restored.completedAt)" in restore
+    assert 'setResultRestoreMode("auto-cache")' in restore
+    assert 'setView("result")' in restore
+    assert "createMultiStrategyBacktestJob" not in restore
+
+    # Viewing a completed result no longer needs an extra exact-cache button.
+    assert ">기존 결과 보기<" not in backtest
+    assert "같은 조건으로 다시 계산" in backtest
+    assert "이전 결과 보기" in backtest
+    assert "새 계산 없이 이번 세션의 저장된 완료 결과를 복원했습니다." in backtest
+    assert "최신 결과" not in backtest
+    assert "최신 데이터 여부를 뜻하지 않습니다." in backtest
+
+    # User edits only rediscover cache metadata; they are not forced back to result view.
+    cache_refresh_start = backtest.index("setExactCachedResult(readBacktestCache(currentSignature))")
+    cache_refresh_end = backtest.index("function showCachedResult", cache_refresh_start)
+    cache_refresh = backtest[cache_refresh_start:cache_refresh_end]
+    assert 'setView("result")' not in cache_refresh
+    assert "createMultiStrategyBacktestJob" not in cache_refresh
+
+    # New runs remain explicit and replace the cache-source marker only after completion.
+    run_start = backtest.index("async function runBacktest")
+    run_end = backtest.index("async function runExitPolicyValidation", run_start)
+    run = backtest[run_start:run_end]
+    assert "createMultiStrategyBacktestJob" in run
+    assert "const previousExact = readBacktestCache(runSignature)" in run
+    assert 'setResultRestoreMode("manual-cache")' in run
+    assert "setResultRestoreMode(null)" in run
+    assert "setResult(null)" not in run
+    assert "기존 완료 결과는 아래에 유지됩니다." in backtest
+    assert "기존 완료 결과는 그대로 유지됩니다." in backtest
+
+    # Backtest stock search now follows J2 stale-response protection.
+    assert "stockSearchRequestIdRef" in backtest
+    assert "new AbortController()" in backtest
+    assert "searchStocks(query, { signal: controller.signal })" in backtest
+    assert "requestId !== stockSearchRequestIdRef.current" in backtest
+    assert "controller?.abort()" in backtest
+    assert "stockSearchRequestIdRef.current += 1" in backtest
+    assert "isAbortError(error)" in backtest
+
+    # Exit research/job lifecycle remains a separate explicit workflow.
+    assert "createExitPolicyValidationJob" in backtest
+    assert "cancelBacktestJob<ExitPolicyValidationReport>" in backtest
