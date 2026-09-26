@@ -132,7 +132,7 @@ def test_ux_redesign1d_scanner_can_add_candidates_to_holdings_without_reanalysis
     assert 'className="scanner-compare-manage"' in scanner
     assert '"☆ 관심"' in scanner
     assert "★ 관심" in scanner
-    assert '"+ 보유"' in scanner
+    assert '"+ 기존 보유"' in scanner
     assert "보유 중" in scanner
     assert "event.stopPropagation()" in scanner
 
@@ -143,7 +143,7 @@ def test_ux_redesign1d_scanner_can_add_candidates_to_holdings_without_reanalysis
     assert "averagePrice <= 0" in scanner
 
     assert "onOpenHoldings" in scanner
-    assert "내 종목에서 보기" in scanner
+    assert "내 종목 관리" in scanner
     assert "onOpenHoldings={(target) => openHoldingsForStock(target)}" in app
     assert "stockscope-holdings-target" in app
 
@@ -723,3 +723,106 @@ def test_ux_redesign1j4_prioritizes_held_management_and_separates_opening_balanc
     assert ".holdings-position-management .holdings-positions" in styles
     assert "order: 6" in styles
     assert ".holdings-opening-balance-note" in styles
+
+
+def test_ux_redesign1j5_scanner_defaults_to_reading_and_separates_explicit_work() -> None:
+    scanner = Path("frontend/src/components/ScannerPanel.tsx").read_text(encoding="utf-8")
+    styles = Path("frontend/src/styles.css").read_text(encoding="utf-8")
+
+    # Candidate rows remain the fast explicit mutation surface; nested buttons do not select rows.
+    row_start = scanner.index("function CandidateCompareRow")
+    row_end = scanner.index("function CandidateDetail", row_start)
+    row = scanner[row_start:row_end]
+    assert 'onClick={onSelect}' in row
+    assert "event.stopPropagation()" in row
+    assert '"☆ 관심"' in row
+    assert '"+ 기존 보유"' in row
+    assert "onAddWatch()" in row
+    assert "onRegisterHeld()" in row
+
+    # Selected detail is now a reading surface, not a duplicate mutation toolbar.
+    detail_start = scanner.index("function CandidateDetail")
+    detail_end = scanner.index("export default function ScannerPanel", detail_start)
+    detail = scanner[detail_start:detail_end]
+    assert "☆ 관심 추가" not in detail
+    assert "+ 보유 등록" not in detail
+    assert "onAddWatch" not in detail
+    assert "onRegisterHeld" not in detail
+    assert "전문 분석에서 더 보기 →" in detail
+    assert "내 종목 관리 →" in detail
+    assert "scanner-selected-management-summary" in detail
+
+    # Data recovery that is actually actionable is visible without opening the evidence details.
+    assert "scanner-evidence-recovery-inline" in detail
+    assert "3년 근거 데이터 준비" in detail
+    inline_recovery_start = detail.index("scanner-evidence-recovery-inline")
+    details_start = detail.index('className="scanner-evidence-details"', inline_recovery_start)
+    assert inline_recovery_start < details_start
+    assert "evidence && !evidence.verified && canPrepareEvidence" in detail
+    assert "evidencePreparationAvailable(candidate)" in scanner
+
+    # Normal freshness/retry flows reuse cache; only the advanced option force-refreshes.
+    assert "최신 확정 시세 확인" in scanner
+    assert 'onClick={() => void runScanner(false)}' in scanner
+    assert "분석 실행 옵션" in scanner
+    assert ">강제 재계산</button>" in scanner
+    force_option_start = scanner.index('className="scanner-run-options"')
+    force_option_end = scanner.index("</details>", force_option_start)
+    force_option = scanner[force_option_start:force_option_end]
+    assert "runScanner(true)" in force_option
+    assert "현재 저장된 Scanner 계산 결과를 사용하지 않고" in force_option
+    assert ">다시 분석</button>" not in scanner
+    assert "runScanner(Boolean(result))" not in scanner
+
+    # Large missing-data preparation remains explicit and may bypass the partial cached result.
+    assert "누락 시장 데이터 준비" in scanner
+    assert "runScanner(true, true)" in scanner
+    assert "allow_large_sync: allowLargeSync" in scanner
+
+    # A normal Scanner rerun preserves the selected candidate without reusing Evidence intent.
+    run_start = scanner.index("async function runScanner")
+    run_end = scanner.index("async function prepareCandidateEvidence", run_start)
+    run = scanner[run_start:run_end]
+    assert "scannerSelectionToPreserveRef.current = result && selectedCandidateKey ? selectedCandidateKey : null" in run
+    assert "preferredCandidateKeyRef.current = null" in run
+    poll_start = scanner.index("async function poll")
+    poll_end = scanner.index("async function runScanner", poll_start)
+    poll = scanner[poll_start:poll_end]
+    assert "preferredCandidateKeyRef.current ?? scannerSelectionToPreserveRef.current" in poll
+    assert "latestCandidates.find" in poll
+    assert "latest.result.candidates[0]" in poll
+
+    # Evidence preparation still keeps its dedicated candidate and is not automatic.
+    evidence_start = scanner.index("async function prepareCandidateEvidence")
+    evidence_end = scanner.index("function upsertManagedStock", evidence_start)
+    evidence = scanner[evidence_start:evidence_end]
+    assert "createScannerEvidenceJob" in evidence
+    assert "preferredCandidateKeyRef.current = selectionKey" in evidence
+    assert "scannerSelectionToPreserveRef.current = null" in evidence
+
+    # Holdings status is a local read dependency; retrying it must not rerun Scanner.
+    load_holdings_start = scanner.index("async function loadManagedStocks")
+    load_holdings_end = scanner.index("useEffect(() =>", load_holdings_start)
+    load_holdings = scanner[load_holdings_start:load_holdings_end]
+    assert "listHoldingStocks()" in load_holdings
+    assert "runScanner(" not in load_holdings
+    assert "createScannerJob" not in load_holdings
+    assert "createScannerEvidenceJob" not in load_holdings
+    assert "등록 상태 다시 확인" in scanner
+
+    # Scanner's held registration is explicitly OPENING_BALANCE-style registration, not a BUY event.
+    held_start = scanner.index("async function submitHoldingRegistration")
+    held_end = scanner.index("function openCandidateInHoldings", held_start)
+    held = scanner[held_start:held_end]
+    assert "registerHeldStock" in held
+    assert "recordManualBuy" not in held
+    assert "기존 보유 상태로 등록했습니다." in held
+    assert "보유 상태 기준 시각" in scanner
+    assert "새로운 매수 기록(BUY)을 생성하는 기능이 아닙니다." in scanner
+
+    # The visual hierarchy is restrained: text navigation + hidden advanced execution.
+    assert "UX-REDESIGN.1J-5" in styles
+    assert ".scanner-run-options" in styles
+    assert ".scanner-text-action" in styles
+    assert ".scanner-selected-management-summary" in styles
+    assert ".scanner-evidence-recovery-inline" in styles
