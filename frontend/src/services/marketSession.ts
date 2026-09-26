@@ -27,17 +27,17 @@ export function quoteSessionMessage(
 
   switch (session?.phase) {
     case "PRE_MARKET":
-      return `프리마켓 · KIS 통합 시세${received ? ` · ${received} 수신` : ""}`;
+      return "프리마켓 · KIS 통합 시세" + (received ? ` · ${received} 수신` : "");
     case "REGULAR":
-      return `장중 · KIS 통합 시세${received ? ` · ${received} 수신` : ""}`;
+      return "장중 · KIS 통합 시세" + (received ? ` · ${received} 수신` : "");
     case "AFTER_MARKET":
-      return `애프터마켓 · KIS 통합 시세${received ? ` · ${received} 수신` : ""}`;
+      return "애프터마켓 · KIS 통합 시세" + (received ? ` · ${received} 수신` : "");
     case "INTERMISSION":
-      return `시장 전환 구간${suffix}`;
+      return "시장 전환 구간" + suffix;
     case "CLOSED":
-      return `장 마감${suffix}`;
+      return "장 마감" + suffix;
     case "UNKNOWN":
-      return `시장 운영 상태 확인 불가 · KIS 시세${received ? ` · ${received} 수신` : ""}`;
+      return "시장 운영 상태 확인 불가 · KIS 시세" + (received ? ` · ${received} 수신` : "");
     default:
       return "시장 운영 상태 확인 중";
   }
