@@ -1,10 +1,23 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
 from app.core.config import get_settings
+from app.quotes.websocket_manager import quote_websocket_manager
 
 settings = get_settings()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    await quote_websocket_manager.start()
+    try:
+        yield
+    finally:
+        await quote_websocket_manager.stop()
+
 
 app = FastAPI(
     title=settings.app_name,
@@ -13,6 +26,7 @@ app = FastAPI(
         "Real brokerage order execution is intentionally not supported."
     ),
     version=settings.app_version,
+    lifespan=lifespan,
 )
 
 app.add_middleware(
