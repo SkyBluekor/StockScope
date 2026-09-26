@@ -11,6 +11,35 @@ export type ProviderStatus = {
 export type DataContractResourceStatus = "ABSENT" | "UNVERIFIED" | "VALID" | "INVALID";
 export type StockDataContractRange = "1m" | "3m" | "6m" | "1y";
 
+export type DomesticMarketSessionPhase =
+  | "PRE_MARKET"
+  | "REGULAR"
+  | "INTERMISSION"
+  | "AFTER_MARKET"
+  | "CLOSED"
+  | "UNKNOWN";
+
+export type DomesticMarketSessionSource =
+  | "WEEKEND_RULE"
+  | "KIS_HOLIDAY"
+  | "SESSION_CLOCK"
+  | "UNKNOWN";
+
+export type DomesticMarketSessionResponse = {
+  market: "DOMESTIC_EQUITY";
+  venue: "INTEGRATED";
+  timezone: "Asia/Seoul";
+  checked_at: string;
+  local_date: string;
+  trading_day: boolean | null;
+  phase: DomesticMarketSessionPhase;
+  quote_polling_allowed: boolean;
+  market_active: boolean | null;
+  next_transition_at: string | null;
+  source: DomesticMarketSessionSource;
+  reason_code: string | null;
+};
+
 export type StockQuoteVenue = "INTEGRATED" | "KRX" | "NXT";
 export type StockQuoteDeliverySource = "UPSTREAM" | "CACHE" | "SINGLE_FLIGHT";
 
@@ -120,6 +149,9 @@ export type StockDataContract = {
       received_at: string | null;
       age_ms: number | null;
       freshness_seconds: number | null;
+      session_phase: DomesticMarketSessionPhase | null;
+      trading_day: boolean | null;
+      market_active: boolean | null;
       reason_code: string | null;
     };
     ledger: {
@@ -420,6 +452,22 @@ export async function fetchStockContext(
       `/api/stocks/${encodeURIComponent(code.trim().toUpperCase())}/context?${query.toString()}`,
       { signal: options.signal },
     ),
+  );
+}
+
+export async function fetchDomesticMarketSession(
+  options: {
+    venue?: "INTEGRATED";
+    signal?: AbortSignal;
+  } = {},
+): Promise<DomesticMarketSessionResponse> {
+  const query = new URLSearchParams({
+    venue: options.venue ?? "INTEGRATED",
+  });
+  return asJson<DomesticMarketSessionResponse>(
+    await fetch(`/api/market-session/domestic?${query.toString()}`, {
+      signal: options.signal,
+    }),
   );
 }
 
