@@ -15,7 +15,7 @@ from .account import (
     KisHolding,
     inquire_domestic_balance,
 )
-from .token_cache import get_access_token
+from .token_cache import credential_fingerprint, get_access_token, invalidate_access_token
 
 __all__ = [
     "KisAccessToken",
@@ -32,4 +32,6 @@ __all__ = [
     "KisHolding",
     "inquire_domestic_balance",
     "get_access_token",
+    "credential_fingerprint",
+    "invalidate_access_token",
 ]

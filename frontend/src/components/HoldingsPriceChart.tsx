@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import {
   getHoldingChart,
   prepareHoldingChartWithProgress,
@@ -10,6 +10,8 @@ import {
   type HoldingChartRange,
   type HoldingChartResponse,
 } from "../services/holdingsApi";
+import useStockDataContract from "../hooks/useStockDataContract";
+import { contractAction } from "../services/dataContract";
 
 const RANGE_OPTIONS: Array<{ key: HoldingChartRange; label: string }> = [
   { key: "1m", label: "1개월" },
@@ -55,6 +57,8 @@ function mergeBars(history: HoldingChartBar[], liveBar: HoldingChartBar | null) 
 
 type Props = {
   stockId: string;
+  market: "KOSPI" | "KOSDAQ";
+  ticker: string;
   analysis: HoldingAnalysis | null;
   liveBar?: HoldingChartBar | null;
   refreshKey?: number;
@@ -63,6 +67,8 @@ type Props = {
 
 export default function HoldingsPriceChart({
   stockId,
+  market,
+  ticker,
   analysis,
   liveBar = null,
   refreshKey = 0,
@@ -77,6 +83,18 @@ export default function HoldingsPriceChart({
   const [prepareProgress, setPrepareProgress] = useState<HoldingChartPrepareProgress | null>(null);
   const [prepareResult, setPrepareResult] = useState<HoldingChartPrepareResult | null>(null);
   const [prepareError, setPrepareError] = useState<string | null>(null);
+
+  const prepareGenerationRef = useRef(0);
+  const activeIdentityRef = useRef(`${stockId}:${market}:${ticker.trim().toUpperCase()}:${range}`);
+  activeIdentityRef.current = `${stockId}:${market}:${ticker.trim().toUpperCase()}:${range}`;
+  const {
+    contract: dataContract,
+    error: contractError,
+    refresh: refreshDataContract,
+  } = useStockDataContract({ code: ticker, market, range });
+  const chartContract = dataContract?.resources.chart ?? null;
+  const prepareChartAction = contractAction(dataContract, "PREPARE_CHART");
+
 
   useEffect(() => {
     let cancelled = false;
@@ -95,6 +113,7 @@ export default function HoldingsPriceChart({
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+    prepareGenerationRef.current += 1;
     return () => {
       cancelled = true;
     };
@@ -183,7 +202,11 @@ export default function HoldingsPriceChart({
   }, [bars, analysis]);
 
   async function prepareSelectedRange() {
-    if (!chart || preparingRange) return;
+    if (!chart || preparingRange || !prepareChartAction) return;
+    const identity = activeIdentityRef.current;
+    const generation = ++prepareGenerationRef.current;
+    const isCurrent = () =>
+      prepareGenerationRef.current === generation && activeIdentityRef.current === identity;
     setPreparingRange(true);
     setPrepareError(null);
     setPrepareResult(null);
@@ -196,22 +219,27 @@ export default function HoldingsPriceChart({
     });
 
     try {
-      const result = await prepareHoldingChartWithProgress(stockId, range, (progress) => setPrepareProgress(progress));
+      const result = await prepareHoldingChartWithProgress(stockId, range, (progress) => {
+        if (isCurrent()) setPrepareProgress(progress);
+      });
+      if (!isCurrent()) return;
       setPrepareResult(result);
       const refreshed = await getHoldingChart(stockId, range);
+      if (!isCurrent()) return;
       setChart(refreshed);
+      await refreshDataContract();
     } catch (prepareLoadError) {
+      if (!isCurrent()) return;
       setPrepareError(prepareLoadError instanceof Error ? prepareLoadError.message : "차트 데이터를 준비하지 못했습니다.");
-      // A failed provider call may still have saved a valid partial batch.
-      // Reload the chart so the notice reflects the actual persisted row count.
       try {
         const refreshed = await getHoldingChart(stockId, range);
-        setChart(refreshed);
+        if (isCurrent()) setChart(refreshed);
       } catch {
         // Keep the currently visible chart if the refresh itself fails.
       }
+      if (isCurrent()) await refreshDataContract();
     } finally {
-      setPreparingRange(false);
+      if (isCurrent()) setPreparingRange(false);
     }
   }
 
@@ -229,7 +257,13 @@ export default function HoldingsPriceChart({
   const chartDate = chart?.to_date ?? null;
   const analysisDate = analysis?.market_date ?? null;
   const analysisBehindChart = Boolean(chartDate && analysisDate && analysisDate < chartDate);
-  const chartPartial = Boolean(chart && chart.count < chart.requested_bars);
+  const chartPartial = Boolean(
+    chart && (
+      chart.count < chart.requested_bars
+      || chartContract?.reason_code === "INSUFFICIENT_COVERAGE"
+    ),
+  );
+  const chartNeedsPreparation = Boolean(prepareChartAction);
   const activeRangeLabel = RANGE_OPTIONS.find((option) => option.key === range)?.label ?? range;
   const maxAvailable = prepareResult?.status === "PARTIAL_MAX_AVAILABLE";
   const progressCurrent = prepareProgress?.current ?? chart?.count ?? 0;
@@ -258,7 +292,7 @@ export default function HoldingsPriceChart({
         </div>
       </div>
 
-      {chartPartial && (
+      {(chartPartial || chartNeedsPreparation) && (
         <div className="holdings-chart-coverage" aria-live="polite">
           <div className="holdings-chart-coverage-copy">
             {preparingRange ? (
@@ -276,10 +310,15 @@ export default function HoldingsPriceChart({
                 <strong>차트 데이터를 모두 준비하지 못했습니다</strong>
                 <span>{prepareError} · 현재 {chart?.count ?? 0} / {chart?.requested_bars ?? 0}거래일은 계속 볼 수 있습니다.</span>
               </>
+            ) : chartContract?.reason_code === "STALE_TO_MARKET_CONFIRMED" ? (
+              <>
+                <strong>확정 일봉 갱신 필요</strong>
+                <span>저장 차트 {chartContract.to_date ?? "-"} · 시장 확정 {chartContract.market_confirmed_date ?? "-"}</span>
+              </>
             ) : (
               <>
                 <strong>일부 기간만 표시 중</strong>
-                <span>현재 {chart?.count ?? 0} / {chart?.requested_bars ?? 0}거래일만 저장되어 있습니다.</span>
+                <span>현재 {chartContract?.row_count ?? chart?.count ?? 0} / {chartContract?.required_rows ?? chart?.requested_bars ?? 0}거래일만 저장되어 있습니다.</span>
               </>
             )}
           </div>
@@ -289,7 +328,7 @@ export default function HoldingsPriceChart({
               <span>{progressCurrent} / {progressRequired}거래일</span>
               <div aria-hidden="true"><i style={{ width: `${progressRatio * 100}%` }} /></div>
             </div>
-          ) : !maxAvailable ? (
+          ) : !maxAvailable && prepareChartAction ? (
             <button type="button" className="holdings-chart-prepare-button" onClick={() => void prepareSelectedRange()}>
               {prepareError ? "다시 시도" : `${activeRangeLabel} 데이터 준비`}
             </button>
@@ -443,6 +482,7 @@ export default function HoldingsPriceChart({
       )}
 
       <div className="holdings-chart-foot">
+        {contractError && <span className="stale">데이터 상태 확인 실패</span>}
         <span>{chartDate ? `차트 최신일 ${chartDate.replace(/-/g, ".")}` : "저장된 확정 일봉을 사용합니다."}</span>
         {analysisDate && (
           <span className={analysisBehindChart ? "stale" : ""}>

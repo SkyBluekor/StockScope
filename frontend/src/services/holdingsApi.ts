@@ -309,6 +309,35 @@ export type HoldingManagementResponse = {
   }>;
 };
 
+export type LiveHoldingManagementProximityResponse = {
+  stock_id: string;
+  market: string;
+  ticker: string;
+  available: boolean;
+  state: "FRESH" | "STALE" | "UNAVAILABLE";
+  reason_code: string | null;
+  quote: {
+    provider: string;
+    mode: string;
+    venue: string;
+    price: string;
+    provider_timestamp: string | null;
+    received_at: string;
+    age_ms: number;
+    freshness_seconds: number;
+  } | null;
+  positions: Array<{
+    position_id: string;
+    active_plan_id: string | null;
+    plan_version: number | null;
+    distances: {
+      stop: { level: string | null; amount: string | null; pct: string | null };
+      target1: { level: string | null; amount: string | null; pct: string | null };
+      target2: { level: string | null; amount: string | null; pct: string | null };
+    };
+  }>;
+};
+
 export type HoldingPerformanceValuation = {
   available: boolean;
   market_date: string | null;
@@ -366,6 +395,26 @@ export type HoldingPerformanceResponse = {
   warnings: string[];
 };
 
+export type LiveHoldingPerformanceResponse = {
+  stock_id: string;
+  market: string;
+  ticker: string;
+  available: boolean;
+  state: "FRESH" | "STALE" | "UNAVAILABLE";
+  reason_code: string | null;
+  quote: {
+    provider: string;
+    mode: string;
+    venue: string;
+    price: string;
+    provider_timestamp: string | null;
+    received_at: string;
+    age_ms: number;
+    freshness_seconds: number;
+  } | null;
+  performance: HoldingPerformanceResponse | null;
+};
+
 type ApiErrorBody = {
   detail?: string | ApiErrorDetail;
 };
@@ -418,8 +467,14 @@ export function listHoldingStocks(): Promise<HoldingStock[]> {
   return requestJson<HoldingStock[]>("/api/holdings/stocks");
 }
 
-export function getHoldingStock(stockId: string): Promise<HoldingStock> {
-  return requestJson<HoldingStock>(`/api/holdings/stocks/${encodeURIComponent(stockId)}`);
+export function getHoldingStock(
+  stockId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<HoldingStock> {
+  return requestJson<HoldingStock>(
+    `/api/holdings/stocks/${encodeURIComponent(stockId)}`,
+    { signal: options.signal },
+  );
 }
 
 export function addWatchStock(input: {
@@ -502,9 +557,23 @@ export function recordManualCorrection(
   );
 }
 
-export function getHoldingManagement(stockId: string): Promise<HoldingManagementResponse> {
+export function getHoldingManagement(
+  stockId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<HoldingManagementResponse> {
   return requestJson<HoldingManagementResponse>(
     `/api/holdings/stocks/${encodeURIComponent(stockId)}/management`,
+    { signal: options.signal },
+  );
+}
+
+export function getLiveHoldingManagementProximity(
+  stockId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<LiveHoldingManagementProximityResponse> {
+  return requestJson<LiveHoldingManagementProximityResponse>(
+    `/api/holdings/stocks/${encodeURIComponent(stockId)}/management/live-proximity`,
+    { signal: options.signal },
   );
 }
 
@@ -520,9 +589,21 @@ export function applyHoldingManagementPlan(
 
 export function getHoldingPerformance(
   stockId: string,
+  options: { signal?: AbortSignal } = {},
 ): Promise<HoldingPerformanceResponse> {
   return requestJson<HoldingPerformanceResponse>(
     `/api/holdings/stocks/${encodeURIComponent(stockId)}/performance`,
+    { signal: options.signal },
+  );
+}
+
+export function getLiveHoldingPerformance(
+  stockId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<LiveHoldingPerformanceResponse> {
+  return requestJson<LiveHoldingPerformanceResponse>(
+    `/api/holdings/stocks/${encodeURIComponent(stockId)}/performance/live`,
+    { signal: options.signal },
   );
 }
 
@@ -611,10 +692,12 @@ export async function prepareHoldingAnalysisWithProgress(
 export function getHoldingTimeline(
   stockId: string,
   limit = 100,
+  options: { signal?: AbortSignal } = {},
 ): Promise<HoldingTimelineItem[]> {
   const query = new URLSearchParams({ limit: String(limit) });
   return requestJson<HoldingTimelineItem[]>(
     `/api/holdings/stocks/${encodeURIComponent(stockId)}/timeline?${query.toString()}`,
+    { signal: options.signal },
   );
 }
 

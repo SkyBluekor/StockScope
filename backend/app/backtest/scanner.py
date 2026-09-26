@@ -16,7 +16,7 @@ from app.backtest.entry_risk_guide import build_entry_risk_guide
 from app.backtest.production_exit_policy import production_policy_cache_token
 from app.backtest.sector_rs_input import HistoricalSectorInput
 from app.backtest.sector_rs_prefetch import HistoricalSectorInputPrefetcher
-from app.backtest.historical_evidence import build_historical_evidence, validation_start_for_years
+from app.backtest.historical_evidence import build_historical_evidence, data_readiness, validation_start_for_years
 from app.backtest.market_store import HistoricalMarketStore
 from app.backtest.reproducibility_audit import write_scanner_reproducibility_audit
 from app.backtest.models import BacktestConfig
@@ -1202,6 +1202,166 @@ class StockScannerService:
             "peak_concurrency": peak_concurrency,
             "final_concurrency_limit": current_limit,
         }
+
+    async def prepare_three_year_evidence_data(
+        self,
+        *,
+        market: str,
+        code: str,
+        data_end: str,
+        progress: ProgressCallback | None = None,
+    ) -> dict[str, Any]:
+        """Prepare the exact local history required by three-year Historical Evidence.
+
+        This is intentionally separate from the Scanner fast-history bootstrap.
+        It reuses Market Store/day cache first, fetches only missing market/day
+        snapshots, and leaves the actual evidence calculation to the subsequent
+        forced Scanner run so priority text and all public analysis fields are
+        rebuilt from one server-side result.
+        """
+        market_key = market.upper().strip()
+        if market_key not in {"KOSPI", "KOSDAQ"}:
+            raise ValueError("market은 KOSPI 또는 KOSDAQ이어야 합니다.")
+        code_key = code.strip().upper()
+        if not code_key:
+            raise ValueError("code가 필요합니다.")
+        try:
+            end = date.fromisoformat(data_end)
+        except ValueError as exc:
+            raise ValueError("data_end는 YYYY-MM-DD 형식이어야 합니다.") from exc
+
+        validation_start = validation_start_for_years(end)
+        warmup_start = validation_start - timedelta(days=self.THREE_YEAR_WARMUP_DAYS)
+        started_at = time.perf_counter()
+        plan = self._history_plan(market=market_key, start=warmup_start, end=end)
+
+        self._emit(
+            progress,
+            stage="evidence_plan",
+            message="3년 검증에 필요한 과거 데이터 범위를 확인했습니다.",
+            current=int(plan["reused"]),
+            total=max(int(plan["total"]), 1),
+            details=self._progress_payload(
+                overall_percent=3,
+                started_at=started_at,
+                current_item=f"{market_key} {code_key}",
+                market=market_key,
+                code=code_key,
+                warmup_start=warmup_start.isoformat(),
+                validation_start=validation_start.isoformat(),
+                validation_end=end.isoformat(),
+                reused_items=int(plan["reused"]),
+                missing_items=len(plan["work"]),
+                estimated_network_requests=int(plan["estimated_network_requests"]),
+            ),
+        )
+
+        def evidence_progress(payload: dict[str, Any]) -> None:
+            forwarded = dict(payload)
+            forwarded["stage"] = "evidence_prepare"
+            forwarded["message"] = "3년 검증용 과거 시장 데이터를 준비하는 중"
+            details = dict(forwarded.get("details") or {})
+            details.update({
+                "market": market_key,
+                "code": code_key,
+                "warmup_start": warmup_start.isoformat(),
+                "validation_start": validation_start.isoformat(),
+                "validation_end": end.isoformat(),
+            })
+            forwarded["details"] = details
+            if progress is not None:
+                progress(forwarded)
+
+        await self.krx.open_session()
+        try:
+            sync = await self._ensure_market_history(
+                market=market_key,
+                start=warmup_start,
+                end=end,
+                progress=evidence_progress,
+                progress_base=5,
+                progress_span=88,
+                started_at=started_at,
+                plan=plan,
+            )
+
+            self._emit(
+                progress,
+                stage="evidence_validate",
+                message="준비된 데이터로 3년 검증 가능 여부를 확인하는 중",
+                current=1,
+                total=1,
+                details=self._progress_payload(
+                    overall_percent=96,
+                    started_at=started_at,
+                    current_item=f"{market_key} {code_key}",
+                    market=market_key,
+                    code=code_key,
+                    warmup_start=warmup_start.isoformat(),
+                    validation_start=validation_start.isoformat(),
+                    validation_end=end.isoformat(),
+                ),
+            )
+
+            stock_series = self.market_store.stock_series(
+                market_key,
+                code_key,
+                self._compact(warmup_start),
+                self._compact(end),
+            )
+            index_series = self.market_store.index_series(
+                market_key,
+                self._compact(warmup_start),
+                self._compact(end),
+            )
+            readiness = data_readiness(
+                stock_rows=list(stock_series.rows.values()),
+                index_rows=list(index_series.rows.values()),
+                validation_start=validation_start,
+                validation_end=end,
+            )
+            ready = bool(readiness.get("ready"))
+            message = (
+                "3년 검증용 과거 데이터 준비가 완료되었습니다. 같은 기준일로 Scanner 분석을 다시 계산합니다."
+                if ready
+                else "과거 데이터 준비 후에도 3년 검증 요건을 모두 충족하지 못했습니다. 실제 보유 데이터 기준으로 다시 분석합니다."
+            )
+            self._emit(
+                progress,
+                stage="evidence_complete",
+                message=message,
+                current=1,
+                total=1,
+                details=self._progress_payload(
+                    overall_percent=100,
+                    started_at=started_at,
+                    current_item=f"{market_key} {code_key}",
+                    market=market_key,
+                    code=code_key,
+                    warmup_start=warmup_start.isoformat(),
+                    validation_start=validation_start.isoformat(),
+                    validation_end=end.isoformat(),
+                    ready=ready,
+                    stock_rows=int(readiness.get("stock_rows") or 0),
+                    index_rows=int(readiness.get("index_rows") or 0),
+                    stock_warmup_rows=int(readiness.get("stock_warmup_rows") or 0),
+                    index_warmup_rows=int(readiness.get("index_warmup_rows") or 0),
+                    errors=int(sync.get("errors") or 0),
+                ),
+            )
+            return {
+                "status": "READY" if ready else "DATA_UNAVAILABLE",
+                "market": market_key,
+                "code": code_key,
+                "warmup_start": warmup_start.isoformat(),
+                "validation_start": validation_start.isoformat(),
+                "validation_end": end.isoformat(),
+                "readiness": readiness,
+                "sync": sync,
+                "message": message,
+            }
+        finally:
+            await self.krx.close_session()
 
     @staticmethod
     def _fingerprint_rows(rows: list[dict[str, Any]]) -> str:

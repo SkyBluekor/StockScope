@@ -277,7 +277,10 @@ def test_news1_frontend_and_env_contract() -> None:
     assert 'target="_blank"' in panel
     assert 'rel="noopener noreferrer"' in panel
     assert "최근 뉴스" in panel
-    assert "slice(0, expanded ? 10 : 5)" in panel
+    assert 'variant = "full"' in panel
+    assert "collapsedLimit = compact ? 3 : 5" in panel
+    assert "expandedLimit = compact ? 5 : 10" in panel
+    assert "slice(0, expanded ? expandedLimit : collapsedLimit)" in panel
     assert "Strategy·Scanner·Ranking·Risk 계산을 변경하지 않습니다." in panel
     assert "StockNewsPanel" in workspace
     rendered_news = workspace.index("<StockNewsPanel", workspace.index("stock-analysis-company-summary"))

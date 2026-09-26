@@ -38,6 +38,8 @@ from app.holdings.history_prepare import (
     HoldingsHistoryPrepareError,
     HoldingsHistoryPrepareService,
 )
+from app.holdings.live_performance import HoldingsLivePerformanceService
+from app.holdings.live_management import HoldingsLiveManagementService
 from app.holdings.kis_sync import (
     HoldingsKisSyncError,
     KisAccountSyncService,
@@ -136,6 +138,18 @@ def _performance_service(catalog: HoldingsCatalog) -> HoldingPerformanceService:
         catalog,
         market_store_db=_market_store_path(),
     )
+
+
+def _live_performance_service() -> HoldingsLivePerformanceService:
+    raw = os.getenv("STOCKSCOPE_HOLDINGS_DB")
+    path = Path(raw) if raw else DEFAULT_HOLDINGS_DB
+    return HoldingsLivePerformanceService(path)
+
+
+def _live_management_service() -> HoldingsLiveManagementService:
+    raw = os.getenv("STOCKSCOPE_HOLDINGS_DB")
+    path = Path(raw) if raw else DEFAULT_HOLDINGS_DB
+    return HoldingsLiveManagementService(path)
 
 
 def _management_service(catalog: HoldingsCatalog) -> HoldingManagementService:
@@ -523,11 +537,27 @@ def apply_management_plan(position_id: str, request: ApplyManagementPlanRequest)
         _raise_holdings_error(error)
 
 
+@router.get("/stocks/{stock_id}/management/live-proximity")
+def stock_live_management_proximity(stock_id: str) -> dict[str, Any]:
+    try:
+        return _live_management_service().calculate(stock_id).to_dict()
+    except (HoldingsCatalogError, HoldingsManagementError) as error:
+        _raise_holdings_error(error)
+
+
 @router.get("/stocks/{stock_id}/performance")
 def stock_performance(stock_id: str) -> dict[str, Any]:
     catalog = _catalog()
     try:
         return _performance_service(catalog).calculate(stock_id).to_dict()
+    except (HoldingsCatalogError, HoldingsPerformanceError) as error:
+        _raise_holdings_error(error)
+
+
+@router.get("/stocks/{stock_id}/performance/live")
+def stock_live_performance(stock_id: str) -> dict[str, Any]:
+    try:
+        return _live_performance_service().calculate(stock_id).to_dict()
     except (HoldingsCatalogError, HoldingsPerformanceError) as error:
         _raise_holdings_error(error)
 

@@ -8,6 +8,200 @@ export type ProviderStatus = {
   real_trading: boolean;
 };
 
+export type DataContractResourceStatus = "ABSENT" | "UNVERIFIED" | "VALID" | "INVALID";
+export type StockDataContractRange = "1m" | "3m" | "6m" | "1y";
+
+export type DomesticMarketSessionPhase =
+  | "PRE_MARKET"
+  | "REGULAR"
+  | "INTERMISSION"
+  | "AFTER_MARKET"
+  | "CLOSED"
+  | "UNKNOWN";
+
+export type DomesticMarketSessionSource =
+  | "WEEKEND_RULE"
+  | "KIS_HOLIDAY"
+  | "SESSION_CLOCK"
+  | "UNKNOWN";
+
+export type DomesticMarketSessionResponse = {
+  market: "DOMESTIC_EQUITY";
+  venue: "INTEGRATED";
+  timezone: "Asia/Seoul";
+  checked_at: string;
+  local_date: string;
+  trading_day: boolean | null;
+  phase: DomesticMarketSessionPhase;
+  quote_polling_allowed: boolean;
+  market_active: boolean | null;
+  next_transition_at: string | null;
+  source: DomesticMarketSessionSource;
+  reason_code: string | null;
+};
+
+export type StockQuoteVenue = "INTEGRATED" | "KRX" | "NXT";
+export type StockQuoteDeliverySource = "UPSTREAM" | "CACHE" | "SINGLE_FLIGHT" | "WEBSOCKET";
+
+export type StockQuoteResponse = {
+  resource_key: string;
+  provider: "KIS";
+  mode: "SNAPSHOT";
+  market: "KOSPI" | "KOSDAQ";
+  ticker: string;
+  name: string | null;
+  venue: StockQuoteVenue;
+  provider_market_division: string;
+  environment: "real" | "virtual";
+  current_price: string;
+  change_amount: string;
+  change_rate: string;
+  change_sign: string | null;
+  open_price: string;
+  high_price: string;
+  low_price: string;
+  base_price: string;
+  accumulated_volume: string;
+  provider_timestamp: string | null;
+  received_at: string;
+  delivery: {
+    source: StockQuoteDeliverySource;
+    cache_age_ms: number;
+  };
+};
+
+export type DataContractAction = {
+  id: "PREPARE_CHART" | "REFRESH_HOLDING_ANALYSIS" | "VIEW_ACTIVE_JOB";
+  target: "chart" | "analysis_result" | "active_job";
+  enabled: boolean;
+  requires_user_initiation: true;
+  reason_code: string | null;
+};
+
+export type StockDataContract = {
+  contract_version: "DATA_CONTRACT_V1";
+  resource_key: string;
+  checked_at: string;
+  request: {
+    market: "KOSPI" | "KOSDAQ";
+    ticker: string;
+    range: StockDataContractRange | null;
+    job_id: string | null;
+  };
+  resources: {
+    eod: {
+      status: DataContractResourceStatus;
+      present: boolean;
+      source: string;
+      basis: "CONFIRMED_EOD";
+      market_confirmed_date: string | null;
+      stock_date: string | null;
+      first_date: string | null;
+      row_count: number;
+      reason_code: string | null;
+    };
+    chart: {
+      status: DataContractResourceStatus;
+      present: boolean;
+      source: string;
+      range: StockDataContractRange | null;
+      from_date: string | null;
+      to_date: string | null;
+      row_count: number;
+      required_rows: number | null;
+      market_confirmed_date: string | null;
+      reason_code: string | null;
+    };
+    analysis_result: {
+      status: DataContractResourceStatus;
+      present: boolean;
+      source: string;
+      basis: "CONFIRMED_EOD" | null;
+      basis_date: string | null;
+      monitored_stock_id: string | null;
+      revision_id: string | null;
+      revision_no: number | null;
+      computed_at: string | null;
+      strategy_key: string | null;
+      action_state: string | null;
+      risk_state: string | null;
+      identity: {
+        input_fingerprint: string | null;
+        scanner_version: string | null;
+        analysis_engine_version: string | null;
+        policy_version: string | null;
+        source_versions: Record<string, unknown> | null;
+      };
+      displayable: boolean;
+      current_use_allowed: boolean;
+      reason_code: string | null;
+    };
+    realtime: {
+      status: DataContractResourceStatus;
+      present: boolean;
+      source: string;
+      capability: boolean;
+      provider: string | null;
+      mode: string | null;
+      venue: string | null;
+      current_price: string | null;
+      provider_timestamp: string | null;
+      received_at: string | null;
+      age_ms: number | null;
+      freshness_seconds: number | null;
+      session_phase: DomesticMarketSessionPhase | null;
+      trading_day: boolean | null;
+      market_active: boolean | null;
+      reason_code: string | null;
+    };
+    ledger: {
+      status: DataContractResourceStatus;
+      present: boolean;
+      source: string;
+      monitored_stock_id: string | null;
+      watch_enabled: boolean | null;
+      archived_at: string | null;
+      open_position_count: number;
+      positions: Array<{
+        position_id: string;
+        account_id: string;
+        provider: string;
+        account_kind: string;
+        broker_environment: string | null;
+        current_quantity: string;
+        current_average_price: string | null;
+        current_cost_basis: string | null;
+        opened_reason: string;
+        opened_at: string;
+        last_observed_at: string | null;
+        last_sync_run_id: string | null;
+      }>;
+      reason_code: string | null;
+    };
+  };
+  preparation: {
+    required: boolean;
+    targets: Array<"eod" | "chart">;
+    supported: boolean;
+    reason_codes: string[];
+  };
+  active_job: {
+    state: "KNOWN" | "UNKNOWN";
+    job_id: string;
+    status: string | null;
+    stage: string | null;
+    message: string | null;
+    current: number | null;
+    total: number | null;
+    details: Record<string, unknown> | null;
+    error: string | null;
+    created_at: string | null;
+    updated_at: string | null;
+    reason_code: string | null;
+  } | null;
+  actions: DataContractAction[];
+};
+
 export type KrxStockRow = {
   date: string | null;
   code: string | null;
@@ -205,10 +399,18 @@ async function asJson<T>(response: Response): Promise<T> {
   let requestId: string | null = null;
   try {
     const body = (await response.json()) as {
-      detail?: string | { error?: { code?: string; message?: string; retryable?: boolean; retry_after?: number | null; request_id?: string } };
+      detail?: string | {
+        code?: string;
+        message?: string;
+        retryable?: boolean;
+        retry_after?: number | null;
+        request_id?: string;
+        error?: { code?: string; message?: string; retryable?: boolean; retry_after?: number | null; request_id?: string };
+      };
       error?: { code?: string; message?: string; retryable?: boolean; retry_after?: number | null; request_id?: string };
     };
-    const structured = typeof body.detail === "object" ? body.detail?.error : body.error;
+    const directDetail = typeof body.detail === "object" ? body.detail : null;
+    const structured = directDetail?.error ?? directDetail ?? body.error;
     if (typeof body.detail === "string") message = body.detail;
     if (structured) {
       message = structured.message ?? message;
@@ -242,10 +444,70 @@ export async function fetchMarketHistory(): Promise<MarketHistory> {
 export async function fetchStockContext(
   code: string,
   market: "KOSPI" | "KOSDAQ",
+  options: { signal?: AbortSignal } = {},
 ): Promise<StockContext> {
   const query = new URLSearchParams({ market });
   return asJson<StockContext>(
-    await fetch(`/api/stocks/${encodeURIComponent(code.trim().toUpperCase())}/context?${query.toString()}`),
+    await fetch(
+      `/api/stocks/${encodeURIComponent(code.trim().toUpperCase())}/context?${query.toString()}`,
+      { signal: options.signal },
+    ),
+  );
+}
+
+export async function fetchDomesticMarketSession(
+  options: {
+    venue?: "INTEGRATED";
+    signal?: AbortSignal;
+  } = {},
+): Promise<DomesticMarketSessionResponse> {
+  const query = new URLSearchParams({
+    venue: options.venue ?? "INTEGRATED",
+  });
+  return asJson<DomesticMarketSessionResponse>(
+    await fetch(`/api/market-session/domestic?${query.toString()}`, {
+      signal: options.signal,
+    }),
+  );
+}
+
+export async function fetchStockQuote(
+  code: string,
+  market: "KOSPI" | "KOSDAQ",
+  options: {
+    venue?: StockQuoteVenue;
+    signal?: AbortSignal;
+  } = {},
+): Promise<StockQuoteResponse> {
+  const query = new URLSearchParams({
+    market,
+    venue: options.venue ?? "INTEGRATED",
+  });
+  return asJson<StockQuoteResponse>(
+    await fetch(
+      `/api/quotes/stocks/${encodeURIComponent(code.trim().toUpperCase())}?${query.toString()}`,
+      { signal: options.signal },
+    ),
+  );
+}
+
+export async function fetchStockDataContract(
+  code: string,
+  market: "KOSPI" | "KOSDAQ",
+  options: {
+    range?: StockDataContractRange;
+    jobId?: string;
+    signal?: AbortSignal;
+  } = {},
+): Promise<StockDataContract> {
+  const query = new URLSearchParams({ market });
+  if (options.range) query.set("range", options.range);
+  if (options.jobId?.trim()) query.set("job_id", options.jobId.trim());
+  return asJson<StockDataContract>(
+    await fetch(
+      `/api/data-contract/stocks/${encodeURIComponent(code.trim().toUpperCase())}?${query.toString()}`,
+      { signal: options.signal },
+    ),
   );
 }
 
@@ -1099,6 +1361,7 @@ export async function fetchStrategyAnalysis(
   positionMode: "NOT_HELD" | "HOLDING" = "NOT_HELD",
   averagePrice?: number,
   quantity?: number,
+  options: { signal?: AbortSignal } = {},
 ): Promise<StrategyAnalysis> {
   const query = new URLSearchParams({ market, history_points: "60" });
   if (referencePrice != null && Number.isFinite(referencePrice) && referencePrice > 0) query.set("reference_price", String(referencePrice));
@@ -1109,7 +1372,10 @@ export async function fetchStrategyAnalysis(
   if (averagePrice != null && Number.isFinite(averagePrice) && averagePrice > 0) query.set("average_price", String(averagePrice));
   if (quantity != null && Number.isFinite(quantity) && quantity > 0) query.set("quantity", String(quantity));
   return asJson<StrategyAnalysis>(
-    await fetch(`/api/stocks/${encodeURIComponent(code.trim().toUpperCase())}/strategy-analysis?${query.toString()}`),
+    await fetch(
+      `/api/stocks/${encodeURIComponent(code.trim().toUpperCase())}/strategy-analysis?${query.toString()}`,
+      { signal: options.signal },
+    ),
   );
 }
 
@@ -1139,9 +1405,14 @@ export type StockSearchResponse = {
   warnings: string[];
 };
 
-export async function searchStocks(query: string): Promise<StockSearchResponse> {
+export async function searchStocks(
+  query: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<StockSearchResponse> {
   const params = new URLSearchParams({ q: query, limit: "12" });
-  return asJson<StockSearchResponse>(await fetch(`/api/stocks/search?${params.toString()}`));
+  return asJson<StockSearchResponse>(
+    await fetch(`/api/stocks/search?${params.toString()}`, { signal: options.signal }),
+  );
 }
 
 export type BacktestMetrics = {
@@ -2449,6 +2720,8 @@ export type ScannerHistoricalEvidence = {
   label: string;
   summary: string;
   verified: boolean;
+  unavailable_reason?: "MISSING_HISTORY" | "UNSUPPORTED_STRATEGY" | string | null;
+  preparation_available?: boolean;
   sample_sufficient: boolean;
   minimum_sample: number;
   validation_years: number;
@@ -2711,6 +2984,28 @@ export async function prepareScannerLatestData(payload: {
 export async function createScannerJob(payload: ScannerRequest): Promise<BacktestJob<ScannerResponse>> {
   return asJson<BacktestJob<ScannerResponse>>(
     await fetch("/api/backtest/scanner/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  );
+}
+
+
+export type ScannerEvidencePrepareRequest = {
+  market: "KOSPI" | "KOSDAQ";
+  code: string;
+  strategy: string;
+  data_end: string;
+  market_scope: "ALL" | "KOSPI" | "KOSDAQ";
+  candidate_limit?: number;
+};
+
+export async function createScannerEvidenceJob(
+  payload: ScannerEvidencePrepareRequest,
+): Promise<BacktestJob<ScannerResponse>> {
+  return asJson<BacktestJob<ScannerResponse>>(
+    await fetch("/api/backtest/scanner/evidence/jobs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),

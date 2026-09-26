@@ -1,0 +1,96 @@
+.quote-strip {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 58px;
+  margin: 0 0 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border-default);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.quote-strip-main {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.quote-strip-main > span,
+.quote-strip-meta span,
+.quote-strip-meta small {
+  color: var(--text-muted);
+}
+
+.quote-strip-main > strong {
+  font-size: 1.28rem;
+  letter-spacing: -0.03em;
+}
+
+.quote-strip-change {
+  font-size: 0.92rem;
+}
+
+.quote-strip-change.positive {
+  color: var(--success);
+}
+
+.quote-strip-change.negative {
+  color: var(--danger);
+}
+
+.quote-strip-change.neutral {
+  color: var(--text-muted);
+}
+
+.quote-strip-meta {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  flex: 1 1 auto;
+}
+
+.quote-strip.state-delayed .quote-strip-meta span,
+.quote-strip.state-error .quote-strip-meta span {
+  color: var(--warning);
+}
+
+.quote-strip-refresh {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.quote-strip-refresh:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.quote-strip-refresh:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+@media (max-width: 700px) {
+  .quote-strip {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 5px 12px;
+  }
+
+  .quote-strip-main {
+    grid-column: 1 / -1;
+  }
+
+  .quote-strip-meta {
+    grid-column: 1;
+  }
+
+  .quote-strip-refresh {
+    grid-column: 2;
+    grid-row: 2;
+  }
+}

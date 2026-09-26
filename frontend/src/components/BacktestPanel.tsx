@@ -23,6 +23,7 @@ type Props = {
   market: Market;
   stockName?: string;
   onSelectStock: (item: StockSearchItem) => void;
+  onBackToAnalysis?: () => void;
 };
 
 type ScannerAnalysisContext = {
@@ -39,6 +40,122 @@ type ScannerAnalysisContext = {
   risk_status: string | null;
   saved_at: number;
 };
+
+
+type BacktestCacheConfig = {
+  code: string;
+  market: Market;
+  startDate: string;
+  endDate: string;
+  initialCapital: number;
+  maxHoldingDays: number;
+  roundTripCostPct: number;
+};
+
+type BacktestCacheEntry = {
+  version: 1;
+  signature: string;
+  config: BacktestCacheConfig;
+  completedAt: number;
+  result: MultiStrategyBacktestResponse;
+};
+
+const BACKTEST_RESULT_PREFIX = "stockscope-multi-strategy-result:";
+const BACKTEST_LATEST_PREFIX = "stockscope-multi-strategy-latest:";
+
+function normalizedNumber(value: number) {
+  return Number.isFinite(value) ? Number(value.toFixed(6)) : 0;
+}
+
+function backtestResultSignature(config: BacktestCacheConfig) {
+  return [
+    config.market,
+    config.code.trim().toUpperCase(),
+    config.startDate,
+    config.endDate,
+    normalizedNumber(config.initialCapital),
+    Math.trunc(config.maxHoldingDays),
+    normalizedNumber(config.roundTripCostPct),
+  ].join("|");
+}
+
+function resultStorageKey(signature: string) {
+  return `${BACKTEST_RESULT_PREFIX}${signature}`;
+}
+
+function latestStorageKey(market: Market, code: string) {
+  return `${BACKTEST_LATEST_PREFIX}${market}:${code.trim().toUpperCase()}`;
+}
+
+function isBacktestCacheEntry(value: unknown): value is BacktestCacheEntry {
+  if (!value || typeof value !== "object") return false;
+  const entry = value as Partial<BacktestCacheEntry>;
+  return entry.version === 1
+    && typeof entry.signature === "string"
+    && typeof entry.completedAt === "number"
+    && Boolean(entry.config)
+    && Boolean(entry.result)
+    && entry.result?.code === entry.config?.code
+    && entry.result?.market === entry.config?.market;
+}
+
+function readBacktestCache(signature: string): BacktestCacheEntry | null {
+  try {
+    const raw = window.sessionStorage.getItem(resultStorageKey(signature));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isBacktestCacheEntry(parsed) || parsed.signature !== signature) {
+      window.sessionStorage.removeItem(resultStorageKey(signature));
+      return null;
+    }
+    return parsed;
+  } catch {
+    try { window.sessionStorage.removeItem(resultStorageKey(signature)); } catch { /* ignore */ }
+    return null;
+  }
+}
+
+function readLatestBacktestCache(market: Market, code: string): BacktestCacheEntry | null {
+  try {
+    const signature = window.sessionStorage.getItem(latestStorageKey(market, code));
+    return signature ? readBacktestCache(signature) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeBacktestCache(entry: BacktestCacheEntry) {
+  try {
+    window.sessionStorage.setItem(resultStorageKey(entry.signature), JSON.stringify(entry));
+    window.sessionStorage.setItem(latestStorageKey(entry.config.market, entry.config.code), entry.signature);
+  } catch {
+    // A large result can exceed browser session storage. The completed result
+    // remains usable in memory even when persistence is unavailable.
+  }
+}
+
+function formatCompletedAt(value: number | null | undefined) {
+  if (!value || !Number.isFinite(value)) return "-";
+  return new Intl.DateTimeFormat("ko-KR", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(value));
+}
+
+function dateKey(value: string | null | undefined) {
+  return String(value ?? "").replace(/[^0-9]/g, "").slice(0, 8);
+}
+
+function configSummary(config: BacktestCacheConfig) {
+  return `${formatCompactDate(config.startDate)} ~ ${formatCompactDate(config.endDate)} · 보유 ${config.maxHoldingDays}일 · 비용 ${config.roundTripCostPct}%`;
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError";
+}
 
 function readScannerAnalysisContext(code: string): ScannerAnalysisContext | null {
   try {
@@ -338,7 +455,7 @@ function StrategyMiniCard({ row }: { row: MultiStrategyRow }) {
   );
 }
 
-export default function BacktestPanel({ code, market, stockName, onSelectStock }: Props) {
+export default function BacktestPanel({ code, market, stockName, onSelectStock, onBackToAnalysis }: Props) {
   const [view, setView] = useState<"setup" | "result">("setup");
   const [stockQuery, setStockQuery] = useState(stockName ? `${stockName} (${code})` : code);
   const [stockSearchResults, setStockSearchResults] = useState<StockSearchItem[]>([]);
@@ -354,13 +471,27 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
   const [error, setError] = useState<string | null>(null);
   const [job, setJob] = useState<BacktestJob<MultiStrategyBacktestResponse> | null>(null);
   const [result, setResult] = useState<MultiStrategyBacktestResponse | null>(null);
+  const [resultConfig, setResultConfig] = useState<BacktestCacheConfig | null>(null);
+  const [resultCompletedAt, setResultCompletedAt] = useState<number | null>(null);
+  const [resultRestoreMode, setResultRestoreMode] = useState<"auto-cache" | "manual-cache" | null>(null);
+  const [exactCachedResult, setExactCachedResult] = useState<BacktestCacheEntry | null>(null);
+  const [latestCachedResult, setLatestCachedResult] = useState<BacktestCacheEntry | null>(null);
   const [validationBusy, setValidationBusy] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [validationJob, setValidationJob] = useState<BacktestJob<ExitPolicyValidationReport> | null>(null);
   const [validationReport, setValidationReport] = useState<ExitPolicyValidationReport | null>(null);
   const activeJobId = useRef<string | null>(null);
   const activeValidationJobId = useRef<string | null>(null);
+  const runGenerationRef = useRef(0);
+  const activeRunRef = useRef<{
+    generation: number;
+    signature: string;
+    code: string;
+    market: Market;
+    jobId: string | null;
+  } | null>(null);
   const workspaceTopRef = useRef<HTMLDivElement | null>(null);
+  const stockSearchRequestIdRef = useRef(0);
   const [scannerContext, setScannerContext] = useState<ScannerAnalysisContext | null>(() => readScannerAnalysisContext(code));
   const [showStrategyGuides, setShowStrategyGuides] = useState(false);
   const [showComparisonCriteria, setShowComparisonCriteria] = useState(false);
@@ -375,24 +506,39 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
     const query = stockQuery.trim();
     const selectedLabel = stockName ? `${stockName} (${code})` : "";
     if (query === selectedLabel || query.length < 2) {
+      stockSearchRequestIdRef.current += 1;
       setStockSearchResults([]);
       setStockSearchBusy(false);
-      return;
+      return undefined;
     }
+
+    let controller: AbortController | null = null;
     const timer = window.setTimeout(() => {
+      controller = new AbortController();
+      const requestId = ++stockSearchRequestIdRef.current;
       setStockSearchBusy(true);
-      void searchStocks(query)
+      void searchStocks(query, { signal: controller.signal })
         .then((response) => {
+          if (requestId !== stockSearchRequestIdRef.current || stockQuery.trim() !== query) return;
           setStockSearchResults(response.rows);
           setStockSearchOpen(true);
         })
-        .catch(() => {
+        .catch((error) => {
+          if (isAbortError(error) || requestId !== stockSearchRequestIdRef.current) return;
+          if (stockQuery.trim() !== query) return;
           setStockSearchResults([]);
           setStockSearchOpen(true);
         })
-        .finally(() => setStockSearchBusy(false));
+        .finally(() => {
+          if (requestId === stockSearchRequestIdRef.current) setStockSearchBusy(false);
+        });
     }, 250);
-    return () => window.clearTimeout(timer);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller?.abort();
+      stockSearchRequestIdRef.current += 1;
+    };
   }, [stockQuery, code, stockName]);
 
   useEffect(() => {
@@ -403,6 +549,8 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
 
   useEffect(() => {
     return () => {
+      runGenerationRef.current += 1;
+      activeRunRef.current = null;
       const running = activeJobId.current;
       if (running) void cancelBacktestJob<MultiStrategyBacktestResponse>(running).catch(() => undefined);
       const validationRunning = activeValidationJobId.current;
@@ -411,23 +559,73 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
   }, []);
 
   useEffect(() => {
+    runGenerationRef.current += 1;
+    activeRunRef.current = null;
     const running = activeJobId.current;
     if (running) void cancelBacktestJob<MultiStrategyBacktestResponse>(running).catch(() => undefined);
     activeJobId.current = null;
     setBusy(false);
     setJob(null);
     setResult(null);
+    setResultConfig(null);
+    setResultCompletedAt(null);
+    setResultRestoreMode(null);
     setError(null);
+
+    const restored = readLatestBacktestCache(market, code);
+    if (
+      restored
+      && restored.config.market === market
+      && restored.config.code.trim().toUpperCase() === code.trim().toUpperCase()
+    ) {
+      applyConfigToForm(restored.config);
+      setExactCachedResult(restored);
+      setLatestCachedResult(restored);
+      setResult(restored.result);
+      setResultConfig(restored.config);
+      setResultCompletedAt(restored.completedAt);
+      setResultRestoreMode("auto-cache");
+      setView("result");
+      return;
+    }
+
+    setExactCachedResult(null);
+    setLatestCachedResult(null);
     setView("setup");
   }, [code, market]);
 
   const selectedHolding = customHolding ? Number(customHolding) : maxHoldingDays;
+  const currentConfig = useMemo<BacktestCacheConfig>(() => ({
+    code: code.trim().toUpperCase(),
+    market,
+    startDate,
+    endDate,
+    initialCapital: Number(initialCapital),
+    maxHoldingDays: Number(selectedHolding),
+    roundTripCostPct: Number(costPct),
+  }), [code, costPct, endDate, initialCapital, market, selectedHolding, startDate]);
+  const currentSignature = useMemo(() => backtestResultSignature(currentConfig), [currentConfig]);
   const selectedStockLabel = stockName ? `${stockName} (${code})` : "";
   const stockSelectionDirty = Boolean(stockQuery.trim() && stockQuery.trim() !== selectedStockLabel);
   const holdingDescription = useMemo(() => {
     if (customHolding) return "직접 입력한 거래일 수를 모든 전략에 동일하게 적용합니다.";
     return holdingOptions.find((item) => item.days === maxHoldingDays)?.description ?? "";
   }, [customHolding, maxHoldingDays]);
+
+  useEffect(() => {
+    setExactCachedResult(readBacktestCache(currentSignature));
+    setLatestCachedResult(readLatestBacktestCache(market, code));
+  }, [code, currentSignature, market]);
+
+  function showCachedResult(entry: BacktestCacheEntry) {
+    setResult(entry.result);
+    setResultConfig(entry.config);
+    setResultCompletedAt(entry.completedAt);
+    setResultRestoreMode("manual-cache");
+    setError(null);
+    setView("result");
+    scrollTop();
+  }
 
   function chooseStock(item: StockSearchItem) {
     onSelectStock(item);
@@ -441,40 +639,121 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
     window.requestAnimationFrame(() => workspaceTopRef.current?.scrollIntoView({ behavior: "auto", block: "start" }));
   }
 
-  async function runBacktest(endDateOverride?: string) {
+  function applyConfigToForm(config: BacktestCacheConfig) {
+    setStartDate(config.startDate);
+    setEndDate(config.endDate);
+    setInitialCapital(String(config.initialCapital));
+    setCostPct(String(config.roundTripCostPct));
+    if (holdingOptions.some((option) => option.days === config.maxHoldingDays)) {
+      setCustomHolding("");
+      setMaxHoldingDays(config.maxHoldingDays);
+    } else {
+      setCustomHolding(String(config.maxHoldingDays));
+    }
+  }
+
+  async function runBacktest(configOverride?: BacktestCacheConfig) {
     if (!code.trim() || stockSelectionDirty || busy) return;
-    const holding = Number(selectedHolding);
+    const runConfig = configOverride ?? currentConfig;
+    const holding = Number(runConfig.maxHoldingDays);
     if (!Number.isFinite(holding) || holding < 1 || holding > 120) {
       setError("최대 보유기간은 1~120 거래일로 입력해 주세요.");
       return;
     }
+    if (!Number.isFinite(runConfig.initialCapital) || runConfig.initialCapital <= 0) {
+      setError("초기 자본은 0보다 큰 값으로 입력해 주세요.");
+      return;
+    }
+    if (!Number.isFinite(runConfig.roundTripCostPct) || runConfig.roundTripCostPct < 0 || runConfig.roundTripCostPct > 5) {
+      setError("왕복 비용률은 0~5% 범위로 입력해 주세요.");
+      return;
+    }
+
+    const runSignature = backtestResultSignature(runConfig);
+    const runCode = runConfig.code.trim().toUpperCase();
+    const generation = ++runGenerationRef.current;
+    activeRunRef.current = {
+      generation,
+      signature: runSignature,
+      code: runCode,
+      market: runConfig.market,
+      jobId: null,
+    };
+    const isCurrentRun = (jobId: string | null = null) => {
+      const active = activeRunRef.current;
+      return runGenerationRef.current === generation
+        && active?.generation === generation
+        && active.signature === runSignature
+        && active.code === runCode
+        && active.market === runConfig.market
+        && (jobId == null || active.jobId === jobId);
+    };
+
+    const previousExact = readBacktestCache(runSignature);
+    if (!result && previousExact) {
+      setResult(previousExact.result);
+      setResultConfig(previousExact.config);
+      setResultCompletedAt(previousExact.completedAt);
+      setResultRestoreMode("manual-cache");
+    }
+
     setBusy(true);
     setError(null);
-    setResult(null);
     setView("result");
     scrollTop();
 
     try {
       const created = await createMultiStrategyBacktestJob({
-        code,
-        market,
-        start_date: startDate,
-        end_date: endDateOverride ?? endDate,
-        initial_capital: Number(initialCapital),
+        code: runConfig.code,
+        market: runConfig.market,
+        start_date: runConfig.startDate,
+        end_date: runConfig.endDate,
+        initial_capital: runConfig.initialCapital,
         max_holding_days: holding,
-        round_trip_cost_pct: Number(costPct),
+        round_trip_cost_pct: runConfig.roundTripCostPct,
       });
-      setJob(created);
-      activeJobId.current = created.job_id;
+      if (!isCurrentRun()) {
+        void cancelBacktestJob<MultiStrategyBacktestResponse>(created.job_id).catch(() => undefined);
+        return;
+      }
 
-      while (activeJobId.current === created.job_id) {
+      activeRunRef.current = {
+        generation,
+        signature: runSignature,
+        code: runCode,
+        market: runConfig.market,
+        jobId: created.job_id,
+      };
+      activeJobId.current = created.job_id;
+      setJob(created);
+
+      while (isCurrentRun(created.job_id) && activeJobId.current === created.job_id) {
         await new Promise((resolve) => window.setTimeout(resolve, 650));
+        if (!isCurrentRun(created.job_id) || activeJobId.current !== created.job_id) return;
+
         const latest = await fetchBacktestJob<MultiStrategyBacktestResponse>(created.job_id);
+        if (!isCurrentRun(created.job_id) || activeJobId.current !== created.job_id) return;
+
         setJob(latest);
         if (latest.status === "completed" && latest.result) {
+          const completedAt = Date.now();
+          const entry: BacktestCacheEntry = {
+            version: 1,
+            signature: runSignature,
+            config: runConfig,
+            completedAt,
+            result: latest.result,
+          };
+          writeBacktestCache(entry);
           setResult(latest.result);
+          setResultConfig(runConfig);
+          setResultCompletedAt(completedAt);
+          setResultRestoreMode(null);
+          setLatestCachedResult(entry);
+          if (runSignature === currentSignature) setExactCachedResult(entry);
           setBusy(false);
           activeJobId.current = null;
+          activeRunRef.current = null;
           scrollTop();
           return;
         }
@@ -484,12 +763,15 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
         if (latest.status === "cancelled") {
           setBusy(false);
           activeJobId.current = null;
+          activeRunRef.current = null;
           return;
         }
       }
     } catch (cause) {
+      if (!isCurrentRun(activeJobId.current)) return;
       setBusy(false);
       activeJobId.current = null;
+      activeRunRef.current = null;
       setError(cause instanceof Error ? cause.message : "전체 전략 검증 중 오류가 발생했습니다.");
     }
   }
@@ -559,8 +841,15 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
   function rerunLatest() {
     if (busy) return;
     const latest = isoDate(new Date());
+    const config = { ...currentConfig, endDate: latest };
     setEndDate(latest);
-    void runBacktest(latest);
+    void runBacktest(config);
+  }
+
+  function rerunDisplayedResult() {
+    if (!resultConfig || busy) return;
+    applyConfigToForm(resultConfig);
+    void runBacktest(resultConfig);
   }
 
   async function cancelRunning() {
@@ -583,14 +872,30 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
     ? result.strategies.find((row) => row.strategy === result.recommendation.historical_best_strategy) ?? null
     : null;
   const scannerContextMatchesDate = Boolean(scannerContext && result && scannerContext.data_date.replace(/-/g, "") === result.as_of_date.replace(/-/g, ""));
+  const latestCachedDiffers = Boolean(latestCachedResult && latestCachedResult.signature !== currentSignature);
+  const displayedConfig = resultConfig ?? currentConfig;
+  const resultRequestedStart = result?.data_window?.requested_start ?? displayedConfig.startDate;
+  const resultRequestedEnd = result?.data_window?.requested_end ?? displayedConfig.endDate;
+  const resultActualStart = result?.data_window?.first_stock_date ?? "";
+  const resultActualEnd = result?.data_window?.last_stock_date ?? "";
+  const resultRangeIncomplete = Boolean(
+    result
+    && resultActualStart
+    && resultActualEnd
+    && (dateKey(resultActualStart) > dateKey(resultRequestedStart) || dateKey(resultActualEnd) < dateKey(resultRequestedEnd)),
+  );
 
   return (
     <section className="backtest-workspace multi-strategy-workspace" ref={workspaceTopRef}>
       <header className="multi-strategy-header">
         <div>
-          <h1>종목 과거 성과</h1>
-          <p>같은 종목과 기간에서 10가지 전략의 과거 성과를 비교합니다.</p>
+          <span>선택적 과거 검증</span>
+          <h1>{stockName ? `${stockName} 과거 성과` : "종목 과거 성과"}</h1>
+          <p>현재 검토 중인 조건이 과거에는 어떻게 작동했는지 확인합니다. 이 검증을 실행하지 않아도 종목 분석과 관심·보유 관리는 사용할 수 있습니다.</p>
         </div>
+        {onBackToAnalysis && (
+          <button type="button" className="backtest-back-analysis" onClick={onBackToAnalysis}>종목 분석으로</button>
+        )}
       </header>
 
       <nav className="backtest-subnav" aria-label="과거 성과 비교 화면">
@@ -600,8 +905,66 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
 
       {view === "setup" && (
         <div className="multi-strategy-setup">
+          <section className="backtest-question-panel">
+            <div>
+              <span>이번에 확인하는 질문</span>
+              <strong>{stockName || code || "선택 종목"} · {market}</strong>
+              <p>
+                {formatCompactDate(startDate)} ~ {formatCompactDate(endDate)} 동안 StockScope의 10가지 전략이
+                같은 데이터에서 어떻게 작동했는지 비교합니다.
+              </p>
+            </div>
+            <div className="backtest-question-context">
+              {scannerContext ? (
+                <>
+                  <span>종목 찾기에서 넘어온 현재 판단</span>
+                  <strong>{scannerContext.strategy_easy_name} · {scannerContext.action_label}</strong>
+                  <small>{scannerContext.data_date} 기준 · {scannerContext.passed}/{scannerContext.total} 조건 충족</small>
+                </>
+              ) : (
+                <>
+                  <span>검증의 역할</span>
+                  <strong>현재 판단을 보완하는 참고 근거</strong>
+                  <small>과거 성과 1위가 현재 매수 신호를 의미하지 않습니다.</small>
+                </>
+              )}
+            </div>
+          </section>
+
+          <section className={`backtest-cache-panel ${exactCachedResult ? "exact" : latestCachedDiffers ? "different" : "empty"}`}>
+            <div className="backtest-cache-copy">
+              <span>이번 세션의 기존 결과</span>
+              {exactCachedResult ? (
+                <>
+                  <strong>현재 조건의 완료 결과가 이번 세션에 저장되어 있습니다.</strong>
+                  <small>{formatCompletedAt(exactCachedResult.completedAt)} 완료 · {configSummary(exactCachedResult.config)}</small>
+                  <small>저장된 결과는 계산 당시 조건 기준이며 최신 데이터 여부를 뜻하지 않습니다.</small>
+                </>
+              ) : latestCachedDiffers && latestCachedResult ? (
+                <>
+                  <strong>이전에 계산한 결과가 있지만 현재 설정과 다릅니다.</strong>
+                  <small>이전: {configSummary(latestCachedResult.config)}</small>
+                  <small>현재: {configSummary(currentConfig)}</small>
+                </>
+              ) : (
+                <>
+                  <strong>같은 조건의 기존 결과가 없습니다.</strong>
+                  <small>처음 확인하려면 과거 성과 계산을 실행하세요. 재방문만으로 자동 계산하지 않습니다.</small>
+                </>
+              )}
+            </div>
+            <div className="backtest-cache-actions">
+              {exactCachedResult && (
+                <button type="button" className="secondary" disabled={busy} onClick={() => void runBacktest(exactCachedResult.config)}>같은 조건으로 다시 계산</button>
+              )}
+              {!exactCachedResult && latestCachedDiffers && latestCachedResult && (
+                <button type="button" className="secondary" onClick={() => showCachedResult(latestCachedResult)}>이전 결과 보기</button>
+              )}
+            </div>
+          </section>
+
           <section className="backtest-settings-card">
-            <div className="backtest-section-title"><span>검증 설정</span><strong>종목과 기간을 정하고 과거 성과를 비교합니다.</strong></div>
+            <div className="backtest-section-title"><span>검증 조건</span><strong>필요할 때만 조건을 정해 과거 성과를 계산합니다.</strong></div>
             <div className="backtest-stock-picker">
               <label htmlFor="backtest-stock-search">검증 종목</label>
               <div className="backtest-stock-search-box">
@@ -673,11 +1036,15 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
             </details>
 
             <div className="backtest-run-row multi-strategy-run-row">
-              <button type="button" disabled={busy || !code.trim() || stockSelectionDirty} onClick={() => void runBacktest()}>{busy ? "과거 성과 비교 중..." : "과거 성과 비교"}</button>
+              <button type="button" disabled={busy || !code.trim() || stockSelectionDirty} onClick={() => void runBacktest()}>{busy ? "과거 성과 계산 중..." : "과거 성과 계산"}</button>
             </div>
             {error && <div className="backtest-error"><strong>실행 실패</strong><span>{error}</span></div>}
           </section>
-          <details className="exit-validation-panel" open={showAdvancedResearch}>
+          <div className="backtest-optional-note">
+            <strong>과거 검증은 선택 사항입니다.</strong>
+            <span>결과가 없거나 실행하지 않아도 현재 종목 분석과 관심·보유 기능은 그대로 사용할 수 있습니다.</span>
+          </div>
+                    <details className="exit-validation-panel" open={showAdvancedResearch}>
             <summary onClick={(event) => { event.preventDefault(); setShowAdvancedResearch((open) => !open); }}><span>고급 검증 · Exit 정책 연구</span><DetailToggleText closed="열기 ▼" open="닫기 ▲" /></summary>
             <div className="exit-validation-body">
               <div className="exit-validation-intro">
@@ -749,8 +1116,16 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
       {view === "result" && (
         <div className="backtest-result-view multi-strategy-result-view">
           <div className="backtest-result-toolbar">
-            <div><span>검증 대상</span><strong>{stockName || code || "종목 미선택"} · 전체 전략</strong><small>{formatCompactDate(startDate)} ~ {formatCompactDate(endDate)}</small></div>
-            <button type="button" disabled={busy} onClick={() => { setView("setup"); scrollTop(); }}>설정 변경</button>
+            <div>
+              <span>과거 성과 결과 · 선택적 검증</span>
+              <strong>{stockName || code || "종목 미선택"} · {result?.market ?? market}</strong>
+              <small>{formatCompactDate(displayedConfig.startDate)} ~ {formatCompactDate(displayedConfig.endDate)} · 최대 보유 {displayedConfig.maxHoldingDays}거래일</small>
+            </div>
+            <div className="backtest-result-toolbar-actions">
+              <button type="button" disabled={busy} onClick={() => { setView("setup"); scrollTop(); }}>조건 변경</button>
+              {result && <button type="button" disabled={busy} onClick={rerunDisplayedResult}>같은 조건 다시 계산</button>}
+              {onBackToAnalysis && <button type="button" onClick={onBackToAnalysis}>종목 분석으로</button>}
+            </div>
           </div>
 
           {busy && job && (
@@ -758,14 +1133,62 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock }
               <div className="backtest-progress-head"><div><strong>{job.progress.message}</strong><span>{job.progress.current.toLocaleString()} / {job.progress.total.toLocaleString()} · {job.progress.percent.toFixed(1)}%</span></div><b>{job.elapsed_seconds.toFixed(1)}초</b></div>
               <progress max={100} value={job.progress.percent} />
               <div className="backtest-progress-stats"><span><b>처리 경로</b>{job.progress.details.cold_start_fast_path ? "Cold Start Fast Path" : job.progress.details.single_stock_fast_path ? "단일 종목 Fast Path" : "기본 경로"}</span><span><b>과거 저장소</b>{Number(job.progress.details.history_store_hits ?? 0).toLocaleString()} hit</span><span><b>선택종목 캐시</b>{Number(job.progress.details.cached_symbol_fast_path_hits ?? 0).toLocaleString()}일</span><span><b>KRX 캐시</b>{Number(job.progress.details.raw_cache_hits ?? 0).toLocaleString()} hit</span><span><b>실제 요청</b>{Number(job.progress.details.network_requests ?? 0).toLocaleString()}회</span><span><b>동시 처리</b>{Number(job.progress.details.concurrency ?? 0).toLocaleString()}</span><span><b>재시도</b>{Number(job.progress.details.retries ?? 0).toLocaleString()}회</span><span><b>현재 전략</b>{String(job.progress.details.strategy ?? "-")}</span></div>
+              {result && <p className="backtest-preserved-result-note">기존 완료 결과는 아래에 유지됩니다. 새 계산이 끝나면 새 결과로 교체합니다.</p>}
               <button type="button" className="backtest-cancel-button" onClick={() => void cancelRunning()}>분석 취소</button>
             </div>
           )}
           {busy && !job && <div className="loading-card">10가지 방법 비교를 준비하고 있습니다...</div>}
-          {error && <div className="backtest-error"><strong>실행 실패</strong><span>{error}</span><button type="button" onClick={() => { setView("setup"); scrollTop(); }}>설정으로 돌아가기</button></div>}
+          {error && (
+            <div className="backtest-error backtest-result-error">
+              <strong>{result ? "새 계산을 완료하지 못했습니다." : "실행 실패"}</strong>
+              <span>{error}</span>
+              {result && <small>기존 완료 결과는 그대로 유지됩니다.</small>}
+              <div>
+                {result && <button type="button" disabled={busy} onClick={rerunDisplayedResult}>다시 시도</button>}
+                <button type="button" onClick={() => { setView("setup"); scrollTop(); }}>조건 확인</button>
+                {onBackToAnalysis && <button type="button" onClick={onBackToAnalysis}>종목 분석으로</button>}
+              </div>
+            </div>
+          )}
 
           {result && (
             <div className="multi-strategy-results">
+              <section className="backtest-result-context" aria-label="과거 성과 검증 범위">
+                <div className="backtest-result-context-head">
+                  <div>
+                    <span>검증 범위</span>
+                    <strong>요청 조건과 실제 사용한 데이터 범위를 구분해 표시합니다.</strong>
+                  </div>
+                  <small>
+                    {resultCompletedAt
+                      ? resultRestoreMode === "auto-cache"
+                        ? `저장 결과 자동 복원 · ${formatCompletedAt(resultCompletedAt)} 완료`
+                        : resultRestoreMode === "manual-cache"
+                          ? `이번 세션 저장 결과 · ${formatCompletedAt(resultCompletedAt)} 완료`
+                          : `이번 세션 ${formatCompletedAt(resultCompletedAt)} 완료`
+                      : "완료 시각 확인 불가"}
+                  </small>
+                </div>
+                {resultRestoreMode === "auto-cache" && (
+                  <p className="backtest-preserved-result-note">새 계산 없이 이번 세션의 저장된 완료 결과를 복원했습니다.</p>
+                )}
+                <div className="backtest-result-context-grid">
+                  <div><span>요청한 검증 기간</span><strong>{formatCompactDate(resultRequestedStart)} ~ {formatCompactDate(resultRequestedEnd)}</strong></div>
+                  <div><span>실제 종목 데이터</span><strong>{resultActualStart && resultActualEnd ? `${formatCompactDate(resultActualStart)} ~ ${formatCompactDate(resultActualEnd)}` : "-"}</strong></div>
+                  <div><span>종목 데이터</span><strong>{Number(result.data_window?.stock_rows ?? 0).toLocaleString()} 거래일</strong></div>
+                  <div><span>시장지수 데이터</span><strong>{Number(result.data_window?.index_rows ?? 0).toLocaleString()} 거래일</strong></div>
+                  <div><span>최대 보유기간</span><strong>{displayedConfig.maxHoldingDays} 거래일</strong></div>
+                  <div><span>왕복 비용률</span><strong>{displayedConfig.roundTripCostPct}%</strong></div>
+                </div>
+                {resultRangeIncomplete && (
+                  <div className="backtest-result-range-warning">
+                    <strong>요청한 기간 전체와 실제 확보된 종목 데이터 범위가 다릅니다.</strong>
+                    <span>상장 기간 또는 확보 가능한 과거 데이터 범위를 확인해주세요. 현재 화면은 실제 확보된 데이터로 계산된 결과입니다.</span>
+                  </div>
+                )}
+                <p>이 결과는 과거 같은 조건의 비교 결과입니다. 과거 성과 1위가 현재 매수해야 할 전략이라는 뜻은 아닙니다.</p>
+              </section>
+
               <section className={`strategy-selector-hero action-${result.recommendation.action.toLowerCase()}`}>
                 <div className="strategy-selector-kicker">
                   <span>{formatCompactDate(result.as_of_date)} 확정 일봉 기준</span>

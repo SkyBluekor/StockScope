@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import NumericStepper, { formatIntegerInput, parseFormattedNumber } from "./components/NumericStepper";
 import { BeginnerGlossary, BeginnerIndicatorSummary, TermHelp } from "./components/BeginnerHelp";
 import { AnalysisDetailHeader, AnalysisHub, PullbackConfirmationPanel, type AnalysisSection } from "./components/AnalysisHub";
@@ -10,8 +10,23 @@ import TrackingWorkspace from "./components/TrackingWorkspace";
 import HoldingsWorkspace from "./components/HoldingsWorkspace";
 import StockAnalysisWorkspace from "./components/StockAnalysisWorkspace";
 import MarketOverviewWorkspace from "./components/MarketOverviewWorkspace";
+import DataStatusPanel, { dataStatusSummary } from "./components/DataStatusPanel";
+import useStockDataContract from "./hooks/useStockDataContract";
+import useStockQuote from "./hooks/useStockQuote";
+import {
+  DATA_TASK_EVENT,
+  dataTaskIsRunning,
+  readActiveDataTask,
+  writeActiveDataTask,
+  type DataTaskSnapshot,
+} from "./services/dataTask";
+import {
+  readAnalysisSelectionContext,
+  writeAnalysisSelectionContext,
+} from "./services/uiSession";
 import {
   fetchHealth,
+  fetchBacktestJob,
   fetchMarketDashboard,
   fetchMarketHistory,
   fetchProviderStatus,
@@ -40,7 +55,6 @@ function initialTheme(): ThemeMode {
   document.documentElement.dataset.theme = resolved;
   return resolved;
 }
-
 
 function stockScopeFavicon(theme: ThemeMode) {
   const dark = theme === "dark";
@@ -129,6 +143,14 @@ function pageFromPathname(pathname: string): AppPage {
   return "dashboard";
 }
 
+function stockIdentity(market: "KOSPI" | "KOSDAQ", code: string) {
+  return `${market}:${code.trim().toUpperCase()}`;
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
 function number(value: number | null | undefined, suffix = "") {
   if (value == null) return "-";
   return `${new Intl.NumberFormat("ko-KR").format(value)}${suffix}`;
@@ -214,19 +236,28 @@ export default function App() {
     }
   }, [theme]);
   const [providers, setProviders] = useState<ProviderStatus | null>(null);
+  const [dataStatusOpen, setDataStatusOpen] = useState(false);
+  const [providerRefreshing, setProviderRefreshing] = useState(false);
+  const [activeDataTask, setActiveDataTask] = useState<DataTaskSnapshot | null>(() => readActiveDataTask());
   const [dashboard, setDashboard] = useState<MarketDashboard | null>(null);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [appPage, setAppPage] = useState<AppPage>(() => pageFromPathname(window.location.pathname));
-  const [stockCode, setStockCode] = useState("005930");
-  const [stockMarket, setStockMarket] = useState<"KOSPI" | "KOSDAQ">("KOSPI");
-  const [stockQuery, setStockQuery] = useState("삼성전자 (005930)");
-  const [selectedStockName, setSelectedStockName] = useState("삼성전자");
+  const [initialAnalysisSelection] = useState(() => readAnalysisSelectionContext());
+  const [stockCode, setStockCode] = useState(initialAnalysisSelection?.code ?? "005930");
+  const [stockMarket, setStockMarket] = useState<"KOSPI" | "KOSDAQ">(initialAnalysisSelection?.market ?? "KOSPI");
+  const [stockQuery, setStockQuery] = useState(
+    initialAnalysisSelection
+      ? `${initialAnalysisSelection.name} (${initialAnalysisSelection.code})`
+      : "삼성전자 (005930)",
+  );
+  const [selectedStockName, setSelectedStockName] = useState(initialAnalysisSelection?.name ?? "삼성전자");
   const [stockSearchResults, setStockSearchResults] = useState<StockSearchItem[]>([]);
   const [stockSearchBusy, setStockSearchBusy] = useState(false);
   const [stockSearchOpen, setStockSearchOpen] = useState(false);
   const [stock, setStock] = useState<StockContext | null>(null);
   const [stockMessage, setStockMessage] = useState("종목코드로 KRX + OpenDART 통합 조회 가능");
+  const [stockContextError, setStockContextError] = useState<string | null>(null);
   const [stockBusy, setStockBusy] = useState(false);
   const [strategyAnalysis, setStrategyAnalysis] = useState<StrategyAnalysis | null>(null);
   const [strategyBusy, setStrategyBusy] = useState(false);
@@ -241,7 +272,44 @@ export default function App() {
   const [lastAnalysisInputSignature, setLastAnalysisInputSignature] = useState("");
   const [analysisSection, setAnalysisSection] = useState<AnalysisSection>("summary");
   const [selectedStrategyIndex, setSelectedStrategyIndex] = useState(0);
-  const [scannerOrigin, setScannerOrigin] = useState(false);
+  const [scannerOrigin, setScannerOrigin] = useState(initialAnalysisSelection?.scannerOrigin ?? false);
+  const selectedStockKeyRef = useRef(stockIdentity(stockMarket, stockCode));
+  const stockSearchRequestIdRef = useRef(0);
+  const stockContextRequestIdRef = useRef(0);
+  const strategyRequestIdRef = useRef(0);
+  const stockContextAbortRef = useRef<AbortController | null>(null);
+  const strategyAbortRef = useRef<AbortController | null>(null);
+  const autoContextLoadedKeyRef = useRef<string | null>(null);
+
+  selectedStockKeyRef.current = stockIdentity(stockMarket, stockCode);
+
+  const {
+    contract: stockDataContract,
+    loading: stockDataContractBusy,
+    error: stockDataContractError,
+    refresh: refreshStockDataContract,
+  } = useStockDataContract({
+    code: stockCode,
+    market: stockMarket,
+    enabled: appPage === "analysis" && Boolean(stockCode && selectedStockName),
+  });
+
+
+  const {
+    quote: stockQuote,
+    state: stockQuoteState,
+    streamState: stockQuoteStreamState,
+    refreshing: stockQuoteRefreshing,
+    error: stockQuoteError,
+    refresh: refreshStockQuote,
+    marketSession: stockMarketSession,
+    marketSessionLoading: stockMarketSessionLoading,
+  } = useStockQuote({
+    code: stockCode,
+    market: stockMarket,
+    venue: "INTEGRATED",
+    enabled: appPage === "analysis" && Boolean(stockCode && selectedStockName),
+  });
 
   const analysisInputSignature = [
     stockCode,
@@ -254,6 +322,8 @@ export default function App() {
     averagePriceInput,
     holdingQuantityInput,
   ].join("|");
+  const analysisInputSignatureRef = useRef(analysisInputSignature);
+  analysisInputSignatureRef.current = analysisInputSignature;
   const analysisOutdated = Boolean(
     strategyAnalysis &&
       lastAnalysisInputSignature &&
@@ -263,6 +333,25 @@ export default function App() {
     ? Math.min(selectedStrategyIndex, Math.max(strategyAnalysis.strategies.length - 1, 0))
     : 0;
   const selectedStrategy = strategyAnalysis?.strategies[selectedStrategyIndexSafe] ?? null;
+
+  async function refreshSystemStatus() {
+    setProviderRefreshing(true);
+    const [healthResult, providerResult] = await Promise.allSettled([
+      fetchHealth(),
+      fetchProviderStatus(),
+    ]);
+    if (healthResult.status === "fulfilled") {
+      setApiStatus(healthResult.value.status === "ok" ? "정상" : "오류");
+    } else {
+      setApiStatus("연결 실패");
+    }
+    if (providerResult.status === "fulfilled") {
+      setProviders(providerResult.value);
+    } else {
+      setProviders(null);
+    }
+    setProviderRefreshing(false);
+  }
 
   async function loadDashboard() {
     setLoading(true);
@@ -296,10 +385,7 @@ export default function App() {
   }
 
   useEffect(() => {
-    fetchHealth()
-      .then((data) => setApiStatus(data.status === "ok" ? "정상" : "오류"))
-      .catch(() => setApiStatus("연결 실패"));
-    fetchProviderStatus().then(setProviders).catch(() => setProviders(null));
+    void refreshSystemStatus();
 
     if (window.location.pathname === "/") {
       window.history.replaceState({}, "", "/dashboard");
@@ -313,6 +399,13 @@ export default function App() {
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
+  useEffect(() => () => {
+    stockContextRequestIdRef.current += 1;
+    strategyRequestIdRef.current += 1;
+    stockContextAbortRef.current?.abort();
+    strategyAbortRef.current?.abort();
+  }, []);
+
   useEffect(() => {
     if (appPage === "dashboard" && dashboard == null && !loading) {
       void loadDashboard();
@@ -320,36 +413,140 @@ export default function App() {
   }, [appPage]);
 
   useEffect(() => {
+    const syncTask = () => setActiveDataTask(readActiveDataTask());
+    window.addEventListener(DATA_TASK_EVENT, syncTask);
+    return () => window.removeEventListener(DATA_TASK_EVENT, syncTask);
+  }, []);
+
+  useEffect(() => {
+    if (!activeDataTask || !dataTaskIsRunning(activeDataTask)) return undefined;
+    let cancelled = false;
+    let timer: number | null = null;
+
+    const pollGlobalTask = async () => {
+      try {
+        const latest = await fetchBacktestJob(activeDataTask.jobId);
+        if (cancelled) return;
+        const total = latest.progress?.total ?? null;
+        const next: DataTaskSnapshot = {
+          ...activeDataTask,
+          status: latest.status,
+          stage: latest.stage,
+          message: latest.error || latest.progress?.message || activeDataTask.message,
+          current: latest.progress?.current ?? null,
+          total,
+          percent: total != null && total > 0 ? latest.progress?.percent ?? null : null,
+          updatedAt: latest.updated_at ?? null,
+        };
+        setActiveDataTask(next);
+        writeActiveDataTask(next);
+        if (dataTaskIsRunning(next)) {
+          timer = window.setTimeout(() => void pollGlobalTask(), 1200);
+        }
+      } catch {
+        if (cancelled) return;
+        const next: DataTaskSnapshot = {
+          ...activeDataTask,
+          status: "unknown",
+          message: "진행 상태를 확인하지 못했습니다. 새 작업을 시작하지 말고 상태를 다시 확인하세요.",
+        };
+        setActiveDataTask(next);
+        writeActiveDataTask(next);
+      }
+    };
+
+    void pollGlobalTask();
+    return () => {
+      cancelled = true;
+      if (timer != null) window.clearTimeout(timer);
+    };
+  }, [activeDataTask?.jobId, activeDataTask?.status]);
+
+  useEffect(() => {
     const query = stockQuery.trim();
     const selectedLabel = selectedStockName ? `${selectedStockName} (${stockCode})` : "";
     if (query === selectedLabel || query.length < 2) {
+      stockSearchRequestIdRef.current += 1;
       setStockSearchResults([]);
       setStockSearchBusy(false);
-      return;
+      return undefined;
     }
 
+    let controller: AbortController | null = null;
     const timer = window.setTimeout(() => {
+      controller = new AbortController();
+      const requestId = ++stockSearchRequestIdRef.current;
       setStockSearchBusy(true);
-      void searchStocks(query)
+      void searchStocks(query, { signal: controller.signal })
         .then((result) => {
+          if (requestId !== stockSearchRequestIdRef.current) return;
+          if (stockQuery.trim() !== query) return;
           setStockSearchResults(result.rows);
           setStockSearchOpen(true);
         })
-        .catch(() => {
+        .catch((error) => {
+          if (isAbortError(error) || requestId !== stockSearchRequestIdRef.current) return;
+          if (stockQuery.trim() !== query) return;
           setStockSearchResults([]);
           setStockSearchOpen(true);
         })
-        .finally(() => setStockSearchBusy(false));
+        .finally(() => {
+          if (requestId === stockSearchRequestIdRef.current) setStockSearchBusy(false);
+        });
     }, 250);
-    return () => window.clearTimeout(timer);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller?.abort();
+    };
   }, [stockQuery, stockCode, selectedStockName]);
+
+  async function loadStockContextForSelection(
+    code: string,
+    market: "KOSPI" | "KOSDAQ",
+    label: string,
+  ) {
+    const normalizedCode = code.trim().toUpperCase();
+    const requestKey = stockIdentity(market, normalizedCode);
+    const requestId = ++stockContextRequestIdRef.current;
+    stockContextAbortRef.current?.abort();
+    const controller = new AbortController();
+    stockContextAbortRef.current = controller;
+    setStockBusy(true);
+    setStockContextError(null);
+    setStockMessage(`${label || normalizedCode} 기본 정보 불러오는 중...`);
+
+    try {
+      const result = await fetchStockContext(normalizedCode, market, { signal: controller.signal });
+      if (requestId !== stockContextRequestIdRef.current || selectedStockKeyRef.current !== requestKey) return;
+      setStock(result);
+      setStockContextError(null);
+      setStockMessage(`${result.company.corp_name ?? result.stock.name ?? normalizedCode} 조회 완료`);
+    } catch (error) {
+      if (isAbortError(error)) return;
+      if (requestId !== stockContextRequestIdRef.current || selectedStockKeyRef.current !== requestKey) return;
+      const contextError = error instanceof Error ? error.message : "종목 기본 정보를 확인하지 못했습니다.";
+      setStock(null);
+      setStockContextError(contextError);
+      setStockMessage(contextError);
+    } finally {
+      if (requestId === stockContextRequestIdRef.current) {
+        if (stockContextAbortRef.current === controller) stockContextAbortRef.current = null;
+        setStockBusy(false);
+      }
+    }
+  }
 
   function chooseStock(
     item: StockSearchItem,
     options: { loadContext?: boolean; origin?: "scanner" | null } = {},
   ) {
     const normalizedCode = item.code.trim().toUpperCase();
+    const nextKey = stockIdentity(item.market, normalizedCode);
+    const sameStock = selectedStockKeyRef.current === nextKey;
     const shouldLoadContext = options.loadContext ?? appPage === "analysis";
+
+    selectedStockKeyRef.current = nextKey;
     setScannerOrigin(options.origin === "scanner");
     setStockCode(normalizedCode);
     setStockMarket(item.market);
@@ -357,52 +554,24 @@ export default function App() {
     setStockQuery(`${item.name} (${item.code})`);
     setStockSearchResults([]);
     setStockSearchOpen(false);
-    setStock(null);
-    setStrategyAnalysis(null);
-    setSelectedStrategyIndex(0);
-    setLastAnalysisInputSignature("");
-    setReferencePriceInput("");
-    setReferenceHighInput("");
-    setReferenceLowInput("");
-    setReferenceVolumeInput("");
-    setPositionMode("NOT_HELD");
-    setAveragePriceInput("");
-    setHoldingQuantityInput("");
-    setStockMessage(`${item.market} · ${item.name} 선택됨`);
+    writeAnalysisSelectionContext({
+      market: item.market,
+      code: normalizedCode,
+      name: item.name,
+      scannerOrigin: options.origin === "scanner",
+    });
 
-    if (shouldLoadContext) {
-      setStockBusy(true);
-      setStockMessage(`${item.name} 기본 정보 불러오는 중...`);
-      void fetchStockContext(normalizedCode, item.market)
-        .then((result) => {
-          setStock(result);
-          setStrategyAnalysis(null);
-          setSelectedStrategyIndex(0);
-          setLastAnalysisInputSignature("");
-          setStockMessage(`${result.company.corp_name ?? result.stock.name ?? item.code} 조회 완료`);
-        })
-        .catch((error) => {
-          setStock(null);
-          setStrategyAnalysis(null);
-          setSelectedStrategyIndex(0);
-          setLastAnalysisInputSignature("");
-          setStockMessage(error instanceof Error ? error.message : "종목 조회 실패");
-        })
-        .finally(() => setStockBusy(false));
-    }
-  }
-
-  function changeStockQuery(value: string) {
-    setStockQuery(value);
-    const selectedLabel = selectedStockName ? `${selectedStockName} (${stockCode})` : "";
-    if (value !== selectedLabel) {
-      setScannerOrigin(false);
-      setSelectedStockName("");
-      setStockCode("");
+    if (!sameStock) {
+      strategyRequestIdRef.current += 1;
+      strategyAbortRef.current?.abort();
+      strategyAbortRef.current = null;
+      setStrategyBusy(false);
       setStock(null);
+      setStockContextError(null);
       setStrategyAnalysis(null);
       setSelectedStrategyIndex(0);
       setLastAnalysisInputSignature("");
+      setStrategyMessage("아직 이 종목의 전략 분석을 실행하지 않았습니다.");
       setReferencePriceInput("");
       setReferenceHighInput("");
       setReferenceLowInput("");
@@ -410,30 +579,65 @@ export default function App() {
       setPositionMode("NOT_HELD");
       setAveragePriceInput("");
       setHoldingQuantityInput("");
+      setAnalysisSection("summary");
+    }
+
+    setStockMessage(`${item.market} · ${item.name} 선택됨`);
+
+    if (shouldLoadContext && (!sameStock || !stock)) {
+      autoContextLoadedKeyRef.current = nextKey;
+      void loadStockContextForSelection(normalizedCode, item.market, item.name);
+    }
+  }
+
+  function changeStockQuery(value: string) {
+    setStockQuery(value);
+    const selectedLabel = selectedStockName ? `${selectedStockName} (${stockCode})` : "";
+    if (value !== selectedLabel) {
+      stockContextRequestIdRef.current += 1;
+      stockContextAbortRef.current?.abort();
+      stockContextAbortRef.current = null;
+      strategyRequestIdRef.current += 1;
+      strategyAbortRef.current?.abort();
+      strategyAbortRef.current = null;
+      selectedStockKeyRef.current = stockIdentity(stockMarket, "");
+      autoContextLoadedKeyRef.current = null;
+      setStockBusy(false);
+      setStrategyBusy(false);
+      setScannerOrigin(false);
+      setSelectedStockName("");
+      setStockCode("");
+      setStock(null);
+      setStockContextError(null);
+      setStrategyAnalysis(null);
+      setSelectedStrategyIndex(0);
+      setLastAnalysisInputSignature("");
+      setStrategyMessage("종목을 선택하면 전략 분석을 실행할 수 있습니다.");
+      setReferencePriceInput("");
+      setReferenceHighInput("");
+      setReferenceLowInput("");
+      setReferenceVolumeInput("");
+      setPositionMode("NOT_HELD");
+      setAveragePriceInput("");
+      setHoldingQuantityInput("");
+      setAnalysisSection("summary");
     }
   }
 
   async function quickAnalyze() {
-    setStockBusy(true);
-    setStockMessage("KRX + OpenDART 통합 조회 중...");
-    try {
-      const result = await fetchStockContext(stockCode, stockMarket);
-      setStock(result);
-      setStrategyAnalysis(null);
-      setSelectedStrategyIndex(0);
-      setLastAnalysisInputSignature("");
-      setStockMessage(`${result.company.corp_name ?? result.stock.name ?? stockCode} 조회 완료`);
-    } catch (error) {
-      setStock(null);
-      setStrategyAnalysis(null);
-      setSelectedStrategyIndex(0);
-      setLastAnalysisInputSignature("");
-      setStockMessage(error instanceof Error ? error.message : "종목 조회 실패");
-    } finally {
-      setStockBusy(false);
-    }
+    if (!stockCode.trim()) return;
+    autoContextLoadedKeyRef.current = stockIdentity(stockMarket, stockCode);
+    await loadStockContextForSelection(stockCode, stockMarket, selectedStockName || stockCode);
   }
 
+
+  useEffect(() => {
+    if (appPage !== "analysis" || !stockCode || !selectedStockName || stock || stockBusy) return;
+    const key = stockIdentity(stockMarket, stockCode);
+    if (autoContextLoadedKeyRef.current === key) return;
+    autoContextLoadedKeyRef.current = key;
+    void loadStockContextForSelection(stockCode, stockMarket, selectedStockName);
+  }, [appPage, stockCode, stockMarket, selectedStockName, stock, stockBusy]);
 
 const strategyName: Record<string, string> = {
     trend_following: "추세추종",
@@ -522,7 +726,13 @@ const strategyName: Record<string, string> = {
     }
 
     const scrollPosition = window.scrollY;
+    const hadExistingResult = strategyAnalysis != null;
     const requestInputSignature = analysisInputSignature;
+    const requestedStockKey = stockIdentity(stockMarket, stockCode);
+    const requestId = ++strategyRequestIdRef.current;
+    strategyAbortRef.current?.abort();
+    const controller = new AbortController();
+    strategyAbortRef.current = controller;
     setStrategyBusy(true);
     setStrategyMessage(
       referencePrice
@@ -540,7 +750,13 @@ const strategyName: Record<string, string> = {
         positionMode,
         averagePrice,
         holdingQuantity,
+        { signal: controller.signal },
       );
+      if (
+        requestId !== strategyRequestIdRef.current
+        || selectedStockKeyRef.current !== requestedStockKey
+        || analysisInputSignatureRef.current !== requestInputSignature
+      ) return;
       setStrategyAnalysis(result);
       setSelectedStrategyIndex(0);
       setAnalysisSection("summary");
@@ -552,17 +768,31 @@ const strategyName: Record<string, string> = {
           : "매매 보류";
       setStrategyMessage(`${result.history_points}거래일 분석 완료 · ${result.position_context.label} 기준 · 현재 판단: ${topName}`);
     } catch (error) {
-      setStrategyAnalysis(null);
-      setSelectedStrategyIndex(0);
-      setLastAnalysisInputSignature("");
-      setStrategyMessage(error instanceof Error ? error.message : "전략 분석 실패");
+      if (isAbortError(error)) return;
+      if (
+        requestId !== strategyRequestIdRef.current
+        || selectedStockKeyRef.current !== requestedStockKey
+        || analysisInputSignatureRef.current !== requestInputSignature
+      ) return;
+      const failureMessage = error instanceof Error ? error.message : "전략 분석 실패";
+      if (!hadExistingResult) {
+        setStrategyAnalysis(null);
+        setSelectedStrategyIndex(0);
+        setLastAnalysisInputSignature("");
+        setStrategyMessage(failureMessage);
+      } else {
+        setStrategyMessage(`새 전략 분석을 완료하지 못했습니다. 현재 표시 중인 이전 분석 결과는 유지됩니다. · ${failureMessage}`);
+      }
     } finally {
-      setStrategyBusy(false);
-      requestAnimationFrame(() => {
+      if (requestId === strategyRequestIdRef.current) {
+        if (strategyAbortRef.current === controller) strategyAbortRef.current = null;
+        setStrategyBusy(false);
         requestAnimationFrame(() => {
-          window.scrollTo({ top: scrollPosition, behavior: "auto" });
+          requestAnimationFrame(() => {
+            window.scrollTo({ top: scrollPosition, behavior: "auto" });
+          });
         });
-      });
+      }
     }
   }
 
@@ -602,6 +832,14 @@ const strategyName: Record<string, string> = {
     navigateApp("analysis");
   }
 
+  function openActiveDataTask() {
+    setDataStatusOpen(false);
+    navigateApp("scanner");
+  }
+
+  const dataSummary = dataStatusSummary(apiStatus, providers);
+  const dataTaskRunning = dataTaskIsRunning(activeDataTask);
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -629,12 +867,39 @@ const strategyName: Record<string, string> = {
             <b>{theme === "dark" ? "라이트" : "다크"}</b>
           </button>
           <div className="header-status">
-            <span className={`dot-status ${apiStatus === "정상" ? "ok" : ""}`}>API {apiStatus}</span>
-            <span className={`dot-status ${providers?.krx.configured ? "ok" : ""}`}>KRX</span>
-            <span className={`dot-status ${providers?.dart.configured ? "ok" : ""}`}>DART</span>
+            {activeDataTask && (
+              <button
+                type="button"
+                className={`data-task-chip ${dataTaskRunning ? "running" : activeDataTask.status}`}
+                onClick={openActiveDataTask}
+              >
+                <span>{dataTaskRunning ? "데이터 작업 중" : activeDataTask.status === "completed" ? "데이터 작업 완료" : "데이터 작업 확인"}</span>
+                <b>{dataTaskRunning ? "진행 보기" : "결과 보기"}</b>
+              </button>
+            )}
+            <button
+              type="button"
+              className={`data-status-trigger tone-${dataSummary.tone}`}
+              onClick={() => setDataStatusOpen(true)}
+              aria-haspopup="dialog"
+            >
+              <span className="status-dot" aria-hidden="true" />
+              <b>{dataSummary.label}</b>
+            </button>
           </div>
         </div>
       </header>
+
+      <DataStatusPanel
+        open={dataStatusOpen}
+        apiStatus={apiStatus}
+        providers={providers}
+        task={activeDataTask}
+        refreshing={providerRefreshing}
+        onClose={() => setDataStatusOpen(false)}
+        onRefresh={() => void refreshSystemStatus()}
+        onOpenTask={openActiveDataTask}
+      />
 
       <div className="layout backtest-layout">
         <main className="content backtest-page-content">
@@ -657,15 +922,29 @@ const strategyName: Record<string, string> = {
               stockMarket={stockMarket}
               stockBusy={stockBusy}
               stockMessage={stockMessage}
+              stockContextError={stockContextError}
               stock={stock}
               strategyAnalysis={strategyAnalysis}
               strategyBusy={strategyBusy}
               analysisOutdated={analysisOutdated}
+              dataContract={stockDataContract}
+              dataContractBusy={stockDataContractBusy}
+              dataContractError={stockDataContractError}
+              onRefreshDataContract={() => void refreshStockDataContract()}
+              quote={stockQuote}
+              quoteState={stockQuoteState}
+              quoteStreamState={stockQuoteStreamState}
+              quoteRefreshing={stockQuoteRefreshing}
+              quoteError={stockQuoteError}
+              marketSession={stockMarketSession}
+              marketSessionLoading={stockMarketSessionLoading}
+              onRefreshQuote={refreshStockQuote}
               onQueryChange={changeStockQuery}
               onSearchFocus={() => stockSearchResults.length > 0 && setStockSearchOpen(true)}
               onChooseStock={chooseStock}
-              onLoadContext={() => void quickAnalyze()}
+              onRetryContext={() => void quickAnalyze()}
               onRunAnalysis={() => void runStrategyAnalysis()}
+              strategyMessage={strategyMessage}
               scannerOrigin={scannerOrigin}
               onBackToScanner={() => navigateApp("scanner")}
               onOpenHoldings={openHoldingsForStock}
@@ -675,25 +954,15 @@ const strategyName: Record<string, string> = {
                 <div className="strategy-test-head">
                   <div>
                     <h3>분석 세부 설정</h3>
-                    <p>{strategyMessage}</p>
+                    <p>가상 참고가격과 보유 시나리오를 조정합니다. 실행은 기본 분석 영역에서 한 번만 합니다.</p>
                   </div>
-                  <button type="button" disabled={strategyBusy} onClick={() => void runStrategyAnalysis()}>
-                    {strategyBusy ? "분석 중..." : analysisOutdated ? "변경값 다시 분석" : "분석 실행"}
-                  </button>
                 </div>
-
-                {analysisOutdated && (
-                  <div className="analysis-dirty-notice" role="status">
-                    <strong>입력값이 변경되었습니다.</strong>
-                    <span>아래 분석 결과는 이전 입력 기준입니다. 변경한 가격·평균가·수량을 반영하려면 다시 분석해주세요.</span>
-                  </div>
-                )}
 
                 <details className="stock-reference-scenario">
                   <summary>
                     <span>
-                      <strong>현재 참고가격·보유상태 시나리오</strong>
-                      <small>선택 · 공식 확정 일봉 분석을 덮어쓰지 않습니다.</small>
+                      <strong>가상 분석 조건</strong>
+                      <small>선택 · 공식 확정 일봉 분석을 덮어쓰지 않습니다. 실제 보유 수량·평균단가와 원장을 변경하지 않습니다.</small>
                     </span>
                     <b>펼치기</b>
                   </summary>
@@ -1878,6 +2147,7 @@ const strategyName: Record<string, string> = {
               market={stockMarket}
               stockName={selectedStockName}
               onSelectStock={chooseStock}
+              onBackToAnalysis={() => navigateApp("analysis")}
             />
           ) : appPage === "scanner" ? (
             <ScannerPanel
@@ -1885,6 +2155,7 @@ const strategyName: Record<string, string> = {
                 chooseStock(item, { loadContext: true, origin: "scanner" });
                 navigateApp("analysis");
               }}
+              onOpenHoldings={(target) => openHoldingsForStock(target)}
             />
           ) : appPage === "simulation" ? (
             <TrackingWorkspace />

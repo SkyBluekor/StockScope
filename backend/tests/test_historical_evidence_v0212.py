@@ -140,7 +140,37 @@ def test_v0212_unavailable_history_stays_separate_from_current_entry_condition()
     )
     assert evidence["verified"] is False
     assert evidence["status"] == "DATA_UNAVAILABLE"
+    assert evidence["unavailable_reason"] == "MISSING_HISTORY"
+    assert evidence["preparation_available"] is True
     assert "현재 전략 조건 실패" in evidence["guardrail"]
+
+
+
+
+
+def test_v0212_unsupported_evidence_does_not_offer_data_preparation() -> None:
+    evidence = unavailable_historical_evidence(
+        validation_start=date(2023, 9, 14),
+        validation_end=date(2026, 9, 14),
+        reasons=["지원하지 않는 전략: UNKNOWN"],
+        unavailable_reason="UNSUPPORTED_STRATEGY",
+        preparation_available=False,
+    )
+    assert evidence["status"] == "DATA_UNAVAILABLE"
+    assert evidence["unavailable_reason"] == "UNSUPPORTED_STRATEGY"
+    assert evidence["preparation_available"] is False
+
+
+def test_v0212_verified_evidence_never_requests_data_preparation() -> None:
+    evidence = evaluate_historical_evidence(
+        metrics=_metrics(trades=12, wins=7, avg=-0.3, pf=0.9, mdd=-18.0),
+        trades=_trades(12, net=-0.3),
+        validation_start="2023-09-14",
+        validation_end="2026-09-14",
+    )
+    assert evidence["verified"] is True
+    assert evidence["unavailable_reason"] is None
+    assert evidence["preparation_available"] is False
 
 
 def test_v0212_three_year_period_uses_calendar_date_not_1095_day_approximation() -> None:

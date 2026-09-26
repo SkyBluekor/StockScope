@@ -380,7 +380,11 @@ class HoldingPerformanceService:
             warnings,
         )
 
-    def calculate(self, stock_id: str) -> HoldingPerformance:
+    def calculate_with_valuation(
+        self,
+        stock_id: str,
+        valuation: HoldingValuation,
+    ) -> HoldingPerformance:
         stock = self.catalog.get_monitored_stock(stock_id)
         if stock is None:
             raise HoldingsPerformanceError(
@@ -388,7 +392,6 @@ class HoldingPerformanceService:
                 "등록된 종목을 찾을 수 없습니다.",
             )
 
-        valuation = self._valuation(stock)
         open_positions = self.catalog.list_positions(stock.id, status="OPEN")
         positions = [
             self._position_performance(position, valuation)
@@ -422,4 +425,16 @@ class HoldingPerformanceService:
             aggregate=aggregate,
             calculation_status=status,
             warnings=tuple(dict.fromkeys(warnings)),
+        )
+
+    def calculate(self, stock_id: str) -> HoldingPerformance:
+        stock = self.catalog.get_monitored_stock(stock_id)
+        if stock is None:
+            raise HoldingsPerformanceError(
+                "HOLD_STOCK_NOT_FOUND",
+                "등록된 종목을 찾을 수 없습니다.",
+            )
+        return self.calculate_with_valuation(
+            stock_id,
+            self._valuation(stock),
         )
