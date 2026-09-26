@@ -1176,3 +1176,115 @@ def test_j8_3_frontend_data_contract_integration() -> None:
     assert "createScannerJob" not in hook + helper
     assert "createMultiStrategyBacktestJob" not in hook + helper
 
+def test_realtime2_selected_quote_polling_and_domain_boundaries() -> None:
+    api = Path("frontend/src/services/api.ts").read_text(encoding="utf-8")
+    hook = Path("frontend/src/hooks/useStockQuote.ts").read_text(encoding="utf-8")
+    helper = Path("frontend/src/services/quote.ts").read_text(encoding="utf-8")
+    strip = Path("frontend/src/components/StockQuoteStrip.tsx").read_text(encoding="utf-8")
+    app = Path("frontend/src/App.tsx").read_text(encoding="utf-8")
+    workspace = Path("frontend/src/components/StockAnalysisWorkspace.tsx").read_text(encoding="utf-8")
+    holdings = Path("frontend/src/components/HoldingsWorkspace.tsx").read_text(encoding="utf-8")
+
+    # REALTIME.1 product quote response is represented directly in the frontend contract.
+    assert 'export type StockQuoteVenue = "INTEGRATED" | "KRX" | "NXT"' in api
+    assert 'export type StockQuoteResponse = {' in api
+    assert 'export async function fetchStockQuote(' in api
+    assert "/api/quotes/stocks/" in api
+    assert 'venue: options.venue ?? "INTEGRATED"' in api
+    assert "{ signal: options.signal }" in api
+
+    # Data Contract realtime typing follows the additive REALTIME.1 backend fields.
+    for token in (
+        "capability: boolean",
+        "provider: string | null",
+        "current_price: string | null",
+        "received_at: string | null",
+        "age_ms: number | null",
+        "freshness_seconds: number | null",
+    ):
+        assert token in api
+
+    # Polling is completion-driven, never setInterval-driven, and guards stale identities.
+    assert "pollIntervalMs = 5_000" in hook
+    assert "MAX_BACKOFF_MS = 30_000" in hook
+    assert "window.setTimeout" in hook
+    assert "setInterval" not in hook
+    assert "const generationRef = useRef(0)" in hook
+    assert "const abortRef = useRef<AbortController | null>(null)" in hook
+    assert "result.resource_key !==" in hook
+    assert "result.ticker !== normalizedCode" in hook
+    assert "result.venue !== venue" in hook
+
+    # Hidden/offline work is paused and resumes only when the page becomes usable.
+    assert '"visibilitychange"' in hook
+    assert 'document.visibilityState === "hidden"' in hook
+    assert 'window.addEventListener("offline"' in hook
+    assert 'window.addEventListener("online"' in hook
+    assert "abortRef.current?.abort()" in hook
+
+    # Success returns to 5 s; transient failures back off 10 -> 20 -> max 30 s.
+    assert "2 ** failuresRef.current" in hook
+    assert "failuresRef.current = 0" in hook
+    assert "Math.min(" in hook
+    assert "MAX_BACKOFF_MS" in hook
+
+    # Configuration / validation failures pause automatic polling.
+    assert 'apiError?.status === 409' in hook
+    assert 'apiError?.code === "KIS_QUOTE_NOT_CONFIGURED"' in hook
+    assert "permanentlyPaused = true" in hook
+    assert 'apiError?.status === 422' in hook
+    assert "if (!isCurrent() || permanentlyPaused) return" in hook
+
+    # A transient failure preserves the last successful quote instead of clearing it.
+    transient_start = hook.index("failuresRef.current += 1")
+    transient_end = hook.index("} finally", transient_start)
+    assert "setQuote(null)" not in hook[transient_start:transient_end]
+    assert 'setState(quoteRef.current ? "DELAYED" : "ERROR")' in hook
+
+    # Polling only calls the quote endpoint; it does not create a second Data Contract poll.
+    assert "fetchStockDataContract" not in hook
+    assert "fetchStrategyAnalysis" not in hook
+    assert "createScannerJob" not in hook
+    assert "createMultiStrategyBacktestJob" not in hook
+
+    # Shared UI clearly labels a snapshot/current quote and keeps polling diagnostics secondary.
+    assert "KIS 현재가 스냅샷" in strip
+    assert "현재가" in strip
+    assert "새로고침" in strip
+    assert "KIS 통합 시세" in helper
+    assert "마지막 수신" in helper
+
+    # Analysis page polls exactly the selected stock while that page is active.
+    assert 'import useStockQuote from "./hooks/useStockQuote"' in app
+    assert "quote: stockQuote" in app
+    assert 'venue: "INTEGRATED"' in app
+    assert 'enabled: appPage === "analysis"' in app
+    assert "quote={stockQuote}" in app
+    assert "<StockQuoteStrip" in workspace
+    assert "최근 확정 종가" in workspace
+    assert "분석 기준" in workspace
+
+    # Quote arrival never writes the manual reference scenario or triggers Strategy automatically.
+    quote_hook_start = app.index("quote: stockQuote")
+    analysis_signature_start = app.index("const analysisInputSignature", quote_hook_start)
+    quote_hook_block = app[quote_hook_start:analysis_signature_start]
+    assert "setReferencePriceInput" not in quote_hook_block
+    assert "runStrategyAnalysis" not in quote_hook_block
+    assert "setStrategyAnalysis" not in quote_hook_block
+
+    # Holdings polls only the selected detail, not every list row.
+    assert 'import useStockQuote from "../hooks/useStockQuote"' in holdings
+    assert "quote: selectedQuote" in holdings
+    assert 'code: detail?.ticker ?? ""' in holdings
+    assert "enabled: Boolean(detail && selectedStockId === detail.stock_id)" in holdings
+    assert holdings.count("useStockQuote({") == 1
+    reload_start = holdings.index("async function reloadStocks")
+    load_selected_start = holdings.index("async function loadSelected")
+    assert "fetchStockQuote" not in holdings[reload_start:load_selected_start]
+    assert "<StockQuoteStrip" in holdings
+
+    # REALTIME.2 is display-only: it does not feed quote values into holdings P&L or official analysis.
+    assert "selectedQuote.current_price" not in holdings
+    assert "getHoldingPerformance(selectedQuote" not in holdings
+    assert "selectedAnalysis.reference_price = selectedQuote" not in holdings
+
