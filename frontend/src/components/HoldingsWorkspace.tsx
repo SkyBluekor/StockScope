@@ -744,10 +744,6 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
         setLivePerformance(null);
         setLivePerformanceError(null);
         setManagement(null);
-    setLiveManagementProximity(null);
-    setLiveManagementError(null);
-      setLiveManagementProximity(null);
-      setLiveManagementError(null);
         setLiveManagementProximity(null);
         setLiveManagementError(null);
       }
@@ -772,8 +768,6 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
       setLivePerformance(null);
       setLivePerformanceError(null);
       setManagement(null);
-    setLiveManagementProximity(null);
-    setLiveManagementError(null);
       setLiveManagementProximity(null);
       setLiveManagementError(null);
     }
