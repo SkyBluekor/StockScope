@@ -16,6 +16,7 @@ from app.integrations.kis.token_cache import credential_fingerprint
 from app.integrations.kis.ws_approval import KisWebSocketApproval, get_ws_approval_key, invalidate_ws_approval_key
 from app.market_session.service import DomesticMarketSessionService, market_session_service
 
+from .event_hub import QuoteEventHub, quote_event_hub
 from .models import QuoteCacheKey, QuoteSnapshot, VENUE_TO_KIS_MARKET_DIVISION
 from .store import QuoteStore, quote_store
 from .websocket_parser import VENUE_TO_WS_TR_ID, WebSocketQuoteParseError, parse_quote_frame
@@ -41,6 +42,7 @@ class QuoteWebSocketManager:
         approval_invalidator: Callable[..., bool] = invalidate_ws_approval_key,
         connect_factory=websocket_connect,
         monotonic: Callable[[], float] = time.monotonic,
+        event_hub: QuoteEventHub | None = None,
     ) -> None:
         self.store = store or quote_store
         self.settings_getter = settings_getter
@@ -49,6 +51,7 @@ class QuoteWebSocketManager:
         self.approval_invalidator = approval_invalidator
         self.connect_factory = connect_factory
         self.monotonic = monotonic
+        self.event_hub = event_hub or quote_event_hub
         self._lock = Lock()
         self._leases: dict[QuoteCacheKey, SubscriptionLease] = {}
         self._state: TransportState = "IDLE"
@@ -106,6 +109,11 @@ class QuoteWebSocketManager:
         with self._lock:
             lease = self._leases.get(key)
             return lease.state if lease else None
+
+    def subscription_error(self, key: QuoteCacheKey) -> str | None:
+        with self._lock:
+            lease = self._leases.get(key)
+            return lease.error_code if lease else None
 
     def is_subscription_ready(self, key: QuoteCacheKey) -> bool:
         with self._lock:
@@ -309,29 +317,28 @@ class QuoteWebSocketManager:
             if key is None or not self.is_subscription_ready(key):
                 continue
             old = self.store.peek(key)
-            self.store.put(
-                key,
-                QuoteSnapshot(
-                    market=key.market,
-                    ticker=tick.ticker,
-                    name=old.name if old else None,
-                    venue=tick.venue,
-                    provider_market_division=VENUE_TO_KIS_MARKET_DIVISION[tick.venue],
-                    environment=key.environment,
-                    current_price=tick.current_price,
-                    change_amount=tick.change_amount,
-                    change_rate=tick.change_rate,
-                    change_sign=tick.change_sign,
-                    open_price=tick.open_price,
-                    high_price=tick.high_price,
-                    low_price=tick.low_price,
-                    base_price=tick.base_price,
-                    accumulated_volume=tick.accumulated_volume,
-                    provider_timestamp=tick.provider_timestamp,
-                    received_at=datetime.now(timezone.utc),
-                    transport="WEBSOCKET",
-                ),
+            snapshot = QuoteSnapshot(
+                market=key.market,
+                ticker=tick.ticker,
+                name=old.name if old else None,
+                venue=tick.venue,
+                provider_market_division=VENUE_TO_KIS_MARKET_DIVISION[tick.venue],
+                environment=key.environment,
+                current_price=tick.current_price,
+                change_amount=tick.change_amount,
+                change_rate=tick.change_rate,
+                change_sign=tick.change_sign,
+                open_price=tick.open_price,
+                high_price=tick.high_price,
+                low_price=tick.low_price,
+                base_price=tick.base_price,
+                accumulated_volume=tick.accumulated_volume,
+                provider_timestamp=tick.provider_timestamp,
+                received_at=datetime.now(timezone.utc),
+                transport="WEBSOCKET",
             )
+            if self.store.put(key, snapshot):
+                await self.event_hub.publish(key, snapshot)
 
     async def _message(self, raw, settings: Settings) -> None:
         if isinstance(raw, bytes):
