@@ -2449,6 +2449,8 @@ export type ScannerHistoricalEvidence = {
   label: string;
   summary: string;
   verified: boolean;
+  unavailable_reason?: "MISSING_HISTORY" | "UNSUPPORTED_STRATEGY" | string | null;
+  preparation_available?: boolean;
   sample_sufficient: boolean;
   minimum_sample: number;
   validation_years: number;
