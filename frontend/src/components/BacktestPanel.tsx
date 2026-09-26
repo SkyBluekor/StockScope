@@ -484,7 +484,6 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock, 
   const activeValidationJobId = useRef<string | null>(null);
   const workspaceTopRef = useRef<HTMLDivElement | null>(null);
   const stockSearchRequestIdRef = useRef(0);
-  const autoRestoreStockKeyRef = useRef<string | null>(null);
   const [scannerContext, setScannerContext] = useState<ScannerAnalysisContext | null>(() => readScannerAnalysisContext(code));
   const [showStrategyGuides, setShowStrategyGuides] = useState(false);
   const [showComparisonCriteria, setShowComparisonCriteria] = useState(false);
@@ -530,6 +529,7 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock, 
     return () => {
       window.clearTimeout(timer);
       controller?.abort();
+      stockSearchRequestIdRef.current += 1;
     };
   }, [stockQuery, code, stockName]);
 
@@ -559,13 +559,6 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock, 
     setResultCompletedAt(null);
     setResultRestoreMode(null);
     setError(null);
-
-    const stockKey = `${market}:${code.trim().toUpperCase()}`;
-    if (autoRestoreStockKeyRef.current === stockKey) {
-      setView("setup");
-      return;
-    }
-    autoRestoreStockKeyRef.current = stockKey;
 
     const restored = readLatestBacktestCache(market, code);
     if (
