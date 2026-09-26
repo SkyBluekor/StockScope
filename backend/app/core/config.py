@@ -38,6 +38,13 @@ class Settings(BaseSettings):
     kis_ws_demand_ttl_seconds: float = 45.0
     kis_ws_reconnect_base_seconds: float = 1.0
     kis_ws_reconnect_max_seconds: float = 30.0
+    kis_ws_enabled: bool = True
+    kis_ws_real_url: str = "ws://ops.koreainvestment.com:21000"
+    kis_ws_virtual_url: str = "ws://ops.koreainvestment.com:31000"
+    kis_ws_max_subscriptions: int = 40
+    kis_ws_demand_ttl_seconds: float = 45.0
+    kis_ws_reconnect_base_seconds: float = 1.0
+    kis_ws_reconnect_max_seconds: float = 30.0
 
     model_config = SettingsConfigDict(
         env_file=PROJECT_ROOT / ".env",
