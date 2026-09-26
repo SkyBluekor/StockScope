@@ -255,6 +255,7 @@ export default function App() {
   const [stockSearchOpen, setStockSearchOpen] = useState(false);
   const [stock, setStock] = useState<StockContext | null>(null);
   const [stockMessage, setStockMessage] = useState("종목코드로 KRX + OpenDART 통합 조회 가능");
+  const [stockContextError, setStockContextError] = useState<string | null>(null);
   const [stockBusy, setStockBusy] = useState(false);
   const [strategyAnalysis, setStrategyAnalysis] = useState<StrategyAnalysis | null>(null);
   const [strategyBusy, setStrategyBusy] = useState(false);
@@ -482,18 +483,22 @@ export default function App() {
     const controller = new AbortController();
     stockContextAbortRef.current = controller;
     setStockBusy(true);
+    setStockContextError(null);
     setStockMessage(`${label || normalizedCode} 기본 정보 불러오는 중...`);
 
     try {
       const result = await fetchStockContext(normalizedCode, market, { signal: controller.signal });
       if (requestId !== stockContextRequestIdRef.current || selectedStockKeyRef.current !== requestKey) return;
       setStock(result);
+      setStockContextError(null);
       setStockMessage(`${result.company.corp_name ?? result.stock.name ?? normalizedCode} 조회 완료`);
     } catch (error) {
       if (isAbortError(error)) return;
       if (requestId !== stockContextRequestIdRef.current || selectedStockKeyRef.current !== requestKey) return;
+      const contextError = error instanceof Error ? error.message : "종목 기본 정보를 확인하지 못했습니다.";
       setStock(null);
-      setStockMessage(error instanceof Error ? error.message : "종목 조회 실패");
+      setStockContextError(contextError);
+      setStockMessage(contextError);
     } finally {
       if (requestId === stockContextRequestIdRef.current) {
         if (stockContextAbortRef.current === controller) stockContextAbortRef.current = null;
@@ -532,6 +537,7 @@ export default function App() {
       strategyAbortRef.current = null;
       setStrategyBusy(false);
       setStock(null);
+      setStockContextError(null);
       setStrategyAnalysis(null);
       setSelectedStrategyIndex(0);
       setLastAnalysisInputSignature("");
@@ -572,6 +578,7 @@ export default function App() {
       setSelectedStockName("");
       setStockCode("");
       setStock(null);
+      setStockContextError(null);
       setStrategyAnalysis(null);
       setSelectedStrategyIndex(0);
       setLastAnalysisInputSignature("");
@@ -885,6 +892,7 @@ const strategyName: Record<string, string> = {
               stockMarket={stockMarket}
               stockBusy={stockBusy}
               stockMessage={stockMessage}
+              stockContextError={stockContextError}
               stock={stock}
               strategyAnalysis={strategyAnalysis}
               strategyBusy={strategyBusy}
