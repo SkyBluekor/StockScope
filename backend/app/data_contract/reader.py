@@ -10,6 +10,7 @@ from typing import Iterator
 
 from app.backtest.jobs import BacktestJobManager, backtest_jobs
 from app.core.config import PROJECT_ROOT
+from app.quotes.service import observe_cached_quote
 
 from .models import (
     ChartCoverageObservation,
@@ -17,6 +18,7 @@ from .models import (
     LedgerObservation,
     LedgerPositionObservation,
     MarketEodObservation,
+    RealtimeQuoteObservation,
     StockStateObservation,
     StoredAnalysisObservation,
 )
@@ -491,6 +493,52 @@ class ReadOnlyDataStateReader:
                 error=str(exc),
             )
 
+    def read_realtime_quote(self, market: str, ticker: str) -> RealtimeQuoteObservation:
+        clean_market = self._market(market)
+        clean_ticker = self._ticker(ticker)
+        try:
+            observed = observe_cached_quote(
+                market=clean_market,
+                ticker=clean_ticker,
+                venue="INTEGRATED",
+            )
+        except Exception as exc:
+            return RealtimeQuoteObservation(
+                capable=False,
+                present=False,
+                source="KIS_REST",
+                market=clean_market,
+                ticker=clean_ticker,
+                venue="INTEGRATED",
+                reason="QUOTE_OBSERVATION_FAILED",
+                error=str(exc),
+            )
+
+        return RealtimeQuoteObservation(
+            capable=observed.capable,
+            present=observed.present,
+            source=observed.source,
+            market=clean_market,
+            ticker=clean_ticker,
+            provider=observed.provider,
+            mode=observed.mode,
+            venue=observed.venue,
+            current_price=(
+                format(observed.current_price, "f")
+                if observed.current_price is not None
+                else None
+            ),
+            provider_timestamp=observed.provider_timestamp,
+            received_at=(
+                observed.received_at.isoformat()
+                if observed.received_at is not None
+                else None
+            ),
+            age_ms=observed.age_ms,
+            freshness_seconds=observed.freshness_seconds,
+            reason=observed.reason,
+        )
+
     def read_known_job(self, job_id: str | None) -> KnownJobObservation:
         normalized = (job_id or "").strip()
         if not normalized:
@@ -543,5 +591,6 @@ class ReadOnlyDataStateReader:
             chart=self.read_chart_coverage(clean_market, clean_ticker),
             analysis=self.read_stored_analysis(clean_market, clean_ticker),
             ledger=self.read_ledger(clean_market, clean_ticker),
+            realtime=self.read_realtime_quote(clean_market, clean_ticker),
             active_job=self.read_known_job(known_job_id),
         )
