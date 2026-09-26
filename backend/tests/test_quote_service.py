@@ -253,3 +253,37 @@ def test_venue_is_part_of_cache_identity() -> None:
     assert integrated.snapshot.venue == "INTEGRATED"
     assert krx.snapshot.venue == "KRX"
     assert nxt.snapshot.venue == "NXT"
+
+def test_global_upstream_rate_guard_spaces_distinct_symbols() -> None:
+    clock = {"value": 100.0}
+    sleeps: list[float] = []
+    calls: list[str] = []
+
+    def monotonic():
+        return clock["value"]
+
+    def sleep(seconds):
+        sleeps.append(seconds)
+        clock["value"] += seconds
+
+    def fetcher(ticker, market_division, settings, *, access_token):
+        calls.append(ticker)
+        return _quote(ticker, market_division)
+
+    service = QuoteService(
+        store=QuoteStore(),
+        settings_getter=_settings,
+        token_getter=lambda _settings: _token(),
+        quote_fetcher=fetcher,
+        cache_ttl_seconds=0,
+        min_upstream_interval_seconds=0.25,
+        monotonic=monotonic,
+        sleep=sleep,
+    )
+
+    service.get_quote(market="KOSPI", ticker="005930")
+    service.get_quote(market="KOSPI", ticker="000660")
+
+    assert calls == ["005930", "000660"]
+    assert sleeps == [pytest.approx(0.25)]
+
