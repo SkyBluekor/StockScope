@@ -46,6 +46,7 @@ class QuoteSnapshot:
     accumulated_volume: Decimal
     provider_timestamp: str | None
     received_at: datetime
+    transport: QuoteTransport = "REST"
 
 
 @dataclass(frozen=True, slots=True)
