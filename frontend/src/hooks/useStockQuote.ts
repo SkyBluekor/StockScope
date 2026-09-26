@@ -2,9 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ApiError,
   fetchStockQuote,
+  type DomesticMarketSessionResponse,
   type StockQuoteResponse,
   type StockQuoteVenue,
 } from "../services/api";
+import { marketSessionAllowsAutoQuote, marketSessionIsPaused } from "../services/marketSession";
+import useDomesticMarketSession from "./useDomesticMarketSession";
 
 export type StockQuotePollingState =
   | "IDLE"
@@ -35,6 +38,14 @@ export default function useStockQuote({
   enabled = true,
   pollIntervalMs = 5_000,
 }: Options) {
+  const normalizedCode = code.trim().toUpperCase();
+  const validIdentity = enabled && /^\d{6}$/.test(normalizedCode);
+  const {
+    session: marketSession,
+    loading: marketSessionLoading,
+    error: marketSessionError,
+  } = useDomesticMarketSession({ enabled: validIdentity && venue === "INTEGRATED" });
+
   const [quote, setQuote] = useState<StockQuoteResponse | null>(null);
   const [state, setState] = useState<StockQuotePollingState>("IDLE");
   const [refreshing, setRefreshing] = useState(false);
@@ -45,15 +56,15 @@ export default function useStockQuote({
   const timerRef = useRef<number | null>(null);
   const failuresRef = useRef(0);
   const quoteRef = useRef<StockQuoteResponse | null>(null);
-  const runNowRef = useRef<(() => void) | null>(null);
+  const sessionRef = useRef<DomesticMarketSessionResponse | null>(marketSession);
+  const runNowRef = useRef<((manual?: boolean) => void) | null>(null);
+  sessionRef.current = marketSession;
 
   const refresh = useCallback(() => {
-    runNowRef.current?.();
+    runNowRef.current?.(true);
   }, []);
 
   useEffect(() => {
-    const normalizedCode = code.trim().toUpperCase();
-    const valid = enabled && /^\d{6}$/.test(normalizedCode);
     const identity = `${market}:${normalizedCode}:${venue}`;
     const generation = ++generationRef.current;
 
@@ -68,9 +79,9 @@ export default function useStockQuote({
     setQuote(null);
     setError(null);
     setRefreshing(false);
-    setState(valid ? "LOADING" : "IDLE");
+    setState(validIdentity ? "IDLE" : "IDLE");
 
-    if (!valid) {
+    if (!validIdentity) {
       runNowRef.current = null;
       return;
     }
@@ -79,29 +90,30 @@ export default function useStockQuote({
     let permanentlyPaused = false;
 
     const isCurrent = () => !disposed && generationRef.current === generation;
-
     const clearTimer = () => {
       if (timerRef.current != null) {
         window.clearTimeout(timerRef.current);
         timerRef.current = null;
       }
     };
-
-    const canPoll = () =>
+    const canNetwork = () =>
       document.visibilityState !== "hidden"
       && (typeof navigator === "undefined" || navigator.onLine !== false);
+    const canAutoPoll = () =>
+      canNetwork() && marketSessionAllowsAutoQuote(sessionRef.current);
 
     const schedule = (delayMs: number) => {
       clearTimer();
-      if (!isCurrent() || !canPoll()) return;
+      if (!isCurrent() || permanentlyPaused || !canAutoPoll()) return;
       timerRef.current = window.setTimeout(() => {
         timerRef.current = null;
-        void run();
+        void run(false);
       }, delayMs);
     };
 
-    async function run() {
-      if (!isCurrent() || !canPoll()) return;
+    async function run(manual: boolean) {
+      if (!isCurrent() || permanentlyPaused || !canNetwork()) return;
+      if (!manual && !marketSessionAllowsAutoQuote(sessionRef.current)) return;
 
       const controller = new AbortController();
       abortRef.current?.abort();
@@ -119,7 +131,7 @@ export default function useStockQuote({
         });
         if (!isCurrent() || controller.signal.aborted) return;
         if (
-          result.resource_key !== `${market}:${normalizedCode}`
+          result.resource_key !== identity
           || result.market !== market
           || result.ticker !== normalizedCode
           || result.venue !== venue
@@ -142,52 +154,49 @@ export default function useStockQuote({
           setState("NOT_CONFIGURED");
           setError(apiError.message);
           failuresRef.current = 0;
-          nextDelay = null;
         } else if (apiError?.status === 422) {
           permanentlyPaused = true;
           setState("ERROR");
           setError(apiError.message);
-          nextDelay = null;
         } else {
           failuresRef.current += 1;
-          const delay = Math.min(
+          nextDelay = Math.min(
             MAX_BACKOFF_MS,
             Math.max(1_000, pollIntervalMs) * (2 ** failuresRef.current),
           );
           setState(quoteRef.current ? "DELAYED" : "ERROR");
           setError(reason instanceof Error ? reason.message : "현재가를 확인하지 못했습니다.");
-          nextDelay = delay;
         }
       } finally {
         if (abortRef.current === controller) {
           abortRef.current = null;
           setRefreshing(false);
         }
-        if (nextDelay != null && isCurrent() && canPoll()) {
+        if (
+          nextDelay != null
+          && isCurrent()
+          && !permanentlyPaused
+          && marketSessionAllowsAutoQuote(sessionRef.current)
+        ) {
           schedule(nextDelay);
         }
       }
     }
 
-    const runNow = () => {
+    const runNow = (manual = false) => {
       if (!isCurrent() || permanentlyPaused) return;
       clearTimer();
       abortRef.current?.abort();
-      void run();
+      void run(manual);
     };
     runNowRef.current = runNow;
 
     const handleVisibility = () => {
-      if (!isCurrent()) return;
-      if (document.visibilityState === "hidden") {
-        clearTimer();
-        abortRef.current?.abort();
-        setRefreshing(false);
-        return;
-      }
-      runNow();
+      if (!isCurrent() || document.visibilityState !== "hidden") return;
+      clearTimer();
+      abortRef.current?.abort();
+      setRefreshing(false);
     };
-
     const handleOffline = () => {
       if (!isCurrent() || permanentlyPaused) return;
       clearTimer();
@@ -197,22 +206,15 @@ export default function useStockQuote({
       setError("네트워크 연결을 확인해주세요.");
     };
 
-    const handleOnline = () => {
-      if (!isCurrent()) return;
-      runNow();
-    };
-
     document.addEventListener("visibilitychange", handleVisibility);
     window.addEventListener("offline", handleOffline);
-    window.addEventListener("online", handleOnline);
 
-    if (document.visibilityState === "hidden") {
-      setState("IDLE");
-    } else if (typeof navigator !== "undefined" && navigator.onLine === false) {
-      setState("ERROR");
-      setError("네트워크 연결을 확인해주세요.");
-    } else {
-      runNow();
+    if (
+      canNetwork()
+      && sessionRef.current !== null
+      && marketSessionAllowsAutoQuote(sessionRef.current)
+    ) {
+      runNow(false);
     }
 
     return () => {
@@ -223,9 +225,32 @@ export default function useStockQuote({
       abortRef.current = null;
       document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("offline", handleOffline);
-      window.removeEventListener("online", handleOnline);
     };
-  }, [code, market, venue, enabled, pollIntervalMs]);
+  }, [normalizedCode, market, venue, validIdentity, pollIntervalMs]);
+
+  useEffect(() => {
+    if (!validIdentity || !marketSession || !runNowRef.current) return;
+
+    if (marketSessionIsPaused(marketSession.phase)) {
+      if (timerRef.current != null) {
+        window.clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      abortRef.current?.abort();
+      abortRef.current = null;
+      setRefreshing(false);
+      setState(quoteRef.current ? "FRESH" : "IDLE");
+      return;
+    }
+
+    if (
+      marketSessionAllowsAutoQuote(marketSession)
+      && document.visibilityState !== "hidden"
+      && (typeof navigator === "undefined" || navigator.onLine !== false)
+    ) {
+      runNowRef.current(false);
+    }
+  }, [validIdentity, marketSession?.checked_at, marketSession?.phase]);
 
   return {
     quote,
@@ -234,5 +259,8 @@ export default function useStockQuote({
     refreshing,
     error,
     refresh,
+    marketSession,
+    marketSessionLoading,
+    marketSessionError,
   };
 }
