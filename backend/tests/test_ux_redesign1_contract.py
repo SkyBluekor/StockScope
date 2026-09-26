@@ -1437,3 +1437,77 @@ def test_realtime3b_live_management_proximity_boundaries() -> None:
     assert "applyHoldingManagementPlan(" in workspace
     assert "selectedQuote" not in workspace[workspace.index("async function applyLatestManagementPlan"):workspace.index("useEffect(() =>", workspace.index("async function applyLatestManagementPlan"))]
 
+def test_realtime4_market_session_polling_boundaries() -> None:
+    market_hook = Path("frontend/src/hooks/useDomesticMarketSession.ts").read_text(encoding="utf-8")
+    quote_hook = Path("frontend/src/hooks/useStockQuote.ts").read_text(encoding="utf-8")
+    market_helper = Path("frontend/src/services/marketSession.ts").read_text(encoding="utf-8")
+    quote_strip = Path("frontend/src/components/StockQuoteStrip.tsx").read_text(encoding="utf-8")
+    app = Path("frontend/src/App.tsx").read_text(encoding="utf-8")
+    analysis = Path("frontend/src/components/StockAnalysisWorkspace.tsx").read_text(encoding="utf-8")
+    holdings = Path("frontend/src/components/HoldingsWorkspace.tsx").read_text(encoding="utf-8")
+    data_contract = Path("frontend/src/services/api.ts").read_text(encoding="utf-8")
+
+    # Market session has its own low-frequency lifecycle, not a quote-rate polling loop.
+    assert "fetchDomesticMarketSession" in market_hook
+    assert "DEFAULT_RECHECK_MS = 30 * 60 * 1000" in market_hook
+    assert '"visibilitychange"' in market_hook
+    assert 'window.addEventListener("offline"' in market_hook
+    assert 'window.addEventListener("online"' in market_hook
+    assert "next_transition_at" in market_hook
+    assert "setInterval" not in market_hook
+
+    # Session request failures degrade to UNKNOWN and keep quote capability alive.
+    assert 'phase: "UNKNOWN"' in market_hook
+    assert "quote_polling_allowed: true" in market_hook
+    assert '"MARKET_SESSION_REQUEST_FAILED"' in market_hook
+
+    # Automatic quote polling is allowed only by session policy.
+    assert "marketSessionAllowsAutoQuote" in quote_hook
+    assert "marketSessionIsPaused" in quote_hook
+    assert "runNowRef.current?.(true)" in quote_hook  # manual refresh bypasses closed-session auto pause
+    assert "if (!manual && !marketSessionAllowsAutoQuote(sessionRef.current)) return" in quote_hook
+    assert "marketSessionIsPaused(marketSession.phase)" in quote_hook
+    assert "window.clearTimeout(timerRef.current)" in quote_hook
+    assert "abortRef.current?.abort()" in quote_hook
+    assert "setInterval" not in quote_hook
+
+    # Closed/intermission are the only automatic pause phases; UNKNOWN remains permissive.
+    assert 'phase === "CLOSED" || phase === "INTERMISSION"' in market_helper
+    assert 'session.quote_polling_allowed || session.phase === "UNKNOWN"' in market_helper
+
+    # UI calls a closed/intermission observation a last quote, not a live stream.
+    assert 'const priceLabel = pausedByMarket ? "마지막 시세" : "현재가"' in quote_strip
+    assert '"장 마감"' in market_helper
+    assert '"시장 전환 구간"' in market_helper
+    assert '"프리마켓' in market_helper
+    assert '"장중' in market_helper
+    assert '"애프터마켓' in market_helper
+
+    # Both selected-stock surfaces receive the session metadata.
+    assert "marketSession: stockMarketSession" in app
+    assert "marketSession={stockMarketSession}" in app
+    assert "marketSession: DomesticMarketSessionResponse | null" in analysis
+    assert "marketSession={marketSession}" in analysis
+    assert "marketSession: selectedMarketSession" in holdings
+    assert "marketSession={selectedMarketSession}" in holdings
+
+    # Live P&L and management distance preserve the last snapshot label after market pause.
+    assert "selectedMarketPaused" in holdings
+    assert "마지막 KIS 시세" in holdings
+    assert "selectedMarketPauseLabel" in holdings
+
+    # Data Contract frontend typing carries session semantics without triggering a second poll.
+    for token in (
+        "session_phase: DomesticMarketSessionPhase | null",
+        "trading_day: boolean | null",
+        "market_active: boolean | null",
+    ):
+        assert token in data_contract
+    assert "fetchStockDataContract" not in market_hook
+    assert "fetchStockDataContract" not in quote_hook
+
+    # REALTIME.4 remains REST-only; WebSocket transport is intentionally deferred.
+    combined = market_hook + quote_hook + market_helper + quote_strip + holdings
+    assert "H0STCNT0" not in combined
+    assert "WebSocket(" not in combined
+
