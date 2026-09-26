@@ -540,7 +540,7 @@ def test_ux_redesign1j2_preserves_ui_context_and_rejects_stale_async_results() -
 
     for read_fn in ("getHoldingStock", "getHoldingTimeline", "getHoldingPerformance", "getHoldingManagement"):
         read_start = holdings_api.index(f"export function {read_fn}")
-        read_end = holdings_api.find("\\n}\\n", read_start) + 3
+        read_end = holdings_api.find("\n}\n", read_start) + 3
         read_block = holdings_api[read_start:read_end]
         assert "signal?: AbortSignal" in read_block
         assert "signal: options.signal" in read_block
