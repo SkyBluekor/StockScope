@@ -985,14 +985,18 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
       if (latest.status === "completed" && latest.result) {
         const completedAtValue = Date.now();
         const latestCandidates = [...latest.result.candidates, ...latest.result.more_candidates];
-        const preferredKey = preferredCandidateKeyRef.current ?? scannerSelectionToPreserveRef.current;
+        const evidencePreferredKey = preferredCandidateKeyRef.current;
+        const preferredKey = evidencePreferredKey ?? scannerSelectionToPreserveRef.current;
         const preferredCandidate = preferredKey
           ? latestCandidates.find((candidate) => candidateKey(candidate) === preferredKey) ?? null
           : null;
         const nextSelectedKey = preferredCandidate
           ? candidateKey(preferredCandidate)
           : (latest.result.candidates[0] ? candidateKey(latest.result.candidates[0]) : null);
-        const nextExpandedEvidenceIds = preferredCandidate ? [evidenceKey(preferredCandidate)] : [];
+        const latestEvidenceKeys = new Set(latestCandidates.map((candidate) => evidenceKey(candidate)));
+        const nextExpandedEvidenceIds = evidencePreferredKey && preferredCandidate
+          ? [evidenceKey(preferredCandidate)]
+          : expandedEvidenceIds.filter((key) => latestEvidenceKeys.has(key));
         // TRACK.1.9: commit completed Scanner result synchronously so Tracking
         // sees the same result even if the user navigates before React effects run.
         writeScannerSession({
@@ -1048,6 +1052,7 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
         700,
       );
     } catch (err) {
+      scannerSelectionToPreserveRef.current = null;
       setError(err instanceof Error ? err.message : (preferredCandidateKeyRef.current
         ? "3년 검증 데이터 준비 상태를 확인하지 못했습니다."
         : "종목 찾기 상태를 확인하지 못했습니다."));
@@ -1114,6 +1119,7 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
       }
       void poll(created.job_id, scope, allowLargeSync, started);
     } catch (err) {
+      scannerSelectionToPreserveRef.current = null;
       setError(err instanceof Error ? err.message : "종목 찾기를 시작하지 못했습니다.");
     }
   }
