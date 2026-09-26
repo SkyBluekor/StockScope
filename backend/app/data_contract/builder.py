@@ -259,6 +259,12 @@ def _realtime_contract(state: StockStateObservation) -> RealtimeResourceContract
     elif not observed.present:
         status = "ABSENT" if observed.capable else "UNVERIFIED"
         reason = observed.reason or "QUOTE_NOT_OBSERVED"
+    elif observed.session_phase == "CLOSED":
+        status = "VALID"
+        reason = "MARKET_CLOSED_LAST_SNAPSHOT"
+    elif observed.session_phase == "INTERMISSION":
+        status = "VALID"
+        reason = "MARKET_INTERMISSION_LAST_SNAPSHOT"
     elif observed.age_ms is None or observed.freshness_seconds is None:
         status = "UNVERIFIED"
         reason = "QUOTE_FRESHNESS_UNVERIFIED"
@@ -282,6 +288,9 @@ def _realtime_contract(state: StockStateObservation) -> RealtimeResourceContract
         received_at=observed.received_at,
         age_ms=observed.age_ms,
         freshness_seconds=observed.freshness_seconds,
+        session_phase=observed.session_phase,
+        trading_day=observed.trading_day,
+        market_active=observed.market_active,
         reason_code=reason,
     )
 
