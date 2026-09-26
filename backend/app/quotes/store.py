@@ -23,8 +23,7 @@ class QuoteStore:
                 self._entries,
                 key=lambda candidate: self._entries[candidate].received_at,
             )
-            if oldest_key != key:
-                self._entries.pop(oldest_key, None)
+            self._entries.pop(oldest_key, None)
 
     def peek(self, key: QuoteCacheKey) -> QuoteSnapshot | None:
         with self._lock:
