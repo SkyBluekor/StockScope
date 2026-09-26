@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Literal
@@ -8,7 +7,8 @@ from typing import Any, Callable, Literal
 from app.quotes.models import CachedQuoteObservation
 from app.quotes.service import observe_cached_quote
 
-from .catalog import DEFAULT_HOLDINGS_DB, HoldingsCatalog, HoldingsCatalogError
+from .catalog import DEFAULT_HOLDINGS_DB, HoldingsCatalog
+from .read_only_catalog import ReadOnlyHoldingsCatalog
 from .performance import (
     HoldingPerformance,
     HoldingPerformanceService,
@@ -22,23 +22,6 @@ LivePerformanceState = Literal["FRESH", "STALE", "UNAVAILABLE"]
 
 def _decimal_text(value) -> str | None:
     return None if value is None else format(value, "f")
-
-
-class ReadOnlyHoldingsCatalog(HoldingsCatalog):
-    """HoldingsCatalog read surface backed by SQLite mode=ro with no initialization."""
-
-    def connect(self) -> sqlite3.Connection:
-        if not self.db_path.is_file():
-            raise HoldingsCatalogError(
-                "HOLDINGS_STORE_NOT_FOUND",
-                "Holdings 저장소를 찾을 수 없습니다.",
-            )
-        uri = f"file:{self.db_path.resolve().as_posix()}?mode=ro"
-        conn = sqlite3.connect(uri, uri=True)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA query_only=ON")
-        conn.execute("PRAGMA foreign_keys=ON")
-        return conn
 
 
 @dataclass(frozen=True, slots=True)
