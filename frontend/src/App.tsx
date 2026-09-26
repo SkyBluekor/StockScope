@@ -12,6 +12,7 @@ import StockAnalysisWorkspace from "./components/StockAnalysisWorkspace";
 import MarketOverviewWorkspace from "./components/MarketOverviewWorkspace";
 import DataStatusPanel, { dataStatusSummary } from "./components/DataStatusPanel";
 import useStockDataContract from "./hooks/useStockDataContract";
+import useStockQuote from "./hooks/useStockQuote";
 import {
   DATA_TASK_EVENT,
   dataTaskIsRunning,
@@ -293,6 +294,19 @@ export default function App() {
     enabled: appPage === "analysis" && Boolean(stockCode && selectedStockName),
   });
 
+
+  const {
+    quote: stockQuote,
+    state: stockQuoteState,
+    refreshing: stockQuoteRefreshing,
+    error: stockQuoteError,
+    refresh: refreshStockQuote,
+  } = useStockQuote({
+    code: stockCode,
+    market: stockMarket,
+    venue: "INTEGRATED",
+    enabled: appPage === "analysis" && Boolean(stockCode && selectedStockName),
+  });
 
   const analysisInputSignature = [
     stockCode,
@@ -914,6 +928,11 @@ const strategyName: Record<string, string> = {
               dataContractBusy={stockDataContractBusy}
               dataContractError={stockDataContractError}
               onRefreshDataContract={() => void refreshStockDataContract()}
+              quote={stockQuote}
+              quoteState={stockQuoteState}
+              quoteRefreshing={stockQuoteRefreshing}
+              quoteError={stockQuoteError}
+              onRefreshQuote={refreshStockQuote}
               onQueryChange={changeStockQuery}
               onSearchFocus={() => stockSearchResults.length > 0 && setStockSearchOpen(true)}
               onChooseStock={chooseStock}
