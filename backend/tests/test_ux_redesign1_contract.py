@@ -788,7 +788,8 @@ def test_ux_redesign1j5_scanner_defaults_to_reading_and_separates_explicit_work(
     poll_start = scanner.index("async function poll")
     poll_end = scanner.index("async function runScanner", poll_start)
     poll = scanner[poll_start:poll_end]
-    assert "preferredCandidateKeyRef.current ?? scannerSelectionToPreserveRef.current" in poll
+    assert "const evidencePreferredKey = preferredCandidateKeyRef.current" in poll
+    assert "const preferredKey = evidencePreferredKey ?? scannerSelectionToPreserveRef.current" in poll
     assert "latestCandidates.find" in poll
     assert "latest.result.candidates[0]" in poll
 
