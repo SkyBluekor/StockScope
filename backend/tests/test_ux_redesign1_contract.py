@@ -1211,9 +1211,10 @@ def test_realtime2_selected_quote_polling_and_domain_boundaries() -> None:
     assert "setInterval" not in hook
     assert "const generationRef = useRef(0)" in hook
     assert "const abortRef = useRef<AbortController | null>(null)" in hook
-    assert "result.resource_key !==" in hook
-    assert "result.ticker !== normalizedCode" in hook
-    assert "result.venue !== venue" in hook
+    assert "const matchesIdentity =" in hook
+    assert "incoming.resource_key === resourceKey" in hook
+    assert "incoming.ticker === normalizedCode" in hook
+    assert "incoming.venue === venue" in hook
 
     # Hidden/offline work is paused and resumes only when the page becomes usable.
     assert '"visibilitychange"' in hook
@@ -1247,8 +1248,8 @@ def test_realtime2_selected_quote_polling_and_domain_boundaries() -> None:
     assert "createScannerJob" not in hook
     assert "createMultiStrategyBacktestJob" not in hook
 
-    # Shared UI clearly labels a snapshot/current quote and keeps polling diagnostics secondary.
-    assert "KIS 현재가 스냅샷" in strip
+    # Shared UI clearly labels the current quote while realtime transport stays secondary.
+    assert 'aria-label="KIS 현재가"' in strip
     assert "현재가" in strip
     assert "새로고침" in strip
     assert "KIS 통합 시세" in helper
@@ -1511,3 +1512,51 @@ def test_realtime4_market_session_polling_boundaries() -> None:
     assert "H0STCNT0" not in combined
     assert "WebSocket(" not in combined
 
+
+
+def test_realtime6_browser_sse_delivery_contract() -> None:
+    stream = Path("frontend/src/services/quoteStream.ts").read_text(encoding="utf-8")
+    hook = Path("frontend/src/hooks/useStockQuote.ts").read_text(encoding="utf-8")
+    helper = Path("frontend/src/services/quote.ts").read_text(encoding="utf-8")
+    strip = Path("frontend/src/components/StockQuoteStrip.tsx").read_text(encoding="utf-8")
+    backend_api = Path("backend/app/api/quotes.py").read_text(encoding="utf-8")
+    event_hub = Path("backend/app/quotes/event_hub.py").read_text(encoding="utf-8")
+    ws_manager = Path("backend/app/quotes/websocket_manager.py").read_text(encoding="utf-8")
+
+    assert "new EventSource" in stream
+    assert 'addEventListener("status"' in stream
+    assert 'addEventListener("quote"' in stream
+    assert '"/stream?"' in stream
+
+    assert 'streamStateRef.current === "LIVE"' in hook
+    assert 'setStream("DEGRADED")' in hook
+    assert "shouldApplyQuote" in hook
+    assert "eventSourceRef.current?.close()" in hook
+    assert 'document.visibilityState === "hidden"' in hook
+    assert 'window.addEventListener("offline"' in hook
+
+    assert "export function shouldApplyQuote" in helper
+    assert 'delivery.source === "WEBSOCKET"' in helper
+    assert "실시간 연결 복구 중 · REST 시세 사용" in helper
+    assert "실시간 · KIS 통합 시세" in helper
+    assert "streamState={quoteStreamState}" in Path(
+        "frontend/src/components/StockAnalysisWorkspace.tsx"
+    ).read_text(encoding="utf-8")
+    assert "streamState={selectedQuoteStreamState}" in Path(
+        "frontend/src/components/HoldingsWorkspace.tsx"
+    ).read_text(encoding="utf-8")
+    assert "streamState: StockQuoteStreamState" in strip
+
+    assert '@router.get("/stocks/{ticker}/stream")' in backend_api
+    assert 'media_type="text/event-stream"' in backend_api
+    assert '"X-Accel-Buffering": "no"' in backend_api
+    assert 'yield ": heartbeat\\n\\n"' in backend_api
+    assert "asyncio.Queue(maxsize=1)" in event_hub
+    assert "queue.get_nowait()" in event_hub
+    assert "await self.event_hub.publish(key, snapshot)" in ws_manager
+
+    protected = hook + stream + backend_api + event_hub
+    assert "createScannerJob" not in protected
+    assert "createMultiStrategyBacktestJob" not in protected
+    assert "StrategyAnalysisService" not in protected
+    assert "RiskEngine" not in protected
