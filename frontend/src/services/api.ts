@@ -242,10 +242,14 @@ export async function fetchMarketHistory(): Promise<MarketHistory> {
 export async function fetchStockContext(
   code: string,
   market: "KOSPI" | "KOSDAQ",
+  options: { signal?: AbortSignal } = {},
 ): Promise<StockContext> {
   const query = new URLSearchParams({ market });
   return asJson<StockContext>(
-    await fetch(`/api/stocks/${encodeURIComponent(code.trim().toUpperCase())}/context?${query.toString()}`),
+    await fetch(
+      `/api/stocks/${encodeURIComponent(code.trim().toUpperCase())}/context?${query.toString()}`,
+      { signal: options.signal },
+    ),
   );
 }
 
@@ -1099,6 +1103,7 @@ export async function fetchStrategyAnalysis(
   positionMode: "NOT_HELD" | "HOLDING" = "NOT_HELD",
   averagePrice?: number,
   quantity?: number,
+  options: { signal?: AbortSignal } = {},
 ): Promise<StrategyAnalysis> {
   const query = new URLSearchParams({ market, history_points: "60" });
   if (referencePrice != null && Number.isFinite(referencePrice) && referencePrice > 0) query.set("reference_price", String(referencePrice));
@@ -1109,7 +1114,10 @@ export async function fetchStrategyAnalysis(
   if (averagePrice != null && Number.isFinite(averagePrice) && averagePrice > 0) query.set("average_price", String(averagePrice));
   if (quantity != null && Number.isFinite(quantity) && quantity > 0) query.set("quantity", String(quantity));
   return asJson<StrategyAnalysis>(
-    await fetch(`/api/stocks/${encodeURIComponent(code.trim().toUpperCase())}/strategy-analysis?${query.toString()}`),
+    await fetch(
+      `/api/stocks/${encodeURIComponent(code.trim().toUpperCase())}/strategy-analysis?${query.toString()}`,
+      { signal: options.signal },
+    ),
   );
 }
 
@@ -1139,9 +1147,14 @@ export type StockSearchResponse = {
   warnings: string[];
 };
 
-export async function searchStocks(query: string): Promise<StockSearchResponse> {
+export async function searchStocks(
+  query: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<StockSearchResponse> {
   const params = new URLSearchParams({ q: query, limit: "12" });
-  return asJson<StockSearchResponse>(await fetch(`/api/stocks/search?${params.toString()}`));
+  return asJson<StockSearchResponse>(
+    await fetch(`/api/stocks/search?${params.toString()}`, { signal: options.signal }),
+  );
 }
 
 export type BacktestMetrics = {
