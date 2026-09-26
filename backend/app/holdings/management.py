@@ -51,6 +51,19 @@ def _decimal_text(value: Decimal | None) -> str | None:
     return None if value is None else format(value, "f")
 
 
+def management_distance(
+    level: Decimal | None,
+    price: Decimal | None,
+) -> dict[str, str | None]:
+    if level is None or price is None or price <= 0:
+        return {"amount": None, "pct": None}
+    delta = level - price
+    return {
+        "amount": _decimal_text(delta),
+        "pct": _decimal_text(delta / price * Decimal("100")),
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class HoldingManagementPlan:
     id: str
@@ -270,10 +283,7 @@ class HoldingManagementService:
 
     @staticmethod
     def _distance(level: Decimal | None, price: Decimal | None) -> dict[str, str | None]:
-        if level is None or price is None or price <= 0:
-            return {"amount": None, "pct": None}
-        delta = level - price
-        return {"amount": _decimal_text(delta), "pct": _decimal_text(delta / price * Decimal("100"))}
+        return management_distance(level, price)
 
     @staticmethod
     def _state(active: HoldingManagementPlan | None, price: Decimal | None) -> str:
