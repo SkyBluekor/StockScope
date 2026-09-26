@@ -2361,3 +2361,31 @@ button.holdings-direct-value:hover { border-bottom-color: var(--accent-primary);
 .holdings-pnl-baseline {
   color: var(--text-muted);
 }
+
+
+/* REALTIME.3B — current quote distance to applied management levels */
+.holdings-management-live-basis {
+  margin-top: 3px;
+  color: var(--text-secondary) !important;
+  font-size: var(--font-meta);
+  font-weight: 750;
+}
+
+.holdings-management-live-basis.stale,
+.holdings-management-live-error {
+  color: var(--status-warning) !important;
+}
+
+.holdings-management-live-distance {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-secondary);
+  font-size: var(--font-meta);
+  font-variant-numeric: tabular-nums;
+}
+
+.holdings-management-live-error {
+  display: block;
+  margin-top: 6px;
+  font-size: var(--font-meta);
+}
