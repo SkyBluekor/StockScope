@@ -520,8 +520,8 @@ def test_data_contract_requires_explicit_market_and_valid_identity() -> None:
 
 
 def test_data_contract_api_has_no_mutating_service_dependencies() -> None:
-    api_source = Path("app/api/data_contract.py").read_text(encoding="utf-8")
-    builder_source = Path("app/data_contract/builder.py").read_text(encoding="utf-8")
+    api_source = Path("backend/app/api/data_contract.py").read_text(encoding="utf-8")
+    builder_source = Path("backend/app/data_contract/builder.py").read_text(encoding="utf-8")
 
     forbidden = (
         "KrxProvider(",
