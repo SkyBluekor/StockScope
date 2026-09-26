@@ -1608,11 +1608,11 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                 </div>
                 <div className="holdings-actions">
                   {onAnalyzeStock && (
-                    <button className="holdings-secondary" type="button" onClick={openSelectedStockAnalysis}>
+                    <button className="holdings-text-button" type="button" onClick={openSelectedStockAnalysis}>
                       종목 분석 보기
                     </button>
                   )}
-                  <button className="holdings-primary" type="button" onClick={refreshSelected} disabled={refreshingAnalysis}>
+                  <button className="holdings-secondary" type="button" onClick={refreshSelected} disabled={refreshingAnalysis}>
                     {refreshingAnalysis ? "분석 확인 중" : "분석 새로고침"}
                   </button>
                   {detailPerspective === "watch" ? (
