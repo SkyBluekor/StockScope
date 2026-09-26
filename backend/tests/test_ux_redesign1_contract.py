@@ -827,3 +827,89 @@ def test_ux_redesign1j5_scanner_defaults_to_reading_and_separates_explicit_work(
     assert ".scanner-text-action" in styles
     assert ".scanner-selected-management-summary" in styles
     assert ".scanner-evidence-recovery-inline" in styles
+
+
+def test_ux_redesign1j7_full_news_uses_restrained_cards_and_preserves_compact_news() -> None:
+    panel = Path("frontend/src/components/StockNewsPanel.tsx").read_text(encoding="utf-8")
+    styles = Path("frontend/src/stock-analysis.css").read_text(encoding="utf-8")
+    scanner = Path("frontend/src/components/ScannerPanel.tsx").read_text(encoding="utf-8")
+    holdings = Path("frontend/src/components/HoldingsWorkspace.tsx").read_text(encoding="utf-8")
+
+    # NEWS.1 request/display counts are unchanged.
+    assert "requestLimit = compact ? 5 : 10" in panel
+    assert "collapsedLimit = compact ? 3 : 5" in panel
+    assert "expandedLimit = compact ? 5 : 10" in panel
+    assert "news?.items.slice(0, expanded ? expandedLimit : collapsedLimit)" in panel
+
+    # Fetch isolation/race protection remains intact.
+    assert "new AbortController()" in panel
+    assert "requestIdRef" in panel
+    assert "requestId !== requestIdRef.current" in panel
+    assert "controller.signal.aborted" in panel
+    assert "fetchStockNews(code, market, { limit: requestLimit, signal: controller.signal })" in panel
+
+    # Full news presents source -> time -> linked title, while compact keeps time -> source.
+    assert 'className="stock-news-source"' in panel
+    assert 'className="stock-news-time"' in panel
+    compact_meta = panel.index("{compact ? (")
+    compact_source = panel.index('className="stock-news-source"', compact_meta)
+    compact_time = panel.index('className="stock-news-time"', compact_meta)
+    full_branch = panel.index(") : (", compact_meta)
+    full_source = panel.index('className="stock-news-source"', full_branch)
+    full_time = panel.index('className="stock-news-time"', full_branch)
+    assert compact_time < compact_source < full_branch
+    assert full_branch < full_source < full_time
+
+    # The title remains the safe external link for every article.
+    assert '<a href={item.url} target="_blank" rel="noopener noreferrer">{item.title}</a>' in panel
+
+    # The separate "원문" affordance is compact-only; full cards do not reserve a right column for it.
+    origin_start = panel.index('className="stock-news-origin"')
+    compact_guard = panel.rfind("{compact && (", 0, origin_start)
+    assert compact_guard != -1
+    assert "원문 ↗" in panel
+
+    # Full layout is a restrained two-column editorial grid, collapsing to one column when narrow.
+    assert "UX-REDESIGN.1J-7" in styles
+    assert ".stock-news-panel.full .stock-news-list" in styles
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr))" in styles
+    assert ".stock-news-panel.full .stock-news-item" in styles
+    assert "border: 1px solid var(--border-subtle)" in styles
+    assert "border-radius: 8px" in styles
+    assert "@media (max-width: 860px)" in styles
+    responsive_start = styles.index("@media (max-width: 860px)")
+    responsive_end = styles.index("@media (max-width: 720px)", responsive_start)
+    assert "grid-template-columns: 1fr" in styles[responsive_start:responsive_end]
+
+    # Long full titles are bounded to three lines and descriptions remain at two.
+    full_title_start = styles.index(".stock-news-panel.full .stock-news-item h4")
+    full_title_end = styles.index(".stock-news-panel.full .stock-news-item p", full_title_start)
+    full_title = styles[full_title_start:full_title_end]
+    assert "-webkit-line-clamp: 3" in full_title
+    full_description_start = full_title_end
+    full_description_end = styles.index(".stock-news-origin", full_description_start)
+    assert "-webkit-line-clamp: 2" in styles[full_description_start:full_description_end]
+
+    # Compact Scanner/Holdings news keeps its existing row/list contract and separate origin link.
+    assert 'variant="compact"' in scanner
+    assert 'variant="compact"' in holdings
+    compact_style_start = styles.index(".stock-news-panel.compact .stock-news-item")
+    compact_style_end = styles.index(".stock-news-panel.compact .stock-news-item h4", compact_style_start)
+    compact_style = styles[compact_style_start:compact_style_end]
+    assert "display: grid" in compact_style
+    assert "grid-template-columns: minmax(0, 1fr) auto" in compact_style
+    assert ".stock-news-panel.compact .stock-news-origin" in styles
+
+    # Missing metadata keeps explicit fallbacks; no synthetic article text is invented.
+    assert 'sourceName || sourceDomain || "출처 확인"' in panel
+    assert 'return "시각 정보 없음"' in panel
+    assert "{item.description && <p>{item.description}</p>}" in panel
+
+    # Expanding 5 -> 10 is local state only; it does not introduce another fetch path.
+    assert 'onClick={() => setExpanded((value) => !value)}' in panel
+    assert panel.count("fetchStockNews(") == 1
+
+    # NEWS.1 interpretation boundary and local error isolation remain visible.
+    assert "호재·악재 또는 주가 방향을 판정하지 않습니다." in panel
+    assert "최근 뉴스만 불러오지 못했습니다." in panel
+    assert "종목 분석과 전략 계산 결과에는 영향을 주지 않습니다." in panel
