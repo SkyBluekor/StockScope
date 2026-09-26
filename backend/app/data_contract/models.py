@@ -93,6 +93,25 @@ class LedgerObservation:
 
 
 @dataclass(frozen=True, slots=True)
+class RealtimeQuoteObservation:
+    capable: bool
+    present: bool
+    source: str
+    market: str
+    ticker: str
+    provider: str | None = None
+    mode: str | None = None
+    venue: str | None = None
+    current_price: str | None = None
+    provider_timestamp: str | None = None
+    received_at: str | None = None
+    age_ms: int | None = None
+    freshness_seconds: float | None = None
+    reason: str | None = None
+    error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class KnownJobObservation:
     available: bool
     present: bool
@@ -119,4 +138,5 @@ class StockStateObservation:
     chart: ChartCoverageObservation
     analysis: StoredAnalysisObservation
     ledger: LedgerObservation
+    realtime: RealtimeQuoteObservation
     active_job: KnownJobObservation
