@@ -107,7 +107,11 @@ def _save_cached(settings: Settings, token: KisAccessToken) -> None:
                 pass
 
 
-def invalidate_access_token(settings: Settings | None = None) -> bool:
+def invalidate_access_token(
+    settings: Settings | None = None,
+    *,
+    expected_access_token: str | None = None,
+) -> bool:
     settings = validate_settings(settings or get_settings())
     with _TOKEN_LOCK:
         try:
@@ -115,6 +119,11 @@ def invalidate_access_token(settings: Settings | None = None) -> bool:
         except (OSError, json.JSONDecodeError, TypeError, ValueError):
             return False
         if data.get("credential_fingerprint") != credential_fingerprint(settings):
+            return False
+        if (
+            expected_access_token is not None
+            and str(data.get("access_token") or "") != expected_access_token
+        ):
             return False
         try:
             _CACHE_PATH.unlink()
