@@ -22,8 +22,9 @@ type Props = {
   onQueryChange: (value: string) => void;
   onSearchFocus: () => void;
   onChooseStock: (item: StockSearchItem) => void;
-  onLoadContext: () => void;
+  onRetryContext: () => void;
   onRunAnalysis: () => void;
+  strategyMessage: string;
   scannerOrigin: boolean;
   onBackToScanner: () => void;
   onOpenHoldings: (target: { market: "KOSPI" | "KOSDAQ"; ticker: string; name: string }) => void;
@@ -114,8 +115,9 @@ export default function StockAnalysisWorkspace({
   onQueryChange,
   onSearchFocus,
   onChooseStock,
-  onLoadContext,
+  onRetryContext,
   onRunAnalysis,
+  strategyMessage,
   scannerOrigin,
   onBackToScanner,
   onOpenHoldings,
@@ -131,6 +133,7 @@ export default function StockAnalysisWorkspace({
     ? [...summary.priority_signals, ...summary.other_signals].filter((item) => item.status === "NEGATIVE" || item.status === "CAUTION").slice(0, 4)
     : [];
   const styleContext = summary?.entry_timing.style_context ?? null;
+  const strategyBasisDate = strategyAnalysis?.data_freshness.eod_date ?? strategyAnalysis?.data_date ?? null;
 
   return (
     <section className="stock-analysis-workspace">
@@ -184,20 +187,36 @@ export default function StockAnalysisWorkspace({
           )}
         </div>
         <div className="stock-analysis-search-state">
-          <span>{selectedStockName ? `${stockMarket} · ${stockCode}` : "분석할 종목을 검색하세요"}</span>
-          {selectedStockName && !stock && (
-            <button type="button" onClick={onLoadContext} disabled={stockBusy}>
-              {stockBusy ? "불러오는 중" : "기본 정보 불러오기"}
-            </button>
-          )}
+          <span>
+            {selectedStockName
+              ? stockBusy
+                ? `${stockMarket} · ${stockCode} · 기본 정보 확인 중`
+                : `${stockMarket} · ${stockCode}`
+              : "분석할 종목을 검색하세요"}
+          </span>
         </div>
       </section>
 
       {!stock ? (
         <>
           <div className="stock-analysis-empty">
-            <strong>{selectedStockName ? stockMessage : "분석할 종목을 선택하세요."}</strong>
-            <p>종목을 선택하면 최근 확정 종가와 기업 기본정보를 먼저 불러옵니다.</p>
+            <strong>
+              {selectedStockName
+                ? stockBusy
+                  ? "종목 기본 정보를 확인하고 있습니다."
+                  : stockMessage
+                : "분석할 종목을 선택하세요."}
+            </strong>
+            <p>
+              {selectedStockName
+                ? "종목을 선택하면 최근 확정 종가와 기업 기본정보를 자동으로 확인합니다."
+                : "종목을 선택하면 최근 확정 종가와 기업 기본정보를 먼저 확인합니다."}
+            </p>
+            {selectedStockName && !stockBusy && (
+              <button type="button" className="stock-analysis-context-retry" onClick={onRetryContext}>
+                다시 확인
+              </button>
+            )}
           </div>
           {selectedStockName && stockCode && (
             <StockNewsPanel code={stockCode} market={stockMarket} companyLabel={selectedStockName} />
@@ -229,10 +248,8 @@ export default function StockAnalysisWorkspace({
               </div>
             </div>
             <div className="stock-analysis-head-actions">
-              <button type="button" className="stock-analysis-run" onClick={onRunAnalysis} disabled={strategyBusy}>
-                {strategyBusy ? "분석 중..." : analysisOutdated ? "변경값 다시 분석" : strategyAnalysis ? "분석 다시 실행" : "분석 실행"}
-              </button>
-              <small>공식 분석은 최신 확정 일봉을 기준으로 합니다.</small>
+              <small>기본 정보와 차트는 조회 즉시 표시됩니다.</small>
+              <small>전략 계산은 아래에서 필요할 때 직접 실행합니다.</small>
             </div>
           </section>
 
@@ -243,6 +260,50 @@ export default function StockAnalysisWorkspace({
             referencePrice={stock.stock.close}
             onOpenHoldings={onOpenHoldings}
           />
+
+          <section className="stock-analysis-chart-stage">
+            <StockAnalysisPriceChart code={stock.code} market={stock.market} analysis={strategyAnalysis} />
+          </section>
+
+          <section className={`stock-analysis-execution ${analysisOutdated ? "outdated" : strategyAnalysis ? "has-result" : "not-run"}`}>
+            <div>
+              <span>STOCKSCOPE STRATEGY</span>
+              <h3>전략 분석</h3>
+              {!strategyAnalysis ? (
+                <p>{strategyBusy ? "확정 일봉 기준 전략 분석을 계산하고 있습니다." : strategyMessage}</p>
+              ) : analysisOutdated ? (
+                <p>입력값이 변경되었습니다. 아래 결과는 이전 입력 기준이며, 변경한 조건은 아직 반영되지 않았습니다.</p>
+              ) : strategyBusy ? (
+                <p>새 분석을 계산 중입니다. 현재 표시 중인 이전 완료 결과는 그대로 유지합니다.</p>
+              ) : (
+                <p>
+                  현재 세션의 분석 결과를 표시 중입니다.
+                  {strategyBasisDate ? ` · 기준 ${formatDate(strategyBasisDate)} 확정 일봉` : ""}
+                </p>
+              )}
+            </div>
+
+            {!strategyAnalysis ? (
+              <button type="button" className="stock-analysis-run" onClick={onRunAnalysis} disabled={strategyBusy}>
+                {strategyBusy ? "전략 분석 중..." : "전략 분석 실행"}
+              </button>
+            ) : analysisOutdated ? (
+              <button type="button" className="stock-analysis-run" onClick={onRunAnalysis} disabled={strategyBusy}>
+                {strategyBusy ? "전략 분석 중..." : "변경값으로 다시 분석"}
+              </button>
+            ) : (
+              <details className="stock-analysis-run-options">
+                <summary>분석 실행 옵션</summary>
+                <div>
+                  <strong>같은 조건으로 다시 분석</strong>
+                  <p>현재 입력 조건으로 Strategy 분석을 새로 실행합니다. 기존 결과는 새 분석이 성공할 때까지 유지합니다.</p>
+                  <button type="button" onClick={onRunAnalysis} disabled={strategyBusy}>
+                    {strategyBusy ? "새 분석 계산 중..." : "같은 조건으로 다시 분석"}
+                  </button>
+                </div>
+              </details>
+            )}
+          </section>
 
           {strategyAnalysis && summary && (
             <>
@@ -265,7 +326,7 @@ export default function StockAnalysisWorkspace({
                 </div>
               </section>
 
-              <section className="stock-analysis-primary-grid">
+              <section className="stock-analysis-plan-section">
                 <div className="stock-analysis-plan">
                   <div className="stock-analysis-section-title">
                     <div>
@@ -284,7 +345,6 @@ export default function StockAnalysisWorkspace({
                     참고가격 시나리오를 입력해도 이 영역의 공식 기준은 확정 일봉 분석입니다.
                   </p>
                 </div>
-                <StockAnalysisPriceChart code={stock.code} market={stock.market} analysis={strategyAnalysis} />
               </section>
 
               <section className="stock-analysis-evidence">
