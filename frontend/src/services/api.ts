@@ -41,7 +41,7 @@ export type DomesticMarketSessionResponse = {
 };
 
 export type StockQuoteVenue = "INTEGRATED" | "KRX" | "NXT";
-export type StockQuoteDeliverySource = "UPSTREAM" | "CACHE" | "SINGLE_FLIGHT";
+export type StockQuoteDeliverySource = "UPSTREAM" | "CACHE" | "SINGLE_FLIGHT" | "WEBSOCKET";
 
 export type StockQuoteResponse = {
   resource_key: string;
