@@ -153,6 +153,10 @@ function configSummary(config: BacktestCacheConfig) {
   return `${formatCompactDate(config.startDate)} ~ ${formatCompactDate(config.endDate)} · 보유 ${config.maxHoldingDays}일 · 비용 ${config.roundTripCostPct}%`;
 }
 
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
 function readScannerAnalysisContext(code: string): ScannerAnalysisContext | null {
   try {
     const raw = window.sessionStorage.getItem("stockscope-scanner-analysis-context");
@@ -469,6 +473,7 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock, 
   const [result, setResult] = useState<MultiStrategyBacktestResponse | null>(null);
   const [resultConfig, setResultConfig] = useState<BacktestCacheConfig | null>(null);
   const [resultCompletedAt, setResultCompletedAt] = useState<number | null>(null);
+  const [resultRestoreMode, setResultRestoreMode] = useState<"auto-cache" | "manual-cache" | null>(null);
   const [exactCachedResult, setExactCachedResult] = useState<BacktestCacheEntry | null>(null);
   const [latestCachedResult, setLatestCachedResult] = useState<BacktestCacheEntry | null>(null);
   const [validationBusy, setValidationBusy] = useState(false);
@@ -478,6 +483,8 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock, 
   const activeJobId = useRef<string | null>(null);
   const activeValidationJobId = useRef<string | null>(null);
   const workspaceTopRef = useRef<HTMLDivElement | null>(null);
+  const stockSearchRequestIdRef = useRef(0);
+  const autoRestoreStockKeyRef = useRef<string | null>(null);
   const [scannerContext, setScannerContext] = useState<ScannerAnalysisContext | null>(() => readScannerAnalysisContext(code));
   const [showStrategyGuides, setShowStrategyGuides] = useState(false);
   const [showComparisonCriteria, setShowComparisonCriteria] = useState(false);
@@ -492,24 +499,38 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock, 
     const query = stockQuery.trim();
     const selectedLabel = stockName ? `${stockName} (${code})` : "";
     if (query === selectedLabel || query.length < 2) {
+      stockSearchRequestIdRef.current += 1;
       setStockSearchResults([]);
       setStockSearchBusy(false);
-      return;
+      return undefined;
     }
+
+    let controller: AbortController | null = null;
     const timer = window.setTimeout(() => {
+      controller = new AbortController();
+      const requestId = ++stockSearchRequestIdRef.current;
       setStockSearchBusy(true);
-      void searchStocks(query)
+      void searchStocks(query, { signal: controller.signal })
         .then((response) => {
+          if (requestId !== stockSearchRequestIdRef.current || stockQuery.trim() !== query) return;
           setStockSearchResults(response.rows);
           setStockSearchOpen(true);
         })
-        .catch(() => {
+        .catch((error) => {
+          if (isAbortError(error) || requestId !== stockSearchRequestIdRef.current) return;
+          if (stockQuery.trim() !== query) return;
           setStockSearchResults([]);
           setStockSearchOpen(true);
         })
-        .finally(() => setStockSearchBusy(false));
+        .finally(() => {
+          if (requestId === stockSearchRequestIdRef.current) setStockSearchBusy(false);
+        });
     }, 250);
-    return () => window.clearTimeout(timer);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller?.abort();
+    };
   }, [stockQuery, code, stockName]);
 
   useEffect(() => {
@@ -536,7 +557,35 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock, 
     setResult(null);
     setResultConfig(null);
     setResultCompletedAt(null);
+    setResultRestoreMode(null);
     setError(null);
+
+    const stockKey = `${market}:${code.trim().toUpperCase()}`;
+    if (autoRestoreStockKeyRef.current === stockKey) {
+      setView("setup");
+      return;
+    }
+    autoRestoreStockKeyRef.current = stockKey;
+
+    const restored = readLatestBacktestCache(market, code);
+    if (
+      restored
+      && restored.config.market === market
+      && restored.config.code.trim().toUpperCase() === code.trim().toUpperCase()
+    ) {
+      applyConfigToForm(restored.config);
+      setExactCachedResult(restored);
+      setLatestCachedResult(restored);
+      setResult(restored.result);
+      setResultConfig(restored.config);
+      setResultCompletedAt(restored.completedAt);
+      setResultRestoreMode("auto-cache");
+      setView("result");
+      return;
+    }
+
+    setExactCachedResult(null);
+    setLatestCachedResult(null);
     setView("setup");
   }, [code, market]);
 
@@ -567,6 +616,7 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock, 
     setResult(entry.result);
     setResultConfig(entry.config);
     setResultCompletedAt(entry.completedAt);
+    setResultRestoreMode("manual-cache");
     setError(null);
     setView("result");
     scrollTop();
@@ -620,6 +670,7 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock, 
       setResult(previousExact.result);
       setResultConfig(previousExact.config);
       setResultCompletedAt(previousExact.completedAt);
+      setResultRestoreMode("manual-cache");
     }
 
     setBusy(true);
@@ -657,6 +708,7 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock, 
           setResult(latest.result);
           setResultConfig(runConfig);
           setResultCompletedAt(completedAt);
+          setResultRestoreMode(null);
           setLatestCachedResult(entry);
           if (runSignature === currentSignature) setExactCachedResult(entry);
           setBusy(false);
@@ -840,8 +892,9 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock, 
               <span>이번 세션의 기존 결과</span>
               {exactCachedResult ? (
                 <>
-                  <strong>같은 조건으로 완료된 결과가 있습니다.</strong>
+                  <strong>현재 조건의 완료 결과가 이번 세션에 저장되어 있습니다.</strong>
                   <small>{formatCompletedAt(exactCachedResult.completedAt)} 완료 · {configSummary(exactCachedResult.config)}</small>
+                  <small>저장된 결과는 계산 당시 조건 기준이며 최신 데이터 여부를 뜻하지 않습니다.</small>
                 </>
               ) : latestCachedDiffers && latestCachedResult ? (
                 <>
@@ -858,10 +911,7 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock, 
             </div>
             <div className="backtest-cache-actions">
               {exactCachedResult && (
-                <>
-                  <button type="button" onClick={() => showCachedResult(exactCachedResult)}>기존 결과 보기</button>
-                  <button type="button" className="secondary" disabled={busy} onClick={() => void runBacktest(exactCachedResult.config)}>같은 조건으로 다시 계산</button>
-                </>
+                <button type="button" className="secondary" disabled={busy} onClick={() => void runBacktest(exactCachedResult.config)}>같은 조건으로 다시 계산</button>
               )}
               {!exactCachedResult && latestCachedDiffers && latestCachedResult && (
                 <button type="button" className="secondary" onClick={() => showCachedResult(latestCachedResult)}>이전 결과 보기</button>
@@ -1065,8 +1115,19 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock, 
                     <span>검증 범위</span>
                     <strong>요청 조건과 실제 사용한 데이터 범위를 구분해 표시합니다.</strong>
                   </div>
-                  <small>{resultCompletedAt ? `이번 세션 ${formatCompletedAt(resultCompletedAt)} 완료` : "완료 시각 확인 불가"}</small>
+                  <small>
+                    {resultCompletedAt
+                      ? resultRestoreMode === "auto-cache"
+                        ? `저장 결과 자동 복원 · ${formatCompletedAt(resultCompletedAt)} 완료`
+                        : resultRestoreMode === "manual-cache"
+                          ? `이번 세션 저장 결과 · ${formatCompletedAt(resultCompletedAt)} 완료`
+                          : `이번 세션 ${formatCompletedAt(resultCompletedAt)} 완료`
+                      : "완료 시각 확인 불가"}
+                  </small>
                 </div>
+                {resultRestoreMode === "auto-cache" && (
+                  <p className="backtest-preserved-result-note">새 계산 없이 이번 세션의 저장된 완료 결과를 복원했습니다.</p>
+                )}
                 <div className="backtest-result-context-grid">
                   <div><span>요청한 검증 기간</span><strong>{formatCompactDate(resultRequestedStart)} ~ {formatCompactDate(resultRequestedEnd)}</strong></div>
                   <div><span>실제 종목 데이터</span><strong>{resultActualStart && resultActualEnd ? `${formatCompactDate(resultActualStart)} ~ ${formatCompactDate(resultActualEnd)}` : "-"}</strong></div>
