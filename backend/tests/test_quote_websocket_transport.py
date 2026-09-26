@@ -10,6 +10,7 @@ from app.core.config import Settings
 from app.integrations.kis.quote import KisDomesticPrice
 from app.integrations.kis.token_cache import credential_fingerprint
 from app.integrations.kis.ws_approval import KisWebSocketApproval
+from app.quotes.event_hub import QuoteEventHub
 from app.quotes.models import QuoteCacheKey, QuoteSnapshot
 from app.quotes.service import QuoteService
 from app.quotes.store import QuoteStore
@@ -266,3 +267,37 @@ def test_subscription_limit_never_evicts_existing_demand() -> None:
     assert manager.touch_demand(second) is False
     assert manager.subscription_state(first) == "REQUESTED"
     assert manager.subscription_state(second) == "ERROR"
+
+
+@pytest.mark.asyncio
+async def test_manager_publishes_only_store_accepted_websocket_tick() -> None:
+    settings = _settings()
+    store = QuoteStore()
+    hub = QuoteEventHub()
+    key = _key(settings)
+    queue = await hub.subscribe(key)
+    manager = QuoteWebSocketManager(
+        store=store,
+        settings_getter=lambda: settings,
+        event_hub=hub,
+    )
+    manager.touch_demand(key)
+    manager._set_state("CONNECTED")
+    manager._leases[key].state = "SUBSCRIBED"
+
+    await manager._realtime(_frame())
+
+    published = await queue.get()
+    assert published.current_price == Decimal("84200")
+    assert published.transport == "WEBSOCKET"
+
+    newer = _snapshot(
+        price="84300",
+        transport="WEBSOCKET",
+        provider_timestamp="2026-09-28T09:30:13+09:00",
+    )
+    assert store.put(key, newer) is True
+
+    await manager._realtime(_frame())
+
+    assert queue.empty()
