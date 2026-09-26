@@ -79,6 +79,11 @@ function formatSignedPct(value: number | null | undefined) {
   return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
+function formatPct(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value)) return "-";
+  return `${value.toFixed(2)}%`;
+}
+
 function formatElapsed(seconds: number) {
   const safe = Math.max(0, Math.floor(seconds));
   if (safe < 60) return `${safe}초`;
@@ -203,11 +208,61 @@ function targetCapExplanation(candidate: ScannerCandidate) {
   };
 }
 
+function evidenceValidationLabel(candidate: ScannerCandidate) {
+  const evidence = candidate.historical_evidence;
+  if (!evidence) return candidate.historical_fit.verified === false ? "3년 검증 전" : candidate.historical_fit.label;
+  return evidence.verified ? "최근 3년 검증 완료" : "최근 3년 검증 미완료";
+}
+
+function evidenceAssessmentLabel(candidate: ScannerCandidate) {
+  const evidence = candidate.historical_evidence;
+  if (!evidence) return candidate.historical_fit.label;
+  if (!evidence.verified) {
+    return evidence.unavailable_reason === "UNSUPPORTED_STRATEGY"
+      ? "현재 전략은 3년 검증을 지원하지 않음"
+      : "검증에 필요한 과거 데이터 확인 필요";
+  }
+  if (evidence.status === "GOOD") return "과거 성과 근거 양호";
+  if (evidence.status === "FAIR") return "과거 성과 근거 보통";
+  if (evidence.status === "WEAK") return "과거 성과 근거 약함";
+  if (evidence.status === "INSUFFICIENT") return "거래 표본 부족";
+  if (evidence.status === "NO_CASES") return "동일 전략 거래 사례 없음";
+  return evidence.label;
+}
+
+function evidenceSummaryText(candidate: ScannerCandidate) {
+  const evidence = candidate.historical_evidence;
+  if (!evidence) return candidate.historical_fit.summary;
+  if (!evidence.verified) return evidence.summary;
+  if (evidence.status === "WEAK") {
+    return `3년 검증에 필요한 데이터로 계산을 완료했습니다. ${evidence.summary}`;
+  }
+  if (evidence.status === "INSUFFICIENT") {
+    return `3년 검증은 완료했습니다. ${evidence.summary}`;
+  }
+  if (evidence.status === "NO_CASES") {
+    return `3년 검증은 완료했습니다. ${evidence.summary}`;
+  }
+  return evidence.summary;
+}
+
+function evidencePreparationAvailable(candidate: ScannerCandidate) {
+  const evidence = candidate.historical_evidence;
+  if (!evidence || evidence.status !== "DATA_UNAVAILABLE") return false;
+  if (evidence.preparation_available != null) return evidence.preparation_available;
+  return !evidence.warnings.some((warning) => warning.includes("지원하지 않는 전략"));
+}
+
 function evidenceCompactText(candidate: ScannerCandidate) {
   const evidence = candidate.historical_evidence;
-  if (!evidence?.verified) return evidence?.label ?? candidate.historical_fit.label;
-  const average = formatSignedPct(evidence.average_net_return_pct);
-  return `최근 3년 · ${evidence.sample_count}회 · 평균 ${average}`;
+  if (!evidence) return candidate.historical_fit.label;
+  if (!evidence.verified) return "3년 검증 미완료";
+  if (evidence.status === "GOOD") return "3년 검증 완료 · 근거 양호";
+  if (evidence.status === "FAIR") return "3년 검증 완료 · 근거 보통";
+  if (evidence.status === "WEAK") return "3년 검증 완료 · 근거 약함";
+  if (evidence.status === "INSUFFICIENT") return "3년 검증 완료 · 표본 부족";
+  if (evidence.status === "NO_CASES") return "3년 검증 완료 · 거래 사례 없음";
+  return "3년 검증 완료";
 }
 
 function emptyCandidateMessage(result: ScannerResponse, noAnalyzedData: boolean) {
@@ -388,8 +443,10 @@ function CandidateDetail({
   const tone = candidateTone(candidate);
   const topMissing = candidate.conditions.top_missing ?? [];
   const evidence = candidate.historical_evidence;
-  const evidenceLabel = evidence?.label ?? (candidate.historical_fit.verified === false ? "과거 검증 전" : candidate.historical_fit.label);
-  const evidenceSummary = evidence?.summary ?? candidate.historical_fit.summary;
+  const evidenceValidation = evidenceValidationLabel(candidate);
+  const evidenceAssessment = evidenceAssessmentLabel(candidate);
+  const evidenceSummary = evidenceSummaryText(candidate);
+  const canPrepareEvidence = evidencePreparationAvailable(candidate);
   const targetCap = targetCapExplanation(candidate);
   const changeSummary = candidate.user_action.next_transition
     || (topMissing.length > 0 ? topMissing.slice(0, 2).map((item) => item.label).join(" · ") : "현재 조건이 유지되는지 확인하세요.");
@@ -515,15 +572,21 @@ function CandidateDetail({
         <div className="scanner-evidence-compact-head">
           <div>
             <small>같은 전략의 최근 3년 과거 근거</small>
-            <strong>{evidenceLabel}</strong>
-            <span>{evidenceSummary}</span>
+            <div className="scanner-evidence-status-line">
+              <strong>{evidenceValidation}</strong>
+              <span>{evidenceAssessment}</span>
+            </div>
+            <p className="scanner-evidence-summary">{evidenceSummary}</p>
           </div>
           {evidence?.verified && (
             <div className="scanner-evidence-compact-metrics">
-              <span><small>유사 거래</small><b>{evidence.sample_count}회</b></span>
-              <span><small>승률</small><b>{formatSignedPct(evidence.win_rate_pct)}</b></span>
+              <span className="sample">
+                <small>거래 표본</small>
+                <b>{evidence.sample_count}회</b>
+                <em>{evidence.sample_sufficient ? `최소 기준 ${evidence.minimum_sample}회 충족` : `최소 기준 ${evidence.minimum_sample}회`}</em>
+              </span>
+              <span><small>승률</small><b>{formatPct(evidence.win_rate_pct)}</b></span>
               <span><small>평균 순수익</small><b>{formatSignedPct(evidence.average_net_return_pct)}</b></span>
-              <span><small>기대수익</small><b>{formatSignedPct(evidence.expectancy_pct)}</b></span>
               <span><small>최대 낙폭</small><b>{formatSignedPct(evidence.max_drawdown_pct)}</b></span>
             </div>
           )}
@@ -538,6 +601,7 @@ function CandidateDetail({
             {evidence.verified ? (
               <>
                 <div className="scanner-evidence-detail-grid">
+                  <div><small>기대수익</small><strong>{formatSignedPct(evidence.expectancy_pct)}</strong></div>
                   <div><small>Profit Factor</small><strong>{evidence.profit_factor == null ? "-" : evidence.profit_factor.toFixed(2)}</strong></div>
                   <div><small>수익 거래</small><strong>{evidence.wins} / {evidence.sample_count}</strong></div>
                   <div><small>손절 종료</small><strong>{evidence.exit_counts.stop}회</strong></div>
@@ -564,13 +628,14 @@ function CandidateDetail({
               </>
             ) : (
               <div className="scanner-evidence-unavailable">
-                <strong>{evidence.label}</strong>
-                <p>{evidence.summary}</p>
+                <strong>{evidenceValidation}</strong>
+                <p>{evidenceAssessment}</p>
+                <span>{evidence.summary}</span>
                 <span>검증 기간 · {formatDate(evidence.period.start)} ~ {formatDate(evidence.period.end)}</span>
-                {evidence.warnings.length > 0 && <small>부족 이유 · {evidence.warnings.join(" · ")}</small>}
-                {evidence.status === "DATA_UNAVAILABLE" && (
+                {evidence.warnings.length > 0 && <small>확인 내용 · {evidence.warnings.join(" · ")}</small>}
+                {canPrepareEvidence && (
                   <div className="scanner-evidence-recovery">
-                    <p>저장된 데이터가 부족한 경우 시장 데이터를 준비한 뒤 같은 후보를 다시 검증할 수 있습니다.</p>
+                    <p>과거 데이터가 부족해 검증을 완료하지 못했습니다. 필요한 시장 데이터를 준비한 뒤 같은 후보를 다시 검증할 수 있습니다.</p>
                     <button type="button" onClick={onPrepareEvidence} disabled={evidenceBusy}>
                       {evidenceBusy ? "데이터 준비 중..." : "3년 검증 데이터 준비"}
                     </button>
