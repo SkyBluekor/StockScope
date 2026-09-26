@@ -913,3 +913,106 @@ def test_ux_redesign1j7_full_news_uses_restrained_cards_and_preserves_compact_ne
     assert "호재·악재 또는 주가 방향을 판정하지 않습니다." in panel
     assert "최근 뉴스만 불러오지 못했습니다." in panel
     assert "종목 분석과 전략 계산 결과에는 영향을 주지 않습니다." in panel
+
+
+def test_ux_redesign1j6_separates_stock_reads_from_explicit_strategy_execution() -> None:
+    app = Path("frontend/src/App.tsx").read_text(encoding="utf-8")
+    workspace = Path("frontend/src/components/StockAnalysisWorkspace.tsx").read_text(encoding="utf-8")
+    chart = Path("frontend/src/components/StockAnalysisPriceChart.tsx").read_text(encoding="utf-8")
+    styles = Path("frontend/src/stock-analysis.css").read_text(encoding="utf-8")
+
+    # Direct/revisited analysis keeps the J2 automatic stock-context read.
+    assert 'if (appPage !== "analysis" || !stockCode || !selectedStockName || stock || stockBusy) return' in app
+    assert "void loadStockContextForSelection(stockCode, stockMarket, selectedStockName)" in app
+    assert "fetchStockContext(normalizedCode, market, { signal: controller.signal })" in app
+
+    # The normal UI no longer asks for a redundant basic-info load button.
+    assert "기본 정보 불러오기" not in workspace
+    assert "onLoadContext" not in workspace
+    assert "onRetryContext" in workspace
+    assert "stockContextError" in workspace
+    assert "selectedStockName && !stockBusy && stockContextError" in workspace
+    assert "다시 확인" in workspace
+
+    # Retrying context remains a read-only stock-context action, never a strategy run.
+    retry_prop = 'onRetryContext={() => void quickAnalyze()}'
+    assert retry_prop in app
+    quick_start = app.index("async function quickAnalyze")
+    quick_end = app.index("useEffect(() =>", quick_start)
+    quick = app[quick_start:quick_end]
+    assert "loadStockContextForSelection" in quick
+    assert "runStrategyAnalysis" not in quick
+    assert "fetchStrategyAnalysis" not in quick
+
+    # Confirmed-EOD chart renders as soon as stock context exists, before any Strategy result.
+    assert workspace.count("<StockAnalysisPriceChart") == 1
+    chart_index = workspace.index("<StockAnalysisPriceChart")
+    execution_index = workspace.index("stock-analysis-execution")
+    verdict_index = workspace.index("stock-analysis-verdict")
+    assert chart_index < execution_index < verdict_index
+    assert 'analysis={strategyAnalysis}' in workspace
+    assert "analysis: StrategyAnalysis | null" in chart
+
+    # Strategy-derived plan levels are absent naturally when analysis is null.
+    assert "const plan = analysis?.risk_analysis.selected_plan ?? null" in chart
+    assert "analysis?.data_freshness.eod_close ?? null" in chart
+    assert "이 기간 데이터 준비" in chart
+    assert "prepareStockChartWithProgress" in chart
+
+    # There is one primary explicit execution stage.
+    assert "전략 분석 실행" in workspace
+    assert "변경값으로 다시 분석" in workspace
+    assert "분석 실행 옵션" in workspace
+    assert "같은 조건으로 다시 분석" in workspace
+    assert "현재 세션의 분석 결과를 표시 중입니다." in workspace
+    assert "최신 분석" not in workspace
+
+    # The expert child no longer contains a duplicate run button.
+    child_start = app.index('{stock && (', app.index("<StockAnalysisWorkspace"))
+    child_end = app.index("</StockAnalysisWorkspace>", child_start)
+    child = app[child_start:child_end]
+    assert "분석 세부 설정" in child
+    assert "runStrategyAnalysis()" not in child
+    assert "실행은 기본 분석 영역에서 한 번만 합니다." in child
+
+    # A new stock clears the previous result; same-stock selection does not.
+    choose_start = app.index("function chooseStock")
+    choose_end = app.index("function changeStockQuery", choose_start)
+    choose = app[choose_start:choose_end]
+    assert "const sameStock = selectedStockKeyRef.current === nextKey" in choose
+    assert "if (!sameStock) {" in choose
+    reset_start = choose.index("if (!sameStock) {")
+    reset = choose[reset_start:choose.index("setStockMessage", reset_start)]
+    assert "setStrategyAnalysis(null)" in reset
+    assert "setLastAnalysisInputSignature" in reset
+
+    # Rerun failure preserves an existing completed result and its input signature.
+    run_start = app.index("async function runStrategyAnalysis")
+    run_end = app.index("function navigateAnalysis", run_start)
+    run = app[run_start:run_end]
+    assert "const hadExistingResult = strategyAnalysis != null" in run
+    assert "if (!hadExistingResult)" in run
+    failure_branch_start = run.index("if (!hadExistingResult)")
+    failure_branch = run[failure_branch_start:]
+    assert "setStrategyAnalysis(null)" in failure_branch
+    assert "setLastAnalysisInputSignature" in failure_branch
+    assert "현재 표시 중인 이전 분석 결과는 유지됩니다." in failure_branch
+
+    # Stale/racing strategy responses remain protected by request, stock, and input identity.
+    assert "requestId !== strategyRequestIdRef.current" in run
+    assert "selectedStockKeyRef.current !== requestedStockKey" in run
+    assert "analysisInputSignatureRef.current !== requestInputSignature" in run
+    assert "isAbortError(error)" in run
+
+    # Official EOD and hypothetical inputs remain explicitly separate.
+    assert "공식 확정 EOD 기준" in workspace
+    assert "가상 분석 조건" in child
+    assert "공식 확정 일봉 분석을 덮어쓰지 않습니다." in child
+    assert "실제 보유 수량·평균단가와 원장을 변경하지 않습니다." in child
+
+    # J6 styling keeps the flow editorial instead of adding another card system.
+    assert "UX-REDESIGN.1J-6" in styles
+    assert ".stock-analysis-chart-stage" in styles
+    assert ".stock-analysis-execution" in styles
+    assert ".stock-analysis-run-options" in styles
+    assert ".stock-analysis-plan-section" in styles
