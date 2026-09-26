@@ -15,6 +15,7 @@ type Props = {
   stockMarket: "KOSPI" | "KOSDAQ";
   stockBusy: boolean;
   stockMessage: string;
+  stockContextError: string | null;
   stock: StockContext | null;
   strategyAnalysis: StrategyAnalysis | null;
   strategyBusy: boolean;
@@ -108,6 +109,7 @@ export default function StockAnalysisWorkspace({
   stockMarket,
   stockBusy,
   stockMessage,
+  stockContextError,
   stock,
   strategyAnalysis,
   strategyBusy,
@@ -212,7 +214,7 @@ export default function StockAnalysisWorkspace({
                 ? "종목을 선택하면 최근 확정 종가와 기업 기본정보를 자동으로 확인합니다."
                 : "종목을 선택하면 최근 확정 종가와 기업 기본정보를 먼저 확인합니다."}
             </p>
-            {selectedStockName && !stockBusy && (
+            {selectedStockName && !stockBusy && stockContextError && (
               <button type="button" className="stock-analysis-context-retry" onClick={onRetryContext}>
                 다시 확인
               </button>
