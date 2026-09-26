@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { DomesticMarketSessionResponse, StockContext, StockDataContract, StockQuoteResponse, StockSearchItem, StrategyAnalysis } from "../services/api";
 import { analysisContractMessage, dataContractStatusLabel, dataContractTone } from "../services/dataContract";
 import type { StockQuotePollingState } from "../hooks/useStockQuote";
+import type { StockQuoteStreamState } from "../services/quoteStream";
 import StockAnalysisPriceChart from "./StockAnalysisPriceChart";
 import StockNewsPanel from "./StockNewsPanel";
 import StockTrackingActions from "./StockTrackingActions";
@@ -28,6 +29,7 @@ type Props = {
   dataContractError: string | null;
   quote: StockQuoteResponse | null;
   quoteState: StockQuotePollingState;
+  quoteStreamState: StockQuoteStreamState;
   quoteRefreshing: boolean;
   quoteError: string | null;
   marketSession: DomesticMarketSessionResponse | null;
@@ -133,6 +135,7 @@ export default function StockAnalysisWorkspace({
   dataContractError,
   quote,
   quoteState,
+  quoteStreamState,
   quoteRefreshing,
   quoteError,
   marketSession,
@@ -294,6 +297,7 @@ export default function StockAnalysisWorkspace({
           <StockQuoteStrip
             quote={quote}
             state={quoteState}
+            streamState={quoteStreamState}
             refreshing={quoteRefreshing}
             error={quoteError}
             marketSession={marketSession}
