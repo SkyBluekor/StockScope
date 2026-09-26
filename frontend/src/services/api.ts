@@ -11,6 +11,36 @@ export type ProviderStatus = {
 export type DataContractResourceStatus = "ABSENT" | "UNVERIFIED" | "VALID" | "INVALID";
 export type StockDataContractRange = "1m" | "3m" | "6m" | "1y";
 
+export type StockQuoteVenue = "INTEGRATED" | "KRX" | "NXT";
+export type StockQuoteDeliverySource = "UPSTREAM" | "CACHE" | "SINGLE_FLIGHT";
+
+export type StockQuoteResponse = {
+  resource_key: string;
+  provider: "KIS";
+  mode: "SNAPSHOT";
+  market: "KOSPI" | "KOSDAQ";
+  ticker: string;
+  name: string | null;
+  venue: StockQuoteVenue;
+  provider_market_division: string;
+  environment: "real" | "virtual";
+  current_price: string;
+  change_amount: string;
+  change_rate: string;
+  change_sign: string | null;
+  open_price: string;
+  high_price: string;
+  low_price: string;
+  base_price: string;
+  accumulated_volume: string;
+  provider_timestamp: string | null;
+  received_at: string;
+  delivery: {
+    source: StockQuoteDeliverySource;
+    cache_age_ms: number;
+  };
+};
+
 export type DataContractAction = {
   id: "PREPARE_CHART" | "REFRESH_HOLDING_ANALYSIS" | "VIEW_ACTIVE_JOB";
   target: "chart" | "analysis_result" | "active_job";
@@ -81,6 +111,15 @@ export type StockDataContract = {
       status: DataContractResourceStatus;
       present: boolean;
       source: string;
+      capability: boolean;
+      provider: string | null;
+      mode: string | null;
+      venue: string | null;
+      current_price: string | null;
+      provider_timestamp: string | null;
+      received_at: string | null;
+      age_ms: number | null;
+      freshness_seconds: number | null;
       reason_code: string | null;
     };
     ledger: {
@@ -328,10 +367,18 @@ async function asJson<T>(response: Response): Promise<T> {
   let requestId: string | null = null;
   try {
     const body = (await response.json()) as {
-      detail?: string | { error?: { code?: string; message?: string; retryable?: boolean; retry_after?: number | null; request_id?: string } };
+      detail?: string | {
+        code?: string;
+        message?: string;
+        retryable?: boolean;
+        retry_after?: number | null;
+        request_id?: string;
+        error?: { code?: string; message?: string; retryable?: boolean; retry_after?: number | null; request_id?: string };
+      };
       error?: { code?: string; message?: string; retryable?: boolean; retry_after?: number | null; request_id?: string };
     };
-    const structured = typeof body.detail === "object" ? body.detail?.error : body.error;
+    const directDetail = typeof body.detail === "object" ? body.detail : null;
+    const structured = directDetail?.error ?? directDetail ?? body.error;
     if (typeof body.detail === "string") message = body.detail;
     if (structured) {
       message = structured.message ?? message;
@@ -371,6 +418,26 @@ export async function fetchStockContext(
   return asJson<StockContext>(
     await fetch(
       `/api/stocks/${encodeURIComponent(code.trim().toUpperCase())}/context?${query.toString()}`,
+      { signal: options.signal },
+    ),
+  );
+}
+
+export async function fetchStockQuote(
+  code: string,
+  market: "KOSPI" | "KOSDAQ",
+  options: {
+    venue?: StockQuoteVenue;
+    signal?: AbortSignal;
+  } = {},
+): Promise<StockQuoteResponse> {
+  const query = new URLSearchParams({
+    market,
+    venue: options.venue ?? "INTEGRATED",
+  });
+  return asJson<StockQuoteResponse>(
+    await fetch(
+      `/api/quotes/stocks/${encodeURIComponent(code.trim().toUpperCase())}?${query.toString()}`,
       { signal: options.signal },
     ),
   );
