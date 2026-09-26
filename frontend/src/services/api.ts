@@ -8,6 +8,129 @@ export type ProviderStatus = {
   real_trading: boolean;
 };
 
+export type DataContractResourceStatus = "ABSENT" | "UNVERIFIED" | "VALID" | "INVALID";
+export type StockDataContractRange = "1m" | "3m" | "6m" | "1y";
+
+export type DataContractAction = {
+  id: "PREPARE_CHART" | "REFRESH_HOLDING_ANALYSIS" | "VIEW_ACTIVE_JOB";
+  target: "chart" | "analysis_result" | "active_job";
+  enabled: boolean;
+  requires_user_initiation: true;
+  reason_code: string | null;
+};
+
+export type StockDataContract = {
+  contract_version: "DATA_CONTRACT_V1";
+  resource_key: string;
+  checked_at: string;
+  request: {
+    market: "KOSPI" | "KOSDAQ";
+    ticker: string;
+    range: StockDataContractRange | null;
+    job_id: string | null;
+  };
+  resources: {
+    eod: {
+      status: DataContractResourceStatus;
+      present: boolean;
+      source: string;
+      basis: "CONFIRMED_EOD";
+      market_confirmed_date: string | null;
+      stock_date: string | null;
+      first_date: string | null;
+      row_count: number;
+      reason_code: string | null;
+    };
+    chart: {
+      status: DataContractResourceStatus;
+      present: boolean;
+      source: string;
+      range: StockDataContractRange | null;
+      from_date: string | null;
+      to_date: string | null;
+      row_count: number;
+      required_rows: number | null;
+      market_confirmed_date: string | null;
+      reason_code: string | null;
+    };
+    analysis_result: {
+      status: DataContractResourceStatus;
+      present: boolean;
+      source: string;
+      basis: "CONFIRMED_EOD" | null;
+      basis_date: string | null;
+      monitored_stock_id: string | null;
+      revision_id: string | null;
+      revision_no: number | null;
+      computed_at: string | null;
+      strategy_key: string | null;
+      action_state: string | null;
+      risk_state: string | null;
+      identity: {
+        input_fingerprint: string | null;
+        scanner_version: string | null;
+        analysis_engine_version: string | null;
+        policy_version: string | null;
+        source_versions: Record<string, unknown> | null;
+      };
+      displayable: boolean;
+      current_use_allowed: boolean;
+      reason_code: string | null;
+    };
+    realtime: {
+      status: DataContractResourceStatus;
+      present: boolean;
+      source: string;
+      reason_code: string | null;
+    };
+    ledger: {
+      status: DataContractResourceStatus;
+      present: boolean;
+      source: string;
+      monitored_stock_id: string | null;
+      watch_enabled: boolean | null;
+      archived_at: string | null;
+      open_position_count: number;
+      positions: Array<{
+        position_id: string;
+        account_id: string;
+        provider: string;
+        account_kind: string;
+        broker_environment: string | null;
+        current_quantity: string;
+        current_average_price: string | null;
+        current_cost_basis: string | null;
+        opened_reason: string;
+        opened_at: string;
+        last_observed_at: string | null;
+        last_sync_run_id: string | null;
+      }>;
+      reason_code: string | null;
+    };
+  };
+  preparation: {
+    required: boolean;
+    targets: Array<"eod" | "chart">;
+    supported: boolean;
+    reason_codes: string[];
+  };
+  active_job: {
+    state: "KNOWN" | "UNKNOWN";
+    job_id: string;
+    status: string | null;
+    stage: string | null;
+    message: string | null;
+    current: number | null;
+    total: number | null;
+    details: Record<string, unknown> | null;
+    error: string | null;
+    created_at: string | null;
+    updated_at: string | null;
+    reason_code: string | null;
+  } | null;
+  actions: DataContractAction[];
+};
+
 export type KrxStockRow = {
   date: string | null;
   code: string | null;
@@ -248,6 +371,26 @@ export async function fetchStockContext(
   return asJson<StockContext>(
     await fetch(
       `/api/stocks/${encodeURIComponent(code.trim().toUpperCase())}/context?${query.toString()}`,
+      { signal: options.signal },
+    ),
+  );
+}
+
+export async function fetchStockDataContract(
+  code: string,
+  market: "KOSPI" | "KOSDAQ",
+  options: {
+    range?: StockDataContractRange;
+    jobId?: string;
+    signal?: AbortSignal;
+  } = {},
+): Promise<StockDataContract> {
+  const query = new URLSearchParams({ market });
+  if (options.range) query.set("range", options.range);
+  if (options.jobId?.trim()) query.set("job_id", options.jobId.trim());
+  return asJson<StockDataContract>(
+    await fetch(
+      `/api/data-contract/stocks/${encodeURIComponent(code.trim().toUpperCase())}?${query.toString()}`,
       { signal: options.signal },
     ),
   );
