@@ -1763,8 +1763,8 @@
   gap: 18px;
   margin: 2px 0 20px;
   padding: 12px 0;
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
+  border-top: 1px solid var(--border-default);
+  border-bottom: 1px solid var(--border-default);
 }
 
 .stock-analysis-resource-state {
@@ -1775,7 +1775,7 @@
 
 .stock-analysis-resource-state + .stock-analysis-resource-state {
   padding-left: 18px;
-  border-left: 1px solid var(--border);
+  border-left: 1px solid var(--border-default);
 }
 
 .stock-analysis-resource-state span,
@@ -1783,7 +1783,7 @@
   color: var(--text-muted);
 }
 
-.stock-analysis-resource-state strong.tone-ok { color: var(--positive); }
+.stock-analysis-resource-state strong.tone-ok { color: var(--success); }
 .stock-analysis-resource-state strong.tone-warn { color: var(--warning); }
 .stock-analysis-resource-state strong.tone-muted,
 .stock-analysis-resource-state strong.tone-idle { color: var(--text-muted); }
@@ -1803,7 +1803,7 @@
     padding-left: 0;
     padding-top: 10px;
     border-left: 0;
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--border-default);
   }
 
   .stock-analysis-contract-retry {
