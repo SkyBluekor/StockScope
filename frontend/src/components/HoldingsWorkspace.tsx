@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { searchStocks, type StockSearchItem } from "../services/api";
+import { readHoldingsViewContext, writeHoldingsViewContext } from "../services/uiSession";
 import HoldingsPriceChart from "./HoldingsPriceChart";
 import StockNewsPanel from "./StockNewsPanel";
 import {
@@ -385,6 +386,10 @@ function readableError(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
 function timelineLabel(item: HoldingTimelineItem) {
   if (item.kind === "ANALYSIS") return "분석 갱신";
   switch (item.event_type) {
@@ -435,16 +440,23 @@ function timelineDescription(item: HoldingTimelineItem) {
 export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
   const [stocks, setStocks] = useState<HoldingStock[]>([]);
   const [navigationTarget] = useState<HoldingsNavigationTarget | null>(readHoldingsNavigationTarget);
+  const [initialViewContext] = useState(() => readHoldingsViewContext());
   const navigationTargetConsumedRef = useRef(false);
-  const [selectedStockId, setSelectedStockId] = useState<string | null>(null);
+  const [selectedStockId, setSelectedStockId] = useState<string | null>(
+    navigationTarget ? null : initialViewContext?.selectedStockId ?? null,
+  );
   const [detail, setDetail] = useState<HoldingStock | null>(null);
   const [timeline, setTimeline] = useState<HoldingTimelineItem[]>([]);
   const [performance, setPerformance] = useState<HoldingPerformanceResponse | null>(null);
   const [management, setManagement] = useState<HoldingManagementResponse | null>(null);
   const [applyingPlanId, setApplyingPlanId] = useState<string | null>(null);
-  const [stockFilter, setStockFilter] = useState<StockFilter>("all");
-  const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>("all");
-  const [query, setQuery] = useState("");
+  const [stockFilter, setStockFilter] = useState<StockFilter>(
+    navigationTarget ? "all" : initialViewContext?.stockFilter ?? "all",
+  );
+  const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>(
+    navigationTarget ? "all" : initialViewContext?.timelineFilter ?? "all",
+  );
+  const [query, setQuery] = useState(navigationTarget ? "" : initialViewContext?.query ?? "");
   const [loadingStocks, setLoadingStocks] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [refreshingAnalysis, setRefreshingAnalysis] = useState(false);
@@ -494,6 +506,12 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
   const quickEditPanelRef = useRef<HTMLDivElement | null>(null);
   const quickEditInputRef = useRef<HTMLInputElement | null>(null);
   const holdingOverviewRef = useRef<HTMLDivElement | null>(null);
+  const selectedStockIdRef = useRef<string | null>(selectedStockId);
+  const detailRequestIdRef = useRef(0);
+  const detailAbortRef = useRef<AbortController | null>(null);
+  const addSearchRequestIdRef = useRef(0);
+
+  selectedStockIdRef.current = selectedStockId;
 
   async function reloadStocks(preferredId?: string | null) {
     setLoadingStocks(true);
@@ -508,10 +526,10 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
         : null;
       if (!navigationTargetConsumedRef.current) navigationTargetConsumedRef.current = true;
 
-      const keep = preferredId && rows.some((row) => row.stock_id === preferredId)
-        ? preferredId
-        : navigationTargetId
-          ?? (selectedStockId && rows.some((row) => row.stock_id === selectedStockId)
+      const keep = navigationTargetId
+        ?? (preferredId && rows.some((row) => row.stock_id === preferredId)
+          ? preferredId
+          : selectedStockId && rows.some((row) => row.stock_id === selectedStockId)
             ? selectedStockId
             : rows[0]?.stock_id ?? null);
       setSelectedStockId(keep);
@@ -529,24 +547,40 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
   }
 
   async function loadSelected(stockId: string) {
+    const requestId = ++detailRequestIdRef.current;
+    detailAbortRef.current?.abort();
+    const controller = new AbortController();
+    detailAbortRef.current = controller;
+
     setLoadingDetail(true);
-    setPerformance(null);
-    setManagement(null);
+    if (detail?.stock_id !== stockId) {
+      setDetail(null);
+      setTimeline([]);
+      setPerformance(null);
+      setManagement(null);
+    }
+
     try {
       const [stock, rows, pnl, managementResult] = await Promise.all([
-        getHoldingStock(stockId),
-        getHoldingTimeline(stockId),
-        getHoldingPerformance(stockId),
-        getHoldingManagement(stockId),
+        getHoldingStock(stockId, { signal: controller.signal }),
+        getHoldingTimeline(stockId, 100, { signal: controller.signal }),
+        getHoldingPerformance(stockId, { signal: controller.signal }),
+        getHoldingManagement(stockId, { signal: controller.signal }),
       ]);
+      if (requestId !== detailRequestIdRef.current || selectedStockIdRef.current !== stockId) return;
       setDetail(stock);
       setTimeline(rows);
       setPerformance(pnl);
       setManagement(managementResult);
     } catch (loadError) {
+      if (isAbortError(loadError)) return;
+      if (requestId !== detailRequestIdRef.current || selectedStockIdRef.current !== stockId) return;
       setError(readableError(loadError, "선택한 종목 정보를 불러오지 못했습니다."));
     } finally {
-      setLoadingDetail(false);
+      if (requestId === detailRequestIdRef.current) {
+        if (detailAbortRef.current === controller) detailAbortRef.current = null;
+        setLoadingDetail(false);
+      }
     }
   }
 
@@ -566,32 +600,78 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
 
   useEffect(() => {
     void reloadStocks();
+    return () => {
+      detailRequestIdRef.current += 1;
+      detailAbortRef.current?.abort();
+    };
   }, []);
+
+  useEffect(() => {
+    writeHoldingsViewContext({
+      stockFilter,
+      timelineFilter,
+      query,
+      selectedStockId,
+    });
+  }, [stockFilter, timelineFilter, query, selectedStockId]);
 
   useEffect(() => {
     setShowMissingConditions(false);
     setShowPreviousPlan(false);
     setHistoryRecovery(null);
     setHistoryProgress(null);
-    if (selectedStockId) void loadSelected(selectedStockId);
+    if (selectedStockId) {
+      void loadSelected(selectedStockId);
+      return;
+    }
+    detailRequestIdRef.current += 1;
+    detailAbortRef.current?.abort();
+    detailAbortRef.current = null;
+    setLoadingDetail(false);
+    setDetail(null);
+    setTimeline([]);
+    setPerformance(null);
+    setManagement(null);
   }, [selectedStockId]);
 
   useEffect(() => {
-    if (!addOpen) return;
+    if (!addOpen) {
+      addSearchRequestIdRef.current += 1;
+      setAddSearching(false);
+      return undefined;
+    }
     const text = addQuery.trim();
     if (text.length < 2) {
+      addSearchRequestIdRef.current += 1;
       setAddResults([]);
       setAddSearching(false);
-      return;
+      return undefined;
     }
+
+    let controller: AbortController | null = null;
     const timer = window.setTimeout(() => {
+      controller = new AbortController();
+      const requestId = ++addSearchRequestIdRef.current;
       setAddSearching(true);
-      void searchStocks(text)
-        .then((result) => setAddResults(result.rows))
-        .catch(() => setAddResults([]))
-        .finally(() => setAddSearching(false));
+      void searchStocks(text, { signal: controller.signal })
+        .then((result) => {
+          if (requestId !== addSearchRequestIdRef.current || addQuery.trim() !== text) return;
+          setAddResults(result.rows);
+        })
+        .catch((error) => {
+          if (isAbortError(error) || requestId !== addSearchRequestIdRef.current) return;
+          if (addQuery.trim() !== text) return;
+          setAddResults([]);
+        })
+        .finally(() => {
+          if (requestId === addSearchRequestIdRef.current) setAddSearching(false);
+        });
     }, 250);
-    return () => window.clearTimeout(timer);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller?.abort();
+    };
   }, [addOpen, addQuery]);
 
   const summary = useMemo(() => {
