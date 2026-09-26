@@ -309,6 +309,35 @@ export type HoldingManagementResponse = {
   }>;
 };
 
+export type LiveHoldingManagementProximityResponse = {
+  stock_id: string;
+  market: string;
+  ticker: string;
+  available: boolean;
+  state: "FRESH" | "STALE" | "UNAVAILABLE";
+  reason_code: string | null;
+  quote: {
+    provider: string;
+    mode: string;
+    venue: string;
+    price: string;
+    provider_timestamp: string | null;
+    received_at: string;
+    age_ms: number;
+    freshness_seconds: number;
+  } | null;
+  positions: Array<{
+    position_id: string;
+    active_plan_id: string | null;
+    plan_version: number | null;
+    distances: {
+      stop: { level: string | null; amount: string | null; pct: string | null };
+      target1: { level: string | null; amount: string | null; pct: string | null };
+      target2: { level: string | null; amount: string | null; pct: string | null };
+    };
+  }>;
+};
+
 export type HoldingPerformanceValuation = {
   available: boolean;
   market_date: string | null;
@@ -534,6 +563,16 @@ export function getHoldingManagement(
 ): Promise<HoldingManagementResponse> {
   return requestJson<HoldingManagementResponse>(
     `/api/holdings/stocks/${encodeURIComponent(stockId)}/management`,
+    { signal: options.signal },
+  );
+}
+
+export function getLiveHoldingManagementProximity(
+  stockId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<LiveHoldingManagementProximityResponse> {
+  return requestJson<LiveHoldingManagementProximityResponse>(
+    `/api/holdings/stocks/${encodeURIComponent(stockId)}/management/live-proximity`,
     { signal: options.signal },
   );
 }
