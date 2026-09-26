@@ -592,6 +592,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
       .catch((loadError) => {
         if (isAbortError(loadError) || requestId !== livePerformanceRequestIdRef.current) return;
         if (selectedStockIdRef.current !== stockId) return;
+        setLivePerformance(null);
         setLivePerformanceError(
           readableError(loadError, "현재 시세 기준 보유 평가를 확인하지 못했습니다."),
         );
