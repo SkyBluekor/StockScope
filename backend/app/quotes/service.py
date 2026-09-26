@@ -150,6 +150,22 @@ class QuoteService:
             venue=venue,
         )
 
+    def resolve_key(
+        self,
+        *,
+        market: str,
+        ticker: str,
+        venue: str = "INTEGRATED",
+    ) -> QuoteCacheKey:
+        """Resolve quote identity without issuing tokens or market-data calls."""
+        settings = self._settings()
+        return self._key(
+            settings=settings,
+            market=self._market(market),
+            ticker=self._ticker(ticker),
+            venue=self._venue(venue),
+        )
+
     def _cache_ttl(self, settings: Settings) -> float:
         raw = (
             self._cache_ttl_override
