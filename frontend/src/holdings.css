@@ -2195,3 +2195,106 @@ button.holdings-direct-value:hover { border-bottom-color: var(--accent-primary);
     border-bottom: 0;
   }
 }
+
+
+/* UX-REDESIGN.1J-4 — held management first, entry analysis secondary */
+.holdings-position-management .holdings-positions {
+  order: 6;
+  margin-top: 0;
+}
+
+.holdings-opening-balance-note {
+  padding: 10px 0;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: var(--font-meta);
+  line-height: var(--line-body);
+}
+
+.holdings-management-version {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: var(--font-badge);
+  font-weight: 650;
+}
+
+.holdings-management-cannot-apply {
+  flex: 0 0 auto;
+  color: var(--status-warning) !important;
+  font-weight: 800 !important;
+}
+
+.holdings-analysis-disclosure {
+  margin-top: 22px;
+}
+
+.holdings-analysis-disclosure.perspective-watch {
+  margin-top: 0;
+}
+
+.holdings-analysis-disclosure.perspective-watch > summary {
+  display: none;
+}
+
+.holdings-analysis-disclosure.perspective-held {
+  border-top: 1px solid var(--border-default);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.holdings-analysis-disclosure.perspective-held > summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 15px 0;
+  color: var(--text-primary);
+  cursor: pointer;
+  list-style-position: inside;
+}
+
+.holdings-analysis-disclosure.perspective-held > summary span {
+  font-size: var(--font-body);
+  font-weight: 850;
+}
+
+.holdings-analysis-disclosure.perspective-held > summary small {
+  color: var(--text-muted);
+  font-size: var(--font-meta);
+  font-weight: 650;
+}
+
+.holdings-analysis-disclosure.perspective-held[open] > summary {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.holdings-analysis-disclosure-body {
+  min-width: 0;
+}
+
+.holdings-analysis-disclosure.perspective-held .holdings-analysis-grid {
+  margin-top: 0;
+  padding-top: 14px;
+}
+
+.holdings-analysis-disclosure.perspective-held .holdings-basis-note {
+  margin: 0 0 14px;
+}
+
+@media (max-width: 700px) {
+  .holdings-analysis-disclosure.perspective-held > summary {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .holdings-management-proposal {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .holdings-management-cannot-apply {
+    flex-basis: auto;
+  }
+}
