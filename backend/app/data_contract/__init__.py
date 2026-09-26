@@ -4,6 +4,7 @@ from .models import (
     LedgerObservation,
     LedgerPositionObservation,
     MarketEodObservation,
+    RealtimeQuoteObservation,
     StockStateObservation,
     StoredAnalysisObservation,
 )
@@ -15,6 +16,7 @@ __all__ = [
     "LedgerObservation",
     "LedgerPositionObservation",
     "MarketEodObservation",
+    "RealtimeQuoteObservation",
     "ReadOnlyDataStateReader",
     "StockStateObservation",
     "StoredAnalysisObservation",
