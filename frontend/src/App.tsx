@@ -301,6 +301,8 @@ export default function App() {
     refreshing: stockQuoteRefreshing,
     error: stockQuoteError,
     refresh: refreshStockQuote,
+    marketSession: stockMarketSession,
+    marketSessionLoading: stockMarketSessionLoading,
   } = useStockQuote({
     code: stockCode,
     market: stockMarket,
@@ -932,6 +934,8 @@ const strategyName: Record<string, string> = {
               quoteState={stockQuoteState}
               quoteRefreshing={stockQuoteRefreshing}
               quoteError={stockQuoteError}
+              marketSession={stockMarketSession}
+              marketSessionLoading={stockMarketSessionLoading}
               onRefreshQuote={refreshStockQuote}
               onQueryChange={changeStockQuery}
               onSearchFocus={() => stockSearchResults.length > 0 && setStockSearchOpen(true)}
