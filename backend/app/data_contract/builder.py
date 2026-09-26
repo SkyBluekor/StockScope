@@ -265,6 +265,13 @@ def _realtime_contract(state: StockStateObservation) -> RealtimeResourceContract
     elif observed.session_phase == "INTERMISSION":
         status = "VALID"
         reason = "MARKET_INTERMISSION_LAST_SNAPSHOT"
+    elif observed.source == "KIS_WEBSOCKET":
+        if observed.reason:
+            status = "UNVERIFIED"
+            reason = observed.reason
+        else:
+            status = "VALID"
+            reason = None
     elif observed.age_ms is None or observed.freshness_seconds is None:
         status = "UNVERIFIED"
         reason = "QUOTE_FRESHNESS_UNVERIFIED"
