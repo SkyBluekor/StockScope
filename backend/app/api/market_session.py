@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import Literal
 
 from fastapi import APIRouter, Query, Response
@@ -21,4 +22,4 @@ async def domestic_market_session(
         market_session_service.get_session,
         venue,
     )
-    return DomesticMarketSessionResponse(**session.__dict__)
+    return DomesticMarketSessionResponse(**asdict(session))
