@@ -4,6 +4,7 @@ import { readHoldingsViewContext, writeHoldingsViewContext } from "../services/u
 import useStockDataContract from "../hooks/useStockDataContract";
 import useStockQuote from "../hooks/useStockQuote";
 import { analysisContractMessage, dataContractStatusLabel, dataContractTone } from "../services/dataContract";
+import { quoteReceivedTime } from "../services/quote";
 import HoldingsPriceChart from "./HoldingsPriceChart";
 import StockNewsPanel from "./StockNewsPanel";
 import StockQuoteStrip from "./StockQuoteStrip";
@@ -11,6 +12,7 @@ import {
   addWatchStock,
   getHoldingStock,
   getHoldingPerformance,
+  getLiveHoldingPerformance,
   getHoldingManagement,
   applyHoldingManagementPlan,
   getHoldingChart,
@@ -31,6 +33,7 @@ import {
   type HoldingDecisionContext,
   type HoldingPosition,
   type HoldingPerformanceResponse,
+  type LiveHoldingPerformanceResponse,
   type HoldingManagementResponse,
   type HoldingStock,
   type HoldingTimelineItem,
@@ -452,6 +455,9 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
   const [detail, setDetail] = useState<HoldingStock | null>(null);
   const [timeline, setTimeline] = useState<HoldingTimelineItem[]>([]);
   const [performance, setPerformance] = useState<HoldingPerformanceResponse | null>(null);
+  const [livePerformance, setLivePerformance] = useState<LiveHoldingPerformanceResponse | null>(null);
+  const [livePerformanceError, setLivePerformanceError] = useState<string | null>(null);
+  const [livePerformanceRefreshKey, setLivePerformanceRefreshKey] = useState(0);
   const [management, setManagement] = useState<HoldingManagementResponse | null>(null);
   const [applyingPlanId, setApplyingPlanId] = useState<string | null>(null);
   const [stockFilter, setStockFilter] = useState<StockFilter>(
@@ -514,6 +520,8 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
   const selectedStockIdRef = useRef<string | null>(selectedStockId);
   const detailRequestIdRef = useRef(0);
   const detailAbortRef = useRef<AbortController | null>(null);
+  const livePerformanceRequestIdRef = useRef(0);
+  const livePerformanceAbortRef = useRef<AbortController | null>(null);
   const addSearchRequestIdRef = useRef(0);
 
   const {
@@ -541,6 +549,79 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
     venue: "INTEGRATED",
     enabled: Boolean(detail && selectedStockId === detail.stock_id),
   });
+
+  useEffect(() => {
+    const stockId = detail?.stock_id ?? null;
+    const eligible = Boolean(
+      stockId
+      && detail?.is_held
+      && detail.positions.length > 0
+      && selectedStockId === stockId
+      && selectedQuote?.received_at,
+    );
+
+    livePerformanceRequestIdRef.current += 1;
+    livePerformanceAbortRef.current?.abort();
+    livePerformanceAbortRef.current = null;
+
+    if (!eligible || !stockId || !selectedQuote?.received_at) {
+      setLivePerformance(null);
+      setLivePerformanceError(null);
+      return undefined;
+    }
+
+    const requestId = livePerformanceRequestIdRef.current;
+    const expectedMarket = detail?.market ?? "";
+    const expectedTicker = detail?.ticker ?? "";
+    const expectedQuoteReceivedAt = selectedQuote.received_at;
+    const controller = new AbortController();
+    livePerformanceAbortRef.current = controller;
+    setLivePerformanceError(null);
+
+    void getLiveHoldingPerformance(stockId, { signal: controller.signal })
+      .then((result) => {
+        if (
+          requestId !== livePerformanceRequestIdRef.current
+          || controller.signal.aborted
+          || selectedStockIdRef.current !== stockId
+          || result.stock_id !== stockId
+          || result.market !== expectedMarket
+          || result.ticker !== expectedTicker
+        ) return;
+        setLivePerformance(result);
+      })
+      .catch((loadError) => {
+        if (isAbortError(loadError) || requestId !== livePerformanceRequestIdRef.current) return;
+        if (selectedStockIdRef.current !== stockId) return;
+        setLivePerformanceError(
+          readableError(loadError, "현재 시세 기준 보유 평가를 확인하지 못했습니다."),
+        );
+      })
+      .finally(() => {
+        if (
+          requestId === livePerformanceRequestIdRef.current
+          && livePerformanceAbortRef.current === controller
+        ) {
+          livePerformanceAbortRef.current = null;
+        }
+      });
+
+    return () => {
+      if (livePerformanceAbortRef.current === controller) {
+        livePerformanceAbortRef.current = null;
+      }
+      controller.abort();
+    };
+  }, [
+    detail?.stock_id,
+    detail?.market,
+    detail?.ticker,
+    detail?.is_held,
+    detail?.positions.length,
+    selectedStockId,
+    selectedQuote?.received_at,
+    livePerformanceRefreshKey,
+  ]);
 
   selectedStockIdRef.current = selectedStockId;
 
@@ -577,6 +658,8 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
         setDetail(null);
         setTimeline([]);
         setPerformance(null);
+        setLivePerformance(null);
+        setLivePerformanceError(null);
         setManagement(null);
       }
     } catch (loadError) {
@@ -597,6 +680,8 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
       setDetail(null);
       setTimeline([]);
       setPerformance(null);
+      setLivePerformance(null);
+      setLivePerformanceError(null);
       setManagement(null);
     }
 
@@ -643,6 +728,8 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
     return () => {
       detailRequestIdRef.current += 1;
       detailAbortRef.current?.abort();
+      livePerformanceRequestIdRef.current += 1;
+      livePerformanceAbortRef.current?.abort();
     };
   }, []);
 
@@ -671,6 +758,8 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
     setDetail(null);
     setTimeline([]);
     setPerformance(null);
+    setLivePerformance(null);
+    setLivePerformanceError(null);
     setManagement(null);
   }, [selectedStockId]);
 
@@ -912,6 +1001,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
       const currentStockId = selectedStockIdRef.current;
       if (currentStockId) {
         await loadSelected(currentStockId);
+        setLivePerformanceRefreshKey((value) => value + 1);
         await contractRefreshRef.current();
       }
       setMessage(`잔고 동기화 완료 · 확인 ${result.holding_count}종목`);
@@ -1231,6 +1321,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
       setQuickEditBaseValue("");
       setQuickZeroConfirm(false);
       await Promise.all([reloadStocks(detail.stock_id), loadSelected(detail.stock_id)]);
+      setLivePerformanceRefreshKey((value) => value + 1);
       await contractRefreshRef.current();
       window.requestAnimationFrame(() => {
         holdingOverviewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1376,6 +1467,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
       }
       setManualOpen(false);
       await Promise.all([reloadStocks(detail.stock_id), loadSelected(detail.stock_id)]);
+      setLivePerformanceRefreshKey((value) => value + 1);
       await contractRefreshRef.current();
       window.requestAnimationFrame(() => {
         holdingOverviewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1397,6 +1489,14 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
   }
 
   const selectedAnalysis = detail?.current_analysis ?? null;
+  const usingLivePerformance = Boolean(
+    livePerformance?.available && livePerformance.performance,
+  );
+  const displayedPerformance = usingLivePerformance
+    ? livePerformance?.performance ?? performance
+    : performance;
+  const liveQuoteTime = quoteReceivedTime(livePerformance?.quote?.received_at);
+
   const selectedAnalysisContract = selectedDataContract?.resources.analysis_result ?? null;
   const selectedLedgerContract = selectedDataContract?.resources.ledger ?? null;
   const selectedAnalysisContractMessage = analysisContractMessage(selectedDataContract);
@@ -1885,22 +1985,26 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                     )}
                   </div>
   
-                  {performance && performance.positions.length > 0 && (
+                  {performance && displayedPerformance.positions.length > 0 && (
                     <div className="holdings-pnl-block" aria-label="보유 손익">
                       <div className="holdings-pnl-head">
                         <div>
                           <strong>보유 손익</strong>
-                          <span>비용 제외 · {performanceStatusText(performance.calculation_status)}</span>
+                          <span>비용 제외 · {performanceStatusText(displayedPerformance.calculation_status)}</span>
                         </div>
-                        <span>
-                          {performance.valuation.available && performance.valuation.market_date
-                            ? `${compactDate(performance.valuation.market_date)} 확정 종가 기준`
-                            : "최신 확정 가격 없음"}
+                        <span className={usingLivePerformance && livePerformance?.state === "STALE" ? "holdings-pnl-live-basis stale" : "holdings-pnl-live-basis"}>
+                          {usingLivePerformance && livePerformance?.quote
+                            ? livePerformance.state === "STALE"
+                              ? `마지막 KIS 시세 · ${liveQuoteTime ?? "-"} 수신 · 갱신 지연`
+                              : `KIS 현재가 · ${liveQuoteTime ?? "-"} 수신 · 스냅샷`
+                            : displayedPerformance.valuation.available && displayedPerformance.valuation.market_date
+                              ? `${compactDate(displayedPerformance.valuation.market_date)} 확정 종가 기준`
+                              : "최신 확정 가격 없음"}
                         </span>
                       </div>
   
-                      {performance.positions.length === 1 ? (() => {
-                        const pnl = performance.positions[0];
+                      {displayedPerformance.positions.length === 1 ? (() => {
+                        const pnl = displayedPerformance.positions[0];
                         return (
                           <>
                             <div className="holdings-pnl-metrics">
@@ -1928,8 +2032,17 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                             </div>
                             <div className="holdings-pnl-note">
                               <span>{pnl.calculation_message}</span>
-                              {performance.valuation.available && performance.valuation.price && (
-                                <span>평가가격 {money(performance.valuation.price)}</span>
+                              {displayedPerformance.valuation.available && displayedPerformance.valuation.price && (
+                                <span>
+                                  평가가격 {money(displayedPerformance.valuation.price)}
+                                  {usingLivePerformance ? " · KIS Snapshot" : ""}
+                                </span>
+                              )}
+                              {usingLivePerformance && performance?.valuation.available && performance.valuation.price && (
+                                <span className="holdings-pnl-baseline">
+                                  확정 종가 {money(performance.valuation.price)}
+                                  {performance.valuation.market_date ? ` · ${compactDate(performance.valuation.market_date)}` : ""}
+                                </span>
                               )}
                             </div>
                           </>
@@ -1939,7 +2052,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                           <table className="holdings-pnl-position-table">
                             <thead><tr><th>계좌</th><th>수량</th><th>평가손익</th><th>실현손익</th><th>범위</th></tr></thead>
                             <tbody>
-                              {performance.positions.map((pnl) => (
+                              {displayedPerformance.positions.map((pnl) => (
                                 <tr key={pnl.position_id}>
                                   <td>{pnl.account_name || pnl.provider}</td>
                                   <td>{quantity(pnl.quantity)}주</td>
@@ -1952,7 +2065,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                               ))}
                             </tbody>
                           </table>
-                          {performance.aggregate.potential_overlap && (
+                          {displayedPerformance.aggregate.potential_overlap && (
                             <div className="holdings-pnl-warning">
                               수동 보유와 증권사 보유가 함께 있어 종목 합계를 실제 자산 합계로 단정하지 않습니다.
                             </div>
@@ -1960,9 +2073,14 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                         </div>
                       )}
   
-                      {!performance.valuation.available && (
+                      {!displayedPerformance.valuation.available && (
                         <div className="holdings-pnl-warning">
-                          평가손익을 0원으로 대체하지 않았습니다. {performance.valuation.message || "최신 확정 가격이 필요합니다."}
+                          평가손익을 0원으로 대체하지 않았습니다. {displayedPerformance.valuation.message || "최신 확정 가격이 필요합니다."}
+                        </div>
+                      )}
+                      {livePerformanceError && selectedQuote && (
+                        <div className="holdings-pnl-warning">
+                          현재 시세 평가는 갱신하지 못했습니다. 확정 종가 기준 손익을 유지합니다.
                         </div>
                       )}
                     </div>
