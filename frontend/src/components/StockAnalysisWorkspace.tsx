@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import type { StockContext, StockSearchItem, StrategyAnalysis } from "../services/api";
+import type { StockContext, StockDataContract, StockSearchItem, StrategyAnalysis } from "../services/api";
+import { analysisContractMessage, dataContractStatusLabel, dataContractTone } from "../services/dataContract";
 import StockAnalysisPriceChart from "./StockAnalysisPriceChart";
 import StockNewsPanel from "./StockNewsPanel";
 import StockTrackingActions from "./StockTrackingActions";
@@ -20,11 +21,15 @@ type Props = {
   strategyAnalysis: StrategyAnalysis | null;
   strategyBusy: boolean;
   analysisOutdated: boolean;
+  dataContract: StockDataContract | null;
+  dataContractBusy: boolean;
+  dataContractError: string | null;
   onQueryChange: (value: string) => void;
   onSearchFocus: () => void;
   onChooseStock: (item: StockSearchItem) => void;
   onRetryContext: () => void;
   onRunAnalysis: () => void;
+  onRefreshDataContract: () => void;
   strategyMessage: string;
   scannerOrigin: boolean;
   onBackToScanner: () => void;
@@ -114,11 +119,15 @@ export default function StockAnalysisWorkspace({
   strategyAnalysis,
   strategyBusy,
   analysisOutdated,
+  dataContract,
+  dataContractBusy,
+  dataContractError,
   onQueryChange,
   onSearchFocus,
   onChooseStock,
   onRetryContext,
   onRunAnalysis,
+  onRefreshDataContract,
   strategyMessage,
   scannerOrigin,
   onBackToScanner,
@@ -142,6 +151,11 @@ export default function StockAnalysisWorkspace({
     ?? null;
   const manualReferenceBasis = strategyBasis === "MANUAL_REFERENCE";
   const confirmedEodBasis = strategyBasis === "CONFIRMED_EOD";
+
+  const eodResource = dataContract?.resources.eod ?? null;
+  const storedAnalysisResource = dataContract?.resources.analysis_result ?? null;
+  const storedAnalysisMessage = analysisContractMessage(dataContract);
+
 
   return (
     <section className="stock-analysis-workspace">
@@ -260,6 +274,36 @@ export default function StockAnalysisWorkspace({
               <small>전략 계산은 아래에서 필요할 때 직접 실행합니다.</small>
             </div>
           </section>
+
+          <div className="stock-analysis-data-state" aria-live="polite">
+            <div className="stock-analysis-resource-state">
+              <span>확정 일봉 상태</span>
+              <strong className={eodResource ? `tone-${dataContractTone(eodResource.status)}` : ""}>
+                {dataContractBusy && !eodResource
+                  ? "확인 중"
+                  : eodResource
+                    ? dataContractStatusLabel(eodResource.status)
+                    : "상태 미확인"}
+              </strong>
+              <small>
+                {eodResource?.stock_date
+                  ? `저장 데이터 ${formatDate(eodResource.stock_date)}${eodResource.market_confirmed_date ? ` · 시장 확정 ${formatDate(eodResource.market_confirmed_date)}` : ""}`
+                  : "저장된 확정 일봉 상태를 확인합니다."}
+              </small>
+            </div>
+            <div className="stock-analysis-resource-state">
+              <span>저장된 분석 상태</span>
+              <strong className={storedAnalysisResource ? `tone-${dataContractTone(storedAnalysisResource.status)}` : ""}>
+                {storedAnalysisResource ? dataContractStatusLabel(storedAnalysisResource.status) : "상태 미확인"}
+              </strong>
+              <small>{storedAnalysisMessage ?? "서버에 저장된 Holdings 분석 상태를 별도로 확인합니다."}</small>
+            </div>
+            {dataContractError && (
+              <button type="button" className="stock-analysis-contract-retry" onClick={onRefreshDataContract}>
+                데이터 상태 다시 확인
+              </button>
+            )}
+          </div>
 
           <StockTrackingActions
             code={stock.code}
