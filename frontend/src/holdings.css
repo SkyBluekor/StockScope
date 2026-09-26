@@ -2345,3 +2345,19 @@ button.holdings-direct-value:hover { border-bottom-color: var(--accent-primary);
     border-top: 1px solid var(--border-default);
   }
 }
+
+
+/* REALTIME.3 — live holdings valuation basis */
+.holdings-pnl-live-basis {
+  color: var(--text-secondary);
+  font-size: var(--font-meta);
+  font-weight: 750;
+}
+
+.holdings-pnl-live-basis.stale {
+  color: var(--warning);
+}
+
+.holdings-pnl-baseline {
+  color: var(--text-muted);
+}
