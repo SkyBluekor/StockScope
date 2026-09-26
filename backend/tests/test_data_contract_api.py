@@ -280,12 +280,12 @@ def test_data_contract_returns_versioned_read_only_resource_states(
     assert analysis["current_use_allowed"] is False
     assert analysis["reason_code"] == "CURRENT_INPUT_IDENTITY_NOT_PROVEN"
 
-    assert body["resources"]["realtime"] == {
-        "status": "ABSENT",
-        "present": False,
-        "source": "NONE",
-        "reason_code": "REALTIME_BACKEND_NOT_IMPLEMENTED",
-    }
+    realtime = body["resources"]["realtime"]
+    assert realtime["status"] == "ABSENT"
+    assert realtime["present"] is False
+    assert realtime["capability"] is False
+    assert realtime["source"] == "NONE"
+    assert realtime["reason_code"] == "KIS_QUOTE_NOT_CONFIGURED"
 
     ledger = body["resources"]["ledger"]
     assert ledger["status"] == "VALID"
@@ -542,3 +542,156 @@ def test_data_contract_api_has_no_mutating_service_dependencies() -> None:
     combined = api_source + "\n" + builder_source
     for token in forbidden:
         assert token not in combined
+
+def test_data_contract_realtime_reads_cached_quote_without_network(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from datetime import datetime, timezone
+    from decimal import Decimal
+
+    from app.core.config import Settings
+    from app.quotes.models import QuoteCacheKey, QuoteSnapshot
+    from app.quotes.store import quote_store
+    import app.data_contract.reader as reader_module
+    import app.quotes.service as quote_service_module
+
+    market_db = tmp_path / "market.db"
+    holdings_db = tmp_path / "holdings.db"
+    _create_market_db(market_db)
+    _create_holdings_db(holdings_db)
+    _configure_paths(monkeypatch, market_db, holdings_db)
+
+    settings = Settings(
+        _env_file=None,
+        kis_app_key="app-key",
+        kis_app_secret="app-secret",
+        kis_env="real",
+        kis_quote_freshness_seconds=15.0,
+    )
+    monkeypatch.setattr(quote_service_module, "get_settings", lambda: settings)
+    quote_store.clear()
+
+    key = QuoteCacheKey(
+        environment="real",
+        credential_fingerprint=quote_service_module.credential_fingerprint(settings),
+        market="KOSPI",
+        ticker="005930",
+        venue="INTEGRATED",
+    )
+    quote_store.put(
+        key,
+        QuoteSnapshot(
+            market="KOSPI",
+            ticker="005930",
+            name="삼성전자",
+            venue="INTEGRATED",
+            provider_market_division="UN",
+            environment="real",
+            current_price=Decimal("84200"),
+            change_amount=Decimal("1200"),
+            change_rate=Decimal("1.45"),
+            change_sign="2",
+            open_price=Decimal("83300"),
+            high_price=Decimal("85000"),
+            low_price=Decimal("82900"),
+            base_price=Decimal("83000"),
+            accumulated_volume=Decimal("12345678"),
+            provider_timestamp=None,
+            received_at=datetime.now(timezone.utc),
+        ),
+    )
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("data-contract GET must not call KIS or issue tokens")
+
+    monkeypatch.setattr(quote_service_module, "get_access_token", forbidden)
+    monkeypatch.setattr(quote_service_module, "inquire_domestic_price", forbidden)
+
+    response = client.get(
+        "/api/data-contract/stocks/005930",
+        params={"market": "KOSPI"},
+    )
+    realtime = response.json()["resources"]["realtime"]
+
+    assert response.status_code == 200
+    assert realtime["status"] == "VALID"
+    assert realtime["present"] is True
+    assert realtime["capability"] is True
+    assert realtime["source"] == "KIS_REST"
+    assert realtime["provider"] == "KIS"
+    assert realtime["mode"] == "SNAPSHOT"
+    assert realtime["venue"] == "INTEGRATED"
+    assert realtime["current_price"] == "84200"
+    assert realtime["provider_timestamp"] is None
+    assert realtime["reason_code"] is None
+    quote_store.clear()
+
+
+def test_data_contract_realtime_marks_stale_snapshot_unverified(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from datetime import datetime, timedelta, timezone
+    from decimal import Decimal
+
+    from app.core.config import Settings
+    from app.quotes.models import QuoteCacheKey, QuoteSnapshot
+    from app.quotes.store import quote_store
+    import app.quotes.service as quote_service_module
+
+    market_db = tmp_path / "market.db"
+    holdings_db = tmp_path / "holdings.db"
+    _create_market_db(market_db)
+    _create_holdings_db(holdings_db)
+    _configure_paths(monkeypatch, market_db, holdings_db)
+
+    settings = Settings(
+        _env_file=None,
+        kis_app_key="app-key",
+        kis_app_secret="app-secret",
+        kis_env="real",
+        kis_quote_freshness_seconds=1.0,
+    )
+    monkeypatch.setattr(quote_service_module, "get_settings", lambda: settings)
+    quote_store.clear()
+    key = QuoteCacheKey(
+        environment="real",
+        credential_fingerprint=quote_service_module.credential_fingerprint(settings),
+        market="KOSPI",
+        ticker="005930",
+        venue="INTEGRATED",
+    )
+    quote_store.put(
+        key,
+        QuoteSnapshot(
+            market="KOSPI",
+            ticker="005930",
+            name="삼성전자",
+            venue="INTEGRATED",
+            provider_market_division="UN",
+            environment="real",
+            current_price=Decimal("84200"),
+            change_amount=Decimal("1200"),
+            change_rate=Decimal("1.45"),
+            change_sign="2",
+            open_price=Decimal("83300"),
+            high_price=Decimal("85000"),
+            low_price=Decimal("82900"),
+            base_price=Decimal("83000"),
+            accumulated_volume=Decimal("12345678"),
+            provider_timestamp=None,
+            received_at=datetime.now(timezone.utc) - timedelta(seconds=5),
+        ),
+    )
+
+    realtime = client.get(
+        "/api/data-contract/stocks/005930",
+        params={"market": "KOSPI"},
+    ).json()["resources"]["realtime"]
+
+    assert realtime["status"] == "UNVERIFIED"
+    assert realtime["present"] is True
+    assert realtime["reason_code"] == "QUOTE_SNAPSHOT_STALE"
+    quote_store.clear()
+
