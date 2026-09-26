@@ -1754,3 +1754,60 @@
     width: 100%;
   }
 }
+
+
+/* UX-REDESIGN.1J-8.3 — read-only resource state lines */
+.stock-analysis-data-state {
+  display: flex;
+  align-items: stretch;
+  gap: 18px;
+  margin: 2px 0 20px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.stock-analysis-resource-state {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.stock-analysis-resource-state + .stock-analysis-resource-state {
+  padding-left: 18px;
+  border-left: 1px solid var(--border);
+}
+
+.stock-analysis-resource-state span,
+.stock-analysis-resource-state small {
+  color: var(--text-muted);
+}
+
+.stock-analysis-resource-state strong.tone-ok { color: var(--positive); }
+.stock-analysis-resource-state strong.tone-warn { color: var(--warning); }
+.stock-analysis-resource-state strong.tone-muted,
+.stock-analysis-resource-state strong.tone-idle { color: var(--text-muted); }
+
+.stock-analysis-contract-retry {
+  margin-left: auto;
+  align-self: center;
+}
+
+@media (max-width: 760px) {
+  .stock-analysis-data-state {
+    display: grid;
+    gap: 10px;
+  }
+
+  .stock-analysis-resource-state + .stock-analysis-resource-state {
+    padding-left: 0;
+    padding-top: 10px;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .stock-analysis-contract-retry {
+    margin-left: 0;
+    justify-self: start;
+  }
+}
