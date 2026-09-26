@@ -457,3 +457,95 @@ def test_ux_redesign1j1_historical_evidence_separates_readiness_sample_and_perfo
 
     assert ".scanner-evidence-status-line" in styles
     assert ".scanner-evidence-compact-metrics > span.sample" in styles
+
+
+def test_ux_redesign1j2_preserves_ui_context_and_rejects_stale_async_results() -> None:
+    app = Path("frontend/src/App.tsx").read_text(encoding="utf-8")
+    api = Path("frontend/src/services/api.ts").read_text(encoding="utf-8")
+    holdings = Path("frontend/src/components/HoldingsWorkspace.tsx").read_text(encoding="utf-8")
+    holdings_api = Path("frontend/src/services/holdingsApi.ts").read_text(encoding="utf-8")
+    tracking = Path("frontend/src/components/TrackingWorkspace.tsx").read_text(encoding="utf-8")
+    session = Path("frontend/src/services/uiSession.ts").read_text(encoding="utf-8")
+
+    # Lightweight UI context is session-only and explicitly excludes analysis/ledger payloads.
+    assert "stockscope-analysis-context-v1" in session
+    assert "stockscope-holdings-context-v1" in session
+    assert "stockscope-tracking-mode-v1" in session
+    assert "readAnalysisSelectionContext" in session
+    assert "writeAnalysisSelectionContext" in session
+    assert "readHoldingsViewContext" in session
+    assert "writeHoldingsViewContext" in session
+    assert "readTrackingMode" in session
+    assert "writeTrackingMode" in session
+    assert "strategyAnalysis" not in session
+    assert "HoldingPerformanceResponse" not in session
+
+    # Selecting the same stock preserves the already-rendered analysis state.
+    assert "const sameStock = selectedStockKeyRef.current === nextKey" in app
+    assert "if (!sameStock) {" in app
+    same_stock_start = app.index("if (!sameStock) {")
+    same_stock_block = app[same_stock_start:app.index("setStockMessage", same_stock_start)]
+    assert "setStrategyAnalysis(null)" in same_stock_block
+    assert "setReferencePriceInput" in same_stock_block
+    assert "writeAnalysisSelectionContext" in app
+
+    # Search, stock context, and strategy analysis all have abort + latest-request guards.
+    assert "stockSearchRequestIdRef" in app
+    assert "stockContextRequestIdRef" in app
+    assert "strategyRequestIdRef" in app
+    assert "stockContextAbortRef" in app
+    assert "strategyAbortRef" in app
+    assert "selectedStockKeyRef.current !== requestKey" in app
+    assert "selectedStockKeyRef.current !== requestedStockKey" in app
+    assert "analysisInputSignatureRef.current !== requestInputSignature" in app
+    assert "isAbortError(error)" in app
+    assert "searchStocks(query, { signal: controller.signal })" in app
+    assert "fetchStockContext(normalizedCode, market, { signal: controller.signal })" in app
+
+    # Direct/revisited analysis restores identity and only auto-loads basic context.
+    assert "initialAnalysisSelection" in app
+    assert 'appPage !== "analysis"' in app
+    assert "loadStockContextForSelection" in app
+    auto_start = app.index('if (appPage !== "analysis"')
+    auto_load = app[auto_start:app.index("const strategyName", auto_start)]
+    assert "runStrategyAnalysis" not in auto_load
+    assert "fetchStrategyAnalysis" not in auto_load
+
+    # Read APIs accept AbortSignal without changing backend routes.
+    assert "options: { signal?: AbortSignal } = {}" in api
+    assert "{ signal: options.signal }" in api
+    assert "/api/stocks/search?" in api
+    assert "/strategy-analysis?" in api
+    assert "/context?" in api
+
+    # Holdings explicit navigation target wins over restored view state.
+    assert "initialViewContext" in holdings
+    assert 'navigationTarget ? "all"' in holdings
+    keep_start = holdings.index("const keep = navigationTargetId")
+    keep_block = holdings[keep_start:holdings.index("setSelectedStockId(keep)", keep_start)]
+    assert "navigationTargetId" in keep_block
+    assert "preferredId" in keep_block
+    assert "selectedStockId" in keep_block
+
+    # Holdings detail and add-stock search reject stale results.
+    assert "detailRequestIdRef" in holdings
+    assert "detailAbortRef" in holdings
+    assert "selectedStockIdRef.current !== stockId" in holdings
+    assert "getHoldingStock(stockId, { signal: controller.signal })" in holdings
+    assert "getHoldingTimeline(stockId, 100, { signal: controller.signal })" in holdings
+    assert "getHoldingPerformance(stockId, { signal: controller.signal })" in holdings
+    assert "getHoldingManagement(stockId, { signal: controller.signal })" in holdings
+    assert "addSearchRequestIdRef" in holdings
+    assert "searchStocks(text, { signal: controller.signal })" in holdings
+
+    for read_fn in ("getHoldingStock", "getHoldingTimeline", "getHoldingPerformance", "getHoldingManagement"):
+        read_start = holdings_api.index(f"export function {read_fn}")
+        read_end = holdings_api.find("\\n}\\n", read_start) + 3
+        read_block = holdings_api[read_start:read_end]
+        assert "signal?: AbortSignal" in read_block
+        assert "signal: options.signal" in read_block
+
+    # Tracking returns to the user's last sub-view but never starts validation automatically.
+    assert "useState<TrackingMode>(readTrackingMode)" in tracking
+    assert "writeTrackingMode(next)" in tracking
+    assert "create" not in tracking.lower()
