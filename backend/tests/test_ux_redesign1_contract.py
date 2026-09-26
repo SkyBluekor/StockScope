@@ -226,7 +226,7 @@ def test_ux_redesign1f_watch_and_held_views_are_semantically_separated() -> None
     assert "<strong>보유분 관리 기준</strong>" in holdings
     assert "적용 기준일" in holdings
     assert "최신 분석 제안" in holdings
-    assert "적용된 보유분 관리 기준이 없습니다." in holdings
+    assert "현재 적용 중인 보유분 관리 기준이 없습니다." in holdings
 
     # New-entry analysis must not be presented as a held-position sell instruction.
     assert "신규 진입 관점 분석" in holdings
@@ -692,10 +692,14 @@ def test_ux_redesign1j4_prioritizes_held_management_and_separates_opening_balanc
     disclosure_start = holdings.index("<details", news)
     disclosure_end = holdings.index("</details>", disclosure_start)
     disclosure_block = holdings[disclosure_start:disclosure_end]
-    assert "refreshSelected" not in disclosure_block
-    assert "applyLatestManagementPlan" not in disclosure_block
-    assert "registerHeldStock" not in disclosure_block
-    assert "recordManualBuy" not in disclosure_block
+    # Opening the disclosure itself is display-only. A separate explicit "분석 실행"
+    # button may exist only for the no-saved-analysis empty state.
+    summary_end = holdings.index("</summary>", disclosure_start)
+    disclosure_summary = holdings[disclosure_start:summary_end]
+    assert "refreshSelected" not in disclosure_summary
+    assert "applyLatestManagementPlan" not in disclosure_summary
+    assert "registerHeldStock" not in disclosure_summary
+    assert "recordManualBuy" not in disclosure_summary
 
     # Active management remains explicit and non-applicable proposals explain themselves.
     assert "현재 보유분에 실제 적용 중인 손절·목표 가격" in holdings
