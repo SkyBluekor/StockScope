@@ -11,6 +11,7 @@ import HoldingsWorkspace from "./components/HoldingsWorkspace";
 import StockAnalysisWorkspace from "./components/StockAnalysisWorkspace";
 import MarketOverviewWorkspace from "./components/MarketOverviewWorkspace";
 import DataStatusPanel, { dataStatusSummary } from "./components/DataStatusPanel";
+import useStockDataContract from "./hooks/useStockDataContract";
 import {
   DATA_TASK_EVENT,
   dataTaskIsRunning,
@@ -280,6 +281,18 @@ export default function App() {
   const autoContextLoadedKeyRef = useRef<string | null>(null);
 
   selectedStockKeyRef.current = stockIdentity(stockMarket, stockCode);
+
+  const {
+    contract: stockDataContract,
+    loading: stockDataContractBusy,
+    error: stockDataContractError,
+    refresh: refreshStockDataContract,
+  } = useStockDataContract({
+    code: stockCode,
+    market: stockMarket,
+    enabled: appPage === "analysis" && Boolean(stockCode && selectedStockName),
+  });
+
 
   const analysisInputSignature = [
     stockCode,
@@ -897,6 +910,10 @@ const strategyName: Record<string, string> = {
               strategyAnalysis={strategyAnalysis}
               strategyBusy={strategyBusy}
               analysisOutdated={analysisOutdated}
+              dataContract={stockDataContract}
+              dataContractBusy={stockDataContractBusy}
+              dataContractError={stockDataContractError}
+              onRefreshDataContract={() => void refreshStockDataContract()}
               onQueryChange={changeStockQuery}
               onSearchFocus={() => stockSearchResults.length > 0 && setStockSearchOpen(true)}
               onChooseStock={chooseStock}
