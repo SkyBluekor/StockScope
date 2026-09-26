@@ -1,5 +1,6 @@
 import type { StockQuoteResponse } from "./api";
 import type { StockQuotePollingState } from "../hooks/useStockQuote";
+import type { StockQuoteStreamState } from "./quoteStream";
 
 const wonFormatter = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 0 });
 
@@ -37,6 +38,30 @@ export function quoteReceivedTime(value: string | null | undefined) {
     second: "2-digit",
     hour12: false,
   }).format(parsed);
+}
+
+export function quoteStreamStatusMessage(
+  streamState: StockQuoteStreamState,
+  quote: StockQuoteResponse | null,
+) {
+  const received = quoteReceivedTime(quote?.received_at);
+  if (streamState === "LIVE") {
+    return received
+      ? `실시간 · KIS 통합 시세 · ${received} 수신`
+      : "실시간 · KIS 통합 시세";
+  }
+  if (streamState === "CONNECTING") {
+    return received
+      ? `실시간 연결 중 · 마지막 시세 ${received}`
+      : "실시간 연결 중";
+  }
+  if (streamState === "DEGRADED") {
+    return "실시간 연결 복구 중 · REST 시세 사용";
+  }
+  if (streamState === "UNAVAILABLE") {
+    return "실시간 연결 불가 · REST 시세 사용";
+  }
+  return null;
 }
 
 export function quoteStatusMessage(
