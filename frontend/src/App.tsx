@@ -298,6 +298,7 @@ export default function App() {
   const {
     quote: stockQuote,
     state: stockQuoteState,
+    streamState: stockQuoteStreamState,
     refreshing: stockQuoteRefreshing,
     error: stockQuoteError,
     refresh: refreshStockQuote,
@@ -932,6 +933,7 @@ const strategyName: Record<string, string> = {
               onRefreshDataContract={() => void refreshStockDataContract()}
               quote={stockQuote}
               quoteState={stockQuoteState}
+              quoteStreamState={stockQuoteStreamState}
               quoteRefreshing={stockQuoteRefreshing}
               quoteError={stockQuoteError}
               marketSession={stockMarketSession}
