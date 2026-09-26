@@ -16826,6 +16826,61 @@ button, input, select, textarea { line-height: var(--line-compact); }
   font-size: 15px;
 }
 
+
+.scanner-evidence-status-line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 3px;
+}
+
+.scanner-evidence-status-line strong {
+  margin: 0;
+}
+
+.scanner-evidence-status-line > span {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.scanner-evidence-summary {
+  max-width: 720px;
+  margin: 5px 0 0;
+  color: var(--text-subtle);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.scanner-evidence-compact-metrics > span.sample {
+  min-width: 150px;
+}
+
+.scanner-evidence-compact-metrics em {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-subtle);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.scanner-evidence-compact.evidence-good .scanner-evidence-status-line > span {
+  color: var(--success);
+}
+
+.scanner-evidence-compact.evidence-fair .scanner-evidence-status-line > span,
+.scanner-evidence-compact.evidence-insufficient .scanner-evidence-status-line > span {
+  color: var(--warning);
+}
+
+.scanner-evidence-compact.evidence-weak .scanner-evidence-status-line > span,
+.scanner-evidence-compact.evidence-data_unavailable .scanner-evidence-status-line > span {
+  color: var(--danger);
+}
+
 .scanner-selected-secondary {
   border-top: 1px solid var(--line-soft);
   padding-top: 12px;
@@ -16864,6 +16919,21 @@ button, input, select, textarea { line-height: var(--line-compact); }
 }
 
 @media (max-width: 1200px) {
+  .scanner-evidence-compact-head {
+    flex-direction: column;
+  }
+
+  .scanner-evidence-compact-metrics {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0;
+  }
+
+  .scanner-evidence-compact-metrics > span {
+    min-width: 0;
+  }
+
   .scanner-compare-labels,
   .scanner-compare-row {
     grid-template-columns: 40px minmax(160px, 1fr) minmax(130px, .75fr) minmax(0, 2.1fr) 18px;
@@ -17862,6 +17932,25 @@ html[data-theme="dark"] .backtest-workspace.multi-strategy-workspace > .backtest
 }
 
 @media (max-width: 760px) {
+  .scanner-evidence-compact-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 10px;
+  }
+
+  .scanner-evidence-compact-metrics > span:nth-child(odd) {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .scanner-evidence-status-line {
+    display: block;
+  }
+
+  .scanner-evidence-status-line > span {
+    display: block;
+    margin-top: 2px;
+  }
+
   .scanner-evidence-recovery {
     align-items: flex-start;
     flex-direction: column;
