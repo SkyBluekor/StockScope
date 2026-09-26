@@ -73,6 +73,7 @@ class QuoteService:
         min_upstream_interval_seconds: float | None = None,
         monotonic: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
+        websocket_manager=None,
     ) -> None:
         self.store = store or quote_store
         self.settings_getter = settings_getter
@@ -83,6 +84,7 @@ class QuoteService:
         self._min_interval_override = min_upstream_interval_seconds
         self._monotonic = monotonic
         self._sleep = sleep
+        self.websocket_manager = websocket_manager
 
         self._flight_lock = Lock()
         self._flights: dict[QuoteCacheKey, _Flight] = {}
@@ -174,6 +176,8 @@ class QuoteService:
             return None
         snapshot = self.store.peek(key)
         if snapshot is None:
+            return None
+        if snapshot.transport != "REST":
             return None
         if self.store.age_ms(snapshot) <= int(ttl_seconds * 1000):
             return snapshot
@@ -314,6 +318,7 @@ class QuoteService:
             accumulated_volume=quote.volume,
             provider_timestamp=None,
             received_at=datetime.now(timezone.utc),
+            transport="REST",
         )
 
     def get_quote(
@@ -333,8 +338,26 @@ class QuoteService:
             ticker=clean_ticker,
             venue=clean_venue,
         )
-        ttl = self._cache_ttl(settings)
 
+        if self.websocket_manager is not None:
+            try:
+                self.websocket_manager.touch_demand(key)
+                websocket_ready = self.websocket_manager.is_subscription_ready(key)
+            except Exception:
+                websocket_ready = False
+            if websocket_ready:
+                websocket_snapshot = self.store.peek(key)
+                if (
+                    websocket_snapshot is not None
+                    and websocket_snapshot.transport == "WEBSOCKET"
+                ):
+                    return QuoteResult(
+                        snapshot=websocket_snapshot,
+                        delivery_source="WEBSOCKET",
+                        cache_age_ms=self.store.age_ms(websocket_snapshot),
+                    )
+
+        ttl = self._cache_ttl(settings)
         cached = self._fresh_cached(key, ttl_seconds=ttl)
         if cached is not None:
             return QuoteResult(
@@ -470,6 +493,36 @@ def observe_cached_quote(
             reason="QUOTE_NOT_OBSERVED",
         )
 
+    if snapshot.transport == "WEBSOCKET":
+        from .websocket_manager import quote_websocket_manager
+
+        try:
+            if quote_websocket_manager.is_subscription_ready(key):
+                websocket_reason = None
+            elif quote_websocket_manager.transport_state != "CONNECTED":
+                websocket_reason = "WEBSOCKET_DISCONNECTED_LAST_TICK"
+            else:
+                websocket_reason = "WEBSOCKET_SUBSCRIPTION_UNAVAILABLE_LAST_TICK"
+        except Exception:
+            websocket_reason = "WEBSOCKET_HEALTH_UNAVAILABLE_LAST_TICK"
+
+        return CachedQuoteObservation(
+            capable=True,
+            present=True,
+            source="KIS_WEBSOCKET",
+            market=clean_market,
+            ticker=clean_ticker,
+            venue=venue,
+            provider="KIS",
+            mode="SNAPSHOT",
+            current_price=snapshot.current_price,
+            provider_timestamp=snapshot.provider_timestamp,
+            received_at=snapshot.received_at,
+            age_ms=active_store.age_ms(snapshot),
+            freshness_seconds=None,
+            reason=websocket_reason,
+        )
+
     return CachedQuoteObservation(
         capable=True,
         present=True,
@@ -487,4 +540,6 @@ def observe_cached_quote(
     )
 
 
-quote_service = QuoteService()
+from .websocket_manager import quote_websocket_manager
+
+quote_service = QuoteService(websocket_manager=quote_websocket_manager)
