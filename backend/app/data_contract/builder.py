@@ -245,6 +245,47 @@ def _ledger_contract(state: StockStateObservation) -> LedgerResourceContract:
     )
 
 
+def _realtime_contract(state: StockStateObservation) -> RealtimeResourceContract:
+    observed = state.realtime
+    if observed.reason == "KIS_QUOTE_NOT_CONFIGURED":
+        status = "ABSENT"
+        reason = observed.reason
+    elif observed.reason == "QUOTE_NOT_OBSERVED":
+        status = "ABSENT"
+        reason = observed.reason
+    elif observed.reason == "QUOTE_OBSERVATION_FAILED":
+        status = "UNVERIFIED"
+        reason = observed.reason
+    elif not observed.present:
+        status = "ABSENT" if observed.capable else "UNVERIFIED"
+        reason = observed.reason or "QUOTE_NOT_OBSERVED"
+    elif observed.age_ms is None or observed.freshness_seconds is None:
+        status = "UNVERIFIED"
+        reason = "QUOTE_FRESHNESS_UNVERIFIED"
+    elif observed.age_ms > int(observed.freshness_seconds * 1000):
+        status = "UNVERIFIED"
+        reason = "QUOTE_SNAPSHOT_STALE"
+    else:
+        status = "VALID"
+        reason = None
+
+    return RealtimeResourceContract(
+        status=status,
+        present=observed.present,
+        source=observed.source,
+        capability=observed.capable,
+        provider=observed.provider,
+        mode=observed.mode,
+        venue=observed.venue,
+        current_price=observed.current_price,
+        provider_timestamp=observed.provider_timestamp,
+        received_at=observed.received_at,
+        age_ms=observed.age_ms,
+        freshness_seconds=observed.freshness_seconds,
+        reason_code=reason,
+    )
+
+
 def _active_job_contract(state: StockStateObservation) -> ActiveJobContract | None:
     observed = state.active_job
     if observed.job_id is None:
@@ -357,12 +398,7 @@ def build_stock_data_contract(
     chart = _chart_contract(state, chart_range)
     analysis = _analysis_contract(state, eod)
     ledger = _ledger_contract(state)
-    realtime = RealtimeResourceContract(
-        status="ABSENT",
-        present=False,
-        source="NONE",
-        reason_code="REALTIME_BACKEND_NOT_IMPLEMENTED",
-    )
+    realtime = _realtime_contract(state)
     active_job = _active_job_contract(state)
     preparation = _preparation_contract(
         eod=eod,
