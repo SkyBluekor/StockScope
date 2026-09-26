@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { searchStocks, type StockSearchItem } from "../services/api";
 import { readHoldingsViewContext, writeHoldingsViewContext } from "../services/uiSession";
 import useStockDataContract from "../hooks/useStockDataContract";
+import useStockQuote from "../hooks/useStockQuote";
 import { analysisContractMessage, dataContractStatusLabel, dataContractTone } from "../services/dataContract";
 import HoldingsPriceChart from "./HoldingsPriceChart";
 import StockNewsPanel from "./StockNewsPanel";
+import StockQuoteStrip from "./StockQuoteStrip";
 import {
   addWatchStock,
   getHoldingStock,
@@ -526,6 +528,19 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
   });
   const contractRefreshRef = useRef(refreshSelectedDataContract);
   contractRefreshRef.current = refreshSelectedDataContract;
+
+  const {
+    quote: selectedQuote,
+    state: selectedQuoteState,
+    refreshing: selectedQuoteRefreshing,
+    error: selectedQuoteError,
+    refresh: refreshSelectedQuote,
+  } = useStockQuote({
+    code: detail?.ticker ?? "",
+    market: detail?.market === "KOSDAQ" ? "KOSDAQ" : "KOSPI",
+    venue: "INTEGRATED",
+    enabled: Boolean(detail && selectedStockId === detail.stock_id),
+  });
 
   selectedStockIdRef.current = selectedStockId;
 
@@ -1686,6 +1701,14 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                   )}
                 </div>
               </div>
+
+              <StockQuoteStrip
+                quote={selectedQuote}
+                state={selectedQuoteState}
+                refreshing={selectedQuoteRefreshing}
+                error={selectedQuoteError}
+                onRefresh={refreshSelectedQuote}
+              />
 
               <div className="holdings-data-state" aria-live="polite">
                 <div className="holdings-analysis-state">
