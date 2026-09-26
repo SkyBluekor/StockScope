@@ -547,6 +547,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
   const {
     quote: selectedQuote,
     state: selectedQuoteState,
+    streamState: selectedQuoteStreamState,
     refreshing: selectedQuoteRefreshing,
     error: selectedQuoteError,
     refresh: refreshSelectedQuote,
@@ -1911,6 +1912,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
               <StockQuoteStrip
                 quote={selectedQuote}
                 state={selectedQuoteState}
+                streamState={selectedQuoteStreamState}
                 refreshing={selectedQuoteRefreshing}
                 error={selectedQuoteError}
                 marketSession={selectedMarketSession}
