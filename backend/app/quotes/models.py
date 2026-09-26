@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 
 QuoteVenue = Literal["INTEGRATED", "KRX", "NXT"]
-QuoteDeliverySource = Literal["UPSTREAM", "CACHE", "SINGLE_FLIGHT"]
+QuoteDeliverySource = Literal["UPSTREAM", "CACHE", "SINGLE_FLIGHT", "WEBSOCKET"]\nQuoteTransport = Literal["REST", "WEBSOCKET"]
 
 VENUE_TO_KIS_MARKET_DIVISION: dict[QuoteVenue, str] = {
     "INTEGRATED": "UN",
