@@ -535,6 +535,7 @@ export default function App() {
       setStrategyAnalysis(null);
       setSelectedStrategyIndex(0);
       setLastAnalysisInputSignature("");
+      setStrategyMessage("아직 이 종목의 전략 분석을 실행하지 않았습니다.");
       setReferencePriceInput("");
       setReferenceHighInput("");
       setReferenceLowInput("");
@@ -574,6 +575,7 @@ export default function App() {
       setStrategyAnalysis(null);
       setSelectedStrategyIndex(0);
       setLastAnalysisInputSignature("");
+      setStrategyMessage("종목을 선택하면 전략 분석을 실행할 수 있습니다.");
       setReferencePriceInput("");
       setReferenceHighInput("");
       setReferenceLowInput("");
@@ -687,6 +689,7 @@ const strategyName: Record<string, string> = {
     }
 
     const scrollPosition = window.scrollY;
+    const hadExistingResult = strategyAnalysis != null;
     const requestInputSignature = analysisInputSignature;
     const requestedStockKey = stockIdentity(stockMarket, stockCode);
     const requestId = ++strategyRequestIdRef.current;
@@ -734,10 +737,15 @@ const strategyName: Record<string, string> = {
         || selectedStockKeyRef.current !== requestedStockKey
         || analysisInputSignatureRef.current !== requestInputSignature
       ) return;
-      setStrategyAnalysis(null);
-      setSelectedStrategyIndex(0);
-      setLastAnalysisInputSignature("");
-      setStrategyMessage(error instanceof Error ? error.message : "전략 분석 실패");
+      const failureMessage = error instanceof Error ? error.message : "전략 분석 실패";
+      if (!hadExistingResult) {
+        setStrategyAnalysis(null);
+        setSelectedStrategyIndex(0);
+        setLastAnalysisInputSignature("");
+        setStrategyMessage(failureMessage);
+      } else {
+        setStrategyMessage(`새 전략 분석을 완료하지 못했습니다. 현재 표시 중인 이전 분석 결과는 유지됩니다. · ${failureMessage}`);
+      }
     } finally {
       if (requestId === strategyRequestIdRef.current) {
         if (strategyAbortRef.current === controller) strategyAbortRef.current = null;
@@ -884,8 +892,9 @@ const strategyName: Record<string, string> = {
               onQueryChange={changeStockQuery}
               onSearchFocus={() => stockSearchResults.length > 0 && setStockSearchOpen(true)}
               onChooseStock={chooseStock}
-              onLoadContext={() => void quickAnalyze()}
+              onRetryContext={() => void quickAnalyze()}
               onRunAnalysis={() => void runStrategyAnalysis()}
+              strategyMessage={strategyMessage}
               scannerOrigin={scannerOrigin}
               onBackToScanner={() => navigateApp("scanner")}
               onOpenHoldings={openHoldingsForStock}
@@ -895,19 +904,9 @@ const strategyName: Record<string, string> = {
                 <div className="strategy-test-head">
                   <div>
                     <h3>분석 세부 설정</h3>
-                    <p>{strategyMessage}</p>
+                    <p>가상 참고가격과 보유 시나리오를 조정합니다. 실행은 기본 분석 영역에서 한 번만 합니다.</p>
                   </div>
-                  <button type="button" disabled={strategyBusy} onClick={() => void runStrategyAnalysis()}>
-                    {strategyBusy ? "분석 중..." : analysisOutdated ? "변경값 다시 분석" : "분석 실행"}
-                  </button>
                 </div>
-
-                {analysisOutdated && (
-                  <div className="analysis-dirty-notice" role="status">
-                    <strong>입력값이 변경되었습니다.</strong>
-                    <span>아래 분석 결과는 이전 입력 기준입니다. 변경한 가격·평균가·수량을 반영하려면 다시 분석해주세요.</span>
-                  </div>
-                )}
 
                 <details className="stock-reference-scenario">
                   <summary>
