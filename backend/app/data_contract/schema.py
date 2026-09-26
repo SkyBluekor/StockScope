@@ -73,6 +73,15 @@ class RealtimeResourceContract(BaseModel):
     status: ResourceStatus
     present: bool
     source: str
+    capability: bool
+    provider: str | None = None
+    mode: str | None = None
+    venue: str | None = None
+    current_price: str | None = None
+    provider_timestamp: str | None = None
+    received_at: str | None = None
+    age_ms: int | None = None
+    freshness_seconds: float | None = None
     reason_code: str | None = None
 
 
