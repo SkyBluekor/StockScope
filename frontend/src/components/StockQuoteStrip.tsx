@@ -1,4 +1,4 @@
-import type { StockQuoteResponse } from "../services/api";
+import type { DomesticMarketSessionResponse, StockQuoteResponse } from "../services/api";
 import type { StockQuotePollingState } from "../hooks/useStockQuote";
 import {
   quoteChangeRateText,
@@ -6,6 +6,7 @@ import {
   quotePriceText,
   quoteStatusMessage,
 } from "../services/quote";
+import { marketSessionIsPaused, quoteSessionMessage } from "../services/marketSession";
 import "../quote.css";
 
 type Props = {
@@ -13,6 +14,8 @@ type Props = {
   state: StockQuotePollingState;
   refreshing: boolean;
   error: string | null;
+  marketSession: DomesticMarketSessionResponse | null;
+  marketSessionLoading: boolean;
   onRefresh: () => void;
 };
 
@@ -21,16 +24,26 @@ export default function StockQuoteStrip({
   state,
   refreshing,
   error,
+  marketSession,
+  marketSessionLoading,
   onRefresh,
 }: Props) {
   const hasQuote = quote !== null;
-  const statusMessage = quoteStatusMessage(state, quote);
+  const pausedByMarket = marketSessionIsPaused(marketSession?.phase);
+  const statusMessage = marketSessionLoading && !marketSession
+    ? "시장 운영 상태 확인 중"
+    : state === "FRESH" && marketSession
+      ? quoteSessionMessage(marketSession, quote)
+      : pausedByMarket && marketSession
+        ? quoteSessionMessage(marketSession, quote)
+        : quoteStatusMessage(state, quote);
   const changeTone = quoteChangeTone(quote?.change_rate);
+  const priceLabel = pausedByMarket ? "마지막 시세" : "현재가";
 
   return (
     <section className={`quote-strip state-${state.toLowerCase()}`} aria-label="KIS 현재가 스냅샷">
       <div className="quote-strip-main">
-        <span>현재가</span>
+        <span>{priceLabel}</span>
         <strong>{hasQuote ? quotePriceText(quote.current_price) : state === "NOT_CONFIGURED" ? "시세 미설정" : "-"}</strong>
         {hasQuote && (
           <b className={`quote-strip-change ${changeTone}`}>
