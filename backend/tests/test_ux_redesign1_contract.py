@@ -32,7 +32,8 @@ def test_ux_redesign1_scanner_data_task_is_resumable_and_visible() -> None:
     assert "stockscope-active-data-task" in task
     assert "sessionStorage" in task
     assert "3년 검증 데이터 준비" in scanner
-    assert 'evidence.status === "DATA_UNAVAILABLE"' in scanner
+    assert "evidencePreparationAvailable" in scanner
+    assert "evidence.preparation_available" in scanner
     assert "onPrepareEvidence={() => void prepareCandidateEvidence(selectedCandidate)}" in scanner
 
 
@@ -404,3 +405,55 @@ def test_ux_redesign1i_data_status_does_not_claim_unverified_connectivity() -> N
 
     assert ".data-status-capability-row small" in styles
     assert ".data-status-providers > summary" in styles
+
+
+def test_ux_redesign1j1_historical_evidence_separates_readiness_sample_and_performance() -> None:
+    scanner = Path("frontend/src/components/ScannerPanel.tsx").read_text(encoding="utf-8")
+    api = Path("frontend/src/services/api.ts").read_text(encoding="utf-8")
+    evidence_backend = Path("backend/app/backtest/historical_evidence.py").read_text(encoding="utf-8")
+    priority = Path("backend/app/backtest/candidate_priority.py").read_text(encoding="utf-8")
+    styles = Path("frontend/src/styles.css").read_text(encoding="utf-8")
+
+    # The UI explicitly separates validation completion from the performance assessment.
+    assert "최근 3년 검증 완료" in scanner
+    assert "최근 3년 검증 미완료" in scanner
+    assert "과거 성과 근거 양호" in scanner
+    assert "과거 성과 근거 보통" in scanner
+    assert "과거 성과 근거 약함" in scanner
+    assert "거래 표본 부족" in scanner
+    assert "동일 전략 거래 사례 없음" in scanner
+    assert "3년 검증에 필요한 데이터로 계산을 완료했습니다." in scanner
+
+    # Compact metrics show sample quality without duplicating expectancy.
+    summary_start = scanner.index('className="scanner-evidence-compact-metrics"')
+    summary_end = scanner.index("</div>", summary_start)
+    compact_summary = scanner[summary_start:summary_end]
+    assert "거래 표본" in compact_summary
+    assert "최소 기준" in compact_summary
+    assert "승률" in compact_summary
+    assert "평균 순수익" in compact_summary
+    assert "최대 낙폭" in compact_summary
+    assert "기대수익" not in compact_summary
+    assert "formatPct(evidence.win_rate_pct)" in compact_summary
+    assert "<small>기대수익</small>" in scanner
+
+    # Recovery is offered only when the backend says preparation can help.
+    assert "preparation_available?: boolean" in api
+    assert "unavailable_reason?" in api
+    assert '"unavailable_reason": unavailable_reason' in evidence_backend
+    assert '"preparation_available": preparation_available' in evidence_backend
+    assert 'unavailable_reason="UNSUPPORTED_STRATEGY"' in evidence_backend
+    assert "preparation_available=False" in evidence_backend
+    assert "canPrepareEvidence &&" in scanner
+    assert "evidence.preparation_available" in scanner
+
+    # Existing evidence calculation and Scanner ranking semantics stay untouched.
+    assert "evaluate_historical_evidence(" in evidence_backend
+    assert 'strengths.append("3년 과거 근거 양호")' in priority
+    assert 'strengths.append("3년 과거 근거 보통")' in priority
+    assert 'penalties.append("3년 과거 근거 약함")' in priority
+    assert 'penalties.append("3년 과거 표본 부족")' in priority
+    assert 'penalties.append("3년 유사 사례 없음")' in priority
+
+    assert ".scanner-evidence-status-line" in styles
+    assert ".scanner-evidence-compact-metrics > span.sample" in styles
