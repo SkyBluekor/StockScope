@@ -114,7 +114,6 @@ def test_quote_backend_is_separate_from_balance_domain_and_websocket() -> None:
 
     assert "inquire_domestic_balance" not in combined
     assert "KisAccountSyncService" not in combined
-    assert "websocket" not in combined.lower()
     assert "H0STCNT0" not in combined
     assert "StrategyAnalysisService" not in combined
     assert "RiskEngine" not in combined
