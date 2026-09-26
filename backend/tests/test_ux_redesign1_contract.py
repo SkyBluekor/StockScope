@@ -1291,6 +1291,7 @@ def test_realtime2_selected_quote_polling_and_domain_boundaries() -> None:
 def test_realtime3_live_holdings_valuation_boundaries() -> None:
     performance = Path("backend/app/holdings/performance.py").read_text(encoding="utf-8")
     live_backend = Path("backend/app/holdings/live_performance.py").read_text(encoding="utf-8")
+    read_only_catalog = Path("backend/app/holdings/read_only_catalog.py").read_text(encoding="utf-8")
     holdings_api = Path("backend/app/api/holdings.py").read_text(encoding="utf-8")
     frontend_api = Path("frontend/src/services/holdingsApi.ts").read_text(encoding="utf-8")
     workspace = Path("frontend/src/components/HoldingsWorkspace.tsx").read_text(encoding="utf-8")
@@ -1304,8 +1305,8 @@ def test_realtime3_live_holdings_valuation_boundaries() -> None:
 
     # Live backend is cache/read-only only: no KIS network/token and no schema initialization.
     assert "ReadOnlyHoldingsCatalog" in live_backend
-    assert 'mode=ro' in live_backend
-    assert "PRAGMA query_only=ON" in live_backend
+    assert 'mode=ro' in read_only_catalog
+    assert "PRAGMA query_only=ON" in read_only_catalog
     assert "observe_cached_quote" in live_backend
     for forbidden in (
         "inquire_domestic_price",
@@ -1359,4 +1360,80 @@ def test_realtime3_live_holdings_valuation_boundaries() -> None:
     assert workspace.count("setLivePerformanceRefreshKey((value) => value + 1)") >= 3
     assert "selectedAnalysis.reference_price = selectedQuote" not in workspace
     assert "management.valuation.price = selectedQuote" not in workspace
+
+def test_realtime3b_live_management_proximity_boundaries() -> None:
+    management = Path("backend/app/holdings/management.py").read_text(encoding="utf-8")
+    live_backend = Path("backend/app/holdings/live_management.py").read_text(encoding="utf-8")
+    readonly = Path("backend/app/holdings/read_only_catalog.py").read_text(encoding="utf-8")
+    holdings_api = Path("backend/app/api/holdings.py").read_text(encoding="utf-8")
+    frontend_api = Path("frontend/src/services/holdingsApi.ts").read_text(encoding="utf-8")
+    workspace = Path("frontend/src/components/HoldingsWorkspace.tsx").read_text(encoding="utf-8")
+
+    # Existing management keeps the official EOD state calculation and shares only distance math.
+    assert "def management_distance(" in management
+    assert "return management_distance(level, price)" in management
+    assert 'management_state": self._state(active, price)' in management
+    assert "STOP_BREACHED" in management
+    assert "TARGET1_REACHED" in management
+    assert "TARGET2_REACHED" in management
+
+    # Live proximity is explicitly distance-only: no live management_state or automatic decision.
+    assert "management_distance(" in live_backend
+    assert "management_state" not in live_backend
+    assert "STOP_BREACHED" not in live_backend
+    assert "TARGET1_REACHED" not in live_backend
+    assert "TARGET2_REACHED" not in live_backend
+    assert "apply_analysis_plan" not in live_backend
+
+    # The live projection is read-only/cache-only.
+    assert "ReadOnlyHoldingsCatalog" in live_backend
+    assert "observe_cached_quote" in live_backend
+    assert "mode=ro" in readonly
+    assert "PRAGMA query_only=ON" in readonly
+    for forbidden in (
+        "inquire_domestic_price",
+        "get_access_token",
+        "issue_access_token",
+        "INSERT ",
+        "UPDATE ",
+        "DELETE ",
+        ".initialize(",
+    ):
+        assert forbidden not in live_backend
+
+    assert '@router.get("/stocks/{stock_id}/management")' in holdings_api
+    assert '@router.get("/stocks/{stock_id}/management/live-proximity")' in holdings_api
+
+    # Frontend consumes backend-calculated distances; it does not compute stop/target math in React.
+    assert "export type LiveHoldingManagementProximityResponse" in frontend_api
+    assert "export function getLiveHoldingManagementProximity(" in frontend_api
+    assert "/management/live-proximity" in frontend_api
+    assert "const [liveManagementProximity, setLiveManagementProximity]" in workspace
+    assert "selectedQuote?.received_at" in workspace
+    assert "getLiveHoldingManagementProximity(stockId" in workspace
+    assert "liveManagementRequestIdRef" in workspace
+    assert "liveManagementAbortRef" in workspace
+
+    live_start = workspace.index("void getLiveHoldingManagementProximity(stockId")
+    live_end = workspace.index("selectedStockIdRef.current = selectedStockId", live_start)
+    live_effect = workspace[live_start:live_end]
+    assert "setInterval" not in live_effect
+    assert "setTimeout" not in live_effect
+
+    # Only held selected details with an already-applied plan request live proximity.
+    assert "management?.positions.some((item) => item.active_plan != null)" in workspace
+    assert "detail?.is_held" in workspace
+    assert "selectedStockId === stockId" in workspace
+
+    # UI preserves the EOD state label and shows only current-price distance metadata.
+    assert "managementStateText(item.management_state)" in workspace
+    assert "현재가 대비" in workspace
+    assert "현재가 거리 · KIS" in workspace
+    assert "갱신 지연" in workspace
+
+    # No frontend distance formula or automatic plan mutation is introduced.
+    assert "selectedQuote.current_price - item.active_plan" not in workspace
+    assert "item.active_plan.stop_price - selectedQuote" not in workspace
+    assert "applyHoldingManagementPlan(" in workspace
+    assert "selectedQuote" not in workspace[workspace.index("async function applyLatestManagementPlan"):workspace.index("useEffect(() =>", workspace.index("async function applyLatestManagementPlan"))]
 
