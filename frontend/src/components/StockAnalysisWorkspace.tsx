@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { StockContext, StockDataContract, StockQuoteResponse, StockSearchItem, StrategyAnalysis } from "../services/api";
+import type { DomesticMarketSessionResponse, StockContext, StockDataContract, StockQuoteResponse, StockSearchItem, StrategyAnalysis } from "../services/api";
 import { analysisContractMessage, dataContractStatusLabel, dataContractTone } from "../services/dataContract";
 import type { StockQuotePollingState } from "../hooks/useStockQuote";
 import StockAnalysisPriceChart from "./StockAnalysisPriceChart";
@@ -30,6 +30,8 @@ type Props = {
   quoteState: StockQuotePollingState;
   quoteRefreshing: boolean;
   quoteError: string | null;
+  marketSession: DomesticMarketSessionResponse | null;
+  marketSessionLoading: boolean;
   onQueryChange: (value: string) => void;
   onSearchFocus: () => void;
   onChooseStock: (item: StockSearchItem) => void;
@@ -133,6 +135,8 @@ export default function StockAnalysisWorkspace({
   quoteState,
   quoteRefreshing,
   quoteError,
+  marketSession,
+  marketSessionLoading,
   onQueryChange,
   onSearchFocus,
   onChooseStock,
@@ -292,6 +296,8 @@ export default function StockAnalysisWorkspace({
             state={quoteState}
             refreshing={quoteRefreshing}
             error={quoteError}
+            marketSession={marketSession}
+            marketSessionLoading={marketSessionLoading}
             onRefresh={onRefreshQuote}
           />
 
