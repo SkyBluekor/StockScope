@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     kis_account_no: str | None = None
     kis_account_product_code: str = "01"
     kis_env: str = "real"
+    kis_quote_cache_ttl_seconds: float = 2.0
+    kis_quote_freshness_seconds: float = 15.0
+    kis_quote_min_upstream_interval_seconds: float = 0.25
 
     model_config = SettingsConfigDict(
         env_file=PROJECT_ROOT / ".env",
