@@ -23,7 +23,7 @@ def test_ux_flow1_analysis_has_tracking_actions_without_strategy_coupling() -> N
     assert "addWatchStock" in actions
     assert "registerHeldStock" in actions
     assert "관심종목에 추가" in actions
-    assert "보유종목으로 등록" in actions
+    assert "기존 보유 등록" in actions
     assert "내 종목 관리" in actions
     assert "Strategy·Scanner·Risk 계산을 변경하지 않습니다." in actions
     assert "fetchStrategyAnalysis" not in actions
