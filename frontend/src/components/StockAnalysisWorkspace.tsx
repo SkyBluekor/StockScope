@@ -1,9 +1,11 @@
 import type { ReactNode } from "react";
-import type { StockContext, StockDataContract, StockSearchItem, StrategyAnalysis } from "../services/api";
+import type { StockContext, StockDataContract, StockQuoteResponse, StockSearchItem, StrategyAnalysis } from "../services/api";
 import { analysisContractMessage, dataContractStatusLabel, dataContractTone } from "../services/dataContract";
+import type { StockQuotePollingState } from "../hooks/useStockQuote";
 import StockAnalysisPriceChart from "./StockAnalysisPriceChart";
 import StockNewsPanel from "./StockNewsPanel";
 import StockTrackingActions from "./StockTrackingActions";
+import StockQuoteStrip from "./StockQuoteStrip";
 import "../stock-analysis.css";
 
 type Props = {
@@ -24,12 +26,17 @@ type Props = {
   dataContract: StockDataContract | null;
   dataContractBusy: boolean;
   dataContractError: string | null;
+  quote: StockQuoteResponse | null;
+  quoteState: StockQuotePollingState;
+  quoteRefreshing: boolean;
+  quoteError: string | null;
   onQueryChange: (value: string) => void;
   onSearchFocus: () => void;
   onChooseStock: (item: StockSearchItem) => void;
   onRetryContext: () => void;
   onRunAnalysis: () => void;
   onRefreshDataContract: () => void;
+  onRefreshQuote: () => void;
   strategyMessage: string;
   scannerOrigin: boolean;
   onBackToScanner: () => void;
@@ -122,12 +129,17 @@ export default function StockAnalysisWorkspace({
   dataContract,
   dataContractBusy,
   dataContractError,
+  quote,
+  quoteState,
+  quoteRefreshing,
+  quoteError,
   onQueryChange,
   onSearchFocus,
   onChooseStock,
   onRetryContext,
   onRunAnalysis,
   onRefreshDataContract,
+  onRefreshQuote,
   strategyMessage,
   scannerOrigin,
   onBackToScanner,
@@ -274,6 +286,14 @@ export default function StockAnalysisWorkspace({
               <small>전략 계산은 아래에서 필요할 때 직접 실행합니다.</small>
             </div>
           </section>
+
+          <StockQuoteStrip
+            quote={quote}
+            state={quoteState}
+            refreshing={quoteRefreshing}
+            error={quoteError}
+            onRefresh={onRefreshQuote}
+          />
 
           <div className="stock-analysis-data-state" aria-live="polite">
             <div className="stock-analysis-resource-state">
