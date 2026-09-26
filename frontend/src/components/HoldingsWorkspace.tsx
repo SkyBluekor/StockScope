@@ -514,7 +514,10 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
 
   selectedStockIdRef.current = selectedStockId;
 
-  async function reloadStocks(preferredId?: string | null) {
+  async function reloadStocks(
+    preferredId?: string | null,
+    selectionMode: "prefer-target" | "preserve-current" = "prefer-target",
+  ) {
     setLoadingStocks(true);
     try {
       const rows = await listHoldingStocks();
@@ -527,12 +530,18 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
         : null;
       if (!navigationTargetConsumedRef.current) navigationTargetConsumedRef.current = true;
 
+      const currentSelection = selectedStockIdRef.current;
       const keep = navigationTargetId
-        ?? (preferredId && rows.some((row) => row.stock_id === preferredId)
-          ? preferredId
-          : selectedStockId && rows.some((row) => row.stock_id === selectedStockId)
-            ? selectedStockId
-            : rows[0]?.stock_id ?? null);
+        ?? (selectionMode === "preserve-current"
+          && currentSelection
+          && rows.some((row) => row.stock_id === currentSelection)
+          ? currentSelection
+          : preferredId && rows.some((row) => row.stock_id === preferredId)
+            ? preferredId
+            : currentSelection && rows.some((row) => row.stock_id === currentSelection)
+              ? currentSelection
+              : rows[0]?.stock_id ?? null);
+      selectedStockIdRef.current = keep;
       setSelectedStockId(keep);
       if (!keep) {
         setDetail(null);
@@ -774,26 +783,31 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
       : null;
 
   async function refreshSelected() {
-    if (!selectedStockId) return;
+    const targetStockId = selectedStockIdRef.current;
+    if (!targetStockId) return;
     setRefreshingAnalysis(true);
     setError(null);
     setMessage(null);
     setHistoryRecovery(null);
     try {
-      const result = await refreshHoldingAnalysis(selectedStockId);
-      await Promise.all([reloadStocks(selectedStockId), loadSelected(selectedStockId)]);
-      setChartRefreshKey((value) => value + 1);
-      const dateLabel = compactDate(result.market_date);
-      setMessage(
-        result.data_freshness.status === "UPDATED"
-          ? `새로운 확정 시세를 반영해 ${dateLabel} 기준으로 분석했습니다.`
-          : `${dateLabel} 최신 확정 일봉 기준으로 분석했습니다.`,
-      );
+      const result = await refreshHoldingAnalysis(targetStockId);
+      await reloadStocks(targetStockId, "preserve-current");
+      if (selectedStockIdRef.current === targetStockId) {
+        await loadSelected(targetStockId);
+        setChartRefreshKey((value) => value + 1);
+        const dateLabel = compactDate(result.market_date);
+        setMessage(
+          result.data_freshness.status === "UPDATED"
+            ? `새로운 확정 시세를 반영해 ${dateLabel} 기준으로 분석했습니다.`
+            : `${dateLabel} 최신 확정 일봉 기준으로 분석했습니다.`,
+        );
+      }
     } catch (refreshError) {
+      if (selectedStockIdRef.current !== targetStockId) return;
       if (refreshError instanceof HoldingsApiError && refreshError.code === "HOLD_ANALYSIS_HISTORY_INSUFFICIENT") {
         const requirement = historyRequirement(refreshError);
         setHistoryRecovery({
-          stockId: selectedStockId,
+          stockId: targetStockId,
           currentRows: requirement.currentRows,
           requiredRows: requirement.requiredRows,
           exhausted: false,
@@ -807,7 +821,8 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
   }
 
   async function prepareHistoryAndAnalyze() {
-    if (!selectedStockId) return;
+    const targetStockId = selectedStockIdRef.current;
+    if (!targetStockId) return;
     setPreparingHistory(true);
     setError(null);
     setMessage(null);
@@ -818,25 +833,31 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
     });
     try {
       const result = await prepareHoldingAnalysisWithProgress(
-        selectedStockId,
-        (progress) => setHistoryProgress(progress),
+        targetStockId,
+        (progress) => {
+          if (selectedStockIdRef.current === targetStockId) setHistoryProgress(progress);
+        },
       );
-      setHistoryRecovery(null);
-      setHistoryProgress({ type: "progress", stage: "refresh", message: "화면을 갱신하고 있습니다." });
-      await Promise.all([reloadStocks(selectedStockId), loadSelected(selectedStockId)]);
-      setChartRefreshKey((value) => value + 1);
-      const prepared = result.history_prepare;
-      const preparedText = prepared && prepared.prepared_rows > 0
-        ? `과거 가격 ${prepared.prepared_rows}거래일을 추가로 준비하고 `
-        : "과거 가격 데이터를 확인하고 ";
-      setMessage(`${preparedText}${compactDate(result.market_date)} 기준 분석을 완료했습니다.`);
+      await reloadStocks(targetStockId, "preserve-current");
+      if (selectedStockIdRef.current === targetStockId) {
+        setHistoryRecovery(null);
+        setHistoryProgress({ type: "progress", stage: "refresh", message: "화면을 갱신하고 있습니다." });
+        await loadSelected(targetStockId);
+        setChartRefreshKey((value) => value + 1);
+        const prepared = result.history_prepare;
+        const preparedText = prepared && prepared.prepared_rows > 0
+          ? `과거 가격 ${prepared.prepared_rows}거래일을 추가로 준비하고 `
+          : "과거 가격 데이터를 확인하고 ";
+        setMessage(`${preparedText}${compactDate(result.market_date)} 기준 분석을 완료했습니다.`);
+      }
       setHistoryProgress(null);
     } catch (prepareError) {
       setHistoryProgress(null);
+      if (selectedStockIdRef.current !== targetStockId) return;
       if (prepareError instanceof HoldingsApiError && prepareError.code === "HOLD_ANALYSIS_HISTORY_INSUFFICIENT") {
         const requirement = historyRequirement(prepareError);
         setHistoryRecovery({
-          stockId: selectedStockId,
+          stockId: targetStockId,
           currentRows: requirement.currentRows,
           requiredRows: requirement.requiredRows,
           exhausted: true,
@@ -855,8 +876,9 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
     setMessage(null);
     try {
       const result = await syncKisHoldings();
-      await reloadStocks(selectedStockId);
-      if (selectedStockId) await loadSelected(selectedStockId);
+      await reloadStocks(null, "preserve-current");
+      const currentStockId = selectedStockIdRef.current;
+      if (currentStockId) await loadSelected(currentStockId);
       setMessage(`잔고 동기화 완료 · 확인 ${result.holding_count}종목`);
     } catch (syncError) {
       setError(readableError(syncError, "한국투자증권 잔고 동기화에 실패했습니다."));
