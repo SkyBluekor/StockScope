@@ -750,6 +750,8 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
   const savedScrollRef = useRef(initialSession?.scrollY ?? 0);
   const didRestoreScrollRef = useRef(false);
   const didResumeJobRef = useRef(false);
+  const pollObserverGenerationRef = useRef(0);
+  const mountedRef = useRef(true);
   const progressRef = useRef<HTMLElement | null>(null);
 
   const jobBusy = job?.status === "queued" || job?.status === "running";
@@ -851,8 +853,13 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
     });
   }, [initialSession, result]);
 
-  useEffect(() => () => {
-    if (pollRef.current != null) window.clearTimeout(pollRef.current);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      pollObserverGenerationRef.current += 1;
+      if (pollRef.current != null) window.clearTimeout(pollRef.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -861,12 +868,22 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
     const saved = readActiveDataTask();
     if (!saved || saved.kind !== "scanner") return;
 
+    const observerGeneration = ++pollObserverGenerationRef.current;
+    const observerIsCurrent = () => {
+      const activeTask = readActiveDataTask();
+      return mountedRef.current
+        && pollObserverGenerationRef.current === observerGeneration
+        && activeTask?.kind === "scanner"
+        && activeTask.jobId === saved.jobId;
+    };
+
     setScope(saved.scope);
     preferredCandidateKeyRef.current = saved.selectedCandidateKey ?? null;
     startedAtRef.current = saved.startedAt;
     lastProgressAtRef.current = Date.now();
     void fetchBacktestJob<ScannerResponse>(saved.jobId)
       .then((latest) => {
+        if (!observerIsCurrent()) return;
         setJob(latest);
         if (latest.status === "completed" && latest.result) {
           const completedAtValue = Date.now();
@@ -879,6 +896,7 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
             ? candidateKey(preferredCandidate)
             : (latest.result.candidates[0] ? candidateKey(latest.result.candidates[0]) : null);
           const nextExpandedEvidenceIds = preferredCandidate ? [evidenceKey(preferredCandidate)] : [];
+          if (!observerIsCurrent()) return;
           writeScannerSession({
             scope: saved.scope,
             result: latest.result,
@@ -898,15 +916,19 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
           return;
         }
         if (latest.status === "queued" || latest.status === "running") {
-          void poll(saved.jobId, saved.scope, saved.allowLargeSync, saved.startedAt);
+          void poll(saved.jobId, saved.scope, saved.allowLargeSync, saved.startedAt, observerGeneration);
           requestAnimationFrame(() => {
-            requestAnimationFrame(() => progressRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+            if (!observerIsCurrent()) return;
+            requestAnimationFrame(() => {
+              if (observerIsCurrent()) progressRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+            });
           });
           return;
         }
-        clearActiveDataTask();
+        if (observerIsCurrent()) clearActiveDataTask();
       })
       .catch(() => {
+        if (!observerIsCurrent()) return;
         setError("진행 중이던 작업 상태를 확인하지 못했습니다. 서버가 재시작되었을 수 있습니다.");
       });
   }, []);
@@ -946,9 +968,19 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
     jobScope: MarketScope = scope,
     allowLargeSync = false,
     startedAt = startedAtRef.current ?? Date.now(),
+    observerGeneration = pollObserverGenerationRef.current,
   ) {
+    const observerIsCurrent = () => {
+      const activeTask = readActiveDataTask();
+      return mountedRef.current
+        && pollObserverGenerationRef.current === observerGeneration
+        && activeTask?.kind === "scanner"
+        && activeTask.jobId === jobId;
+    };
+
     try {
       const latest = await fetchBacktestJob<ScannerResponse>(jobId);
+      if (!observerIsCurrent()) return;
       const signature = JSON.stringify({
         stage: latest.stage,
         current: latest.progress?.current,
@@ -1047,11 +1079,13 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
         clearActiveDataTask();
         return;
       }
+      if (!observerIsCurrent()) return;
       pollRef.current = window.setTimeout(
-        () => void poll(jobId, jobScope, allowLargeSync, startedAt),
+        () => void poll(jobId, jobScope, allowLargeSync, startedAt, observerGeneration),
         700,
       );
     } catch (err) {
+      if (!observerIsCurrent()) return;
       scannerSelectionToPreserveRef.current = null;
       setError(err instanceof Error ? err.message : (preferredCandidateKeyRef.current
         ? "3년 검증 데이터 준비 상태를 확인하지 못했습니다."
@@ -1065,6 +1099,7 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
     pinnedAsOfDate: string | null = null,
   ) {
     if (busy) return;
+    const observerGeneration = ++pollObserverGenerationRef.current;
     scannerSelectionToPreserveRef.current = result && selectedCandidateKey ? selectedCandidateKey : null;
     preferredCandidateKeyRef.current = null;
     if (pollRef.current != null) window.clearTimeout(pollRef.current);
@@ -1094,6 +1129,7 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
         allow_large_sync: allowLargeSync,
       } as Parameters<typeof createScannerJob>[0] & { known_data_date?: string | null };
       const created = await createScannerJob(request);
+      if (!mountedRef.current || pollObserverGenerationRef.current !== observerGeneration) return;
       setJob(created);
       writeActiveDataTask({
         kind: "scanner",
@@ -1117,8 +1153,9 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
           });
         });
       }
-      void poll(created.job_id, scope, allowLargeSync, started);
+      void poll(created.job_id, scope, allowLargeSync, started, observerGeneration);
     } catch (err) {
+      if (!mountedRef.current || pollObserverGenerationRef.current !== observerGeneration) return;
       scannerSelectionToPreserveRef.current = null;
       setError(err instanceof Error ? err.message : "종목 찾기를 시작하지 못했습니다.");
     }
@@ -1126,6 +1163,7 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
 
   async function prepareCandidateEvidence(candidate: ScannerCandidate) {
     if (busy || !result) return;
+    const observerGeneration = ++pollObserverGenerationRef.current;
     scannerSelectionToPreserveRef.current = null;
     if (pollRef.current != null) window.clearTimeout(pollRef.current);
     setError(null);
@@ -1147,6 +1185,7 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
         market_scope: scope,
         candidate_limit: 5,
       });
+      if (!mountedRef.current || pollObserverGenerationRef.current !== observerGeneration) return;
       setJob(created);
       writeActiveDataTask({
         kind: "scanner",
@@ -1169,8 +1208,9 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
           progressRef.current?.focus({ preventScroll: true });
         });
       });
-      void poll(created.job_id, scope, false, started);
+      void poll(created.job_id, scope, false, started, observerGeneration);
     } catch (err) {
+      if (!mountedRef.current || pollObserverGenerationRef.current !== observerGeneration) return;
       preferredCandidateKeyRef.current = null;
       setError(err instanceof Error ? err.message : "3년 검증 데이터 준비를 시작하지 못했습니다.");
     }
