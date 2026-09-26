@@ -228,10 +228,10 @@ def test_ux_redesign1f_watch_and_held_views_are_semantically_separated() -> None
     assert "최신 분석 제안" in holdings
     assert "현재 적용 중인 보유분 관리 기준이 없습니다." in holdings
 
-    # New-entry analysis must not be presented as a held-position sell instruction.
-    assert "신규 진입 관점 분석" in holdings
-    assert "현재 보유분에 대한 매도 판단이 아닙니다." in holdings
-    assert "현재 보유분의 매도를 지시하지 않습니다." in holdings
+    # New-entry analysis remains explicitly separate from held-position management.
+    assert "추가 매수·신규 진입 관점" in holdings
+    assert "기존 보유분의 매도 판단이나 적용 중인 관리 기준을 변경하지 않습니다." in holdings
+    assert "실제 적용 중인 보유분 관리 기준" in holdings
 
     # Filter changes cannot leave a hidden stock selected in the detail pane.
     assert "visibleStocks.some((stock) => stock.stock_id === selectedStockId)" in holdings
