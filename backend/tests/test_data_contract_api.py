@@ -248,6 +248,14 @@ def test_data_contract_returns_versioned_read_only_resource_states(
     _create_holdings_db(holdings_db)
     _configure_paths(monkeypatch, market_db, holdings_db)
 
+    from app.core.config import Settings
+    import app.quotes.service as quote_service_module
+    monkeypatch.setattr(
+        quote_service_module,
+        "get_settings",
+        lambda: Settings(_env_file=None, kis_app_key=None, kis_app_secret=None),
+    )
+
     response = client.get(
         "/api/data-contract/stocks/005930",
         params={"market": "KOSPI", "range": "3m"},
