@@ -1,10 +1,12 @@
 import type { DomesticMarketSessionResponse, StockQuoteResponse } from "../services/api";
 import type { StockQuotePollingState } from "../hooks/useStockQuote";
+import type { StockQuoteStreamState } from "../services/quoteStream";
 import {
   quoteChangeRateText,
   quoteChangeTone,
   quotePriceText,
   quoteStatusMessage,
+  quoteStreamStatusMessage,
 } from "../services/quote";
 import { marketSessionIsPaused, quoteSessionMessage } from "../services/marketSession";
 import "../quote.css";
@@ -12,6 +14,7 @@ import "../quote.css";
 type Props = {
   quote: StockQuoteResponse | null;
   state: StockQuotePollingState;
+  streamState: StockQuoteStreamState;
   refreshing: boolean;
   error: string | null;
   marketSession: DomesticMarketSessionResponse | null;
@@ -22,6 +25,7 @@ type Props = {
 export default function StockQuoteStrip({
   quote,
   state,
+  streamState,
   refreshing,
   error,
   marketSession,
@@ -30,18 +34,20 @@ export default function StockQuoteStrip({
 }: Props) {
   const hasQuote = quote !== null;
   const pausedByMarket = marketSessionIsPaused(marketSession?.phase);
+  const streamStatusMessage = quoteStreamStatusMessage(streamState, quote);
   const statusMessage = marketSessionLoading && !marketSession
     ? "시장 운영 상태 확인 중"
-    : state === "FRESH" && marketSession
+    : pausedByMarket && marketSession
       ? quoteSessionMessage(marketSession, quote)
-      : pausedByMarket && marketSession
-        ? quoteSessionMessage(marketSession, quote)
-        : quoteStatusMessage(state, quote);
+      : streamStatusMessage
+        ?? (state === "FRESH" && marketSession
+          ? quoteSessionMessage(marketSession, quote)
+          : quoteStatusMessage(state, quote));
   const changeTone = quoteChangeTone(quote?.change_rate);
   const priceLabel = pausedByMarket ? "마지막 시세" : "현재가";
 
   return (
-    <section className={`quote-strip state-${state.toLowerCase()}`} aria-label="KIS 현재가 스냅샷">
+    <section className={`quote-strip state-${state.toLowerCase()}`} aria-label="KIS 현재가">
       <div className="quote-strip-main">
         <span>{priceLabel}</span>
         <strong>{hasQuote ? quotePriceText(quote.current_price) : state === "NOT_CONFIGURED" ? "시세 미설정" : "-"}</strong>
