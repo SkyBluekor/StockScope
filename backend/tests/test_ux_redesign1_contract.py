@@ -1016,3 +1016,76 @@ def test_ux_redesign1j6_separates_stock_reads_from_explicit_strategy_execution()
     assert ".stock-analysis-execution" in styles
     assert ".stock-analysis-run-options" in styles
     assert ".stock-analysis-plan-section" in styles
+
+
+def test_pre_j8_basis_and_async_safety_contracts() -> None:
+    workspace = Path("frontend/src/components/StockAnalysisWorkspace.tsx").read_text(encoding="utf-8")
+    backtest = Path("frontend/src/components/BacktestPanel.tsx").read_text(encoding="utf-8")
+    scanner = Path("frontend/src/components/ScannerPanel.tsx").read_text(encoding="utf-8")
+    holdings = Path("frontend/src/components/HoldingsWorkspace.tsx").read_text(encoding="utf-8")
+
+    # PRE-J8.1: the price plan label follows the actual response basis.
+    assert 'const strategyBasis = plan?.basis' in workspace
+    assert 'strategyAnalysis?.risk_analysis.basis' in workspace
+    assert 'strategyAnalysis?.data_freshness.analysis_basis' in workspace
+    assert 'const manualReferenceBasis = strategyBasis === "MANUAL_REFERENCE"' in workspace
+    assert 'const confirmedEodBasis = strategyBasis === "CONFIRMED_EOD"' in workspace
+    assert "SCENARIO PRICE PLAN" in workspace
+    assert "가상 시나리오 가격 계획" in workspace
+    assert "사용자 참고가격 기준" in workspace
+    assert "공식 확정 EOD 가격 계획이 아닙니다." in workspace
+    assert "확정 일봉을 기준으로 계산한 공식 가격 계획입니다." in workspace
+    assert "참고가격 시나리오를 입력해도 이 영역의 공식 기준은 확정 일봉 분석입니다." not in workspace
+
+    # No synthetic confirmed-EOD Risk plan is created for a manual-reference result.
+    assert "const plan = strategyAnalysis?.risk_analysis.selected_plan ?? null" in workspace
+    assert "MANUAL_REFERENCE" in workspace
+    assert "selected_plan" in workspace
+
+    # PRE-J8.2 Backtest: create and poll responses are accepted only for the same run identity.
+    assert "const runGenerationRef = useRef(0)" in backtest
+    assert "const activeRunRef = useRef<{" in backtest
+    assert "signature: runSignature" in backtest
+    assert "code: runCode" in backtest
+    assert "market: runConfig.market" in backtest
+    assert "const isCurrentRun = (jobId: string | null = null)" in backtest
+    assert "runGenerationRef.current === generation" in backtest
+    assert "active.jobId === jobId" in backtest
+    create_index = backtest.index("const created = await createMultiStrategyBacktestJob")
+    create_guard_index = backtest.index("if (!isCurrentRun())", create_index)
+    create_state_index = backtest.index("setJob(created)", create_index)
+    assert create_index < create_guard_index < create_state_index
+    poll_index = backtest.index("const latest = await fetchBacktestJob<MultiStrategyBacktestResponse>")
+    poll_guard_index = backtest.index("if (!isCurrentRun(created.job_id)", poll_index)
+    poll_state_index = backtest.index("setJob(latest)", poll_index)
+    cache_write_index = backtest.index("writeBacktestCache(entry)", poll_index)
+    assert poll_index < poll_guard_index < poll_state_index < cache_write_index
+
+    # PRE-J8.2 Scanner: navigation invalidates only the observer, not the server job.
+    assert "const pollObserverGenerationRef = useRef(0)" in scanner
+    assert "const mountedRef = useRef(true)" in scanner
+    assert "mountedRef.current = false" in scanner
+    assert "pollObserverGenerationRef.current += 1" in scanner
+    assert "const observerIsCurrent = () => {" in scanner
+    assert 'activeTask?.kind === "scanner"' in scanner
+    assert "activeTask.jobId === jobId" in scanner
+    scanner_poll_index = scanner.index("const latest = await fetchBacktestJob<ScannerResponse>(jobId)")
+    scanner_guard_index = scanner.index("if (!observerIsCurrent()) return", scanner_poll_index)
+    scanner_state_index = scanner.index("setJob(latest)", scanner_poll_index)
+    scanner_task_write_index = scanner.index("writeActiveDataTask({", scanner_poll_index)
+    assert scanner_poll_index < scanner_guard_index < scanner_state_index < scanner_task_write_index
+    cleanup_start = scanner.index("mountedRef.current = false")
+    cleanup_end = scanner.index("}, []);", cleanup_start)
+    assert "cancelBacktestJob" not in scanner[cleanup_start:cleanup_end]
+
+    # PRE-J8.2 Holdings: background work targets the captured stock but preserves live selection.
+    assert 'selectionMode: "prefer-target" | "preserve-current" = "prefer-target"' in holdings
+    assert "const currentSelection = selectedStockIdRef.current" in holdings
+    assert 'selectionMode === "preserve-current"' in holdings
+    assert "selectedStockIdRef.current = keep" in holdings
+    assert "const targetStockId = selectedStockIdRef.current" in holdings
+    assert 'await reloadStocks(targetStockId, "preserve-current")' in holdings
+    assert "if (selectedStockIdRef.current === targetStockId)" in holdings
+    assert 'await reloadStocks(null, "preserve-current")' in holdings
+    assert "const currentStockId = selectedStockIdRef.current" in holdings
+
