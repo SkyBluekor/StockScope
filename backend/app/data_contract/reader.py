@@ -10,6 +10,7 @@ from typing import Iterator
 
 from app.backtest.jobs import BacktestJobManager, backtest_jobs
 from app.core.config import PROJECT_ROOT
+from app.market_session import peek_market_session
 from app.quotes.service import observe_cached_quote
 
 from .models import (
@@ -510,10 +511,14 @@ class ReadOnlyDataStateReader:
                 market=clean_market,
                 ticker=clean_ticker,
                 venue="INTEGRATED",
+                session_phase="UNKNOWN",
+                trading_day=None,
+                market_active=None,
                 reason="QUOTE_OBSERVATION_FAILED",
                 error=str(exc),
             )
 
+        session = peek_market_session("INTEGRATED")
         return RealtimeQuoteObservation(
             capable=observed.capable,
             present=observed.present,
@@ -536,6 +541,9 @@ class ReadOnlyDataStateReader:
             ),
             age_ms=observed.age_ms,
             freshness_seconds=observed.freshness_seconds,
+            session_phase=session.phase if session is not None else "UNKNOWN",
+            trading_day=session.trading_day if session is not None else None,
+            market_active=session.market_active if session is not None else None,
             reason=observed.reason,
         )
 
