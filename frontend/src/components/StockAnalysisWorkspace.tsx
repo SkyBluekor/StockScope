@@ -136,6 +136,12 @@ export default function StockAnalysisWorkspace({
     : [];
   const styleContext = summary?.entry_timing.style_context ?? null;
   const strategyBasisDate = strategyAnalysis?.data_freshness.eod_date ?? strategyAnalysis?.data_date ?? null;
+  const strategyBasis = plan?.basis
+    ?? strategyAnalysis?.risk_analysis.basis
+    ?? strategyAnalysis?.data_freshness.analysis_basis
+    ?? null;
+  const manualReferenceBasis = strategyBasis === "MANUAL_REFERENCE";
+  const confirmedEodBasis = strategyBasis === "CONFIRMED_EOD";
 
   return (
     <section className="stock-analysis-workspace">
@@ -143,7 +149,7 @@ export default function StockAnalysisWorkspace({
         <div>
           <span className="eyebrow">STOCK ANALYSIS</span>
           <h1>종목 분석</h1>
-          <p>종목의 현재 상태와 전략 근거를 최신 확정 일봉 기준으로 확인합니다.</p>
+          <p>확정 일봉 분석을 확인하고, 필요할 때 참고가격 시나리오를 별도로 비교합니다.</p>
         </div>
       </header>
 
@@ -279,8 +285,16 @@ export default function StockAnalysisWorkspace({
                 <p>새 분석을 계산 중입니다. 현재 표시 중인 이전 완료 결과는 그대로 유지합니다.</p>
               ) : (
                 <p>
-                  현재 세션의 분석 결과를 표시 중입니다.
-                  {strategyBasisDate ? ` · 기준 ${formatDate(strategyBasisDate)} 확정 일봉` : ""}
+                  {manualReferenceBasis
+                    ? "현재 세션의 참고가격 시나리오 결과를 표시 중입니다."
+                    : confirmedEodBasis
+                      ? "현재 세션의 분석 결과를 표시 중입니다."
+                      : "현재 세션의 분석 결과를 표시 중이며, 응답의 분석 기준을 확인하고 있습니다."}
+                  {strategyBasisDate
+                    ? manualReferenceBasis
+                      ? ` · 기초 확정 일봉 ${formatDate(strategyBasisDate)}`
+                      : ` · 기준 ${formatDate(strategyBasisDate)} 확정 일봉`
+                    : ""}
                 </p>
               )}
               {strategyAnalysis && <small className="stock-analysis-execution-status">{strategyMessage}</small>}
@@ -333,10 +347,16 @@ export default function StockAnalysisWorkspace({
                 <div className="stock-analysis-plan">
                   <div className="stock-analysis-section-title">
                     <div>
-                      <span>PRICE PLAN</span>
-                      <h3>가격 계획</h3>
+                      <span>{manualReferenceBasis ? "SCENARIO PRICE PLAN" : "PRICE PLAN"}</span>
+                      <h3>{manualReferenceBasis ? "가상 시나리오 가격 계획" : "가격 계획"}</h3>
                     </div>
-                    <small>공식 확정 EOD 기준</small>
+                    <small>
+                      {manualReferenceBasis
+                        ? "사용자 참고가격 기준"
+                        : confirmedEodBasis
+                          ? "공식 확정 EOD 기준"
+                          : "분석 응답 기준"}
+                    </small>
                   </div>
                   <dl>
                     <div><dt>기준가</dt><dd>{formatNumber(plan?.entry_price ?? strategyAnalysis.data_freshness.eod_close, "원")}</dd></div>
@@ -345,7 +365,11 @@ export default function StockAnalysisWorkspace({
                     <div><dt>2차 목표</dt><dd>{formatNumber(plan?.target2_price, "원")}</dd></div>
                   </dl>
                   <p className="stock-analysis-plan-note">
-                    참고가격 시나리오를 입력해도 이 영역의 공식 기준은 확정 일봉 분석입니다.
+                    {manualReferenceBasis
+                      ? "사용자가 입력한 참고가격 시나리오를 기준으로 계산한 결과입니다. 공식 확정 EOD 가격 계획이 아닙니다."
+                      : confirmedEodBasis
+                        ? "확정 일봉을 기준으로 계산한 공식 가격 계획입니다."
+                        : "가격 계획의 기준 정보가 명시되지 않았습니다. 응답의 basis를 확인해 주세요."}
                   </p>
                 </div>
               </section>
