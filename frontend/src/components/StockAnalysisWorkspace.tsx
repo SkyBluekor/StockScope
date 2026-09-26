@@ -283,6 +283,7 @@ export default function StockAnalysisWorkspace({
                   {strategyBasisDate ? ` · 기준 ${formatDate(strategyBasisDate)} 확정 일봉` : ""}
                 </p>
               )}
+              {strategyAnalysis && <small className="stock-analysis-execution-status">{strategyMessage}</small>}
             </div>
 
             {!strategyAnalysis ? (
