@@ -79,7 +79,7 @@ export default function useStockQuote({
     setQuote(null);
     setError(null);
     setRefreshing(false);
-    setState(validIdentity ? "IDLE" : "IDLE");
+    setState("IDLE");
 
     if (!validIdentity) {
       runNowRef.current = null;
@@ -96,9 +96,10 @@ export default function useStockQuote({
         timerRef.current = null;
       }
     };
-    const canNetwork = () =>
-      document.visibilityState !== "hidden"
-      && (typeof navigator === "undefined" || navigator.onLine !== false);
+    const canNetwork = () => {
+      if (document.visibilityState === "hidden") return false;
+      return typeof navigator === "undefined" || navigator.onLine !== false;
+    };
     const canAutoPoll = () =>
       canNetwork() && marketSessionAllowsAutoQuote(sessionRef.current);
 
@@ -205,9 +206,15 @@ export default function useStockQuote({
       setState(quoteRef.current ? "DELAYED" : "ERROR");
       setError("네트워크 연결을 확인해주세요.");
     };
+    const handleOnline = () => {
+      if (!isCurrent()) return;
+      // useDomesticMarketSession refreshes first; its checked_at update resumes quote polling.
+      setError(null);
+    };
 
     document.addEventListener("visibilitychange", handleVisibility);
     window.addEventListener("offline", handleOffline);
+    window.addEventListener("online", handleOnline);
 
     if (
       canNetwork()
@@ -225,6 +232,7 @@ export default function useStockQuote({
       abortRef.current = null;
       document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("online", handleOnline);
     };
   }, [normalizedCode, market, venue, validIdentity, pollIntervalMs]);
 
