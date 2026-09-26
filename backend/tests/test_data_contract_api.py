@@ -703,3 +703,143 @@ def test_data_contract_realtime_marks_stale_snapshot_unverified(
     assert realtime["reason_code"] == "QUOTE_SNAPSHOT_STALE"
     quote_store.clear()
 
+def test_data_contract_realtime_treats_closed_market_snapshot_as_valid_last_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from datetime import datetime, timedelta, timezone
+    from decimal import Decimal
+
+    from app.core.config import Settings
+    from app.market_session.models import DomesticMarketSession
+    from app.quotes.models import QuoteCacheKey, QuoteSnapshot
+    from app.quotes.store import quote_store
+    import app.data_contract.reader as reader_module
+    import app.quotes.service as quote_service_module
+
+    market_db = tmp_path / "market.db"
+    holdings_db = tmp_path / "holdings.db"
+    _create_market_db(market_db)
+    _create_holdings_db(holdings_db)
+    _configure_paths(monkeypatch, market_db, holdings_db)
+
+    settings = Settings(
+        _env_file=None,
+        kis_app_key="app-key",
+        kis_app_secret="app-secret",
+        kis_env="real",
+        kis_quote_freshness_seconds=1.0,
+    )
+    monkeypatch.setattr(quote_service_module, "get_settings", lambda: settings)
+    monkeypatch.setattr(
+        reader_module,
+        "peek_market_session",
+        lambda _venue: DomesticMarketSession(
+            market="DOMESTIC_EQUITY",
+            venue="INTEGRATED",
+            timezone="Asia/Seoul",
+            checked_at="2026-09-25T20:01:00+09:00",
+            local_date="2026-09-25",
+            trading_day=True,
+            phase="CLOSED",
+            quote_polling_allowed=False,
+            market_active=False,
+            next_transition_at=None,
+            source="SESSION_CLOCK",
+            reason_code="MARKET_CLOSED",
+        ),
+    )
+    quote_store.clear()
+    key = QuoteCacheKey(
+        environment="real",
+        credential_fingerprint=quote_service_module.credential_fingerprint(settings),
+        market="KOSPI",
+        ticker="005930",
+        venue="INTEGRATED",
+    )
+    quote_store.put(
+        key,
+        QuoteSnapshot(
+            market="KOSPI",
+            ticker="005930",
+            name="삼성전자",
+            venue="INTEGRATED",
+            provider_market_division="UN",
+            environment="real",
+            current_price=Decimal("84200"),
+            change_amount=Decimal("1200"),
+            change_rate=Decimal("1.45"),
+            change_sign="2",
+            open_price=Decimal("83300"),
+            high_price=Decimal("85000"),
+            low_price=Decimal("82900"),
+            base_price=Decimal("83000"),
+            accumulated_volume=Decimal("12345678"),
+            provider_timestamp=None,
+            received_at=datetime.now(timezone.utc) - timedelta(seconds=30),
+        ),
+    )
+
+    realtime = client.get(
+        "/api/data-contract/stocks/005930",
+        params={"market": "KOSPI"},
+    ).json()["resources"]["realtime"]
+
+    assert realtime["status"] == "VALID"
+    assert realtime["reason_code"] == "MARKET_CLOSED_LAST_SNAPSHOT"
+    assert realtime["session_phase"] == "CLOSED"
+    assert realtime["trading_day"] is True
+    assert realtime["market_active"] is False
+    assert realtime["age_ms"] >= 1_000
+    quote_store.clear()
+
+
+def test_data_contract_realtime_intermission_snapshot_is_valid_last_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.data_contract.builder import _realtime_contract
+    from app.data_contract.models import (
+        ChartCoverageObservation,
+        KnownJobObservation,
+        LedgerObservation,
+        MarketEodObservation,
+        RealtimeQuoteObservation,
+        StockStateObservation,
+        StoredAnalysisObservation,
+    )
+
+    state = StockStateObservation(
+        checked_at="2026-09-25T15:35:00+09:00",
+        market="KOSPI",
+        ticker="005930",
+        eod=MarketEodObservation(True, False, "MARKET_STORE", "KOSPI", "005930"),
+        chart=ChartCoverageObservation(True, False, "MARKET_STORE", "KOSPI", "005930"),
+        analysis=StoredAnalysisObservation(True, False, "HOLDINGS_DB", "KOSPI", "005930"),
+        ledger=LedgerObservation(True, False, "HOLDINGS_DB", "KOSPI", "005930"),
+        realtime=RealtimeQuoteObservation(
+            capable=True,
+            present=True,
+            source="KIS_REST",
+            market="KOSPI",
+            ticker="005930",
+            provider="KIS",
+            mode="SNAPSHOT",
+            venue="INTEGRATED",
+            current_price="84200",
+            received_at="2026-09-25T15:29:58+09:00",
+            age_ms=300_000,
+            freshness_seconds=15.0,
+            session_phase="INTERMISSION",
+            trading_day=True,
+            market_active=False,
+        ),
+        active_job=KnownJobObservation(True, False, "BACKTEST_JOB_MEMORY", None),
+    )
+
+    result = _realtime_contract(state)
+
+    assert result.status == "VALID"
+    assert result.reason_code == "MARKET_INTERMISSION_LAST_SNAPSHOT"
+    assert result.session_phase == "INTERMISSION"
+    assert result.market_active is False
+
