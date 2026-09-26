@@ -55,3 +55,52 @@ export function quoteStatusMessage(
   }
   return "현재가 대기";
 }
+
+
+function quoteTimestamp(value: string | null | undefined) {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isWebSocketQuote(quote: StockQuoteResponse) {
+  return quote.delivery.source === "WEBSOCKET";
+}
+
+export function shouldApplyQuote(
+  current: StockQuoteResponse | null,
+  incoming: StockQuoteResponse,
+) {
+  if (!current) return true;
+
+  const currentProviderTime = quoteTimestamp(current.provider_timestamp);
+  const incomingProviderTime = quoteTimestamp(incoming.provider_timestamp);
+
+  if (currentProviderTime != null && incomingProviderTime != null) {
+    if (incomingProviderTime < currentProviderTime) return false;
+    if (incomingProviderTime === currentProviderTime) {
+      if (isWebSocketQuote(current) && !isWebSocketQuote(incoming)) return false;
+      if (!isWebSocketQuote(current) && isWebSocketQuote(incoming)) return true;
+    }
+  }
+
+  if (
+    isWebSocketQuote(current)
+    && !isWebSocketQuote(incoming)
+    && incomingProviderTime == null
+  ) {
+    return false;
+  }
+
+  if (!isWebSocketQuote(current) && isWebSocketQuote(incoming)) {
+    return true;
+  }
+
+  const currentReceivedAt = quoteTimestamp(current.received_at);
+  const incomingReceivedAt = quoteTimestamp(incoming.received_at);
+  if (currentReceivedAt != null && incomingReceivedAt != null) {
+    return incomingReceivedAt >= currentReceivedAt;
+  }
+
+  return true;
+}
