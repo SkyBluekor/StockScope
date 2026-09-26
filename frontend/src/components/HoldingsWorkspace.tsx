@@ -573,7 +573,6 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
     const requestId = livePerformanceRequestIdRef.current;
     const expectedMarket = detail?.market ?? "";
     const expectedTicker = detail?.ticker ?? "";
-    const expectedQuoteReceivedAt = selectedQuote.received_at;
     const controller = new AbortController();
     livePerformanceAbortRef.current = controller;
     setLivePerformanceError(null);
@@ -1985,7 +1984,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                     )}
                   </div>
   
-                  {performance && displayedPerformance.positions.length > 0 && (
+                  {displayedPerformance && displayedPerformance.positions.length > 0 && (
                     <div className="holdings-pnl-block" aria-label="보유 손익">
                       <div className="holdings-pnl-head">
                         <div>
