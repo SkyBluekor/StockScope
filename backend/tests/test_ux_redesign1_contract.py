@@ -1288,3 +1288,75 @@ def test_realtime2_selected_quote_polling_and_domain_boundaries() -> None:
     assert "getHoldingPerformance(selectedQuote" not in holdings
     assert "selectedAnalysis.reference_price = selectedQuote" not in holdings
 
+def test_realtime3_live_holdings_valuation_boundaries() -> None:
+    performance = Path("backend/app/holdings/performance.py").read_text(encoding="utf-8")
+    live_backend = Path("backend/app/holdings/live_performance.py").read_text(encoding="utf-8")
+    holdings_api = Path("backend/app/api/holdings.py").read_text(encoding="utf-8")
+    frontend_api = Path("frontend/src/services/holdingsApi.ts").read_text(encoding="utf-8")
+    workspace = Path("frontend/src/components/HoldingsWorkspace.tsx").read_text(encoding="utf-8")
+
+    # Existing confirmed-EOD API keeps its original valuation path; live uses injected valuation.
+    assert "def calculate_with_valuation(" in performance
+    assert "return self.calculate_with_valuation(" in performance
+    assert "self._valuation(stock)" in performance
+    assert '@router.get("/stocks/{stock_id}/performance")' in holdings_api
+    assert '@router.get("/stocks/{stock_id}/performance/live")' in holdings_api
+
+    # Live backend is cache/read-only only: no KIS network/token and no schema initialization.
+    assert "ReadOnlyHoldingsCatalog" in live_backend
+    assert 'mode=ro' in live_backend
+    assert "PRAGMA query_only=ON" in live_backend
+    assert "observe_cached_quote" in live_backend
+    for forbidden in (
+        "inquire_domestic_price",
+        "get_access_token",
+        "issue_access_token",
+        ".initialize(",
+        "INSERT ",
+        "UPDATE ",
+        "DELETE ",
+    ):
+        assert forbidden not in live_backend
+
+    # The same Decimal performance result is reused instead of duplicating finance formulas.
+    assert "calculate_with_valuation(" in live_backend
+    assert 'source="KIS_REST_SNAPSHOT"' in live_backend
+    assert "current_quantity *" not in live_backend
+    assert "unrealized_pnl =" not in live_backend
+
+    # Frontend receives backend-calculated performance and does not poll it independently.
+    assert "export type LiveHoldingPerformanceResponse" in frontend_api
+    assert "export function getLiveHoldingPerformance(" in frontend_api
+    assert "/performance/live" in frontend_api
+    assert "const [livePerformance, setLivePerformance]" in workspace
+    assert "selectedQuote?.received_at" in workspace
+    assert "getLiveHoldingPerformance(stockId" in workspace
+
+    live_effect_start = workspace.index("void getLiveHoldingPerformance(stockId")
+    live_effect_end = workspace.index("selectedStockIdRef.current = selectedStockId", live_effect_start)
+    live_effect = workspace[live_effect_start:live_effect_end]
+    assert "setInterval" not in live_effect
+    assert "setTimeout" not in live_effect
+    assert "livePerformanceRequestIdRef" in live_effect
+    assert "livePerformanceAbortRef" in live_effect
+
+    # Quote values are never multiplied into ledger values in React.
+    assert "selectedQuote.current_price" not in workspace
+    assert "selectedQuote?.current_price" not in workspace
+    assert "quote.current_price *" not in workspace
+    assert "current_price * quantity" not in workspace
+
+    # Live performance is selected-detail only and preserves the confirmed fallback.
+    assert "detail?.is_held" in workspace
+    assert "detail.positions.length > 0" in workspace
+    assert "const displayedPerformance = usingLivePerformance" in workspace
+    assert ": performance;" in workspace
+    assert "확정 종가" in workspace
+    assert "KIS 현재가" in workspace
+    assert "KIS Snapshot" in workspace
+
+    # Ledger mutations refresh the local live calculation, while analysis/management semantics stay separate.
+    assert workspace.count("setLivePerformanceRefreshKey((value) => value + 1)") >= 3
+    assert "selectedAnalysis.reference_price = selectedQuote" not in workspace
+    assert "management.valuation.price = selectedQuote" not in workspace
+
