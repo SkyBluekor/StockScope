@@ -5,6 +5,7 @@ import useStockDataContract from "../hooks/useStockDataContract";
 import useStockQuote from "../hooks/useStockQuote";
 import { analysisContractMessage, dataContractStatusLabel, dataContractTone } from "../services/dataContract";
 import { quoteReceivedTime } from "../services/quote";
+import { marketSessionIsPaused } from "../services/marketSession";
 import HoldingsPriceChart from "./HoldingsPriceChart";
 import StockNewsPanel from "./StockNewsPanel";
 import StockQuoteStrip from "./StockQuoteStrip";
@@ -549,6 +550,8 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
     refreshing: selectedQuoteRefreshing,
     error: selectedQuoteError,
     refresh: refreshSelectedQuote,
+    marketSession: selectedMarketSession,
+    marketSessionLoading: selectedMarketSessionLoading,
   } = useStockQuote({
     code: detail?.ticker ?? "",
     market: detail?.market === "KOSDAQ" ? "KOSDAQ" : "KOSPI",
@@ -1595,6 +1598,10 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
     ? livePerformance?.performance ?? performance
     : performance;
   const liveQuoteTime = quoteReceivedTime(livePerformance?.quote?.received_at);
+  const selectedMarketPaused = marketSessionIsPaused(selectedMarketSession?.phase);
+  const selectedMarketPauseLabel = selectedMarketSession?.phase === "INTERMISSION"
+    ? "시장 전환 구간"
+    : "장 마감";
 
   const selectedAnalysisContract = selectedDataContract?.resources.analysis_result ?? null;
   const selectedLedgerContract = selectedDataContract?.resources.ledger ?? null;
@@ -1906,6 +1913,8 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                 state={selectedQuoteState}
                 refreshing={selectedQuoteRefreshing}
                 error={selectedQuoteError}
+                marketSession={selectedMarketSession}
+                marketSessionLoading={selectedMarketSessionLoading}
                 onRefresh={refreshSelectedQuote}
               />
 
@@ -2093,9 +2102,11 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                         </div>
                         <span className={usingLivePerformance && livePerformance?.state === "STALE" ? "holdings-pnl-live-basis stale" : "holdings-pnl-live-basis"}>
                           {usingLivePerformance && livePerformance?.quote
-                            ? livePerformance.state === "STALE"
-                              ? `마지막 KIS 시세 · ${liveQuoteTime ?? "-"} 수신 · 갱신 지연`
-                              : `KIS 현재가 · ${liveQuoteTime ?? "-"} 수신 · 스냅샷`
+                            ? selectedMarketPaused
+                              ? `마지막 KIS 시세 · ${liveQuoteTime ?? "-"} 수신 · ${selectedMarketPauseLabel}`
+                              : livePerformance.state === "STALE"
+                                ? `마지막 KIS 시세 · ${liveQuoteTime ?? "-"} 수신 · 갱신 지연`
+                                : `KIS 현재가 · ${liveQuoteTime ?? "-"} 수신 · 스냅샷`
                             : displayedPerformance.valuation.available && displayedPerformance.valuation.market_date
                               ? `${compactDate(displayedPerformance.valuation.market_date)} 확정 종가 기준`
                               : "최신 확정 가격 없음"}
@@ -2197,9 +2208,11 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                         </span>
                         {liveManagementProximity?.available && liveManagementProximity.quote && (
                           <span className={liveManagementProximity.state === "STALE" ? "holdings-management-live-basis stale" : "holdings-management-live-basis"}>
-                            {liveManagementProximity.state === "STALE"
-                              ? `현재가 거리 · 마지막 KIS 시세 ${liveManagementQuoteTime ?? "-"} · 갱신 지연`
-                              : `현재가 거리 · KIS ${liveManagementQuoteTime ?? "-"} 수신`}
+                            {selectedMarketPaused
+                              ? `현재가 거리 · 마지막 KIS 시세 ${liveManagementQuoteTime ?? "-"} · ${selectedMarketPauseLabel}`
+                              : liveManagementProximity.state === "STALE"
+                                ? `현재가 거리 · 마지막 KIS 시세 ${liveManagementQuoteTime ?? "-"} · 갱신 지연`
+                                : `현재가 거리 · KIS ${liveManagementQuoteTime ?? "-"} 수신`}
                           </span>
                         )}
                       </div>
