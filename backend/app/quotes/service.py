@@ -170,6 +170,8 @@ class QuoteService:
         *,
         ttl_seconds: float,
     ) -> QuoteSnapshot | None:
+        if ttl_seconds <= 0:
+            return None
         snapshot = self.store.peek(key)
         if snapshot is None:
             return None
@@ -272,6 +274,7 @@ class QuoteService:
             )
             try:
                 replacement = self.token_getter(settings)
+                self._acquire_rate_slot(self._min_upstream_interval(settings))
                 quote = self._fetch_once(
                     settings=settings,
                     ticker=ticker,
