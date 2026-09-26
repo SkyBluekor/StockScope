@@ -258,7 +258,8 @@ export default function useStockQuote({
       closeStream();
       setStream("CONNECTING");
 
-      const source = openStockQuoteStream(
+      let source: EventSource;
+      source = openStockQuoteStream(
         normalizedCode,
         market,
         venue,
