@@ -366,6 +366,26 @@ export type HoldingPerformanceResponse = {
   warnings: string[];
 };
 
+export type LiveHoldingPerformanceResponse = {
+  stock_id: string;
+  market: string;
+  ticker: string;
+  available: boolean;
+  state: "FRESH" | "STALE" | "UNAVAILABLE";
+  reason_code: string | null;
+  quote: {
+    provider: string;
+    mode: string;
+    venue: string;
+    price: string;
+    provider_timestamp: string | null;
+    received_at: string;
+    age_ms: number;
+    freshness_seconds: number;
+  } | null;
+  performance: HoldingPerformanceResponse | null;
+};
+
 type ApiErrorBody = {
   detail?: string | ApiErrorDetail;
 };
@@ -534,6 +554,16 @@ export function getHoldingPerformance(
 ): Promise<HoldingPerformanceResponse> {
   return requestJson<HoldingPerformanceResponse>(
     `/api/holdings/stocks/${encodeURIComponent(stockId)}/performance`,
+    { signal: options.signal },
+  );
+}
+
+export function getLiveHoldingPerformance(
+  stockId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<LiveHoldingPerformanceResponse> {
+  return requestJson<LiveHoldingPerformanceResponse>(
+    `/api/holdings/stocks/${encodeURIComponent(stockId)}/performance/live`,
     { signal: options.signal },
   );
 }
