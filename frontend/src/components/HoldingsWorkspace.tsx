@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { searchStocks, type StockSearchItem } from "../services/api";
 import { readHoldingsViewContext, writeHoldingsViewContext } from "../services/uiSession";
+import useStockDataContract from "../hooks/useStockDataContract";
+import { analysisContractMessage, dataContractStatusLabel, dataContractTone } from "../services/dataContract";
 import HoldingsPriceChart from "./HoldingsPriceChart";
 import StockNewsPanel from "./StockNewsPanel";
 import {
@@ -512,6 +514,19 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
   const detailAbortRef = useRef<AbortController | null>(null);
   const addSearchRequestIdRef = useRef(0);
 
+  const {
+    contract: selectedDataContract,
+    loading: selectedDataContractBusy,
+    error: selectedDataContractError,
+    refresh: refreshSelectedDataContract,
+  } = useStockDataContract({
+    code: detail?.ticker ?? "",
+    market: detail?.market === "KOSDAQ" ? "KOSDAQ" : "KOSPI",
+    enabled: Boolean(detail && selectedStockId === detail.stock_id),
+  });
+  const contractRefreshRef = useRef(refreshSelectedDataContract);
+  contractRefreshRef.current = refreshSelectedDataContract;
+
   selectedStockIdRef.current = selectedStockId;
 
   async function reloadStocks(
@@ -795,6 +810,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
       if (selectedStockIdRef.current === targetStockId) {
         await loadSelected(targetStockId);
         setChartRefreshKey((value) => value + 1);
+        await contractRefreshRef.current();
         const dateLabel = compactDate(result.market_date);
         setMessage(
           result.data_freshness.status === "UPDATED"
@@ -844,6 +860,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
         setHistoryProgress({ type: "progress", stage: "refresh", message: "화면을 갱신하고 있습니다." });
         await loadSelected(targetStockId);
         setChartRefreshKey((value) => value + 1);
+        await contractRefreshRef.current();
         const prepared = result.history_prepare;
         const preparedText = prepared && prepared.prepared_rows > 0
           ? `과거 가격 ${prepared.prepared_rows}거래일을 추가로 준비하고 `
@@ -878,7 +895,10 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
       const result = await syncKisHoldings();
       await reloadStocks(null, "preserve-current");
       const currentStockId = selectedStockIdRef.current;
-      if (currentStockId) await loadSelected(currentStockId);
+      if (currentStockId) {
+        await loadSelected(currentStockId);
+        await contractRefreshRef.current();
+      }
       setMessage(`잔고 동기화 완료 · 확인 ${result.holding_count}종목`);
     } catch (syncError) {
       setError(readableError(syncError, "한국투자증권 잔고 동기화에 실패했습니다."));
@@ -1196,6 +1216,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
       setQuickEditBaseValue("");
       setQuickZeroConfirm(false);
       await Promise.all([reloadStocks(detail.stock_id), loadSelected(detail.stock_id)]);
+      await contractRefreshRef.current();
       window.requestAnimationFrame(() => {
         holdingOverviewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       });
@@ -1340,6 +1361,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
       }
       setManualOpen(false);
       await Promise.all([reloadStocks(detail.stock_id), loadSelected(detail.stock_id)]);
+      await contractRefreshRef.current();
       window.requestAnimationFrame(() => {
         holdingOverviewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       });
@@ -1360,6 +1382,9 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
   }
 
   const selectedAnalysis = detail?.current_analysis ?? null;
+  const selectedAnalysisContract = selectedDataContract?.resources.analysis_result ?? null;
+  const selectedLedgerContract = selectedDataContract?.resources.ledger ?? null;
+  const selectedAnalysisContractMessage = analysisContractMessage(selectedDataContract);
   const detailPerspective: "watch" | "held" = stockFilter === "held"
     ? "held"
     : stockFilter === "watch"
@@ -1660,6 +1685,38 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                     </button>
                   )}
                 </div>
+              </div>
+
+              <div className="holdings-data-state" aria-live="polite">
+                <div className="holdings-analysis-state">
+                  <span>저장된 분석</span>
+                  <strong className={selectedAnalysisContract ? `tone-${dataContractTone(selectedAnalysisContract.status)}` : ""}>
+                    {selectedDataContractBusy && !selectedAnalysisContract
+                      ? "확인 중"
+                      : selectedAnalysisContract
+                        ? dataContractStatusLabel(selectedAnalysisContract.status)
+                        : "상태 미확인"}
+                  </strong>
+                  <small>{selectedAnalysisContractMessage ?? "선택 종목의 저장 분석 상태를 확인합니다."}</small>
+                </div>
+                <div className="holdings-analysis-state">
+                  <span>보유 원장</span>
+                  <strong className={selectedLedgerContract ? `tone-${dataContractTone(selectedLedgerContract.status)}` : ""}>
+                    {selectedLedgerContract ? dataContractStatusLabel(selectedLedgerContract.status) : "상태 미확인"}
+                  </strong>
+                  <small>
+                    {selectedLedgerContract?.status === "VALID"
+                      ? `open position ${selectedLedgerContract.open_position_count}개 · 원장 확인됨`
+                      : selectedLedgerContract?.status === "ABSENT"
+                        ? "현재 open position이 없습니다."
+                        : "원장 상태를 현재 화면 값과 별도로 확인합니다."}
+                  </small>
+                </div>
+                {selectedDataContractError && (
+                  <button type="button" className="holdings-text-button" onClick={() => void contractRefreshRef.current()}>
+                    데이터 상태 다시 확인
+                  </button>
+                )}
               </div>
 
               {historyRecovery?.stockId === detail.stock_id && (
@@ -2112,6 +2169,8 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
 
               <HoldingsPriceChart
                 stockId={detail.stock_id}
+                market={detail.market === "KOSDAQ" ? "KOSDAQ" : "KOSPI"}
+                ticker={detail.ticker}
                 analysis={selectedAnalysis}
                 refreshKey={chartRefreshKey}
                 decisionContext={detail.decision_context}
