@@ -400,7 +400,7 @@ function CandidateCompareRow({
               onRegisterHeld();
             }}
           >
-            {heldBusy ? "등록 중..." : "+ 보유"}
+            {heldBusy ? "등록 중..." : "+ 기존 보유"}
           </button>
         )}
       </span>
@@ -420,9 +420,6 @@ function CandidateDetail({
   managedStock,
   holdingsLoading,
   holdingsReady,
-  holdingActionBusyKey,
-  onAddWatch,
-  onRegisterHeld,
   onOpenHoldings,
 }: {
   candidate: ScannerCandidate;
@@ -435,9 +432,6 @@ function CandidateDetail({
   managedStock: HoldingStock | null;
   holdingsLoading: boolean;
   holdingsReady: boolean;
-  holdingActionBusyKey: string | null;
-  onAddWatch: () => void;
-  onRegisterHeld: () => void;
   onOpenHoldings?: () => void;
 }) {
   const tone = candidateTone(candidate);
@@ -452,9 +446,6 @@ function CandidateDetail({
     || (topMissing.length > 0 ? topMissing.slice(0, 2).map((item) => item.label).join(" · ") : "현재 조건이 유지되는지 확인하세요.");
   const isWatched = managedStock?.watch_enabled === true;
   const isHeld = managedStock?.is_held === true;
-  const key = candidateKey(candidate);
-  const watchBusy = holdingActionBusyKey === `watch:${key}`;
-  const heldBusy = holdingActionBusyKey === `held:${key}`;
 
   return (
     <article className={`scanner-selected-detail tone-${tone}`}>
@@ -591,6 +582,14 @@ function CandidateDetail({
             </div>
           )}
         </div>
+        {evidence && !evidence.verified && canPrepareEvidence && (
+          <div className="scanner-evidence-recovery-inline">
+            <span>3년 검증에 필요한 과거 데이터가 부족합니다.</span>
+            <button type="button" onClick={onPrepareEvidence} disabled={evidenceBusy}>
+              {evidenceBusy ? "데이터 준비 중..." : "3년 근거 데이터 준비"}
+            </button>
+          </div>
+        )}
         {evidence && (
           <details
             className="scanner-evidence-details"
@@ -634,12 +633,7 @@ function CandidateDetail({
                 <span>검증 기간 · {formatDate(evidence.period.start)} ~ {formatDate(evidence.period.end)}</span>
                 {evidence.warnings.length > 0 && <small>확인 내용 · {evidence.warnings.join(" · ")}</small>}
                 {canPrepareEvidence && (
-                  <div className="scanner-evidence-recovery">
-                    <p>과거 데이터가 부족해 검증을 완료하지 못했습니다. 필요한 시장 데이터를 준비한 뒤 같은 후보를 다시 검증할 수 있습니다.</p>
-                    <button type="button" onClick={onPrepareEvidence} disabled={evidenceBusy}>
-                      {evidenceBusy ? "데이터 준비 중..." : "3년 검증 데이터 준비"}
-                    </button>
-                  </div>
+                  <p className="scanner-evidence-recovery-note">필요한 과거 데이터를 준비하면 같은 후보를 다시 검증할 수 있습니다.</p>
                 )}
               </div>
             )}
@@ -680,41 +674,31 @@ function CandidateDetail({
           <strong>{candidate.user_action.title || "현재 판단을 유지하세요."}</strong>
           <p>{candidate.user_action.detail}</p>
         </div>
-        <div className="scanner-selected-action-buttons">
-          <button type="button" className="scanner-detail-button" onClick={onAnalyze}>이 종목 자세히 분석</button>
-          {holdingsLoading ? (
-            <span className="scanner-manage-state loading">내 종목 상태 확인 중</span>
-          ) : !holdingsReady ? (
-            <span className="scanner-manage-state loading">내 종목 상태 확인 필요</span>
-          ) : isWatched ? (
-            <span className="scanner-manage-state watched">★ 관심 등록됨</span>
-          ) : (
-            <button
-              type="button"
-              className="scanner-manage-button watch"
-              onClick={onAddWatch}
-              disabled={Boolean(holdingActionBusyKey)}
-            >
-              {watchBusy ? "추가 중..." : "☆ 관심 추가"}
-            </button>
-          )}
-          {holdingsReady && !holdingsLoading && (isHeld ? (
-            <span className="scanner-manage-state held">보유 중</span>
-          ) : (
-            <button
-              type="button"
-              className="scanner-manage-button held"
-              onClick={onRegisterHeld}
-              disabled={Boolean(holdingActionBusyKey)}
-            >
-              {heldBusy ? "등록 중..." : "+ 보유 등록"}
-            </button>
-          ))}
+        <div className="scanner-selected-action-buttons simplified">
+          <div className="scanner-selected-management-summary">
+            <small>내 종목</small>
+            <strong>
+              {holdingsLoading
+                ? "등록 상태 확인 중"
+                : !holdingsReady
+                  ? "등록 상태 확인 필요"
+                  : isHeld && isWatched
+                    ? "보유 중 · 관심 종목"
+                    : isHeld
+                      ? "보유 중"
+                      : isWatched
+                        ? "★ 관심 등록됨"
+                        : "미등록"}
+            </strong>
+          </div>
           {holdingsReady && (isWatched || isHeld) && onOpenHoldings && (
-            <button type="button" className="scanner-manage-button open" onClick={onOpenHoldings}>
-              내 종목에서 보기
+            <button type="button" className="scanner-text-action" onClick={onOpenHoldings}>
+              내 종목 관리 →
             </button>
           )}
+          <button type="button" className="scanner-text-action" onClick={onAnalyze}>
+            전문 분석에서 더 보기 →
+          </button>
         </div>
       </footer>
 
@@ -761,6 +745,8 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
   const lastProgressAtRef = useRef<number | null>(null);
   const lastProgressSignatureRef = useRef("");
   const preferredCandidateKeyRef = useRef<string | null>(null);
+  const scannerSelectionToPreserveRef = useRef<string | null>(null);
+  const holdingsLoadRequestIdRef = useRef(0);
   const savedScrollRef = useRef(initialSession?.scrollY ?? 0);
   const didRestoreScrollRef = useRef(false);
   const didResumeJobRef = useRef(false);
@@ -778,6 +764,31 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
     && preferredCandidateKeyRef.current
     && (job?.stage === "queued" || String(job?.stage || "").startsWith("evidence_")),
   );
+
+  async function loadManagedStocks() {
+    if (!result) {
+      setManagedStocks([]);
+      setHoldingsReady(false);
+      setHoldingsLoading(false);
+      return;
+    }
+    const requestId = ++holdingsLoadRequestIdRef.current;
+    setHoldingsLoading(true);
+    setHoldingsReady(false);
+    setHoldingError(null);
+    try {
+      const stocks = await listHoldingStocks();
+      if (requestId !== holdingsLoadRequestIdRef.current) return;
+      setManagedStocks(stocks);
+      setHoldingsReady(true);
+    } catch (loadError) {
+      if (requestId !== holdingsLoadRequestIdRef.current) return;
+      setHoldingsReady(false);
+      setHoldingError(loadError instanceof Error ? loadError.message : "내 종목 등록 상태를 불러오지 못했습니다.");
+    } finally {
+      if (requestId === holdingsLoadRequestIdRef.current) setHoldingsLoading(false);
+    }
+  }
 
   useEffect(() => {
     // TRACK.1.10.1: accept Scanner results completed from another entry point
@@ -798,32 +809,15 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
 
   useEffect(() => {
     if (!result) {
+      holdingsLoadRequestIdRef.current += 1;
       setManagedStocks([]);
       setHoldingsReady(false);
+      setHoldingsLoading(false);
       return undefined;
     }
-    let cancelled = false;
-    setHoldingsLoading(true);
-    setHoldingsReady(false);
-    setHoldingError(null);
-    void listHoldingStocks()
-      .then((stocks) => {
-        if (!cancelled) {
-          setManagedStocks(stocks);
-          setHoldingsReady(true);
-        }
-      })
-      .catch((loadError) => {
-        if (!cancelled) {
-          setHoldingsReady(false);
-          setHoldingError(loadError instanceof Error ? loadError.message : "내 종목 등록 상태를 불러오지 못했습니다.");
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setHoldingsLoading(false);
-      });
+    void loadManagedStocks();
     return () => {
-      cancelled = true;
+      holdingsLoadRequestIdRef.current += 1;
     };
   }, [result?.generated_at]);
 
@@ -991,7 +985,7 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
       if (latest.status === "completed" && latest.result) {
         const completedAtValue = Date.now();
         const latestCandidates = [...latest.result.candidates, ...latest.result.more_candidates];
-        const preferredKey = preferredCandidateKeyRef.current;
+        const preferredKey = preferredCandidateKeyRef.current ?? scannerSelectionToPreserveRef.current;
         const preferredCandidate = preferredKey
           ? latestCandidates.find((candidate) => candidateKey(candidate) === preferredKey) ?? null
           : null;
@@ -1019,6 +1013,7 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
         setRestoredFromSession(false);
         savedScrollRef.current = window.scrollY;
         preferredCandidateKeyRef.current = null;
+        scannerSelectionToPreserveRef.current = null;
         clearActiveDataTask();
         return;
       }
@@ -1039,10 +1034,12 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
             ? "3년 검증 데이터 준비 또는 재분석 중 오류가 발생했습니다."
             : "종목 찾기 중 오류가 발생했습니다."));
         }
+        scannerSelectionToPreserveRef.current = null;
         clearActiveDataTask();
         return;
       }
       if (latest.status === "cancelled") {
+        scannerSelectionToPreserveRef.current = null;
         clearActiveDataTask();
         return;
       }
@@ -1063,6 +1060,7 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
     pinnedAsOfDate: string | null = null,
   ) {
     if (busy) return;
+    scannerSelectionToPreserveRef.current = result && selectedCandidateKey ? selectedCandidateKey : null;
     preferredCandidateKeyRef.current = null;
     if (pollRef.current != null) window.clearTimeout(pollRef.current);
     setError(null);
@@ -1122,6 +1120,7 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
 
   async function prepareCandidateEvidence(candidate: ScannerCandidate) {
     if (busy || !result) return;
+    scannerSelectionToPreserveRef.current = null;
     if (pollRef.current != null) window.clearTimeout(pollRef.current);
     setError(null);
     setFreshnessFailure(null);
@@ -1238,7 +1237,7 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
       return;
     }
     if (!effectiveAt) {
-      setHoldingError("매수 시점을 확인해주세요.");
+      setHoldingError("보유 상태 기준 시각을 확인해주세요.");
       return;
     }
 
@@ -1258,11 +1257,11 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
       upsertManagedStock(response.stock);
       setHoldingDialogCandidate(null);
       setHoldingNotice({
-        message: `${candidate.name}을(를) ${formatNumber(quantity)}주 보유 종목으로 등록했습니다.`,
+        message: `${candidate.name}을(를) ${formatNumber(quantity)}주 기존 보유 상태로 등록했습니다.`,
         candidate,
       });
     } catch (heldError) {
-      setHoldingError(heldError instanceof Error ? heldError.message : "보유 종목을 등록하지 못했습니다.");
+      setHoldingError(heldError instanceof Error ? heldError.message : "기존 보유 상태를 등록하지 못했습니다.");
     } finally {
       setHoldingActionBusyKey(null);
     }
@@ -1382,6 +1381,7 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
   const analysisDataDate = analysisDateResolution.date;
   const analysisDateMismatch = Boolean(result && !analysisDateResolution.aligned);
   const restoredOnDifferentDay = Boolean(initialSession && restoredFromSession && localDateKey(initialSession.completedAt) !== localDateKey());
+  const needsFreshnessCheck = Boolean(restoredOnDifferentDay || analysisDateMismatch);
   const allCandidates = useMemo(
     () => result ? [...result.candidates, ...result.more_candidates] : [],
     [result],
@@ -1467,12 +1467,12 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
             )}
           </div>
           <div className="scanner-freshness-actions">
-            <button type="button" onClick={() => void runScanner(Boolean(result))}>다시 시도</button>
+            <button type="button" onClick={() => void runScanner(false)}>다시 시도</button>
             {freshnessFailure.fallback_allowed && freshnessFailure.available_data_date && (
               <button
                 type="button"
                 className="secondary"
-                onClick={() => void runScanner(Boolean(result), false, freshnessFailure.available_data_date)}
+                onClick={() => void runScanner(false, false, freshnessFailure.available_data_date)}
               >
                 {formatDate(freshnessFailure.available_data_date)} 기준으로 분석
               </button>
@@ -1614,7 +1614,7 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
         <section className="scanner-error-card">
           <strong>{result ? "새 분석을 완료하지 못했습니다. 기존 결과를 유지합니다." : "종목 찾기를 완료하지 못했습니다."}</strong>
           <p>{error}</p>
-          <button type="button" onClick={() => void runScanner(Boolean(result))}>다시 시도</button>
+          <button type="button" onClick={() => void runScanner(false)}>다시 시도</button>
         </section>
       )}
 
@@ -1642,7 +1642,7 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
             <div className="scanner-analysis-date">
               <span>분석 기준일</span>
               <strong>{analysisDataDate ? `${formatDate(analysisDataDate)} 확정 일봉` : "확정 일봉 확인 필요"}</strong>
-              {analysisDateMismatch && <small>저장된 시장별 날짜가 달라 다시 분석해야 합니다.</small>}
+              {analysisDateMismatch && <small>시장별 분석 기준일이 일치하지 않습니다.</small>}
             </div>
             <div className="scanner-cache-note">
               {result.scanner_cache_hit ? "오늘 계산한 결과를 바로 재사용했습니다." : `KRX 신규 요청 ${result.diagnostics.network_requests}회 · 시장 저장 데이터 재사용 ${result.diagnostics.market_store_reused_items}건`}
@@ -1655,9 +1655,14 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
               </div>
               <p>
                 {restoredOnDifferentDay
-                  ? "브라우저 날짜가 바뀌었습니다. 새 확정 일봉이 생겼다면 ‘다시 분석’으로 갱신하세요."
+                  ? "브라우저 날짜가 바뀌었습니다. 새 확정 일봉이 있는지 확인할 수 있습니다."
                   : "상세 분석 후 종목 찾기로 돌아와도 같은 결과를 다시 계산하지 않습니다."}
               </p>
+              {needsFreshnessCheck && (
+                <button type="button" className="scanner-freshness-check-button" onClick={() => void runScanner(false)} disabled={busy}>
+                  최신 확정 시세 확인
+                </button>
+              )}
             </div>
           </section>
 
@@ -1673,7 +1678,7 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
                   ))}
                 </div>
               </div>
-              <button type="button" onClick={() => void runScanner(true, true)} disabled={busy}>시장 데이터 준비 시작 · 약 {formatNumber(preparationRequests)}회</button>
+              <button type="button" onClick={() => void runScanner(true, true)} disabled={busy}>누락 시장 데이터 준비 · 약 {formatNumber(preparationRequests)}회</button>
             </section>
           )}
 
@@ -1683,15 +1688,28 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
               <h2>{result.candidates.length > 0 ? `${result.candidates.length}개를 먼저 확인하세요.` : noAnalyzedData ? "아직 후보를 판단하지 못했습니다." : "현재 조건에 맞는 후보가 없습니다."}</h2>
               <p>순위는 상승 확률이 아닙니다. 현재 조건을 먼저 보고 Risk, 실제 진입 기준까지의 거리, 같은 전략의 3년 과거 근거 순으로 비교해 먼저 확인할 순서를 정합니다.</p>
             </div>
-            <button type="button" className="scanner-refresh-button" onClick={() => void runScanner(true)} disabled={busy}>다시 분석</button>
           </section>
+
+          <details className="scanner-run-options">
+            <summary>분석 실행 옵션</summary>
+            <div>
+              <strong>강제 재계산</strong>
+              <p>현재 저장된 Scanner 계산 결과를 사용하지 않고 같은 조건을 다시 계산합니다.</p>
+              <button type="button" onClick={() => void runScanner(true)} disabled={busy}>강제 재계산</button>
+            </div>
+          </details>
 
           {(holdingNotice || (holdingError && !holdingDialogCandidate)) && (
             <div className={`scanner-holdings-notice ${holdingError ? "error" : "success"}`} role="status">
               <span>{holdingError ?? holdingNotice?.message}</span>
               {holdingNotice && onOpenHoldings && (
                 <button type="button" onClick={() => openCandidateInHoldings(holdingNotice.candidate)}>
-                  내 종목에서 보기
+                  내 종목 관리
+                </button>
+              )}
+              {holdingError && !holdingDialogCandidate && (
+                <button type="button" onClick={() => void loadManagedStocks()} disabled={holdingsLoading}>
+                  {holdingsLoading ? "확인 중..." : "등록 상태 다시 확인"}
                 </button>
               )}
               <button
@@ -1786,9 +1804,6 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
                   managedStock={managedStockMap.get(candidateKey(selectedCandidate)) ?? null}
                   holdingsLoading={holdingsLoading}
                   holdingsReady={holdingsReady}
-                  holdingActionBusyKey={holdingActionBusyKey}
-                  onAddWatch={() => void addCandidateToWatch(selectedCandidate)}
-                  onRegisterHeld={() => openHoldingRegistration(selectedCandidate)}
                   onOpenHoldings={onOpenHoldings ? () => openCandidateInHoldings(selectedCandidate) : undefined}
                 />
               )}
@@ -1845,13 +1860,13 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
           >
             <header>
               <div>
-                <span>보유 종목 등록</span>
+                <span>기존 보유 등록</span>
                 <h3 id="scanner-holding-dialog-title">{holdingDialogCandidate.name}</h3>
                 <p>{holdingDialogCandidate.market} · {holdingDialogCandidate.code}</p>
               </div>
               <button
                 type="button"
-                aria-label="보유 종목 등록 닫기"
+                aria-label="기존 보유 등록 닫기"
                 disabled={Boolean(holdingActionBusyKey)}
                 onClick={() => setHoldingDialogCandidate(null)}
               >
@@ -1908,13 +1923,17 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
             </label>
 
             <label className="scanner-holding-field">
-              <span>매수 시점</span>
+              <span>보유 상태 기준 시각</span>
               <input
                 type="datetime-local"
                 value={holdingEffectiveAt}
                 onChange={(event) => setHoldingEffectiveAt(event.target.value)}
               />
             </label>
+
+            <p className="scanner-holding-opening-note">
+              이미 보유 중인 수량과 평균단가를 StockScope의 시작 보유 상태로 등록합니다. 새로운 매수 기록(BUY)을 생성하는 기능이 아닙니다.
+            </p>
 
             {holdingError && <p className="scanner-holding-dialog-error">{holdingError}</p>}
 
@@ -1933,7 +1952,7 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
                 disabled={Boolean(holdingActionBusyKey)}
                 onClick={() => void submitHoldingRegistration()}
               >
-                {holdingActionBusyKey?.startsWith("held:") ? "등록 중..." : "보유 종목 등록"}
+                {holdingActionBusyKey?.startsWith("held:") ? "등록 중..." : "기존 보유 등록"}
               </button>
             </footer>
           </section>
