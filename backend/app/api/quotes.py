@@ -132,7 +132,11 @@ async def stock_quote_stream(
 
     async def event_stream():
         loop = asyncio.get_running_loop()
-        next_heartbeat = loop.time()
+        try:
+            quote_websocket_manager.touch_demand(key)
+        except Exception:
+            pass
+        next_heartbeat = loop.time() + _HEARTBEAT_SECONDS
         last_status: tuple[object, ...] | None = None
         last_quote: tuple[object, ...] | None = None
         try:
@@ -146,8 +150,7 @@ async def stock_quote_stream(
                         quote_websocket_manager.touch_demand(key)
                     except Exception:
                         pass
-                    if next_heartbeat != now:
-                        yield ": heartbeat\n\n"
+                    yield ": heartbeat\n\n"
                     next_heartbeat = now + _HEARTBEAT_SECONDS
 
                 status = _stream_status(key)
