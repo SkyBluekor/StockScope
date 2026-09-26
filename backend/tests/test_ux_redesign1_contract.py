@@ -1089,3 +1089,90 @@ def test_pre_j8_basis_and_async_safety_contracts() -> None:
     assert 'await reloadStocks(null, "preserve-current")' in holdings
     assert "const currentStockId = selectedStockIdRef.current" in holdings
 
+def test_j8_3_frontend_data_contract_integration() -> None:
+    api = Path("frontend/src/services/api.ts").read_text(encoding="utf-8")
+    hook = Path("frontend/src/hooks/useStockDataContract.ts").read_text(encoding="utf-8")
+    helper = Path("frontend/src/services/dataContract.ts").read_text(encoding="utf-8")
+    app = Path("frontend/src/App.tsx").read_text(encoding="utf-8")
+    workspace = Path("frontend/src/components/StockAnalysisWorkspace.tsx").read_text(encoding="utf-8")
+    stock_chart = Path("frontend/src/components/StockAnalysisPriceChart.tsx").read_text(encoding="utf-8")
+    holdings = Path("frontend/src/components/HoldingsWorkspace.tsx").read_text(encoding="utf-8")
+    holdings_chart = Path("frontend/src/components/HoldingsPriceChart.tsx").read_text(encoding="utf-8")
+
+    # Public client consumes J-8.2 read-only contract and preserves the four-state vocabulary.
+    assert 'export type DataContractResourceStatus = "ABSENT" | "UNVERIFIED" | "VALID" | "INVALID"' in api
+    assert "export type StockDataContract =" in api
+    assert "export async function fetchStockDataContract(" in api
+    assert "/api/data-contract/stocks/" in api
+    assert 'query.set("range", options.range)' in api
+    assert 'query.set("job_id", options.jobId.trim())' in api
+    assert "signal: options.signal" in api
+
+    # Hook invalidates stale requests instead of allowing stock A to overwrite stock B.
+    assert "const generationRef = useRef(0)" in hook
+    assert "const abortRef = useRef<AbortController | null>(null)" in hook
+    assert "const generation = ++generationRef.current" in hook
+    assert "abortRef.current?.abort()" in hook
+    assert "generation !== generationRef.current" in hook
+    assert "controller.signal.aborted" in hook
+
+    # UNVERIFIED remains a neutral currentness limitation, not an error or auto-refresh loop.
+    assert 'case "UNVERIFIED": return "현재성 확인 제한"' in helper
+    assert "저장 결과 있음 · 현재 입력 기준과 완전 일치 여부는 확인하지 않았습니다." in helper
+    assert "refreshHoldingAnalysis" not in helper
+    assert "prepareStockChartWithProgress" not in helper
+
+    # App reads the contract independently from session Strategy results.
+    assert "useStockDataContract({" in app
+    assert "contract: stockDataContract" in app
+    assert "strategyAnalysis" in app
+    assert "dataContract={stockDataContract}" in app
+    assert "setStrategyAnalysis(null)" not in app[app.index("contract: stockDataContract"):app.index("const analysisInputSignature")]
+
+    # Analysis UI explicitly labels stored server analysis separately from the session Strategy result.
+    assert "저장된 분석 상태" in workspace
+    assert "서버에 저장된 Holdings 분석 상태를 별도로 확인합니다." in workspace
+    assert "stock-analysis-data-state" in workspace
+    assert "strategyAnalysis" in workspace
+
+    # Chart preparation is contract-authorized and user initiated; no mount-time POST was added.
+    assert 'contractAction(dataContract, "PREPARE_CHART")' in stock_chart
+    assert "if (preparing || !prepareChartAction) return" in stock_chart
+    assert 'onClick={() => void prepareRange()}' in stock_chart
+    effect_start = stock_chart.index("useEffect(() => {")
+    prepare_start = stock_chart.index("async function prepareRange")
+    assert "prepareStockChartWithProgress" not in stock_chart[effect_start:prepare_start]
+
+    # Late preparation responses are guarded by stock/range identity.
+    assert "const prepareGenerationRef = useRef(0)" in stock_chart
+    assert "const activeIdentityRef = useRef" in stock_chart
+    assert "const isCurrent = () =>" in stock_chart
+    assert "activeIdentityRef.current === identity" in stock_chart
+
+    # Holdings reads a contract only for the selected detail; there is no list-wide N+1 fetch.
+    assert "contract: selectedDataContract" in holdings
+    assert 'code: detail?.ticker ?? ""' in holdings
+    assert "enabled: Boolean(detail && selectedStockId === detail.stock_id)" in holdings
+    reload_start = holdings.index("async function reloadStocks")
+    load_selected_start = holdings.index("async function loadSelected")
+    assert "fetchStockDataContract" not in holdings[reload_start:load_selected_start]
+    assert "저장된 분석" in holdings
+    assert "보유 원장" in holdings
+
+    # Analysis refresh/history prepare/KIS sync re-read current contract without hijacking selection.
+    assert "await contractRefreshRef.current()" in holdings
+    assert "if (selectedStockIdRef.current === targetStockId)" in holdings
+    assert "const currentStockId = selectedStockIdRef.current" in holdings
+
+    # Holdings chart also requires explicit PREPARE_CHART and guards stale completion.
+    assert 'contractAction(dataContract, "PREPARE_CHART")' in holdings_chart
+    assert "if (!chart || preparingRange || !prepareChartAction) return" in holdings_chart
+    assert "const prepareGenerationRef = useRef(0)" in holdings_chart
+    assert "activeIdentityRef.current === identity" in holdings_chart
+    assert 'onClick={() => void prepareSelectedRange()}' in holdings_chart
+
+    # J-8.3 does not invent realtime data or alter Scanner/Backtest workflows.
+    assert "REALTIME_BACKEND_NOT_IMPLEMENTED" not in app + workspace + stock_chart + holdings + holdings_chart
+    assert "createScannerJob" not in hook + helper
+    assert "createMultiStrategyBacktestJob" not in hook + helper
+
