@@ -418,8 +418,14 @@ export function listHoldingStocks(): Promise<HoldingStock[]> {
   return requestJson<HoldingStock[]>("/api/holdings/stocks");
 }
 
-export function getHoldingStock(stockId: string): Promise<HoldingStock> {
-  return requestJson<HoldingStock>(`/api/holdings/stocks/${encodeURIComponent(stockId)}`);
+export function getHoldingStock(
+  stockId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<HoldingStock> {
+  return requestJson<HoldingStock>(
+    `/api/holdings/stocks/${encodeURIComponent(stockId)}`,
+    { signal: options.signal },
+  );
 }
 
 export function addWatchStock(input: {
@@ -502,9 +508,13 @@ export function recordManualCorrection(
   );
 }
 
-export function getHoldingManagement(stockId: string): Promise<HoldingManagementResponse> {
+export function getHoldingManagement(
+  stockId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<HoldingManagementResponse> {
   return requestJson<HoldingManagementResponse>(
     `/api/holdings/stocks/${encodeURIComponent(stockId)}/management`,
+    { signal: options.signal },
   );
 }
 
@@ -520,9 +530,11 @@ export function applyHoldingManagementPlan(
 
 export function getHoldingPerformance(
   stockId: string,
+  options: { signal?: AbortSignal } = {},
 ): Promise<HoldingPerformanceResponse> {
   return requestJson<HoldingPerformanceResponse>(
     `/api/holdings/stocks/${encodeURIComponent(stockId)}/performance`,
+    { signal: options.signal },
   );
 }
 
@@ -611,10 +623,12 @@ export async function prepareHoldingAnalysisWithProgress(
 export function getHoldingTimeline(
   stockId: string,
   limit = 100,
+  options: { signal?: AbortSignal } = {},
 ): Promise<HoldingTimelineItem[]> {
   const query = new URLSearchParams({ limit: String(limit) });
   return requestJson<HoldingTimelineItem[]>(
     `/api/holdings/stocks/${encodeURIComponent(stockId)}/timeline?${query.toString()}`,
+    { signal: options.signal },
   );
 }
 
