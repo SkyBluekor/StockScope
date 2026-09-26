@@ -1666,6 +1666,14 @@
   line-height: 1.5;
 }
 
+.stock-analysis-execution-status {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: var(--font-meta);
+  line-height: 1.45;
+}
+
 .stock-analysis-execution.outdated {
   border-top: 1px solid var(--status-warning);
 }
