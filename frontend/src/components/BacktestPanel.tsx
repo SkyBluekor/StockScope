@@ -482,6 +482,14 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock, 
   const [validationReport, setValidationReport] = useState<ExitPolicyValidationReport | null>(null);
   const activeJobId = useRef<string | null>(null);
   const activeValidationJobId = useRef<string | null>(null);
+  const runGenerationRef = useRef(0);
+  const activeRunRef = useRef<{
+    generation: number;
+    signature: string;
+    code: string;
+    market: Market;
+    jobId: string | null;
+  } | null>(null);
   const workspaceTopRef = useRef<HTMLDivElement | null>(null);
   const stockSearchRequestIdRef = useRef(0);
   const [scannerContext, setScannerContext] = useState<ScannerAnalysisContext | null>(() => readScannerAnalysisContext(code));
@@ -541,6 +549,8 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock, 
 
   useEffect(() => {
     return () => {
+      runGenerationRef.current += 1;
+      activeRunRef.current = null;
       const running = activeJobId.current;
       if (running) void cancelBacktestJob<MultiStrategyBacktestResponse>(running).catch(() => undefined);
       const validationRunning = activeValidationJobId.current;
@@ -549,6 +559,8 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock, 
   }, []);
 
   useEffect(() => {
+    runGenerationRef.current += 1;
+    activeRunRef.current = null;
     const running = activeJobId.current;
     if (running) void cancelBacktestJob<MultiStrategyBacktestResponse>(running).catch(() => undefined);
     activeJobId.current = null;
@@ -658,6 +670,25 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock, 
     }
 
     const runSignature = backtestResultSignature(runConfig);
+    const runCode = runConfig.code.trim().toUpperCase();
+    const generation = ++runGenerationRef.current;
+    activeRunRef.current = {
+      generation,
+      signature: runSignature,
+      code: runCode,
+      market: runConfig.market,
+      jobId: null,
+    };
+    const isCurrentRun = (jobId: string | null = null) => {
+      const active = activeRunRef.current;
+      return runGenerationRef.current === generation
+        && active?.generation === generation
+        && active.signature === runSignature
+        && active.code === runCode
+        && active.market === runConfig.market
+        && (jobId == null || active.jobId === jobId);
+    };
+
     const previousExact = readBacktestCache(runSignature);
     if (!result && previousExact) {
       setResult(previousExact.result);
@@ -681,12 +712,28 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock, 
         max_holding_days: holding,
         round_trip_cost_pct: runConfig.roundTripCostPct,
       });
-      setJob(created);
-      activeJobId.current = created.job_id;
+      if (!isCurrentRun()) {
+        void cancelBacktestJob<MultiStrategyBacktestResponse>(created.job_id).catch(() => undefined);
+        return;
+      }
 
-      while (activeJobId.current === created.job_id) {
+      activeRunRef.current = {
+        generation,
+        signature: runSignature,
+        code: runCode,
+        market: runConfig.market,
+        jobId: created.job_id,
+      };
+      activeJobId.current = created.job_id;
+      setJob(created);
+
+      while (isCurrentRun(created.job_id) && activeJobId.current === created.job_id) {
         await new Promise((resolve) => window.setTimeout(resolve, 650));
+        if (!isCurrentRun(created.job_id) || activeJobId.current !== created.job_id) return;
+
         const latest = await fetchBacktestJob<MultiStrategyBacktestResponse>(created.job_id);
+        if (!isCurrentRun(created.job_id) || activeJobId.current !== created.job_id) return;
+
         setJob(latest);
         if (latest.status === "completed" && latest.result) {
           const completedAt = Date.now();
@@ -706,6 +753,7 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock, 
           if (runSignature === currentSignature) setExactCachedResult(entry);
           setBusy(false);
           activeJobId.current = null;
+          activeRunRef.current = null;
           scrollTop();
           return;
         }
@@ -715,12 +763,15 @@ export default function BacktestPanel({ code, market, stockName, onSelectStock, 
         if (latest.status === "cancelled") {
           setBusy(false);
           activeJobId.current = null;
+          activeRunRef.current = null;
           return;
         }
       }
     } catch (cause) {
+      if (!isCurrentRun(activeJobId.current)) return;
       setBusy(false);
       activeJobId.current = null;
+      activeRunRef.current = null;
       setError(cause instanceof Error ? cause.message : "전체 전략 검증 중 오류가 발생했습니다.");
     }
   }
