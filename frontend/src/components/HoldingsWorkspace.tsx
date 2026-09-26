@@ -13,6 +13,7 @@ import {
   getHoldingStock,
   getHoldingPerformance,
   getLiveHoldingPerformance,
+  getLiveHoldingManagementProximity,
   getHoldingManagement,
   applyHoldingManagementPlan,
   getHoldingChart,
@@ -34,6 +35,7 @@ import {
   type HoldingPosition,
   type HoldingPerformanceResponse,
   type LiveHoldingPerformanceResponse,
+  type LiveHoldingManagementProximityResponse,
   type HoldingManagementResponse,
   type HoldingStock,
   type HoldingTimelineItem,
@@ -459,6 +461,8 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
   const [livePerformanceError, setLivePerformanceError] = useState<string | null>(null);
   const [livePerformanceRefreshKey, setLivePerformanceRefreshKey] = useState(0);
   const [management, setManagement] = useState<HoldingManagementResponse | null>(null);
+  const [liveManagementProximity, setLiveManagementProximity] = useState<LiveHoldingManagementProximityResponse | null>(null);
+  const [liveManagementError, setLiveManagementError] = useState<string | null>(null);
   const [applyingPlanId, setApplyingPlanId] = useState<string | null>(null);
   const [stockFilter, setStockFilter] = useState<StockFilter>(
     navigationTarget ? "all" : initialViewContext?.stockFilter ?? "all",
@@ -522,6 +526,8 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
   const detailAbortRef = useRef<AbortController | null>(null);
   const livePerformanceRequestIdRef = useRef(0);
   const livePerformanceAbortRef = useRef<AbortController | null>(null);
+  const liveManagementRequestIdRef = useRef(0);
+  const liveManagementAbortRef = useRef<AbortController | null>(null);
   const addSearchRequestIdRef = useRef(0);
 
   const {
@@ -623,6 +629,83 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
     livePerformanceRefreshKey,
   ]);
 
+  useEffect(() => {
+    const stockId = detail?.stock_id ?? null;
+    const hasActivePlan = Boolean(
+      management?.positions.some((item) => item.active_plan != null),
+    );
+    const eligible = Boolean(
+      stockId
+      && detail?.is_held
+      && detail.positions.length > 0
+      && hasActivePlan
+      && selectedStockId === stockId
+      && selectedQuote?.received_at,
+    );
+
+    liveManagementRequestIdRef.current += 1;
+    liveManagementAbortRef.current?.abort();
+    liveManagementAbortRef.current = null;
+
+    if (!eligible || !stockId || !selectedQuote?.received_at) {
+      setLiveManagementProximity(null);
+      setLiveManagementError(null);
+      return undefined;
+    }
+
+    const requestId = liveManagementRequestIdRef.current;
+    const expectedMarket = detail?.market ?? "";
+    const expectedTicker = detail?.ticker ?? "";
+    const controller = new AbortController();
+    liveManagementAbortRef.current = controller;
+    setLiveManagementError(null);
+
+    void getLiveHoldingManagementProximity(stockId, { signal: controller.signal })
+      .then((result) => {
+        if (
+          requestId !== liveManagementRequestIdRef.current
+          || controller.signal.aborted
+          || selectedStockIdRef.current !== stockId
+          || result.stock_id !== stockId
+          || result.market !== expectedMarket
+          || result.ticker !== expectedTicker
+        ) return;
+        setLiveManagementProximity(result);
+      })
+      .catch((loadError) => {
+        if (isAbortError(loadError) || requestId !== liveManagementRequestIdRef.current) return;
+        if (selectedStockIdRef.current !== stockId) return;
+        setLiveManagementProximity(null);
+        setLiveManagementError(
+          readableError(loadError, "현재가와 보유분 관리 기준의 거리를 확인하지 못했습니다."),
+        );
+      })
+      .finally(() => {
+        if (
+          requestId === liveManagementRequestIdRef.current
+          && liveManagementAbortRef.current === controller
+        ) {
+          liveManagementAbortRef.current = null;
+        }
+      });
+
+    return () => {
+      if (liveManagementAbortRef.current === controller) {
+        liveManagementAbortRef.current = null;
+      }
+      controller.abort();
+    };
+  }, [
+    detail?.stock_id,
+    detail?.market,
+    detail?.ticker,
+    detail?.is_held,
+    detail?.positions.length,
+    selectedStockId,
+    selectedQuote?.received_at,
+    management,
+  ]);
+
   selectedStockIdRef.current = selectedStockId;
 
   async function reloadStocks(
@@ -661,6 +744,12 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
         setLivePerformance(null);
         setLivePerformanceError(null);
         setManagement(null);
+    setLiveManagementProximity(null);
+    setLiveManagementError(null);
+      setLiveManagementProximity(null);
+      setLiveManagementError(null);
+        setLiveManagementProximity(null);
+        setLiveManagementError(null);
       }
     } catch (loadError) {
       setError(readableError(loadError, "내 종목 목록을 불러오지 못했습니다."));
@@ -683,6 +772,10 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
       setLivePerformance(null);
       setLivePerformanceError(null);
       setManagement(null);
+    setLiveManagementProximity(null);
+    setLiveManagementError(null);
+      setLiveManagementProximity(null);
+      setLiveManagementError(null);
     }
 
     try {
@@ -730,6 +823,8 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
       detailAbortRef.current?.abort();
       livePerformanceRequestIdRef.current += 1;
       livePerformanceAbortRef.current?.abort();
+      liveManagementRequestIdRef.current += 1;
+      liveManagementAbortRef.current?.abort();
     };
   }, []);
 
@@ -761,6 +856,8 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
     setLivePerformance(null);
     setLivePerformanceError(null);
     setManagement(null);
+    setLiveManagementProximity(null);
+    setLiveManagementError(null);
   }, [selectedStockId]);
 
   useEffect(() => {
@@ -1488,6 +1585,14 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
     }
   }
 
+  const liveManagementByPosition = useMemo(
+    () => new Map(
+      (liveManagementProximity?.positions ?? []).map((item) => [item.position_id, item]),
+    ),
+    [liveManagementProximity],
+  );
+  const liveManagementQuoteTime = quoteReceivedTime(liveManagementProximity?.quote?.received_at);
+
   const selectedAnalysis = detail?.current_analysis ?? null;
   const usingLivePerformance = Boolean(
     livePerformance?.available && livePerformance.performance,
@@ -2096,6 +2201,13 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                           현재 보유분에 실제 적용 중인 손절·목표 가격
                           {management.valuation.market_date ? ` · ${compactDate(management.valuation.market_date)} 확정 종가 기준` : " · 현재 가격 데이터 확인 필요"}
                         </span>
+                        {liveManagementProximity?.available && liveManagementProximity.quote && (
+                          <span className={liveManagementProximity.state === "STALE" ? "holdings-management-live-basis stale" : "holdings-management-live-basis"}>
+                            {liveManagementProximity.state === "STALE"
+                              ? `현재가 거리 · 마지막 KIS 시세 ${liveManagementQuoteTime ?? "-"} · 갱신 지연`
+                              : `현재가 거리 · KIS ${liveManagementQuoteTime ?? "-"} 수신`}
+                          </span>
+                        )}
                       </div>
                     </div>
                     {management.positions.map((item) => (
@@ -2107,12 +2219,39 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                         {item.active_plan ? (
                           <div className="holdings-management-plan-grid">
                             <div><span>적용 기준일</span><strong>{compactDate(item.active_plan.applied_at)}</strong></div>
-                            <div><span>손절</span><strong>{money(item.active_plan.stop_price)}</strong></div>
-                            <div><span>1차 목표</span><strong>{money(item.active_plan.target1_price)}</strong></div>
-                            <div><span>2차 목표</span><strong>{money(item.active_plan.target2_price)}</strong></div>
+                            <div>
+                              <span>손절</span>
+                              <strong>{money(item.active_plan.stop_price)}</strong>
+                              {liveManagementByPosition.get(item.position_id)?.distances.stop.pct != null && (
+                                <small className="holdings-management-live-distance">
+                                  현재가 대비 {signedPercent(liveManagementByPosition.get(item.position_id)?.distances.stop.pct)}
+                                </small>
+                              )}
+                            </div>
+                            <div>
+                              <span>1차 목표</span>
+                              <strong>{money(item.active_plan.target1_price)}</strong>
+                              {liveManagementByPosition.get(item.position_id)?.distances.target1.pct != null && (
+                                <small className="holdings-management-live-distance">
+                                  현재가 대비 {signedPercent(liveManagementByPosition.get(item.position_id)?.distances.target1.pct)}
+                                </small>
+                              )}
+                            </div>
+                            <div>
+                              <span>2차 목표</span>
+                              <strong>{money(item.active_plan.target2_price)}</strong>
+                              {liveManagementByPosition.get(item.position_id)?.distances.target2.pct != null && (
+                                <small className="holdings-management-live-distance">
+                                  현재가 대비 {signedPercent(liveManagementByPosition.get(item.position_id)?.distances.target2.pct)}
+                                </small>
+                              )}
+                            </div>
                           </div>
                         ) : <div className="holdings-management-empty">현재 적용 중인 보유분 관리 기준이 없습니다. 최신 분석에 적용 가능한 제안이 있다면 아래에서 확인 후 직접 적용할 수 있습니다.</div>}
                         {item.active_plan && <small className="holdings-management-version">기술 정보 · 내부 기준 v{item.active_plan.version}</small>}
+                        {liveManagementError && item.active_plan && (
+                          <small className="holdings-management-live-error">현재가 거리를 갱신하지 못했습니다. 확정 종가 기준 관리 상태는 유지됩니다.</small>
+                        )}
                         <div className="holdings-management-proposal">
                           <div>
                             <span className="holdings-management-proposal-kicker">최신 분석 제안</span>
