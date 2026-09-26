@@ -71,7 +71,9 @@ def test_quote_api_returns_product_snapshot_contract(monkeypatch) -> None:
     serialized = response.text.lower()
     assert "app-secret" not in serialized
     assert "access_token" not in serialized
-    assert "12345678" not in serialized
+    assert "app_key" not in serialized
+    assert "app_secret" not in serialized
+    assert "account_no" not in serialized
 
 
 def test_quote_api_maps_configuration_error(monkeypatch) -> None:
