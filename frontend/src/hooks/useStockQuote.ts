@@ -206,7 +206,14 @@ export default function useStockQuote({
     window.addEventListener("offline", handleOffline);
     window.addEventListener("online", handleOnline);
 
-    if (canPoll()) runNow();
+    if (document.visibilityState === "hidden") {
+      setState("IDLE");
+    } else if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      setState("ERROR");
+      setError("네트워크 연결을 확인해주세요.");
+    } else {
+      runNow();
+    }
 
     return () => {
       disposed = true;
