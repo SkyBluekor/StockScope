@@ -76,6 +76,7 @@ export default function useStockQuote({
     }
 
     let disposed = false;
+    let permanentlyPaused = false;
 
     const isCurrent = () => !disposed && generationRef.current === generation;
 
@@ -99,7 +100,7 @@ export default function useStockQuote({
       }, delayMs);
     };
 
-    const run = async () => {
+    async function run() {
       if (!isCurrent() || !canPoll()) return;
 
       const controller = new AbortController();
@@ -137,11 +138,13 @@ export default function useStockQuote({
 
         const apiError = reason instanceof ApiError ? reason : null;
         if (apiError?.status === 409 || apiError?.code === "KIS_QUOTE_NOT_CONFIGURED") {
+          permanentlyPaused = true;
           setState("NOT_CONFIGURED");
           setError(apiError.message);
           failuresRef.current = 0;
           nextDelay = null;
         } else if (apiError?.status === 422) {
+          permanentlyPaused = true;
           setState("ERROR");
           setError(apiError.message);
           nextDelay = null;
@@ -164,10 +167,10 @@ export default function useStockQuote({
           schedule(nextDelay);
         }
       }
-    };
+    }
 
     const runNow = () => {
-      if (!isCurrent()) return;
+      if (!isCurrent() || permanentlyPaused) return;
       clearTimer();
       abortRef.current?.abort();
       void run();
@@ -186,7 +189,7 @@ export default function useStockQuote({
     };
 
     const handleOffline = () => {
-      if (!isCurrent()) return;
+      if (!isCurrent() || permanentlyPaused) return;
       clearTimer();
       abortRef.current?.abort();
       setRefreshing(false);
