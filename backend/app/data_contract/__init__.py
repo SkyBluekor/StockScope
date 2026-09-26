@@ -19,3 +19,12 @@ __all__ = [
     "StockStateObservation",
     "StoredAnalysisObservation",
 ]
+
+from .builder import build_stock_data_contract
+from .schema import CONTRACT_VERSION, StockDataContract
+
+__all__ += [
+    "CONTRACT_VERSION",
+    "StockDataContract",
+    "build_stock_data_contract",
+]
