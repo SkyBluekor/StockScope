@@ -133,15 +133,26 @@ export default function StockNewsPanel({ code, market, companyLabel, variant = "
               <article key={item.id} className="stock-news-item">
                 <div className="stock-news-item-copy">
                   <div className="stock-news-meta">
-                    <time dateTime={item.published_at ?? undefined}>{formatTimestamp(item.published_at)}</time>
-                    <span>{sourceLabel(item.source_name, item.source_domain)}</span>
+                    {compact ? (
+                      <>
+                        <time className="stock-news-time" dateTime={item.published_at ?? undefined}>{formatTimestamp(item.published_at)}</time>
+                        <span className="stock-news-source">{sourceLabel(item.source_name, item.source_domain)}</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="stock-news-source">{sourceLabel(item.source_name, item.source_domain)}</span>
+                        <time className="stock-news-time" dateTime={item.published_at ?? undefined}>{formatTimestamp(item.published_at)}</time>
+                      </>
+                    )}
                   </div>
                   <h4>
                     <a href={item.url} target="_blank" rel="noopener noreferrer">{item.title}</a>
                   </h4>
                   {item.description && <p>{item.description}</p>}
                 </div>
-                <a className="stock-news-origin" href={item.url} target="_blank" rel="noopener noreferrer" aria-label={`${item.title} 원문 새 탭에서 열기`}>원문 ↗</a>
+                {compact && (
+                  <a className="stock-news-origin" href={item.url} target="_blank" rel="noopener noreferrer" aria-label={`${item.title} 원문 새 탭에서 열기`}>원문 ↗</a>
+                )}
               </article>
             ))}
           </div>
