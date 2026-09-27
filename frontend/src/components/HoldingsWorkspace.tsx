@@ -8,6 +8,7 @@ import { quoteReceivedTime } from "../services/quote";
 import { marketSessionIsPaused } from "../services/marketSession";
 import HoldingsPriceChart from "./HoldingsPriceChart";
 import HoldingDecisionPanel from "./HoldingDecisionPanel";
+import HoldingRecoveryPanel from "./HoldingRecoveryPanel";
 import StockNewsPanel from "./StockNewsPanel";
 import StockQuoteStrip from "./StockQuoteStrip";
 import {
@@ -2269,6 +2270,11 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                   onPlanChanged={async () => {
                     await loadSelected(detail.stock_id);
                   }}
+                />
+
+                <HoldingRecoveryPanel
+                  positions={detail.positions}
+                  sourceKey={holdingDecisionSourceKey(detail, management)}
                 />
 
                 {management && management.positions.length > 0 && (
