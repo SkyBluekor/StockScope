@@ -53,12 +53,10 @@ REQUIRED_MARKET_TABLES = frozenset(
     }
 )
 
-REQUIRED_SIMULATION_TABLES = frozenset(
-    {
-        "simulation_schema_meta",
-        "historical_validation_run",
-        "historical_validation_day",
-    }
+SIMULATION_TABLE_FAMILIES = (
+    frozenset({"simulation_schema_meta", "simulation_portfolio"}),
+    frozenset({"historical_validation_run", "historical_validation_day"}),
+    frozenset({"historical_execution_run"}),
 )
 
 REQUIRED_TRACKING_TABLES = frozenset(
@@ -300,11 +298,35 @@ def validate_runtime_domain_db(
 
 
 def validate_simulation_db(path: Path) -> dict[str, Any]:
-    return validate_runtime_domain_db(
-        path,
-        required_tables=REQUIRED_SIMULATION_TABLES,
-        label="Simulation DB",
-    )
+    """Accept the currently populated Simulation domain families without creating them.
+
+    Legacy SIM.1~3 and Historical/Execution Validation share one DB file but are
+    independently initialized. A valid validation-only DB must therefore not be
+    rejected merely because the legacy portfolio family was never created.
+    """
+    with sqlite_readonly(path) as conn:
+        names = table_names(conn)
+        present_families = [
+            family for family in SIMULATION_TABLE_FAMILIES
+            if family.issubset(names)
+        ]
+        if not present_families:
+            raise DataToolError(
+                "Simulation DB에서 지원되는 기존 도메인 테이블을 찾을 수 없습니다."
+            )
+        _integrity_check(conn)
+        _foreign_key_check(conn)
+        recognized = sorted(set().union(*present_families))
+        counts = {
+            name: int(conn.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0])
+            for name in recognized
+        }
+        return {
+            "integrity": "ok",
+            "foreign_keys": "ok",
+            "tables": recognized,
+            "counts": counts,
+        }
 
 
 def validate_tracking_db(path: Path) -> dict[str, Any]:
