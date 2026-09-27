@@ -29,6 +29,9 @@ class HorizonContext:
     reason_code: str | None
     review_cycle_trading_days: int | None = None
     time_stop_trading_days: int | None = None
+    strategy_support: dict[str, str] | None = None
+    required_inputs: tuple[str, ...] | None = None
+    confirmation_policy: str | None = None
 
     @property
     def is_legacy(self) -> bool:
