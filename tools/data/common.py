@@ -57,6 +57,14 @@ SIMULATION_TABLE_FAMILIES = (
     frozenset({"simulation_schema_meta", "simulation_portfolio"}),
     frozenset({"historical_validation_run", "historical_validation_day"}),
     frozenset({"historical_execution_run"}),
+    frozenset({
+        "feedback_schema_meta",
+        "feedback_source_ref",
+        "feedback_cohort",
+        "feedback_cohort_source",
+        "feedback_cohort_member",
+        "feedback_report",
+    }),
 )
 
 REQUIRED_TRACKING_TABLES = frozenset(
