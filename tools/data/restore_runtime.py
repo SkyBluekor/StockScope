@@ -226,6 +226,9 @@ def restore_backup(
         identity_manifest = dict(extensions.get("input_identity_v1") or {})
         horizon_manifest = dict(extensions.get("horizon_context_v1") or {})
         feedback_manifest = dict(extensions.get("feedback_v1") or {})
+        prospective_manifest = dict(
+            extensions.get("prospective_evaluation_v1") or {}
+        )
         revision_identity_restored = bool(
             identity_manifest.get("revision_identity_metadata")
         )
@@ -293,6 +296,17 @@ def restore_backup(
                     and feedback_manifest.get("restorable")
                 ),
                 "tables": list(feedback_manifest.get("tables") or []),
+            },
+            "prospective_evaluation": {
+                "schema_version": prospective_manifest.get("schema_version"),
+                "store_present_in_backup": bool(
+                    prospective_manifest.get("present")
+                ),
+                "store_restored": bool(
+                    restore_simulation
+                    and prospective_manifest.get("restorable")
+                ),
+                "tables": list(prospective_manifest.get("tables") or []),
             },
         }
     finally:
