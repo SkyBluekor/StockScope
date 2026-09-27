@@ -7,6 +7,7 @@ import {
   getValidationDraft,
   getValidationOutcomeBreakdown,
   getValidationOutcomeSummary,
+  getHorizonPolicy,
   listLegacyValidations,
   listValidationDrafts,
   previewValidationPeriod,
@@ -17,6 +18,7 @@ import {
   type HistoricalValidationDraft,
   type HistoricalValidationOutcomeBreakdown,
   type HistoricalValidationOutcomeSummary,
+  type HorizonPolicyCatalog,
   type ValidationInputIdentitySummary,
   type ValidationOutcomeBreakdownRow,
   type LegacyValidation,
@@ -47,6 +49,24 @@ function statusLabel(value: string) {
   if (value === "CANCELLED") return "중지됨";
   return value;
 }
+function horizonLabel(intent: string) {
+  if (intent === "SHORT") return "단기";
+  if (intent === "MEDIUM") return "중기";
+  if (intent === "LONG") return "장기";
+  return "기간 의도 미지정";
+}
+function horizonStatusText(row: HistoricalValidationDraft) {
+  const context = row.horizon_context;
+  if (!context || context.intent === "LEGACY_UNSPECIFIED") return "기간 의도 미지정 · 기존 분석 기준";
+  if (context.support_status === "SUPPORTED") return `${horizonLabel(context.intent)} · 사용 가능`;
+  if (context.support_status === "EVALUATION_PENDING") return `${horizonLabel(context.intent)} · 정책 평가 중`;
+  return `${horizonLabel(context.intent)} · 미지원`;
+}
+function horizonRunnable(row: HistoricalValidationDraft) {
+  const status = row.horizon_context?.support_status;
+  return !status || status === "LEGACY_UNSPECIFIED" || status === "SUPPORTED";
+}
+
 function replayPercent(row: HistoricalValidationDraft) {
   if (row.trading_day_count <= 0) return 0;
   return Math.max(0, Math.min(100, Math.round((row.processed_day_count / row.trading_day_count) * 100)));
@@ -175,6 +195,7 @@ export default function SimulationWorkspace() {
   const [expandedStrategyKey, setExpandedStrategyKey] = useState<string | null>(null);
   const [expandedDecisionKey, setExpandedDecisionKey] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [horizonPolicy, setHorizonPolicy] = useState<HorizonPolicyCatalog | null>(null);
 
   function defaultName(nextPreset: Preset, nextMarket: "ALL" | "KOSPI" | "KOSDAQ", nextPreview?: ValidationPeriodPreview | null) {
     const market = nextMarket === "ALL" ? "전체시장" : nextMarket;
@@ -217,7 +238,12 @@ export default function SimulationWorkspace() {
     } finally { setSavedBusy(false); }
   }
 
-  useEffect(() => { void loadPreview("1y", "ALL", "", "", true); }, []);
+  useEffect(() => {
+    void loadPreview("1y", "ALL", "", "", true);
+    void getHorizonPolicy()
+      .then(setHorizonPolicy)
+      .catch(() => setHorizonPolicy(null));
+  }, []);
   useEffect(() => { if (mode === "saved") void loadSaved(); }, [mode]);
 
   useEffect(() => {
@@ -455,6 +481,21 @@ export default function SimulationWorkspace() {
           </div>
 
           <div className="sim-validation-row">
+            <span>투자 기간 의도</span>
+            <div className="sim-inline-options">
+              <button className="active" disabled>기존 기준</button>
+              {(horizonPolicy?.options ?? []).map((option) => (
+                <button key={option.intent} disabled title="정확한 기간·재검토·Time Stop 정책 승인 전에는 실행하지 않습니다.">
+                  {horizonLabel(option.intent)} · 평가 중
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="sim-validation-hint">
+            5·10·20거래일 성과 관찰은 투자 기간 의도가 아닙니다. 단기·중기·장기의 정확한 숫자 정책은 아직 승인되지 않아 기존 기준만 실행할 수 있습니다.
+          </p>
+
+          <div className="sim-validation-row">
             <span>검증 기간</span>
             <div className="sim-inline-options"><button className={preset === "6m" ? "active" : ""} onClick={() => choosePreset("6m")}>최근 6개월</button><button className={preset === "1y" ? "active" : ""} onClick={() => choosePreset("1y")}>최근 1년</button><button className={preset === "2y" ? "active" : ""} onClick={() => choosePreset("2y")}>최근 2년</button><button className={preset === "custom" ? "active" : ""} onClick={() => choosePreset("custom")}>직접 선택</button></div>
           </div>
@@ -490,7 +531,8 @@ export default function SimulationWorkspace() {
 
           {selectedDraft && <div className="sim-saved-detail sim-replay-detail">
             <div className="sim-saved-detail-head"><div><span>저장된 검증</span><h3>{selectedDraft.name}</h3></div><strong>{replayStatusLabel(selectedDraft)}</strong></div>
-            <dl><dt>검증 대상</dt><dd>Production Scanner {selectedDraft.scanner_version}</dd><dt>시장</dt><dd>{marketLabel(selectedDraft.market_scope)}</dd><dt>실제 기간</dt><dd>{dateText(selectedDraft.resolved_start_date)} ~ {dateText(selectedDraft.resolved_end_date)}</dd><dt>생성일</dt><dd>{dateText(selectedDraft.created_at.slice(0, 10))}</dd></dl>
+            <dl><dt>검증 대상</dt><dd>Production Scanner {selectedDraft.scanner_version}</dd><dt>시장</dt><dd>{marketLabel(selectedDraft.market_scope)}</dd><dt>투자 기간 의도</dt><dd>{horizonStatusText(selectedDraft)}</dd><dt>실제 기간</dt><dd>{dateText(selectedDraft.resolved_start_date)} ~ {dateText(selectedDraft.resolved_end_date)}</dd><dt>생성일</dt><dd>{dateText(selectedDraft.created_at.slice(0, 10))}</dd></dl>
+            {!horizonRunnable(selectedDraft) && <p className="sim-replay-note">이 검증은 Horizon 문맥은 저장되어 있지만 수치 정책이 아직 승인되지 않아 재생을 시작할 수 없습니다.</p>}
 
             <div className="sim-replay-status">
               <div className="sim-replay-progress-head"><span>과거 Scanner 재생</span><strong>{selectedDraft.processed_day_count ?? 0} / {selectedDraft.trading_day_count} 거래일 · {replayPercent(selectedDraft)}%</strong></div>
@@ -517,8 +559,8 @@ export default function SimulationWorkspace() {
               </div>}
 
               <div className="sim-replay-actions">
-                {selectedDraft.status === "DRAFT" && <button className="sim-primary" disabled={replayBusy} onClick={() => void runReplay(selectedDraft)}>{replayBusy ? "시작 중…" : "과거 Scanner 재생 시작"}</button>}
-                {(selectedDraft.status === "FAILED" || selectedDraft.status === "CANCELLED" || (selectedDraft.status === "RUNNING" && selectedDraft.runtime_active === false)) && <button className="sim-primary" disabled={replayBusy} onClick={() => void runReplay(selectedDraft)}>{replayBusy ? "시작 중…" : "이어 실행"}</button>}
+                {selectedDraft.status === "DRAFT" && <button className="sim-primary" disabled={replayBusy || !horizonRunnable(selectedDraft)} onClick={() => void runReplay(selectedDraft)}>{replayBusy ? "시작 중…" : "과거 Scanner 재생 시작"}</button>}
+                {(selectedDraft.status === "FAILED" || selectedDraft.status === "CANCELLED" || (selectedDraft.status === "RUNNING" && selectedDraft.runtime_active === false)) && <button className="sim-primary" disabled={replayBusy || !horizonRunnable(selectedDraft)} onClick={() => void runReplay(selectedDraft)}>{replayBusy ? "시작 중…" : "이어 실행"}</button>}
                 {selectedDraft.status === "RUNNING" && selectedDraft.runtime_active !== false && <><span className="sim-replay-running">재생 중…</span><button className="sim-secondary" disabled={replayBusy || selectedDraft.cancel_requested} onClick={() => void cancelReplay(selectedDraft)}>{selectedDraft.cancel_requested ? "중지 요청됨" : replayBusy ? "처리 중…" : "중지"}</button></>}
               </div>
             </div>
