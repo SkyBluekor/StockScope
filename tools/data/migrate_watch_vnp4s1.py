@@ -47,6 +47,10 @@ TABLE_COLUMNS: dict[str, set[str]] = {
         "direction",
         "threshold_price",
         "policy_version",
+        "confirmation_observations",
+        "rearm_observations",
+        "rearm_distance_bps",
+        "max_quote_age_seconds",
         "state",
         "confirmation_count",
         "rearm_count",
@@ -276,6 +280,14 @@ def migrate_watch_store(path: Path) -> dict[str, object]:
                 )),
                 threshold_price TEXT NOT NULL,
                 policy_version TEXT NOT NULL,
+                confirmation_observations INTEGER NOT NULL
+                    CHECK(confirmation_observations >= 1),
+                rearm_observations INTEGER NOT NULL
+                    CHECK(rearm_observations >= 1),
+                rearm_distance_bps INTEGER NOT NULL
+                    CHECK(rearm_distance_bps > 0),
+                max_quote_age_seconds REAL NOT NULL
+                    CHECK(max_quote_age_seconds > 0),
                 state TEXT NOT NULL CHECK(state IN (
                     'ARMED','PENDING_CONFIRMATION','CONFIRMED',
                     'RESOLVED','DISABLED'
