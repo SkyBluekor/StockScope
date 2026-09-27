@@ -338,6 +338,70 @@ def test_new_analysis_revision_makes_decision_stale(tmp_path: Path):
     assert "ANALYSIS_REVISION_CHANGED" in detail["stale_reasons"]
 
 
+def test_first_plan_apply_from_decision_is_explicit_and_preserves_ledger(tmp_path: Path):
+    catalog, _, opened, mdb = _env(tmp_path)
+    revision = _rev(catalog, opened.stock_id, "r1", "90")
+    service = HoldingDecisionSupportService(
+        catalog,
+        market_store_db=mdb,
+        clock=lambda: "2026-09-24T03:00:00+00:00",
+    )
+
+    decision = service.evaluate(opened.position.id)
+    before = catalog.get_position(opened.position.id)
+    event_count = len(catalog.list_position_events(opened.position.id))
+
+    assert decision["status"] == "REVIEW_REQUIRED"
+    assert decision["primary_action"] is None
+    assert decision["source_active_plan_id"] is None
+    assert decision["evidence"]["plan_state"] == "NO_ACTIVE_PLAN"
+    assert decision["evidence"]["new_plan_horizon_activatable"] is True
+    assert decision["evidence"]["proposal_conflict"] is None
+
+    result = service.apply_plan(
+        decision_id=decision["decision_id"],
+        selected_action=None,
+        note="첫 관리 계획을 검토 후 명시 적용",
+    )
+
+    after = catalog.get_position(opened.position.id)
+    plans = HoldingManagementService(
+        catalog,
+        market_store_db=mdb,
+    ).list_plans(opened.position.id)
+
+    assert len(plans) == 1
+    assert plans[0].status == "ACTIVE"
+    assert plans[0].plan_version == 1
+    assert plans[0].source_analysis_revision_id == revision.id
+    assert after.current_quantity == before.current_quantity
+    assert after.current_average_price == before.current_average_price
+    assert len(catalog.list_position_events(opened.position.id)) == event_count
+
+    with sqlite3.connect(catalog.db_path) as conn:
+        resolution = conn.execute(
+            """
+            SELECT * FROM holding_decision_resolution
+            WHERE decision_id=?
+            """,
+            (decision["decision_id"],),
+        ).fetchone()
+        context = conn.execute(
+            """
+            SELECT * FROM holding_management_plan_context_vnp3s1
+            WHERE plan_id=?
+            """,
+            (result["plan"]["plan_id"],),
+        ).fetchone()
+
+    assert resolution is not None
+    assert resolution[3] == "APPLY_NEW_PLAN"
+    assert context is not None
+    assert context[3] is None
+    assert context[4] is None
+    assert context[5] is None
+
+
 def test_plan_apply_from_decision_is_atomic_and_preserves_ledger(tmp_path: Path):
     catalog, _, opened, mdb = _env(tmp_path)
     r1 = _rev(catalog, opened.stock_id, "r1", "90")
