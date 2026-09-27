@@ -11,6 +11,11 @@ import pytest
 from app.holdings import HoldingsCatalog, PositionLifecycleService
 from app.holdings.management import HoldingManagementService
 from app.feedback import FeedbackCatalog, FeedbackEvidence
+from app.prospective import (
+    EvaluationProtocolSpec,
+    ProspectiveCaptureRequest,
+    ProspectiveCatalog,
+)
 from app.simulation.execution_catalog import HistoricalExecutionCatalog
 from app.simulation.sim1_store import SimulationRepository
 from app.simulation.validation_catalog import HistoricalValidationCatalog
@@ -26,6 +31,7 @@ from tools.data.doctor import collect_report
 from tools.data import restore_runtime as restore_module
 from tools.data.restore_runtime import restore_backup
 from tools.data.migrate_feedback_vnp2s1 import migrate_feedback_store
+from tools.data.migrate_prospective_vnp2s2 import migrate_prospective_store
 
 
 T0 = "2026-09-24T09:00:00+09:00"
@@ -329,6 +335,165 @@ def test_feedback_store_roundtrip_is_declared_and_restored(tmp_path):
         ).fetchone()[0] == 1
         assert conn.execute(
             "SELECT COUNT(*) FROM feedback_report"
+        ).fetchone()[0] == 1
+
+
+def test_prospective_store_roundtrip_is_declared_and_restored(tmp_path):
+    holdings = _holdings_db(tmp_path / "holdings.db")
+    simulation = _simulation_db(tmp_path / "simulation.db")
+    migrate_prospective_store(simulation)
+    catalog = ProspectiveCatalog(simulation)
+
+    request = ProspectiveCaptureRequest(
+        market_scope="ALL",
+        requested_as_of="2026-09-23",
+        candidate_limit=5,
+        horizon_intent="LEGACY_UNSPECIFIED",
+        horizon_policy_version="VN_P1_S2_HORIZON_CONTEXT_V1",
+    )
+    catalog.begin_capture(
+        source_job_id="backup-scanner-job",
+        request=request,
+        created_at="2026-09-27T00:00:00+00:00",
+    )
+    capture = catalog.finalize_capture(
+        source_job_id="backup-scanner-job",
+        request=request,
+        result={
+            "version": "0.21.3.7",
+            "requested_as_of": "2026-09-23",
+            "market_scope": "ALL",
+            "data_dates": {"KOSPI": "2026-09-23"},
+            "input_fingerprint": "backup-input",
+            "partial_data": False,
+            "summary": {"candidate_count": 1, "shown_count": 1},
+            "candidates": [{
+                "market": "KOSPI",
+                "code": "005930",
+                "name": "삼성전자",
+                "rank": 1,
+                "strategy": "pullback",
+                "decision_status": "WATCH",
+                "candidate_state": "WATCH",
+                "action": "WAIT",
+            }],
+            "more_candidates": [],
+        },
+        completed_at="2026-09-27T00:01:00+00:00",
+    )
+    protocol = catalog.create_protocol(
+        client_request_id="backup-protocol",
+        spec=EvaluationProtocolSpec(
+            name="backup fixture",
+            market_scope="ALL",
+            strategy=None,
+            development_start="2026-01-01",
+            development_end="2026-03-31",
+            holdout_start="2026-05-01",
+            holdout_end="2026-07-31",
+            execution_mode="OBSERVATION_ONLY",
+            exit_policy_token=None,
+        ),
+        created_at="2026-09-27T00:02:00+00:00",
+    )
+    run = catalog.create_evaluation_run(
+        protocol_id=protocol["id"],
+        client_request_id="backup-evaluation",
+        created_at="2026-09-27T00:03:00+00:00",
+    )
+    catalog.begin_evaluation_run(run["id"])
+    catalog.replace_evaluation_units(
+        run_id=run["id"],
+        units=[{
+            "capture_run_id": capture["id"],
+            "sample_index": 0,
+            "split": "HOLDOUT",
+            "maturity_status": "MATURE",
+            "exclusion_reason": None,
+            "signal_date": "2026-09-23",
+            "market": "KOSPI",
+            "ticker": "005930",
+            "strategy": "pullback",
+            "available_trading_days": 20,
+            "evaluated_through": "2026-10-22",
+            "return_5d": 1.0,
+            "return_10d": 2.0,
+            "return_20d": 3.0,
+            "mfe_pct": 4.0,
+            "mae_pct": -2.0,
+            "entry_comparable": 1,
+            "entry_touched": 1,
+            "stop_comparable": 1,
+            "stop_touched": 0,
+            "target1_comparable": 1,
+            "target1_touched": 0,
+            "target2_comparable": 1,
+            "target2_touched": 0,
+            "execution_status": "NOT_EXECUTED",
+            "execution_reason": "SCANNER_WAIT",
+            "entry_date": None,
+            "entry_price": None,
+            "exit_date": None,
+            "exit_price": None,
+            "exit_reason": None,
+            "holding_days": None,
+            "gross_return_pct": None,
+            "net_return_pct": None,
+            "mark_return_pct": None,
+            "details": {"fixture": True},
+            "computed_at": "2026-09-27T00:04:00+00:00",
+        }],
+        counts={
+            "source_capture_count": 1,
+            "source_sample_count": 1,
+            "development_count": 0,
+            "holdout_count": 1,
+            "purged_count": 0,
+            "mature_count": 1,
+            "immature_count": 0,
+            "excluded_count": 0,
+            "failed_count": 0,
+        },
+        report_summary={"evidence_state": "SAMPLE_SIZE_POLICY_UNDEFINED"},
+        completed_at="2026-09-27T00:05:00+00:00",
+    )
+
+    backup = create_backup(
+        destination=tmp_path / "prospective-backup",
+        holdings_db=holdings,
+        simulation_db=simulation,
+        include_tracking=False,
+    )
+    manifest = json.loads(
+        (backup / "backup_manifest.json").read_text(encoding="utf-8")
+    )
+    extension = manifest["extensions"]["prospective_evaluation_v1"]
+    assert extension["present"] is True
+    assert extension["restorable"] is True
+
+    restored_holdings = tmp_path / "restored-holdings.db"
+    restored_simulation = tmp_path / "restored-simulation.db"
+    result = restore_backup(
+        backup,
+        restore_simulation=True,
+        target_holdings=restored_holdings,
+        target_simulation=restored_simulation,
+    )
+
+    assert result["prospective_evaluation"]["store_present_in_backup"] is True
+    assert result["prospective_evaluation"]["store_restored"] is True
+    with sqlite3.connect(restored_simulation) as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM prospective_capture_run"
+        ).fetchone()[0] == 1
+        assert conn.execute(
+            "SELECT COUNT(*) FROM prospective_recommendation_sample"
+        ).fetchone()[0] == 1
+        assert conn.execute(
+            "SELECT COUNT(*) FROM prospective_evaluation_protocol"
+        ).fetchone()[0] == 1
+        assert conn.execute(
+            "SELECT COUNT(*) FROM prospective_evaluation_report"
         ).fetchone()[0] == 1
 
 
