@@ -222,9 +222,9 @@ def restore_backup(
                     target.unlink()
             raise
 
-        identity_manifest = dict(
-            dict(manifest.get("extensions") or {}).get("input_identity_v1") or {}
-        )
+        extensions = dict(manifest.get("extensions") or {})
+        identity_manifest = dict(extensions.get("input_identity_v1") or {})
+        horizon_manifest = dict(extensions.get("horizon_context_v1") or {})
         revision_identity_restored = bool(
             identity_manifest.get("revision_identity_metadata")
         )
@@ -261,6 +261,25 @@ def restore_backup(
                 "validation_input_proof_store_restored": validation_proof_restored,
                 "current_identity_verification_capability_restored": (
                     revision_identity_restored and generation_restored
+                ),
+            },
+            "horizon_context": {
+                "analysis_context_store_restored": bool(
+                    horizon_manifest.get("analysis_context_store")
+                ),
+                "management_plan_context_store_restored": bool(
+                    horizon_manifest.get("management_plan_context_store")
+                ),
+                "validation_context_store_restored": bool(
+                    restore_simulation
+                    and horizon_manifest.get("validation_context_store")
+                ),
+                "execution_context_store_restored": bool(
+                    restore_simulation
+                    and horizon_manifest.get("execution_context_store")
+                ),
+                "numeric_policy_approved": bool(
+                    horizon_manifest.get("numeric_policy_approved")
                 ),
             },
         }
