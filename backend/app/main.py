@@ -20,7 +20,7 @@ async def lifespan(_app: FastAPI):
         or PROJECT_ROOT / "backend" / "runtime" / "simulation" / "simulation.db"
     )
     market_db = Path(
-        os.getenv("STOCKSCOPE_MARKET_DB")
+        (os.getenv("STOCKSCOPE_MARKET_STORE_DB") or os.getenv("STOCKSCOPE_MARKET_DB"))
         or PROJECT_ROOT / "backend" / "runtime" / "market_history" / "market_history.db"
     )
     try:
