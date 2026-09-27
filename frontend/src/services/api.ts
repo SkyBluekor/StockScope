@@ -2868,6 +2868,14 @@ export type ScannerCandidate = {
 
 export type ScannerResponse = {
   version: string;
+  horizon_context?: {
+    intent: "SHORT" | "MEDIUM" | "LONG" | "LEGACY_UNSPECIFIED" | string;
+    policy_version: string | null;
+    support_status: string;
+    reason_code: string | null;
+    review_cycle_trading_days: number | null;
+    time_stop_trading_days: number | null;
+  };
   scanner_cache_hit: boolean;
   generated_at: string;
   requested_as_of: string;
@@ -2952,6 +2960,7 @@ export type ScannerRequest = {
   candidate_limit?: number;
   force_refresh?: boolean;
   allow_large_sync?: boolean;
+  horizon_intent?: "SHORT" | "MEDIUM" | "LONG";
 };
 
 export type ScannerFreshnessResponse = {
