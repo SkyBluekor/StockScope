@@ -725,6 +725,11 @@ def test_ux_redesign1j4_prioritizes_held_management_and_separates_opening_balanc
     assert "&& decision.evidence.new_plan_horizon_activatable" in decision_panel
     assert "&& !decision.evidence.proposal_conflict" in decision_panel
 
+    # STALE decisions remain review-only until the user explicitly rebuilds them.
+    assert 'decision?.stale ? "최신 판단 다시 만들기"' in decision_panel
+    assert "!decision.stale && decision.status !== \"INSUFFICIENT_DATA\"" in decision_panel
+    assert "&& !decision.stale" in decision_panel
+
     # Stock analysis uses the same opening-balance language and guardrail.
     assert "기존 보유 등록" in tracking
     assert "보유종목으로 등록" not in tracking
