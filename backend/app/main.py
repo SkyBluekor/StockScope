@@ -7,8 +7,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
 from app.core.config import PROJECT_ROOT, get_settings
+from app.holdings.catalog import DEFAULT_HOLDINGS_DB, HoldingsCatalog
 from app.prospective import ProspectiveCatalogError, ProspectiveService
 from app.quotes.websocket_manager import quote_websocket_manager
+from app.watch import WatchCoordinator
 
 settings = get_settings()
 
@@ -37,10 +39,18 @@ async def lifespan(_app: FastAPI):
         }:
             raise
 
+    holdings_db = Path(
+        os.getenv("STOCKSCOPE_HOLDINGS_DB")
+        or DEFAULT_HOLDINGS_DB
+    )
+    watch_coordinator = WatchCoordinator(HoldingsCatalog(holdings_db))
+
     await quote_websocket_manager.start()
+    await watch_coordinator.start()
     try:
         yield
     finally:
+        await watch_coordinator.stop()
         await quote_websocket_manager.stop()
 
 
