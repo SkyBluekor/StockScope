@@ -22,6 +22,7 @@ from app.simulation.validation_replay import (
     HistoricalValidationReplayError,
     HistoricalValidationReplayService,
 )
+from app.simulation.input_identity import verify_validation_input_identity
 from app.simulation.validation_outcome import (
     HistoricalValidationOutcomeError,
     HistoricalValidationOutcomeService,
@@ -408,6 +409,37 @@ async def cancel_validation_replay(validation_id: str):
         "status": updated.status,
         "cancel_requested": updated.cancel_requested,
     }
+
+
+@router.post(
+    "/simulation/validations/{validation_id}/verify-input",
+    tags=["simulation-validation"],
+)
+def verify_validation_input(validation_id: str):
+    catalog = _validation_catalog()
+    item = catalog.get(validation_id)
+    if item is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "VAL_REPLAY_NOT_FOUND",
+                "message": "저장된 검증을 찾을 수 없습니다.",
+            },
+        )
+    if item.status != "COMPLETED":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "VAL_REPLAY_NOT_COMPLETED",
+                "message": "완료된 Historical Validation만 입력 근거를 검증할 수 있습니다.",
+            },
+        )
+    service = _validation_replay_service()
+    return verify_validation_input_identity(
+        catalog,
+        service.market_store,
+        validation_id,
+    )
 
 
 @router.get(

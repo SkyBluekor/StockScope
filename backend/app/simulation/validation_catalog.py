@@ -9,6 +9,11 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from app.input_identity import (
+    VALIDATION_PROOF_TABLE,
+    VALIDATION_PROOF_VERSION,
+)
+
 
 PRODUCTION_SCANNER_VERSION = "0.21.3.7"
 
@@ -425,6 +430,40 @@ class HistoricalValidationCatalog:
             ).fetchone()
         return self._day_from_row(row) if row else None
 
+    def get_input_identity_proof(
+        self,
+        validation_id: str,
+        trading_date: str,
+    ) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            table = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
+                (VALIDATION_PROOF_TABLE,),
+            ).fetchone()
+            if table is None:
+                return None
+            row = conn.execute(
+                f"""
+                SELECT proof_version,market_manifest_json,source_input_fingerprint_json,
+                       day_result_hash,captured_at
+                FROM {VALIDATION_PROOF_TABLE}
+                WHERE validation_id=? AND trading_date=?
+                LIMIT 1
+                """,
+                (validation_id, trading_date),
+            ).fetchone()
+        if row is None or str(row["proof_version"]) != VALIDATION_PROOF_VERSION:
+            return None
+        return {
+            "proof_version": str(row["proof_version"]),
+            "market_manifest": _json_value(row["market_manifest_json"]) or {},
+            "source_input_fingerprint": _json_value(
+                row["source_input_fingerprint_json"]
+            ),
+            "day_result_hash": row["day_result_hash"],
+            "captured_at": str(row["captured_at"]),
+        }
+
     def completed_dates(self, validation_id: str) -> set[str]:
         with self.connect() as conn:
             rows = conn.execute(
@@ -482,11 +521,12 @@ class HistoricalValidationCatalog:
         scanner_cache_hit: bool,
         partial_data: bool,
         input_fingerprint: Any,
-        market_summary: Any,
-        summary: Any,
-        methodology: Any,
-        diagnostics: Any,
-        candidates: list[dict[str, Any]],
+        input_manifest: dict[str, Any] | None = None,
+        market_summary: Any = None,
+        summary: Any = None,
+        methodology: Any = None,
+        diagnostics: Any = None,
+        candidates: list[dict[str, Any]] | None = None,
         duration_ms: int = 0,
         started_at: str | None = None,
         completed_at: str | None = None,
@@ -494,7 +534,7 @@ class HistoricalValidationCatalog:
         started = started_at or datetime.now(timezone.utc).isoformat()
         completed = completed_at or datetime.now(timezone.utc).isoformat()
         normalized: list[dict[str, Any]] = []
-        for candidate in candidates:
+        for candidate in candidates or []:
             market = str(candidate.get("market") or "").strip().upper()
             ticker = str(candidate.get("ticker") or "").strip()
             name = str(candidate.get("name") or "").strip()
@@ -586,6 +626,38 @@ class HistoricalValidationCatalog:
                     None, None, started, completed,
                 ),
             )
+            proof_table = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
+                (VALIDATION_PROOF_TABLE,),
+            ).fetchone()
+            if proof_table is not None and isinstance(input_manifest, dict):
+                conn.execute(
+                    f"""
+                    INSERT INTO {VALIDATION_PROOF_TABLE}(
+                        validation_id,trading_date,proof_version,
+                        market_manifest_json,source_input_fingerprint_json,
+                        day_result_hash,captured_at
+                    ) VALUES(?,?,?,?,?,?,?)
+                    ON CONFLICT(validation_id,trading_date) DO UPDATE SET
+                        proof_version=excluded.proof_version,
+                        market_manifest_json=excluded.market_manifest_json,
+                        source_input_fingerprint_json=excluded.source_input_fingerprint_json,
+                        day_result_hash=excluded.day_result_hash,
+                        captured_at=excluded.captured_at
+                    """,
+                    (
+                        validation_id,
+                        trading_date,
+                        VALIDATION_PROOF_VERSION,
+                        _json_text(input_manifest),
+                        _json_text(input_fingerprint)
+                        if input_fingerprint is not None
+                        else None,
+                        result_hash,
+                        completed,
+                    ),
+                )
+
             for candidate in normalized:
                 conn.execute(
                     """INSERT INTO historical_validation_candidate(

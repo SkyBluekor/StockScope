@@ -270,6 +270,23 @@ export type HistoricalValidationDay = {
   completed_at: string | null;
 };
 
+export type ValidationInputIdentitySummary = {
+  validation_id: string;
+  status: "VALID" | "INVALID" | "UNVERIFIED" | string;
+  counts: {
+    completed: number;
+    valid: number;
+    changed: number;
+    source_mismatch: number;
+    unverified: number;
+  };
+  details: Array<{
+    trading_date: string;
+    status: string;
+    reason: string | null;
+  }>;
+};
+
 export type ValidationReplayResponse = {
   accepted: boolean;
   id: string;
@@ -348,6 +365,13 @@ export function runValidationReplay(id: string) {
 export function cancelValidationReplay(id: string) {
   return apiJson<ValidationReplayResponse>(
     `/api/simulation/validations/${encodeURIComponent(id)}/cancel`,
+    { method: "POST" },
+  );
+}
+
+export function verifyValidationInputIdentity(id: string) {
+  return apiJson<ValidationInputIdentitySummary>(
+    `/api/simulation/validations/${encodeURIComponent(id)}/verify-input`,
     { method: "POST" },
   );
 }

@@ -6,9 +6,12 @@ from typing import Any
 
 INPUT_IDENTITY_SCHEMA_VERSION = "VN_P1_S1_INPUT_GENERATION_V1"
 ANALYSIS_PROOF_VERSION = "VN_P1_S1_ANALYSIS_PROOF_V1"
+VALIDATION_PROOF_VERSION = "VN_P1_S1_VALIDATION_PROOF_V1"
+VALIDATION_INPUT_MANIFEST_VERSION = "VN_P1_S1_VALIDATION_INPUT_MANIFEST_V1"
 META_TABLE = "input_identity_meta"
 GENERATION_TABLE = "input_change_generation"
 PROOF_TABLE = "analysis_input_proof"
+VALIDATION_PROOF_TABLE = "historical_validation_input_proof"
 
 
 def table_exists(conn: sqlite3.Connection, name: str) -> bool:

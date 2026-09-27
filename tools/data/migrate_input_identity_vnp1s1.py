@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sqlite3
 import sys
 from pathlib import Path
@@ -15,6 +16,8 @@ from app.input_identity import (
     ANALYSIS_PROOF_VERSION,
     INPUT_IDENTITY_SCHEMA_VERSION,
     PROOF_TABLE,
+    VALIDATION_PROOF_TABLE,
+    VALIDATION_PROOF_VERSION,
 )
 from tools.data.common import (
     DataToolError,
@@ -302,14 +305,67 @@ def migrate_holdings(path: Path) -> dict[str, str]:
         conn.close()
 
 
+def migrate_simulation(path: Path) -> dict[str, str]:
+    path = Path(path)
+    _existing_core_tables(
+        path,
+        {"historical_validation_run", "historical_validation_day"},
+    )
+    conn = sqlite3.connect(path, timeout=20.0)
+    try:
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS {VALIDATION_PROOF_TABLE} (
+                validation_id TEXT NOT NULL,
+                trading_date TEXT NOT NULL,
+                proof_version TEXT NOT NULL,
+                market_manifest_json TEXT NOT NULL,
+                source_input_fingerprint_json TEXT,
+                day_result_hash TEXT,
+                captured_at TEXT NOT NULL,
+                PRIMARY KEY(validation_id,trading_date),
+                FOREIGN KEY(validation_id,trading_date)
+                    REFERENCES historical_validation_day(validation_id,trading_date)
+                    ON DELETE CASCADE
+            )
+            """
+        )
+        conn.commit()
+        return {"proof_version": VALIDATION_PROOF_VERSION}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def migrate_input_identity(
     *,
     holdings_db: Path | None = None,
     market_db: Path | None = None,
+    simulation_db: Path | None = None,
 ) -> dict[str, object]:
     market_result = migrate_market_store(Path(market_db or market_db_path()))
     holdings_result = migrate_holdings(Path(holdings_db or holdings_db_path()))
-    return {"market": market_result, "holdings": holdings_result}
+
+    default_simulation = BACKEND / "runtime" / "simulation" / "simulation.db"
+    simulation_path = Path(
+        simulation_db
+        or os.getenv("STOCKSCOPE_SIM_DB")
+        or default_simulation
+    )
+    simulation_result: dict[str, str]
+    if simulation_path.is_file():
+        simulation_result = migrate_simulation(simulation_path)
+    else:
+        simulation_result = {"status": "SKIPPED_MISSING"}
+    return {
+        "market": market_result,
+        "holdings": holdings_result,
+        "simulation": simulation_result,
+    }
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -318,6 +374,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--holdings-db", type=Path)
     parser.add_argument("--market-db", type=Path)
+    parser.add_argument("--simulation-db", type=Path)
     return parser
 
 
@@ -327,6 +384,7 @@ def main() -> int:
         result = migrate_input_identity(
             holdings_db=args.holdings_db,
             market_db=args.market_db,
+            simulation_db=args.simulation_db,
         )
         print("VN-P1-S1 INPUT IDENTITY MIGRATION PASS")
         print(result)

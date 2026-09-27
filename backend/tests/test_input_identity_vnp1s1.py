@@ -4,6 +4,7 @@ import json
 import sqlite3
 from pathlib import Path
 
+from app.backtest.market_store import HistoricalMarketStore
 from app.data_contract.builder import build_stock_data_contract
 from app.data_contract.reader import ReadOnlyDataStateReader
 from app.backtest.scanner import StockScannerService
@@ -12,8 +13,16 @@ from app.holdings.analysis import ANALYSIS_ENGINE_VERSION
 from app.backtest.production_exit_policy import production_policy_cache_token
 from app.holdings.input_proof import verify_current_analysis_input
 from app.input_identity import read_input_generation_token
+from app.simulation.input_identity import (
+    build_replay_market_manifest,
+    verify_validation_input_identity,
+)
+from app.simulation.validation_catalog import HistoricalValidationCatalog
 from tools.data.backup_runtime import create_backup
-from tools.data.migrate_input_identity_vnp1s1 import migrate_input_identity
+from tools.data.migrate_input_identity_vnp1s1 import (
+    migrate_input_identity,
+    migrate_simulation,
+)
 from tools.data.restore_runtime import restore_backup
 
 
@@ -314,3 +323,82 @@ def test_match_proof_becomes_invalid_only_after_related_input_change(
         == "CURRENT_INPUT_CHANGED_SINCE_PROOF"
     )
     assert changed.resources.analysis_result.current_use_allowed is False
+
+
+def test_validation_manifest_ignores_future_rows_but_detects_used_range_change(
+    tmp_path: Path,
+) -> None:
+    market = _market_db(tmp_path / "market.db")
+    simulation = tmp_path / "simulation.db"
+    catalog = HistoricalValidationCatalog(simulation)
+    catalog.initialize()
+    migrate_simulation(simulation)
+
+    draft = catalog.create_draft(
+        name="P1 identity test",
+        market_scope="KOSPI",
+        requested_period_type="custom",
+        requested_start_month="2026-09",
+        requested_end_month="2026-09",
+        resolved_start_date="2026-09-25",
+        resolved_end_date="2026-09-25",
+        trading_day_count=1,
+    )
+    store = HistoricalMarketStore(market)
+    replay_day = __import__("datetime").date(2026, 9, 25)
+    manifest = build_replay_market_manifest(store, draft, replay_day)
+
+    catalog.save_completed_day(
+        validation_id=draft.id,
+        trading_date="2026-09-25",
+        scanner_version=draft.scanner_version,
+        market_scope=draft.market_scope,
+        scanner_cache_hit=False,
+        partial_data=False,
+        input_fingerprint={"fixture": "v1"},
+        input_manifest=manifest,
+        market_summary={},
+        summary={},
+        methodology={},
+        diagnostics={},
+        candidates=[],
+    )
+
+    initial = verify_validation_input_identity(catalog, store, draft.id)
+    assert initial["status"] == "VALID"
+    assert initial["counts"]["valid"] == 1
+
+    with sqlite3.connect(market) as conn:
+        conn.execute(
+            "INSERT INTO stock_daily VALUES(?,?,?,?)",
+            (
+                "KOSPI",
+                "20260928",
+                "005930",
+                json.dumps({"code": "005930", "close": 120}),
+            ),
+        )
+        conn.execute(
+            "INSERT INTO main_index_daily VALUES(?,?,?)",
+            ("KOSPI", "20260928", json.dumps({"close": 3100})),
+        )
+        conn.execute(
+            "INSERT INTO day_status VALUES('KOSPI','20260928','stock','data')"
+        )
+        conn.execute(
+            "INSERT INTO day_status VALUES('KOSPI','20260928','index','data')"
+        )
+
+    future_added = verify_validation_input_identity(catalog, store, draft.id)
+    assert future_added["status"] == "VALID"
+
+    with sqlite3.connect(market) as conn:
+        conn.execute(
+            "UPDATE stock_daily SET row_json=? "
+            "WHERE market='KOSPI' AND bas_dd='20260925' AND stock_code='005930'",
+            (json.dumps({"code": "005930", "close": 999}),),
+        )
+
+    changed = verify_validation_input_identity(catalog, store, draft.id)
+    assert changed["status"] == "INVALID"
+    assert changed["counts"]["changed"] == 1

@@ -12,10 +12,12 @@ import {
   previewValidationPeriod,
   refreshValidationOutcomes,
   runValidationReplay,
+  verifyValidationInputIdentity,
   SimulationApiError,
   type HistoricalValidationDraft,
   type HistoricalValidationOutcomeBreakdown,
   type HistoricalValidationOutcomeSummary,
+  type ValidationInputIdentitySummary,
   type ValidationOutcomeBreakdownRow,
   type LegacyValidation,
   type ValidationPeriodPreview,
@@ -167,6 +169,8 @@ export default function SimulationWorkspace() {
   const [replayBusy, setReplayBusy] = useState(false);
   const [outcomeBusy, setOutcomeBusy] = useState(false);
   const [outcomeSummary, setOutcomeSummary] = useState<HistoricalValidationOutcomeSummary | null>(null);
+  const [inputIdentitySummary, setInputIdentitySummary] = useState<ValidationInputIdentitySummary | null>(null);
+  const [inputIdentityBusy, setInputIdentityBusy] = useState(false);
   const [outcomeBreakdown, setOutcomeBreakdown] = useState<HistoricalValidationOutcomeBreakdown | null>(null);
   const [expandedStrategyKey, setExpandedStrategyKey] = useState<string | null>(null);
   const [expandedDecisionKey, setExpandedDecisionKey] = useState<string | null>(null);
@@ -219,6 +223,7 @@ export default function SimulationWorkspace() {
   useEffect(() => {
     setExpandedStrategyKey(null);
     setExpandedDecisionKey(null);
+    setInputIdentitySummary(null);
     if (mode !== "saved" || !selectedDraft || selectedDraft.status !== "COMPLETED") {
       setOutcomeSummary(null);
       setOutcomeBreakdown(null);
@@ -305,6 +310,26 @@ export default function SimulationWorkspace() {
     } catch (error) {
       setMessage(errorText(error));
     } finally { setBusy(false); }
+  }
+
+  async function verifyReplayInput(row: HistoricalValidationDraft) {
+    setInputIdentityBusy(true);
+    setMessage(null);
+    try {
+      const result = await verifyValidationInputIdentity(row.id);
+      setInputIdentitySummary(result);
+      if (result.status === "VALID") {
+        setMessage("저장된 Replay 입력이 현재 보존된 Market Store와 일치합니다.");
+      } else if (result.status === "INVALID") {
+        setMessage("저장 이후 관련 Market Store 입력 변경이 감지되었습니다.");
+      } else {
+        setMessage("일부 거래일은 입력 증명을 갖고 있지 않아 완전 검증할 수 없습니다.");
+      }
+    } catch (error) {
+      setMessage(errorText(error));
+    } finally {
+      setInputIdentityBusy(false);
+    }
   }
 
   async function runReplay(row: HistoricalValidationDraft) {
@@ -480,6 +505,16 @@ export default function SimulationWorkspace() {
               {selectedDraft.status === "RUNNING" && selectedDraft.runtime_active === false && <p className="sim-replay-note">이전 실행 프로세스가 종료되었습니다. 완료된 날짜는 보존되어 있으며 이어서 실행할 수 있습니다.</p>}
               {selectedDraft.status === "CANCELLED" && <p className="sim-replay-note">완료된 날짜까지 저장되었습니다. 이어 실행하면 다음 미완료 거래일부터 계속합니다.</p>}
               {selectedDraft.status === "COMPLETED" && <p className="sim-replay-note">모든 대상 거래일의 당시 Scanner 판단을 저장했습니다. 아래 성과 평가는 추천 당일을 제외하고 D+1부터 최대 20거래일까지 실제 확정 일봉을 관측합니다.</p>}
+              {selectedDraft.status === "COMPLETED" && <div className="sim-replay-note">
+                <button className="sim-secondary" disabled={inputIdentityBusy} onClick={() => void verifyReplayInput(selectedDraft)}>
+                  {inputIdentityBusy ? "입력 근거 확인 중…" : "Replay 입력 근거 확인"}
+                </button>
+                {inputIdentitySummary && <span>
+                  입력 증명 {inputIdentitySummary.status} · 유효 {inputIdentitySummary.counts.valid}/{inputIdentitySummary.counts.completed}일
+                  {inputIdentitySummary.counts.changed > 0 ? ` · 변경 ${inputIdentitySummary.counts.changed}일` : ""}
+                  {inputIdentitySummary.counts.unverified > 0 ? ` · 미증명 ${inputIdentitySummary.counts.unverified}일` : ""}
+                </span>}
+              </div>}
 
               <div className="sim-replay-actions">
                 {selectedDraft.status === "DRAFT" && <button className="sim-primary" disabled={replayBusy} onClick={() => void runReplay(selectedDraft)}>{replayBusy ? "시작 중…" : "과거 Scanner 재생 시작"}</button>}
