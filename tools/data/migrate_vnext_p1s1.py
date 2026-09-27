@@ -13,6 +13,7 @@ from tools.data.common import (
     DataToolError,
     holdings_db_path,
     market_db_path,
+    simulation_db_path,
     sqlite_snapshot,
     utc_stamp,
     validate_holdings_db,
@@ -142,14 +143,91 @@ def _migrate_holdings(path: Path) -> None:
         conn.close()
 
 
+def _migrate_simulation(path: Path) -> None:
+    conn = sqlite3.connect(path, timeout=20.0)
+    try:
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("PRAGMA busy_timeout=20000")
+        conn.executescript(
+            """
+            BEGIN EXCLUSIVE;
+            CREATE TABLE IF NOT EXISTS simulation_input_manifest (
+                manifest_hash TEXT PRIMARY KEY,
+                schema_version TEXT NOT NULL,
+                source_kind TEXT NOT NULL,
+                input_fingerprint_json TEXT,
+                manifest_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TRIGGER IF NOT EXISTS trg_simulation_input_manifest_no_update
+            BEFORE UPDATE ON simulation_input_manifest
+            BEGIN
+                SELECT RAISE(ABORT, 'simulation_input_manifest is immutable');
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS trg_simulation_input_manifest_no_delete
+            BEFORE DELETE ON simulation_input_manifest
+            BEGIN
+                SELECT RAISE(ABORT, 'simulation_input_manifest is immutable');
+            END;
+
+            CREATE TABLE IF NOT EXISTS simulation_input_proof (
+                id TEXT PRIMARY KEY,
+                source_kind TEXT NOT NULL,
+                source_key TEXT NOT NULL,
+                manifest_hash TEXT NOT NULL,
+                market_generations_json TEXT NOT NULL,
+                verified_at TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(
+                    source_kind,
+                    source_key,
+                    manifest_hash,
+                    market_generations_json
+                ),
+                FOREIGN KEY(manifest_hash)
+                    REFERENCES simulation_input_manifest(manifest_hash)
+                    ON DELETE RESTRICT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_simulation_input_proof_source
+                ON simulation_input_proof(source_kind,source_key,verified_at DESC);
+
+            CREATE TRIGGER IF NOT EXISTS trg_simulation_input_proof_no_update
+            BEFORE UPDATE ON simulation_input_proof
+            BEGIN
+                SELECT RAISE(ABORT, 'simulation_input_proof is append-only');
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS trg_simulation_input_proof_no_delete
+            BEFORE DELETE ON simulation_input_proof
+            BEGIN
+                SELECT RAISE(ABORT, 'simulation_input_proof is append-only');
+            END;
+            COMMIT;
+            """
+        )
+    except Exception:
+        try:
+            conn.rollback()
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        conn.close()
+
+
 def migrate_p1_input_identity(
     *,
     holdings_db: Path | None = None,
     market_db: Path | None = None,
+    simulation_db: Path | None = None,
     create_backups: bool = True,
 ) -> dict[str, object]:
     holdings = Path(holdings_db or holdings_db_path())
     market = Path(market_db or market_db_path())
+    simulation = Path(simulation_db or simulation_db_path())
 
     validate_holdings_db(holdings)
     validate_market_db(market)
@@ -159,13 +237,17 @@ def migrate_p1_input_identity(
     # fails via SQLite busy/locked rather than by treating harmless WAL sidecars
     # as corruption.
     stamp = utc_stamp()
-    backups: dict[str, str | None] = {"holdings": None, "market": None}
+    backups: dict[str, str | None] = {"holdings": None, "market": None, "simulation": None}
     if create_backups:
         backups["holdings"] = str(_safety_backup(holdings, stamp))
         backups["market"] = str(_safety_backup(market, stamp))
+        if simulation.is_file():
+            backups["simulation"] = str(_safety_backup(simulation, stamp))
 
     _migrate_market(market)
     _migrate_holdings(holdings)
+    if simulation.is_file():
+        _migrate_simulation(simulation)
 
     validate_market_db(market)
     validate_holdings_db(holdings)
@@ -173,6 +255,7 @@ def migrate_p1_input_identity(
         "migration_id": MIGRATION_ID,
         "holdings_db": str(holdings),
         "market_history_db": str(market),
+        "simulation_db": str(simulation) if simulation.is_file() else None,
         "backups": backups,
     }
 
@@ -183,6 +266,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--holdings-db", type=Path)
     parser.add_argument("--market-db", type=Path)
+    parser.add_argument("--simulation-db", type=Path)
     parser.add_argument(
         "--no-backup",
         action="store_true",
@@ -197,6 +281,7 @@ def main() -> int:
         result = migrate_p1_input_identity(
             holdings_db=args.holdings_db,
             market_db=args.market_db,
+            simulation_db=args.simulation_db,
             create_backups=not args.no_backup,
         )
         print("=" * 78)

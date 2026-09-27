@@ -17,6 +17,7 @@ from .validation_catalog import (
 
 
 ProgressCallback = Callable[[dict[str, Any]], None]
+INPUT_MANIFEST_SCHEMA_VERSION = "SIM_VALIDATION_INPUT_MANIFEST_V1"
 
 
 # PERF.1 — isolate Production reproducibility audit from Historical Replay
@@ -209,6 +210,78 @@ class HistoricalValidationReplayService:
                 "Replay에 필요한 Market Store 이력이 부족합니다: " + ", ".join(missing),
             )
 
+    def _input_generations(self, markets: tuple[str, ...]) -> dict[str, int] | None:
+        reader = getattr(self.market_store, "input_generation", None)
+        if not callable(reader):
+            return None
+        values: dict[str, int] = {}
+        for market in markets:
+            generation = reader(market)
+            if generation is None:
+                return None
+            values[market] = int(generation)
+        return values
+
+    def _input_manifest(
+        self,
+        *,
+        draft: HistoricalValidationDraft,
+        replay_day: date,
+        result: dict[str, Any],
+        expected_generations: dict[str, int] | None,
+    ) -> tuple[dict[str, Any] | None, dict[str, int] | None]:
+        snapshotter = getattr(self.market_store, "reproducibility_snapshot", None)
+        markets = self._markets(draft.market_scope)
+        if expected_generations is None or not callable(snapshotter):
+            return None, None
+
+        before_snapshot = self._input_generations(markets)
+        if before_snapshot != expected_generations:
+            raise HistoricalValidationReplayError(
+                "VAL_REPLAY_INPUT_CHANGED",
+                "Replay 실행 중 Market Store 입력 generation이 변경되었습니다.",
+            )
+
+        history_start = replay_day - timedelta(days=StockScannerService.FAST_HISTORY_CALENDAR_DAYS)
+        start_key = self._compact(history_start)
+        end_key = self._compact(replay_day)
+        expected_dates: list[str] = []
+        cursor = history_start
+        while cursor <= replay_day:
+            if cursor.weekday() < 5:
+                expected_dates.append(self._compact(cursor))
+            cursor += timedelta(days=1)
+
+        snapshots = {
+            market: snapshotter(
+                market,
+                start_key,
+                end_key,
+                expected_dates=expected_dates,
+            )
+            for market in markets
+        }
+        after_snapshot = self._input_generations(markets)
+        if after_snapshot != expected_generations:
+            raise HistoricalValidationReplayError(
+                "VAL_REPLAY_INPUT_CHANGED",
+                "Replay 입력 증명 생성 중 Market Store가 변경되었습니다.",
+            )
+
+        manifest = {
+            "schema_version": INPUT_MANIFEST_SCHEMA_VERSION,
+            "calculation_path": "HISTORICAL_VALIDATION_REPLAY",
+            "validation_id": draft.id,
+            "trading_date": replay_day.isoformat(),
+            "market_scope": draft.market_scope,
+            "scanner_version": draft.scanner_version,
+            "history_start": history_start.isoformat(),
+            "history_end": replay_day.isoformat(),
+            "input_fingerprint": result.get("input_fingerprint"),
+            "market_snapshots": snapshots,
+        }
+        return manifest, after_snapshot
+
     def _validate_point_in_time(
         self,
         draft: HistoricalValidationDraft,
@@ -365,6 +438,8 @@ class HistoricalValidationReplayService:
             started_at = datetime.now(timezone.utc).isoformat()
             started_clock = perf_counter()
             try:
+                markets = self._markets(draft.market_scope)
+                generation_before = self._input_generations(markets)
                 self._assert_local_inputs(draft, replay_day)
                 scanner = self.scanner_factory()
                 result = await scanner.run(
@@ -380,6 +455,22 @@ class HistoricalValidationReplayService:
                         "Scanner 결과 형식이 올바르지 않습니다.",
                     )
                 self._validate_point_in_time(draft, replay_day, result)
+                generation_after = self._input_generations(markets)
+                if (
+                    generation_before is not None
+                    and generation_after is not None
+                    and generation_before != generation_after
+                ):
+                    raise HistoricalValidationReplayError(
+                        "VAL_REPLAY_INPUT_CHANGED",
+                        "Replay 실행 중 Market Store 입력이 변경되었습니다.",
+                    )
+                input_manifest, proven_generations = self._input_manifest(
+                    draft=draft,
+                    replay_day=replay_day,
+                    result=result,
+                    expected_generations=generation_after,
+                )
                 candidates = self._normalize_candidates(result)
                 duration_ms = max(0, int((perf_counter() - started_clock) * 1000))
 
@@ -396,6 +487,8 @@ class HistoricalValidationReplayService:
                     methodology=result.get("methodology"),
                     diagnostics=result.get("diagnostics"),
                     candidates=candidates,
+                    input_manifest=input_manifest,
+                    market_generations=proven_generations,
                     duration_ms=duration_ms,
                     started_at=started_at,
                     completed_at=datetime.now(timezone.utc).isoformat(),

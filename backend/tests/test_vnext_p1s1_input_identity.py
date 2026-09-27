@@ -14,6 +14,7 @@ from app.holdings.analysis import (
     SingleStockAnalysis,
 )
 from app.holdings.analysis_history import HoldingAnalysisHistoryService
+from app.simulation.validation_catalog import HistoricalValidationCatalog
 from tools.data.migrate_vnext_p1s1 import migrate_p1_input_identity
 
 
@@ -237,3 +238,82 @@ def test_analysis_proof_becomes_valid_then_invalidates_and_reproves(
             ).fetchone()[0]
         )
     assert proof_count == 2
+
+
+
+def test_simulation_validation_day_can_store_append_only_input_proof(
+    tmp_path: Path,
+) -> None:
+    market_path = tmp_path / "market.db"
+    holdings_path = tmp_path / "holdings.db"
+    simulation_path = tmp_path / "simulation.db"
+    _core_market_db(market_path)
+    _core_holdings_db(holdings_path)
+    catalog = HistoricalValidationCatalog(simulation_path)
+    catalog.initialize()
+
+    migrate_p1_input_identity(
+        holdings_db=holdings_path,
+        market_db=market_path,
+        simulation_db=simulation_path,
+        create_backups=False,
+    )
+    draft = catalog.create_draft(
+        name="proof fixture",
+        market_scope="KOSPI",
+        requested_period_type="custom",
+        requested_start_month="2026-09",
+        requested_end_month="2026-09",
+        resolved_start_date="2026-09-25",
+        resolved_end_date="2026-09-25",
+        trading_day_count=1,
+    )
+    fingerprint = {"id": "sim-proof-fp"}
+    manifest = {
+        "schema_version": "SIM_VALIDATION_INPUT_MANIFEST_V1",
+        "calculation_path": "HISTORICAL_VALIDATION_REPLAY",
+        "validation_id": draft.id,
+        "trading_date": "2026-09-25",
+        "input_fingerprint": fingerprint,
+        "market_snapshots": {"KOSPI": {"combined_sha256": "fixture"}},
+    }
+    kwargs = dict(
+        validation_id=draft.id,
+        trading_date="2026-09-25",
+        scanner_version=StockScannerService.VERSION,
+        market_scope="KOSPI",
+        scanner_cache_hit=False,
+        partial_data=False,
+        input_fingerprint=fingerprint,
+        market_summary=[],
+        summary={},
+        methodology={},
+        diagnostics={"network_requests": 0},
+        candidates=[
+            {
+                "market": "KOSPI",
+                "ticker": "005930",
+                "name": "삼성전자",
+                "rank": 1,
+                "result_bucket": "TOP",
+                "strategy": "PULLBACK",
+                "decision_status": "READY",
+                "snapshot": {"code": "005930"},
+            }
+        ],
+        input_manifest=manifest,
+        market_generations={"KOSPI": 0},
+    )
+    first = catalog.save_completed_day(**kwargs)
+    second = catalog.save_completed_day(**kwargs)
+    assert first.result_hash == second.result_hash
+
+    with sqlite3.connect(simulation_path) as conn:
+        manifest_count = int(
+            conn.execute("SELECT COUNT(*) FROM simulation_input_manifest").fetchone()[0]
+        )
+        proof_count = int(
+            conn.execute("SELECT COUNT(*) FROM simulation_input_proof").fetchone()[0]
+        )
+    assert manifest_count == 1
+    assert proof_count == 1

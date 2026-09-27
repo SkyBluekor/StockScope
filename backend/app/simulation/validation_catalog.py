@@ -472,6 +472,102 @@ class HistoricalValidationCatalog:
             (validation_id, validation_id, validation_id, now, validation_id),
         )
 
+    @staticmethod
+    def _input_evidence_available(conn: sqlite3.Connection) -> bool:
+        names = {
+            str(row["name"])
+            for row in conn.execute(
+                """
+                SELECT name FROM sqlite_master
+                WHERE type='table' AND name IN (
+                    'simulation_input_manifest',
+                    'simulation_input_proof'
+                )
+                """
+            ).fetchall()
+        }
+        return names == {"simulation_input_manifest", "simulation_input_proof"}
+
+    def _persist_input_proof_uow(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        validation_id: str,
+        trading_date: str,
+        input_fingerprint: Any,
+        input_manifest: dict[str, Any] | None,
+        market_generations: dict[str, int] | None,
+        verified_at: str,
+        created_at: str,
+    ) -> None:
+        if input_manifest is None or market_generations is None:
+            return
+        if not self._input_evidence_available(conn):
+            return
+
+        manifest = dict(input_manifest)
+        schema_version = str(manifest.get("schema_version") or "").strip()
+        if not schema_version:
+            raise ValidationCatalogError(
+                "VAL_INPUT_MANIFEST_INVALID",
+                "Simulation 입력 manifest schema version이 없습니다.",
+            )
+        manifest_fingerprint = manifest.get("input_fingerprint")
+        if _json_text(manifest_fingerprint) != _json_text(input_fingerprint):
+            raise ValidationCatalogError(
+                "VAL_INPUT_MANIFEST_INVALID",
+                "Simulation 입력 manifest와 저장 fingerprint가 일치하지 않습니다.",
+            )
+        generations = {
+            str(key).upper(): int(value)
+            for key, value in sorted(market_generations.items())
+        }
+        if not generations or any(value < 0 for value in generations.values()):
+            raise ValidationCatalogError(
+                "VAL_INPUT_MANIFEST_INVALID",
+                "Simulation Market Store generation이 올바르지 않습니다.",
+            )
+
+        manifest_json = _json_text(manifest)
+        manifest_hash = _digest(manifest)
+        generations_json = _json_text(generations)
+        source_kind = "HISTORICAL_VALIDATION_DAY"
+        source_key = f"{validation_id}:{trading_date}"
+
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO simulation_input_manifest(
+                manifest_hash,schema_version,source_kind,
+                input_fingerprint_json,manifest_json,created_at
+            ) VALUES(?,?,?,?,?,?)
+            """,
+            (
+                manifest_hash,
+                schema_version,
+                source_kind,
+                _json_text(input_fingerprint) if input_fingerprint is not None else None,
+                manifest_json,
+                created_at,
+            ),
+        )
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO simulation_input_proof(
+                id,source_kind,source_key,manifest_hash,
+                market_generations_json,verified_at,created_at
+            ) VALUES(?,?,?,?,?,?,?)
+            """,
+            (
+                str(uuid4()),
+                source_kind,
+                source_key,
+                manifest_hash,
+                generations_json,
+                verified_at,
+                created_at,
+            ),
+        )
+
     def save_completed_day(
         self,
         *,
@@ -487,6 +583,8 @@ class HistoricalValidationCatalog:
         methodology: Any,
         diagnostics: Any,
         candidates: list[dict[str, Any]],
+        input_manifest: dict[str, Any] | None = None,
+        market_generations: dict[str, int] | None = None,
         duration_ms: int = 0,
         started_at: str | None = None,
         completed_at: str | None = None,
@@ -543,6 +641,22 @@ class HistoricalValidationCatalog:
                 (validation_id, trading_date),
             ).fetchone()
             if existing is not None and existing["status"] == "COMPLETED":
+                existing_fingerprint = _json_value(existing["input_fingerprint_json"])
+                if _json_text(existing_fingerprint) != _json_text(input_fingerprint):
+                    raise ValidationCatalogError(
+                        "VAL_INPUT_PROOF_CONFLICT",
+                        "완료된 Validation Day의 input fingerprint를 변경할 수 없습니다.",
+                    )
+                self._persist_input_proof_uow(
+                    conn,
+                    validation_id=validation_id,
+                    trading_date=trading_date,
+                    input_fingerprint=input_fingerprint,
+                    input_manifest=input_manifest,
+                    market_generations=market_generations,
+                    verified_at=completed,
+                    created_at=now,
+                )
                 return self._day_from_row(existing)
 
             conn.execute(
@@ -585,6 +699,16 @@ class HistoricalValidationCatalog:
                     _json_text(diagnostics) if diagnostics is not None else None,
                     None, None, started, completed,
                 ),
+            )
+            self._persist_input_proof_uow(
+                conn,
+                validation_id=validation_id,
+                trading_date=trading_date,
+                input_fingerprint=input_fingerprint,
+                input_manifest=input_manifest,
+                market_generations=market_generations,
+                verified_at=completed,
+                created_at=now,
             )
             for candidate in normalized:
                 conn.execute(
