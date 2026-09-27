@@ -22,6 +22,7 @@ from app.watch import (
     WatchPolicyError,
     WatchRuleRuntimeState,
     WatchRuleSpec,
+    WatchService,
     advance_watch_rule,
     load_active_plan_watch_demands,
     production_watch_policy,
@@ -654,3 +655,229 @@ async def test_subscription_rejection_reports_coverage_issue_without_consumer(
     assert coverage == [("p1", "SUBSCRIPTION_LIMIT")]
     assert await hub.subscriber_count(key) == 0
     await coordinator.stop()
+
+
+
+def _snapshot_at(
+    key: QuoteCacheKey,
+    seconds: int,
+    price: str,
+) -> QuoteSnapshot:
+    base = _snapshot(key, price)
+    return QuoteSnapshot(
+        market=base.market,
+        ticker=base.ticker,
+        name=base.name,
+        venue=base.venue,
+        provider_market_division=base.provider_market_division,
+        environment=base.environment,
+        current_price=base.current_price,
+        change_amount=base.change_amount,
+        change_rate=base.change_rate,
+        change_sign=base.change_sign,
+        open_price=base.open_price,
+        high_price=base.high_price,
+        low_price=base.low_price,
+        base_price=base.base_price,
+        accumulated_volume=base.accumulated_volume,
+        provider_timestamp=base.provider_timestamp,
+        received_at=BASE_TIME + timedelta(seconds=seconds),
+        transport=base.transport,
+    )
+
+
+def test_durable_watch_confirmation_creates_single_episode_and_notification(
+    tmp_path: Path,
+):
+    db, catalog, opened, plan = _env(tmp_path)
+    migrate_watch_store(db)
+    events_before = catalog.list_position_events(opened.position.id)
+    demand = load_active_plan_watch_demands(catalog)[0]
+    policy = _test_policy(confirmation=2, max_age=60)
+    service = WatchService(
+        catalog,
+        policy_provider=lambda: policy,
+        clock=lambda: BASE_TIME + timedelta(seconds=10),
+    )
+    key = _quote_key()
+
+    reconciled = service.reconcile([demand])
+    first = service.process_quote(demand, _snapshot_at(key, 1, "89"))
+    second = service.process_quote(demand, _snapshot_at(key, 2, "88"))
+    repeated = service.process_quote(demand, _snapshot_at(key, 3, "87"))
+
+    assert reconciled["active_settings"] == 1
+    assert any(
+        item["event"] == "CONDITION_ENTERED"
+        and item["rule_kind"] == "STOP"
+        for item in first["transitions"]
+    )
+    assert any(
+        item["event"] == "CONFIRMED"
+        and item["rule_kind"] == "STOP"
+        for item in second["transitions"]
+    )
+    assert all(
+        item["event"] != "CONFIRMED"
+        for item in repeated["transitions"]
+    )
+
+    with sqlite3.connect(db) as conn:
+        conn.row_factory = sqlite3.Row
+        settings = conn.execute(
+            "SELECT * FROM holding_watch_setting"
+        ).fetchall()
+        rules = conn.execute(
+            "SELECT * FROM holding_watch_rule ORDER BY rule_kind"
+        ).fetchall()
+        episodes = conn.execute(
+            "SELECT * FROM holding_watch_episode"
+        ).fetchall()
+        notifications = conn.execute(
+            "SELECT * FROM holding_watch_notification_outbox"
+        ).fetchall()
+
+    assert len(settings) == 1
+    assert str(settings[0]["plan_id"]) == plan.id
+    assert len(rules) == 3
+    stop_rule = next(row for row in rules if row["rule_kind"] == "STOP")
+    assert stop_rule["state"] == "CONFIRMED"
+    assert stop_rule["confirmation_observations"] == 2
+    assert stop_rule["rearm_observations"] == 2
+    assert stop_rule["rearm_distance_bps"] == 100
+    assert stop_rule["max_quote_age_seconds"] == 60
+    assert len(episodes) == 1
+    assert episodes[0]["status"] == "OPEN"
+    assert episodes[0]["confirmed_at"] is not None
+    assert len(notifications) == 1
+    assert notifications[0]["delivery_status"] == "PENDING"
+    assert catalog.list_position_events(opened.position.id) == events_before
+    active = HoldingManagementService(catalog).get_active_plan(opened.position.id)
+    assert active is not None
+    assert active.id == plan.id
+
+
+def test_watch_coverage_gap_is_durable_idempotent_and_resets_pending_only(
+    tmp_path: Path,
+):
+    db, catalog, opened, _plan = _env(tmp_path)
+    migrate_watch_store(db)
+    demand = load_active_plan_watch_demands(catalog)[0]
+    policy = _test_policy(confirmation=2, max_age=60)
+    service = WatchService(
+        catalog,
+        policy_provider=lambda: policy,
+        clock=lambda: BASE_TIME + timedelta(seconds=10),
+    )
+    key = _quote_key()
+
+    service.reconcile([demand])
+    service.process_quote(demand, _snapshot_at(key, 1, "89"))
+    service.record_coverage_issue(demand, "WS_RECONNECT")
+    service.record_coverage_issue(demand, "WS_RECONNECT")
+
+    with sqlite3.connect(db) as conn:
+        conn.row_factory = sqlite3.Row
+        stop = conn.execute(
+            """
+            SELECT * FROM holding_watch_rule
+            WHERE rule_kind='STOP'
+            """
+        ).fetchone()
+        episodes = conn.execute(
+            "SELECT * FROM holding_watch_episode"
+        ).fetchall()
+        gaps = conn.execute(
+            "SELECT * FROM holding_watch_coverage_gap"
+        ).fetchall()
+
+    assert stop is not None
+    assert stop["state"] == "ARMED"
+    assert stop["confirmation_count"] == 0
+    assert len(episodes) == 1
+    assert episodes[0]["status"] == "INVALIDATED"
+    assert episodes[0]["resolution_reason"] == "COVERAGE_GAP:WS_RECONNECT"
+    assert len(gaps) == 1
+    assert gaps[0]["status"] == "OPEN"
+
+    service.process_quote(demand, _snapshot_at(key, 3, "95"))
+    with sqlite3.connect(db) as conn:
+        closed_gap = conn.execute(
+            "SELECT status,ended_at FROM holding_watch_coverage_gap"
+        ).fetchone()
+    assert closed_gap[0] == "CLOSED"
+    assert closed_gap[1] is not None
+
+
+def test_watch_plan_change_invalidates_old_setting_and_preserves_history(
+    tmp_path: Path,
+):
+    db, catalog, opened, old_plan = _env(tmp_path)
+    migrate_watch_store(db)
+    policy = _test_policy(max_age=60)
+    service = WatchService(
+        catalog,
+        policy_provider=lambda: policy,
+        clock=lambda: BASE_TIME + timedelta(seconds=30),
+    )
+    old_demand = load_active_plan_watch_demands(catalog)[0]
+    service.reconcile([old_demand])
+
+    day = catalog.get_or_create_analysis_day(
+        monitored_stock_id=opened.stock_id,
+        market_date="2026-09-28",
+    )
+    revision2 = catalog.append_analysis_revision(
+        analysis_day_id=day.id,
+        input_fingerprint="watch-r2",
+        strategy_key="trend_following",
+        action_state="WATCH",
+        risk_state="READY",
+        reference_price="101",
+        stop_price="92",
+        target1_price="125",
+        target2_price="135",
+        scanner_version="test",
+        analysis_engine_version="test",
+        policy_version="test",
+        source_versions={"fixture": "watch-r2"},
+        snapshot={"fixture": "watch-r2"},
+        computed_at="2026-09-28T09:20:00+09:00",
+    )
+    catalog.promote_current_revision(
+        analysis_day_id=day.id,
+        revision_id=revision2.id,
+    )
+    new_plan = HoldingManagementService(catalog).apply_analysis_plan(
+        position_id=opened.position.id,
+        analysis_revision_id=revision2.id,
+        applied_at="2026-09-28T09:21:00+09:00",
+    )
+    assert new_plan.id != old_plan.id
+
+    new_demand = load_active_plan_watch_demands(catalog)[0]
+    service.reconcile([new_demand])
+
+    with sqlite3.connect(db) as conn:
+        conn.row_factory = sqlite3.Row
+        settings = conn.execute(
+            """
+            SELECT * FROM holding_watch_setting
+            ORDER BY created_at,rowid
+            """
+        ).fetchall()
+        old_rules = conn.execute(
+            """
+            SELECT * FROM holding_watch_rule
+            WHERE setting_id=?
+            """,
+            (settings[0]["id"],),
+        ).fetchall()
+
+    assert len(settings) == 2
+    assert settings[0]["plan_id"] == old_plan.id
+    assert settings[0]["status"] == "DISABLED"
+    assert settings[0]["disabled_reason"] == "PLAN_OR_POLICY_CHANGED"
+    assert all(row["status"] == "CLOSED" for row in old_rules)
+    assert settings[1]["plan_id"] == new_plan.id
+    assert settings[1]["status"] == "ACTIVE"
