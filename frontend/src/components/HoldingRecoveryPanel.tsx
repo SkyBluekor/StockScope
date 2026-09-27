@@ -351,6 +351,30 @@ export default function HoldingRecoveryPanel({ positions, sourceKey }: Props) {
                   </button>
                 </div>
 
+                {context.review_history.some((item) => item.assessments.length > 0) && (
+                  <details className="holding-recovery-details">
+                    <summary>이전 Recovery 기록</summary>
+                    <div className="holding-recovery-history">
+                      {context.review_history.flatMap((item) =>
+                        item.assessments.map((assessment) => (
+                          <div className="holding-recovery-history-row" key={assessment.assessment_id}>
+                            <span>{assessment.created_at.slice(0, 10).replace(/-/g, ".")}</span>
+                            <strong>
+                              {thesisOptions.find((option) => option.value === assessment.thesis_state)?.label
+                                ?? assessment.thesis_state}
+                            </strong>
+                            <span>
+                              {actionOptions.find((option) => option.value === assessment.review_action)?.label
+                                ?? assessment.review_action}
+                            </span>
+                            <p>{assessment.reason_note || "이유 기록 없음"}</p>
+                          </div>
+                        )),
+                      )}
+                    </div>
+                  </details>
+                )}
+
                 <details className="holding-recovery-details">
                   <summary>현재 근거 · 제한사항</summary>
                   <div className="holding-recovery-evidence">
@@ -361,7 +385,19 @@ export default function HoldingRecoveryPanel({ positions, sourceKey }: Props) {
                   </div>
                   {context.current.limitations.length > 0 && (
                     <ul>
-                      {context.current.limitations.map((item) => <li key={item}>{item}</li>)}
+                      {context.current.limitations.map((item) => {
+                        const text = ({
+                          VALUATION_NOT_AVAILABLE: "확정 EOD 평가가격을 사용할 수 없습니다.",
+                          ANALYSIS_NOT_AVAILABLE: "최신 분석이 없습니다.",
+                          ACTIVE_PLAN_NOT_AVAILABLE: "현재 적용 중인 관리 계획이 없습니다.",
+                          HOLDING_DECISION_NOT_AVAILABLE: "저장된 최신 보유 판단이 없습니다.",
+                          HOLDING_DECISION_STALE: "최근 보유 판단이 현재 상태와 달라 다시 판단해야 합니다.",
+                          POSITION_PNL_NOT_AVAILABLE: "현재 평가손익을 계산할 수 없습니다.",
+                          ACCOUNT_TOTAL_EXPOSURE_NOT_PROVEN: "전체 현금·계좌·자산 범위를 알 수 없어 전체 자산 대비 비중을 확정하지 않습니다.",
+                          COMPANY_EVIDENCE_NOT_CONNECTED: "기업·공시 근거는 아직 Recovery 판단 근거로 연결하지 않았습니다.",
+                        } as Record<string, string>)[item] ?? item;
+                        return <li key={item}>{text}</li>;
+                      })}
                     </ul>
                   )}
                 </details>
