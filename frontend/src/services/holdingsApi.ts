@@ -530,6 +530,7 @@ export type HoldingRecoveryAssessment = {
 export type HoldingRecoveryContext = {
   position_id: string;
   open_review: HoldingRecoveryReview | null;
+  latest_open_assessment: HoldingRecoveryAssessment | null;
   reviews: HoldingRecoveryReview[];
   review_history: Array<{
     review: HoldingRecoveryReview;
