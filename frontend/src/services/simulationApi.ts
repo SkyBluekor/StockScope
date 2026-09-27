@@ -168,6 +168,9 @@ export type HorizonContext = {
   reason_code: string | null;
   review_cycle_trading_days: number | null;
   time_stop_trading_days: number | null;
+  strategy_support: Record<string, string> | null;
+  required_inputs: string[] | null;
+  confirmation_policy: string | null;
 };
 
 export type HorizonPolicyCatalog = {
