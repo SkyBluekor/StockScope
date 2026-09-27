@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from decimal import Decimal
 from pathlib import Path
@@ -7,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from app.holdings import HoldingsCatalog, PositionLifecycleService
+from app.holdings.decision_support import HoldingDecisionSupportService
 from app.holdings.management import HoldingManagementService
 from app.holdings.recovery import HoldingRecoveryService, HoldingsRecoveryError
 from tools.data.common import DataToolError
@@ -22,6 +24,35 @@ T0 = "2026-09-27T09:00:00+09:00"
 T1 = "2026-09-27T10:00:00+09:00"
 T2 = "2026-09-27T11:00:00+09:00"
 T3 = "2026-09-27T12:00:00+09:00"
+
+
+def _market(path: Path, close: str = "80") -> None:
+    with sqlite3.connect(path) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE day_status(
+                market TEXT,bas_dd TEXT,kind TEXT,status TEXT
+            );
+            CREATE TABLE stock_daily(
+                market TEXT,bas_dd TEXT,stock_code TEXT,row_json TEXT
+            );
+            """
+        )
+        payload = {
+            "date": "2026-09-27",
+            "open": close,
+            "high": close,
+            "low": close,
+            "close": close,
+            "volume": "1000",
+        }
+        conn.execute(
+            "INSERT INTO day_status VALUES('KOSPI','20260927','stock','data')"
+        )
+        conn.execute(
+            "INSERT INTO stock_daily VALUES('KOSPI','20260927','005930',?)",
+            (json.dumps(payload),),
+        )
 
 
 def _env(tmp_path: Path, *, migrate_recovery: bool = True):
@@ -385,3 +416,82 @@ def test_cannot_start_new_recovery_review_for_closed_position(tmp_path: Path):
         service.start_review(position_id=opened.position.id)
 
     assert caught.value.code == "HOLD_RECOVERY_POSITION_NOT_OPEN"
+
+
+def test_recovery_context_reuses_current_holdings_evidence_without_creating_decision(
+    tmp_path: Path,
+):
+    catalog, _, opened = _env(tmp_path)
+    revision, plan = _revision_and_plan(catalog, opened)
+    mdb = tmp_path / "market.db"
+    _market(mdb, "80")
+    service = HoldingRecoveryService(catalog, market_store_db=mdb)
+
+    context = service.get_context(opened.position.id)
+
+    assert context["position_id"] == opened.position.id
+    assert context["open_review"] is None
+    assert context["current"]["evidence_version"] == "VN_P3_S2_RECOVERY_EVIDENCE_V1"
+    assert context["current"]["position"]["quantity"] == "10"
+    assert context["current"]["position"]["average_price"] == "100"
+    assert context["current"]["valuation"]["market_date"] == "2026-09-27"
+    assert context["current"]["valuation"]["price"] == "80"
+    assert context["current"]["performance"]["unrealized_pnl"] == "-200"
+    assert context["current"]["performance"]["unrealized_return_pct"] == "-20.0"
+    assert context["current"]["analysis"]["revision_id"] == revision.id
+    assert context["current"]["active_plan"]["plan_id"] == plan.id
+    assert context["current"]["latest_decision"] is None
+    assert "HOLDING_DECISION_NOT_AVAILABLE" in context["current"]["limitations"]
+    assert "ACCOUNT_TOTAL_EXPOSURE_NOT_PROVEN" in context["current"]["limitations"]
+    assert "COMPANY_EVIDENCE_NOT_CONNECTED" in context["current"]["limitations"]
+
+    with sqlite3.connect(catalog.db_path) as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM holding_decision_record"
+        ).fetchone()[0] == 0
+
+
+def test_record_current_assessment_snapshots_p3s1_decision_and_never_trades(
+    tmp_path: Path,
+):
+    catalog, _, opened = _env(tmp_path)
+    revision, plan = _revision_and_plan(catalog, opened)
+    mdb = tmp_path / "market.db"
+    _market(mdb, "80")
+    decision = HoldingDecisionSupportService(
+        catalog,
+        market_store_db=mdb,
+    ).evaluate(opened.position.id)
+    service = HoldingRecoveryService(
+        catalog,
+        market_store_db=mdb,
+        clock=lambda: T2,
+    )
+    review = service.start_review(position_id=opened.position.id)["review"]
+    events_before = catalog.list_position_events(opened.position.id)
+
+    assessment = service.record_current_assessment(
+        review_id=review["review_id"],
+        thesis_state="WEAKENED",
+        review_action="ADD_REVIEW",
+        reason_note="추가매수는 검토만 하고 자동 행동은 만들지 않음",
+        linked_decision_id=decision["decision_id"],
+    )
+
+    assert assessment["source_analysis_revision_id"] == revision.id
+    assert assessment["source_active_plan_id"] == plan.id
+    assert assessment["linked_decision_id"] == decision["decision_id"]
+    assert assessment["valuation_market_date"] == "2026-09-27"
+    assert assessment["valuation_price"] == "80"
+    assert assessment["unrealized_pnl"] == "-200"
+    assert assessment["unrealized_return_pct"] == "-20.0"
+    assert assessment["review_action"] == "ADD_REVIEW"
+    assert assessment["evidence"]["linked_decision"]["decision_id"] == decision["decision_id"]
+    assert "ACCOUNT_TOTAL_EXPOSURE_NOT_PROVEN" in assessment["limitations"]
+    assert "COMPANY_EVIDENCE_NOT_CONNECTED" in assessment["limitations"]
+    assert len(catalog.list_position_events(opened.position.id)) == len(events_before)
+    active = HoldingManagementService(catalog, market_store_db=mdb).get_active_plan(
+        opened.position.id
+    )
+    assert active is not None
+    assert active.id == plan.id
