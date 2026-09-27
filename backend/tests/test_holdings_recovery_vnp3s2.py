@@ -238,6 +238,44 @@ def test_assessment_is_append_only_and_snapshots_current_sources(tmp_path: Path)
             )
 
 
+def test_assessment_rejects_changed_source_before_insert(tmp_path: Path):
+    catalog, lifecycle, opened = _env(tmp_path)
+    revision, plan = _revision_and_plan(catalog, opened)
+    service = HoldingRecoveryService(catalog, clock=lambda: T2)
+    review = service.start_review(position_id=opened.position.id)["review"]
+
+    expected_source = {
+        "position_status": "OPEN",
+        "position_quantity": "10",
+        "position_average_price": "100",
+        "analysis_revision_id": revision.id,
+        "active_plan_id": plan.id,
+        "active_plan_version": 1,
+    }
+    lifecycle.record_correction(
+        position_id=opened.position.id,
+        corrected_quantity="9",
+        corrected_average_price="100",
+        effective_at=T3,
+        note="concurrent source change fixture",
+    )
+
+    with pytest.raises(HoldingsRecoveryError) as caught:
+        service.record_assessment(
+            review_id=review["review_id"],
+            thesis_state="WEAKENED",
+            review_action="HOLD",
+            expected_source=expected_source,
+        )
+    assert caught.value.code == "HOLD_RECOVERY_SOURCE_CHANGED"
+
+    with sqlite3.connect(catalog.db_path) as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM holding_recovery_assessment WHERE review_id=?",
+            (review["review_id"],),
+        ).fetchone()[0] == 0
+
+
 def test_add_review_records_intent_only_without_trade_or_plan_change(tmp_path: Path):
     catalog, _, opened = _env(tmp_path)
     _, plan = _revision_and_plan(catalog, opened)
