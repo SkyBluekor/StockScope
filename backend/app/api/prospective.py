@@ -59,7 +59,7 @@ def _service() -> ProspectiveService:
         or DEFAULT_SIMULATION_DB
     )
     market_db = Path(
-        os.getenv("STOCKSCOPE_MARKET_DB")
+        (os.getenv("STOCKSCOPE_MARKET_STORE_DB") or os.getenv("STOCKSCOPE_MARKET_DB"))
         or DEFAULT_MARKET_DB
     )
     return ProspectiveService(simulation_db, market_db)
