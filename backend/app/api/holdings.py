@@ -65,6 +65,7 @@ from app.holdings.lifecycle import (
 )
 from app.holdings.performance import HoldingsPerformanceError, HoldingPerformanceService
 from app.holdings.management import HoldingsManagementError, HoldingManagementService
+from app.holdings.recovery import HoldingRecoveryService, HoldingsRecoveryError
 
 
 router = APIRouter(prefix="/holdings", tags=["holdings"])
@@ -112,6 +113,22 @@ class HoldingDecisionApplyPlanRequest(BaseModel):
         "HOLD","ADD","REDUCE","TAKE_PROFIT","STOP","EXIT"
     ] | None = None
     note: str | None = Field(default=None, max_length=500)
+
+
+class HoldingRecoveryStartRequest(BaseModel):
+    note: str | None = Field(default=None, max_length=1000)
+
+
+class HoldingRecoveryAssessmentRequest(BaseModel):
+    thesis_state: Literal["INTACT", "WEAKENED", "BROKEN", "UNKNOWN"]
+    review_action: Literal["UNDECIDED", "HOLD", "REDUCE", "EXIT", "ADD_REVIEW"]
+    reason_note: str | None = Field(default=None, max_length=2000)
+    linked_decision_id: str | None = Field(default=None, min_length=1, max_length=100)
+
+
+class HoldingRecoveryCloseRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=100)
+    note: str | None = Field(default=None, max_length=1000)
 
 
 class ManualBuyRequest(BaseModel):
@@ -223,6 +240,13 @@ def _decision_support_service(
     )
 
 
+def _recovery_service(catalog: HoldingsCatalog) -> HoldingRecoveryService:
+    return HoldingRecoveryService(
+        catalog,
+        market_store_db=_market_store_path(),
+    )
+
+
 def _freshness_service() -> HoldingsMarketFreshnessService:
     settings = get_settings()
     return HoldingsMarketFreshnessService(
@@ -276,6 +300,11 @@ def _http_status(code: str) -> int:
         "HOLD_DECISION_PLAN_UNCHANGED",
         "HOLD_DECISION_RESOLUTION_CONFLICT",
         "HOLD_DECISION_APPLY_CONFLICT",
+        "HOLD_RECOVERY_MIGRATION_REQUIRED",
+        "HOLD_RECOVERY_SCHEMA_UNSUPPORTED",
+        "HOLD_RECOVERY_POSITION_NOT_OPEN",
+        "HOLD_RECOVERY_REVIEW_CLOSED",
+        "HOLD_RECOVERY_DECISION_POSITION_MISMATCH",
         "HOLD_KIS_SYNC_CONFIGURATION_ERROR",
         "HOLD_KIS_SYNC_ACCOUNT_CONFLICT",
         "HOLD_KIS_SYNC_INCOMPLETE",
@@ -669,6 +698,91 @@ def apply_holding_decision_plan(
         HoldingsCatalogError,
         HoldingsDecisionSupportError,
         HoldingsManagementError,
+    ) as error:
+        _raise_holdings_error(error)
+
+
+@router.get("/positions/{position_id}/recovery")
+def holding_recovery_context(position_id: str) -> dict[str, Any]:
+    catalog = _catalog()
+    try:
+        return _recovery_service(catalog).get_context(position_id)
+    except (
+        HoldingsCatalogError,
+        HoldingsRecoveryError,
+    ) as error:
+        _raise_holdings_error(error)
+
+
+@router.post("/positions/{position_id}/recovery/start")
+def start_holding_recovery(
+    position_id: str,
+    request: HoldingRecoveryStartRequest,
+) -> dict[str, Any]:
+    catalog = _catalog()
+    try:
+        service = _recovery_service(catalog)
+        result = service.start_review(
+            position_id=position_id,
+            note=request.note,
+        )
+        return {
+            **result,
+            "context": service.get_context(position_id),
+        }
+    except (
+        HoldingsCatalogError,
+        HoldingsRecoveryError,
+    ) as error:
+        _raise_holdings_error(error)
+
+
+@router.post("/recovery/{review_id}/assessments")
+def record_holding_recovery_assessment(
+    review_id: str,
+    request: HoldingRecoveryAssessmentRequest,
+) -> dict[str, Any]:
+    catalog = _catalog()
+    try:
+        service = _recovery_service(catalog)
+        assessment = service.record_current_assessment(
+            review_id=review_id,
+            thesis_state=request.thesis_state,
+            review_action=request.review_action,
+            reason_note=request.reason_note,
+            linked_decision_id=request.linked_decision_id,
+        )
+        return {
+            "assessment": assessment,
+            "context": service.get_context(assessment["position_id"]),
+        }
+    except (
+        HoldingsCatalogError,
+        HoldingsRecoveryError,
+    ) as error:
+        _raise_holdings_error(error)
+
+
+@router.post("/recovery/{review_id}/close")
+def close_holding_recovery(
+    review_id: str,
+    request: HoldingRecoveryCloseRequest,
+) -> dict[str, Any]:
+    catalog = _catalog()
+    try:
+        service = _recovery_service(catalog)
+        result = service.close_review(
+            review_id=review_id,
+            reason=request.reason,
+            note=request.note,
+        )
+        return {
+            **result,
+            "context": service.get_context(result["review"]["position_id"]),
+        }
+    except (
+        HoldingsCatalogError,
+        HoldingsRecoveryError,
     ) as error:
         _raise_holdings_error(error)
 
