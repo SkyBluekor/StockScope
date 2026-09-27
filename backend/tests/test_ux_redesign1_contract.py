@@ -716,6 +716,14 @@ def test_ux_redesign1j4_prioritizes_held_management_and_separates_opening_balanc
     assert "applyLatestManagementPlan" not in holdings
     assert "새 분석 계획 적용" in decision_panel
     assert "applyHoldingDecisionPlan(" in decision_panel
+    # First plan creation is a valid explicit apply path: there is no active plan
+    # to differ from yet. Existing-plan replacement still requires a newer analysis.
+    assert "const hasApplicableAnalysis = Boolean(" in decision_panel
+    assert "decision.source_active_plan_id == null" in decision_panel
+    assert "|| decision.evidence.latest_analysis_differs_from_active_plan" in decision_panel
+    assert "&& hasApplicableAnalysis" in decision_panel
+    assert "&& decision.evidence.new_plan_horizon_activatable" in decision_panel
+    assert "&& !decision.evidence.proposal_conflict" in decision_panel
 
     # Stock analysis uses the same opening-balance language and guardrail.
     assert "기존 보유 등록" in tracking
