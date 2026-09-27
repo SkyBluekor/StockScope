@@ -13,6 +13,11 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
+from app.horizon import (
+    HorizonPolicyError,
+    require_horizon_activatable,
+    resolve_horizon_context,
+)
 from app.horizon_context import get_analysis_horizon
 
 from app.holdings.analysis_history import (
@@ -112,6 +117,16 @@ class ManualCorrectionRequest(BaseModel):
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _require_analysis_horizon(horizon_intent: str | None) -> None:
+    try:
+        require_horizon_activatable(resolve_horizon_context(horizon_intent))
+    except HorizonPolicyError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": error.code, "message": error.message},
+        ) from error
 
 
 def _catalog() -> HoldingsCatalog:
@@ -854,7 +869,9 @@ async def refresh_analysis(
     stock_id: str,
     prepare_latest: bool = Query(default=False),
     prepare_history: bool = Query(default=False),
+    horizon_intent: str | None = Query(default=None),
 ) -> dict[str, Any]:
+    _require_analysis_horizon(horizon_intent)
     catalog = _catalog()
     try:
         # Existing API callers keep the HOLD.1-F behavior and make no external
@@ -916,7 +933,12 @@ async def refresh_analysis(
 
 
 @router.post("/stocks/{stock_id}/analysis/prepare-stream")
-async def prepare_analysis_stream(stock_id: str) -> StreamingResponse:
+async def prepare_analysis_stream(
+    stock_id: str,
+    horizon_intent: str | None = Query(default=None),
+) -> StreamingResponse:
+    _require_analysis_horizon(horizon_intent)
+
     async def event_stream():
         catalog = _catalog()
 
