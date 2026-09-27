@@ -30,6 +30,8 @@ from app.feedback.models import FEEDBACK_SCHEMA_VERSION
 from app.prospective.models import PROSPECTIVE_SCHEMA_VERSION
 from app.holdings.decision_support import HOLDING_DECISION_SCHEMA_VERSION
 from app.holdings.recovery import RECOVERY_SCHEMA_VERSION
+from app.watch.policy import WATCH_POLICY_CONTRACT_VERSION
+from app.watch.storage import WATCH_SCHEMA_VERSION
 
 from tools.data.common import (
     BACKUP_FORMAT_VERSION,
@@ -246,6 +248,38 @@ def _holding_recovery_extension(
     }
 
 
+HOLDING_WATCH_TABLES = (
+    "holding_watch_schema_meta",
+    "holding_watch_setting",
+    "holding_watch_rule",
+    "holding_watch_episode",
+    "holding_watch_coverage_gap",
+    "holding_watch_notification_outbox",
+)
+
+
+def _holding_watch_extension(
+    holdings_copy: Path,
+) -> dict[str, object]:
+    present = [
+        table
+        for table in HOLDING_WATCH_TABLES
+        if _table_exists(holdings_copy, table)
+    ]
+    return {
+        "schema_version": WATCH_SCHEMA_VERSION,
+        "policy_contract_version": WATCH_POLICY_CONTRACT_VERSION,
+        "present": bool(present),
+        "tables": present,
+        "restorable": len(present) == len(HOLDING_WATCH_TABLES),
+        "note": (
+            "P4-S1 Watch settings/rules/episodes/coverage gaps/notification outbox "
+            "live in holdings.db. Quotes themselves are not backed up; restored Watch "
+            "must reacquire live coverage instead of replaying a missing interval."
+        ),
+    }
+
+
 def _horizon_context_extension(
     holdings_copy: Path,
     simulation_copy: Path | None,
@@ -393,6 +427,9 @@ def create_backup(
                     holdings_copy,
                 ),
                 "holding_recovery_v1": _holding_recovery_extension(
+                    holdings_copy,
+                ),
+                "holding_watch_v1": _holding_watch_extension(
                     holdings_copy,
                 ),
             },
