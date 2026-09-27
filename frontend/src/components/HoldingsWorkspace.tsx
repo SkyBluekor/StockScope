@@ -7,6 +7,7 @@ import { analysisContractMessage, contractAction, dataContractStatusLabel, dataC
 import { quoteReceivedTime } from "../services/quote";
 import { marketSessionIsPaused } from "../services/marketSession";
 import HoldingsPriceChart from "./HoldingsPriceChart";
+import HoldingDecisionPanel from "./HoldingDecisionPanel";
 import StockNewsPanel from "./StockNewsPanel";
 import StockQuoteStrip from "./StockQuoteStrip";
 import {
@@ -16,7 +17,6 @@ import {
   getLiveHoldingPerformance,
   getLiveHoldingManagementProximity,
   getHoldingManagement,
-  applyHoldingManagementPlan,
   getHoldingChart,
   getHoldingTimeline,
   listHoldingAccounts,
@@ -480,7 +480,6 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
   const [management, setManagement] = useState<HoldingManagementResponse | null>(null);
   const [liveManagementProximity, setLiveManagementProximity] = useState<LiveHoldingManagementProximityResponse | null>(null);
   const [liveManagementError, setLiveManagementError] = useState<string | null>(null);
-  const [applyingPlanId, setApplyingPlanId] = useState<string | null>(null);
   const [stockFilter, setStockFilter] = useState<StockFilter>(
     navigationTarget ? "all" : initialViewContext?.stockFilter ?? "all",
   );
@@ -814,20 +813,6 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
         if (detailAbortRef.current === controller) detailAbortRef.current = null;
         setLoadingDetail(false);
       }
-    }
-  }
-
-  async function applyLatestManagementPlan(positionId: string, revisionId: string) {
-    setApplyingPlanId(positionId);
-    setError(null);
-    try {
-      await applyHoldingManagementPlan(positionId, revisionId);
-      setMessage("최신 분석의 가격 계획을 현재 보유분 관리 기준으로 적용했습니다.");
-      if (selectedStockId) await loadSelected(selectedStockId);
-    } catch (applyError) {
-      setError(readableError(applyError, "보유분 관리 기준을 적용하지 못했습니다."));
-    } finally {
-      setApplyingPlanId(null);
     }
   }
 
@@ -2251,6 +2236,14 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                   )}
 
 
+                <HoldingDecisionPanel
+                  stockId={detail.stock_id}
+                  positions={detail.positions}
+                  onPlanChanged={async () => {
+                    await loadSelected(detail.stock_id);
+                  }}
+                />
+
                 {management && management.positions.length > 0 && (
                   <div className="holdings-management-block" aria-label="보유분 관리 기준">
                     <div className="holdings-management-head">
@@ -2323,10 +2316,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                             {item.proposal.reason && <small>{item.proposal.reason}</small>}
                           </div>
                           {item.proposal.analysis_revision_id && item.proposal.state !== "SAME_AS_ACTIVE" && item.proposal.can_apply && (
-                            <button type="button" className="holdings-secondary-button" disabled={applyingPlanId === item.position_id}
-                              onClick={() => void applyLatestManagementPlan(item.position_id, item.proposal.analysis_revision_id as string)}>
-                              {applyingPlanId === item.position_id ? "적용 중..." : "이 계획 적용"}
-                            </button>
+                            <span className="holdings-management-cannot-apply">위의 보유 판단에서 검토 후 명시적으로 적용할 수 있습니다.</span>
                           )}
                           {item.proposal.analysis_revision_id && item.proposal.state !== "SAME_AS_ACTIVE" && !item.proposal.can_apply && (
                             <span className="holdings-management-cannot-apply">현재 적용할 수 없는 제안입니다.</span>
