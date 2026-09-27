@@ -195,6 +195,61 @@ def _simulation_fixture(path: Path):
     return draft, run_a, run_b
 
 
+def test_feedback_migration_allows_validation_only_simulation_db(
+    tmp_path: Path,
+) -> None:
+    simulation_db = tmp_path / "simulation.db"
+    validation = HistoricalValidationCatalog(simulation_db)
+    validation.initialize()
+
+    with sqlite3.connect(simulation_db) as conn:
+        names_before = {
+            str(row[0])
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        assert "historical_validation_run" in names_before
+        assert "historical_execution_run" not in names_before
+
+    result = migrate_feedback_store(simulation_db)
+
+    assert result["source_tables"]["available"] == ["historical_validation_run"]
+    assert result["source_tables"]["missing"] == ["historical_execution_run"]
+    with sqlite3.connect(simulation_db) as conn:
+        names_after = {
+            str(row[0])
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        assert "feedback_schema_meta" in names_after
+        assert "feedback_cohort" in names_after
+        assert "historical_execution_run" not in names_after
+
+
+def test_feedback_migration_allows_simulation_db_without_val_sources(
+    tmp_path: Path,
+) -> None:
+    simulation_db = tmp_path / "simulation.db"
+    with sqlite3.connect(simulation_db) as conn:
+        conn.execute(
+            "CREATE TABLE local_placeholder(id INTEGER PRIMARY KEY)"
+        )
+
+    result = migrate_feedback_store(simulation_db)
+
+    assert result["source_tables"]["available"] == []
+    assert result["source_tables"]["missing"] == [
+        "historical_execution_run",
+        "historical_validation_run",
+    ]
+    with sqlite3.connect(simulation_db) as conn:
+        assert conn.execute(
+            "SELECT value FROM feedback_schema_meta WHERE key='schema_version'"
+        ).fetchone()[0] == "VN_P2_S1_FEEDBACK_STORAGE_V1"
+
+
 def test_feedback_migration_is_repeatable_without_touching_source_rows(
     tmp_path: Path,
 ) -> None:
