@@ -130,6 +130,10 @@ export type StockDataContract = {
         scanner_version: string | null;
         analysis_engine_version: string | null;
         policy_version: string | null;
+        horizon_intent: string | null;
+        horizon_policy_version: string | null;
+        horizon_support_status: string | null;
+        horizon_reason_code: string | null;
         source_versions: Record<string, unknown> | null;
         stored_input_generation: Record<string, unknown> | null;
         current_input_generation: Record<string, unknown> | null;
