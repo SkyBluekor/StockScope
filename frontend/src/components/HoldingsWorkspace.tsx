@@ -34,6 +34,7 @@ import {
   type HoldingAnalysisPrepareProgress,
   type HoldingAccount,
   type HoldingDecisionContext,
+  type HoldingHorizonContext,
   type HoldingPosition,
   type HoldingPerformanceResponse,
   type LiveHoldingPerformanceResponse,
@@ -305,9 +306,7 @@ function proposalStateText(state: string) {
   }
 }
 
-function horizonContextText(context: HoldingStock["current_analysis"] extends infer A
-  ? A extends { horizon_context: infer H } ? H : never
-  : never) {
+function horizonContextText(context: HoldingHorizonContext | null | undefined) {
   if (!context || context.intent === "LEGACY_UNSPECIFIED") return "기간 의도 기록 없음";
   const intent = context.intent === "SHORT"
     ? "단기"
@@ -2311,7 +2310,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                           </div>
                         ) : <div className="holdings-management-empty">현재 적용 중인 보유분 관리 기준이 없습니다. 최신 분석에 적용 가능한 제안이 있다면 아래에서 확인 후 직접 적용할 수 있습니다.</div>}
                         {item.active_plan && <small className="holdings-management-version">
-                          기술 정보 · 내부 기준 v{item.active_plan.version} · {horizonContextText(item.active_plan.horizon_context as NonNullable<HoldingStock["current_analysis"]>["horizon_context"])}
+                          기술 정보 · 내부 기준 v{item.active_plan.version} · {horizonContextText(item.active_plan.horizon_context)}
                         </small>}
                         {liveManagementError && item.active_plan && (
                           <small className="holdings-management-live-error">현재가 거리를 갱신하지 못했습니다. 확정 종가 기준 관리 상태는 유지됩니다.</small>
