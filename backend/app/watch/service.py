@@ -682,15 +682,6 @@ class WatchService:
             )
             setting_id = str(setting["id"])
 
-            conn.execute(
-                """
-                UPDATE holding_watch_coverage_gap
-                SET status='CLOSED',ended_at=?,updated_at=?
-                WHERE setting_id=? AND status='OPEN'
-                """,
-                (observed_at, now_text, setting_id),
-            )
-
             rules = conn.execute(
                 """
                 SELECT * FROM holding_watch_rule
@@ -777,6 +768,16 @@ class WatchService:
                         "event": transition.event,
                         "state": transition.current.state,
                     }
+                )
+
+            if transitions:
+                conn.execute(
+                    """
+                    UPDATE holding_watch_coverage_gap
+                    SET status='CLOSED',ended_at=?,updated_at=?
+                    WHERE setting_id=? AND status='OPEN'
+                    """,
+                    (observed_at, now_text, setting_id),
                 )
 
         return {
