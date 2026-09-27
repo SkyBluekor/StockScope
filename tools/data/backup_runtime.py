@@ -27,6 +27,7 @@ from app.horizon_context import (
     VALIDATION_HORIZON_TABLE,
 )
 from app.feedback.models import FEEDBACK_SCHEMA_VERSION
+from app.prospective.models import PROSPECTIVE_SCHEMA_VERSION
 
 from tools.data.common import (
     BACKUP_FORMAT_VERSION,
@@ -144,6 +145,44 @@ def _feedback_extension(
         "note": (
             "P2-S1 source refs/cohorts/reports live in Simulation DB. "
             "Tracking DB remains a separate read-only evidence source."
+        ),
+    }
+
+
+PROSPECTIVE_TABLES = (
+    "prospective_schema_meta",
+    "prospective_capture_run",
+    "prospective_recommendation_sample",
+    "prospective_evaluation_protocol",
+    "prospective_evaluation_run",
+    "prospective_evaluation_unit",
+    "prospective_evaluation_report",
+)
+
+
+def _prospective_extension(
+    simulation_copy: Path | None,
+) -> dict[str, object]:
+    if simulation_copy is None or not simulation_copy.is_file():
+        return {
+            "schema_version": PROSPECTIVE_SCHEMA_VERSION,
+            "present": False,
+            "tables": [],
+            "restorable": False,
+        }
+    present = [
+        table for table in PROSPECTIVE_TABLES
+        if _table_exists(simulation_copy, table)
+    ]
+    return {
+        "schema_version": PROSPECTIVE_SCHEMA_VERSION,
+        "present": bool(present),
+        "tables": present,
+        "restorable": len(present) == len(PROSPECTIVE_TABLES),
+        "note": (
+            "VN-P2-S2 prospective capture, immutable samples, protocols, "
+            "evaluation runs/units/reports live in Simulation DB. "
+            "Market Store remains the separate local evaluation input owner."
         ),
     }
 
@@ -286,6 +325,9 @@ def create_backup(
                     simulation_copy,
                 ),
                 "feedback_v1": _feedback_extension(
+                    simulation_copy,
+                ),
+                "prospective_evaluation_v1": _prospective_extension(
                     simulation_copy,
                 ),
             },
