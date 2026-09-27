@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -9,15 +10,20 @@ import pytest
 
 from app.holdings import HoldingsCatalog, PositionLifecycleService
 from app.holdings.management import HoldingManagementService
+from app.quotes.event_hub import QuoteEventHub
+from app.quotes.models import QuoteCacheKey, QuoteSnapshot
 from app.watch import (
     WATCH_POLICY_CONTRACT_VERSION,
     WATCH_SCHEMA_VERSION,
+    WatchDemand,
+    WatchCoordinator,
     WatchObservation,
     WatchPolicy,
     WatchPolicyError,
     WatchRuleRuntimeState,
     WatchRuleSpec,
     advance_watch_rule,
+    load_active_plan_watch_demands,
     production_watch_policy,
     watch_schema_available,
 )
@@ -385,3 +391,266 @@ def test_out_of_order_observation_is_ignored_without_mutating_runtime():
     assert older.accepted is False
     assert older.event == "OUT_OF_ORDER_IGNORED"
     assert older.current == first.current
+
+
+
+class _FakeWebSocketManager:
+    def __init__(self, *, reject: bool = False):
+        self.reject = reject
+        self.touched: list[QuoteCacheKey] = []
+
+    def touch_demand(self, key: QuoteCacheKey) -> bool:
+        self.touched.append(key)
+        return not self.reject
+
+    def subscription_error(self, _key: QuoteCacheKey) -> str | None:
+        return "SUBSCRIPTION_LIMIT" if self.reject else None
+
+
+def _quote_key(
+    *,
+    market: str = "KOSPI",
+    ticker: str = "005930",
+    venue: str = "INTEGRATED",
+) -> QuoteCacheKey:
+    return QuoteCacheKey(
+        environment="virtual",
+        credential_fingerprint="f" * 64,
+        market=market,
+        ticker=ticker,
+        venue=venue,  # type: ignore[arg-type]
+    )
+
+
+def _snapshot(key: QuoteCacheKey, price: str = "91") -> QuoteSnapshot:
+    return QuoteSnapshot(
+        market=key.market,
+        ticker=key.ticker,
+        name="삼성전자",
+        venue=key.venue,
+        provider_market_division="UN",
+        environment=key.environment,
+        current_price=Decimal(price),
+        change_amount=Decimal("1"),
+        change_rate=Decimal("1"),
+        change_sign="2",
+        open_price=Decimal("90"),
+        high_price=Decimal("92"),
+        low_price=Decimal("89"),
+        base_price=Decimal("90"),
+        accumulated_volume=Decimal("1000"),
+        provider_timestamp="2026-09-28T09:00:00+09:00",
+        received_at=BASE_TIME,
+        transport="WEBSOCKET",
+    )
+
+
+def test_active_plan_watch_demand_is_read_only_projection(tmp_path: Path):
+    _db, catalog, opened, plan = _env(tmp_path)
+    events_before = catalog.list_position_events(opened.position.id)
+
+    demands = load_active_plan_watch_demands(catalog)
+
+    assert len(demands) == 1
+    demand = demands[0]
+    assert demand.position_id == opened.position.id
+    assert demand.plan_id == plan.id
+    assert demand.plan_version == plan.plan_version
+    assert demand.market == "KOSPI"
+    assert demand.ticker == "005930"
+    assert demand.stop_price == Decimal("90")
+    assert demand.target1_price == Decimal("120")
+    assert demand.target2_price == Decimal("130")
+    assert catalog.list_position_events(opened.position.id) == events_before
+    active = HoldingManagementService(catalog).get_active_plan(opened.position.id)
+    assert active is not None
+    assert active.id == plan.id
+
+
+@pytest.mark.asyncio
+async def test_blocked_production_policy_creates_no_server_quote_demand(
+    tmp_path: Path,
+):
+    catalog = HoldingsCatalog(tmp_path / "holdings.db")
+    manager = _FakeWebSocketManager()
+    hub = QuoteEventHub()
+    demand = WatchDemand(
+        position_id="p1",
+        plan_id="plan1",
+        plan_version=1,
+        market="KOSPI",
+        ticker="005930",
+        stop_price=Decimal("90"),
+        target1_price=Decimal("120"),
+        target2_price=Decimal("130"),
+    )
+    coordinator = WatchCoordinator(
+        catalog,
+        policy_provider=production_watch_policy,
+        demand_loader=lambda _catalog: [demand],
+        resolve_key=lambda **kwargs: _quote_key(**kwargs),
+        websocket_manager=manager,
+        event_hub=hub,
+    )
+
+    result = await coordinator.reconcile_once()
+
+    assert result.enabled is False
+    assert result.blocked_reason == "OPERATING_THRESHOLDS_UNAPPROVED"
+    assert manager.touched == []
+    assert await hub.subscriber_count(_quote_key()) == 0
+
+
+@pytest.mark.asyncio
+async def test_watch_demand_deduplicates_resource_and_receives_quotes_without_browser(
+    tmp_path: Path,
+):
+    catalog = HoldingsCatalog(tmp_path / "holdings.db")
+    manager = _FakeWebSocketManager()
+    hub = QuoteEventHub()
+    key = _quote_key()
+    received: list[tuple[str, str]] = []
+
+    demands = [
+        WatchDemand(
+            position_id="p1",
+            plan_id="plan1",
+            plan_version=1,
+            market="KOSPI",
+            ticker="005930",
+            stop_price=Decimal("90"),
+            target1_price=Decimal("120"),
+            target2_price=Decimal("130"),
+        ),
+        WatchDemand(
+            position_id="p2",
+            plan_id="plan2",
+            plan_version=3,
+            market="KOSPI",
+            ticker="005930",
+            stop_price=Decimal("88"),
+            target1_price=None,
+            target2_price=None,
+        ),
+    ]
+
+    async def on_quote(demand: WatchDemand, snapshot: QuoteSnapshot) -> None:
+        received.append((demand.position_id, str(snapshot.current_price)))
+
+    coordinator = WatchCoordinator(
+        catalog,
+        policy_provider=lambda: _test_policy(),
+        demand_loader=lambda _catalog: demands,
+        resolve_key=lambda **_kwargs: key,
+        websocket_manager=manager,
+        event_hub=hub,
+        on_quote=on_quote,
+    )
+
+    result = await coordinator.reconcile_once()
+    await asyncio.sleep(0)
+
+    assert result.enabled is True
+    assert result.demand_count == 2
+    assert result.resource_count == 1
+    assert result.leased_count == 1
+    assert result.rejected_count == 0
+    assert manager.touched == [key]
+    assert await hub.subscriber_count(key) == 1
+
+    await hub.publish(key, _snapshot(key, "91"))
+    await asyncio.sleep(0)
+
+    assert sorted(received) == [("p1", "91"), ("p2", "91")]
+
+    await coordinator.stop()
+    assert await hub.subscriber_count(key) == 0
+
+
+@pytest.mark.asyncio
+async def test_browser_and_watch_have_separate_consumers_on_same_quote_resource(
+    tmp_path: Path,
+):
+    catalog = HoldingsCatalog(tmp_path / "holdings.db")
+    manager = _FakeWebSocketManager()
+    hub = QuoteEventHub()
+    key = _quote_key()
+    received: list[str] = []
+    demand = WatchDemand(
+        position_id="p1",
+        plan_id="plan1",
+        plan_version=1,
+        market="KOSPI",
+        ticker="005930",
+        stop_price=Decimal("90"),
+        target1_price=Decimal("120"),
+        target2_price=Decimal("130"),
+    )
+
+    coordinator = WatchCoordinator(
+        catalog,
+        policy_provider=lambda: _test_policy(),
+        demand_loader=lambda _catalog: [demand],
+        resolve_key=lambda **_kwargs: key,
+        websocket_manager=manager,
+        event_hub=hub,
+        on_quote=lambda item, _snapshot_value: received.append(item.position_id),
+    )
+
+    await coordinator.reconcile_once()
+    await asyncio.sleep(0)
+    browser_queue = await hub.subscribe(key)
+    assert await hub.subscriber_count(key) == 2
+
+    snapshot = _snapshot(key)
+    await hub.publish(key, snapshot)
+    browser_received = await asyncio.wait_for(browser_queue.get(), timeout=1)
+    await asyncio.sleep(0)
+
+    assert browser_received == snapshot
+    assert received == ["p1"]
+
+    await hub.unsubscribe(key, browser_queue)
+    await coordinator.stop()
+    assert await hub.subscriber_count(key) == 0
+
+
+@pytest.mark.asyncio
+async def test_subscription_rejection_reports_coverage_issue_without_consumer(
+    tmp_path: Path,
+):
+    catalog = HoldingsCatalog(tmp_path / "holdings.db")
+    manager = _FakeWebSocketManager(reject=True)
+    hub = QuoteEventHub()
+    key = _quote_key()
+    coverage: list[tuple[str, str]] = []
+    demand = WatchDemand(
+        position_id="p1",
+        plan_id="plan1",
+        plan_version=1,
+        market="KOSPI",
+        ticker="005930",
+        stop_price=Decimal("90"),
+        target1_price=None,
+        target2_price=None,
+    )
+
+    coordinator = WatchCoordinator(
+        catalog,
+        policy_provider=lambda: _test_policy(),
+        demand_loader=lambda _catalog: [demand],
+        resolve_key=lambda **_kwargs: key,
+        websocket_manager=manager,
+        event_hub=hub,
+        on_coverage_issue=lambda item, reason: coverage.append(
+            (item.position_id, reason)
+        ),
+    )
+
+    result = await coordinator.reconcile_once()
+
+    assert result.leased_count == 0
+    assert result.rejected_count == 1
+    assert coverage == [("p1", "SUBSCRIPTION_LIMIT")]
+    assert await hub.subscriber_count(key) == 0
+    await coordinator.stop()
