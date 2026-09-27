@@ -1615,6 +1615,10 @@ def test_vnp3s2_recovery_ui_is_manual_review_only() -> None:
     assert "기업·공시 근거는 아직 Recovery 판단 근거로 연결하지 않았습니다." in panel
     assert "startHoldingRecovery" in panel
     assert "recordHoldingRecoveryAssessment" in panel
+    assert "setThesisByPosition" in panel
+    assert "result.assessment.thesis_state" in panel
+    assert "result.assessment.review_action" in panel
+    assert "result.assessment.reason_note" in panel
     assert "closeHoldingRecovery" in panel
     assert "recordManualBuy" not in panel
     assert "recordManualSell" not in panel
