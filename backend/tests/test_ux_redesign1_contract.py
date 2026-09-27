@@ -1595,3 +1595,27 @@ def test_realtime6_browser_sse_delivery_contract() -> None:
     assert "createMultiStrategyBacktestJob" not in protected
     assert "StrategyAnalysisService" not in protected
     assert "RiskEngine" not in protected
+
+
+def test_vnp3s2_recovery_ui_is_manual_review_only() -> None:
+    workspace = Path("frontend/src/components/HoldingsWorkspace.tsx").read_text(encoding="utf-8")
+    panel = Path("frontend/src/components/HoldingRecoveryPanel.tsx").read_text(encoding="utf-8")
+    api = Path("frontend/src/services/holdingsApi.ts").read_text(encoding="utf-8")
+
+    assert 'import HoldingRecoveryPanel from "./HoldingRecoveryPanel";' in workspace
+    assert "<HoldingRecoveryPanel" in workspace
+    assert "손실 포지션 재검토" in panel
+    assert "손실률 임계값으로 자동 시작하지 않습니다." in panel
+    assert "ADD_REVIEW" in panel
+    assert "검토 의도만 기록하며 매수 신호·금액·수량을 만들지 않습니다." in panel
+    assert "현재 보유 판단 보기" in panel
+    assert "Recovery 검토 종료" in panel
+    assert "startHoldingRecovery" in panel
+    assert "recordHoldingRecoveryAssessment" in panel
+    assert "closeHoldingRecovery" in panel
+    assert "recordManualBuy" not in panel
+    assert "recordManualSell" not in panel
+    assert "applyHoldingDecisionPlan" not in panel
+    assert "/api/holdings/positions/" in api
+    assert "/recovery/start" in api
+    assert "/assessments" in api
