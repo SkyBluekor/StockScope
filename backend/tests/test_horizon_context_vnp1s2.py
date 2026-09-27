@@ -25,6 +25,8 @@ from app.horizon_context import (
     get_plan_horizon,
     get_validation_horizon,
     set_analysis_horizon,
+    set_validation_horizon,
+    HorizonStorageError,
 )
 from app.simulation.execution_catalog import (
     ExecutionCatalogError,
@@ -162,6 +164,55 @@ def test_horizon_migration_is_repeatable_and_does_not_backfill(tmp_path: Path) -
         assert conn.execute(
             f"SELECT COUNT(*) FROM {EXECUTION_HORIZON_TABLE}"
         ).fetchone()[0] == 0
+
+
+def test_horizon_version_mismatch_and_persisted_context_are_not_rewritten(
+    tmp_path: Path,
+) -> None:
+    unsupported = resolve_horizon_context(
+        "SHORT",
+        policy_version="OLD_HORIZON_POLICY",
+    )
+    assert unsupported.support_status == "UNSUPPORTED"
+    assert unsupported.reason_code == "HORIZON_POLICY_VERSION_UNSUPPORTED"
+
+    holdings, _, revision_id = _holdings_fixture(tmp_path / "holdings.db")
+    validation, _ = _simulation_fixture(tmp_path / "simulation.db")
+    migrate_horizon_context(
+        holdings_db=holdings.db_path,
+        simulation_db=validation.db_path,
+    )
+
+    medium = resolve_horizon_context("MEDIUM")
+    with holdings.connection() as conn:
+        set_analysis_horizon(conn, revision_id, medium, created_at=T0)
+        set_analysis_horizon(conn, revision_id, medium, created_at=T1)
+        with pytest.raises(HorizonStorageError) as caught:
+            set_analysis_horizon(
+                conn,
+                revision_id,
+                resolve_horizon_context("LONG"),
+                created_at=T1,
+            )
+        assert caught.value.code == "HORIZON_CONTEXT_IMMUTABLE"
+        assert get_analysis_horizon(conn, revision_id).intent == "MEDIUM"
+
+    draft = _draft(
+        validation,
+        "중기 고정",
+        horizon=medium,
+    )
+    with validation.connect() as conn:
+        set_validation_horizon(conn, draft.id, medium, created_at=T1)
+        with pytest.raises(HorizonStorageError) as caught:
+            set_validation_horizon(
+                conn,
+                draft.id,
+                resolve_horizon_context("SHORT"),
+                created_at=T1,
+            )
+        assert caught.value.code == "HORIZON_CONTEXT_IMMUTABLE"
+        assert get_validation_horizon(conn, draft.id).intent == "MEDIUM"
 
 
 def test_pending_analysis_horizon_cannot_be_applied_as_plan(tmp_path: Path) -> None:
