@@ -17,6 +17,7 @@ for candidate in (ROOT, BACKEND):
 from app.input_identity import (
     INPUT_IDENTITY_SCHEMA_VERSION,
     PROOF_TABLE,
+    VALIDATION_PROOF_TABLE,
 )
 
 from tools.data.common import (
@@ -29,12 +30,16 @@ from tools.data.common import (
     iso_now,
     manifest_file_entry,
     market_db_path,
+    simulation_db_path,
+    tracking_db_path,
     project_version,
     secret_like_paths,
     sqlite_snapshot,
     utc_stamp,
     validate_holdings_db,
     validate_market_db,
+    validate_simulation_db,
+    validate_tracking_db,
     write_json_atomic,
 )
 
@@ -71,22 +76,30 @@ def _market_generation_ready(path: Path | None) -> bool:
 def _input_identity_extension(
     holdings_copy: Path,
     market_copy: Path | None,
+    simulation_copy: Path | None,
 ) -> dict[str, object]:
     explicit_proof_store = _table_exists(holdings_copy, PROOF_TABLE)
     revision_identity_metadata = _table_exists(holdings_copy, "stock_analysis_revision")
     market_generation = _market_generation_ready(market_copy)
+    validation_proof_store = (
+        simulation_copy is not None
+        and simulation_copy.is_file()
+        and _table_exists(simulation_copy, VALIDATION_PROOF_TABLE)
+    )
     return {
         "schema_version": INPUT_IDENTITY_SCHEMA_VERSION,
         "revision_identity_metadata": revision_identity_metadata,
         "explicit_proof_store": explicit_proof_store,
         "market_generation_store": market_generation,
+        "validation_input_proof_store": validation_proof_store,
         "current_identity_verification_capability_restorable": (
             revision_identity_metadata and market_generation
         ),
         "note": (
             "분석 revision 자체의 fingerprint/source_versions는 Holdings snapshot에 보존됩니다. "
             "현재 입력 동일성을 다시 판정하려면 같은 시점의 Market generation store도 함께 복원해야 합니다. "
-            "explicit proof table은 과거 revision을 명시 검증한 이력을 추가로 보존합니다."
+            "explicit proof table은 과거 revision을 명시 검증한 이력을 추가로 보존합니다. "
+            "Simulation snapshot이 포함되면 Historical Validation 입력 proof도 함께 보존됩니다."
         ),
     }
 
@@ -97,13 +110,23 @@ def create_backup(
     include_market: bool = False,
     holdings_db: Path | None = None,
     market_db: Path | None = None,
+    simulation_db: Path | None = None,
+    tracking_db: Path | None = None,
+    include_simulation: bool = True,
+    include_tracking: bool = True,
 ) -> Path:
     source_holdings = Path(holdings_db or holdings_db_path())
     source_market = Path(market_db or market_db_path())
+    source_simulation = Path(simulation_db or simulation_db_path())
+    source_tracking = Path(tracking_db or tracking_db_path())
 
     validate_holdings_db(source_holdings)
     if include_market:
         validate_market_db(source_market)
+    if include_simulation and source_simulation.is_file():
+        validate_simulation_db(source_simulation)
+    if include_tracking and source_tracking.is_file():
+        validate_tracking_db(source_tracking)
 
     final_dir = Path(
         destination
@@ -127,6 +150,8 @@ def create_backup(
         contents = {
             "holdings_db": True,
             "market_history_db": False,
+            "simulation_db": False,
+            "tracking_db": False,
         }
 
         market_summary = None
@@ -137,6 +162,24 @@ def create_backup(
             market_summary = validate_market_db(market_copy)
             files["market_history.db"] = manifest_file_entry(market_copy)
             contents["market_history_db"] = True
+
+        simulation_summary = None
+        simulation_copy: Path | None = None
+        if include_simulation and source_simulation.is_file():
+            simulation_copy = temp_dir / "simulation.db"
+            sqlite_snapshot(source_simulation, simulation_copy)
+            simulation_summary = validate_simulation_db(simulation_copy)
+            files["simulation.db"] = manifest_file_entry(simulation_copy)
+            contents["simulation_db"] = True
+
+        tracking_summary = None
+        tracking_copy: Path | None = None
+        if include_tracking and source_tracking.is_file():
+            tracking_copy = temp_dir / "recommendation_tracking.db"
+            sqlite_snapshot(source_tracking, tracking_copy)
+            tracking_summary = validate_tracking_db(tracking_copy)
+            files["recommendation_tracking.db"] = manifest_file_entry(tracking_copy)
+            contents["tracking_db"] = True
 
         manifest = {
             "format_version": BACKUP_FORMAT_VERSION,
@@ -153,11 +196,14 @@ def create_backup(
                     "domain": holdings_validation["domain"],
                 },
                 "market_history": market_summary,
+                "simulation": simulation_summary,
+                "tracking": tracking_summary,
             },
             "extensions": {
                 "input_identity_v1": _input_identity_extension(
                     holdings_copy,
                     market_copy,
+                    simulation_copy,
                 ),
             },
             "secret_files_included": [],
@@ -187,6 +233,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="재수집 가능한 market_history.db도 함께 백업합니다.",
     )
     parser.add_argument(
+        "--exclude-simulation",
+        action="store_true",
+        help="simulation.db가 존재해도 백업에서 제외합니다.",
+    )
+    parser.add_argument(
+        "--exclude-tracking",
+        action="store_true",
+        help="recommendation_tracking.db가 존재해도 백업에서 제외합니다.",
+    )
+    parser.add_argument(
         "--destination",
         type=Path,
         help="생성할 백업 디렉터리. 생략하면 backups/ 아래에 시간별 폴더를 만듭니다.",
@@ -200,6 +256,8 @@ def main() -> int:
         path = create_backup(
             destination=args.destination,
             include_market=args.include_market,
+            include_simulation=not args.exclude_simulation,
+            include_tracking=not args.exclude_tracking,
         )
         manifest_path = path / "backup_manifest.json"
         print("=" * 78)
@@ -210,6 +268,8 @@ def main() -> int:
         print("Foreign Keys     PASS")
         print("Domain Check     PASS")
         print("Market Store     " + ("INCLUDED" if args.include_market else "SKIPPED"))
+        print("Simulation DB    " + ("AUTO" if not args.exclude_simulation else "SKIPPED"))
+        print("Tracking DB      " + ("AUTO" if not args.exclude_tracking else "SKIPPED"))
         print("Secrets          EXCLUDED")
         print("Manifest         PASS")
         print("")
