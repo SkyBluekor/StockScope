@@ -98,6 +98,14 @@ class FeedbackEvidence:
             "slippage_pct": self.slippage_pct,
             "selection_method": self.metadata.get("selection_method"),
             "evaluation_window": self.metadata.get("evaluation_window"),
+            "selector_date_from": self.metadata.get("selector_date_from"),
+            "selector_date_to": self.metadata.get("selector_date_to"),
+            "source_period_start": self.metadata.get("source_period_start"),
+            "source_period_end": self.metadata.get("source_period_end"),
+            "market_scope": self.metadata.get("market_scope"),
+            "round_trip_cost_pct": self.metadata.get("round_trip_cost_pct"),
+            "max_holding_days": self.metadata.get("max_holding_days"),
+            "market_data_cutoff_date": self.metadata.get("market_data_cutoff_date"),
         }
 
     @property
