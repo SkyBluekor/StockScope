@@ -47,6 +47,10 @@ class AnalysisIdentityContract(BaseModel):
     scanner_version: str | None = None
     analysis_engine_version: str | None = None
     policy_version: str | None = None
+    horizon_intent: str | None = None
+    horizon_policy_version: str | None = None
+    horizon_support_status: str | None = None
+    horizon_reason_code: str | None = None
     source_versions: dict[str, Any] | None = None
     stored_input_generation: dict[str, Any] | None = None
     current_input_generation: dict[str, Any] | None = None
