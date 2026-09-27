@@ -10,6 +10,8 @@ import pytest
 
 from app.holdings import HoldingsCatalog, PositionLifecycleService
 from app.holdings.management import HoldingManagementService
+from app.simulation.sim1_store import SimulationRepository
+from app.tracking.store import RecommendationTrackingRepository
 from tools.data.backup_runtime import create_backup
 from tools.data.bootstrap_runtime import bootstrap_runtime
 from tools.data.common import (
@@ -272,3 +274,86 @@ def test_setup_and_env_template_expose_data1_entrypoints():
     assert "tools\\data\\doctor.py" in setup
     assert "STOCKSCOPE_HOLDINGS_DB=" in env_example
     assert "STOCKSCOPE_MARKET_STORE_DB=" in env_example
+
+
+
+def test_p1_backup_manifest_can_include_tracking_and_simulation(tmp_path):
+    holdings = _holdings_db(tmp_path / "holdings.db")
+    market = _market_db(tmp_path / "market.db")
+
+    tracking = tmp_path / "recommendation_tracking.db"
+    RecommendationTrackingRepository(tracking).initialize()
+
+    simulation = tmp_path / "simulation.db"
+    SimulationRepository(simulation).initialize()
+
+    backup = create_backup(
+        destination=tmp_path / "p1-full",
+        include_market=True,
+        include_tracking=True,
+        include_simulation=True,
+        holdings_db=holdings,
+        market_db=market,
+        tracking_db=tracking,
+        simulation_db=simulation,
+    )
+    manifest = json.loads(
+        (backup / "backup_manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["contents"] == {
+        "holdings_db": True,
+        "market_history_db": True,
+        "tracking_db": True,
+        "simulation_db": True,
+    }
+    p1 = manifest["p1_storage_contract"]
+    assert p1["schema_version"] == "VN_P1_S1_BACKUP_MANIFEST_V1"
+    assert p1["domains"]["tracking"]["frozen_contract"] == "TRACK.1"
+    assert p1["future_stage_state"]["watch"] == "NOT_OWNED_BY_P1"
+    assert p1["future_stage_state"]["strategy_activation"] == "NOT_OWNED_BY_P1"
+    assert (backup / "recommendation_tracking.db").is_file()
+    assert (backup / "simulation.db").is_file()
+
+
+def test_p1_restore_roundtrip_can_restore_tracking_and_simulation(tmp_path):
+    holdings = _holdings_db(tmp_path / "holdings.db")
+    market = _market_db(tmp_path / "market.db")
+    tracking = tmp_path / "recommendation_tracking.db"
+    RecommendationTrackingRepository(tracking).initialize()
+    simulation = tmp_path / "simulation.db"
+    SimulationRepository(simulation).initialize()
+
+    backup = create_backup(
+        destination=tmp_path / "p1-restore",
+        include_tracking=True,
+        include_simulation=True,
+        holdings_db=holdings,
+        market_db=market,
+        tracking_db=tracking,
+        simulation_db=simulation,
+    )
+
+    target_holdings = _holdings_db(tmp_path / "target-holdings.db")
+    target_tracking = tmp_path / "target-tracking.db"
+    RecommendationTrackingRepository(target_tracking).initialize()
+    target_simulation = tmp_path / "target-simulation.db"
+    SimulationRepository(target_simulation).initialize()
+
+    result = restore_backup(
+        backup,
+        restore_tracking=True,
+        restore_simulation=True,
+        target_holdings=target_holdings,
+        target_tracking=target_tracking,
+        target_simulation=target_simulation,
+    )
+    assert result["tracking_db"] == str(target_tracking)
+    assert result["simulation_db"] == str(target_simulation)
+    with sqlite3.connect(target_tracking) as conn:
+        assert conn.execute(
+            "SELECT value FROM tracking_meta WHERE key='schema_version'"
+        ).fetchone() is not None
+    with sqlite3.connect(target_simulation) as conn:
+        assert conn.execute(
+            "SELECT value FROM simulation_schema_meta WHERE key='schema_version'"
+        ).fetchone() is not None

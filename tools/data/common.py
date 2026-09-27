@@ -52,6 +52,20 @@ REQUIRED_MARKET_TABLES = frozenset(
         "day_status",
     }
 )
+REQUIRED_TRACKING_TABLES = frozenset(
+    {
+        "tracking_meta",
+        "tracked_recommendation",
+        "recommendation_performance",
+    }
+)
+SIMULATION_OWNER_TABLES = frozenset(
+    {
+        "simulation_schema_meta",
+        "historical_validation_run",
+        "historical_execution_run",
+    }
+)
 
 
 class DataToolError(RuntimeError):
@@ -253,6 +267,72 @@ def validate_market_db(path: Path) -> dict[str, Any]:
             "integrity": "ok",
             "tables": sorted(REQUIRED_MARKET_TABLES),
         }
+
+
+def validate_tracking_db(path: Path) -> dict[str, Any]:
+    with sqlite_readonly(path) as conn:
+        names = table_names(conn)
+        missing = sorted(REQUIRED_TRACKING_TABLES - names)
+        if missing:
+            raise DataToolError(
+                "Tracking DB 필수 테이블이 없습니다: " + ", ".join(missing)
+            )
+        _integrity_check(conn)
+        _foreign_key_check(conn)
+        return {
+            "integrity": "ok",
+            "foreign_keys": "ok",
+            "tables": sorted(REQUIRED_TRACKING_TABLES),
+            "p1_evidence_tables": [],
+        }
+
+
+def validate_simulation_db(path: Path) -> dict[str, Any]:
+    with sqlite_readonly(path) as conn:
+        names = table_names(conn)
+        if not (SIMULATION_OWNER_TABLES & names):
+            raise DataToolError(
+                "Simulation DB 식별 테이블이 없습니다."
+            )
+        _integrity_check(conn)
+        _foreign_key_check(conn)
+        evidence = sorted(
+            names & {"simulation_input_manifest", "simulation_input_proof"}
+        )
+        return {
+            "integrity": "ok",
+            "foreign_keys": "ok",
+            "owner_tables": sorted(SIMULATION_OWNER_TABLES & names),
+            "p1_evidence_tables": evidence,
+        }
+
+
+def p1_storage_evidence(path: Path, *, domain: str) -> dict[str, Any]:
+    if not path.is_file():
+        return {
+            "domain": domain,
+            "available": False,
+            "evidence_tables": [],
+        }
+    with sqlite_readonly(path) as conn:
+        names = table_names(conn)
+    if domain == "holdings":
+        evidence = sorted(
+            names & {"stock_analysis_input_manifest", "stock_analysis_input_proof"}
+        )
+    elif domain == "market":
+        evidence = sorted(names & {"input_change_generation"})
+    elif domain == "simulation":
+        evidence = sorted(
+            names & {"simulation_input_manifest", "simulation_input_proof"}
+        )
+    else:
+        evidence = []
+    return {
+        "domain": domain,
+        "available": True,
+        "evidence_tables": evidence,
+    }
 
 
 def sqlite_snapshot(source: Path, target: Path) -> None:
