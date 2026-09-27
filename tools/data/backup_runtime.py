@@ -29,6 +29,7 @@ from app.horizon_context import (
 from app.feedback.models import FEEDBACK_SCHEMA_VERSION
 from app.prospective.models import PROSPECTIVE_SCHEMA_VERSION
 from app.holdings.decision_support import HOLDING_DECISION_SCHEMA_VERSION
+from app.holdings.recovery import RECOVERY_SCHEMA_VERSION
 
 from tools.data.common import (
     BACKUP_FORMAT_VERSION,
@@ -217,6 +218,34 @@ def _holding_decision_extension(
     }
 
 
+HOLDING_RECOVERY_TABLES = (
+    "holding_recovery_schema_meta",
+    "holding_recovery_review",
+    "holding_recovery_assessment",
+)
+
+
+def _holding_recovery_extension(
+    holdings_copy: Path,
+) -> dict[str, object]:
+    present = [
+        table
+        for table in HOLDING_RECOVERY_TABLES
+        if _table_exists(holdings_copy, table)
+    ]
+    return {
+        "schema_version": RECOVERY_SCHEMA_VERSION,
+        "present": bool(present),
+        "tables": present,
+        "restorable": len(present) == len(HOLDING_RECOVERY_TABLES),
+        "note": (
+            "P3-S2 Recovery review and append-only assessment history live in holdings.db. "
+            "They are restored with the Holdings ledger; this manifest entry verifies "
+            "the optional Recovery family is complete."
+        ),
+    }
+
+
 def _horizon_context_extension(
     holdings_copy: Path,
     simulation_copy: Path | None,
@@ -361,6 +390,9 @@ def create_backup(
                     simulation_copy,
                 ),
                 "holding_decision_v1": _holding_decision_extension(
+                    holdings_copy,
+                ),
+                "holding_recovery_v1": _holding_recovery_extension(
                     holdings_copy,
                 ),
             },
