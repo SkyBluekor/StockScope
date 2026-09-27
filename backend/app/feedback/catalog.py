@@ -29,7 +29,11 @@ class FeedbackCatalog:
         self.db_path = Path(db_path)
 
     def connect(self) -> sqlite3.Connection:
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        if not self.db_path.is_file():
+            raise FeedbackCatalogError(
+                "FEEDBACK_MIGRATION_REQUIRED",
+                f"Simulation DB 또는 Feedback schema를 찾을 수 없습니다: {self.db_path}",
+            )
         conn = sqlite3.connect(self.db_path, timeout=20.0)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
@@ -164,7 +168,18 @@ class FeedbackCatalog:
                 return self.get_cohort(str(existing["id"]))
 
             cohort_id = str(uuid4())
-            status = "READY" if evidence else "EMPTY"
+            has_source_error = any(
+                source.get("status") == "ERROR"
+                for source in selector_results
+            )
+            if evidence and has_source_error:
+                status = "PARTIAL"
+            elif evidence:
+                status = "READY"
+            elif has_source_error:
+                status = "SOURCE_UNAVAILABLE"
+            else:
+                status = "EMPTY"
             conn.execute(
                 """
                 INSERT INTO feedback_cohort(
