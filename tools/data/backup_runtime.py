@@ -26,6 +26,7 @@ from app.horizon_context import (
     PLAN_HORIZON_TABLE,
     VALIDATION_HORIZON_TABLE,
 )
+from app.feedback.models import FEEDBACK_SCHEMA_VERSION
 
 from tools.data.common import (
     BACKUP_FORMAT_VERSION,
@@ -107,6 +108,42 @@ def _input_identity_extension(
             "현재 입력 동일성을 다시 판정하려면 같은 시점의 Market generation store도 함께 복원해야 합니다. "
             "explicit proof table은 과거 revision을 명시 검증한 이력을 추가로 보존합니다. "
             "Simulation snapshot이 포함되면 Historical Validation 입력 proof도 함께 보존됩니다."
+        ),
+    }
+
+
+FEEDBACK_TABLES = (
+    "feedback_schema_meta",
+    "feedback_source_ref",
+    "feedback_cohort",
+    "feedback_cohort_source",
+    "feedback_cohort_member",
+    "feedback_report",
+)
+
+
+def _feedback_extension(
+    simulation_copy: Path | None,
+) -> dict[str, object]:
+    if simulation_copy is None or not simulation_copy.is_file():
+        return {
+            "schema_version": FEEDBACK_SCHEMA_VERSION,
+            "present": False,
+            "tables": [],
+            "restorable": False,
+        }
+    present = [
+        table for table in FEEDBACK_TABLES
+        if _table_exists(simulation_copy, table)
+    ]
+    return {
+        "schema_version": FEEDBACK_SCHEMA_VERSION,
+        "present": bool(present),
+        "tables": present,
+        "restorable": len(present) == len(FEEDBACK_TABLES),
+        "note": (
+            "P2-S1 source refs/cohorts/reports live in Simulation DB. "
+            "Tracking DB remains a separate read-only evidence source."
         ),
     }
 
@@ -246,6 +283,9 @@ def create_backup(
                 ),
                 "horizon_context_v1": _horizon_context_extension(
                     holdings_copy,
+                    simulation_copy,
+                ),
+                "feedback_v1": _feedback_extension(
                     simulation_copy,
                 ),
             },
