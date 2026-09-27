@@ -531,6 +531,10 @@ export type HoldingRecoveryContext = {
   position_id: string;
   open_review: HoldingRecoveryReview | null;
   reviews: HoldingRecoveryReview[];
+  review_history: Array<{
+    review: HoldingRecoveryReview;
+    assessments: HoldingRecoveryAssessment[];
+  }>;
   current: {
     evidence_version: string;
     stock: { stock_id: string; market: string; ticker: string; name: string };
