@@ -65,6 +65,15 @@ SIMULATION_TABLE_FAMILIES = (
         "feedback_cohort_member",
         "feedback_report",
     }),
+    frozenset({
+        "prospective_schema_meta",
+        "prospective_capture_run",
+        "prospective_recommendation_sample",
+        "prospective_evaluation_protocol",
+        "prospective_evaluation_run",
+        "prospective_evaluation_unit",
+        "prospective_evaluation_report",
+    }),
 )
 
 REQUIRED_TRACKING_TABLES = frozenset(
