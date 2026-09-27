@@ -56,6 +56,11 @@ class StoredAnalysisObservation:
     analysis_engine_version: str | None = None
     policy_version: str | None = None
     source_versions: dict[str, Any] | None = None
+    stored_input_generation: dict[str, Any] | None = None
+    current_input_generation: dict[str, Any] | None = None
+    input_proof_source: str | None = None
+    input_proof_result: str | None = None
+    input_proof_verified_at: str | None = None
     reason: str | None = None
     error: str | None = None
 

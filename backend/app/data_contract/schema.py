@@ -48,6 +48,11 @@ class AnalysisIdentityContract(BaseModel):
     analysis_engine_version: str | None = None
     policy_version: str | None = None
     source_versions: dict[str, Any] | None = None
+    stored_input_generation: dict[str, Any] | None = None
+    current_input_generation: dict[str, Any] | None = None
+    proof_source: str | None = None
+    proof_result: str | None = None
+    proof_verified_at: str | None = None
 
 
 class AnalysisResourceContract(BaseModel):
@@ -146,7 +151,7 @@ class ActiveJobContract(BaseModel):
 
 
 class ContractAction(BaseModel):
-    id: Literal["PREPARE_CHART", "REFRESH_HOLDING_ANALYSIS", "VIEW_ACTIVE_JOB"]
+    id: Literal["PREPARE_CHART", "REFRESH_HOLDING_ANALYSIS", "VERIFY_ANALYSIS_INPUT", "VIEW_ACTIVE_JOB"]
     target: Literal["chart", "analysis_result", "active_job"]
     enabled: bool
     requires_user_initiation: Literal[True] = True

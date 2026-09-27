@@ -10,6 +10,12 @@ from typing import Iterator
 
 from app.backtest.jobs import BacktestJobManager, backtest_jobs
 from app.core.config import PROJECT_ROOT
+from app.input_identity import (
+    ANALYSIS_PROOF_VERSION,
+    PROOF_TABLE,
+    canonical_generation_token,
+    read_input_generation_token,
+)
 from app.market_session import peek_market_session
 from app.quotes.service import observe_cached_quote
 
@@ -355,6 +361,49 @@ class ReadOnlyDataStateReader:
                 except json.JSONDecodeError as exc:
                     parse_error = f"source_versions_json invalid: {exc.msg}"
 
+                stored_generation = (
+                    source_versions.get("input_generation")
+                    if isinstance(source_versions, dict)
+                    and isinstance(source_versions.get("input_generation"), dict)
+                    else None
+                )
+                proof_source = "ANALYSIS_REVISION" if stored_generation is not None else None
+                proof_result = "MATCH" if stored_generation is not None else None
+                proof_verified_at: str | None = None
+
+                if self._has_tables(conn, {PROOF_TABLE}):
+                    proof = conn.execute(
+                        f"""
+                        SELECT proof_version,generation_json,verification_result,verified_at
+                        FROM {PROOF_TABLE}
+                        WHERE revision_id=?
+                        LIMIT 1
+                        """,
+                        (str(revision["id"]),),
+                    ).fetchone()
+                    if proof is not None and str(proof["proof_version"]) == ANALYSIS_PROOF_VERSION:
+                        try:
+                            parsed_generation = json.loads(str(proof["generation_json"]))
+                        except json.JSONDecodeError:
+                            parsed_generation = None
+                        if canonical_generation_token(parsed_generation) is not None:
+                            stored_generation = parsed_generation
+                            proof_source = "EXPLICIT_VALIDATION"
+                            proof_result = str(proof["verification_result"])
+                            proof_verified_at = str(proof["verified_at"])
+
+                current_generation = None
+                if self.market_store_db.is_file():
+                    try:
+                        with self._read_only_connection(self.market_store_db) as market_conn:
+                            current_generation = read_input_generation_token(
+                                market_conn,
+                                clean_market,
+                                clean_ticker,
+                            )
+                    except (sqlite3.Error, OSError):
+                        current_generation = None
+
                 return StoredAnalysisObservation(
                     available=True,
                     present=True,
@@ -376,6 +425,11 @@ class ReadOnlyDataStateReader:
                     analysis_engine_version=revision["analysis_engine_version"],
                     policy_version=revision["policy_version"],
                     source_versions=source_versions,
+                    stored_input_generation=stored_generation,
+                    current_input_generation=current_generation,
+                    input_proof_source=proof_source,
+                    input_proof_result=proof_result,
+                    input_proof_verified_at=proof_verified_at,
                     reason="DATA_INVALID" if parse_error else None,
                     error=parse_error,
                 )

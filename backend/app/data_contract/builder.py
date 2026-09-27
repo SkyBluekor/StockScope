@@ -135,6 +135,11 @@ def _analysis_contract(
         analysis_engine_version=observed.analysis_engine_version,
         policy_version=observed.policy_version,
         source_versions=observed.source_versions,
+        stored_input_generation=observed.stored_input_generation,
+        current_input_generation=observed.current_input_generation,
+        proof_source=observed.input_proof_source,
+        proof_result=observed.input_proof_result,
+        proof_verified_at=observed.input_proof_verified_at,
     )
     basis_date = _iso_date(observed.market_date)
 
@@ -176,10 +181,18 @@ def _analysis_contract(
     ):
         status = "UNVERIFIED"
         reason = "ANALYSIS_IDENTITY_INCOMPLETE"
-    else:
-        # J-8.2 deliberately does not reconstruct the current input fingerprint.
+    elif observed.input_proof_result == "MISMATCH":
+        status = "INVALID"
+        reason = "CURRENT_INPUT_IDENTITY_MISMATCH"
+    elif not observed.stored_input_generation or not observed.current_input_generation:
         status = "UNVERIFIED"
         reason = "CURRENT_INPUT_IDENTITY_NOT_PROVEN"
+    elif observed.stored_input_generation != observed.current_input_generation:
+        status = "INVALID"
+        reason = "CURRENT_INPUT_CHANGED_SINCE_PROOF"
+    else:
+        status = "VALID"
+        reason = None
 
     return AnalysisResourceContract(
         status=status,
@@ -381,6 +394,26 @@ def _actions(
         actions.append(
             ContractAction(
                 id="REFRESH_HOLDING_ANALYSIS",
+                target="analysis_result",
+                enabled=True,
+                reason_code=analysis.reason_code,
+            )
+        )
+
+    if (
+        analysis.monitored_stock_id
+        and analysis.present
+        and analysis.status in {"UNVERIFIED", "INVALID"}
+        and analysis.reason_code
+        in {
+            "CURRENT_INPUT_IDENTITY_NOT_PROVEN",
+            "CURRENT_INPUT_IDENTITY_MISMATCH",
+            "CURRENT_INPUT_CHANGED_SINCE_PROOF",
+        }
+    ):
+        actions.append(
+            ContractAction(
+                id="VERIFY_ANALYSIS_INPUT",
                 target="analysis_result",
                 enabled=True,
                 reason_code=analysis.reason_code,

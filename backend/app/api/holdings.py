@@ -40,6 +40,10 @@ from app.holdings.history_prepare import (
 )
 from app.holdings.live_performance import HoldingsLivePerformanceService
 from app.holdings.live_management import HoldingsLiveManagementService
+from app.holdings.input_proof import (
+    HoldingsInputProofError,
+    verify_current_analysis_input,
+)
 from app.holdings.kis_sync import (
     HoldingsKisSyncError,
     KisAccountSyncService,
@@ -221,6 +225,8 @@ def _http_status(code: str) -> int:
         "HOLD_KIS_SYNC_MARKET_UNRESOLVED",
         "HOLD_KIS_SYNC_STORAGE_CONFLICT",
         "HOLD_ANALYSIS_HISTORY_CONFLICT",
+        "HOLD_INPUT_PROOF_MIGRATION_REQUIRED",
+        "HOLD_INPUT_PROOF_REVISION_CHANGED",
     }:
         return 409
     if code in {
@@ -814,6 +820,20 @@ def current_analysis(stock_id: str) -> dict[str, Any]:
         _raise_holdings_error(error)
     analysis = _current_analysis_payload(catalog, stock_id)
     return {"available": analysis is not None, "analysis": analysis}
+
+
+@router.post("/stocks/{stock_id}/analysis/verify-input")
+def verify_analysis_input(stock_id: str) -> dict[str, Any]:
+    catalog = _catalog()
+    try:
+        result = verify_current_analysis_input(
+            catalog,
+            stock_id,
+            market_store_db=_market_store_path(),
+        )
+        return {"proof": result.to_dict()}
+    except (HoldingsCatalogError, HoldingsInputProofError) as error:
+        _raise_holdings_error(error)
 
 
 @router.post("/stocks/{stock_id}/analysis/refresh")
