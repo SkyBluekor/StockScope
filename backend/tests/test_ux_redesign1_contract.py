@@ -1610,6 +1610,9 @@ def test_vnp3s2_recovery_ui_is_manual_review_only() -> None:
     assert "검토 의도만 기록하며 매수 신호·금액·수량을 만들지 않습니다." in panel
     assert "현재 보유 판단 보기" in panel
     assert "Recovery 검토 종료" in panel
+    assert "이전 Recovery 기록" in panel
+    assert "전체 현금·계좌·자산 범위를 알 수 없어 전체 자산 대비 비중을 확정하지 않습니다." in panel
+    assert "기업·공시 근거는 아직 Recovery 판단 근거로 연결하지 않았습니다." in panel
     assert "startHoldingRecovery" in panel
     assert "recordHoldingRecoveryAssessment" in panel
     assert "closeHoldingRecovery" in panel
