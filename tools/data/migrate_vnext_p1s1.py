@@ -11,7 +11,6 @@ if str(ROOT) not in sys.path:
 
 from tools.data.common import (
     DataToolError,
-    assert_replaceable,
     holdings_db_path,
     market_db_path,
     sqlite_snapshot,
@@ -40,9 +39,10 @@ def _migrate_market(path: Path) -> None:
     conn = sqlite3.connect(path, timeout=20.0)
     try:
         conn.execute("PRAGMA foreign_keys=ON")
-        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("PRAGMA busy_timeout=20000")
         conn.executescript(
             """
+            BEGIN EXCLUSIVE;
             CREATE TABLE IF NOT EXISTS input_change_generation (
                 market TEXT PRIMARY KEY
                     CHECK(market IN ('KOSPI','KOSDAQ')),
@@ -51,11 +51,14 @@ def _migrate_market(path: Path) -> None:
             );
             INSERT OR IGNORE INTO input_change_generation(market,generation)
             VALUES ('KOSPI',0),('KOSDAQ',0);
+            COMMIT;
             """
         )
-        conn.commit()
     except Exception:
-        conn.rollback()
+        try:
+            conn.rollback()
+        except sqlite3.Error:
+            pass
         raise
     finally:
         conn.close()
@@ -65,9 +68,10 @@ def _migrate_holdings(path: Path) -> None:
     conn = sqlite3.connect(path, timeout=20.0)
     try:
         conn.execute("PRAGMA foreign_keys=ON")
-        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("PRAGMA busy_timeout=20000")
         conn.executescript(
             """
+            BEGIN EXCLUSIVE;
             CREATE TABLE IF NOT EXISTS stock_analysis_input_manifest (
                 manifest_hash TEXT PRIMARY KEY,
                 schema_version TEXT NOT NULL,
@@ -125,11 +129,14 @@ def _migrate_holdings(path: Path) -> None:
             BEGIN
                 SELECT RAISE(ABORT, 'stock_analysis_input_proof is append-only');
             END;
+            COMMIT;
             """
         )
-        conn.commit()
     except Exception:
-        conn.rollback()
+        try:
+            conn.rollback()
+        except sqlite3.Error:
+            pass
         raise
     finally:
         conn.close()
@@ -146,9 +153,11 @@ def migrate_p1_input_identity(
 
     validate_holdings_db(holdings)
     validate_market_db(market)
-    assert_replaceable(holdings)
-    assert_replaceable(market)
 
+    # Unlike restore, this migration does not replace DB files. Each additive DDL
+    # transaction acquires its own exclusive writer lock; a live writer therefore
+    # fails via SQLite busy/locked rather than by treating harmless WAL sidecars
+    # as corruption.
     stamp = utc_stamp()
     backups: dict[str, str | None] = {"holdings": None, "market": None}
     if create_backups:

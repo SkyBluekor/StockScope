@@ -53,6 +53,7 @@ class AnalysisIdentityContract(BaseModel):
     proven_market_generation: int | None = None
     current_market_generation: int | None = None
     proof_verified_at: str | None = None
+    current_policy_version: str | None = None
 
 
 class AnalysisResourceContract(BaseModel):

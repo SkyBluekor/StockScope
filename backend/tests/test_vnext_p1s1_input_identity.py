@@ -185,6 +185,7 @@ def test_analysis_proof_becomes_valid_then_invalidates_and_reproves(
     state = ReadOnlyDataStateReader(
         market_store_db=market_path,
         holdings_db=holdings_path,
+        production_policy_path=tmp_path / "missing-policy.json",
     ).read_stock_state("KOSPI", "005930")
     contract = build_stock_data_contract(state)
     assert contract.resources.analysis_result.status == "VALID"
@@ -203,6 +204,7 @@ def test_analysis_proof_becomes_valid_then_invalidates_and_reproves(
     changed_state = ReadOnlyDataStateReader(
         market_store_db=market_path,
         holdings_db=holdings_path,
+        production_policy_path=tmp_path / "missing-policy.json",
     ).read_stock_state("KOSPI", "005930")
     changed = build_stock_data_contract(changed_state)
     assert changed.resources.analysis_result.status == "UNVERIFIED"
@@ -223,6 +225,7 @@ def test_analysis_proof_becomes_valid_then_invalidates_and_reproves(
     reproved_state = ReadOnlyDataStateReader(
         market_store_db=market_path,
         holdings_db=holdings_path,
+        production_policy_path=tmp_path / "missing-policy.json",
     ).read_stock_state("KOSPI", "005930")
     reproved = build_stock_data_contract(reproved_state)
     assert reproved.resources.analysis_result.status == "VALID"

@@ -61,6 +61,7 @@ class StoredAnalysisObservation:
     input_manifest_hash: str | None = None
     proven_market_generation: int | None = None
     proof_verified_at: str | None = None
+    current_policy_version: str | None = None
     reason: str | None = None
     error: str | None = None
 

@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from app.backtest.production_exit_policy import (
-    PRODUCTION_EXIT_POLICY_VERSION,
-    production_policy_cache_token,
-)
+from app.backtest.production_exit_policy import PRODUCTION_EXIT_POLICY_VERSION
 from app.backtest.scanner import StockScannerService
 from app.holdings.analysis import ANALYSIS_ENGINE_VERSION
 from app.holdings.chart import RANGE_BARS
@@ -143,6 +140,7 @@ def _analysis_contract(
         proven_market_generation=observed.proven_market_generation,
         current_market_generation=state.eod.input_generation,
         proof_verified_at=observed.proof_verified_at,
+        current_policy_version=observed.current_policy_version,
     )
     basis_date = _iso_date(observed.market_date)
 
@@ -195,7 +193,10 @@ def _analysis_contract(
     elif state.eod.input_generation is None:
         status = "UNVERIFIED"
         reason = "CURRENT_INPUT_GENERATION_UNAVAILABLE"
-    elif observed.policy_version != production_policy_cache_token():
+    elif (
+        observed.current_policy_version is None
+        or observed.policy_version != observed.current_policy_version
+    ):
         status = "UNVERIFIED"
         reason = "CURRENT_POLICY_IDENTITY_CHANGED"
     elif observed.proven_market_generation != state.eod.input_generation:

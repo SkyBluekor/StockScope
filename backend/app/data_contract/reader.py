@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sqlite3
@@ -9,6 +10,10 @@ from pathlib import Path
 from typing import Iterator
 
 from app.backtest.jobs import BacktestJobManager, backtest_jobs
+from app.backtest.production_exit_policy import (
+    PRODUCTION_EXIT_POLICY_VERSION,
+    PRODUCTION_POLICY_SCHEMA_VERSION,
+)
 from app.core.config import PROJECT_ROOT
 from app.market_session import peek_market_session
 from app.quotes.service import observe_cached_quote
@@ -31,6 +36,9 @@ DEFAULT_MARKET_STORE_DB = (
 DEFAULT_HOLDINGS_DB = (
     PROJECT_ROOT / "backend" / "runtime" / "holdings" / "holdings.db"
 )
+DEFAULT_PRODUCTION_POLICY_PATH = (
+    PROJECT_ROOT / "backend" / "runtime" / "research" / "exit_policy_production.json"
+)
 
 
 class ReadOnlyDataStateReader:
@@ -47,6 +55,7 @@ class ReadOnlyDataStateReader:
         *,
         market_store_db: Path | None = None,
         holdings_db: Path | None = None,
+        production_policy_path: Path | None = None,
         job_manager: BacktestJobManager | None = None,
     ) -> None:
         market_env = os.getenv("STOCKSCOPE_MARKET_STORE_DB")
@@ -60,6 +69,11 @@ class ReadOnlyDataStateReader:
             holdings_db
             if holdings_db is not None
             else holdings_env or DEFAULT_HOLDINGS_DB
+        )
+        self.production_policy_path = Path(
+            production_policy_path
+            if production_policy_path is not None
+            else DEFAULT_PRODUCTION_POLICY_PATH
         )
         self.job_manager = job_manager or backtest_jobs
 
@@ -90,6 +104,31 @@ class ReadOnlyDataStateReader:
             yield conn
         finally:
             conn.close()
+
+    def _current_policy_token(self) -> str:
+        """Observe the active policy file without bootstrapping or mutating it."""
+        path = self.production_policy_path
+        if not path.is_file():
+            return f"{PRODUCTION_EXIT_POLICY_VERSION}-baseline"
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return f"{PRODUCTION_EXIT_POLICY_VERSION}-baseline"
+        if (
+            not isinstance(payload, dict)
+            or payload.get("schema_version") != PRODUCTION_POLICY_SCHEMA_VERSION
+            or payload.get("policy_version") != PRODUCTION_EXIT_POLICY_VERSION
+            or not isinstance(payload.get("strategies"), dict)
+        ):
+            return f"{PRODUCTION_EXIT_POLICY_VERSION}-baseline"
+        raw = json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
+        return f"{PRODUCTION_EXIT_POLICY_VERSION}-{digest}"
 
     @staticmethod
     def _has_tables(conn: sqlite3.Connection, required: set[str]) -> bool:
@@ -122,7 +161,7 @@ class ReadOnlyDataStateReader:
             ).fetchone()
             confirmed_date = str(confirmed["bas_dd"] or "") if confirmed else ""
             if not confirmed_date:
-                return True, None, None, None, 0
+                return True, None, None, None, 0, None
             span = conn.execute(
                 """
                 SELECT MIN(bas_dd) AS first_date,
@@ -429,6 +468,7 @@ class ReadOnlyDataStateReader:
                     input_manifest_hash=manifest_hash,
                     proven_market_generation=proven_generation,
                     proof_verified_at=proof_verified_at,
+                    current_policy_version=self._current_policy_token(),
                     reason="DATA_INVALID" if parse_error else None,
                     error=parse_error,
                 )
