@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -299,14 +300,27 @@ def test_horizon_context_survives_runtime_backup_restore(tmp_path: Path) -> None
         simulation_db=validation.db_path,
         include_tracking=False,
     )
+    manifest = json.loads(
+        (backup / "backup_manifest.json").read_text(encoding="utf-8")
+    )
+    horizon_manifest = manifest["extensions"]["horizon_context_v1"]
+    assert horizon_manifest["holdings_context_restorable"] is True
+    assert horizon_manifest["simulation_context_restorable"] is True
+    assert horizon_manifest["numeric_policy_approved"] is False
+
     restored_holdings = tmp_path / "restored-holdings.db"
     restored_simulation = tmp_path / "restored-simulation.db"
-    restore_backup(
+    restored = restore_backup(
         backup,
         restore_simulation=True,
         target_holdings=restored_holdings,
         target_simulation=restored_simulation,
     )
+    assert restored["horizon_context"]["analysis_context_store_restored"] is True
+    assert restored["horizon_context"]["management_plan_context_store_restored"] is True
+    assert restored["horizon_context"]["validation_context_store_restored"] is True
+    assert restored["horizon_context"]["execution_context_store_restored"] is True
+    assert restored["horizon_context"]["numeric_policy_approved"] is False
 
     with sqlite3.connect(restored_holdings) as conn:
         assert get_analysis_horizon(conn, revision_id).intent == "LONG"
