@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.backtest import router as backtest_router
 from app.api.data_contract import router as data_contract_router
 from app.api.data_sources import router as data_sources_router
+from app.api.feedback import router as feedback_router
 from app.api.health import router as health_router
 from app.api.market_session import router as market_session_router
 from app.api.news import router as news_router
@@ -21,5 +22,6 @@ api_router.include_router(data_contract_router)
 api_router.include_router(data_sources_router)
 api_router.include_router(backtest_router)
 api_router.include_router(simulation_api.router)
+api_router.include_router(feedback_router)
 api_router.include_router(holdings_router)
 api_router.include_router(integrations_router)
