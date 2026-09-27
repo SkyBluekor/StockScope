@@ -77,6 +77,20 @@ P2-S2는 새 Scanner 실행부터 실제 추천 표본을 사후 선택 전에 �
 
 조회/API import는 이 migration을 자동 실행하지 않습니다. Migration 전에도 기존 Scanner는 정상 동작하며 prospective 수집만 `NOT_READY` 상태입니다.
 
+## P3-S1 보유 판단 저장소 준비
+
+P3-S1은 기존 Holdings 원장과 적용 계획 위에 별도의 보유 판단/선택 이력을 추가합니다. 기존 Position, 거래 이벤트, 과거 관리 계획을 소급 변환하지 않습니다.
+
+명시적으로 한 번 실행합니다.
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\migrate_holdings_decision_vnp3s1.py
+```
+
+조회/API import는 이 migration을 자동 실행하지 않습니다. Migration 전에도 기존 Holdings·원장·관리 계획 기능은 유지되며 새 보유 판단 기능만 `HOLD_DECISION_MIGRATION_REQUIRED` 상태입니다.
+
+Decision, Resolution, Plan Context는 `holdings.db`에 저장되므로 기본 Holdings backup에 함께 포함됩니다. Manifest의 `holding_decision_v1` 항목은 해당 optional table family가 완전하고 복원 가능한지 별도로 기록합니다.
+
 ## 복원
 
 기본 복원은 Holdings DB만 복원합니다. Simulation/Tracking은 백업에 포함되어 있어도 명시적으로 복원합니다.
