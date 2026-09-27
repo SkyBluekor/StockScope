@@ -268,6 +268,61 @@ def test_capture_is_independent_from_tracking_and_deduplicates_same_result(
     assert samples[0]["signal_date"] == "2026-09-23"
 
 
+def test_partial_capture_is_preserved_but_not_evaluation_sample(
+    tmp_path: Path,
+) -> None:
+    simulation_db = _simulation_db(tmp_path / "simulation.db")
+    market_db = _market_db(tmp_path / "market.db")
+    migrate_prospective_store(simulation_db)
+    service = ProspectiveService(simulation_db, market_db)
+
+    service.try_begin_scanner_capture(
+        source_job_id="partial-job",
+        payload=_payload("2026-09-23"),
+    )
+    result = _scanner_result("2026-09-23", fingerprint="partial-fp")
+    result["partial_data"] = True
+    finalized = service.try_finalize_scanner_capture(
+        source_job_id="partial-job",
+        payload=_payload("2026-09-23"),
+        result=result,
+    )
+
+    assert finalized["status"] == "PARTIAL"
+    assert service.catalog.list_samples() == []
+    captures = service.catalog.list_captures()
+    assert captures[0]["status"] == "PARTIAL"
+
+
+def test_same_job_finalize_retry_returns_terminal_capture_unchanged(
+    tmp_path: Path,
+) -> None:
+    simulation_db = _simulation_db(tmp_path / "simulation.db")
+    market_db = _market_db(tmp_path / "market.db")
+    migrate_prospective_store(simulation_db)
+    service = ProspectiveService(simulation_db, market_db)
+    result = _scanner_result("2026-09-23", fingerprint="retry-fp")
+
+    service.try_begin_scanner_capture(
+        source_job_id="retry-job",
+        payload=_payload("2026-09-23"),
+    )
+    first = service.try_finalize_scanner_capture(
+        source_job_id="retry-job",
+        payload=_payload("2026-09-23"),
+        result=result,
+    )
+    second = service.try_finalize_scanner_capture(
+        source_job_id="retry-job",
+        payload=_payload("2026-09-23"),
+        result=result,
+    )
+
+    assert first == second
+    assert first["status"] == "COMPLETE"
+    assert len(service.catalog.list_samples()) == 1
+
+
 def test_capture_not_ready_never_breaks_scanner_path(tmp_path: Path) -> None:
     simulation_db = _simulation_db(tmp_path / "simulation.db")
     service = ProspectiveService(
