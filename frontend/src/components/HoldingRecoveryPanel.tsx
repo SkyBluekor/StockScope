@@ -54,11 +54,7 @@ function pct(value: string | null | undefined) {
 }
 
 function currentAssessment(context: HoldingRecoveryContext) {
-  const reviewId = context.open_review?.review_id;
-  if (!reviewId) return null;
-  const history = context.review_history.find((item) => item.review.review_id === reviewId);
-  if (!history || history.assessments.length === 0) return null;
-  return history.assessments[history.assessments.length - 1];
+  return context.latest_open_assessment;
 }
 
 function scrollToDecision() {
