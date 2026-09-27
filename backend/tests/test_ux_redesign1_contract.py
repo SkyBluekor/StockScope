@@ -701,14 +701,21 @@ def test_ux_redesign1j4_prioritizes_held_management_and_separates_opening_balanc
     assert "registerHeldStock" not in disclosure_summary
     assert "recordManualBuy" not in disclosure_summary
 
-    # Active management remains explicit and non-applicable proposals explain themselves.
+    # Active management remains explicit, while P3-S1 moves plan mutation behind
+    # the dedicated decision-support review instead of a direct Workspace button.
+    decision_panel = Path(
+        "frontend/src/components/HoldingDecisionPanel.tsx"
+    ).read_text(encoding="utf-8")
     assert "현재 보유분에 실제 적용 중인 손절·목표 가격" in holdings
     assert "현재 적용 중인 보유분 관리 기준이 없습니다." in holdings
     assert "기술 정보 · 내부 기준" in holdings
     assert "현재 적용할 수 없는 제안입니다." in holdings
     assert "item.proposal.can_apply &&" in holdings
-    assert "이 계획 적용" in holdings
-    assert "applyLatestManagementPlan" in holdings
+    assert "HoldingDecisionPanel" in holdings
+    assert "위의 보유 판단에서 검토 후 명시적으로 적용할 수 있습니다." in holdings
+    assert "applyLatestManagementPlan" not in holdings
+    assert "새 분석 계획 적용" in decision_panel
+    assert "applyHoldingDecisionPlan(" in decision_panel
 
     # Stock analysis uses the same opening-balance language and guardrail.
     assert "기존 보유 등록" in tracking
@@ -1369,6 +1376,9 @@ def test_realtime3b_live_management_proximity_boundaries() -> None:
     holdings_api = Path("backend/app/api/holdings.py").read_text(encoding="utf-8")
     frontend_api = Path("frontend/src/services/holdingsApi.ts").read_text(encoding="utf-8")
     workspace = Path("frontend/src/components/HoldingsWorkspace.tsx").read_text(encoding="utf-8")
+    decision_panel = Path(
+        "frontend/src/components/HoldingDecisionPanel.tsx"
+    ).read_text(encoding="utf-8")
 
     # Existing management keeps the official EOD state calculation and shares only distance math.
     assert "def management_distance(" in management
@@ -1432,11 +1442,15 @@ def test_realtime3b_live_management_proximity_boundaries() -> None:
     assert "현재가 거리 · KIS" in workspace
     assert "갱신 지연" in workspace
 
-    # No frontend distance formula or automatic plan mutation is introduced.
+    # No frontend distance formula or quote-triggered plan mutation is introduced.
+    # P3-S1 moves the explicit plan mutation behind the persisted EOD decision surface.
     assert "selectedQuote.current_price - item.active_plan" not in workspace
     assert "item.active_plan.stop_price - selectedQuote" not in workspace
-    assert "applyHoldingManagementPlan(" in workspace
-    assert "selectedQuote" not in workspace[workspace.index("async function applyLatestManagementPlan"):workspace.index("useEffect(() =>", workspace.index("async function applyLatestManagementPlan"))]
+    assert "applyHoldingManagementPlan(" not in workspace
+    assert "HoldingDecisionPanel" in workspace
+    assert "applyHoldingDecisionPlan(" in decision_panel
+    assert "selectedQuote" not in decision_panel
+    assert "getLiveHoldingManagementProximity" not in decision_panel
 
 def test_realtime4_market_session_polling_boundaries() -> None:
     market_hook = Path("frontend/src/hooks/useDomesticMarketSession.ts").read_text(encoding="utf-8")
