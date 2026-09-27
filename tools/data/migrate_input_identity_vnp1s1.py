@@ -149,7 +149,7 @@ def migrate_market_store(path: Path) -> dict[str, int | str]:
             """
             CREATE TRIGGER IF NOT EXISTS trg_input_gen_stock_update_new
             AFTER UPDATE ON stock_daily
-            WHEN OLD.market<>NEW.market OR OLD.stock_code<>NEW.stock_code OR OLD.row_json<>NEW.row_json
+            WHEN OLD.market<>NEW.market OR OLD.stock_code<>NEW.stock_code OR OLD.bas_dd<>NEW.bas_dd OR OLD.row_json<>NEW.row_json
             BEGIN
               INSERT INTO input_change_generation(scope,market,subject,generation)
               VALUES('STOCK',NEW.market,NEW.stock_code,1)
@@ -254,6 +254,9 @@ def migrate_market_store(path: Path) -> dict[str, int | str]:
             END
             """,
         )
+        # Repair this trigger on repeat migration as its v1 definition originally
+        # missed date-only row moves (bas_dd), which can change the used input range.
+        conn.execute("DROP TRIGGER IF EXISTS trg_input_gen_stock_update_new")
         for statement in trigger_sql:
             conn.execute(statement)
         conn.commit()
