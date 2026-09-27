@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
@@ -16,7 +18,8 @@ from app.backtest.exit_policy_validation_runner import (
 from app.backtest.risk_validation import RiskPolicyValidationService
 from app.backtest.scanner import StockScannerService
 from app.backtest.production_exit_policy import ProductionExitPolicyRegistry
-from app.core.config import get_settings
+from app.core.config import PROJECT_ROOT, get_settings
+from app.prospective import ProspectiveService
 from app.horizon import (
     HorizonPolicyError,
     require_horizon_activatable,
@@ -27,6 +30,17 @@ from app.market.providers.base import ProviderError, ProviderNotConfigured
 
 router = APIRouter(prefix="/backtest", tags=["backtest"])
 
+
+def _prospective_service() -> ProspectiveService:
+    simulation_db = Path(
+        os.getenv("STOCKSCOPE_SIM_DB")
+        or PROJECT_ROOT / "backend" / "runtime" / "simulation" / "simulation.db"
+    )
+    market_db = Path(
+        os.getenv("STOCKSCOPE_MARKET_DB")
+        or PROJECT_ROOT / "backend" / "runtime" / "market_history" / "market_history.db"
+    )
+    return ProspectiveService(simulation_db, market_db)
 
 
 
@@ -493,6 +507,7 @@ async def create_multi_strategy_backtest_job(payload: PullbackBacktestRequest) -
 
 async def _run_scanner_job(job_id: str, payload: ScannerRequest, api_key: str | None) -> None:
     service = StockScannerService(KrxProvider(api_key))
+    prospective = _prospective_service()
     progress_context: dict[str, object] = {
         "completed_stages": [],
         "reused_stages": [],
@@ -541,7 +556,14 @@ async def _run_scanner_job(job_id: str, payload: ScannerRequest, api_key: str | 
                         "freshness_failure": freshness,
                     },
                 })
-                backtest_jobs.fail(job_id, freshness.get("message") or "최신 확정 시세 준비에 실패했습니다.")
+                message = freshness.get("message") or "최신 확정 시세 준비에 실패했습니다."
+                backtest_jobs.fail(job_id, message)
+                prospective.try_mark_scanner_capture_terminal(
+                    source_job_id=job_id,
+                    status="FAILED",
+                    error_code="SCANNER_PREPARE_FAILED",
+                    error_message=message,
+                )
                 return
             update_progress({
                 "stage": "scanner_prepare_complete",
@@ -568,14 +590,43 @@ async def _run_scanner_job(job_id: str, payload: ScannerRequest, api_key: str | 
             result["horizon_context"] = resolve_horizon_context(
                 payload.horizon_intent
             ).to_dict()
+            result["prospective_capture"] = prospective.try_finalize_scanner_capture(
+                source_job_id=job_id,
+                payload=payload,
+                result=result,
+            )
     except BacktestJobCancelled:
+        prospective.try_mark_scanner_capture_terminal(
+            source_job_id=job_id,
+            status="CANCELLED",
+            error_code="SCANNER_CANCELLED",
+            error_message="사용자가 Scanner 작업을 취소했습니다.",
+        )
         backtest_jobs.mark_cancelled(job_id)
     except asyncio.CancelledError:
+        prospective.try_mark_scanner_capture_terminal(
+            source_job_id=job_id,
+            status="CANCELLED",
+            error_code="SCANNER_CANCELLED",
+            error_message="Scanner task가 취소되었습니다.",
+        )
         backtest_jobs.mark_cancelled(job_id)
         raise
     except (ProviderNotConfigured, ProviderError, ValueError) as exc:
+        prospective.try_mark_scanner_capture_terminal(
+            source_job_id=job_id,
+            status="FAILED",
+            error_code="SCANNER_FAILED",
+            error_message=str(exc),
+        )
         backtest_jobs.fail(job_id, str(exc))
     except Exception as exc:  # pragma: no cover
+        prospective.try_mark_scanner_capture_terminal(
+            source_job_id=job_id,
+            status="FAILED",
+            error_code="SCANNER_UNEXPECTED_FAILURE",
+            error_message=str(exc),
+        )
         backtest_jobs.fail(job_id, f"종목 찾기 처리 중 예상하지 못한 오류가 발생했습니다: {exc}")
     else:
         backtest_jobs.complete(job_id, result)
@@ -695,6 +746,10 @@ async def create_scanner_job(payload: ScannerRequest) -> dict:
 
     settings = get_settings()
     job = backtest_jobs.create()
+    _prospective_service().try_begin_scanner_capture(
+        source_job_id=job.job_id,
+        payload=payload,
+    )
     task = asyncio.create_task(_run_scanner_job(job.job_id, payload, settings.krx_api_key))
     backtest_jobs.attach_task(job.job_id, task)
     return job.public()
