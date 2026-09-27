@@ -365,7 +365,7 @@ def migrate_prospective_store(path: Path) -> dict[str, object]:
             """
             CREATE TRIGGER IF NOT EXISTS trg_prospective_capture_terminal_immutable
             BEFORE UPDATE ON prospective_capture_run
-            WHEN OLD.status IN ('COMPLETE','DUPLICATE','FAILED','CANCELLED','INTERRUPTED')
+            WHEN OLD.status IN ('COMPLETE','DUPLICATE','PARTIAL','FAILED','CANCELLED','INTERRUPTED')
             BEGIN
                 SELECT RAISE(ABORT, 'Terminal prospective capture is immutable');
             END
