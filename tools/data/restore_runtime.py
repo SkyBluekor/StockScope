@@ -232,6 +232,9 @@ def restore_backup(
         holding_decision_manifest = dict(
             extensions.get("holding_decision_v1") or {}
         )
+        holding_recovery_manifest = dict(
+            extensions.get("holding_recovery_v1") or {}
+        )
         revision_identity_restored = bool(
             identity_manifest.get("revision_identity_metadata")
         )
@@ -320,6 +323,16 @@ def restore_backup(
                     holding_decision_manifest.get("restorable")
                 ),
                 "tables": list(holding_decision_manifest.get("tables") or []),
+            },
+            "holding_recovery": {
+                "schema_version": holding_recovery_manifest.get("schema_version"),
+                "store_present_in_backup": bool(
+                    holding_recovery_manifest.get("present")
+                ),
+                "store_restored": bool(
+                    holding_recovery_manifest.get("restorable")
+                ),
+                "tables": list(holding_recovery_manifest.get("tables") or []),
             },
         }
     finally:
