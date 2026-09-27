@@ -1619,6 +1619,8 @@ def test_vnp3s2_recovery_ui_is_manual_review_only() -> None:
     assert "result.assessment.thesis_state" in panel
     assert "result.assessment.review_action" in panel
     assert "result.assessment.reason_note" in panel
+    assert "return context.latest_open_assessment;" in panel
+    assert "latest_open_assessment: HoldingRecoveryAssessment | null;" in api
     assert "closeHoldingRecovery" in panel
     assert "recordManualBuy" not in panel
     assert "recordManualSell" not in panel
