@@ -8,6 +8,13 @@ from pathlib import Path
 from typing import Any, Callable
 from uuid import uuid4
 
+from app.horizon import HorizonPolicyError, require_horizon_activatable
+from app.horizon_context import (
+    copy_analysis_horizon_to_plan,
+    get_analysis_horizon,
+    get_plan_horizon,
+)
+
 from .catalog import HoldingsCatalog
 from .chart import HoldingsChartError, HoldingsChartService
 
@@ -195,6 +202,15 @@ class HoldingManagementService:
             if revision_dt > apply_dt:
                 raise HoldingsManagementError("HOLD_PLAN_REVISION_FROM_FUTURE", "적용 시점 이후에 계산된 Analysis Revision은 사용할 수 없습니다.")
 
+            horizon_context = get_analysis_horizon(conn, analysis_revision_id)
+            try:
+                require_horizon_activatable(horizon_context)
+            except HorizonPolicyError as exc:
+                raise HoldingsManagementError(
+                    "HOLD_PLAN_HORIZON_NOT_ACTIVE",
+                    exc.message,
+                ) from exc
+
             reference = _decimal(revision["reference_price"])
             stop = _decimal(revision["stop_price"])
             target1 = _decimal(revision["target1_price"])
@@ -246,6 +262,12 @@ class HoldingManagementService:
                     _decimal_text(reference), _decimal_text(stop), _decimal_text(target1), _decimal_text(target2),
                     "EOD_CONFIRMED", apply_text, reason, previous_plan_id, None, None, now, now,
                 ),
+            )
+            copy_analysis_horizon_to_plan(
+                conn,
+                revision_id=analysis_revision_id,
+                plan_id=plan_id,
+                created_at=now,
             )
             row = conn.execute("SELECT * FROM holding_management_plan WHERE id=?", (plan_id,)).fetchone()
             conn.commit()
@@ -344,13 +366,20 @@ class HoldingManagementService:
         for position in self.catalog.list_positions(stock.id, status="OPEN"):
             account = self.catalog.get_position_account(position.position_account_id)
             active = self.get_active_plan(position.id)
+            active_payload = active.to_dict() if active else None
+            if active_payload is not None:
+                with self.catalog.connection() as conn:
+                    active_payload["horizon_context"] = get_plan_horizon(
+                        conn,
+                        active.id,
+                    ).to_dict()
             rows.append({
                 "position_id": position.id,
                 "account_id": position.position_account_id,
                 "account_name": account.display_name if account else None,
                 "provider": account.provider if account else None,
                 "management_state": self._state(active, price),
-                "active_plan": active.to_dict() if active else None,
+                "active_plan": active_payload,
                 "distances": {
                     "stop": self._distance(active.stop_price if active else None, price),
                     "target1": self._distance(active.target1_price if active else None, price),
