@@ -168,6 +168,14 @@ def execute_prospective_evaluation_run(run_id: str):
         _raise(error)
 
 
+@router.post("/evaluation-runs/{run_id}/cancel")
+def cancel_prospective_evaluation_run(run_id: str):
+    try:
+        return _service().cancel_evaluation_run(run_id)
+    except ProspectiveCatalogError as error:
+        _raise(error)
+
+
 @router.get("/evaluation-runs/{run_id}")
 def get_prospective_evaluation_run(run_id: str):
     try:
