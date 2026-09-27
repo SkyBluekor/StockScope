@@ -18,6 +18,8 @@ BACKEND_ROOT = PROJECT_ROOT / "backend"
 FRONTEND_ROOT = PROJECT_ROOT / "frontend"
 DEFAULT_HOLDINGS_DB = BACKEND_ROOT / "runtime" / "holdings" / "holdings.db"
 DEFAULT_MARKET_DB = BACKEND_ROOT / "runtime" / "market_history" / "market_history.db"
+DEFAULT_SIMULATION_DB = BACKEND_ROOT / "runtime" / "simulation" / "simulation.db"
+DEFAULT_TRACKING_DB = BACKEND_ROOT / "runtime" / "tracking" / "recommendation_tracking.db"
 DEFAULT_BACKUP_ROOT = PROJECT_ROOT / "backups"
 BACKUP_FORMAT_VERSION = 1
 
@@ -51,6 +53,22 @@ REQUIRED_MARKET_TABLES = frozenset(
     }
 )
 
+REQUIRED_SIMULATION_TABLES = frozenset(
+    {
+        "simulation_schema_meta",
+        "historical_validation_run",
+        "historical_validation_day",
+    }
+)
+
+REQUIRED_TRACKING_TABLES = frozenset(
+    {
+        "tracking_meta",
+        "tracked_recommendation",
+        "recommendation_performance",
+    }
+)
+
 
 class DataToolError(RuntimeError):
     pass
@@ -70,6 +88,16 @@ def holdings_db_path() -> Path:
 def market_db_path() -> Path:
     raw = (os.getenv("STOCKSCOPE_MARKET_STORE_DB") or "").strip()
     return Path(raw).expanduser() if raw else DEFAULT_MARKET_DB
+
+
+def simulation_db_path() -> Path:
+    raw = (os.getenv("STOCKSCOPE_SIM_DB") or "").strip()
+    return Path(raw).expanduser() if raw else DEFAULT_SIMULATION_DB
+
+
+def tracking_db_path() -> Path:
+    raw = (os.getenv("STOCKSCOPE_TRACKING_DB") or "").strip()
+    return Path(raw).expanduser() if raw else DEFAULT_TRACKING_DB
 
 
 def utc_stamp() -> str:
@@ -241,6 +269,50 @@ def validate_market_db(path: Path) -> dict[str, Any]:
             "integrity": "ok",
             "tables": sorted(REQUIRED_MARKET_TABLES),
         }
+
+
+def validate_runtime_domain_db(
+    path: Path,
+    *,
+    required_tables: frozenset[str],
+    label: str,
+) -> dict[str, Any]:
+    """Validate an existing domain DB without creating or migrating it."""
+    with sqlite_readonly(path) as conn:
+        names = table_names(conn)
+        missing = sorted(required_tables - names)
+        if missing:
+            raise DataToolError(
+                f"{label} 필수 테이블이 없습니다: " + ", ".join(missing)
+            )
+        _integrity_check(conn)
+        _foreign_key_check(conn)
+        counts = {
+            name: int(conn.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0])
+            for name in sorted(required_tables)
+        }
+        return {
+            "integrity": "ok",
+            "foreign_keys": "ok",
+            "tables": sorted(required_tables),
+            "counts": counts,
+        }
+
+
+def validate_simulation_db(path: Path) -> dict[str, Any]:
+    return validate_runtime_domain_db(
+        path,
+        required_tables=REQUIRED_SIMULATION_TABLES,
+        label="Simulation DB",
+    )
+
+
+def validate_tracking_db(path: Path) -> dict[str, Any]:
+    return validate_runtime_domain_db(
+        path,
+        required_tables=REQUIRED_TRACKING_TABLES,
+        label="Tracking DB",
+    )
 
 
 def sqlite_snapshot(source: Path, target: Path) -> None:
