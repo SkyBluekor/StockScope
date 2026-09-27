@@ -178,6 +178,18 @@ export default function HoldingRecoveryPanel({ positions, sourceKey }: Props) {
         linked_decision_id: context.current.latest_decision?.decision_id ?? null,
       });
       setContexts((current) => ({ ...current, [positionId]: result.context }));
+      setThesisByPosition((current) => ({
+        ...current,
+        [positionId]: result.assessment.thesis_state,
+      }));
+      setActionByPosition((current) => ({
+        ...current,
+        [positionId]: result.assessment.review_action,
+      }));
+      setReasonByPosition((current) => ({
+        ...current,
+        [positionId]: result.assessment.reason_note ?? "",
+      }));
       setMessage("현재 근거와 선택 이유를 Recovery 기록에 남겼습니다. 실제 주문이나 계획 변경은 발생하지 않았습니다.");
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Recovery 검토 내용을 저장하지 못했습니다.");
