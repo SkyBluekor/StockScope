@@ -519,10 +519,23 @@ class HoldingRecoveryService:
 
     def get_context(self, position_id: str) -> dict[str, Any]:
         evidence = self._current_evidence(position_id)
+        reviews = self.list_reviews(position_id)
+        open_review = next(
+            (item for item in reviews if item["status"] == "OPEN"),
+            None,
+        )
+        history = [
+            {
+                "review": review,
+                "assessments": self.list_assessments(review["review_id"]),
+            }
+            for review in reviews
+        ]
         return {
             "position_id": position_id,
-            "open_review": self.get_open_review(position_id),
-            "reviews": self.list_reviews(position_id),
+            "open_review": open_review,
+            "reviews": reviews,
+            "review_history": history,
             "current": evidence,
         }
 
