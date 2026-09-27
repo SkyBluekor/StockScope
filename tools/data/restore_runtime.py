@@ -235,6 +235,9 @@ def restore_backup(
         holding_recovery_manifest = dict(
             extensions.get("holding_recovery_v1") or {}
         )
+        holding_watch_manifest = dict(
+            extensions.get("holding_watch_v1") or {}
+        )
         revision_identity_restored = bool(
             identity_manifest.get("revision_identity_metadata")
         )
@@ -333,6 +336,20 @@ def restore_backup(
                     holding_recovery_manifest.get("restorable")
                 ),
                 "tables": list(holding_recovery_manifest.get("tables") or []),
+            },
+            "holding_watch": {
+                "schema_version": holding_watch_manifest.get("schema_version"),
+                "policy_contract_version": holding_watch_manifest.get(
+                    "policy_contract_version"
+                ),
+                "store_present_in_backup": bool(
+                    holding_watch_manifest.get("present")
+                ),
+                "store_restored": bool(
+                    holding_watch_manifest.get("restorable")
+                ),
+                "tables": list(holding_watch_manifest.get("tables") or []),
+                "live_quote_replay_performed": False,
             },
         }
     finally:
