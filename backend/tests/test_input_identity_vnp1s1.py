@@ -126,6 +126,17 @@ def test_migration_is_explicit_repeatable_and_generation_is_scoped(tmp_path: Pat
         assert after_related is not None
         assert after_related["stock_generation"] == before["stock_generation"] + 1
 
+        conn.execute(
+            "UPDATE stock_daily SET bas_dd='20260924' "
+            "WHERE market='KOSPI' AND bas_dd='20260925' AND stock_code='005930'"
+        )
+        after_date_move = read_input_generation_token(conn, "KOSPI", "005930")
+        assert after_date_move is not None
+        assert (
+            after_date_move["stock_generation"]
+            == after_related["stock_generation"] + 1
+        )
+
 
 def test_data_contract_stays_unverified_without_migration(tmp_path: Path) -> None:
     market = _market_db(tmp_path / "market.db")
