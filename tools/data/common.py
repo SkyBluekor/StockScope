@@ -55,6 +55,15 @@ HOLDING_DECISION_TABLES = frozenset(
     }
 )
 
+HOLDING_RECOVERY_SCHEMA_VERSION = "VN_P3_S2_RECOVERY_REVIEW_V1"
+HOLDING_RECOVERY_TABLES = frozenset(
+    {
+        "holding_recovery_schema_meta",
+        "holding_recovery_review",
+        "holding_recovery_assessment",
+    }
+)
+
 REQUIRED_MARKET_TABLES = frozenset(
     {
         "stock_daily",
@@ -256,6 +265,54 @@ def validate_holdings_db(path: Path) -> dict[str, Any]:
                     "P3-S1 plan context에 승인되지 않은 Review Cycle/Time Stop 수치가 있습니다."
                 )
 
+        recovery_present = HOLDING_RECOVERY_TABLES & names
+        if recovery_present and not HOLDING_RECOVERY_TABLES.issubset(names):
+            missing_recovery = sorted(HOLDING_RECOVERY_TABLES - names)
+            raise DataToolError(
+                "Holdings Recovery store가 부분 migration 상태입니다: "
+                + ", ".join(missing_recovery)
+            )
+        if HOLDING_RECOVERY_TABLES.issubset(names):
+            row = conn.execute(
+                """
+                SELECT value FROM holding_recovery_schema_meta
+                WHERE key='schema_version'
+                """
+            ).fetchone()
+            if row is None or str(row[0]) != HOLDING_RECOVERY_SCHEMA_VERSION:
+                raise DataToolError(
+                    "Holdings Recovery schema version이 지원 범위와 다릅니다."
+                )
+
+            duplicate_recovery = conn.execute(
+                """
+                SELECT position_id,COUNT(*) AS n
+                FROM holding_recovery_review
+                WHERE status='OPEN'
+                GROUP BY position_id
+                HAVING COUNT(*) > 1
+                LIMIT 5
+                """
+            ).fetchall()
+            if duplicate_recovery:
+                raise DataToolError(
+                    "한 Position에 OPEN Recovery review가 2개 이상 있습니다."
+                )
+
+            mismatched_assessment = conn.execute(
+                """
+                SELECT a.id
+                FROM holding_recovery_assessment a
+                JOIN holding_recovery_review r ON r.id=a.review_id
+                WHERE a.position_id<>r.position_id
+                LIMIT 5
+                """
+            ).fetchall()
+            if mismatched_assessment:
+                raise DataToolError(
+                    "Recovery assessment의 Position이 review와 일치하지 않습니다."
+                )
+
         duplicate_open = conn.execute(
             """
             SELECT monitored_stock_id,position_account_id,COUNT(*) AS n
@@ -326,6 +383,13 @@ def validate_holdings_db(path: Path) -> dict[str, Any]:
                 for table in sorted(HOLDING_DECISION_TABLES)
                 if table != "holding_decision_schema_meta"
             }
+        recovery_counts = None
+        if HOLDING_RECOVERY_TABLES.issubset(names):
+            recovery_counts = {
+                table: int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+                for table in sorted(HOLDING_RECOVERY_TABLES)
+                if table != "holding_recovery_schema_meta"
+            }
         return {
             "integrity": "ok",
             "foreign_keys": "ok",
@@ -337,6 +401,13 @@ def validate_holdings_db(path: Path) -> dict[str, Any]:
                     HOLDING_DECISION_SCHEMA_VERSION if decision_counts is not None else None
                 ),
                 "counts": decision_counts,
+            },
+            "holding_recovery": {
+                "present": recovery_counts is not None,
+                "schema_version": (
+                    HOLDING_RECOVERY_SCHEMA_VERSION if recovery_counts is not None else None
+                ),
+                "counts": recovery_counts,
             },
         }
 
