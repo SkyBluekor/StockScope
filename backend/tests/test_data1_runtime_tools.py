@@ -10,6 +10,8 @@ import pytest
 
 from app.holdings import HoldingsCatalog, PositionLifecycleService
 from app.holdings.management import HoldingManagementService
+from app.feedback import FeedbackCatalog, FeedbackEvidence
+from app.simulation.execution_catalog import HistoricalExecutionCatalog
 from app.simulation.sim1_store import SimulationRepository
 from app.simulation.validation_catalog import HistoricalValidationCatalog
 from app.tracking.store import RecommendationTrackingRepository
@@ -23,6 +25,7 @@ from tools.data.common import (
 from tools.data.doctor import collect_report
 from tools.data import restore_runtime as restore_module
 from tools.data.restore_runtime import restore_backup
+from tools.data.migrate_feedback_vnp2s1 import migrate_feedback_store
 
 
 T0 = "2026-09-24T09:00:00+09:00"
@@ -216,6 +219,117 @@ def test_backup_and_restore_include_existing_simulation_and_tracking(tmp_path):
     assert target_tracking.is_file()
     assert result["simulation_db"] == str(target_simulation)
     assert result["tracking_db"] == str(target_tracking)
+
+
+def test_feedback_store_roundtrip_is_declared_and_restored(tmp_path):
+    holdings = _holdings_db(tmp_path / "holdings.db")
+    simulation = _simulation_db(tmp_path / "simulation.db")
+    HistoricalExecutionCatalog(simulation).initialize()
+    migrate_feedback_store(simulation)
+
+    catalog = FeedbackCatalog(simulation)
+    evidence = FeedbackEvidence(
+        source_type="EXECUTION",
+        source_owner="SIMULATION_DB",
+        source_id="run-fixture",
+        source_item_id="2026-09-01|KOSPI|005930",
+        source_hash="source-hash-fixture",
+        durability="DURABLE",
+        origin_kind="VIRTUAL_EXECUTION",
+        market="KOSPI",
+        ticker="005930",
+        name="삼성전자",
+        signal_date="2026-09-01",
+        strategy="pullback",
+        decision_status="READY",
+        scanner_version="0.21.3.7",
+        scanner_baseline="BASELINE_A",
+        horizon_intent="LEGACY_UNSPECIFIED",
+        horizon_policy_version=None,
+        metric_definition="VAL2_VIRTUAL_EXECUTION_V1",
+        execution_policy_version="EXECUTION_V1",
+        exit_policy_token="POLICY-A",
+        fee_pct=0.1,
+        tax_pct=0.1,
+        slippage_pct=0.0,
+        maturity_status="MATURE_REALIZED",
+        inclusion_status="INCLUDED",
+        exclusion_reason=None,
+        available_trading_days=10,
+        metrics={"net_return_pct": 4.8},
+        source_observed_at="2026-09-25T00:00:00+00:00",
+        metadata={
+            "selection_method": "HISTORICAL_EXECUTION_VALIDATION",
+            "evaluation_window": "ENTRY_TO_EXIT_OR_CUTOFF",
+        },
+    )
+    cohort = catalog.create_cohort(
+        client_request_id="backup-cohort",
+        name="backup fixture",
+        filters={"purpose": "backup-test"},
+        selector_results=[
+            {
+                "source_type": "EXECUTION",
+                "source_id": "run-fixture",
+                "selector": {"source_type": "EXECUTION", "source_id": "run-fixture"},
+                "status": "READY",
+                "evidence_count": 1,
+            }
+        ],
+        evidence=[evidence],
+        created_at="2026-09-27T00:00:00+00:00",
+    )
+    catalog.create_report(
+        cohort_id=cohort["id"],
+        client_request_id="backup-report",
+        summary={"evidence_state": "SAMPLE_SIZE_POLICY_UNDEFINED"},
+        source_set_hash=catalog.source_set_hash(cohort["id"]),
+        status="READY",
+        created_at="2026-09-27T00:01:00+00:00",
+    )
+
+    backup = create_backup(
+        destination=tmp_path / "feedback-backup",
+        holdings_db=holdings,
+        simulation_db=simulation,
+        include_tracking=False,
+    )
+    manifest = json.loads(
+        (backup / "backup_manifest.json").read_text(encoding="utf-8")
+    )
+    feedback_manifest = manifest["extensions"]["feedback_v1"]
+    assert feedback_manifest["present"] is True
+    assert feedback_manifest["restorable"] is True
+    assert set(feedback_manifest["tables"]) == {
+        "feedback_schema_meta",
+        "feedback_source_ref",
+        "feedback_cohort",
+        "feedback_cohort_source",
+        "feedback_cohort_member",
+        "feedback_report",
+    }
+
+    restored_holdings = tmp_path / "restored-holdings.db"
+    restored_simulation = tmp_path / "restored-simulation.db"
+    result = restore_backup(
+        backup,
+        restore_simulation=True,
+        target_holdings=restored_holdings,
+        target_simulation=restored_simulation,
+    )
+
+    assert result["feedback"]["store_present_in_backup"] is True
+    assert result["feedback"]["store_restored"] is True
+    with sqlite3.connect(restored_simulation) as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM feedback_source_ref"
+        ).fetchone()[0] == 1
+        assert conn.execute(
+            "SELECT COUNT(*) FROM feedback_cohort"
+        ).fetchone()[0] == 1
+        assert conn.execute(
+            "SELECT COUNT(*) FROM feedback_report"
+        ).fetchone()[0] == 1
 
 
 def test_restore_roundtrip_preserves_holdings_and_creates_pre_restore_backup(tmp_path):
