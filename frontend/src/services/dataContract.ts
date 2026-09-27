@@ -45,11 +45,17 @@ export function analysisContractMessage(contract: StockDataContract | null) {
     if (resource.reason_code === "CURRENT_INPUT_CHANGED_SINCE_PROOF") {
       return "입력 검증 이후 관련 시장 데이터가 변경되었습니다. 다시 검증하거나 분석을 갱신하세요.";
     }
+    if (resource.reason_code === "HORIZON_POLICY_UNSUPPORTED") {
+      return "이 분석의 투자 기간 정책 버전은 현재 지원되지 않습니다.";
+    }
     return "저장된 분석 결과는 현재 기준으로 갱신이 필요합니다.";
   }
   if (resource.status === "UNVERIFIED") {
     if (resource.reason_code === "CURRENT_INPUT_IDENTITY_NOT_PROVEN") {
       return "저장 결과는 있지만 현재 입력과 같은 조건인지 아직 증명되지 않았습니다.";
+    }
+    if (resource.reason_code === "HORIZON_POLICY_NOT_ACTIVE") {
+      return "투자 기간 문맥은 저장됐지만 해당 기간의 수치 정책은 아직 승인되지 않았습니다.";
     }
     return "저장 결과 있음 · 현재 입력 기준과 완전 일치 여부는 확인하지 않았습니다.";
   }
