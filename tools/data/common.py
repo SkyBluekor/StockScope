@@ -45,6 +45,16 @@ REQUIRED_HOLDINGS_TABLES = frozenset(
     }
 )
 
+HOLDING_DECISION_SCHEMA_VERSION = "VN_P3_S1_HOLDING_DECISION_STORAGE_V1"
+HOLDING_DECISION_TABLES = frozenset(
+    {
+        "holding_decision_schema_meta",
+        "holding_decision_record",
+        "holding_decision_resolution",
+        "holding_management_plan_context_vnp3s1",
+    }
+)
+
 REQUIRED_MARKET_TABLES = frozenset(
     {
         "stock_daily",
@@ -200,6 +210,52 @@ def validate_holdings_db(path: Path) -> dict[str, Any]:
         _integrity_check(conn)
         _foreign_key_check(conn)
 
+        decision_present = HOLDING_DECISION_TABLES & names
+        if decision_present and not HOLDING_DECISION_TABLES.issubset(names):
+            missing_decision = sorted(HOLDING_DECISION_TABLES - names)
+            raise DataToolError(
+                "Holdings decision store가 부분 migration 상태입니다: "
+                + ", ".join(missing_decision)
+            )
+        if HOLDING_DECISION_TABLES.issubset(names):
+            row = conn.execute(
+                """
+                SELECT value FROM holding_decision_schema_meta
+                WHERE key='schema_version'
+                """
+            ).fetchone()
+            if row is None or str(row[0]) != HOLDING_DECISION_SCHEMA_VERSION:
+                raise DataToolError(
+                    "Holdings decision schema version이 지원 범위와 다릅니다."
+                )
+
+            invalid_apply = conn.execute(
+                """
+                SELECT id FROM holding_decision_resolution
+                WHERE resolution_type='APPLY_NEW_PLAN'
+                  AND resulting_plan_id IS NULL
+                LIMIT 5
+                """
+            ).fetchall()
+            if invalid_apply:
+                raise DataToolError(
+                    "APPLY_NEW_PLAN resolution에 resulting plan 참조가 없습니다."
+                )
+
+            unsupported_numeric_context = conn.execute(
+                """
+                SELECT plan_id
+                FROM holding_management_plan_context_vnp3s1
+                WHERE review_cycle_trading_days IS NOT NULL
+                   OR time_stop_trading_days IS NOT NULL
+                LIMIT 5
+                """
+            ).fetchall()
+            if unsupported_numeric_context:
+                raise DataToolError(
+                    "P3-S1 plan context에 승인되지 않은 Review Cycle/Time Stop 수치가 있습니다."
+                )
+
         duplicate_open = conn.execute(
             """
             SELECT monitored_stock_id,position_account_id,COUNT(*) AS n
@@ -263,11 +319,25 @@ def validate_holdings_db(path: Path) -> dict[str, Any]:
             name: int(conn.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0])
             for name in HOLDINGS_COUNT_TABLES
         }
+        decision_counts = None
+        if HOLDING_DECISION_TABLES.issubset(names):
+            decision_counts = {
+                table: int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+                for table in sorted(HOLDING_DECISION_TABLES)
+                if table != "holding_decision_schema_meta"
+            }
         return {
             "integrity": "ok",
             "foreign_keys": "ok",
             "domain": "ok",
             "counts": counts,
+            "holding_decision": {
+                "present": decision_counts is not None,
+                "schema_version": (
+                    HOLDING_DECISION_SCHEMA_VERSION if decision_counts is not None else None
+                ),
+                "counts": decision_counts,
+            },
         }
 
 
