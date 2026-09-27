@@ -8,6 +8,7 @@ import pytest
 
 from app.feedback import (
     EvidenceSelector,
+    FeedbackAdapterError,
     FeedbackCatalogError,
     FeedbackEvidence,
     FeedbackEvidenceAdapter,
@@ -341,6 +342,29 @@ def test_comparison_key_separates_period_and_cost_assumptions() -> None:
     )
 
 
+def test_selector_rejects_invalid_or_reversed_dates(tmp_path: Path) -> None:
+    adapter = FeedbackEvidenceAdapter(
+        simulation_db=tmp_path / "simulation.db",
+        tracking_db=tmp_path / "tracking.db",
+    )
+    with pytest.raises(FeedbackAdapterError) as invalid:
+        adapter.resolve(
+            EvidenceSelector("TRACKING", "ALL", date_from="2026/09/01")
+        )
+    assert invalid.value.code == "FEEDBACK_SELECTOR_DATE_INVALID"
+
+    with pytest.raises(FeedbackAdapterError) as reversed_range:
+        adapter.resolve(
+            EvidenceSelector(
+                "TRACKING",
+                "ALL",
+                date_from="2026-09-30",
+                date_to="2026-09-01",
+            )
+        )
+    assert reversed_range.value.code == "FEEDBACK_SELECTOR_RANGE_INVALID"
+
+
 def test_tracking_adapter_is_read_only_and_manual_only_is_excluded(tmp_path: Path) -> None:
     tracking_db = _tracking_fixture(tmp_path / "tracking.db")
     simulation_db = tmp_path / "simulation.db"
@@ -469,6 +493,29 @@ def test_active_tracking_revision_change_marks_report_stale(tmp_path: Path) -> N
     current = service.get_report(report["id"])
     assert current["effective_status"] == "SOURCE_INVALID"
     assert current["source_verification_current"]["counts"]["SOURCE_CHANGED"] == 1
+
+
+def test_duplicate_source_selectors_do_not_double_count_members(
+    tmp_path: Path,
+) -> None:
+    simulation_db = tmp_path / "simulation.db"
+    tracking_db = _tracking_fixture(tmp_path / "tracking.db")
+    _, run_a, _ = _simulation_fixture(simulation_db)
+    migrate_feedback_store(simulation_db)
+    service = FeedbackService(simulation_db, tracking_db)
+
+    cohort = service.create_cohort(
+        client_request_id="dedup-cohort",
+        name="same source twice",
+        selectors=[
+            EvidenceSelector("EXECUTION", run_a.id),
+            EvidenceSelector("EXECUTION", run_a.id),
+        ],
+    )
+
+    assert len(cohort["sources"]) == 2
+    assert len(cohort["members"]) == 1
+    assert cohort["members"][0]["source_id"] == run_a.id
 
 
 def test_cohort_and_report_retries_are_idempotent(tmp_path: Path) -> None:
