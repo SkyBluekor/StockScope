@@ -729,6 +729,14 @@ def test_ux_redesign1j4_prioritizes_held_management_and_separates_opening_balanc
     assert 'decision?.stale ? "최신 판단 다시 만들기"' in decision_panel
     assert "!decision.stale && decision.status !== \"INSUFFICIENT_DATA\"" in decision_panel
     assert "&& !decision.stale" in decision_panel
+    assert "sourceKey: string" in decision_panel
+    assert "}, [stockId, sourceKey]);" in decision_panel
+    assert "holdingDecisionSourceKey(detail, management)" in holdings
+    assert "analysisRevisionId: detail.current_analysis?.revision_id ?? null" in holdings
+    assert "quantity: position.quantity" in holdings
+    assert "averagePrice: position.average_price" in holdings
+    assert "planId: position.active_plan?.plan_id ?? null" in holdings
+    assert "marketDate: management.valuation.market_date" in holdings
 
     # Stock analysis uses the same opening-balance language and guardrail.
     assert "기존 보유 등록" in tracking
