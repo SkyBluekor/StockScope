@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from app.feedback import EvidenceSelector, FeedbackCatalogError, FeedbackEvidenceAdapter, FeedbackService
+from app.feedback import (
+    EvidenceSelector,
+    FeedbackCatalogError,
+    FeedbackEvidence,
+    FeedbackEvidenceAdapter,
+    FeedbackService,
+)
 from app.simulation.execution_catalog import HistoricalExecutionCatalog
 from app.simulation.validation_catalog import HistoricalValidationCatalog
 from app.tracking.store import RecommendationTrackingRepository, canonical_snapshot, snapshot_digest
@@ -255,6 +261,84 @@ def test_feedback_migration_rolls_back_new_objects_on_incompatible_schema(
         assert "feedback_schema_meta" not in names
         assert "feedback_cohort" not in names
         assert "feedback_report" not in names
+
+
+def test_comparison_key_separates_period_and_cost_assumptions() -> None:
+    base = dict(
+        source_type="BACKTEST",
+        source_owner="BACKTEST_JOB_MEMORY",
+        source_id="job-1",
+        source_item_id="trade-1",
+        source_hash="hash-1",
+        durability="EPHEMERAL",
+        origin_kind="BACKTEST_SIMULATION",
+        market="KOSPI",
+        ticker="005930",
+        name=None,
+        signal_date="2026-09-01",
+        strategy="PULLBACK",
+        decision_status=None,
+        scanner_version="0.19.6",
+        scanner_baseline=None,
+        horizon_intent="LEGACY_UNSPECIFIED",
+        horizon_policy_version=None,
+        metric_definition="BACKTEST_TRADE_RESULT_V1",
+        execution_policy_version="TARGET_1_FULL_EXIT",
+        exit_policy_token="POLICY",
+        fee_pct=None,
+        tax_pct=None,
+        slippage_pct=None,
+        maturity_status="MATURE_REALIZED",
+        inclusion_status="INCLUDED",
+        exclusion_reason=None,
+        available_trading_days=10,
+        metrics={"net_return_pct": 3.0},
+        source_observed_at="2026-09-27T00:00:00+00:00",
+    )
+    zero_cost = FeedbackEvidence(
+        **base,
+        metadata={
+            "selection_method": "BACKTEST_STRATEGY_SIMULATION",
+            "evaluation_window": "ENTRY_TO_EXIT",
+            "source_period_start": "2025-01-01",
+            "source_period_end": "2025-12-31",
+            "round_trip_cost_pct": 0.0,
+            "max_holding_days": 20,
+        },
+    )
+    higher_cost = FeedbackEvidence(
+        **base,
+        metadata={
+            "selection_method": "BACKTEST_STRATEGY_SIMULATION",
+            "evaluation_window": "ENTRY_TO_EXIT",
+            "source_period_start": "2025-01-01",
+            "source_period_end": "2025-12-31",
+            "round_trip_cost_pct": 0.3,
+            "max_holding_days": 20,
+        },
+    )
+    different_period = FeedbackEvidence(
+        **base,
+        metadata={
+            "selection_method": "BACKTEST_STRATEGY_SIMULATION",
+            "evaluation_window": "ENTRY_TO_EXIT",
+            "source_period_start": "2026-01-01",
+            "source_period_end": "2026-06-30",
+            "round_trip_cost_pct": 0.0,
+            "max_holding_days": 20,
+        },
+    )
+
+    assert zero_cost.comparison_key != higher_cost.comparison_key
+    assert zero_cost.comparison_key != different_period.comparison_key
+    assert (
+        zero_cost.comparison_dimensions()["round_trip_cost_pct"]
+        == 0.0
+    )
+    assert (
+        zero_cost.comparison_dimensions()["source_period_start"]
+        == "2025-01-01"
+    )
 
 
 def test_tracking_adapter_is_read_only_and_manual_only_is_excluded(tmp_path: Path) -> None:
