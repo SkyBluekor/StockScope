@@ -38,9 +38,50 @@ function money(value: string | null | undefined) {
   return `${new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 0 }).format(number)}원`;
 }
 
+function hasLimitation(decision: HoldingDecisionRecord, code: string) {
+  return decision.limitations.some((item) => item.code === code);
+}
+
+function decisionNeedText(decision: HoldingDecisionRecord) {
+  if (hasLimitation(decision, "ANALYSIS_UNAVAILABLE")) {
+    return {
+      title: "최신 분석이 필요합니다.",
+      summary: "확정 EOD 가격은 있지만 이 보유분에 연결할 최신 분석이 없습니다. 종목 분석을 갱신한 뒤 현재 판단을 다시 확인하세요.",
+    };
+  }
+  if (hasLimitation(decision, "VALUATION_UNAVAILABLE")) {
+    return {
+      title: "확정 EOD 가격을 확인할 수 없습니다.",
+      summary: "가격을 임의로 추정하지 않습니다. 확정 시장 데이터가 준비된 뒤 현재 판단을 다시 확인하세요.",
+    };
+  }
+  if (
+    decision.source_analysis_revision_id
+    && decision.source_active_plan_id == null
+    && decision.evidence.new_plan_horizon_activatable === false
+  ) {
+    return {
+      title: "첫 관리 계획을 아직 적용할 수 없습니다.",
+      summary: "최신 분석은 있지만 현재 Horizon 정책이 계획 적용 단계까지 승인되지 않았습니다. 기존 보유 원장은 그대로 유지됩니다.",
+    };
+  }
+  if (
+    decision.source_analysis_revision_id
+    && decision.source_active_plan_id == null
+  ) {
+    return {
+      title: "첫 관리 계획을 검토하세요.",
+      summary: "최신 분석은 준비됐지만 아직 이 보유분에 적용한 손절·목표 계획이 없습니다. 계획을 적용하기 전까지 기존 원장은 바뀌지 않습니다.",
+    };
+  }
+  return null;
+}
+
 function statusTitle(decision: HoldingDecisionRecord) {
   const effective = decision.effective_status ?? (decision.stale ? "STALE" : decision.status);
   if (effective === "STALE") return "보유 상태가 바뀌어 다시 판단해야 합니다.";
+  const need = decisionNeedText(decision);
+  if (need) return need.title;
   if (decision.status === "INSUFFICIENT_DATA") return "아직 판단할 자료가 충분하지 않습니다.";
   if (decision.status === "CONFLICT") return "새 분석과 현재 계획이 충돌합니다.";
   if (decision.status === "DEFERRED") return "현재 판단을 보류합니다.";
@@ -54,6 +95,8 @@ function statusSummary(decision: HoldingDecisionRecord) {
   if (decision.stale) {
     return "수량·평단·분석·적용 계획·확정 EOD 중 하나가 판단 생성 이후 바뀌었습니다.";
   }
+  const need = decisionNeedText(decision);
+  if (need) return need.summary;
   if (decision.status === "CONFLICT") {
     return "새 분석을 그대로 적용하면 기존 위험 기준을 느슨하게 만들 수 있어 자동 적용을 차단했습니다.";
   }
@@ -145,8 +188,8 @@ export default function HoldingDecisionPanel({
       const result = await evaluateHoldingDecision(positionId);
       setMessage(
         result.decision.reused
-          ? "현재 입력이 이전 판단과 같아 기존 판단을 그대로 사용했습니다."
-          : "현재 확정 EOD와 적용 계획을 기준으로 새 판단을 저장했습니다.",
+          ? "달라진 정보가 없어 현재 판단을 유지했습니다."
+          : "현재 확정 EOD·최신 분석·적용 계획을 기준으로 판단을 업데이트했습니다.",
       );
       await load();
     } catch (evaluateError) {
