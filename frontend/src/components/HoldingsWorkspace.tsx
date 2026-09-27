@@ -9,6 +9,7 @@ import { marketSessionIsPaused } from "../services/marketSession";
 import HoldingsPriceChart from "./HoldingsPriceChart";
 import HoldingDecisionPanel from "./HoldingDecisionPanel";
 import HoldingRecoveryPanel from "./HoldingRecoveryPanel";
+import HoldingWatchStatus from "./HoldingWatchStatus";
 import StockNewsPanel from "./StockNewsPanel";
 import StockQuoteStrip from "./StockQuoteStrip";
 import {
@@ -2273,6 +2274,11 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                 />
 
                 <HoldingRecoveryPanel
+                  positions={detail.positions}
+                  sourceKey={holdingDecisionSourceKey(detail, management)}
+                />
+
+                <HoldingWatchStatus
                   positions={detail.positions}
                   sourceKey={holdingDecisionSourceKey(detail, management)}
                 />
