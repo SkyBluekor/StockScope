@@ -321,6 +321,59 @@ def test_position_quantity_change_makes_decision_stale(tmp_path: Path):
     assert caught.value.code == "HOLD_DECISION_STALE"
 
 
+def test_manual_quantity_correction_makes_decision_stale_and_preserves_active_plan(
+    tmp_path: Path,
+):
+    catalog, life, opened, mdb = _env(tmp_path)
+    revision = _rev(catalog, opened.stock_id, "r1", "90")
+    plan = _apply(catalog, mdb, opened.position.id, revision.id)
+    service = HoldingDecisionSupportService(
+        catalog,
+        market_store_db=mdb,
+    )
+    decision = service.evaluate(opened.position.id)
+
+    events_before = catalog.list_position_events(opened.position.id)
+    trade_events_before = [
+        item for item in events_before
+        if item.event_type in {"BUY", "SELL"}
+    ]
+
+    life.record_correction(
+        position_id=opened.position.id,
+        corrected_quantity="11",
+        corrected_average_price="100",
+        effective_at=T2,
+        note="브라우저 보유 수량 직접 수정 경로",
+    )
+
+    detail = service.get_decision(decision["decision_id"])
+    active = HoldingManagementService(
+        catalog,
+        market_store_db=mdb,
+    ).get_active_plan(opened.position.id)
+    events_after = catalog.list_position_events(opened.position.id)
+    trade_events_after = [
+        item for item in events_after
+        if item.event_type in {"BUY", "SELL"}
+    ]
+
+    assert detail["effective_status"] == "STALE"
+    assert detail["stale_reasons"] == ["POSITION_QUANTITY_CHANGED"]
+    assert active is not None
+    assert active.id == plan.id
+    assert events_after[-1].event_type == "CORRECTION"
+    assert len(trade_events_after) == len(trade_events_before)
+
+    with pytest.raises(HoldingsDecisionSupportError) as caught:
+        service.resolve(
+            decision_id=decision["decision_id"],
+            resolution_type="KEEP_CURRENT_PLAN",
+            selected_action="HOLD",
+        )
+    assert caught.value.code == "HOLD_DECISION_STALE"
+
+
 def test_new_analysis_revision_makes_decision_stale(tmp_path: Path):
     catalog, _, opened, mdb = _env(tmp_path)
     revision = _rev(catalog, opened.stock_id, "r1", "90")
