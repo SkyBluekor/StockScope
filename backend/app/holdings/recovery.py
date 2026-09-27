@@ -716,7 +716,7 @@ class HoldingRecoveryService:
                 """
                 SELECT * FROM holding_recovery_review
                 WHERE position_id=?
-                ORDER BY created_at DESC,id DESC
+                ORDER BY created_at DESC,rowid DESC
                 """,
                 (position_id,),
             ).fetchall()
@@ -730,7 +730,7 @@ class HoldingRecoveryService:
                 """
                 SELECT * FROM holding_recovery_assessment
                 WHERE review_id=?
-                ORDER BY created_at,id
+                ORDER BY created_at,rowid
                 """,
                 (review_id,),
             ).fetchall()
