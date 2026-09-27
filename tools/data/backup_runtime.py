@@ -19,6 +19,13 @@ from app.input_identity import (
     PROOF_TABLE,
     VALIDATION_PROOF_TABLE,
 )
+from app.horizon_context import (
+    ANALYSIS_HORIZON_TABLE,
+    EXECUTION_HORIZON_TABLE,
+    HORIZON_SCHEMA_VERSION,
+    PLAN_HORIZON_TABLE,
+    VALIDATION_HORIZON_TABLE,
+)
 
 from tools.data.common import (
     BACKUP_FORMAT_VERSION,
@@ -100,6 +107,38 @@ def _input_identity_extension(
             "현재 입력 동일성을 다시 판정하려면 같은 시점의 Market generation store도 함께 복원해야 합니다. "
             "explicit proof table은 과거 revision을 명시 검증한 이력을 추가로 보존합니다. "
             "Simulation snapshot이 포함되면 Historical Validation 입력 proof도 함께 보존됩니다."
+        ),
+    }
+
+
+def _horizon_context_extension(
+    holdings_copy: Path,
+    simulation_copy: Path | None,
+) -> dict[str, object]:
+    analysis_context = _table_exists(holdings_copy, ANALYSIS_HORIZON_TABLE)
+    plan_context = _table_exists(holdings_copy, PLAN_HORIZON_TABLE)
+    validation_context = (
+        simulation_copy is not None
+        and simulation_copy.is_file()
+        and _table_exists(simulation_copy, VALIDATION_HORIZON_TABLE)
+    )
+    execution_context = (
+        simulation_copy is not None
+        and simulation_copy.is_file()
+        and _table_exists(simulation_copy, EXECUTION_HORIZON_TABLE)
+    )
+    return {
+        "schema_version": HORIZON_SCHEMA_VERSION,
+        "analysis_context_store": analysis_context,
+        "management_plan_context_store": plan_context,
+        "validation_context_store": validation_context,
+        "execution_context_store": execution_context,
+        "holdings_context_restorable": analysis_context and plan_context,
+        "simulation_context_restorable": validation_context and execution_context,
+        "numeric_policy_approved": False,
+        "note": (
+            "Horizon side tables preserve explicit decision intent without backfilling "
+            "legacy rows. Numeric SHORT/MEDIUM/LONG policy remains separately gated."
         ),
     }
 
@@ -203,6 +242,10 @@ def create_backup(
                 "input_identity_v1": _input_identity_extension(
                     holdings_copy,
                     market_copy,
+                    simulation_copy,
+                ),
+                "horizon_context_v1": _horizon_context_extension(
+                    holdings_copy,
                     simulation_copy,
                 ),
             },
