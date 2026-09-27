@@ -161,6 +161,32 @@ export function getSimulationQuote(portfolioId: string, stockCode: string, marke
 }
 
 
+export type HorizonContext = {
+  intent: "SHORT" | "MEDIUM" | "LONG" | "LEGACY_UNSPECIFIED" | string;
+  policy_version: string | null;
+  support_status: "SUPPORTED" | "EVALUATION_PENDING" | "UNSUPPORTED" | "LEGACY_UNSPECIFIED" | string;
+  reason_code: string | null;
+  review_cycle_trading_days: number | null;
+  time_stop_trading_days: number | null;
+};
+
+export type HorizonPolicyCatalog = {
+  policy_version: string;
+  numeric_policy_approved: boolean;
+  legacy: HorizonContext;
+  options: HorizonContext[];
+  rules: {
+    tracking_5_10_20_are_observation_windows: boolean;
+    validation_20d_is_not_horizon_intent: boolean;
+    legacy_backfill_forbidden: boolean;
+  };
+};
+
+export function getHorizonPolicy() {
+  return apiJson<HorizonPolicyCatalog>("/api/simulation/horizon-policy");
+}
+
+
 export type ValidationPeriodPreview = {
   market_scope: "ALL" | "KOSPI" | "KOSDAQ" | string;
   preset: "6m" | "1y" | "2y" | null;
@@ -246,6 +272,7 @@ export type HistoricalValidationDraft = {
   error_message: string | null;
   cancel_requested: boolean;
   runtime_active?: boolean;
+  horizon_context: HorizonContext;
 };
 
 export type HistoricalValidationDay = {
@@ -340,6 +367,7 @@ export function createValidationDraft(input: {
   start_month?: string;
   end_month?: string;
   market_scope?: "ALL" | "KOSPI" | "KOSDAQ";
+  horizon_intent?: "SHORT" | "MEDIUM" | "LONG";
 }) {
   return apiJson<HistoricalValidationDraft>("/api/simulation/validations", json({
     ...input,
