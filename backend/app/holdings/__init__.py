@@ -87,6 +87,7 @@ __all__.extend(
 )
 
 from .recovery import (
+    RECOVERY_EVIDENCE_VERSION,
     RECOVERY_SCHEMA_VERSION,
     REVIEW_ACTIONS,
     THESIS_STATES,
@@ -98,6 +99,7 @@ from .recovery import (
 
 __all__.extend(
     [
+        "RECOVERY_EVIDENCE_VERSION",
         "RECOVERY_SCHEMA_VERSION",
         "REVIEW_ACTIONS",
         "THESIS_STATES",
