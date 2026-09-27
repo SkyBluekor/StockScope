@@ -27,6 +27,41 @@ class FakeMarketStore:
             cursor += timedelta(days=1)
         return result
 
+    def reproducibility_snapshot(
+        self,
+        market: str,
+        start_dd: str,
+        end_dd: str,
+        *,
+        expected_dates=None,
+    ):
+        expected = sorted({str(value) for value in (expected_dates or []) if str(value)})
+        statuses = {
+            kind: {
+                "data_days": len(expected),
+                "empty_days": 0,
+                "missing_days": 0,
+                "data_dates": expected,
+                "empty_dates": [],
+                "missing_dates": [],
+            }
+            for kind in ("stock", "index")
+        }
+        identity = f"{market}:{start_dd}:{end_dd}:{','.join(expected)}"
+        return {
+            "market": market,
+            "start_date": start_dd,
+            "end_date": end_dd,
+            "expected_weekdays": len(expected),
+            "stock_rows": len(expected),
+            "index_rows": len(expected),
+            "stock_sha256": f"fake-stock:{identity}",
+            "index_sha256": f"fake-index:{identity}",
+            "day_status_sha256": f"fake-status:{identity}",
+            "combined_sha256": f"fake-combined:{identity}",
+            "status": statuses,
+        }
+
 
 class FakeScanner:
     def __init__(self, *, mode: str = "ok"):
