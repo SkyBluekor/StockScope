@@ -13,7 +13,11 @@ from .validation_catalog import (
     HistoricalValidationCandidate,
     HistoricalValidationCatalog,
 )
-from app.horizon_context import copy_validation_horizon_to_execution
+from app.horizon import HorizonPolicyError, require_horizon_activatable
+from app.horizon_context import (
+    copy_validation_horizon_to_execution,
+    get_validation_horizon,
+)
 
 
 EXECUTION_POLICY_VERSION = "EXECUTION_V1"
@@ -371,6 +375,19 @@ class HistoricalExecutionCatalog:
                 "VAL2_SOURCE_NOT_COMPLETED",
                 f"VAL.2는 완료된 VAL.1만 입력으로 사용할 수 있습니다: {validation.status}",
             )
+
+        with self.connect() as horizon_conn:
+            horizon_context = get_validation_horizon(
+                horizon_conn,
+                validation_id,
+            )
+        try:
+            require_horizon_activatable(horizon_context)
+        except HorizonPolicyError as exc:
+            raise ExecutionCatalogError(
+                "VAL2_HORIZON_NOT_ACTIVE",
+                exc.message,
+            ) from exc
 
         try:
             date.fromisoformat(market_data_cutoff_date)
