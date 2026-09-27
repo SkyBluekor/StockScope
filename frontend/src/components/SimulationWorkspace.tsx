@@ -24,6 +24,7 @@ import {
   type LegacyValidation,
   type ValidationPeriodPreview,
 } from "../services/simulationApi";
+import FeedbackPanel from "./FeedbackPanel";
 import "../simulation.css";
 
 type Mode = "new" | "saved";
@@ -770,6 +771,8 @@ export default function SimulationWorkspace() {
               </>}
             </div>}
           </div>}
+
+          <FeedbackPanel selectedValidationId={selectedDraft?.status === "COMPLETED" ? selectedDraft.id : null} />
 
           <div className="sim-saved-group sim-legacy-group">
             <div className="sim-saved-group-head"><strong>이전 수동 Simulation</strong><span>{legacy.length}개</span></div>
