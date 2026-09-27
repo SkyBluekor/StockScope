@@ -1,10 +1,13 @@
 from contextlib import asynccontextmanager
+import os
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
-from app.core.config import get_settings
+from app.core.config import PROJECT_ROOT, get_settings
+from app.prospective import ProspectiveCatalogError, ProspectiveService
 from app.quotes.websocket_manager import quote_websocket_manager
 
 settings = get_settings()
@@ -12,6 +15,26 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    simulation_db = Path(
+        os.getenv("STOCKSCOPE_SIM_DB")
+        or PROJECT_ROOT / "backend" / "runtime" / "simulation" / "simulation.db"
+    )
+    market_db = Path(
+        os.getenv("STOCKSCOPE_MARKET_DB")
+        or PROJECT_ROOT / "backend" / "runtime" / "market_history" / "market_history.db"
+    )
+    try:
+        ProspectiveService(
+            simulation_db,
+            market_db,
+        ).catalog.mark_pending_interrupted()
+    except ProspectiveCatalogError as exc:
+        if exc.code not in {
+            "PROSPECTIVE_MIGRATION_REQUIRED",
+            "PROSPECTIVE_SCHEMA_UNSUPPORTED",
+        }:
+            raise
+
     await quote_websocket_manager.start()
     try:
         yield
