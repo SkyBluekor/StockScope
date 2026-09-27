@@ -574,6 +574,26 @@ class HoldingRecoveryService:
             unrealized_return_pct=performance.get("unrealized_return_pct"),
             limitations=evidence["limitations"],
             evidence=snapshot,
+            expected_source={
+                "position_status": evidence["position"]["status"],
+                "position_quantity": evidence["position"]["quantity"],
+                "position_average_price": evidence["position"]["average_price"],
+                "analysis_revision_id": (
+                    evidence["analysis"]["revision_id"]
+                    if evidence["analysis"] is not None
+                    else None
+                ),
+                "active_plan_id": (
+                    evidence["active_plan"]["plan_id"]
+                    if evidence["active_plan"] is not None
+                    else None
+                ),
+                "active_plan_version": (
+                    evidence["active_plan"]["version"]
+                    if evidence["active_plan"] is not None
+                    else None
+                ),
+            },
         )
 
     def start_review(
@@ -704,6 +724,7 @@ class HoldingRecoveryService:
         unrealized_return_pct: Decimal | int | float | str | None = None,
         limitations: list[Any] | None = None,
         evidence: dict[str, Any] | None = None,
+        expected_source: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         thesis = thesis_state.strip().upper()
         action = review_action.strip().upper()
@@ -757,6 +778,31 @@ class HoldingRecoveryService:
                 str(position["monitored_stock_id"]),
             )
             active_plan = self._active_plan_row(conn, position_id)
+
+            if expected_source is not None:
+                current_source = {
+                    "position_status": str(position["status"]),
+                    "position_quantity": str(position["current_quantity"]),
+                    "position_average_price": (
+                        str(position["current_average_price"])
+                        if position["current_average_price"] is not None
+                        else None
+                    ),
+                    "analysis_revision_id": analysis_revision_id,
+                    "active_plan_id": (
+                        str(active_plan["id"]) if active_plan is not None else None
+                    ),
+                    "active_plan_version": (
+                        int(active_plan["plan_version"])
+                        if active_plan is not None
+                        else None
+                    ),
+                }
+                if current_source != expected_source:
+                    raise HoldingsRecoveryError(
+                        "HOLD_RECOVERY_SOURCE_CHANGED",
+                        "Recovery 근거를 확인한 뒤 Position·Analysis·Plan이 변경되어 기록을 중단했습니다. 최신 상태를 다시 확인해주세요.",
+                    )
 
             assessment_id = str(uuid4())
             now = self.clock()
