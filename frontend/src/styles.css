@@ -18841,3 +18841,109 @@ html[data-theme="dark"] .backtest-workspace.multi-strategy-workspace > .backtest
     border-bottom: 1px solid var(--line-soft);
   }
 }
+
+
+/* UX-RESPONSIVE.1 — keep primary navigation usable at narrow desktop/mobile widths */
+.topbar,
+.topnav,
+.brand-wrap,
+.header-actions {
+  min-width: 0;
+}
+
+.nav-item {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 1180px) {
+  .topbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto 44px;
+    column-gap: 12px;
+    row-gap: 4px;
+    min-height: 108px;
+    padding: 8px 14px 0;
+  }
+
+  .brand-wrap {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: center;
+  }
+
+  .header-actions {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    align-self: center;
+  }
+
+  .topnav {
+    display: flex;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+    height: 44px;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .topnav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav-item {
+    height: 44px;
+    padding-inline: 12px;
+  }
+
+  .nav-item.active::after {
+    left: 11px;
+    right: 11px;
+  }
+}
+
+@media (max-width: 760px) {
+  .topbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto 44px;
+    min-height: 104px;
+    padding: 8px 10px 0;
+  }
+
+  .topnav {
+    display: flex;
+    height: 44px;
+  }
+
+  .brand {
+    font-size: 20px;
+  }
+
+  .theme-toggle b {
+    display: none;
+  }
+
+  .theme-toggle {
+    width: 42px;
+    min-width: 42px;
+    padding-inline: 0;
+  }
+
+  .nav-item {
+    padding-inline: 10px;
+    font-size: 15px;
+  }
+
+  .layout {
+    min-height: calc(100vh - 104px);
+  }
+
+  .backtest-view-tabs {
+    top: 104px;
+  }
+}
