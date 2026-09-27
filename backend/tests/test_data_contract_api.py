@@ -361,6 +361,59 @@ def test_data_contract_marks_requested_chart_range_insufficient(
     } >= {"PREPARE_CHART"}
 
 
+def test_data_contract_marks_pending_horizon_not_currently_usable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = tmp_path / "market.db"
+    holdings_db = tmp_path / "holdings.db"
+    _create_market_db(market_db)
+    _create_holdings_db(holdings_db)
+
+    with sqlite3.connect(holdings_db) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE horizon_context_meta(
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+            INSERT INTO horizon_context_meta(key,value)
+            VALUES('schema_version','VN_P1_S2_HORIZON_STORAGE_V1');
+
+            CREATE TABLE analysis_horizon_context(
+                revision_id TEXT PRIMARY KEY,
+                intent TEXT NOT NULL,
+                policy_version TEXT NOT NULL,
+                support_status TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            INSERT INTO analysis_horizon_context(
+                revision_id,intent,policy_version,support_status,created_at
+            ) VALUES(
+                'rev-1','MEDIUM','VN_P1_S2_HORIZON_CONTEXT_V1',
+                'EVALUATION_PENDING','2026-09-27T00:00:00+00:00'
+            );
+            """
+        )
+
+    _configure_paths(monkeypatch, market_db, holdings_db)
+    body = client.get(
+        "/api/data-contract/stocks/005930",
+        params={"market": "KOSPI"},
+    ).json()
+
+    analysis = body["resources"]["analysis_result"]
+    assert analysis["status"] == "UNVERIFIED"
+    assert analysis["current_use_allowed"] is False
+    assert analysis["reason_code"] == "HORIZON_POLICY_NOT_ACTIVE"
+    assert analysis["identity"]["horizon_intent"] == "MEDIUM"
+    assert (
+        analysis["identity"]["horizon_policy_version"]
+        == "VN_P1_S2_HORIZON_CONTEXT_V1"
+    )
+    assert analysis["identity"]["horizon_support_status"] == "EVALUATION_PENDING"
+
+
 def test_data_contract_marks_stored_analysis_basis_stale(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
