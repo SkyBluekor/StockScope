@@ -64,6 +64,19 @@ HOLDING_RECOVERY_TABLES = frozenset(
     }
 )
 
+HOLDING_WATCH_SCHEMA_VERSION = "VN_P4_S1_WATCH_V1"
+HOLDING_WATCH_POLICY_CONTRACT_VERSION = "VN_P4_S1_WATCH_POLICY_CONTRACT_V1"
+HOLDING_WATCH_TABLES = frozenset(
+    {
+        "holding_watch_schema_meta",
+        "holding_watch_setting",
+        "holding_watch_rule",
+        "holding_watch_episode",
+        "holding_watch_coverage_gap",
+        "holding_watch_notification_outbox",
+    }
+)
+
 REQUIRED_MARKET_TABLES = frozenset(
     {
         "stock_daily",
@@ -313,6 +326,94 @@ def validate_holdings_db(path: Path) -> dict[str, Any]:
                     "Recovery assessment의 Position이 review와 일치하지 않습니다."
                 )
 
+        watch_present = HOLDING_WATCH_TABLES & names
+        if watch_present and not HOLDING_WATCH_TABLES.issubset(names):
+            missing_watch = sorted(HOLDING_WATCH_TABLES - names)
+            raise DataToolError(
+                "Holdings Watch store가 부분 migration 상태입니다: "
+                + ", ".join(missing_watch)
+            )
+        if HOLDING_WATCH_TABLES.issubset(names):
+            schema_row = conn.execute(
+                """
+                SELECT value FROM holding_watch_schema_meta
+                WHERE key='schema_version'
+                """
+            ).fetchone()
+            if (
+                schema_row is None
+                or str(schema_row[0]) != HOLDING_WATCH_SCHEMA_VERSION
+            ):
+                raise DataToolError(
+                    "Holdings Watch schema version이 지원 범위와 다릅니다."
+                )
+
+            contract_row = conn.execute(
+                """
+                SELECT value FROM holding_watch_schema_meta
+                WHERE key='policy_contract_version'
+                """
+            ).fetchone()
+            if (
+                contract_row is None
+                or str(contract_row[0]) != HOLDING_WATCH_POLICY_CONTRACT_VERSION
+            ):
+                raise DataToolError(
+                    "Holdings Watch policy contract version이 지원 범위와 다릅니다."
+                )
+
+            duplicate_watch = conn.execute(
+                """
+                SELECT position_id,COUNT(*) AS n
+                FROM holding_watch_setting
+                WHERE status='ACTIVE'
+                GROUP BY position_id
+                HAVING COUNT(*) > 1
+                LIMIT 5
+                """
+            ).fetchall()
+            if duplicate_watch:
+                raise DataToolError(
+                    "한 Position에 ACTIVE Watch setting이 2개 이상 있습니다."
+                )
+
+            stale_active_watch = conn.execute(
+                """
+                SELECT ws.id
+                FROM holding_watch_setting ws
+                JOIN holding_position p ON p.id=ws.position_id
+                JOIN holding_management_plan mp ON mp.id=ws.plan_id
+                WHERE ws.status='ACTIVE'
+                  AND (
+                    p.status<>'OPEN'
+                    OR mp.status<>'ACTIVE'
+                    OR mp.position_id<>ws.position_id
+                    OR mp.plan_version<>ws.plan_version
+                  )
+                LIMIT 5
+                """
+            ).fetchall()
+            if stale_active_watch:
+                raise DataToolError(
+                    "ACTIVE Watch setting이 현재 OPEN Position/ACTIVE Plan과 일치하지 않습니다."
+                )
+
+            mismatched_watch_rule = conn.execute(
+                """
+                SELECT wr.id
+                FROM holding_watch_rule wr
+                JOIN holding_watch_setting ws ON ws.id=wr.setting_id
+                WHERE wr.position_id<>ws.position_id
+                   OR wr.plan_id<>ws.plan_id
+                   OR wr.plan_version<>ws.plan_version
+                LIMIT 5
+                """
+            ).fetchall()
+            if mismatched_watch_rule:
+                raise DataToolError(
+                    "Watch rule의 Position/Plan snapshot이 setting과 일치하지 않습니다."
+                )
+
         duplicate_open = conn.execute(
             """
             SELECT monitored_stock_id,position_account_id,COUNT(*) AS n
@@ -390,6 +491,13 @@ def validate_holdings_db(path: Path) -> dict[str, Any]:
                 for table in sorted(HOLDING_RECOVERY_TABLES)
                 if table != "holding_recovery_schema_meta"
             }
+        watch_counts = None
+        if HOLDING_WATCH_TABLES.issubset(names):
+            watch_counts = {
+                table: int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+                for table in sorted(HOLDING_WATCH_TABLES)
+                if table != "holding_watch_schema_meta"
+            }
         return {
             "integrity": "ok",
             "foreign_keys": "ok",
@@ -408,6 +516,18 @@ def validate_holdings_db(path: Path) -> dict[str, Any]:
                     HOLDING_RECOVERY_SCHEMA_VERSION if recovery_counts is not None else None
                 ),
                 "counts": recovery_counts,
+            },
+            "holding_watch": {
+                "present": watch_counts is not None,
+                "schema_version": (
+                    HOLDING_WATCH_SCHEMA_VERSION if watch_counts is not None else None
+                ),
+                "policy_contract_version": (
+                    HOLDING_WATCH_POLICY_CONTRACT_VERSION
+                    if watch_counts is not None
+                    else None
+                ),
+                "counts": watch_counts,
             },
         }
 
