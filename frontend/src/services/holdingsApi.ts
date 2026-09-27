@@ -303,6 +303,73 @@ export type HoldingManagementPlan = {
   horizon_context?: HoldingHorizonContext;
 };
 
+export type HoldingDecisionAction =
+  | "HOLD"
+  | "ADD"
+  | "REDUCE"
+  | "TAKE_PROFIT"
+  | "STOP"
+  | "EXIT"
+  | string;
+
+export type HoldingDecisionOption = {
+  action: HoldingDecisionAction;
+  state: "AVAILABLE" | "REVIEW" | "MANUAL_REVIEW" | "BLOCKED" | "NOT_TRIGGERED" | "DEFERRED" | string;
+  reason: string;
+};
+
+export type HoldingDecisionRecord = {
+  decision_id: string;
+  position_id: string;
+  decision_policy_version: string;
+  status: "ACTIONABLE" | "REVIEW_REQUIRED" | "DEFERRED" | "INSUFFICIENT_DATA" | "CONFLICT" | string;
+  effective_status?: "STALE" | string;
+  primary_action: HoldingDecisionAction | null;
+  source_analysis_revision_id: string | null;
+  source_active_plan_id: string | null;
+  source_active_plan_version: number | null;
+  source_position_status: string;
+  source_position_quantity: string;
+  source_position_average_price: string | null;
+  valuation_market_date: string | null;
+  valuation_price: string | null;
+  valuation_source: string | null;
+  horizon_intent: string | null;
+  horizon_policy_version: string | null;
+  input_fingerprint: string;
+  evidence: {
+    plan_state?: string;
+    proposal_conflict?: string | null;
+    latest_analysis_differs_from_active_plan?: boolean;
+    new_plan_horizon_activatable?: boolean;
+    source?: Record<string, unknown>;
+  };
+  alternatives: HoldingDecisionOption[];
+  limitations: Array<{ code: string; message: string }>;
+  created_at: string;
+  stale?: boolean;
+  stale_reasons?: string[];
+  reused?: boolean;
+  resolutions?: Array<{
+    resolution_id: string;
+    selected_action: HoldingDecisionAction | null;
+    resolution_type: string;
+    note: string | null;
+    resulting_plan_id: string | null;
+    created_at: string;
+  }>;
+};
+
+export type HoldingDecisionSupportResponse = {
+  stock_id: string;
+  market: string;
+  ticker: string;
+  positions: Array<{
+    position_id: string;
+    decision: HoldingDecisionRecord | null;
+  }>;
+};
+
 export type HoldingManagementResponse = {
   stock_id: string;
   market: string;
@@ -579,6 +646,62 @@ export function recordManualCorrection(
 ): Promise<unknown> {
   return requestJson(
     `/api/holdings/manual/${encodeURIComponent(positionId)}/correction`,
+    jsonInit("POST", input),
+  );
+}
+
+export function getHoldingDecisionSupport(
+  stockId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<HoldingDecisionSupportResponse> {
+  return requestJson<HoldingDecisionSupportResponse>(
+    `/api/holdings/stocks/${encodeURIComponent(stockId)}/decision-support`,
+    { signal: options.signal },
+  );
+}
+
+export function evaluateHoldingDecision(
+  positionId: string,
+): Promise<{ decision: HoldingDecisionRecord }> {
+  return requestJson<{ decision: HoldingDecisionRecord }>(
+    `/api/holdings/positions/${encodeURIComponent(positionId)}/decisions/evaluate`,
+    jsonInit("POST"),
+  );
+}
+
+export function resolveHoldingDecision(
+  decisionId: string,
+  input: {
+    resolution_type: "KEEP_CURRENT_PLAN" | "ACKNOWLEDGED" | "DEFERRED";
+    selected_action?: HoldingDecisionAction | null;
+    note?: string | null;
+  },
+): Promise<{ decision: HoldingDecisionRecord }> {
+  return requestJson<{ decision: HoldingDecisionRecord }>(
+    `/api/holdings/decisions/${encodeURIComponent(decisionId)}/resolve`,
+    jsonInit("POST", input),
+  );
+}
+
+export function applyHoldingDecisionPlan(
+  decisionId: string,
+  input: {
+    selected_action?: HoldingDecisionAction | null;
+    note?: string | null;
+  } = {},
+): Promise<{
+  decision: HoldingDecisionRecord;
+  plan: HoldingManagementPlan;
+  plan_context: {
+    context_version: string;
+    source_decision_id: string;
+    selected_action: HoldingDecisionAction | null;
+    review_cycle_trading_days: number | null;
+    time_stop_trading_days: number | null;
+  };
+}> {
+  return requestJson(
+    `/api/holdings/decisions/${encodeURIComponent(decisionId)}/apply-plan`,
     jsonInit("POST", input),
   );
 }
