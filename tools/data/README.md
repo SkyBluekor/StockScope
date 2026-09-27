@@ -91,6 +91,26 @@ P3-S1은 기존 Holdings 원장과 적용 계획 위에 별도의 보유 판단/
 
 Decision, Resolution, Plan Context는 `holdings.db`에 저장되므로 기본 Holdings backup에 함께 포함됩니다. Manifest의 `holding_decision_v1` 항목은 해당 optional table family가 완전하고 복원 가능한지 별도로 기록합니다.
 
+## VN-P3-S1-UAT.4 Stop-Loosening fixture
+
+이 도구는 브라우저 UAT에서 stop-loosening 보호를 확인하기 위한 **일회성 테스트 도구**입니다. 제품 분석 경로가 아니며, 기존 Analysis/Plan/Position을 수정하지 않고 현재 Analysis를 복제한 새 Revision 하나만 append합니다.
+
+기본 실행은 preview만 표시하고 DB를 변경하지 않습니다.
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\prepare_vnp3s1_stop_loosening_fixture.py --ticker 005930 --market KOSPI
+```
+
+출력된 Position/Active Plan/stop을 확인한 뒤 실제 fixture를 만들 때만 `--apply`를 추가합니다.
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\prepare_vnp3s1_stop_loosening_fixture.py --ticker 005930 --market KOSPI --apply
+```
+
+`--apply`는 변경 전에 Holdings snapshot을 자동 생성합니다. 현재 최신 Analysis가 이미 Active Plan의 source와 다르거나, Position/Plan/Analysis가 백업 이후 동시에 바뀌면 fixture 생성을 중단합니다. 생성되는 새 Revision은 현재 Active Plan보다 낮은 stop을 사용하며, 수량/평단/BUY·SELL·기존 Plan은 변경하지 않습니다.
+
+브라우저 UAT가 끝나면 서버를 종료한 뒤 도구가 출력한 restore 명령으로 fixture 전 상태를 복원합니다.
+
 ## 복원
 
 기본 복원은 Holdings DB만 복원합니다. Simulation/Tracking은 백업에 포함되어 있어도 명시적으로 복원합니다.
