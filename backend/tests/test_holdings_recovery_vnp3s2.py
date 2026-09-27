@@ -431,6 +431,7 @@ def test_recovery_context_reuses_current_holdings_evidence_without_creating_deci
 
     assert context["position_id"] == opened.position.id
     assert context["open_review"] is None
+    assert context["latest_open_assessment"] is None
     assert context["current"]["evidence_version"] == "VN_P3_S2_RECOVERY_EVIDENCE_V1"
     assert context["current"]["position"]["quantity"] == "10"
     assert context["current"]["position"]["average_price"] == "100"
@@ -449,6 +450,36 @@ def test_recovery_context_reuses_current_holdings_evidence_without_creating_deci
         assert conn.execute(
             "SELECT COUNT(*) FROM holding_decision_record"
         ).fetchone()[0] == 0
+
+
+def test_recovery_context_exposes_latest_open_assessment_for_form_restore(
+    tmp_path: Path,
+):
+    catalog, _, opened = _env(tmp_path)
+    service = HoldingRecoveryService(catalog, clock=lambda: T2)
+    review = service.start_review(position_id=opened.position.id)["review"]
+
+    first = service.record_assessment(
+        review_id=review["review_id"],
+        thesis_state="UNKNOWN",
+        review_action="UNDECIDED",
+        reason_note="첫 기록",
+    )
+    second = service.record_assessment(
+        review_id=review["review_id"],
+        thesis_state="WEAKENED",
+        review_action="REDUCE",
+        reason_note="최신 기록",
+    )
+
+    context = service.get_context(opened.position.id)
+
+    assert context["latest_open_assessment"] is not None
+    assert context["latest_open_assessment"]["assessment_id"] == second["assessment_id"]
+    assert context["latest_open_assessment"]["thesis_state"] == "WEAKENED"
+    assert context["latest_open_assessment"]["review_action"] == "REDUCE"
+    assert context["latest_open_assessment"]["reason_note"] == "최신 기록"
+    assert context["latest_open_assessment"]["assessment_id"] != first["assessment_id"]
 
 
 def test_record_current_assessment_snapshots_p3s1_decision_and_never_trades(
