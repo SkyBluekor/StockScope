@@ -631,6 +631,7 @@ class HoldingDecisionSupportService:
         conn = self.catalog.connect()
         try:
             self.require_ready(conn)
+            conn.execute("BEGIN IMMEDIATE")
             existing = conn.execute(
                 """
                 SELECT * FROM holding_decision_record
@@ -645,6 +646,7 @@ class HoldingDecisionSupportService:
                 payload["reused"] = True
                 payload["stale"] = False
                 payload["stale_reasons"] = []
+                conn.rollback()
                 return payload
 
             decision_id = str(uuid4())
@@ -702,12 +704,14 @@ class HoldingDecisionSupportService:
                 "SELECT * FROM holding_decision_record WHERE id=?",
                 (decision_id,),
             ).fetchone()
+            conn.commit()
             payload = self._decision_from_row(row)
             payload["reused"] = False
             payload["stale"] = False
             payload["stale_reasons"] = []
             return payload
         except sqlite3.IntegrityError as exc:
+            conn.rollback()
             raise HoldingsDecisionSupportError(
                 "HOLD_DECISION_CONFLICT",
                 "보유 판단을 저장하는 동안 충돌이 발생했습니다.",
