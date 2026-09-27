@@ -94,8 +94,13 @@ def _inspect_simulation_db(path: Path) -> dict[str, object]:
         if integrity is None or str(integrity[0]).lower() != "ok":
             raise DataToolError("Simulation DB integrity_check에 실패했습니다.")
         tables = sorted(_table_names(conn))
+        non_prospective = [
+            name
+            for name in tables
+            if not name.startswith("prospective_")
+        ]
     return {
-        "existing_table_count": len(tables),
+        "existing_non_prospective_table_count": len(non_prospective),
         "feedback_v1_present": "feedback_schema_meta" in tables,
         "validation_present": "historical_validation_run" in tables,
         "execution_present": "historical_execution_run" in tables,
