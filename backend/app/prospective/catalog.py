@@ -285,7 +285,11 @@ class ProspectiveCatalog:
                 )
             else:
                 capture_id = str(row["id"])
+                if str(row["status"]) in {"COMPLETE", "DUPLICATE", "PARTIAL"}:
+                    conn.rollback()
+                    return self._capture_from_row(row)
 
+            partial = bool(result.get("partial_data"))
             duplicate = conn.execute(
                 """
                 SELECT id FROM prospective_capture_run
@@ -333,7 +337,7 @@ class ProspectiveCatalog:
             conn.execute(
                 """
                 UPDATE prospective_capture_run
-                SET source_execution_key=?,canonical_capture_id=NULL,status='COMPLETE',
+                SET source_execution_key=?,canonical_capture_id=NULL,status=?,
                     scanner_version=?,scanner_baseline=?,market_scope=?,
                     actual_data_date=?,input_fingerprint=?,
                     actionable_candidate_count=?,returned_candidate_count=?,
@@ -343,6 +347,7 @@ class ProspectiveCatalog:
                 """,
                 (
                     execution_key,
+                    "PARTIAL" if partial else "COMPLETE",
                     scanner_version,
                     baseline,
                     market_scope,
@@ -437,7 +442,7 @@ class ProspectiveCatalog:
             ).fetchone()
             if row is None:
                 return None
-            if str(row["status"]) in {"COMPLETE", "DUPLICATE"}:
+            if str(row["status"]) in {"COMPLETE", "DUPLICATE", "PARTIAL"}:
                 return self._capture_from_row(row)
             conn.execute(
                 """
