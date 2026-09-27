@@ -881,3 +881,46 @@ def test_watch_plan_change_invalidates_old_setting_and_preserves_history(
     assert all(row["status"] == "CLOSED" for row in old_rules)
     assert settings[1]["plan_id"] == new_plan.id
     assert settings[1]["status"] == "ACTIVE"
+
+
+
+def test_out_of_order_quote_does_not_close_existing_coverage_gap(tmp_path: Path):
+    db, catalog, _opened, _plan = _env(tmp_path)
+    migrate_watch_store(db)
+    demand = load_active_plan_watch_demands(catalog)[0]
+    policy = _test_policy(max_age=60)
+    service = WatchService(
+        catalog,
+        policy_provider=lambda: policy,
+        clock=lambda: BASE_TIME + timedelta(seconds=30),
+    )
+    service.reconcile([demand])
+    service.record_coverage_issue(demand, "WS_RECONNECT")
+
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            """
+            UPDATE holding_watch_rule
+            SET last_observed_at=?,last_price=?
+            WHERE status='ACTIVE'
+            """,
+            (
+                (BASE_TIME + timedelta(seconds=20)).isoformat(),
+                "95",
+            ),
+        )
+
+    result = service.process_quote(
+        demand,
+        _snapshot_at(_quote_key(), 10, "95"),
+    )
+
+    assert result["transitions"] == []
+    with sqlite3.connect(db) as conn:
+        gap = conn.execute(
+            """
+            SELECT status,ended_at FROM holding_watch_coverage_gap
+            WHERE reason_code='WS_RECONNECT'
+            """
+        ).fetchone()
+    assert gap == ("OPEN", None)
