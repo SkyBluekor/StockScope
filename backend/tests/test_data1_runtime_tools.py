@@ -10,6 +10,7 @@ import pytest
 
 from app.holdings import HoldingsCatalog, PositionLifecycleService
 from app.holdings.management import HoldingManagementService
+from app.holdings.recovery import HoldingRecoveryService
 from app.feedback import FeedbackCatalog, FeedbackEvidence
 from app.prospective import (
     EvaluationProtocolSpec,
@@ -36,6 +37,10 @@ from tools.data.migrate_holdings_decision_vnp3s1 import (
     HOLDING_DECISION_POLICY_VERSION,
     HOLDING_PLAN_CONTEXT_VERSION,
     migrate_holdings_decision_store,
+)
+from tools.data.migrate_holdings_recovery_vnp3s2 import (
+    RECOVERY_SCHEMA_VERSION,
+    migrate_holdings_recovery_store,
 )
 
 
@@ -648,6 +653,91 @@ def test_holding_decision_store_roundtrip_is_declared_and_restored(tmp_path):
             """
         ).fetchone()
         assert row == (None, None)
+
+
+def test_holding_recovery_store_roundtrip_is_declared_and_restored(tmp_path):
+    holdings = _holdings_db(tmp_path / "holdings.db")
+    migrate_holdings_decision_store(holdings)
+    migrate_holdings_recovery_store(holdings)
+    catalog = HoldingsCatalog(holdings)
+
+    with sqlite3.connect(holdings) as conn:
+        position_id = str(
+            conn.execute(
+                "SELECT id FROM holding_position WHERE status='OPEN' LIMIT 1"
+            ).fetchone()[0]
+        )
+
+    service = HoldingRecoveryService(
+        catalog,
+        clock=lambda: "2026-09-27T03:00:00+00:00",
+    )
+    review = service.start_review(
+        position_id=position_id,
+        note="backup recovery fixture",
+    )["review"]
+    assessment = service.record_assessment(
+        review_id=review["review_id"],
+        thesis_state="WEAKENED",
+        review_action="REDUCE",
+        reason_note="backup roundtrip fixture",
+        valuation_market_date="2026-09-24",
+        valuation_price="80",
+        unrealized_pnl="-200",
+        unrealized_return_pct="-20",
+        limitations=["COMPANY_EVIDENCE_NOT_CONNECTED"],
+        evidence={"fixture": True},
+    )
+
+    backup = create_backup(
+        destination=tmp_path / "recovery-backup",
+        holdings_db=holdings,
+        include_simulation=False,
+        include_tracking=False,
+    )
+    manifest = json.loads(
+        (backup / "backup_manifest.json").read_text(encoding="utf-8")
+    )
+    extension = manifest["extensions"]["holding_recovery_v1"]
+
+    assert extension["schema_version"] == RECOVERY_SCHEMA_VERSION
+    assert extension["present"] is True
+    assert extension["restorable"] is True
+    assert set(extension["tables"]) == {
+        "holding_recovery_schema_meta",
+        "holding_recovery_review",
+        "holding_recovery_assessment",
+    }
+
+    restored_holdings = tmp_path / "restored-recovery-holdings.db"
+    result = restore_backup(
+        backup,
+        target_holdings=restored_holdings,
+    )
+
+    assert result["holding_recovery"]["schema_version"] == RECOVERY_SCHEMA_VERSION
+    assert result["holding_recovery"]["store_present_in_backup"] is True
+    assert result["holding_recovery"]["store_restored"] is True
+
+    with sqlite3.connect(restored_holdings) as conn:
+        conn.row_factory = sqlite3.Row
+        restored_review = conn.execute(
+            "SELECT * FROM holding_recovery_review WHERE id=?",
+            (review["review_id"],),
+        ).fetchone()
+        restored_assessment = conn.execute(
+            "SELECT * FROM holding_recovery_assessment WHERE id=?",
+            (assessment["assessment_id"],),
+        ).fetchone()
+
+    assert restored_review is not None
+    assert restored_review["status"] == "OPEN"
+    assert restored_review["opened_note"] == "backup recovery fixture"
+    assert restored_assessment is not None
+    assert restored_assessment["thesis_state"] == "WEAKENED"
+    assert restored_assessment["review_action"] == "REDUCE"
+    assert restored_assessment["valuation_price"] == "80"
+    assert restored_assessment["unrealized_pnl"] == "-200"
 
 
 def test_restore_roundtrip_preserves_holdings_and_creates_pre_restore_backup(tmp_path):
