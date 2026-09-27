@@ -10,6 +10,7 @@ from app.feedback import EvidenceSelector, FeedbackCatalogError, FeedbackEvidenc
 from app.simulation.execution_catalog import HistoricalExecutionCatalog
 from app.simulation.validation_catalog import HistoricalValidationCatalog
 from app.tracking.store import RecommendationTrackingRepository, canonical_snapshot, snapshot_digest
+from tools.data.common import DataToolError
 from tools.data.migrate_feedback_vnp2s1 import migrate_feedback_store
 
 
@@ -185,6 +186,75 @@ def _simulation_fixture(path: Path):
     )
     execution.mark_completed(run_b.id)
     return draft, run_a, run_b
+
+
+def test_feedback_migration_is_repeatable_without_touching_source_rows(
+    tmp_path: Path,
+) -> None:
+    simulation_db = tmp_path / "simulation.db"
+    draft, run_a, run_b = _simulation_fixture(simulation_db)
+
+    with sqlite3.connect(simulation_db) as conn:
+        before = {
+            "validation_runs": conn.execute(
+                "SELECT COUNT(*) FROM historical_validation_run"
+            ).fetchone()[0],
+            "execution_runs": conn.execute(
+                "SELECT COUNT(*) FROM historical_execution_run"
+            ).fetchone()[0],
+            "execution_outcomes": conn.execute(
+                "SELECT COUNT(*) FROM historical_execution_outcome"
+            ).fetchone()[0],
+        }
+
+    first = migrate_feedback_store(simulation_db)
+    second = migrate_feedback_store(simulation_db)
+
+    assert first == second
+    with sqlite3.connect(simulation_db) as conn:
+        after = {
+            "validation_runs": conn.execute(
+                "SELECT COUNT(*) FROM historical_validation_run"
+            ).fetchone()[0],
+            "execution_runs": conn.execute(
+                "SELECT COUNT(*) FROM historical_execution_run"
+            ).fetchone()[0],
+            "execution_outcomes": conn.execute(
+                "SELECT COUNT(*) FROM historical_execution_outcome"
+            ).fetchone()[0],
+        }
+        assert conn.execute(
+            "SELECT COUNT(*) FROM feedback_source_ref"
+        ).fetchone()[0] == 0
+    assert before == after
+    assert draft.id
+    assert run_a.id != run_b.id
+
+
+def test_feedback_migration_rolls_back_new_objects_on_incompatible_schema(
+    tmp_path: Path,
+) -> None:
+    simulation_db = tmp_path / "simulation.db"
+    _simulation_fixture(simulation_db)
+    with sqlite3.connect(simulation_db) as conn:
+        conn.execute(
+            "CREATE TABLE feedback_source_ref(id TEXT PRIMARY KEY)"
+        )
+
+    with pytest.raises(DataToolError):
+        migrate_feedback_store(simulation_db)
+
+    with sqlite3.connect(simulation_db) as conn:
+        names = {
+            str(row[0])
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        assert "feedback_source_ref" in names
+        assert "feedback_schema_meta" not in names
+        assert "feedback_cohort" not in names
+        assert "feedback_report" not in names
 
 
 def test_tracking_adapter_is_read_only_and_manual_only_is_excluded(tmp_path: Path) -> None:
