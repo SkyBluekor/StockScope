@@ -13,6 +13,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
+from app.horizon_context import get_analysis_horizon
 
 from app.holdings.analysis_history import (
     HoldingAnalysisHistoryService,
@@ -218,6 +219,7 @@ def _http_status(code: str) -> int:
         "HOLD_PLAN_REVISION_FROM_FUTURE",
         "HOLD_PLAN_STOP_LOOSENING_BLOCKED",
         "HOLD_PLAN_CONFLICT",
+        "HOLD_PLAN_HORIZON_NOT_ACTIVE",
         "HOLD_KIS_SYNC_CONFIGURATION_ERROR",
         "HOLD_KIS_SYNC_ACCOUNT_CONFLICT",
         "HOLD_KIS_SYNC_INCOMPLETE",
@@ -350,6 +352,11 @@ def _current_analysis_payload(
             """,
             (stock_id,),
         ).fetchone()
+        horizon_context = (
+            get_analysis_horizon(conn, str(row["revision_id"])).to_dict()
+            if row is not None
+            else None
+        )
     if row is None:
         return None
     return {
@@ -368,6 +375,7 @@ def _current_analysis_payload(
         "policy_version": row["policy_version"],
         "revision_reason": row["revision_reason"],
         "computed_at": row["computed_at"],
+        "horizon_context": horizon_context,
     }
 
 
@@ -473,6 +481,10 @@ def _stored_analysis_payload(
             "SELECT market_date FROM stock_analysis_day WHERE id=?",
             (stored.analysis_day_id,),
         ).fetchone()
+        horizon_context = get_analysis_horizon(
+            conn,
+            stored.revision.id,
+        ).to_dict()
     if row is None:
         raise HTTPException(
             status_code=409,
@@ -497,6 +509,7 @@ def _stored_analysis_payload(
         "target2_price": _json_safe(revision.target2_price),
         "revision_reason": revision.revision_reason,
         "computed_at": revision.computed_at,
+        "horizon_context": horizon_context,
     }
 
 
