@@ -173,7 +173,12 @@ def restore_backup(
         identity_manifest = dict(
             dict(manifest.get("extensions") or {}).get("input_identity_v1") or {}
         )
-        proof_restored = bool(identity_manifest.get("holdings_proof_store"))
+        revision_identity_restored = bool(
+            identity_manifest.get("revision_identity_metadata")
+        )
+        explicit_proof_restored = bool(
+            identity_manifest.get("explicit_proof_store")
+        )
         generation_restored = bool(
             restore_market and identity_manifest.get("market_generation_store")
         )
@@ -188,9 +193,12 @@ def restore_backup(
                 for key, value in pre_restore.items()
             },
             "input_identity": {
-                "holdings_proof_store_restored": proof_restored,
+                "revision_identity_metadata_restored": revision_identity_restored,
+                "explicit_proof_store_restored": explicit_proof_restored,
                 "market_generation_store_restored": generation_restored,
-                "current_identity_restored": proof_restored and generation_restored,
+                "current_identity_verification_capability_restored": (
+                    revision_identity_restored and generation_restored
+                ),
             },
         }
     finally:

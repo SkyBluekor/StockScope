@@ -9,8 +9,10 @@ from pathlib import Path
 from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+BACKEND = ROOT / "backend"
+for candidate in (ROOT, BACKEND):
+    if str(candidate) not in sys.path:
+        sys.path.insert(0, str(candidate))
 
 from app.input_identity import (
     INPUT_IDENTITY_SCHEMA_VERSION,
@@ -70,16 +72,21 @@ def _input_identity_extension(
     holdings_copy: Path,
     market_copy: Path | None,
 ) -> dict[str, object]:
-    proof_store = _table_exists(holdings_copy, PROOF_TABLE)
+    explicit_proof_store = _table_exists(holdings_copy, PROOF_TABLE)
+    revision_identity_metadata = _table_exists(holdings_copy, "stock_analysis_revision")
     market_generation = _market_generation_ready(market_copy)
     return {
         "schema_version": INPUT_IDENTITY_SCHEMA_VERSION,
-        "holdings_proof_store": proof_store,
+        "revision_identity_metadata": revision_identity_metadata,
+        "explicit_proof_store": explicit_proof_store,
         "market_generation_store": market_generation,
-        "current_identity_restorable": proof_store and market_generation,
+        "current_identity_verification_capability_restorable": (
+            revision_identity_metadata and market_generation
+        ),
         "note": (
-            "현재 입력 동일성 증명에는 Holdings proof와 Market generation이 모두 필요합니다. "
-            "Market Store를 제외한 백업은 분석/원장 자료는 보존하지만 현재성 증명을 복원하지 않습니다."
+            "분석 revision 자체의 fingerprint/source_versions는 Holdings snapshot에 보존됩니다. "
+            "현재 입력 동일성을 다시 판정하려면 같은 시점의 Market generation store도 함께 복원해야 합니다. "
+            "explicit proof table은 과거 revision을 명시 검증한 이력을 추가로 보존합니다."
         ),
     }
 

@@ -204,9 +204,10 @@ def test_backup_manifest_reports_partial_and_full_identity_restore(tmp_path: Pat
         (partial / "backup_manifest.json").read_text(encoding="utf-8")
     )
     partial_identity = partial_manifest["extensions"]["input_identity_v1"]
-    assert partial_identity["holdings_proof_store"] is True
+    assert partial_identity["revision_identity_metadata"] is True
+    assert partial_identity["explicit_proof_store"] is True
     assert partial_identity["market_generation_store"] is False
-    assert partial_identity["current_identity_restorable"] is False
+    assert partial_identity["current_identity_verification_capability_restorable"] is False
 
     full = create_backup(
         destination=tmp_path / "full-backup",
@@ -218,9 +219,10 @@ def test_backup_manifest_reports_partial_and_full_identity_restore(tmp_path: Pat
         (full / "backup_manifest.json").read_text(encoding="utf-8")
     )
     full_identity = full_manifest["extensions"]["input_identity_v1"]
-    assert full_identity["holdings_proof_store"] is True
+    assert full_identity["revision_identity_metadata"] is True
+    assert full_identity["explicit_proof_store"] is True
     assert full_identity["market_generation_store"] is True
-    assert full_identity["current_identity_restorable"] is True
+    assert full_identity["current_identity_verification_capability_restorable"] is True
 
     restored = restore_backup(
         full,
@@ -228,4 +230,87 @@ def test_backup_manifest_reports_partial_and_full_identity_restore(tmp_path: Pat
         target_holdings=tmp_path / "restored-holdings.db",
         target_market=tmp_path / "restored-market.db",
     )
-    assert restored["input_identity"]["current_identity_restored"] is True
+    assert (
+        restored["input_identity"][
+            "current_identity_verification_capability_restored"
+        ]
+        is True
+    )
+
+
+def test_match_proof_becomes_invalid_only_after_related_input_change(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    market = _market_db(tmp_path / "market.db")
+    holdings, stock_id, _ = _holdings_db(tmp_path / "holdings.db")
+    migrate_input_identity(holdings_db=holdings, market_db=market)
+
+    from app.holdings import input_proof as proof_module
+    from app.holdings.analysis import SingleStockAnalysis
+
+    with sqlite3.connect(market) as conn:
+        generation = read_input_generation_token(conn, "KOSPI", "005930")
+    assert generation is not None
+
+    fake = SingleStockAnalysis(
+        market="KOSPI",
+        ticker="005930",
+        market_date="2026-09-25",
+        strategy_key="test",
+        action_state="WATCH",
+        risk_state="READY",
+        reference_price=100.0,
+        stop_price=90.0,
+        target1_price=110.0,
+        target2_price=120.0,
+        condition_state={},
+        readiness_state={},
+        scanner_version=StockScannerService.VERSION,
+        analysis_engine_version=ANALYSIS_ENGINE_VERSION,
+        policy_version=production_policy_cache_token(),
+        input_fingerprint="stored-fingerprint",
+        source_versions={"input_generation": generation},
+        snapshot={},
+    )
+    monkeypatch.setattr(proof_module, "analyze_single_stock", lambda **_: fake)
+
+    result = verify_current_analysis_input(
+        HoldingsCatalog(holdings),
+        stock_id,
+        market_store_db=market,
+        clock=lambda: "2026-09-27T00:00:00+00:00",
+    )
+    assert result.verification_result == "MATCH"
+
+    reader = ReadOnlyDataStateReader(market_store_db=market, holdings_db=holdings)
+    valid = build_stock_data_contract(reader.read_stock_state("KOSPI", "005930"))
+    assert valid.resources.analysis_result.status == "VALID"
+    assert valid.resources.analysis_result.current_use_allowed is True
+
+    with sqlite3.connect(market) as conn:
+        conn.execute(
+            "UPDATE stock_daily SET row_json=? "
+            "WHERE market='KOSPI' AND bas_dd='20260925' AND stock_code='000660'",
+            (json.dumps({"code": "000660", "close": 111}),),
+        )
+    still_valid = build_stock_data_contract(
+        reader.read_stock_state("KOSPI", "005930")
+    )
+    assert still_valid.resources.analysis_result.status == "VALID"
+
+    with sqlite3.connect(market) as conn:
+        conn.execute(
+            "UPDATE stock_daily SET row_json=? "
+            "WHERE market='KOSPI' AND bas_dd='20260925' AND stock_code='005930'",
+            (json.dumps({"code": "005930", "close": 112}),),
+        )
+    changed = build_stock_data_contract(
+        reader.read_stock_state("KOSPI", "005930")
+    )
+    assert changed.resources.analysis_result.status == "INVALID"
+    assert (
+        changed.resources.analysis_result.reason_code
+        == "CURRENT_INPUT_CHANGED_SINCE_PROOF"
+    )
+    assert changed.resources.analysis_result.current_use_allowed is False

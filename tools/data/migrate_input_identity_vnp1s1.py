@@ -5,6 +5,12 @@ import sqlite3
 import sys
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[2]
+BACKEND = ROOT / "backend"
+for candidate in (ROOT, BACKEND):
+    if str(candidate) not in sys.path:
+        sys.path.insert(0, str(candidate))
+
 from app.input_identity import (
     ANALYSIS_PROOF_VERSION,
     INPUT_IDENTITY_SCHEMA_VERSION,
@@ -44,19 +50,23 @@ def migrate_market_store(path: Path) -> dict[str, int | str]:
     conn = sqlite3.connect(path, timeout=20.0)
     try:
         conn.execute("BEGIN IMMEDIATE")
-        conn.executescript(
+        conn.execute(
             """
             CREATE TABLE IF NOT EXISTS input_identity_meta (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
-            );
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS input_change_generation (
                 scope TEXT NOT NULL CHECK(scope IN ('STOCK','STOCK_STATUS','INDEX')),
                 market TEXT NOT NULL,
                 subject TEXT NOT NULL,
                 generation INTEGER NOT NULL CHECK(generation >= 1),
                 PRIMARY KEY(scope,market,subject)
-            );
+            )
             """
         )
         marker = conn.execute(
@@ -101,7 +111,7 @@ def migrate_market_store(path: Path) -> dict[str, int | str]:
                 f"지원하지 않는 input identity schema입니다: {marker[0]}"
             )
 
-        conn.executescript(
+        trigger_sql = (
             """
             CREATE TRIGGER IF NOT EXISTS trg_input_gen_stock_insert
             AFTER INSERT ON stock_daily
@@ -110,8 +120,9 @@ def migrate_market_store(path: Path) -> dict[str, int | str]:
               VALUES('STOCK',NEW.market,NEW.stock_code,1)
               ON CONFLICT(scope,market,subject)
               DO UPDATE SET generation=generation+1;
-            END;
-
+            END
+            """,
+            """
             CREATE TRIGGER IF NOT EXISTS trg_input_gen_stock_delete
             AFTER DELETE ON stock_daily
             BEGIN
@@ -119,8 +130,9 @@ def migrate_market_store(path: Path) -> dict[str, int | str]:
               VALUES('STOCK',OLD.market,OLD.stock_code,1)
               ON CONFLICT(scope,market,subject)
               DO UPDATE SET generation=generation+1;
-            END;
-
+            END
+            """,
+            """
             CREATE TRIGGER IF NOT EXISTS trg_input_gen_stock_update_old_key
             AFTER UPDATE ON stock_daily
             WHEN OLD.market<>NEW.market OR OLD.stock_code<>NEW.stock_code
@@ -129,8 +141,9 @@ def migrate_market_store(path: Path) -> dict[str, int | str]:
               VALUES('STOCK',OLD.market,OLD.stock_code,1)
               ON CONFLICT(scope,market,subject)
               DO UPDATE SET generation=generation+1;
-            END;
-
+            END
+            """,
+            """
             CREATE TRIGGER IF NOT EXISTS trg_input_gen_stock_update_new
             AFTER UPDATE ON stock_daily
             WHEN OLD.market<>NEW.market OR OLD.stock_code<>NEW.stock_code OR OLD.row_json<>NEW.row_json
@@ -139,8 +152,9 @@ def migrate_market_store(path: Path) -> dict[str, int | str]:
               VALUES('STOCK',NEW.market,NEW.stock_code,1)
               ON CONFLICT(scope,market,subject)
               DO UPDATE SET generation=generation+1;
-            END;
-
+            END
+            """,
+            """
             CREATE TRIGGER IF NOT EXISTS trg_input_gen_index_insert
             AFTER INSERT ON main_index_daily
             BEGIN
@@ -148,8 +162,9 @@ def migrate_market_store(path: Path) -> dict[str, int | str]:
               VALUES('INDEX',NEW.market,'*',1)
               ON CONFLICT(scope,market,subject)
               DO UPDATE SET generation=generation+1;
-            END;
-
+            END
+            """,
+            """
             CREATE TRIGGER IF NOT EXISTS trg_input_gen_index_delete
             AFTER DELETE ON main_index_daily
             BEGIN
@@ -157,9 +172,21 @@ def migrate_market_store(path: Path) -> dict[str, int | str]:
               VALUES('INDEX',OLD.market,'*',1)
               ON CONFLICT(scope,market,subject)
               DO UPDATE SET generation=generation+1;
-            END;
-
-            CREATE TRIGGER IF NOT EXISTS trg_input_gen_index_update
+            END
+            """,
+            """
+            CREATE TRIGGER IF NOT EXISTS trg_input_gen_index_update_old_market
+            AFTER UPDATE ON main_index_daily
+            WHEN OLD.market<>NEW.market
+            BEGIN
+              INSERT INTO input_change_generation(scope,market,subject,generation)
+              VALUES('INDEX',OLD.market,'*',1)
+              ON CONFLICT(scope,market,subject)
+              DO UPDATE SET generation=generation+1;
+            END
+            """,
+            """
+            CREATE TRIGGER IF NOT EXISTS trg_input_gen_index_update_new
             AFTER UPDATE ON main_index_daily
             WHEN OLD.market<>NEW.market OR OLD.bas_dd<>NEW.bas_dd OR OLD.row_json<>NEW.row_json
             BEGIN
@@ -167,8 +194,9 @@ def migrate_market_store(path: Path) -> dict[str, int | str]:
               VALUES('INDEX',NEW.market,'*',1)
               ON CONFLICT(scope,market,subject)
               DO UPDATE SET generation=generation+1;
-            END;
-
+            END
+            """,
+            """
             CREATE TRIGGER IF NOT EXISTS trg_input_gen_status_insert
             AFTER INSERT ON day_status
             BEGIN
@@ -179,8 +207,9 @@ def migrate_market_store(path: Path) -> dict[str, int | str]:
               )
               ON CONFLICT(scope,market,subject)
               DO UPDATE SET generation=generation+1;
-            END;
-
+            END
+            """,
+            """
             CREATE TRIGGER IF NOT EXISTS trg_input_gen_status_delete
             AFTER DELETE ON day_status
             BEGIN
@@ -191,9 +220,24 @@ def migrate_market_store(path: Path) -> dict[str, int | str]:
               )
               ON CONFLICT(scope,market,subject)
               DO UPDATE SET generation=generation+1;
-            END;
-
-            CREATE TRIGGER IF NOT EXISTS trg_input_gen_status_update
+            END
+            """,
+            """
+            CREATE TRIGGER IF NOT EXISTS trg_input_gen_status_update_old_scope
+            AFTER UPDATE ON day_status
+            WHEN OLD.market<>NEW.market OR OLD.kind<>NEW.kind
+            BEGIN
+              INSERT INTO input_change_generation(scope,market,subject,generation)
+              VALUES(
+                CASE WHEN OLD.kind='stock' THEN 'STOCK_STATUS' ELSE 'INDEX' END,
+                OLD.market,'*',1
+              )
+              ON CONFLICT(scope,market,subject)
+              DO UPDATE SET generation=generation+1;
+            END
+            """,
+            """
+            CREATE TRIGGER IF NOT EXISTS trg_input_gen_status_update_new
             AFTER UPDATE ON day_status
             WHEN OLD.market<>NEW.market OR OLD.bas_dd<>NEW.bas_dd OR OLD.kind<>NEW.kind OR OLD.status<>NEW.status
             BEGIN
@@ -204,9 +248,11 @@ def migrate_market_store(path: Path) -> dict[str, int | str]:
               )
               ON CONFLICT(scope,market,subject)
               DO UPDATE SET generation=generation+1;
-            END;
-            """
+            END
+            """,
         )
+        for statement in trigger_sql:
+            conn.execute(statement)
         conn.commit()
         count = int(
             conn.execute("SELECT COUNT(*) FROM input_change_generation").fetchone()[0]
