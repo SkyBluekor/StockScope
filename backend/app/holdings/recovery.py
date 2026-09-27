@@ -5,13 +5,18 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from typing import Any, Callable
 from uuid import uuid4
 
 from .catalog import HoldingsCatalog
+from .decision_support import HoldingDecisionSupportService, HoldingsDecisionSupportError
+from .management import HoldingManagementService
+from .performance import HoldingPerformanceService, HoldingsPerformanceError
 
 
 RECOVERY_SCHEMA_VERSION = "VN_P3_S2_RECOVERY_REVIEW_V1"
+RECOVERY_EVIDENCE_VERSION = "VN_P3_S2_RECOVERY_EVIDENCE_V1"
 THESIS_STATES = frozenset({"INTACT", "WEAKENED", "BROKEN", "UNKNOWN"})
 REVIEW_ACTIONS = frozenset({"UNDECIDED", "HOLD", "REDUCE", "EXIT", "ADD_REVIEW"})
 
@@ -146,9 +151,23 @@ class HoldingRecoveryService:
         self,
         catalog: HoldingsCatalog,
         *,
+        market_store_db: Path | None = None,
         clock: Callable[[], str] | None = None,
     ) -> None:
         self.catalog = catalog
+        self.market_store_db = market_store_db
+        self.performance = HoldingPerformanceService(
+            catalog,
+            market_store_db=market_store_db,
+        )
+        self.management = HoldingManagementService(
+            catalog,
+            market_store_db=market_store_db,
+        )
+        self.decisions = HoldingDecisionSupportService(
+            catalog,
+            market_store_db=market_store_db,
+        )
         self.clock = clock or _now
 
     @staticmethod
@@ -337,6 +356,225 @@ class HoldingRecoveryService:
                 "다른 Position의 보유 판단은 Recovery 기록에 연결할 수 없습니다.",
             )
         return str(row["id"])
+
+    @staticmethod
+    def _analysis_payload(
+        conn: sqlite3.Connection,
+        monitored_stock_id: str,
+    ) -> dict[str, Any] | None:
+        row = conn.execute(
+            """
+            SELECT
+                d.market_date,
+                r.id AS revision_id,
+                r.revision_no,
+                r.strategy_key,
+                r.action_state,
+                r.risk_state,
+                r.reference_price,
+                r.stop_price,
+                r.target1_price,
+                r.target2_price,
+                r.policy_version,
+                r.computed_at
+            FROM stock_analysis_day d
+            JOIN stock_analysis_revision r ON r.id=d.current_revision_id
+            WHERE d.monitored_stock_id=?
+            ORDER BY d.market_date DESC,d.id DESC
+            LIMIT 1
+            """,
+            (monitored_stock_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "market_date": row["market_date"],
+            "revision_id": str(row["revision_id"]),
+            "revision_no": int(row["revision_no"]),
+            "strategy_key": row["strategy_key"],
+            "action_state": row["action_state"],
+            "risk_state": row["risk_state"],
+            "reference_price": row["reference_price"],
+            "stop_price": row["stop_price"],
+            "target1_price": row["target1_price"],
+            "target2_price": row["target2_price"],
+            "policy_version": row["policy_version"],
+            "computed_at": row["computed_at"],
+        }
+
+    @staticmethod
+    def _stock_payload(
+        conn: sqlite3.Connection,
+        monitored_stock_id: str,
+    ) -> dict[str, Any]:
+        row = conn.execute(
+            "SELECT id,market,ticker,name FROM monitored_stock WHERE id=?",
+            (monitored_stock_id,),
+        ).fetchone()
+        if row is None:
+            raise HoldingsRecoveryError(
+                "HOLD_RECOVERY_STOCK_NOT_FOUND",
+                "Recovery 검토 대상 종목을 찾을 수 없습니다.",
+            )
+        return {
+            "stock_id": str(row["id"]),
+            "market": str(row["market"]),
+            "ticker": str(row["ticker"]),
+            "name": str(row["name"]),
+        }
+
+    def _current_evidence(
+        self,
+        position_id: str,
+    ) -> dict[str, Any]:
+        with self.catalog.connection() as conn:
+            self._require_ready(conn)
+            position = self._position_row(conn, position_id)
+            stock = self._stock_payload(conn, str(position["monitored_stock_id"]))
+            analysis = self._analysis_payload(
+                conn,
+                str(position["monitored_stock_id"]),
+            )
+
+        active_plan = self.management.get_active_plan(position_id)
+        try:
+            performance = self.performance.calculate(stock["stock_id"])
+        except HoldingsPerformanceError as exc:
+            raise HoldingsRecoveryError(exc.code, exc.message) from exc
+
+        position_performance = next(
+            (
+                item.to_dict()
+                for item in performance.positions
+                if item.position_id == position_id
+            ),
+            None,
+        )
+        valuation = performance.valuation.to_dict()
+
+        latest_decision: dict[str, Any] | None = None
+        try:
+            decision_view = self.decisions.latest_for_stock(stock["stock_id"])
+        except HoldingsDecisionSupportError as exc:
+            raise HoldingsRecoveryError(exc.code, exc.message) from exc
+        for item in decision_view["positions"]:
+            if str(item["position_id"]) == position_id:
+                latest_decision = item["decision"]
+                break
+
+        limitations: list[str] = []
+        if valuation.get("available") is not True:
+            limitations.append("VALUATION_NOT_AVAILABLE")
+        if analysis is None:
+            limitations.append("ANALYSIS_NOT_AVAILABLE")
+        if active_plan is None:
+            limitations.append("ACTIVE_PLAN_NOT_AVAILABLE")
+        if latest_decision is None:
+            limitations.append("HOLDING_DECISION_NOT_AVAILABLE")
+        elif latest_decision.get("stale"):
+            limitations.append("HOLDING_DECISION_STALE")
+        if (
+            position_performance is None
+            or position_performance.get("unrealized_pnl") is None
+            or position_performance.get("unrealized_return_pct") is None
+        ):
+            limitations.append("POSITION_PNL_NOT_AVAILABLE")
+
+        # Current Holdings does not prove total investable assets or a complete
+        # company/fundamental evidence set. Keep those unknown instead of inferring.
+        limitations.extend(
+            [
+                "ACCOUNT_TOTAL_EXPOSURE_NOT_PROVEN",
+                "COMPANY_EVIDENCE_NOT_CONNECTED",
+            ]
+        )
+
+        return {
+            "evidence_version": RECOVERY_EVIDENCE_VERSION,
+            "stock": stock,
+            "position": {
+                "position_id": position_id,
+                "status": str(position["status"]),
+                "quantity": str(position["current_quantity"]),
+                "average_price": (
+                    str(position["current_average_price"])
+                    if position["current_average_price"] is not None
+                    else None
+                ),
+                "cost_basis": (
+                    str(position["current_cost_basis"])
+                    if position["current_cost_basis"] is not None
+                    else None
+                ),
+                "opened_at": str(position["opened_at"]),
+                "closed_at": position["closed_at"],
+            },
+            "valuation": valuation,
+            "performance": position_performance,
+            "analysis": analysis,
+            "active_plan": active_plan.to_dict() if active_plan is not None else None,
+            "latest_decision": latest_decision,
+            "limitations": list(dict.fromkeys(limitations)),
+        }
+
+    def get_context(self, position_id: str) -> dict[str, Any]:
+        evidence = self._current_evidence(position_id)
+        return {
+            "position_id": position_id,
+            "open_review": self.get_open_review(position_id),
+            "reviews": self.list_reviews(position_id),
+            "current": evidence,
+        }
+
+    def record_current_assessment(
+        self,
+        *,
+        review_id: str,
+        thesis_state: str,
+        review_action: str,
+        reason_note: str | None = None,
+        linked_decision_id: str | None = None,
+    ) -> dict[str, Any]:
+        review = self.get_review(review_id)
+        if review["status"] != "OPEN":
+            raise HoldingsRecoveryError(
+                "HOLD_RECOVERY_REVIEW_CLOSED",
+                "종료된 Recovery 검토에는 새 판단 기록을 추가할 수 없습니다.",
+            )
+        position_id = str(review["position_id"])
+        evidence = self._current_evidence(position_id)
+
+        linked_snapshot: dict[str, Any] | None = None
+        if linked_decision_id:
+            try:
+                linked_snapshot = self.decisions.get_decision(linked_decision_id)
+            except HoldingsDecisionSupportError as exc:
+                raise HoldingsRecoveryError(exc.code, exc.message) from exc
+            if str(linked_snapshot["position_id"]) != position_id:
+                raise HoldingsRecoveryError(
+                    "HOLD_RECOVERY_DECISION_POSITION_MISMATCH",
+                    "다른 Position의 보유 판단은 Recovery 기록에 연결할 수 없습니다.",
+                )
+
+        valuation = evidence["valuation"]
+        performance = evidence["performance"] or {}
+        snapshot = {
+            **evidence,
+            "linked_decision": linked_snapshot,
+        }
+        return self.record_assessment(
+            review_id=review_id,
+            thesis_state=thesis_state,
+            review_action=review_action,
+            reason_note=reason_note,
+            linked_decision_id=linked_decision_id,
+            valuation_market_date=valuation.get("market_date"),
+            valuation_price=valuation.get("price"),
+            unrealized_pnl=performance.get("unrealized_pnl"),
+            unrealized_return_pct=performance.get("unrealized_return_pct"),
+            limitations=evidence["limitations"],
+            evidence=snapshot,
+        )
 
     def start_review(
         self,
