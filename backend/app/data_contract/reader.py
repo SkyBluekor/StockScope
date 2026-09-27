@@ -16,6 +16,7 @@ from app.input_identity import (
     canonical_generation_token,
     read_input_generation_token,
 )
+from app.horizon_context import get_analysis_horizon
 from app.market_session import peek_market_session
 from app.quotes.service import observe_cached_quote
 
@@ -392,6 +393,11 @@ class ReadOnlyDataStateReader:
                             proof_result = str(proof["verification_result"])
                             proof_verified_at = str(proof["verified_at"])
 
+                horizon_context = get_analysis_horizon(
+                    conn,
+                    str(revision["id"]),
+                )
+
                 current_generation = None
                 if self.market_store_db.is_file():
                     try:
@@ -424,6 +430,10 @@ class ReadOnlyDataStateReader:
                     scanner_version=revision["scanner_version"],
                     analysis_engine_version=revision["analysis_engine_version"],
                     policy_version=revision["policy_version"],
+                    horizon_intent=horizon_context.intent,
+                    horizon_policy_version=horizon_context.policy_version,
+                    horizon_support_status=horizon_context.support_status,
+                    horizon_reason_code=horizon_context.reason_code,
                     source_versions=source_versions,
                     stored_input_generation=stored_generation,
                     current_input_generation=current_generation,
