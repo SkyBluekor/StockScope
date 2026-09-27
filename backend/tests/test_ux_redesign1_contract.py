@@ -1628,3 +1628,26 @@ def test_vnp3s2_recovery_ui_is_manual_review_only() -> None:
     assert "/api/holdings/positions/" in api
     assert "/recovery/start" in api
     assert "/assessments" in api
+
+
+def test_vnp4s1_watch_status_is_observational_and_adds_no_primary_action_buttons() -> None:
+    workspace = Path("frontend/src/components/HoldingsWorkspace.tsx").read_text(encoding="utf-8")
+    panel = Path("frontend/src/components/HoldingWatchStatus.tsx").read_text(encoding="utf-8")
+    api = Path("frontend/src/services/watchApi.ts").read_text(encoding="utf-8")
+    styles = Path("frontend/src/holdings.css").read_text(encoding="utf-8")
+
+    assert 'import HoldingWatchStatus from "./HoldingWatchStatus";' in workspace
+    assert "<HoldingWatchStatus" in workspace
+    assert 'aria-label="실시간 감시 상태"' in panel
+    assert '"정책 검증 중"' in panel
+    assert '"감시 공백"' in panel
+    assert '"기준 확인됨"' in panel
+    assert '"감시 중"' in panel
+    assert "<button" not in panel
+    assert "onClick=" not in panel
+    assert "감시 시작" not in panel
+    assert "감시 새로고침" not in panel
+    assert "/api/watch/positions/" in api
+    assert "/api/watch/notifications" in api
+    assert "markWatchNotificationRead" in api
+    assert "/* VN-P4-S1 — compact Watch status */" in styles
