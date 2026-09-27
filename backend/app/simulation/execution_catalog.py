@@ -13,6 +13,7 @@ from .validation_catalog import (
     HistoricalValidationCandidate,
     HistoricalValidationCatalog,
 )
+from app.horizon_context import copy_validation_horizon_to_execution
 
 
 EXECUTION_POLICY_VERSION = "EXECUTION_V1"
@@ -438,6 +439,12 @@ class HistoricalExecutionCatalog:
                     now,
                     now,
                 ),
+            )
+            copy_validation_horizon_to_execution(
+                conn,
+                validation_id=validation_id,
+                execution_run_id=run_id,
+                created_at=now,
             )
             row = conn.execute(
                 "SELECT * FROM historical_execution_run WHERE id=?",
