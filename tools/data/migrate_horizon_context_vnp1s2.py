@@ -45,6 +45,21 @@ def _existing_core_tables(path: Path, required: set[str]) -> None:
         )
 
 
+def _require_columns(
+    conn: sqlite3.Connection,
+    table: str,
+    required: set[str],
+) -> None:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    columns = {str(row[1]) for row in rows}
+    missing = sorted(required - columns)
+    if missing:
+        raise DataToolError(
+            f"{table} Horizon table schema가 호환되지 않습니다: "
+            + ", ".join(missing)
+        )
+
+
 def _ensure_meta(conn: sqlite3.Connection) -> None:
     conn.execute(
         f"""
@@ -82,7 +97,7 @@ def migrate_holdings_horizon(path: Path) -> dict[str, str]:
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("BEGIN IMMEDIATE")
         _ensure_meta(conn)
-        conn.executescript(
+        conn.execute(
             f"""
             CREATE TABLE IF NOT EXISTS {ANALYSIS_HORIZON_TABLE}(
                 revision_id TEXT PRIMARY KEY,
@@ -93,8 +108,11 @@ def migrate_holdings_horizon(path: Path) -> dict[str, str]:
                 created_at TEXT NOT NULL,
                 FOREIGN KEY(revision_id)
                     REFERENCES stock_analysis_revision(id) ON DELETE CASCADE
-            );
-
+            )
+            """
+        )
+        conn.execute(
+            f"""
             CREATE TABLE IF NOT EXISTS {PLAN_HORIZON_TABLE}(
                 plan_id TEXT PRIMARY KEY,
                 source_revision_id TEXT NOT NULL,
@@ -107,8 +125,21 @@ def migrate_holdings_horizon(path: Path) -> dict[str, str]:
                     REFERENCES holding_management_plan(id) ON DELETE CASCADE,
                 FOREIGN KEY(source_revision_id)
                     REFERENCES stock_analysis_revision(id) ON DELETE RESTRICT
-            );
+            )
             """
+        )
+        _require_columns(
+            conn,
+            ANALYSIS_HORIZON_TABLE,
+            {"revision_id", "intent", "policy_version", "support_status", "created_at"},
+        )
+        _require_columns(
+            conn,
+            PLAN_HORIZON_TABLE,
+            {
+                "plan_id", "source_revision_id", "intent",
+                "policy_version", "support_status", "created_at",
+            },
         )
         conn.commit()
         return {"schema_version": HORIZON_SCHEMA_VERSION}
@@ -133,7 +164,7 @@ def migrate_simulation_horizon(path: Path) -> dict[str, str]:
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("BEGIN IMMEDIATE")
         _ensure_meta(conn)
-        conn.executescript(
+        conn.execute(
             f"""
             CREATE TABLE IF NOT EXISTS {VALIDATION_HORIZON_TABLE}(
                 validation_id TEXT PRIMARY KEY,
@@ -144,8 +175,11 @@ def migrate_simulation_horizon(path: Path) -> dict[str, str]:
                 created_at TEXT NOT NULL,
                 FOREIGN KEY(validation_id)
                     REFERENCES historical_validation_run(id) ON DELETE CASCADE
-            );
-
+            )
+            """
+        )
+        conn.execute(
+            f"""
             CREATE TABLE IF NOT EXISTS {EXECUTION_HORIZON_TABLE}(
                 execution_run_id TEXT PRIMARY KEY,
                 validation_id TEXT NOT NULL,
@@ -158,8 +192,21 @@ def migrate_simulation_horizon(path: Path) -> dict[str, str]:
                     REFERENCES historical_execution_run(id) ON DELETE CASCADE,
                 FOREIGN KEY(validation_id)
                     REFERENCES historical_validation_run(id) ON DELETE CASCADE
-            );
+            )
             """
+        )
+        _require_columns(
+            conn,
+            VALIDATION_HORIZON_TABLE,
+            {"validation_id", "intent", "policy_version", "support_status", "created_at"},
+        )
+        _require_columns(
+            conn,
+            EXECUTION_HORIZON_TABLE,
+            {
+                "execution_run_id", "validation_id", "intent",
+                "policy_version", "support_status", "created_at",
+            },
         )
         conn.commit()
         return {"schema_version": HORIZON_SCHEMA_VERSION}
