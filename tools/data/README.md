@@ -95,6 +95,8 @@ Decision, Resolution, Plan Context는 `holdings.db`에 저장되므로 기본 Ho
 
 P3-S2는 기존 Position/원장/관리 계획을 바꾸지 않고, 같은 Position에 수동 Recovery 검토와 append-only assessment 이력을 추가합니다. P3-S1 migration이 선행되어야 하며, 과거 손실 Position을 자동으로 Recovery 상태로 backfill하지 않습니다.
 
+Recovery review/assessment는 `holdings.db`의 사용자 기록이므로 DATA.1 기본 Holdings snapshot에 함께 포함됩니다. Backup manifest의 `extensions.holding_recovery_v1`이 세 Recovery 테이블과 schema version을 명시하며, restore 후에도 동일 review/assessment ID와 당시 snapshot을 보존합니다.
+
 명시적으로 한 번 실행합니다.
 
 ```powershell
