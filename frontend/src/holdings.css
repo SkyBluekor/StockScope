@@ -3081,3 +3081,60 @@ button.holdings-direct-value:hover { border-bottom-color: var(--accent-primary);
     gap: 3px;
   }
 }
+
+
+/* VN-P4-S1 — compact Watch status */
+.holding-watch-summary {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 14px;
+  padding: 11px 0;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.holding-watch-summary-label {
+  color: var(--text-muted);
+  font-size: var(--font-meta);
+  font-weight: 800;
+}
+
+.holding-watch-summary-list {
+  display: grid;
+  gap: 8px;
+}
+
+.holding-watch-summary-row {
+  display: grid;
+  grid-template-columns: minmax(90px, auto) minmax(0, 1fr) auto;
+  gap: 8px 14px;
+  align-items: baseline;
+}
+
+.holding-watch-summary-row strong {
+  color: var(--text-primary);
+  font-size: var(--font-body-small);
+}
+
+.holding-watch-summary-row span {
+  color: var(--text-secondary);
+  font-size: var(--font-meta);
+  line-height: 1.5;
+}
+
+.holding-watch-summary-row small {
+  color: var(--text-muted);
+  font-size: var(--font-badge);
+}
+
+@media (max-width: 760px) {
+  .holding-watch-summary {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+
+  .holding-watch-summary-row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
