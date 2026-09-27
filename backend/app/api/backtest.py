@@ -37,7 +37,7 @@ def _prospective_service() -> ProspectiveService:
         or PROJECT_ROOT / "backend" / "runtime" / "simulation" / "simulation.db"
     )
     market_db = Path(
-        os.getenv("STOCKSCOPE_MARKET_DB")
+        (os.getenv("STOCKSCOPE_MARKET_STORE_DB") or os.getenv("STOCKSCOPE_MARKET_DB"))
         or PROJECT_ROOT / "backend" / "runtime" / "market_history" / "market_history.db"
     )
     return ProspectiveService(simulation_db, market_db)
