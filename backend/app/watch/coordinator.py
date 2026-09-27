@@ -44,7 +44,11 @@ QuoteHandler = Callable[
 ]
 CoverageHandler = Callable[
     [WatchDemand, str],
-    None | Awaitable[None],
+    object | Awaitable[object],
+]
+ReconcileHandler = Callable[
+    [tuple[WatchDemand, ...], WatchPolicy],
+    object | Awaitable[object],
 ]
 
 
@@ -127,6 +131,7 @@ class WatchCoordinator:
         event_hub: QuoteEventHub = quote_event_hub,
         on_quote: QuoteHandler | None = None,
         on_coverage_issue: CoverageHandler | None = None,
+        on_reconcile: ReconcileHandler | None = None,
         reconcile_interval_seconds: float = 10.0,
     ) -> None:
         self.catalog = catalog
@@ -137,6 +142,7 @@ class WatchCoordinator:
         self.event_hub = event_hub
         self.on_quote = on_quote
         self.on_coverage_issue = on_coverage_issue
+        self.on_reconcile = on_reconcile
         self.reconcile_interval_seconds = max(
             1.0,
             float(reconcile_interval_seconds),
@@ -209,6 +215,8 @@ class WatchCoordinator:
 
         policy.require_enabled()
         demands = tuple(self.demand_loader(self.catalog))
+        if self.on_reconcile is not None:
+            await self._maybe_await(self.on_reconcile(demands, policy))
         grouped: dict[QuoteCacheKey, list[WatchDemand]] = {}
 
         for demand in demands:
