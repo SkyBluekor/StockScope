@@ -684,6 +684,9 @@ class ProspectiveCatalog:
             "immature_count": int(row["immature_count"] or 0),
             "excluded_count": int(row["excluded_count"] or 0),
             "failed_count": int(row["failed_count"] or 0),
+            "processed_count": int(row["processed_count"] or 0),
+            "cancel_requested": bool(row["cancel_requested"]),
+            "restart_count": int(row["restart_count"] or 0),
             "error_code": row["error_code"],
             "error_message": row["error_message"],
             "created_at": row["created_at"],
@@ -734,14 +737,22 @@ class ProspectiveCatalog:
                     "PROSPECTIVE_EVALUATION_ALREADY_RUNNING",
                     "이미 실행 중인 평가입니다.",
                 )
+            if status == "CANCELLED":
+                raise ProspectiveCatalogError(
+                    "PROSPECTIVE_EVALUATION_CANCELLED",
+                    "취소된 평가는 같은 run에서 재개하지 않습니다. 새 run을 생성하세요.",
+                )
+            restart_increment = 1 if status in {"FAILED", "INTERRUPTED"} else 0
             conn.execute(
                 """
                 UPDATE prospective_evaluation_run
                 SET status='RUNNING',started_at=COALESCE(started_at,?),
+                    cancel_requested=0,processed_count=0,
+                    restart_count=restart_count+?,
                     error_code=NULL,error_message=NULL,updated_at=?
                 WHERE id=?
                 """,
-                (now, now, run_id),
+                (now, restart_increment, now, run_id),
             )
             row = conn.execute(
                 "SELECT * FROM prospective_evaluation_run WHERE id=?",
@@ -850,6 +861,7 @@ class ProspectiveCatalog:
                     source_capture_count=?,source_sample_count=?,
                     development_count=?,holdout_count=?,purged_count=?,
                     mature_count=?,immature_count=?,excluded_count=?,failed_count=?,
+                    processed_count=?,cancel_requested=0,
                     completed_at=?,updated_at=?,error_code=NULL,error_message=NULL
                 WHERE id=?
                 """,
@@ -863,6 +875,7 @@ class ProspectiveCatalog:
                     int(counts.get("immature_count", 0)),
                     int(counts.get("excluded_count", 0)),
                     int(counts.get("failed_count", 0)),
+                    len(units),
                     now,
                     now,
                     run_id,
@@ -879,6 +892,105 @@ class ProspectiveCatalog:
             raise
         finally:
             conn.close()
+
+    def request_evaluation_cancel(self, run_id: str) -> dict[str, Any]:
+        now = _now()
+        with self.connect() as conn:
+            self.require_ready(conn)
+            row = conn.execute(
+                "SELECT * FROM prospective_evaluation_run WHERE id=?",
+                (run_id,),
+            ).fetchone()
+            if row is None:
+                raise ProspectiveCatalogError(
+                    "PROSPECTIVE_EVALUATION_RUN_NOT_FOUND",
+                    "평가 run을 찾을 수 없습니다.",
+                )
+            if str(row["status"]) in {"COMPLETED", "CANCELLED"}:
+                return self._run_from_row(row)
+            conn.execute(
+                """
+                UPDATE prospective_evaluation_run
+                SET cancel_requested=1,updated_at=?
+                WHERE id=?
+                """,
+                (now, run_id),
+            )
+            row = conn.execute(
+                "SELECT * FROM prospective_evaluation_run WHERE id=?",
+                (run_id,),
+            ).fetchone()
+        return self._run_from_row(row)
+
+    def evaluation_cancel_requested(self, run_id: str) -> bool:
+        with self.connect() as conn:
+            self.require_ready(conn)
+            row = conn.execute(
+                "SELECT cancel_requested FROM prospective_evaluation_run WHERE id=?",
+                (run_id,),
+            ).fetchone()
+        if row is None:
+            raise ProspectiveCatalogError(
+                "PROSPECTIVE_EVALUATION_RUN_NOT_FOUND",
+                "평가 run을 찾을 수 없습니다.",
+            )
+        return bool(row["cancel_requested"])
+
+    def update_evaluation_progress(self, run_id: str, processed_count: int) -> None:
+        with self.connect() as conn:
+            self.require_ready(conn)
+            conn.execute(
+                """
+                UPDATE prospective_evaluation_run
+                SET processed_count=?,updated_at=?
+                WHERE id=? AND status='RUNNING'
+                """,
+                (max(0, int(processed_count)), _now(), run_id),
+            )
+
+    def mark_evaluation_cancelled(self, run_id: str) -> dict[str, Any]:
+        now = _now()
+        with self.connect() as conn:
+            self.require_ready(conn)
+            conn.execute(
+                """
+                UPDATE prospective_evaluation_run
+                SET status='CANCELLED',completed_at=?,updated_at=?,
+                    error_code=NULL,error_message=NULL
+                WHERE id=? AND status='RUNNING'
+                """,
+                (now, now, run_id),
+            )
+            row = conn.execute(
+                "SELECT * FROM prospective_evaluation_run WHERE id=?",
+                (run_id,),
+            ).fetchone()
+        if row is None:
+            raise ProspectiveCatalogError(
+                "PROSPECTIVE_EVALUATION_RUN_NOT_FOUND",
+                "평가 run을 찾을 수 없습니다.",
+            )
+        return self._run_from_row(row)
+
+    def mark_running_evaluations_interrupted(
+        self,
+        *,
+        reason: str = "BACKEND_RESTARTED_DURING_EVALUATION",
+    ) -> int:
+        now = _now()
+        with self.connect() as conn:
+            self.require_ready(conn)
+            cursor = conn.execute(
+                """
+                UPDATE prospective_evaluation_run
+                SET status='INTERRUPTED',
+                    error_code='PROSPECTIVE_EVALUATION_INTERRUPTED',
+                    error_message=?,completed_at=?,updated_at=?
+                WHERE status='RUNNING'
+                """,
+                (reason, now, now),
+            )
+            return int(cursor.rowcount or 0)
 
     def fail_evaluation_run(
         self,
