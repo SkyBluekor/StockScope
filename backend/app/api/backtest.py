@@ -17,6 +17,11 @@ from app.backtest.risk_validation import RiskPolicyValidationService
 from app.backtest.scanner import StockScannerService
 from app.backtest.production_exit_policy import ProductionExitPolicyRegistry
 from app.core.config import get_settings
+from app.horizon import (
+    HorizonPolicyError,
+    require_horizon_activatable,
+    resolve_horizon_context,
+)
 from app.market.providers import KrxProvider
 from app.market.providers.base import ProviderError, ProviderNotConfigured
 
@@ -32,6 +37,7 @@ class ScannerRequest(BaseModel):
     candidate_limit: int = Field(default=5, ge=1, le=10)
     force_refresh: bool = False
     allow_large_sync: bool = False
+    horizon_intent: str | None = None
 
 
 class ScannerEvidencePrepareRequest(BaseModel):
@@ -558,6 +564,10 @@ async def _run_scanner_job(job_id: str, payload: ScannerRequest, api_key: str | 
             allow_large_sync=payload.allow_large_sync,
             progress=update_progress,
         )
+        if isinstance(result, dict):
+            result["horizon_context"] = resolve_horizon_context(
+                payload.horizon_intent
+            ).to_dict()
     except BacktestJobCancelled:
         backtest_jobs.mark_cancelled(job_id)
     except asyncio.CancelledError:
@@ -673,6 +683,16 @@ async def create_scanner_evidence_job(payload: ScannerEvidencePrepareRequest) ->
 
 @router.post("/scanner/jobs", status_code=202)
 async def create_scanner_job(payload: ScannerRequest) -> dict:
+    try:
+        require_horizon_activatable(
+            resolve_horizon_context(payload.horizon_intent)
+        )
+    except HorizonPolicyError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
+
     settings = get_settings()
     job = backtest_jobs.create()
     task = asyncio.create_task(_run_scanner_job(job.job_id, payload, settings.krx_api_key))
