@@ -65,6 +65,32 @@ type HistoryRecoveryState = {
   exhausted: boolean;
 };
 
+function holdingDecisionSourceKey(
+  detail: HoldingStock,
+  management: HoldingManagementResponse | null,
+) {
+  return JSON.stringify({
+    analysisRevisionId: detail.current_analysis?.revision_id ?? null,
+    positions: detail.positions.map((position) => ({
+      id: position.position_id,
+      status: position.status,
+      quantity: position.quantity,
+      averagePrice: position.average_price,
+    })),
+    valuation: management
+      ? {
+          marketDate: management.valuation.market_date,
+          price: management.valuation.price,
+        }
+      : null,
+    activePlans: management?.positions.map((position) => ({
+      positionId: position.position_id,
+      planId: position.active_plan?.plan_id ?? null,
+      version: position.active_plan?.version ?? null,
+    })) ?? [],
+  });
+}
+
 function readHoldingsNavigationTarget(): HoldingsNavigationTarget | null {
   try {
     const raw = window.sessionStorage.getItem("stockscope-holdings-target");
@@ -2239,6 +2265,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                 <HoldingDecisionPanel
                   stockId={detail.stock_id}
                   positions={detail.positions}
+                  sourceKey={holdingDecisionSourceKey(detail, management)}
                   onPlanChanged={async () => {
                     await loadSelected(detail.stock_id);
                   }}
