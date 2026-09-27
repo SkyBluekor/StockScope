@@ -10,7 +10,7 @@ from app.core.config import PROJECT_ROOT, get_settings
 from app.holdings.catalog import DEFAULT_HOLDINGS_DB, HoldingsCatalog
 from app.prospective import ProspectiveCatalogError, ProspectiveService
 from app.quotes.websocket_manager import quote_websocket_manager
-from app.watch import WatchCoordinator
+from app.watch import WatchCoordinator, WatchService
 
 settings = get_settings()
 
@@ -43,7 +43,14 @@ async def lifespan(_app: FastAPI):
         os.getenv("STOCKSCOPE_HOLDINGS_DB")
         or DEFAULT_HOLDINGS_DB
     )
-    watch_coordinator = WatchCoordinator(HoldingsCatalog(holdings_db))
+    holdings_catalog = HoldingsCatalog(holdings_db)
+    watch_service = WatchService(holdings_catalog)
+    watch_coordinator = WatchCoordinator(
+        holdings_catalog,
+        on_reconcile=watch_service.reconcile,
+        on_quote=watch_service.process_quote,
+        on_coverage_issue=watch_service.record_coverage_issue,
+    )
 
     await quote_websocket_manager.start()
     await watch_coordinator.start()
