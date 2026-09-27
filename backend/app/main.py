@@ -24,10 +24,12 @@ async def lifespan(_app: FastAPI):
         or PROJECT_ROOT / "backend" / "runtime" / "market_history" / "market_history.db"
     )
     try:
-        ProspectiveService(
+        prospective_catalog = ProspectiveService(
             simulation_db,
             market_db,
-        ).catalog.mark_pending_interrupted()
+        ).catalog
+        prospective_catalog.mark_pending_interrupted()
+        prospective_catalog.mark_running_evaluations_interrupted()
     except ProspectiveCatalogError as exc:
         if exc.code not in {
             "PROSPECTIVE_MIGRATION_REQUIRED",
