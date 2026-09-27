@@ -21,6 +21,7 @@ from .policy import (
     WatchPolicyError,
     production_watch_policy,
 )
+from .service import WatchService
 from .state_machine import advance_watch_rule
 from .storage import (
     WATCH_SCHEMA_VERSION,
@@ -46,6 +47,7 @@ __all__ = [
     "WatchRuleRuntimeState",
     "WatchRuleSpec",
     "WatchRuleState",
+    "WatchService",
     "WatchStorageError",
     "WatchTransition",
     "WatchTransitionEvent",
