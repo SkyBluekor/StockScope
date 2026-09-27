@@ -305,6 +305,22 @@ function proposalStateText(state: string) {
   }
 }
 
+function horizonContextText(context: HoldingStock["current_analysis"] extends infer A
+  ? A extends { horizon_context: infer H } ? H : never
+  : never) {
+  if (!context || context.intent === "LEGACY_UNSPECIFIED") return "기간 의도 기록 없음";
+  const intent = context.intent === "SHORT"
+    ? "단기"
+    : context.intent === "MEDIUM"
+      ? "중기"
+      : context.intent === "LONG"
+        ? "장기"
+        : context.intent;
+  if (context.support_status === "EVALUATION_PENDING") return `${intent} · 정책 평가 중`;
+  if (context.support_status === "SUPPORTED") return `${intent} · 사용 가능`;
+  return `${intent} · 미지원`;
+}
+
 function performanceStatusText(status: string) {
   switch (status) {
     case "COMPLETE_SINCE_TRACKING_START":
@@ -2049,6 +2065,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                   <div className="holdings-watch-metrics">
                     <div><span>분석 기준가</span><strong>{money(selectedAnalysis?.reference_price)}</strong></div>
                     <div><span>전략</span><strong>{selectedAnalysis ? (strategyLabel[selectedAnalysis.strategy_key] ?? selectedAnalysis.strategy_key) : "분석 필요"}</strong></div>
+                    <div><span>투자 기간 의도</span><strong>{selectedAnalysis ? horizonContextText(selectedAnalysis.horizon_context) : "-"}</strong></div>
                     <div><span>마지막 분석</span><strong>{compactDate(selectedAnalysis?.market_date)}</strong></div>
                   </div>
                   {detail.is_held && (
@@ -2293,7 +2310,9 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                             </div>
                           </div>
                         ) : <div className="holdings-management-empty">현재 적용 중인 보유분 관리 기준이 없습니다. 최신 분석에 적용 가능한 제안이 있다면 아래에서 확인 후 직접 적용할 수 있습니다.</div>}
-                        {item.active_plan && <small className="holdings-management-version">기술 정보 · 내부 기준 v{item.active_plan.version}</small>}
+                        {item.active_plan && <small className="holdings-management-version">
+                          기술 정보 · 내부 기준 v{item.active_plan.version} · {horizonContextText(item.active_plan.horizon_context as NonNullable<HoldingStock["current_analysis"]>["horizon_context"])}
+                        </small>}
                         {liveManagementError && item.active_plan && (
                           <small className="holdings-management-live-error">현재가 거리를 갱신하지 못했습니다. 확정 종가 기준 관리 상태는 유지됩니다.</small>
                         )}
