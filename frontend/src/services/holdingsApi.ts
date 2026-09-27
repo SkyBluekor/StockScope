@@ -1,3 +1,12 @@
+export type HoldingHorizonContext = {
+  intent: "SHORT" | "MEDIUM" | "LONG" | "LEGACY_UNSPECIFIED" | string;
+  policy_version: string | null;
+  support_status: "SUPPORTED" | "EVALUATION_PENDING" | "UNSUPPORTED" | "LEGACY_UNSPECIFIED" | string;
+  reason_code: string | null;
+  review_cycle_trading_days: number | null;
+  time_stop_trading_days: number | null;
+};
+
 export type HoldingAnalysis = {
   market_date: string;
   revision_id: string;
@@ -14,6 +23,7 @@ export type HoldingAnalysis = {
   policy_version?: string | null;
   revision_reason?: string | null;
   computed_at?: string | null;
+  horizon_context: HoldingHorizonContext;
 };
 
 export type HoldingPosition = {
@@ -287,6 +297,7 @@ export type HoldingManagementPlan = {
   previous_plan_id: string | null;
   superseded_at: string | null;
   closed_at: string | null;
+  horizon_context?: HoldingHorizonContext;
 };
 
 export type HoldingManagementResponse = {
