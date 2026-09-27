@@ -791,6 +791,16 @@ class WatchService:
 
     def get_status(self) -> dict[str, object]:
         policy = self.policy_provider()
+        if not self.catalog.db_path.is_file():
+            return {
+                "available": False,
+                "migration_required": True,
+                "policy_enabled": policy.enabled,
+                "blocked_reason": policy.blocked_reason,
+                "active_settings": 0,
+                "open_gaps": 0,
+                "pending_notifications": 0,
+            }
         with self.catalog.connection() as conn:
             if not watch_schema_available(conn):
                 return {
@@ -830,6 +840,18 @@ class WatchService:
 
     def get_position_status(self, position_id: str) -> dict[str, object]:
         policy = self.policy_provider()
+        if not self.catalog.db_path.is_file():
+            return {
+                "available": False,
+                "migration_required": True,
+                "position_id": position_id,
+                "policy_enabled": policy.enabled,
+                "blocked_reason": policy.blocked_reason,
+                "setting": None,
+                "rules": [],
+                "open_gaps": [],
+                "latest_notification": None,
+            }
         with self.catalog.connection() as conn:
             if not watch_schema_available(conn):
                 return {
@@ -947,6 +969,8 @@ class WatchService:
         unread_only: bool = False,
     ) -> list[dict[str, object]]:
         safe_limit = max(1, min(int(limit), 200))
+        if not self.catalog.db_path.is_file():
+            return []
         with self.catalog.connection() as conn:
             if not watch_schema_available(conn):
                 return []
@@ -988,6 +1012,8 @@ class WatchService:
 
     def mark_notification_read(self, notification_id: str) -> dict[str, object] | None:
         now_text = _dt_text(self.clock())
+        if not self.catalog.db_path.is_file():
+            return None
         with self.catalog.connection() as conn:
             if not watch_schema_available(conn):
                 return None
