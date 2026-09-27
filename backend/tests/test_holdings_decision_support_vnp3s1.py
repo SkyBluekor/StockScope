@@ -20,6 +20,9 @@ from tools.data.common import DataToolError
 from tools.data.migrate_holdings_decision_vnp3s1 import (
     migrate_holdings_decision_store,
 )
+from tools.data.prepare_vnp3s1_stop_loosening_fixture import (
+    prepare_stop_loosening_fixture,
+)
 
 T0 = "2026-09-24T09:00:00+09:00"
 T1 = "2026-09-24T10:00:00+09:00"
@@ -507,6 +510,68 @@ def test_plan_apply_from_decision_is_atomic_and_preserves_ledger(tmp_path: Path)
     assert context is not None
     assert context[4] is None
     assert context[5] is None
+
+
+def test_stop_loosening_uat_fixture_is_backup_first_append_only_and_conflicting(
+    tmp_path: Path,
+):
+    catalog, _, opened, mdb = _env(tmp_path)
+    r1 = _rev(catalog, opened.stock_id, "r1", "90")
+    p1 = _apply(catalog, mdb, opened.position.id, r1.id)
+    service = HoldingDecisionSupportService(
+        catalog,
+        market_store_db=mdb,
+    )
+    old_decision = service.evaluate(opened.position.id)
+    before = catalog.get_position(opened.position.id)
+    events_before = catalog.list_position_events(opened.position.id)
+
+    result = prepare_stop_loosening_fixture(
+        holdings_db=catalog.db_path,
+        ticker="005930",
+        market="KOSPI",
+        backup_root=tmp_path / "backups",
+    )
+
+    assert Path(str(result["backup_dir"]), "holdings.db").is_file()
+    assert result["source_revision_id"] == r1.id
+    assert Decimal(str(result["fixture_stop"])) < p1.stop_price
+
+    stale = service.get_decision(old_decision["decision_id"])
+    assert stale["effective_status"] == "STALE"
+    assert stale["stale_reasons"] == ["ANALYSIS_REVISION_CHANGED"]
+
+    decision = service.evaluate(opened.position.id)
+    assert decision["status"] == "CONFLICT"
+    assert decision["evidence"]["proposal_conflict"] == "STOP_LOOSENING_BLOCKED"
+
+    active = HoldingManagementService(
+        catalog,
+        market_store_db=mdb,
+    ).get_active_plan(opened.position.id)
+    after = catalog.get_position(opened.position.id)
+    events_after = catalog.list_position_events(opened.position.id)
+
+    assert active is not None
+    assert active.id == p1.id
+    assert active.plan_version == 1
+    assert after.current_quantity == before.current_quantity
+    assert after.current_average_price == before.current_average_price
+    assert len(events_after) == len(events_before)
+
+    with pytest.raises(HoldingsManagementError) as caught:
+        service.apply_plan(
+            decision_id=decision["decision_id"],
+            selected_action="HOLD",
+        )
+    assert caught.value.code == "HOLD_PLAN_STOP_LOOSENING_BLOCKED"
+
+    active_after_block = HoldingManagementService(
+        catalog,
+        market_store_db=mdb,
+    ).get_active_plan(opened.position.id)
+    assert active_after_block is not None
+    assert active_after_block.id == p1.id
 
 
 def test_stop_loosening_conflict_cannot_be_bypassed_by_decision_apply(tmp_path: Path):
