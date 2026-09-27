@@ -18,6 +18,7 @@ from tools.data.common import (
     sha256_file,
 )
 from tools.data.doctor import collect_report
+from tools.data import restore_runtime as restore_module
 from tools.data.restore_runtime import restore_backup
 
 
@@ -183,6 +184,41 @@ def test_restore_roundtrip_preserves_holdings_and_creates_pre_restore_backup(tmp
     pre = result["pre_restore_backups"]["holdings"]
     assert pre is not None
     assert Path(pre).is_file()
+
+
+def test_full_restore_rolls_back_new_first_target_when_second_replace_fails(
+    tmp_path,
+    monkeypatch,
+):
+    source_holdings = _holdings_db(tmp_path / "source-holdings.db")
+    source_market = _market_db(tmp_path / "source-market.db")
+    backup = create_backup(
+        destination=tmp_path / "full-backup",
+        include_market=True,
+        holdings_db=source_holdings,
+        market_db=source_market,
+    )
+    target_holdings = tmp_path / "restored-holdings.db"
+    target_market = tmp_path / "restored-market.db"
+    real_replace = restore_module.os.replace
+
+    def fail_second_target(src, dst):
+        if Path(dst) == target_market:
+            raise OSError("simulated second-target replace failure")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(restore_module.os, "replace", fail_second_target)
+
+    with pytest.raises(OSError, match="simulated second-target"):
+        restore_backup(
+            backup,
+            restore_market=True,
+            target_holdings=target_holdings,
+            target_market=target_market,
+        )
+
+    assert not target_holdings.exists()
+    assert not target_market.exists()
 
 
 def test_corrupt_backup_is_blocked_before_target_change(tmp_path):
