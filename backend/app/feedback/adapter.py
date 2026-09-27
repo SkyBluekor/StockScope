@@ -253,6 +253,8 @@ class FeedbackEvidenceAdapter:
                     metadata={
                         "selection_method": "USER_TRACKING_WITH_SCANNER_PROVENANCE" if scanner_source else "MANUAL_ONLY",
                         "evaluation_window": "DPLUS_5_10_20",
+                        "selector_date_from": selector.date_from,
+                        "selector_date_to": selector.date_to,
                         "tracking_status": row["status"],
                         "close_performance_status": row["close_performance_status"],
                         "has_manual_source": manual_source,
@@ -412,6 +414,10 @@ class FeedbackEvidenceAdapter:
                     metadata={
                         "selection_method": "HISTORICAL_SCANNER_REPLAY",
                         "evaluation_window": "DPLUS_5_10_20",
+                        "selector_date_from": selector.date_from,
+                        "selector_date_to": selector.date_to,
+                        "source_period_start": run["resolved_start_date"],
+                        "source_period_end": run["resolved_end_date"],
                         "validation_status": run["status"],
                         "resolved_start_date": run["resolved_start_date"],
                         "resolved_end_date": run["resolved_end_date"],
@@ -440,6 +446,15 @@ class FeedbackEvidenceAdapter:
                     "Execution Validation 원본을 찾을 수 없습니다.",
                 )
             horizon = get_execution_horizon(conn, selector.source_id)
+            validation_run = conn.execute(
+                """
+                SELECT resolved_start_date,resolved_end_date,market_scope,scanner_baseline
+                FROM historical_validation_run
+                WHERE id=?
+                LIMIT 1
+                """,
+                (run["validation_id"],),
+            ).fetchone()
             rows = conn.execute(
                 """
                 SELECT *
@@ -499,7 +514,11 @@ class FeedbackEvidenceAdapter:
                     strategy=str(strategy) if strategy is not None else None,
                     decision_status=str(row["candidate_state"]) if row["candidate_state"] is not None else None,
                     scanner_version=str(row["scanner_version"]),
-                    scanner_baseline=None,
+                    scanner_baseline=(
+                        str(validation_run["scanner_baseline"])
+                        if validation_run is not None and validation_run["scanner_baseline"] is not None
+                        else None
+                    ),
                     horizon_intent=horizon.intent,
                     horizon_policy_version=horizon.policy_version,
                     metric_definition="VAL2_VIRTUAL_EXECUTION_V1",
@@ -517,6 +536,17 @@ class FeedbackEvidenceAdapter:
                     metadata={
                         "selection_method": "HISTORICAL_EXECUTION_VALIDATION",
                         "evaluation_window": "ENTRY_TO_EXIT_OR_CUTOFF",
+                        "selector_date_from": selector.date_from,
+                        "selector_date_to": selector.date_to,
+                        "source_period_start": (
+                            validation_run["resolved_start_date"] if validation_run is not None else None
+                        ),
+                        "source_period_end": (
+                            validation_run["resolved_end_date"] if validation_run is not None else None
+                        ),
+                        "market_scope": (
+                            validation_run["market_scope"] if validation_run is not None else None
+                        ),
                         "execution_status": run["status"],
                         "market_data_cutoff_date": run["market_data_cutoff_date"],
                         "validation_id": run["validation_id"],
@@ -610,6 +640,10 @@ class FeedbackEvidenceAdapter:
                     metadata={
                         "selection_method": "BACKTEST_STRATEGY_SIMULATION",
                         "evaluation_window": "ENTRY_TO_EXIT",
+                        "selector_date_from": selector.date_from,
+                        "selector_date_to": selector.date_to,
+                        "source_period_start": config.get("start_date"),
+                        "source_period_end": config.get("end_date"),
                         "source_durability_warning": "PROCESS_MEMORY_ONLY",
                         "start_date": config.get("start_date"),
                         "end_date": config.get("end_date"),
