@@ -531,9 +531,22 @@ class HoldingRecoveryService:
             }
             for review in reviews
         ]
+        latest_open_assessment = None
+        if open_review is not None:
+            open_history = next(
+                (
+                    item
+                    for item in history
+                    if item["review"]["review_id"] == open_review["review_id"]
+                ),
+                None,
+            )
+            if open_history is not None and open_history["assessments"]:
+                latest_open_assessment = open_history["assessments"][-1]
         return {
             "position_id": position_id,
             "open_review": open_review,
+            "latest_open_assessment": latest_open_assessment,
             "reviews": reviews,
             "review_history": history,
             "current": evidence,
