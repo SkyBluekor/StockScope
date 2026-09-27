@@ -220,6 +220,19 @@ def prepare_stop_loosening_fixture(
         position = target["position"]
         latest = target["latest"]
         active_stop = _decimal(position["active_stop_price"], label="Active Plan stop")
+        if (
+            str(position["id"]) != str(preview["position_id"])
+            or str(position["active_plan_id"]) != str(preview["active_plan_id"])
+            or int(position["active_plan_version"]) != int(preview["active_plan_version"])
+            or str(position["current_quantity"]) != str(preview["position_quantity"])
+            or str(position["current_average_price"]) != str(preview["position_average_price"])
+            or str(latest["id"]) != str(preview["source_revision_id"])
+            or str(active_stop) != str(preview["active_plan_stop"])
+        ):
+            raise DataToolError(
+                "백업 이후 Position/Plan/Analysis 상태가 바뀌었습니다. "
+                "동시 변경을 덮어쓰지 않기 위해 fixture 생성을 중단합니다."
+            )
         if fixture_stop <= 0 or fixture_stop >= active_stop:
             raise DataToolError(
                 "백업 이후 대상 상태가 바뀌어 fixture stop이 더 이상 유효하지 않습니다."
@@ -402,7 +415,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--stop-price",
         type=Decimal,
-        help="fixture stop. 생략하면 Active Plan stop보다 약 1%% 낮게 계산합니다.",
+        help="fixture stop. 생략하면 Active Plan stop보다 약 1% 낮게 계산합니다.",
     )
     parser.add_argument(
         "--apply",
