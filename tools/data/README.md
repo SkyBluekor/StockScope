@@ -91,6 +91,18 @@ P3-S1은 기존 Holdings 원장과 적용 계획 위에 별도의 보유 판단/
 
 Decision, Resolution, Plan Context는 `holdings.db`에 저장되므로 기본 Holdings backup에 함께 포함됩니다. Manifest의 `holding_decision_v1` 항목은 해당 optional table family가 완전하고 복원 가능한지 별도로 기록합니다.
 
+## P3-S2 Recovery 검토 저장소 준비
+
+P3-S2는 기존 Position/원장/관리 계획을 바꾸지 않고, 같은 Position에 수동 Recovery 검토와 append-only assessment 이력을 추가합니다. P3-S1 migration이 선행되어야 하며, 과거 손실 Position을 자동으로 Recovery 상태로 backfill하지 않습니다.
+
+명시적으로 한 번 실행합니다.
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\migrate_holdings_recovery_vnp3s2.py
+```
+
+조회/API import는 이 migration을 자동 실행하지 않습니다. Migration 전에는 Recovery service가 `HOLD_RECOVERY_MIGRATION_REQUIRED`로 중단되고 기존 Holdings/Decision/Plan 기능은 그대로 유지됩니다.
+
 ## VN-P3-S1-UAT.4 Stop-Loosening fixture
 
 이 도구는 브라우저 UAT에서 stop-loosening 보호를 확인하기 위한 **일회성 테스트 도구**입니다. 제품 분석 경로가 아니며, 기존 Analysis/Plan/Position을 수정하지 않고 현재 Analysis를 복제한 새 Revision 하나만 append합니다.
