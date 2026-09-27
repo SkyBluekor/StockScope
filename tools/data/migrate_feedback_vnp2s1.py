@@ -178,43 +178,6 @@ def migrate_feedback_store(path: Path) -> dict[str, object]:
             )
             """
         )
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_feedback_ref_origin
-            ON feedback_source_ref(source_type,source_id,source_item_id)
-            """
-        )
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_feedback_member_cohort
-            ON feedback_cohort_member(cohort_id,inclusion_status)
-            """
-        )
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_feedback_report_cohort
-            ON feedback_report(cohort_id,report_sequence DESC)
-            """
-        )
-        conn.execute(
-            """
-            CREATE TRIGGER IF NOT EXISTS trg_feedback_source_ref_immutable
-            BEFORE UPDATE ON feedback_source_ref
-            BEGIN
-                SELECT RAISE(ABORT, 'Feedback source reference is immutable');
-            END
-            """
-        )
-        conn.execute(
-            """
-            CREATE TRIGGER IF NOT EXISTS trg_feedback_report_immutable
-            BEFORE UPDATE ON feedback_report
-            BEGIN
-                SELECT RAISE(ABORT, 'Feedback report is immutable');
-            END
-            """
-        )
-
         _require_columns(
             conn,
             "feedback_source_ref",
@@ -259,6 +222,43 @@ def migrate_feedback_store(path: Path) -> dict[str, object]:
                 "created_at",
             },
         )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_feedback_ref_origin
+            ON feedback_source_ref(source_type,source_id,source_item_id)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_feedback_member_cohort
+            ON feedback_cohort_member(cohort_id,inclusion_status)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_feedback_report_cohort
+            ON feedback_report(cohort_id,report_sequence DESC)
+            """
+        )
+        conn.execute(
+            """
+            CREATE TRIGGER IF NOT EXISTS trg_feedback_source_ref_immutable
+            BEFORE UPDATE ON feedback_source_ref
+            BEGIN
+                SELECT RAISE(ABORT, 'Feedback source reference is immutable');
+            END
+            """
+        )
+        conn.execute(
+            """
+            CREATE TRIGGER IF NOT EXISTS trg_feedback_report_immutable
+            BEFORE UPDATE ON feedback_report
+            BEGIN
+                SELECT RAISE(ABORT, 'Feedback report is immutable');
+            END
+            """
+        )
+
         fk_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
         if fk_errors:
             raise DataToolError(
