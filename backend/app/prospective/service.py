@@ -185,10 +185,10 @@ class ProspectiveService:
         hold_start = self._parse_date(holdout_start, "holdout_start")
         hold_end = self._parse_date(holdout_end, "holdout_end")
 
-        if not any((dev_start, dev_end, hold_start, hold_end)):
+        if not all((dev_start, dev_end, hold_start, hold_end)):
             raise ProspectiveCatalogError(
                 "PROSPECTIVE_TIME_SPLIT_REQUIRED",
-                "시간 분리 평가를 위해 Development/Holdout 기간을 명시해야 합니다.",
+                "시간 분리 평가에는 Development와 Holdout 시작/종료일이 모두 필요합니다.",
             )
         if bool(dev_start) != bool(dev_end):
             raise ProspectiveCatalogError(
