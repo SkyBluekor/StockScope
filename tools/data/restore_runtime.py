@@ -17,12 +17,16 @@ from tools.data.common import (
     assert_replaceable,
     holdings_db_path,
     market_db_path,
+    simulation_db_path,
+    tracking_db_path,
     secret_like_paths,
     sqlite_snapshot,
     utc_stamp,
     validate_holdings_db,
     validate_manifest_hash,
     validate_market_db,
+    validate_simulation_db,
+    validate_tracking_db,
 )
 
 
@@ -58,8 +62,12 @@ def restore_backup(
     backup_dir: Path,
     *,
     restore_market: bool = False,
+    restore_simulation: bool = False,
+    restore_tracking: bool = False,
     target_holdings: Path | None = None,
     target_market: Path | None = None,
+    target_simulation: Path | None = None,
+    target_tracking: Path | None = None,
 ) -> dict[str, object]:
     backup_dir = Path(backup_dir)
     if not backup_dir.is_dir():
@@ -105,8 +113,42 @@ def restore_backup(
         )
         validate_market_db(source_market)
 
+    source_simulation: Path | None = None
+    if restore_simulation:
+        if not contents.get("simulation_db"):
+            raise DataToolError(
+                "이 백업에는 Simulation DB가 없습니다. --restore-simulation을 제거하세요."
+            )
+        source_simulation = backup_dir / "simulation.db"
+        if not source_simulation.is_file():
+            raise DataToolError("백업 simulation.db 파일이 없습니다.")
+        validate_manifest_hash(
+            source_simulation,
+            dict(files.get("simulation.db") or {}),
+            "simulation.db",
+        )
+        validate_simulation_db(source_simulation)
+
+    source_tracking: Path | None = None
+    if restore_tracking:
+        if not contents.get("tracking_db"):
+            raise DataToolError(
+                "이 백업에는 Tracking DB가 없습니다. --restore-tracking을 제거하세요."
+            )
+        source_tracking = backup_dir / "recommendation_tracking.db"
+        if not source_tracking.is_file():
+            raise DataToolError("백업 recommendation_tracking.db 파일이 없습니다.")
+        validate_manifest_hash(
+            source_tracking,
+            dict(files.get("recommendation_tracking.db") or {}),
+            "recommendation_tracking.db",
+        )
+        validate_tracking_db(source_tracking)
+
     holdings_target = Path(target_holdings or holdings_db_path())
     market_target = Path(target_market or market_db_path())
+    simulation_target = Path(target_simulation or simulation_db_path())
+    tracking_target = Path(target_tracking or tracking_db_path())
 
     targets: list[tuple[str, Path, Path, object]] = [
         ("holdings", source_holdings, holdings_target, validate_holdings_db)
@@ -114,6 +156,14 @@ def restore_backup(
     if restore_market and source_market is not None:
         targets.append(
             ("market", source_market, market_target, validate_market_db)
+        )
+    if restore_simulation and source_simulation is not None:
+        targets.append(
+            ("simulation", source_simulation, simulation_target, validate_simulation_db)
+        )
+    if restore_tracking and source_tracking is not None:
+        targets.append(
+            ("tracking", source_tracking, tracking_target, validate_tracking_db)
         )
 
     for _, _, target, _ in targets:
@@ -184,11 +234,21 @@ def restore_backup(
         generation_restored = bool(
             restore_market and identity_manifest.get("market_generation_store")
         )
+        validation_proof_restored = bool(
+            restore_simulation
+            and identity_manifest.get("validation_input_proof_store")
+        )
 
         return {
             "holdings_db": str(holdings_target),
             "market_history_db": (
                 str(market_target) if restore_market else None
+            ),
+            "simulation_db": (
+                str(simulation_target) if restore_simulation else None
+            ),
+            "tracking_db": (
+                str(tracking_target) if restore_tracking else None
             ),
             "pre_restore_backups": {
                 key: (str(value) if value else None)
@@ -198,6 +258,7 @@ def restore_backup(
                 "revision_identity_metadata_restored": revision_identity_restored,
                 "explicit_proof_store_restored": explicit_proof_restored,
                 "market_generation_store_restored": generation_restored,
+                "validation_input_proof_store_restored": validation_proof_restored,
                 "current_identity_verification_capability_restored": (
                     revision_identity_restored and generation_restored
                 ),
@@ -222,6 +283,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="백업에 포함된 market_history.db도 복원합니다.",
     )
+    parser.add_argument(
+        "--restore-simulation",
+        action="store_true",
+        help="백업에 포함된 simulation.db도 복원합니다.",
+    )
+    parser.add_argument(
+        "--restore-tracking",
+        action="store_true",
+        help="백업에 포함된 recommendation_tracking.db도 복원합니다.",
+    )
     return parser
 
 
@@ -231,6 +302,8 @@ def main() -> int:
         result = restore_backup(
             args.backup_dir,
             restore_market=args.restore_market,
+            restore_simulation=args.restore_simulation,
+            restore_tracking=args.restore_tracking,
         )
         print("=" * 78)
         print("STOCKSCOPE RESTORE")
@@ -242,6 +315,8 @@ def main() -> int:
         print("Domain Check      PASS")
         print("Holdings Restore  PASS")
         print("Market Restore    " + ("PASS" if args.restore_market else "SKIPPED"))
+        print("Simulation Restore " + ("PASS" if args.restore_simulation else "SKIPPED"))
+        print("Tracking Restore   " + ("PASS" if args.restore_tracking else "SKIPPED"))
         print("")
         for label, path in result["pre_restore_backups"].items():
             if path:
