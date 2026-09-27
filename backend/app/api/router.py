@@ -9,6 +9,7 @@ from app.api.health import router as health_router
 from app.api.market_session import router as market_session_router
 from app.api.news import router as news_router
 from app.api.quotes import router as quotes_router
+from app.api.watch import router as watch_router
 
 from app.api import simulation as simulation_api
 from app.api.holdings import router as holdings_router
@@ -19,6 +20,7 @@ api_router.include_router(health_router)
 api_router.include_router(market_session_router)
 api_router.include_router(news_router)
 api_router.include_router(quotes_router)
+api_router.include_router(watch_router)
 api_router.include_router(data_contract_router)
 api_router.include_router(data_sources_router)
 api_router.include_router(backtest_router)
