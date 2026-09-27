@@ -32,6 +32,11 @@ from tools.data import restore_runtime as restore_module
 from tools.data.restore_runtime import restore_backup
 from tools.data.migrate_feedback_vnp2s1 import migrate_feedback_store
 from tools.data.migrate_prospective_vnp2s2 import migrate_prospective_store
+from tools.data.migrate_holdings_decision_vnp3s1 import (
+    HOLDING_DECISION_POLICY_VERSION,
+    HOLDING_PLAN_CONTEXT_VERSION,
+    migrate_holdings_decision_store,
+)
 
 
 T0 = "2026-09-24T09:00:00+09:00"
@@ -495,6 +500,154 @@ def test_prospective_store_roundtrip_is_declared_and_restored(tmp_path):
         assert conn.execute(
             "SELECT COUNT(*) FROM prospective_evaluation_report"
         ).fetchone()[0] == 1
+
+
+def test_holding_decision_store_roundtrip_is_declared_and_restored(tmp_path):
+    holdings = _holdings_db(tmp_path / "holdings.db")
+    migrate_holdings_decision_store(holdings)
+
+    with sqlite3.connect(holdings) as conn:
+        conn.row_factory = sqlite3.Row
+        position = conn.execute(
+            "SELECT * FROM holding_position WHERE status='OPEN' LIMIT 1"
+        ).fetchone()
+        revision = conn.execute(
+            """
+            SELECT r.* FROM stock_analysis_revision r
+            JOIN stock_analysis_day d ON d.id=r.analysis_day_id
+            WHERE d.monitored_stock_id=?
+            ORDER BY d.market_date DESC,r.revision_no DESC
+            LIMIT 1
+            """,
+            (position["monitored_stock_id"],),
+        ).fetchone()
+        plan = conn.execute(
+            """
+            SELECT * FROM holding_management_plan
+            WHERE position_id=? AND status='ACTIVE'
+            LIMIT 1
+            """,
+            (position["id"],),
+        ).fetchone()
+
+        conn.execute(
+            """
+            INSERT INTO holding_decision_record(
+                id,position_id,decision_policy_version,status,primary_action,
+                source_analysis_revision_id,source_active_plan_id,
+                source_active_plan_version,source_position_status,
+                source_position_quantity,source_position_average_price,
+                valuation_market_date,valuation_price,valuation_source,
+                horizon_intent,horizon_policy_version,input_fingerprint,
+                evidence_json,alternatives_json,limitations_json,created_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                "decision-backup-fixture",
+                position["id"],
+                HOLDING_DECISION_POLICY_VERSION,
+                "ACTIONABLE",
+                "HOLD",
+                revision["id"],
+                plan["id"],
+                int(plan["plan_version"]),
+                position["status"],
+                position["current_quantity"],
+                position["current_average_price"],
+                "2026-09-24",
+                "100",
+                "MARKET_STORE_CONFIRMED_EOD",
+                "LEGACY_UNSPECIFIED",
+                None,
+                "fixture-fingerprint",
+                json.dumps({"plan_state": "WITHIN_PLAN"}),
+                json.dumps([{
+                    "action": "HOLD",
+                    "state": "AVAILABLE",
+                    "reason": "fixture",
+                }]),
+                json.dumps([{
+                    "code": "ADD_POLICY_UNDEFINED",
+                    "message": "fixture",
+                }]),
+                "2026-09-27T00:00:00+00:00",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO holding_decision_resolution(
+                id,decision_id,selected_action,resolution_type,note,
+                resulting_plan_id,created_at
+            ) VALUES(?,?,?,?,?,?,?)
+            """,
+            (
+                "resolution-backup-fixture",
+                "decision-backup-fixture",
+                "HOLD",
+                "APPLY_NEW_PLAN",
+                "fixture",
+                plan["id"],
+                "2026-09-27T00:01:00+00:00",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO holding_management_plan_context_vnp3s1(
+                plan_id,context_version,source_decision_id,selected_action,
+                review_cycle_trading_days,time_stop_trading_days,
+                adjustment_context_json,created_at
+            ) VALUES(?,?,?,?,?,?,?,?)
+            """,
+            (
+                plan["id"],
+                HOLDING_PLAN_CONTEXT_VERSION,
+                "decision-backup-fixture",
+                "HOLD",
+                None,
+                None,
+                json.dumps({
+                    "numeric_horizon_policy_approved": False,
+                    "fixture": True,
+                }),
+                "2026-09-27T00:01:00+00:00",
+            ),
+        )
+
+    backup = create_backup(
+        destination=tmp_path / "decision-backup",
+        holdings_db=holdings,
+        include_simulation=False,
+        include_tracking=False,
+    )
+    manifest = json.loads(
+        (backup / "backup_manifest.json").read_text(encoding="utf-8")
+    )
+    extension = manifest["extensions"]["holding_decision_v1"]
+    assert extension["present"] is True
+    assert extension["restorable"] is True
+
+    restored_holdings = tmp_path / "restored-holdings.db"
+    result = restore_backup(
+        backup,
+        target_holdings=restored_holdings,
+    )
+
+    assert result["holding_decision"]["store_present_in_backup"] is True
+    assert result["holding_decision"]["store_restored"] is True
+    with sqlite3.connect(restored_holdings) as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM holding_decision_record"
+        ).fetchone()[0] == 1
+        assert conn.execute(
+            "SELECT COUNT(*) FROM holding_decision_resolution"
+        ).fetchone()[0] == 1
+        row = conn.execute(
+            """
+            SELECT review_cycle_trading_days,time_stop_trading_days
+            FROM holding_management_plan_context_vnp3s1
+            """
+        ).fetchone()
+        assert row == (None, None)
 
 
 def test_restore_roundtrip_preserves_holdings_and_creates_pre_restore_backup(tmp_path):
