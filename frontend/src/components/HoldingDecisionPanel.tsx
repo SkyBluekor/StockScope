@@ -282,11 +282,17 @@ export default function HoldingDecisionPanel({
         const visibleOptions = decision?.alternatives.filter(
           (item) => item.state !== "NOT_TRIGGERED",
         ) ?? [];
+        const hasApplicableAnalysis = Boolean(
+          decision?.source_analysis_revision_id
+          && (
+            decision.source_active_plan_id == null
+            || decision.evidence.latest_analysis_differs_from_active_plan
+          ),
+        );
         const canApplyPlan = Boolean(
           decision
           && !decision.stale
-          && decision.source_analysis_revision_id
-          && decision.evidence.latest_analysis_differs_from_active_plan
+          && hasApplicableAnalysis
           && decision.evidence.new_plan_horizon_activatable
           && !decision.evidence.proposal_conflict,
         );
