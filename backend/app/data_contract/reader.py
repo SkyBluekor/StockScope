@@ -107,8 +107,8 @@ class ReadOnlyDataStateReader:
         *,
         market: str,
         ticker: str,
-    ) -> tuple[bool, str | None, str | None, str | None, int]:
-        """Return confirmed market date plus ticker span bounded by that date."""
+    ) -> tuple[bool, str | None, str | None, str | None, int, int | None]:
+        """Return confirmed date, ticker span, and read-only input generation."""
         with self._read_only_connection(self.market_store_db) as conn:
             if not self._has_tables(conn, {"day_status", "stock_daily"}):
                 raise LookupError("SCHEMA_UNAVAILABLE")
@@ -133,10 +133,21 @@ class ReadOnlyDataStateReader:
                 """,
                 (market, ticker, confirmed_date),
             ).fetchone()
+            input_generation: int | None = None
+            if self._has_tables(conn, {"input_change_generation"}):
+                generation_row = conn.execute(
+                    "SELECT generation FROM input_change_generation WHERE market=?",
+                    (market,),
+                ).fetchone()
+                input_generation = (
+                    int(generation_row["generation"])
+                    if generation_row is not None
+                    else 0
+                )
         row_count = int(span["row_count"] or 0) if span else 0
         first_date = str(span["first_date"]) if span and span["first_date"] else None
         latest_date = str(span["latest_date"]) if span and span["latest_date"] else None
-        return True, confirmed_date, first_date, latest_date, row_count
+        return True, confirmed_date, first_date, latest_date, row_count, input_generation
 
     def read_market_eod(self, market: str, ticker: str) -> MarketEodObservation:
         clean_market = self._market(market)
@@ -151,7 +162,7 @@ class ReadOnlyDataStateReader:
                 reason="STORE_NOT_FOUND",
             )
         try:
-            _, confirmed_date, first_date, latest_date, row_count = self._market_span(
+            _, confirmed_date, first_date, latest_date, row_count, input_generation = self._market_span(
                 market=clean_market,
                 ticker=clean_ticker,
             )
@@ -184,6 +195,7 @@ class ReadOnlyDataStateReader:
             stock_first_date=first_date,
             stock_latest_date=latest_date,
             stock_row_count=row_count,
+            input_generation=input_generation,
             reason=None if row_count > 0 else "DATA_ABSENT",
         )
 
@@ -200,7 +212,7 @@ class ReadOnlyDataStateReader:
                 reason="STORE_NOT_FOUND",
             )
         try:
-            _, confirmed_date, first_date, latest_date, row_count = self._market_span(
+            _, confirmed_date, first_date, latest_date, row_count, _ = self._market_span(
                 market=clean_market,
                 ticker=clean_ticker,
             )
@@ -355,6 +367,43 @@ class ReadOnlyDataStateReader:
                 except json.JSONDecodeError as exc:
                     parse_error = f"source_versions_json invalid: {exc.msg}"
 
+                manifest_schema: str | None = None
+                manifest_hash: str | None = None
+                proven_generation: int | None = None
+                proof_verified_at: str | None = None
+                if self._has_tables(
+                    conn,
+                    {
+                        "stock_analysis_input_manifest",
+                        "stock_analysis_input_proof",
+                    },
+                ):
+                    proof = conn.execute(
+                        """
+                        SELECT
+                            p.manifest_hash,
+                            p.market_store_generation,
+                            p.verified_at,
+                            m.schema_version,
+                            m.input_fingerprint
+                        FROM stock_analysis_input_proof p
+                        JOIN stock_analysis_input_manifest m
+                          ON m.manifest_hash=p.manifest_hash
+                        WHERE p.analysis_revision_id=?
+                        ORDER BY p.verified_at DESC,p.created_at DESC,p.id DESC
+                        LIMIT 1
+                        """,
+                        (str(revision["id"]),),
+                    ).fetchone()
+                    if proof is not None:
+                        if str(proof["input_fingerprint"]) != str(revision["input_fingerprint"]):
+                            parse_error = "input proof fingerprint mismatch"
+                        else:
+                            manifest_schema = str(proof["schema_version"])
+                            manifest_hash = str(proof["manifest_hash"])
+                            proven_generation = int(proof["market_store_generation"])
+                            proof_verified_at = str(proof["verified_at"])
+
                 return StoredAnalysisObservation(
                     available=True,
                     present=True,
@@ -376,6 +425,10 @@ class ReadOnlyDataStateReader:
                     analysis_engine_version=revision["analysis_engine_version"],
                     policy_version=revision["policy_version"],
                     source_versions=source_versions,
+                    input_manifest_schema=manifest_schema,
+                    input_manifest_hash=manifest_hash,
+                    proven_market_generation=proven_generation,
+                    proof_verified_at=proof_verified_at,
                     reason="DATA_INVALID" if parse_error else None,
                     error=parse_error,
                 )

@@ -48,6 +48,11 @@ class AnalysisIdentityContract(BaseModel):
     analysis_engine_version: str | None = None
     policy_version: str | None = None
     source_versions: dict[str, Any] | None = None
+    input_manifest_schema: str | None = None
+    input_manifest_hash: str | None = None
+    proven_market_generation: int | None = None
+    current_market_generation: int | None = None
+    proof_verified_at: str | None = None
 
 
 class AnalysisResourceContract(BaseModel):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from dataclasses import dataclass
@@ -185,6 +186,91 @@ class HoldingAnalysisHistoryService:
     ) -> StockAnalysisRevision:
         return catalog._revision_from_row(row)  # noqa: SLF001
 
+    @staticmethod
+    def _input_evidence_available(conn: sqlite3.Connection) -> bool:
+        rows = conn.execute(
+            """
+            SELECT name FROM sqlite_master
+            WHERE type='table' AND name IN (
+                'stock_analysis_input_manifest',
+                'stock_analysis_input_proof'
+            )
+            """
+        ).fetchall()
+        return {str(row["name"]) for row in rows} == {
+            "stock_analysis_input_manifest",
+            "stock_analysis_input_proof",
+        }
+
+    def _persist_input_proof_uow(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        revision: StockAnalysisRevision,
+        result: SingleStockAnalysis,
+        verified_at: str,
+        created_at: str,
+    ) -> None:
+        if result.input_manifest is None or result.market_store_generation is None:
+            return
+        if not self._input_evidence_available(conn):
+            return
+
+        manifest = dict(result.input_manifest)
+        if str(manifest.get("input_fingerprint") or "") != result.input_fingerprint:
+            raise HoldingsAnalysisHistoryError(
+                "HOLD_ANALYSIS_INPUT_MANIFEST_INVALID",
+                "입력 manifest와 분석 fingerprint가 일치하지 않습니다.",
+            )
+        schema_version = str(manifest.get("schema_version") or "").strip()
+        if not schema_version:
+            raise HoldingsAnalysisHistoryError(
+                "HOLD_ANALYSIS_INPUT_MANIFEST_INVALID",
+                "입력 manifest schema version이 없습니다.",
+            )
+        manifest_json = _json_text(manifest)
+        manifest_hash = hashlib.sha256(manifest_json.encode("utf-8")).hexdigest()
+
+        stored_hash = None
+        if isinstance(revision.source_versions, dict):
+            stored_hash = revision.source_versions.get("input_manifest_hash")
+        if stored_hash not in (None, "") and str(stored_hash) != manifest_hash:
+            raise HoldingsAnalysisHistoryError(
+                "HOLD_ANALYSIS_INPUT_MANIFEST_CONFLICT",
+                "동일 분석 revision에 서로 다른 입력 manifest를 연결할 수 없습니다.",
+            )
+
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO stock_analysis_input_manifest(
+                manifest_hash,schema_version,input_fingerprint,manifest_json,created_at
+            ) VALUES(?,?,?,?,?)
+            """,
+            (
+                manifest_hash,
+                schema_version,
+                result.input_fingerprint,
+                manifest_json,
+                created_at,
+            ),
+        )
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO stock_analysis_input_proof(
+                id,analysis_revision_id,manifest_hash,market_store_generation,
+                verified_at,created_at
+            ) VALUES(?,?,?,?,?,?)
+            """,
+            (
+                str(uuid4()),
+                revision.id,
+                manifest_hash,
+                int(result.market_store_generation),
+                verified_at,
+                created_at,
+            ),
+        )
+
     def _store_result(
         self,
         *,
@@ -319,6 +405,13 @@ class HoldingAnalysisHistoryService:
                 ).fetchone()
 
             revision = self._revision_from_row(self.catalog, existing)
+            self._persist_input_proof_uow(
+                conn,
+                revision=revision,
+                result=result,
+                verified_at=computed_at,
+                created_at=now,
+            )
             promoted_current = day["current_revision_id"] != revision.id
             if promoted_current:
                 cursor = conn.execute(

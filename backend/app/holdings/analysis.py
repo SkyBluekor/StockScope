@@ -14,6 +14,7 @@ from app.core.config import PROJECT_ROOT
 
 
 ANALYSIS_ENGINE_VERSION = "HOLD_SINGLE_STOCK_V1"
+INPUT_MANIFEST_SCHEMA_VERSION = "HOLD_INPUT_MANIFEST_V1"
 DEFAULT_MARKET_STORE_DB = (
     PROJECT_ROOT / "backend" / "runtime" / "market_history" / "market_history.db"
 )
@@ -46,6 +47,8 @@ class SingleStockAnalysis:
     input_fingerprint: str
     source_versions: dict[str, Any]
     snapshot: dict[str, Any]
+    input_manifest: dict[str, Any] | None = None
+    market_store_generation: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -82,6 +85,19 @@ class _ReadOnlyMarketStore:
     def _load(raw: str) -> dict[str, Any]:
         value = json.loads(raw)
         return value if isinstance(value, dict) else {}
+
+    def input_generation(self, market: str) -> int | None:
+        with self._connect() as conn:
+            table = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='input_change_generation'"
+            ).fetchone()
+            if table is None:
+                return None
+            row = conn.execute(
+                "SELECT generation FROM input_change_generation WHERE market=?",
+                (market,),
+            ).fetchone()
+        return int(row["generation"]) if row is not None else 0
 
     def has_data_day(self, market: str, bas_dd: str, kind: str) -> bool:
         with self._connect() as conn:
@@ -237,6 +253,7 @@ class SingleStockAnalysisAdapter:
         clean_ticker = _normalize_ticker(ticker)
         target_date = _normalize_market_date(market_date)
         end_dd = target_date.strftime("%Y%m%d")
+        generation_before = self.store.input_generation(clean_market)
 
         if not self.store.has_data_day(clean_market, end_dd, "stock"):
             raise HoldingsAnalysisError(
@@ -353,6 +370,58 @@ class SingleStockAnalysisAdapter:
             _canonical_json(fingerprint_payload).encode("utf-8")
         ).hexdigest()
 
+        generation_after = self.store.input_generation(clean_market)
+        if (
+            generation_before is not None
+            and generation_after is not None
+            and generation_before != generation_after
+        ):
+            raise HoldingsAnalysisError(
+                "HOLD_ANALYSIS_INPUT_CHANGED",
+                "분석 중 Market Store 입력이 변경되어 결과를 저장하지 않았습니다.",
+            )
+        proven_generation = (
+            generation_before
+            if generation_before is not None and generation_after == generation_before
+            else None
+        )
+        input_manifest = {
+            "schema_version": INPUT_MANIFEST_SCHEMA_VERSION,
+            "calculation_path": ANALYSIS_ENGINE_VERSION,
+            "market": clean_market,
+            "ticker": clean_ticker,
+            "basis_date": target_date.isoformat(),
+            "input_fingerprint": input_fingerprint,
+            "stock_input": {
+                "query_start": start_dd,
+                "query_end": end_dd,
+                "available_rows": len(stock_rows),
+                "fingerprinted_rows": len(fingerprint_stock_rows),
+                "content_sha256": hashlib.sha256(
+                    _canonical_json(fingerprint_stock_rows).encode("utf-8")
+                ).hexdigest(),
+            },
+            "index_input": {
+                "query_start": start_dd,
+                "query_end": end_dd,
+                "available_rows": len(index_rows),
+                "fingerprinted_rows": len(fingerprint_index_rows),
+                "content_sha256": hashlib.sha256(
+                    _canonical_json(fingerprint_index_rows).encode("utf-8")
+                ).hexdigest(),
+            },
+            "versions": {
+                "scanner_version": self.scanner.VERSION,
+                "scanner_data_integrity_version": self.scanner.DATA_INTEGRITY_VERSION,
+                "analysis_engine_version": ANALYSIS_ENGINE_VERSION,
+                "policy_version": policy_version,
+            },
+            "sector_input_mode": "NONE_PRODUCTION_SAFE",
+        }
+        input_manifest_hash = hashlib.sha256(
+            _canonical_json(input_manifest).encode("utf-8")
+        ).hexdigest()
+
         source_versions = {
             "scanner_version": self.scanner.VERSION,
             "scanner_data_integrity_version": self.scanner.DATA_INTEGRITY_VERSION,
@@ -366,6 +435,8 @@ class SingleStockAnalysisAdapter:
             "fingerprinted_stock_rows": len(fingerprint_stock_rows),
             "fingerprinted_index_rows": len(fingerprint_index_rows),
             "sector_input_mode": "NONE_PRODUCTION_SAFE",
+            "input_manifest_schema": INPUT_MANIFEST_SCHEMA_VERSION,
+            "input_manifest_hash": input_manifest_hash,
         }
 
         snapshot = {
@@ -412,6 +483,8 @@ class SingleStockAnalysisAdapter:
             input_fingerprint=input_fingerprint,
             source_versions=source_versions,
             snapshot=snapshot,
+            input_manifest=input_manifest,
+            market_store_generation=proven_generation,
         )
 
 

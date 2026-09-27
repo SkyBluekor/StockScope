@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from app.backtest.production_exit_policy import PRODUCTION_EXIT_POLICY_VERSION
+from app.backtest.production_exit_policy import (
+    PRODUCTION_EXIT_POLICY_VERSION,
+    production_policy_cache_token,
+)
 from app.backtest.scanner import StockScannerService
 from app.holdings.analysis import ANALYSIS_ENGINE_VERSION
 from app.holdings.chart import RANGE_BARS
@@ -135,6 +138,11 @@ def _analysis_contract(
         analysis_engine_version=observed.analysis_engine_version,
         policy_version=observed.policy_version,
         source_versions=observed.source_versions,
+        input_manifest_schema=observed.input_manifest_schema,
+        input_manifest_hash=observed.input_manifest_hash,
+        proven_market_generation=observed.proven_market_generation,
+        current_market_generation=state.eod.input_generation,
+        proof_verified_at=observed.proof_verified_at,
     )
     basis_date = _iso_date(observed.market_date)
 
@@ -176,10 +184,26 @@ def _analysis_contract(
     ):
         status = "UNVERIFIED"
         reason = "ANALYSIS_IDENTITY_INCOMPLETE"
-    else:
-        # J-8.2 deliberately does not reconstruct the current input fingerprint.
+    elif not (
+        observed.input_manifest_schema
+        and observed.input_manifest_hash
+        and observed.proven_market_generation is not None
+        and observed.proof_verified_at
+    ):
         status = "UNVERIFIED"
         reason = "CURRENT_INPUT_IDENTITY_NOT_PROVEN"
+    elif state.eod.input_generation is None:
+        status = "UNVERIFIED"
+        reason = "CURRENT_INPUT_GENERATION_UNAVAILABLE"
+    elif observed.policy_version != production_policy_cache_token():
+        status = "UNVERIFIED"
+        reason = "CURRENT_POLICY_IDENTITY_CHANGED"
+    elif observed.proven_market_generation != state.eod.input_generation:
+        status = "UNVERIFIED"
+        reason = "CURRENT_INPUT_GENERATION_CHANGED"
+    else:
+        status = "VALID"
+        reason = None
 
     return AnalysisResourceContract(
         status=status,

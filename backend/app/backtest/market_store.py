@@ -50,6 +50,40 @@ class HistoricalMarketStore:
         connection.execute("PRAGMA synchronous=NORMAL")
         return connection
 
+    @staticmethod
+    def _input_generation_schema_available(conn: sqlite3.Connection) -> bool:
+        row = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='input_change_generation'"
+        ).fetchone()
+        return row is not None
+
+    @classmethod
+    def _bump_input_generation(cls, conn: sqlite3.Connection, market: str) -> None:
+        # VN-P1-S1 schema is installed only by the explicit migration.
+        if not cls._input_generation_schema_available(conn):
+            return
+        conn.execute(
+            """
+            INSERT INTO input_change_generation(market,generation)
+            VALUES (?,1)
+            ON CONFLICT(market) DO UPDATE
+            SET generation=input_change_generation.generation+1
+            """,
+            (market,),
+        )
+
+    def input_generation(self, market: str) -> int | None:
+        """Read the input-write generation without creating or migrating schema."""
+        market = self._market(market)
+        with self._lock, self._connect() as conn:
+            if not self._input_generation_schema_available(conn):
+                return None
+            row = conn.execute(
+                "SELECT generation FROM input_change_generation WHERE market=?",
+                (market,),
+            ).fetchone()
+        return int(row["generation"]) if row is not None else 0
+
     def _ensure_schema(self) -> None:
         with self._lock, self._connect() as conn:
             conn.executescript(
@@ -126,6 +160,8 @@ class HistoricalMarketStore:
                     """,
                     (market, bas_dd, "data" if normalized else "empty"),
                 )
+            if normalized or stable:
+                self._bump_input_generation(conn, market)
         return len(normalized)
 
 
@@ -146,6 +182,7 @@ class HistoricalMarketStore:
                     "ON CONFLICT(market, bas_dd, kind) DO UPDATE SET status=excluded.status",
                     (market, bas_dd, "data" if normalized else "empty"),
                 )
+            self._bump_input_generation(conn, market)
         return len(normalized)
 
     def replace_index_day(self, market: str, bas_dd: str, row: dict[str, Any] | None, *, stable: bool = True) -> None:
@@ -160,6 +197,7 @@ class HistoricalMarketStore:
                     "ON CONFLICT(market, bas_dd, kind) DO UPDATE SET status=excluded.status",
                     (market, bas_dd, "data" if row is not None else "empty"),
                 )
+            self._bump_input_generation(conn, market)
 
     def index_day_row(self, market: str, bas_dd: str) -> dict[str, Any] | None:
         market = self._market(market)
@@ -252,6 +290,8 @@ class HistoricalMarketStore:
                     """,
                     (market, bas_dd, "data" if row is not None else "empty"),
                 )
+            if row is not None or stable:
+                self._bump_input_generation(conn, market)
 
     def import_legacy_stock(self, market: str, code: str, series: HistorySeries) -> int:
         market = self._market(market)
@@ -272,6 +312,7 @@ class HistoricalMarketStore:
                 """,
                 rows,
             )
+            self._bump_input_generation(conn, market)
         return len(rows)
 
     def import_legacy_index(self, market: str, series: HistorySeries) -> int:
@@ -299,6 +340,8 @@ class HistoricalMarketStore:
                     """,
                     (market, key, status),
                 )
+            if rows or series.checked_dates:
+                self._bump_input_generation(conn, market)
         return len(rows)
 
     def has_stock_row(self, market: str, code: str, bas_dd: str) -> bool:

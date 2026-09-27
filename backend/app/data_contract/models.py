@@ -15,6 +15,7 @@ class MarketEodObservation:
     stock_first_date: str | None = None
     stock_latest_date: str | None = None
     stock_row_count: int = 0
+    input_generation: int | None = None
     reason: str | None = None
     error: str | None = None
 
@@ -56,6 +57,10 @@ class StoredAnalysisObservation:
     analysis_engine_version: str | None = None
     policy_version: str | None = None
     source_versions: dict[str, Any] | None = None
+    input_manifest_schema: str | None = None
+    input_manifest_hash: str | None = None
+    proven_market_generation: int | None = None
+    proof_verified_at: str | None = None
     reason: str | None = None
     error: str | None = None
 
