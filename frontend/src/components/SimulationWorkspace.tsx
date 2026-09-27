@@ -25,6 +25,7 @@ import {
   type ValidationPeriodPreview,
 } from "../services/simulationApi";
 import FeedbackPanel from "./FeedbackPanel";
+import ProspectiveEvaluationPanel from "./ProspectiveEvaluationPanel";
 import "../simulation.css";
 
 type Mode = "new" | "saved";
@@ -772,7 +773,13 @@ export default function SimulationWorkspace() {
             </div>}
           </div>}
 
-          <FeedbackPanel selectedValidationId={selectedDraft?.status === "COMPLETED" ? selectedDraft.id : null} />
+          <ProspectiveEvaluationPanel />
+
+          <details className="sim-advanced-feedback">
+            <summary>상세 평가 근거 · 고급</summary>
+            <p>원본 ID, cohort, 계산 기준을 직접 확인해야 할 때만 사용합니다.</p>
+            <FeedbackPanel selectedValidationId={selectedDraft?.status === "COMPLETED" ? selectedDraft.id : null} />
+          </details>
 
           <div className="sim-saved-group sim-legacy-group">
             <div className="sim-saved-group-head"><strong>이전 수동 Simulation</strong><span>{legacy.length}개</span></div>
