@@ -155,7 +155,9 @@ python tools/data/migrate_feedback_vnp2s1.py
 
 The migration:
 
-- requires existing Validation / Execution source tables
+- requires an existing, valid Simulation DB but does not require VAL.1 / VAL.2 source tables to have been initialized already
+- records which optional source tables are currently available / missing
+- leaves missing VAL.1 / VAL.2 sources to be surfaced later by the read-only adapters
 - uses an explicit transaction
 - validates existing table columns before dependent indexes/triggers
 - checks foreign keys
