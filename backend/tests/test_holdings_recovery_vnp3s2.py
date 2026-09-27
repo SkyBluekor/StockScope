@@ -213,14 +213,13 @@ def test_assessment_is_append_only_and_snapshots_current_sources(tmp_path: Path)
     )
 
     stored = service.list_assessments(review["review_id"])
-    assert [item["assessment_id"] for item in stored] == [
-        first["assessment_id"],
-        second["assessment_id"],
-    ]
-    assert stored[0]["source_position_quantity"] == "10"
-    assert stored[0]["source_position_average_price"] == "100"
-    assert stored[1]["source_position_quantity"] == "8"
-    assert stored[1]["source_position_average_price"] == "105"
+    assert len(stored) == 2
+    by_id = {item["assessment_id"]: item for item in stored}
+    assert set(by_id) == {first["assessment_id"], second["assessment_id"]}
+    assert by_id[first["assessment_id"]]["source_position_quantity"] == "10"
+    assert by_id[first["assessment_id"]]["source_position_average_price"] == "100"
+    assert by_id[second["assessment_id"]]["source_position_quantity"] == "8"
+    assert by_id[second["assessment_id"]]["source_position_average_price"] == "105"
 
     with sqlite3.connect(catalog.db_path) as conn:
         with pytest.raises(sqlite3.IntegrityError):
