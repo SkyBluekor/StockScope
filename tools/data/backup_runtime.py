@@ -28,6 +28,7 @@ from app.horizon_context import (
 )
 from app.feedback.models import FEEDBACK_SCHEMA_VERSION
 from app.prospective.models import PROSPECTIVE_SCHEMA_VERSION
+from app.holdings.decision_support import HOLDING_DECISION_SCHEMA_VERSION
 
 from tools.data.common import (
     BACKUP_FORMAT_VERSION,
@@ -187,6 +188,35 @@ def _prospective_extension(
     }
 
 
+HOLDING_DECISION_TABLES = (
+    "holding_decision_schema_meta",
+    "holding_decision_record",
+    "holding_decision_resolution",
+    "holding_management_plan_context_vnp3s1",
+)
+
+
+def _holding_decision_extension(
+    holdings_copy: Path,
+) -> dict[str, object]:
+    present = [
+        table
+        for table in HOLDING_DECISION_TABLES
+        if _table_exists(holdings_copy, table)
+    ]
+    return {
+        "schema_version": HOLDING_DECISION_SCHEMA_VERSION,
+        "present": bool(present),
+        "tables": present,
+        "restorable": len(present) == len(HOLDING_DECISION_TABLES),
+        "note": (
+            "P3-S1 decision/resolution/plan-context state lives in holdings.db. "
+            "It is restored together with the Holdings ledger; this manifest entry "
+            "verifies the optional family is complete."
+        ),
+    }
+
+
 def _horizon_context_extension(
     holdings_copy: Path,
     simulation_copy: Path | None,
@@ -329,6 +359,9 @@ def create_backup(
                 ),
                 "prospective_evaluation_v1": _prospective_extension(
                     simulation_copy,
+                ),
+                "holding_decision_v1": _holding_decision_extension(
+                    holdings_copy,
                 ),
             },
             "secret_files_included": [],
