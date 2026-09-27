@@ -47,7 +47,7 @@ def _market_db(path: Path) -> Path:
 def _holdings_db(path: Path) -> tuple[Path, str, str]:
     catalog = HoldingsCatalog(path)
     catalog.initialize()
-    stock = catalog.add_watch_stock(
+    stock = catalog.create_monitored_stock(
         market="KOSPI", ticker="005930", name="삼성전자"
     )
     day = catalog.get_or_create_analysis_day(
