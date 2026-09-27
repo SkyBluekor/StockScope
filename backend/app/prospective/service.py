@@ -313,10 +313,15 @@ class ProspectiveService:
                 market_scope=spec.get("market_scope"),
                 strategy=spec.get("strategy"),
             )
-            units = [
-                self.evaluator.evaluate_sample(sample=sample, spec=spec)
-                for sample in samples
-            ]
+            units: list[dict[str, Any]] = []
+            for index, sample in enumerate(samples, start=1):
+                if self.catalog.evaluation_cancel_requested(run_id):
+                    self.catalog.mark_evaluation_cancelled(run_id)
+                    return self.evaluation_detail(run_id)
+                units.append(
+                    self.evaluator.evaluate_sample(sample=sample, spec=spec)
+                )
+                self.catalog.update_evaluation_progress(run_id, index)
             counts, summary = self.evaluator.summarize(
                 protocol=protocol,
                 units=units,
@@ -345,6 +350,9 @@ class ProspectiveService:
                 str(exc),
             ) from exc
         return self.evaluation_detail(run_id)
+
+    def cancel_evaluation_run(self, run_id: str) -> dict[str, Any]:
+        return self.catalog.request_evaluation_cancel(run_id)
 
     def evaluation_detail(self, run_id: str) -> dict[str, Any]:
         run = self.catalog.get_evaluation_run(run_id)
