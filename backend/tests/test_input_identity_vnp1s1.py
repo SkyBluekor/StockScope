@@ -12,7 +12,9 @@ from app.holdings.analysis import ANALYSIS_ENGINE_VERSION
 from app.backtest.production_policy import production_policy_cache_token
 from app.holdings.input_proof import verify_current_analysis_input
 from app.input_identity import read_input_generation_token
+from tools.data.backup_runtime import create_backup
 from tools.data.migrate_input_identity_vnp1s1 import migrate_input_identity
+from tools.data.restore_runtime import restore_backup
 
 
 def _market_db(path: Path) -> Path:
@@ -185,3 +187,45 @@ def test_explicit_mismatch_proof_does_not_modify_revision(tmp_path: Path, monkey
     assert contract.resources.analysis_result.status == "INVALID"
     assert contract.resources.analysis_result.reason_code == "CURRENT_INPUT_IDENTITY_MISMATCH"
     assert any(action.id == "VERIFY_ANALYSIS_INPUT" for action in contract.actions)
+
+
+def test_backup_manifest_reports_partial_and_full_identity_restore(tmp_path: Path) -> None:
+    market = _market_db(tmp_path / "market.db")
+    holdings, _, _ = _holdings_db(tmp_path / "holdings.db")
+    migrate_input_identity(holdings_db=holdings, market_db=market)
+
+    partial = create_backup(
+        destination=tmp_path / "partial-backup",
+        include_market=False,
+        holdings_db=holdings,
+        market_db=market,
+    )
+    partial_manifest = json.loads(
+        (partial / "backup_manifest.json").read_text(encoding="utf-8")
+    )
+    partial_identity = partial_manifest["extensions"]["input_identity_v1"]
+    assert partial_identity["holdings_proof_store"] is True
+    assert partial_identity["market_generation_store"] is False
+    assert partial_identity["current_identity_restorable"] is False
+
+    full = create_backup(
+        destination=tmp_path / "full-backup",
+        include_market=True,
+        holdings_db=holdings,
+        market_db=market,
+    )
+    full_manifest = json.loads(
+        (full / "backup_manifest.json").read_text(encoding="utf-8")
+    )
+    full_identity = full_manifest["extensions"]["input_identity_v1"]
+    assert full_identity["holdings_proof_store"] is True
+    assert full_identity["market_generation_store"] is True
+    assert full_identity["current_identity_restorable"] is True
+
+    restored = restore_backup(
+        full,
+        restore_market=True,
+        target_holdings=tmp_path / "restored-holdings.db",
+        target_market=tmp_path / "restored-market.db",
+    )
+    assert restored["input_identity"]["current_identity_restored"] is True

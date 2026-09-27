@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sqlite3
 import shutil
 import sys
 from pathlib import Path
@@ -10,6 +11,11 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from app.input_identity import (
+    INPUT_IDENTITY_SCHEMA_VERSION,
+    PROOF_TABLE,
+)
 
 from tools.data.common import (
     BACKUP_FORMAT_VERSION,
@@ -29,6 +35,53 @@ from tools.data.common import (
     validate_market_db,
     write_json_atomic,
 )
+
+
+def _table_exists(path: Path, table: str) -> bool:
+    uri = f"file:{path.resolve().as_posix()}?mode=ro"
+    with sqlite3.connect(uri, uri=True) as conn:
+        row = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
+            (table,),
+        ).fetchone()
+    return row is not None
+
+
+def _market_generation_ready(path: Path | None) -> bool:
+    if path is None or not path.is_file():
+        return False
+    uri = f"file:{path.resolve().as_posix()}?mode=ro"
+    with sqlite3.connect(uri, uri=True) as conn:
+        tables = {
+            str(row[0])
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        if not {"input_identity_meta", "input_change_generation"}.issubset(tables):
+            return False
+        row = conn.execute(
+            "SELECT value FROM input_identity_meta WHERE key='schema_version'"
+        ).fetchone()
+    return row is not None and str(row[0]) == INPUT_IDENTITY_SCHEMA_VERSION
+
+
+def _input_identity_extension(
+    holdings_copy: Path,
+    market_copy: Path | None,
+) -> dict[str, object]:
+    proof_store = _table_exists(holdings_copy, PROOF_TABLE)
+    market_generation = _market_generation_ready(market_copy)
+    return {
+        "schema_version": INPUT_IDENTITY_SCHEMA_VERSION,
+        "holdings_proof_store": proof_store,
+        "market_generation_store": market_generation,
+        "current_identity_restorable": proof_store and market_generation,
+        "note": (
+            "현재 입력 동일성 증명에는 Holdings proof와 Market generation이 모두 필요합니다. "
+            "Market Store를 제외한 백업은 분석/원장 자료는 보존하지만 현재성 증명을 복원하지 않습니다."
+        ),
+    }
 
 
 def create_backup(
@@ -70,6 +123,7 @@ def create_backup(
         }
 
         market_summary = None
+        market_copy: Path | None = None
         if include_market:
             market_copy = temp_dir / "market_history.db"
             sqlite_snapshot(source_market, market_copy)
@@ -92,6 +146,12 @@ def create_backup(
                     "domain": holdings_validation["domain"],
                 },
                 "market_history": market_summary,
+            },
+            "extensions": {
+                "input_identity_v1": _input_identity_extension(
+                    holdings_copy,
+                    market_copy,
+                ),
             },
             "secret_files_included": [],
         }

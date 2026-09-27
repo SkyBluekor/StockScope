@@ -71,7 +71,7 @@ export type StockQuoteResponse = {
 };
 
 export type DataContractAction = {
-  id: "PREPARE_CHART" | "REFRESH_HOLDING_ANALYSIS" | "VIEW_ACTIVE_JOB";
+  id: "PREPARE_CHART" | "REFRESH_HOLDING_ANALYSIS" | "VERIFY_ANALYSIS_INPUT" | "VIEW_ACTIVE_JOB";
   target: "chart" | "analysis_result" | "active_job";
   enabled: boolean;
   requires_user_initiation: true;
@@ -131,6 +131,11 @@ export type StockDataContract = {
         analysis_engine_version: string | null;
         policy_version: string | null;
         source_versions: Record<string, unknown> | null;
+        stored_input_generation: Record<string, unknown> | null;
+        current_input_generation: Record<string, unknown> | null;
+        proof_source: string | null;
+        proof_result: string | null;
+        proof_verified_at: string | null;
       };
       displayable: boolean;
       current_use_allowed: boolean;

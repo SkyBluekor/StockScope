@@ -224,6 +224,18 @@ export type HoldingHistoryPrepare = {
   message: string;
 };
 
+export type HoldingAnalysisInputProof = {
+  revision_id: string;
+  market: string;
+  ticker: string;
+  market_date: string;
+  verification_result: "MATCH" | "MISMATCH";
+  stored_fingerprint: string;
+  current_fingerprint: string;
+  generation: Record<string, unknown>;
+  verified_at: string;
+};
+
 export type HoldingAnalysisRefreshResponse = HoldingAnalysis & {
   created_revision: boolean;
   promoted_current: boolean;
@@ -610,6 +622,15 @@ export function getLiveHoldingPerformance(
 export function getCurrentHoldingAnalysis(stockId: string): Promise<CurrentAnalysisResponse> {
   return requestJson<CurrentAnalysisResponse>(
     `/api/holdings/stocks/${encodeURIComponent(stockId)}/analysis`,
+  );
+}
+
+export function verifyHoldingAnalysisInput(
+  stockId: string,
+): Promise<{ proof: HoldingAnalysisInputProof }> {
+  return requestJson<{ proof: HoldingAnalysisInputProof }>(
+    `/api/holdings/stocks/${encodeURIComponent(stockId)}/analysis/verify-input`,
+    jsonInit("POST"),
   );
 }
 

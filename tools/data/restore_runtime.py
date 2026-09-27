@@ -170,6 +170,14 @@ def restore_backup(
                     validator(target)
             raise
 
+        identity_manifest = dict(
+            dict(manifest.get("extensions") or {}).get("input_identity_v1") or {}
+        )
+        proof_restored = bool(identity_manifest.get("holdings_proof_store"))
+        generation_restored = bool(
+            restore_market and identity_manifest.get("market_generation_store")
+        )
+
         return {
             "holdings_db": str(holdings_target),
             "market_history_db": (
@@ -178,6 +186,11 @@ def restore_backup(
             "pre_restore_backups": {
                 key: (str(value) if value else None)
                 for key, value in pre_restore.items()
+            },
+            "input_identity": {
+                "holdings_proof_store_restored": proof_restored,
+                "market_generation_store_restored": generation_restored,
+                "current_identity_restored": proof_restored and generation_restored,
             },
         }
     finally:

@@ -3,7 +3,7 @@ import { searchStocks, type StockSearchItem } from "../services/api";
 import { readHoldingsViewContext, writeHoldingsViewContext } from "../services/uiSession";
 import useStockDataContract from "../hooks/useStockDataContract";
 import useStockQuote from "../hooks/useStockQuote";
-import { analysisContractMessage, dataContractStatusLabel, dataContractTone } from "../services/dataContract";
+import { analysisContractMessage, contractAction, dataContractStatusLabel, dataContractTone } from "../services/dataContract";
 import { quoteReceivedTime } from "../services/quote";
 import { marketSessionIsPaused } from "../services/marketSession";
 import HoldingsPriceChart from "./HoldingsPriceChart";
@@ -26,6 +26,7 @@ import {
   registerHeldStock,
   recordManualSell,
   refreshHoldingAnalysis,
+  verifyHoldingAnalysisInput,
   prepareHoldingAnalysisWithProgress,
   setWatchEnabled,
   syncKisHoldings,
@@ -475,6 +476,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
   const [loadingStocks, setLoadingStocks] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [refreshingAnalysis, setRefreshingAnalysis] = useState(false);
+  const [verifyingAnalysisInput, setVerifyingAnalysisInput] = useState(false);
   const [preparingHistory, setPreparingHistory] = useState(false);
   const [historyRecovery, setHistoryRecovery] = useState<HistoryRecoveryState | null>(null);
   const [historyProgress, setHistoryProgress] = useState<HoldingAnalysisPrepareProgress | null>(null);
@@ -1607,6 +1609,10 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
   const selectedAnalysisContract = selectedDataContract?.resources.analysis_result ?? null;
   const selectedLedgerContract = selectedDataContract?.resources.ledger ?? null;
   const selectedAnalysisContractMessage = analysisContractMessage(selectedDataContract);
+  const selectedAnalysisVerifyAction = contractAction(
+    selectedDataContract,
+    "VERIFY_ANALYSIS_INPUT",
+  );
   const detailPerspective: "watch" | "held" = stockFilter === "held"
     ? "held"
     : stockFilter === "watch"
@@ -1614,6 +1620,26 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
       : detail?.is_held
         ? "held"
         : "watch";
+
+  async function verifySelectedAnalysisInput() {
+    if (!detail) return;
+    setVerifyingAnalysisInput(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const result = await verifyHoldingAnalysisInput(detail.stock_id);
+      await contractRefreshRef.current();
+      setMessage(
+        result.proof.verification_result === "MATCH"
+          ? "저장된 분석이 현재 입력과 같은 조건임을 확인했습니다."
+          : "현재 입력이 저장된 분석 당시 조건과 다릅니다. 분석 갱신이 필요합니다.",
+      );
+    } catch (verifyError) {
+      setError(readableError(verifyError, "저장 분석의 입력 조건을 검증하지 못했습니다."));
+    } finally {
+      setVerifyingAnalysisInput(false);
+    }
+  }
 
   function openSelectedStockAnalysis() {
     if (!detail || !onAnalyzeStock) return;
@@ -1931,6 +1957,16 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                         : "상태 미확인"}
                   </strong>
                   <small>{selectedAnalysisContractMessage ?? "선택 종목의 저장 분석 상태를 확인합니다."}</small>
+                  {selectedAnalysisVerifyAction && (
+                    <button
+                      type="button"
+                      className="holdings-text-button"
+                      onClick={() => void verifySelectedAnalysisInput()}
+                      disabled={verifyingAnalysisInput}
+                    >
+                      {verifyingAnalysisInput ? "입력 조건 검증 중..." : "현재 입력과 다시 검증"}
+                    </button>
+                  )}
                 </div>
                 <div className="holdings-analysis-state">
                   <span>보유 원장</span>
