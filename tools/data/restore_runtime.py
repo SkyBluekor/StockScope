@@ -168,6 +168,8 @@ def restore_backup(
                     )
                     os.replace(rollback_temp, target)
                     validator(target)
+                elif not existed_before.get(label, False) and target.exists():
+                    target.unlink()
             raise
 
         identity_manifest = dict(
