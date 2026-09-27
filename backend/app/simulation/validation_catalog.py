@@ -13,6 +13,8 @@ from app.input_identity import (
     VALIDATION_PROOF_TABLE,
     VALIDATION_PROOF_VERSION,
 )
+from app.horizon import HorizonContext
+from app.horizon_context import set_validation_horizon
 
 
 PRODUCTION_SCANNER_VERSION = "0.21.3.7"
@@ -361,6 +363,7 @@ class HistoricalValidationCatalog:
         resolved_end_date: str,
         trading_day_count: int,
         scanner_baseline: str | None = None,
+        horizon_context: HorizonContext | None = None,
     ) -> HistoricalValidationDraft:
         clean_name = name.strip()
         if not clean_name:
@@ -390,6 +393,13 @@ class HistoricalValidationCatalog:
                     draft.resolved_end_date, draft.trading_day_count, draft.status, draft.created_at, draft.updated_at,
                 ),
             )
+            if horizon_context is not None:
+                set_validation_horizon(
+                    conn,
+                    draft.id,
+                    horizon_context,
+                    created_at=now,
+                )
         return draft
 
     def list(self) -> list[HistoricalValidationDraft]:
