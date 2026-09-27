@@ -10,6 +10,9 @@ import pytest
 
 from app.holdings import HoldingsCatalog, PositionLifecycleService
 from app.holdings.management import HoldingManagementService
+from app.simulation.sim1_store import SimulationRepository
+from app.simulation.validation_catalog import HistoricalValidationCatalog
+from app.tracking.store import RecommendationTrackingRepository
 from tools.data.backup_runtime import create_backup
 from tools.data.bootstrap_runtime import bootstrap_runtime
 from tools.data.common import (
@@ -128,6 +131,17 @@ def _market_db(path: Path, rows: int = 70) -> Path:
     return path
 
 
+def _simulation_db(path: Path) -> Path:
+    SimulationRepository(path).initialize()
+    HistoricalValidationCatalog(path).initialize()
+    return path
+
+
+def _tracking_db(path: Path) -> Path:
+    RecommendationTrackingRepository(path).initialize()
+    return path
+
+
 def test_default_backup_excludes_market_and_secrets(tmp_path):
     holdings = _holdings_db(tmp_path / "holdings.db")
     market = _market_db(tmp_path / "market.db")
@@ -163,6 +177,45 @@ def test_full_backup_includes_market_and_plan_counts(tmp_path):
     assert manifest["contents"]["market_history_db"] is True
     assert manifest["counts"]["holding_management_plan"] == 1
     assert manifest["counts"]["holding_position_event"] >= 1
+
+
+def test_backup_and_restore_include_existing_simulation_and_tracking(tmp_path):
+    holdings = _holdings_db(tmp_path / "holdings.db")
+    simulation = _simulation_db(tmp_path / "simulation.db")
+    tracking = _tracking_db(tmp_path / "tracking.db")
+
+    backup = create_backup(
+        destination=tmp_path / "runtime-backup",
+        holdings_db=holdings,
+        simulation_db=simulation,
+        tracking_db=tracking,
+    )
+    manifest = json.loads(
+        (backup / "backup_manifest.json").read_text(encoding="utf-8")
+    )
+
+    assert manifest["contents"]["simulation_db"] is True
+    assert manifest["contents"]["tracking_db"] is True
+    assert (backup / "simulation.db").is_file()
+    assert (backup / "recommendation_tracking.db").is_file()
+
+    target_holdings = tmp_path / "restored-holdings.db"
+    target_simulation = tmp_path / "restored-simulation.db"
+    target_tracking = tmp_path / "restored-tracking.db"
+    result = restore_backup(
+        backup,
+        restore_simulation=True,
+        restore_tracking=True,
+        target_holdings=target_holdings,
+        target_simulation=target_simulation,
+        target_tracking=target_tracking,
+    )
+
+    assert target_holdings.is_file()
+    assert target_simulation.is_file()
+    assert target_tracking.is_file()
+    assert result["simulation_db"] == str(target_simulation)
+    assert result["tracking_db"] == str(target_tracking)
 
 
 def test_restore_roundtrip_preserves_holdings_and_creates_pre_restore_backup(tmp_path):
