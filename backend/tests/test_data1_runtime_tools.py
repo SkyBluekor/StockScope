@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,8 @@ import pytest
 from app.holdings import HoldingsCatalog, PositionLifecycleService
 from app.holdings.management import HoldingManagementService
 from app.holdings.recovery import HoldingRecoveryService
+from app.quotes.models import QuoteSnapshot
+from app.watch import WatchPolicy, WatchService, load_active_plan_watch_demands
 from app.feedback import FeedbackCatalog, FeedbackEvidence
 from app.prospective import (
     EvaluationProtocolSpec,
@@ -42,6 +45,9 @@ from tools.data.migrate_holdings_recovery_vnp3s2 import (
     RECOVERY_SCHEMA_VERSION,
     migrate_holdings_recovery_store,
 )
+from tools.data.migrate_watch_vnp4s1 import migrate_watch_store
+from app.watch.policy import WATCH_POLICY_CONTRACT_VERSION
+from app.watch.storage import WATCH_SCHEMA_VERSION
 
 
 T0 = "2026-09-24T09:00:00+09:00"
@@ -738,6 +744,159 @@ def test_holding_recovery_store_roundtrip_is_declared_and_restored(tmp_path):
     assert restored_assessment["review_action"] == "REDUCE"
     assert restored_assessment["valuation_price"] == "80"
     assert restored_assessment["unrealized_pnl"] == "-200"
+
+
+def test_holding_watch_store_roundtrip_is_declared_and_restored(tmp_path):
+    holdings = _holdings_db(tmp_path / "holdings.db")
+    migrate_holdings_decision_store(holdings)
+    migrate_watch_store(holdings)
+    catalog = HoldingsCatalog(holdings)
+    demand = load_active_plan_watch_demands(catalog)[0]
+    policy = WatchPolicy(
+        policy_version="TEST_BACKUP_ONLY",
+        enabled=True,
+        confirmation_observations=2,
+        rearm_observations=2,
+        rearm_distance_bps=100,
+        max_quote_age_seconds=60,
+    )
+    now = datetime(2026, 9, 28, 0, 0, 10, tzinfo=timezone.utc)
+    service = WatchService(
+        catalog,
+        policy_provider=lambda: policy,
+        clock=lambda: now,
+    )
+    service.reconcile([demand])
+
+    def snapshot(seconds: int, price: str) -> QuoteSnapshot:
+        return QuoteSnapshot(
+            market="KOSPI",
+            ticker="005930",
+            name="삼성전자",
+            venue="INTEGRATED",
+            provider_market_division="UN",
+            environment="virtual",
+            current_price=Decimal(price),
+            change_amount=Decimal("0"),
+            change_rate=Decimal("0"),
+            change_sign="3",
+            open_price=Decimal("100"),
+            high_price=Decimal("100"),
+            low_price=Decimal(price),
+            base_price=Decimal("100"),
+            accumulated_volume=Decimal("1000"),
+            provider_timestamp=None,
+            received_at=now - timedelta(seconds=10-seconds),
+            transport="WEBSOCKET",
+        )
+
+    service.process_quote(demand, snapshot(1, "89"))
+    service.process_quote(demand, snapshot(2, "88"))
+    service.record_coverage_issue(
+        demand,
+        "WS_RECONNECT",
+        detail={"fixture": True},
+    )
+
+    with sqlite3.connect(holdings) as conn:
+        conn.row_factory = sqlite3.Row
+        setting = conn.execute(
+            "SELECT * FROM holding_watch_setting WHERE status='ACTIVE'"
+        ).fetchone()
+        stop_rule = conn.execute(
+            """
+            SELECT * FROM holding_watch_rule
+            WHERE rule_kind='STOP'
+            """
+        ).fetchone()
+        episode = conn.execute(
+            "SELECT * FROM holding_watch_episode"
+        ).fetchone()
+        gap = conn.execute(
+            "SELECT * FROM holding_watch_coverage_gap"
+        ).fetchone()
+        notification = conn.execute(
+            "SELECT * FROM holding_watch_notification_outbox"
+        ).fetchone()
+
+    assert setting is not None
+    assert stop_rule is not None
+    assert episode is not None
+    assert gap is not None
+    assert notification is not None
+
+    backup = create_backup(
+        destination=tmp_path / "watch-backup",
+        holdings_db=holdings,
+        include_simulation=False,
+        include_tracking=False,
+    )
+    manifest = json.loads(
+        (backup / "backup_manifest.json").read_text(encoding="utf-8")
+    )
+    extension = manifest["extensions"]["holding_watch_v1"]
+
+    assert extension["schema_version"] == WATCH_SCHEMA_VERSION
+    assert extension["policy_contract_version"] == WATCH_POLICY_CONTRACT_VERSION
+    assert extension["present"] is True
+    assert extension["restorable"] is True
+    assert set(extension["tables"]) == {
+        "holding_watch_schema_meta",
+        "holding_watch_setting",
+        "holding_watch_rule",
+        "holding_watch_episode",
+        "holding_watch_coverage_gap",
+        "holding_watch_notification_outbox",
+    }
+
+    restored_holdings = tmp_path / "restored-watch-holdings.db"
+    result = restore_backup(
+        backup,
+        target_holdings=restored_holdings,
+    )
+
+    assert result["holding_watch"]["schema_version"] == WATCH_SCHEMA_VERSION
+    assert (
+        result["holding_watch"]["policy_contract_version"]
+        == WATCH_POLICY_CONTRACT_VERSION
+    )
+    assert result["holding_watch"]["store_present_in_backup"] is True
+    assert result["holding_watch"]["store_restored"] is True
+    assert result["holding_watch"]["live_quote_replay_performed"] is False
+
+    with sqlite3.connect(restored_holdings) as conn:
+        conn.row_factory = sqlite3.Row
+        restored_setting = conn.execute(
+            "SELECT * FROM holding_watch_setting WHERE id=?",
+            (setting["id"],),
+        ).fetchone()
+        restored_rule = conn.execute(
+            "SELECT * FROM holding_watch_rule WHERE id=?",
+            (stop_rule["id"],),
+        ).fetchone()
+        restored_episode = conn.execute(
+            "SELECT * FROM holding_watch_episode WHERE id=?",
+            (episode["id"],),
+        ).fetchone()
+        restored_gap = conn.execute(
+            "SELECT * FROM holding_watch_coverage_gap WHERE id=?",
+            (gap["id"],),
+        ).fetchone()
+        restored_notification = conn.execute(
+            "SELECT * FROM holding_watch_notification_outbox WHERE id=?",
+            (notification["id"],),
+        ).fetchone()
+
+    assert restored_setting is not None
+    assert restored_setting["plan_id"] == setting["plan_id"]
+    assert restored_rule is not None
+    assert restored_rule["state"] == "CONFIRMED"
+    assert restored_episode is not None
+    assert restored_episode["confirmed_at"] is not None
+    assert restored_gap is not None
+    assert restored_gap["status"] == "OPEN"
+    assert restored_notification is not None
+    assert restored_notification["delivery_status"] == "PENDING"
 
 
 def test_restore_roundtrip_preserves_holdings_and_creates_pre_restore_backup(tmp_path):
