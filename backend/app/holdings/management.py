@@ -165,6 +165,175 @@ class HoldingManagementService:
             ).fetchall()
         return [self._plan_from_row(row) for row in rows]
 
+    def _apply_analysis_plan_in_conn(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        position_id: str,
+        analysis_revision_id: str,
+        change_reason: str | None = None,
+        applied_at: str | None = None,
+    ) -> HoldingManagementPlan:
+        apply_text = (applied_at or self.clock()).strip()
+        apply_dt = _parse_time(
+            apply_text,
+            code="HOLD_PLAN_TIME_INVALID",
+            label="적용 시각",
+        )
+        reason = (change_reason or "").strip() or None
+
+        position = conn.execute(
+            "SELECT * FROM holding_position WHERE id=?",
+            (position_id,),
+        ).fetchone()
+        if position is None:
+            raise HoldingsManagementError(
+                "HOLD_POSITION_NOT_FOUND",
+                "관리 계획을 적용할 Position을 찾을 수 없습니다.",
+            )
+        if position["status"] != "OPEN":
+            raise HoldingsManagementError(
+                "HOLD_PLAN_POSITION_CLOSED",
+                "종료된 Position에는 관리 계획을 적용할 수 없습니다.",
+            )
+
+        revision = conn.execute(
+            """
+            SELECT r.*,d.monitored_stock_id,d.market_date
+            FROM stock_analysis_revision r
+            JOIN stock_analysis_day d ON d.id=r.analysis_day_id
+            WHERE r.id=?
+            """,
+            (analysis_revision_id,),
+        ).fetchone()
+        if revision is None:
+            raise HoldingsManagementError(
+                "HOLD_ANALYSIS_REVISION_NOT_FOUND",
+                "적용할 Analysis Revision을 찾을 수 없습니다.",
+            )
+        if str(revision["monitored_stock_id"]) != str(position["monitored_stock_id"]):
+            raise HoldingsManagementError(
+                "HOLD_PLAN_REVISION_MISMATCH",
+                "다른 종목의 Analysis Revision은 이 Position에 적용할 수 없습니다.",
+            )
+        revision_dt = _parse_time(
+            str(revision["computed_at"]),
+            code="HOLD_PLAN_REVISION_TIME_INVALID",
+            label="Analysis Revision",
+        )
+        if revision_dt > apply_dt:
+            raise HoldingsManagementError(
+                "HOLD_PLAN_REVISION_FROM_FUTURE",
+                "적용 시점 이후에 계산된 Analysis Revision은 사용할 수 없습니다.",
+            )
+
+        horizon_context = get_analysis_horizon(conn, analysis_revision_id)
+        try:
+            require_horizon_activatable(horizon_context)
+        except HorizonPolicyError as exc:
+            raise HoldingsManagementError(
+                "HOLD_PLAN_HORIZON_NOT_ACTIVE",
+                exc.message,
+            ) from exc
+
+        reference = _decimal(revision["reference_price"])
+        stop = _decimal(revision["stop_price"])
+        target1 = _decimal(revision["target1_price"])
+        target2 = _decimal(revision["target2_price"])
+        if stop is None or stop <= 0:
+            raise HoldingsManagementError(
+                "HOLD_PLAN_NOT_APPLICABLE",
+                "이 Analysis Revision에는 적용 가능한 손절 가격이 없습니다.",
+            )
+        for label, value in (("1차 목표", target1), ("2차 목표", target2)):
+            if value is not None and value <= 0:
+                raise HoldingsManagementError(
+                    "HOLD_PLAN_NOT_APPLICABLE",
+                    f"{label} 가격이 유효하지 않아 계획을 적용할 수 없습니다.",
+                )
+
+        active_row = conn.execute(
+            """
+            SELECT * FROM holding_management_plan
+            WHERE position_id=? AND status='ACTIVE'
+            LIMIT 1
+            """,
+            (position_id,),
+        ).fetchone()
+        if active_row is not None:
+            active = self._plan_from_row(active_row)
+            if active.source_analysis_revision_id == analysis_revision_id:
+                return active
+            if stop < active.stop_price:
+                raise HoldingsManagementError(
+                    "HOLD_PLAN_STOP_LOOSENING_BLOCKED",
+                    "새 분석의 손절 기준이 현재 적용 계획보다 낮아 기존 보유 위험 기준을 느슨하게 만들 수 없습니다.",
+                )
+
+        next_version = int(
+            conn.execute(
+                """
+                SELECT COALESCE(MAX(plan_version),0)+1
+                FROM holding_management_plan
+                WHERE position_id=?
+                """,
+                (position_id,),
+            ).fetchone()[0]
+        )
+        now = self.clock()
+        previous_plan_id = str(active_row["id"]) if active_row is not None else None
+        if active_row is not None:
+            conn.execute(
+                """
+                UPDATE holding_management_plan
+                SET status='SUPERSEDED',superseded_at=?,updated_at=?
+                WHERE id=? AND status='ACTIVE'
+                """,
+                (apply_text, now, previous_plan_id),
+            )
+
+        plan_id = str(uuid4())
+        conn.execute(
+            """
+            INSERT INTO holding_management_plan(
+                id,position_id,plan_version,status,source_type,source_analysis_revision_id,
+                reference_price,stop_price,target1_price,target2_price,confirmation_policy,
+                applied_at,change_reason,previous_plan_id,superseded_at,closed_at,created_at,updated_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                plan_id,
+                position_id,
+                next_version,
+                "ACTIVE",
+                "ANALYSIS_REVISION",
+                analysis_revision_id,
+                _decimal_text(reference),
+                _decimal_text(stop),
+                _decimal_text(target1),
+                _decimal_text(target2),
+                "EOD_CONFIRMED",
+                apply_text,
+                reason,
+                previous_plan_id,
+                None,
+                None,
+                now,
+                now,
+            ),
+        )
+        copy_analysis_horizon_to_plan(
+            conn,
+            revision_id=analysis_revision_id,
+            plan_id=plan_id,
+            created_at=now,
+        )
+        row = conn.execute(
+            "SELECT * FROM holding_management_plan WHERE id=?",
+            (plan_id,),
+        ).fetchone()
+        return self._plan_from_row(row)
+
     def apply_analysis_plan(
         self,
         *,
@@ -173,108 +342,24 @@ class HoldingManagementService:
         change_reason: str | None = None,
         applied_at: str | None = None,
     ) -> HoldingManagementPlan:
-        apply_text = (applied_at or self.clock()).strip()
-        apply_dt = _parse_time(apply_text, code="HOLD_PLAN_TIME_INVALID", label="적용 시각")
-        reason = (change_reason or "").strip() or None
         conn = self.catalog.connect()
         try:
             conn.execute("BEGIN IMMEDIATE")
-            position = conn.execute("SELECT * FROM holding_position WHERE id=?", (position_id,)).fetchone()
-            if position is None:
-                raise HoldingsManagementError("HOLD_POSITION_NOT_FOUND", "관리 계획을 적용할 Position을 찾을 수 없습니다.")
-            if position["status"] != "OPEN":
-                raise HoldingsManagementError("HOLD_PLAN_POSITION_CLOSED", "종료된 Position에는 관리 계획을 적용할 수 없습니다.")
-
-            revision = conn.execute(
-                """
-                SELECT r.*,d.monitored_stock_id,d.market_date
-                FROM stock_analysis_revision r
-                JOIN stock_analysis_day d ON d.id=r.analysis_day_id
-                WHERE r.id=?
-                """,
-                (analysis_revision_id,),
-            ).fetchone()
-            if revision is None:
-                raise HoldingsManagementError("HOLD_ANALYSIS_REVISION_NOT_FOUND", "적용할 Analysis Revision을 찾을 수 없습니다.")
-            if str(revision["monitored_stock_id"]) != str(position["monitored_stock_id"]):
-                raise HoldingsManagementError("HOLD_PLAN_REVISION_MISMATCH", "다른 종목의 Analysis Revision은 이 Position에 적용할 수 없습니다.")
-            revision_dt = _parse_time(str(revision["computed_at"]), code="HOLD_PLAN_REVISION_TIME_INVALID", label="Analysis Revision")
-            if revision_dt > apply_dt:
-                raise HoldingsManagementError("HOLD_PLAN_REVISION_FROM_FUTURE", "적용 시점 이후에 계산된 Analysis Revision은 사용할 수 없습니다.")
-
-            horizon_context = get_analysis_horizon(conn, analysis_revision_id)
-            try:
-                require_horizon_activatable(horizon_context)
-            except HorizonPolicyError as exc:
-                raise HoldingsManagementError(
-                    "HOLD_PLAN_HORIZON_NOT_ACTIVE",
-                    exc.message,
-                ) from exc
-
-            reference = _decimal(revision["reference_price"])
-            stop = _decimal(revision["stop_price"])
-            target1 = _decimal(revision["target1_price"])
-            target2 = _decimal(revision["target2_price"])
-            if stop is None or stop <= 0:
-                raise HoldingsManagementError("HOLD_PLAN_NOT_APPLICABLE", "이 Analysis Revision에는 적용 가능한 손절 가격이 없습니다.")
-            for label, value in (("1차 목표", target1), ("2차 목표", target2)):
-                if value is not None and value <= 0:
-                    raise HoldingsManagementError("HOLD_PLAN_NOT_APPLICABLE", f"{label} 가격이 유효하지 않아 계획을 적용할 수 없습니다.")
-
-            active_row = conn.execute(
-                "SELECT * FROM holding_management_plan WHERE position_id=? AND status='ACTIVE' LIMIT 1",
-                (position_id,),
-            ).fetchone()
-            if active_row is not None:
-                active = self._plan_from_row(active_row)
-                if active.source_analysis_revision_id == analysis_revision_id:
-                    conn.rollback()
-                    return active
-                if stop < active.stop_price:
-                    raise HoldingsManagementError(
-                        "HOLD_PLAN_STOP_LOOSENING_BLOCKED",
-                        "새 분석의 손절 기준이 현재 적용 계획보다 낮아 기존 보유 위험 기준을 느슨하게 만들 수 없습니다.",
-                    )
-
-            next_version = int(conn.execute(
-                "SELECT COALESCE(MAX(plan_version),0)+1 FROM holding_management_plan WHERE position_id=?",
-                (position_id,),
-            ).fetchone()[0])
-            now = self.clock()
-            previous_plan_id = str(active_row["id"]) if active_row is not None else None
-            if active_row is not None:
-                conn.execute(
-                    "UPDATE holding_management_plan SET status='SUPERSEDED',superseded_at=?,updated_at=? WHERE id=? AND status='ACTIVE'",
-                    (apply_text, now, previous_plan_id),
-                )
-
-            plan_id = str(uuid4())
-            conn.execute(
-                """
-                INSERT INTO holding_management_plan(
-                    id,position_id,plan_version,status,source_type,source_analysis_revision_id,
-                    reference_price,stop_price,target1_price,target2_price,confirmation_policy,
-                    applied_at,change_reason,previous_plan_id,superseded_at,closed_at,created_at,updated_at
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                """,
-                (
-                    plan_id, position_id, next_version, "ACTIVE", "ANALYSIS_REVISION", analysis_revision_id,
-                    _decimal_text(reference), _decimal_text(stop), _decimal_text(target1), _decimal_text(target2),
-                    "EOD_CONFIRMED", apply_text, reason, previous_plan_id, None, None, now, now,
-                ),
-            )
-            copy_analysis_horizon_to_plan(
+            plan = self._apply_analysis_plan_in_conn(
                 conn,
-                revision_id=analysis_revision_id,
-                plan_id=plan_id,
-                created_at=now,
+                position_id=position_id,
+                analysis_revision_id=analysis_revision_id,
+                change_reason=change_reason,
+                applied_at=applied_at,
             )
-            row = conn.execute("SELECT * FROM holding_management_plan WHERE id=?", (plan_id,)).fetchone()
             conn.commit()
-            return self._plan_from_row(row)
+            return plan
         except sqlite3.IntegrityError as exc:
             conn.rollback()
-            raise HoldingsManagementError("HOLD_PLAN_CONFLICT", "관리 계획을 저장하는 동안 원장 충돌이 발생했습니다.") from exc
+            raise HoldingsManagementError(
+                "HOLD_PLAN_CONFLICT",
+                "관리 계획을 저장하는 동안 원장 충돌이 발생했습니다.",
+            ) from exc
         except Exception:
             conn.rollback()
             raise
