@@ -453,6 +453,29 @@ class ProspectiveCatalog:
             ).fetchone()
         return self._capture_from_row(row)
 
+    def mark_pending_interrupted(
+        self,
+        *,
+        reason: str = "BACKEND_RESTARTED_BEFORE_CAPTURE_COMMIT",
+        updated_at: str | None = None,
+    ) -> int:
+        now = updated_at or _now()
+        with self.connect() as conn:
+            self.require_ready(conn)
+            cursor = conn.execute(
+                """
+                UPDATE prospective_capture_run
+                SET status='INTERRUPTED',
+                    error_code='PROSPECTIVE_CAPTURE_INTERRUPTED',
+                    error_message=?,
+                    completed_at=?,
+                    updated_at=?
+                WHERE status='PENDING'
+                """,
+                (reason, now, now),
+            )
+            return int(cursor.rowcount or 0)
+
     def get_capture_by_job(self, source_job_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
             self.require_ready(conn)
