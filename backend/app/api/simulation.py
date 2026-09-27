@@ -587,6 +587,7 @@ def _execution_http_error(code: str, message: str) -> None:
         status = 404
     elif code in {
         "VAL2_SOURCE_NOT_COMPLETED",
+        "VAL2_HORIZON_NOT_ACTIVE",
         "VAL2_RUN_ALREADY_RUNNING",
         "VAL2_RUN_ALREADY_COMPLETED",
         "VAL2_RUN_INVALID_STATUS",
