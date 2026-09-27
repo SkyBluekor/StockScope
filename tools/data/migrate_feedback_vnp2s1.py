@@ -15,7 +15,7 @@ from app.feedback.models import FEEDBACK_SCHEMA_VERSION
 from tools.data.common import DataToolError, simulation_db_path, sqlite_readonly
 
 
-REQUIRED_SOURCE_TABLES = {
+KNOWN_SOURCE_TABLES = {
     "historical_validation_run",
     "historical_execution_run",
 }
@@ -28,16 +28,26 @@ def _table_names(conn: sqlite3.Connection) -> set[str]:
     return {str(row[0]) for row in rows}
 
 
-def _require_source_schema(path: Path) -> None:
+def _inspect_source_schema(path: Path) -> dict[str, list[str]]:
+    """Inspect optional evaluation sources without requiring them to exist.
+
+    P2-S1 Feedback storage is allowed on a valid Simulation DB even when VAL.2
+    (or VAL.1) has never been initialized locally. Missing sources are surfaced
+    later by the read-only adapters instead of blocking schema migration.
+    """
     if not path.is_file():
         raise DataToolError(f"Simulation DB를 찾을 수 없습니다: {path}")
     with sqlite_readonly(path) as conn:
-        missing = sorted(REQUIRED_SOURCE_TABLES - _table_names(conn))
-    if missing:
-        raise DataToolError(
-            "P2-S1에 필요한 기존 Validation/Execution table이 없습니다: "
-            + ", ".join(missing)
-        )
+        integrity = conn.execute("PRAGMA integrity_check").fetchone()
+        if integrity is None or str(integrity[0]).lower() != "ok":
+            raise DataToolError("Simulation DB integrity_check에 실패했습니다.")
+        names = _table_names(conn)
+    available = sorted(KNOWN_SOURCE_TABLES & names)
+    missing = sorted(KNOWN_SOURCE_TABLES - names)
+    return {
+        "available": available,
+        "missing": missing,
+    }
 
 
 def _columns(conn: sqlite3.Connection, table: str) -> set[str]:
@@ -85,7 +95,7 @@ def _ensure_meta(conn: sqlite3.Connection) -> None:
 
 def migrate_feedback_store(path: Path) -> dict[str, object]:
     path = Path(path)
-    _require_source_schema(path)
+    source_schema = _inspect_source_schema(path)
     conn = sqlite3.connect(path, timeout=20.0)
     try:
         conn.execute("PRAGMA foreign_keys=ON")
@@ -274,6 +284,7 @@ def migrate_feedback_store(path: Path) -> dict[str, object]:
                 "feedback_cohort_member",
                 "feedback_report",
             ],
+            "source_tables": source_schema,
         }
     except Exception:
         conn.rollback()
