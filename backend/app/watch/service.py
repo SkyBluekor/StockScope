@@ -14,7 +14,7 @@ from .coordinator import WatchDemand
 from .models import WatchObservation, WatchRuleRuntimeState, WatchRuleSpec
 from .policy import WatchPolicy, production_watch_policy
 from .state_machine import advance_watch_rule
-from .storage import require_watch_schema
+from .storage import require_watch_schema, watch_schema_available
 
 
 def _now() -> datetime:
@@ -786,4 +786,241 @@ class WatchService:
             "setting_id": setting_id,
             "transitions": transitions,
             "coverage": None,
+        }
+
+
+    def get_status(self) -> dict[str, object]:
+        policy = self.policy_provider()
+        with self.catalog.connection() as conn:
+            if not watch_schema_available(conn):
+                return {
+                    "available": False,
+                    "migration_required": True,
+                    "policy_enabled": policy.enabled,
+                    "blocked_reason": policy.blocked_reason,
+                    "active_settings": 0,
+                    "open_gaps": 0,
+                    "pending_notifications": 0,
+                }
+
+            return {
+                "available": True,
+                "migration_required": False,
+                "policy_enabled": policy.enabled,
+                "blocked_reason": policy.blocked_reason,
+                "active_settings": int(
+                    conn.execute(
+                        "SELECT COUNT(*) FROM holding_watch_setting WHERE status='ACTIVE'"
+                    ).fetchone()[0]
+                ),
+                "open_gaps": int(
+                    conn.execute(
+                        "SELECT COUNT(*) FROM holding_watch_coverage_gap WHERE status='OPEN'"
+                    ).fetchone()[0]
+                ),
+                "pending_notifications": int(
+                    conn.execute(
+                        """
+                        SELECT COUNT(*) FROM holding_watch_notification_outbox
+                        WHERE read_at IS NULL
+                        """
+                    ).fetchone()[0]
+                ),
+            }
+
+    def get_position_status(self, position_id: str) -> dict[str, object]:
+        policy = self.policy_provider()
+        with self.catalog.connection() as conn:
+            if not watch_schema_available(conn):
+                return {
+                    "available": False,
+                    "migration_required": True,
+                    "position_id": position_id,
+                    "policy_enabled": policy.enabled,
+                    "blocked_reason": policy.blocked_reason,
+                    "setting": None,
+                    "rules": [],
+                    "open_gaps": [],
+                    "latest_notification": None,
+                }
+
+            setting = conn.execute(
+                """
+                SELECT * FROM holding_watch_setting
+                WHERE position_id=? AND status='ACTIVE'
+                LIMIT 1
+                """,
+                (position_id,),
+            ).fetchone()
+            if setting is None:
+                return {
+                    "available": True,
+                    "migration_required": False,
+                    "position_id": position_id,
+                    "policy_enabled": policy.enabled,
+                    "blocked_reason": policy.blocked_reason,
+                    "setting": None,
+                    "rules": [],
+                    "open_gaps": [],
+                    "latest_notification": None,
+                }
+
+            setting_id = str(setting["id"])
+            rules = conn.execute(
+                """
+                SELECT * FROM holding_watch_rule
+                WHERE setting_id=?
+                ORDER BY CASE rule_kind
+                    WHEN 'STOP' THEN 1
+                    WHEN 'TARGET1' THEN 2
+                    ELSE 3 END
+                """,
+                (setting_id,),
+            ).fetchall()
+            gaps = conn.execute(
+                """
+                SELECT * FROM holding_watch_coverage_gap
+                WHERE setting_id=? AND status='OPEN'
+                ORDER BY started_at,id
+                """,
+                (setting_id,),
+            ).fetchall()
+            notification = conn.execute(
+                """
+                SELECT * FROM holding_watch_notification_outbox
+                WHERE setting_id=?
+                ORDER BY created_at DESC,rowid DESC
+                LIMIT 1
+                """,
+                (setting_id,),
+            ).fetchone()
+
+        def rule_payload(row: sqlite3.Row) -> dict[str, object]:
+            return {
+                "rule_id": str(row["id"]),
+                "rule_kind": str(row["rule_kind"]),
+                "threshold_price": str(row["threshold_price"]),
+                "state": str(row["state"]),
+                "status": str(row["status"]),
+                "last_observed_at": row["last_observed_at"],
+                "last_price": row["last_price"],
+            }
+
+        return {
+            "available": True,
+            "migration_required": False,
+            "position_id": position_id,
+            "policy_enabled": policy.enabled,
+            "blocked_reason": policy.blocked_reason,
+            "setting": {
+                "setting_id": setting_id,
+                "plan_id": str(setting["plan_id"]),
+                "plan_version": int(setting["plan_version"]),
+                "status": str(setting["status"]),
+                "policy_version": str(setting["policy_version"]),
+            },
+            "rules": [rule_payload(row) for row in rules],
+            "open_gaps": [
+                {
+                    "gap_id": str(row["id"]),
+                    "reason_code": str(row["reason_code"]),
+                    "started_at": str(row["started_at"]),
+                }
+                for row in gaps
+            ],
+            "latest_notification": (
+                {
+                    "notification_id": str(notification["id"]),
+                    "payload": json.loads(str(notification["payload_json"])),
+                    "created_at": str(notification["created_at"]),
+                    "read_at": notification["read_at"],
+                }
+                if notification is not None
+                else None
+            ),
+        }
+
+    def list_notifications(
+        self,
+        *,
+        limit: int = 50,
+        unread_only: bool = False,
+    ) -> list[dict[str, object]]:
+        safe_limit = max(1, min(int(limit), 200))
+        with self.catalog.connection() as conn:
+            if not watch_schema_available(conn):
+                return []
+            where = "WHERE n.read_at IS NULL" if unread_only else ""
+            rows = conn.execute(
+                f"""
+                SELECT
+                    n.*,
+                    s.market,
+                    s.ticker,
+                    s.name
+                FROM holding_watch_notification_outbox n
+                JOIN holding_position p ON p.id=n.position_id
+                JOIN monitored_stock s ON s.id=p.monitored_stock_id
+                {where}
+                ORDER BY n.created_at DESC,n.rowid DESC
+                LIMIT ?
+                """,
+                (safe_limit,),
+            ).fetchall()
+
+        return [
+            {
+                "notification_id": str(row["id"]),
+                "position_id": str(row["position_id"]),
+                "plan_id": str(row["plan_id"]),
+                "market": str(row["market"]),
+                "ticker": str(row["ticker"]),
+                "name": str(row["name"]),
+                "notification_type": str(row["notification_type"]),
+                "delivery_status": str(row["delivery_status"]),
+                "payload": json.loads(str(row["payload_json"])),
+                "created_at": str(row["created_at"]),
+                "delivered_at": row["delivered_at"],
+                "read_at": row["read_at"],
+            }
+            for row in rows
+        ]
+
+    def mark_notification_read(self, notification_id: str) -> dict[str, object] | None:
+        now_text = _dt_text(self.clock())
+        with self.catalog.connection() as conn:
+            if not watch_schema_available(conn):
+                return None
+            row = conn.execute(
+                """
+                SELECT * FROM holding_watch_notification_outbox
+                WHERE id=?
+                """,
+                (notification_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            conn.execute(
+                """
+                UPDATE holding_watch_notification_outbox
+                SET delivery_status='DELIVERED',
+                    delivered_at=COALESCE(delivered_at,?),
+                    read_at=COALESCE(read_at,?)
+                WHERE id=?
+                """,
+                (now_text, now_text, notification_id),
+            )
+            updated = conn.execute(
+                """
+                SELECT * FROM holding_watch_notification_outbox
+                WHERE id=?
+                """,
+                (notification_id,),
+            ).fetchone()
+
+        return {
+            "notification_id": str(updated["id"]),
+            "delivery_status": str(updated["delivery_status"]),
+            "delivered_at": updated["delivered_at"],
+            "read_at": updated["read_at"],
         }
