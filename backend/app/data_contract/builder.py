@@ -134,6 +134,10 @@ def _analysis_contract(
         scanner_version=observed.scanner_version,
         analysis_engine_version=observed.analysis_engine_version,
         policy_version=observed.policy_version,
+        horizon_intent=observed.horizon_intent,
+        horizon_policy_version=observed.horizon_policy_version,
+        horizon_support_status=observed.horizon_support_status,
+        horizon_reason_code=observed.horizon_reason_code,
         source_versions=observed.source_versions,
         stored_input_generation=observed.stored_input_generation,
         current_input_generation=observed.current_input_generation,
@@ -181,6 +185,12 @@ def _analysis_contract(
     ):
         status = "UNVERIFIED"
         reason = "ANALYSIS_IDENTITY_INCOMPLETE"
+    elif observed.horizon_support_status == "UNSUPPORTED":
+        status = "INVALID"
+        reason = "HORIZON_POLICY_UNSUPPORTED"
+    elif observed.horizon_support_status == "EVALUATION_PENDING":
+        status = "UNVERIFIED"
+        reason = "HORIZON_POLICY_NOT_ACTIVE"
     elif observed.input_proof_result == "MISMATCH":
         status = "INVALID"
         reason = "CURRENT_INPUT_IDENTITY_MISMATCH"
