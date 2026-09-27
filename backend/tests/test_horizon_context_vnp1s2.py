@@ -122,6 +122,9 @@ def test_horizon_contract_does_not_invent_numeric_policy() -> None:
         assert context.support_status == "EVALUATION_PENDING"
         assert context.review_cycle_trading_days is None
         assert context.time_stop_trading_days is None
+        assert context.strategy_support is None
+        assert context.required_inputs is None
+        assert context.confirmation_policy is None
         with pytest.raises(HorizonPolicyError) as caught:
             require_horizon_activatable(context)
         assert caught.value.code == "HORIZON_POLICY_NOT_ACTIVE"
