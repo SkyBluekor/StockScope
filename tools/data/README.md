@@ -6,6 +6,8 @@
 
 - `backend/runtime/holdings/holdings.db`: 사용자 핵심 상태. 기본 백업 대상.
 - `backend/runtime/market_history/market_history.db`: 재수집 가능한 시장 데이터. `--include-market`일 때만 백업.
+- `backend/runtime/simulation/simulation.db`: 존재하면 기본 백업에 자동 포함. Validation/Feedback/Prospective 평가 상태를 보존.
+- `backend/runtime/tracking/recommendation_tracking.db`: 존재하면 기본 백업에 자동 포함. Tracking 원본 owner는 그대로 유지.
 - `.env`, KRX/KIS/DART 키, 인증 정보: 백업 대상 아님.
 - `market_history.db`와 `holdings.db`는 cleanup 과정에서 자동 삭제하지 않습니다.
 
@@ -53,7 +55,7 @@ Doctor는 SQLite를 read-only mode로 열며 네트워크 요청, 다운로드, 
 .\.venv\Scripts\python.exe .\tools\data\backup_runtime.py
 ```
 
-기본 백업은 `holdings.db`와 `backup_manifest.json`만 포함합니다.
+기본 백업은 `holdings.db`를 필수로 포함하고, 존재하는 `simulation.db`와 `recommendation_tracking.db`를 자동 포함합니다. Market Store는 재수집 가능 데이터이므로 기본 제외입니다.
 
 ## 전체 데이터 백업
 
@@ -63,9 +65,21 @@ Doctor는 SQLite를 read-only mode로 열며 네트워크 요청, 다운로드, 
 
 Market Store까지 SQLite backup API로 snapshot합니다.
 
+## P2-S2 실제 추천 평가 저장소 준비
+
+P2-S2는 새 Scanner 실행부터 실제 추천 표본을 사후 선택 전에 보존합니다. 과거 Scanner 실행을 prospective 표본으로 소급 생성하지 않습니다.
+
+명시적으로 한 번 실행합니다.
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\migrate_prospective_vnp2s2.py
+```
+
+조회/API import는 이 migration을 자동 실행하지 않습니다. Migration 전에도 기존 Scanner는 정상 동작하며 prospective 수집만 `NOT_READY` 상태입니다.
+
 ## 복원
 
-기본 복원은 Holdings DB만 복원합니다.
+기본 복원은 Holdings DB만 복원합니다. Simulation/Tracking은 백업에 포함되어 있어도 명시적으로 복원합니다.
 
 ```powershell
 .\.venv\Scripts\python.exe .\tools\data\restore_runtime.py .\backups\StockScope_...
@@ -75,6 +89,12 @@ Market Store까지 포함된 백업이라면 명시적으로:
 
 ```powershell
 .\.venv\Scripts\python.exe .\tools\data\restore_runtime.py .\backups\StockScope_... --restore-market
+```
+
+Simulation/Tracking 상태까지 복원할 때는 필요한 owner를 명시합니다.
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\restore_runtime.py .\backups\StockScope_... --restore-simulation --restore-tracking
 ```
 
 복원은 manifest/hash/integrity/FK/domain 검사를 먼저 수행합니다. 기존 DB가 있으면 `*.pre_restore_*.bak` snapshot을 만든 뒤 교체합니다. StockScope 서버가 DB를 사용 중이면 복원을 거부합니다.
