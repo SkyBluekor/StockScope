@@ -14,6 +14,7 @@ import {
 type Props = {
   stockId: string;
   positions: HoldingPosition[];
+  sourceKey: string;
   onPlanChanged?: () => Promise<void> | void;
 };
 
@@ -134,6 +135,7 @@ function optionStateText(state: string) {
 export default function HoldingDecisionPanel({
   stockId,
   positions,
+  sourceKey,
   onPlanChanged,
 }: Props) {
   const [data, setData] = useState<HoldingDecisionSupportResponse | null>(null);
@@ -172,7 +174,7 @@ export default function HoldingDecisionPanel({
     setMigrationRequired(false);
     void load(controller.signal);
     return () => controller.abort();
-  }, [stockId]);
+  }, [stockId, sourceKey]);
 
   const byPosition = useMemo(() => {
     const map = new Map<string, HoldingDecisionRecord | null>();
