@@ -6,7 +6,10 @@ from pathlib import Path
 
 from app.data_contract.builder import build_stock_data_contract
 from app.data_contract.reader import ReadOnlyDataStateReader
+from app.backtest.scanner import StockScannerService
 from app.holdings import HoldingsCatalog
+from app.holdings.analysis import ANALYSIS_ENGINE_VERSION
+from app.backtest.production_policy import production_policy_cache_token
 from app.holdings.input_proof import verify_current_analysis_input
 from app.input_identity import read_input_generation_token
 from tools.data.migrate_input_identity_vnp1s1 import migrate_input_identity
@@ -63,9 +66,9 @@ def _holdings_db(path: Path) -> tuple[Path, str, str]:
         stop_price="90",
         target1_price="110",
         target2_price="120",
-        scanner_version="0.21.3.7",
-        analysis_engine_version="HOLD_SINGLE_STOCK_V1",
-        policy_version="PROD_EXIT_V1",
+        scanner_version=StockScannerService.VERSION,
+        analysis_engine_version=ANALYSIS_ENGINE_VERSION,
+        policy_version=production_policy_cache_token(),
         source_versions={},
         snapshot={},
         computed_at="2026-09-25T00:00:00+00:00",
@@ -148,9 +151,9 @@ def test_explicit_mismatch_proof_does_not_modify_revision(tmp_path: Path, monkey
         target2_price=120.0,
         condition_state={},
         readiness_state={},
-        scanner_version="0.21.3.7",
-        analysis_engine_version="HOLD_SINGLE_STOCK_V1",
-        policy_version="PROD_EXIT_V1",
+        scanner_version=StockScannerService.VERSION,
+        analysis_engine_version=ANALYSIS_ENGINE_VERSION,
+        policy_version=production_policy_cache_token(),
         input_fingerprint="different-current-fingerprint",
         source_versions={"input_generation": generation},
         snapshot={},
