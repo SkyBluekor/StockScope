@@ -36,6 +36,7 @@ from app.simulation.validation_catalog import HistoricalValidationCatalog
 from tools.data.backup_runtime import create_backup
 from tools.data.migrate_horizon_context_vnp1s2 import migrate_horizon_context
 from tools.data.restore_runtime import restore_backup
+from tools.data.common import DataToolError
 
 
 T0 = "2026-09-27T00:00:00+00:00"
@@ -164,6 +165,35 @@ def test_horizon_migration_is_repeatable_and_does_not_backfill(tmp_path: Path) -
         assert conn.execute(
             f"SELECT COUNT(*) FROM {EXECUTION_HORIZON_TABLE}"
         ).fetchone()[0] == 0
+
+
+def test_horizon_migration_rolls_back_new_objects_on_incompatible_schema(
+    tmp_path: Path,
+) -> None:
+    holdings, _, _ = _holdings_fixture(tmp_path / "holdings.db")
+    validation, _ = _simulation_fixture(tmp_path / "simulation.db")
+
+    with sqlite3.connect(holdings.db_path) as conn:
+        conn.execute(
+            "CREATE TABLE analysis_horizon_context(revision_id TEXT PRIMARY KEY)"
+        )
+
+    with pytest.raises(DataToolError):
+        migrate_horizon_context(
+            holdings_db=holdings.db_path,
+            simulation_db=validation.db_path,
+        )
+
+    with sqlite3.connect(holdings.db_path) as conn:
+        names = {
+            str(row[0])
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        assert "analysis_horizon_context" in names
+        assert "horizon_context_meta" not in names
+        assert "management_plan_horizon_context" not in names
 
 
 def test_horizon_version_mismatch_and_persisted_context_are_not_rewritten(
