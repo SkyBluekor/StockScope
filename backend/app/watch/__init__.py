@@ -1,3 +1,9 @@
+from .coordinator import (
+    WatchCoordinator,
+    WatchDemand,
+    WatchReconcileResult,
+    load_active_plan_watch_demands,
+)
 from .models import (
     WatchDirection,
     WatchObservation,
@@ -26,6 +32,9 @@ from .storage import (
 
 __all__ = [
     "WATCH_POLICY_CONTRACT_VERSION",
+    "WatchCoordinator",
+    "WatchDemand",
+    "WatchReconcileResult",
     "WATCH_PRODUCTION_POLICY_VERSION",
     "WATCH_SCHEMA_VERSION",
     "WATCH_TABLES",
@@ -41,6 +50,7 @@ __all__ = [
     "WatchTransition",
     "WatchTransitionEvent",
     "advance_watch_rule",
+    "load_active_plan_watch_demands",
     "production_watch_policy",
     "require_watch_schema",
     "watch_schema_available",
