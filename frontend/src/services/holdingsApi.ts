@@ -488,6 +488,83 @@ export type HoldingPerformanceResponse = {
   warnings: string[];
 };
 
+export type HoldingRecoveryThesisState = "INTACT" | "WEAKENED" | "BROKEN" | "UNKNOWN";
+export type HoldingRecoveryAction = "UNDECIDED" | "HOLD" | "REDUCE" | "EXIT" | "ADD_REVIEW";
+
+export type HoldingRecoveryReview = {
+  review_id: string;
+  position_id: string;
+  status: "OPEN" | "CLOSED";
+  opened_at: string;
+  opened_note: string | null;
+  closed_at: string | null;
+  close_reason: string | null;
+  close_note: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type HoldingRecoveryAssessment = {
+  assessment_id: string;
+  review_id: string;
+  position_id: string;
+  thesis_state: HoldingRecoveryThesisState;
+  review_action: HoldingRecoveryAction;
+  reason_note: string | null;
+  source_analysis_revision_id: string | null;
+  source_active_plan_id: string | null;
+  source_active_plan_version: number | null;
+  source_position_status: string;
+  source_position_quantity: string;
+  source_position_average_price: string | null;
+  valuation_market_date: string | null;
+  valuation_price: string | null;
+  unrealized_pnl: string | null;
+  unrealized_return_pct: string | null;
+  linked_decision_id: string | null;
+  limitations: string[];
+  evidence: Record<string, unknown>;
+  created_at: string;
+};
+
+export type HoldingRecoveryContext = {
+  position_id: string;
+  open_review: HoldingRecoveryReview | null;
+  reviews: HoldingRecoveryReview[];
+  current: {
+    evidence_version: string;
+    stock: { stock_id: string; market: string; ticker: string; name: string };
+    position: {
+      position_id: string;
+      status: string;
+      quantity: string;
+      average_price: string | null;
+      cost_basis: string | null;
+      opened_at: string;
+      closed_at: string | null;
+    };
+    valuation: HoldingPerformanceValuation;
+    performance: HoldingPositionPerformance | null;
+    analysis: {
+      market_date: string;
+      revision_id: string;
+      revision_no: number;
+      strategy_key: string | null;
+      action_state: string | null;
+      risk_state: string | null;
+      reference_price: string | null;
+      stop_price: string | null;
+      target1_price: string | null;
+      target2_price: string | null;
+      policy_version: string | null;
+      computed_at: string;
+    } | null;
+    active_plan: HoldingManagementPlan | null;
+    latest_decision: HoldingDecisionRecord | null;
+    limitations: string[];
+  };
+};
+
 export type LiveHoldingPerformanceResponse = {
   stock_id: string;
   market: string;
@@ -702,6 +779,51 @@ export function applyHoldingDecisionPlan(
 }> {
   return requestJson(
     `/api/holdings/decisions/${encodeURIComponent(decisionId)}/apply-plan`,
+    jsonInit("POST", input),
+  );
+}
+
+export function getHoldingRecovery(
+  positionId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<HoldingRecoveryContext> {
+  return requestJson<HoldingRecoveryContext>(
+    `/api/holdings/positions/${encodeURIComponent(positionId)}/recovery`,
+    { signal: options.signal },
+  );
+}
+
+export function startHoldingRecovery(
+  positionId: string,
+  note?: string | null,
+): Promise<{ created: boolean; review: HoldingRecoveryReview; context: HoldingRecoveryContext }> {
+  return requestJson(
+    `/api/holdings/positions/${encodeURIComponent(positionId)}/recovery/start`,
+    jsonInit("POST", { note: note ?? null }),
+  );
+}
+
+export function recordHoldingRecoveryAssessment(
+  reviewId: string,
+  input: {
+    thesis_state: HoldingRecoveryThesisState;
+    review_action: HoldingRecoveryAction;
+    reason_note?: string | null;
+    linked_decision_id?: string | null;
+  },
+): Promise<{ assessment: HoldingRecoveryAssessment; context: HoldingRecoveryContext }> {
+  return requestJson(
+    `/api/holdings/recovery/${encodeURIComponent(reviewId)}/assessments`,
+    jsonInit("POST", input),
+  );
+}
+
+export function closeHoldingRecovery(
+  reviewId: string,
+  input: { reason?: string | null; note?: string | null } = {},
+): Promise<{ closed: boolean; review: HoldingRecoveryReview; context: HoldingRecoveryContext }> {
+  return requestJson(
+    `/api/holdings/recovery/${encodeURIComponent(reviewId)}/close`,
     jsonInit("POST", input),
   );
 }
