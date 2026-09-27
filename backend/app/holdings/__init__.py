@@ -85,3 +85,25 @@ __all__.extend(
         "StoredAnalysisResult",
     ]
 )
+
+from .recovery import (
+    RECOVERY_SCHEMA_VERSION,
+    REVIEW_ACTIONS,
+    THESIS_STATES,
+    HoldingRecoveryAssessment,
+    HoldingRecoveryReview,
+    HoldingRecoveryService,
+    HoldingsRecoveryError,
+)
+
+__all__.extend(
+    [
+        "RECOVERY_SCHEMA_VERSION",
+        "REVIEW_ACTIONS",
+        "THESIS_STATES",
+        "HoldingRecoveryAssessment",
+        "HoldingRecoveryReview",
+        "HoldingRecoveryService",
+        "HoldingsRecoveryError",
+    ]
+)
