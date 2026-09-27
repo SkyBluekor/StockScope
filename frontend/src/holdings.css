@@ -3042,3 +3042,42 @@ button.holdings-direct-value:hover { border-bottom-color: var(--accent-primary);
     flex-direction: column;
   }
 }
+
+
+.holding-recovery-history {
+  margin-top: 7px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.holding-recovery-history-row {
+  display: grid;
+  grid-template-columns: 90px minmax(150px, .8fr) minmax(150px, .8fr) minmax(0, 1.4fr);
+  gap: 10px 14px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  align-items: baseline;
+}
+
+.holding-recovery-history-row > span {
+  color: var(--text-muted);
+  font-size: var(--font-badge);
+}
+
+.holding-recovery-history-row > strong {
+  color: var(--text-primary);
+  font-size: var(--font-meta);
+}
+
+.holding-recovery-history-row > p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-meta);
+  line-height: 1.45;
+}
+
+@media (max-width: 760px) {
+  .holding-recovery-history-row {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+}
