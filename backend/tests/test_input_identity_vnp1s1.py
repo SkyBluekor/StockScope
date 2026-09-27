@@ -9,7 +9,7 @@ from app.data_contract.reader import ReadOnlyDataStateReader
 from app.backtest.scanner import StockScannerService
 from app.holdings import HoldingsCatalog
 from app.holdings.analysis import ANALYSIS_ENGINE_VERSION
-from app.backtest.production_policy import production_policy_cache_token
+from app.backtest.production_exit_policy import production_policy_cache_token
 from app.holdings.input_proof import verify_current_analysis_input
 from app.input_identity import read_input_generation_token
 from tools.data.backup_runtime import create_backup
