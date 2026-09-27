@@ -105,6 +105,20 @@ Recovery review/assessment는 `holdings.db`의 사용자 기록이므로 DATA.1 
 
 조회/API import는 이 migration을 자동 실행하지 않습니다. Migration 전에는 Recovery service가 `HOLD_RECOVERY_MIGRATION_REQUIRED`로 중단되고 기존 Holdings/Decision/Plan 기능은 그대로 유지됩니다.
 
+## VN-P4-S1 Watch 저장소 준비
+
+P4-S1은 기존 KIS quote 전달과 P3-S1의 ACTIVE Plan 위에 서버 Watch 설정·규칙·episode·coverage gap·앱 내 알림 outbox를 추가합니다. 기존 Position/원장/Plan을 수정하지 않으며, migration 시 과거 ACTIVE Plan을 Watch로 자동 backfill하거나 과거 알림을 생성하지 않습니다.
+
+명시적으로 한 번 실행합니다.
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\migrate_watch_vnp4s1.py
+```
+
+현재 운영 confirmation·재무장·freshness 수치는 검증 전이므로 기본 production Watch policy는 `OPERATING_THRESHOLDS_UNAPPROVED`로 비활성입니다. Migration은 저장 구조만 준비하며 실시간 감시를 임의로 활성화하지 않습니다. 테스트 fixture에서만 명시적인 수치를 주입해 lifecycle을 검증합니다.
+
+Watch 상태는 `holdings.db`에 저장되어 기본 Holdings backup에 포함됩니다. Backup manifest의 `extensions.holding_watch_v1`은 schema/policy contract와 여섯 Watch 테이블의 복원 가능성을 기록합니다. Quote tick 자체는 backup하지 않으며 restore 뒤 서버는 새 live coverage를 다시 확보해야 합니다. 서버 종료 구간의 가격이나 confirmation을 소급 재구성하지 않습니다.
+
 ## VN-P3-S1-UAT.4 Stop-Loosening fixture
 
 이 도구는 브라우저 UAT에서 stop-loosening 보호를 확인하기 위한 **일회성 테스트 도구**입니다. 제품 분석 경로가 아니며, 기존 Analysis/Plan/Position을 수정하지 않고 현재 Analysis를 복제한 새 Revision 하나만 append합니다.
