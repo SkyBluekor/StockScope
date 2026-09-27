@@ -4,6 +4,7 @@ import json
 import os
 import sqlite3
 from contextlib import contextmanager
+from datetime import date
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -122,6 +123,30 @@ class FeedbackEvidenceAdapter:
 
     def resolve(self, selector: EvidenceSelector) -> list[FeedbackEvidence]:
         normalized = selector.normalized()
+        parsed_dates: dict[str, date] = {}
+        for field_name, raw in (
+            ("date_from", normalized.date_from),
+            ("date_to", normalized.date_to),
+        ):
+            if raw is None:
+                continue
+            try:
+                parsed_dates[field_name] = date.fromisoformat(raw)
+            except ValueError as exc:
+                raise FeedbackAdapterError(
+                    "FEEDBACK_SELECTOR_DATE_INVALID",
+                    f"{field_name}은 YYYY-MM-DD 형식이어야 합니다.",
+                ) from exc
+        if (
+            "date_from" in parsed_dates
+            and "date_to" in parsed_dates
+            and parsed_dates["date_from"] > parsed_dates["date_to"]
+        ):
+            raise FeedbackAdapterError(
+                "FEEDBACK_SELECTOR_RANGE_INVALID",
+                "평가 시작일은 종료일보다 늦을 수 없습니다.",
+            )
+
         if normalized.source_type == "TRACKING":
             return self._tracking(normalized)
         if normalized.source_type == "VALIDATION":
