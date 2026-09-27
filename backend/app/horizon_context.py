@@ -106,15 +106,33 @@ def set_analysis_horizon(
     if context.is_legacy:
         return
     _require_table(conn, ANALYSIS_HORIZON_TABLE)
+    existing = conn.execute(
+        f"""
+        SELECT intent,policy_version,support_status
+        FROM {ANALYSIS_HORIZON_TABLE}
+        WHERE revision_id=?
+        LIMIT 1
+        """,
+        (revision_id,),
+    ).fetchone()
+    values = (
+        context.intent,
+        context.policy_version,
+        context.support_status,
+    )
+    if existing is not None:
+        stored = (str(existing[0]), str(existing[1]), str(existing[2]))
+        if stored != values:
+            raise HorizonStorageError(
+                "HORIZON_CONTEXT_IMMUTABLE",
+                "기존 Analysis Revision의 Horizon 문맥은 변경할 수 없습니다. 새 Revision을 생성하세요.",
+            )
+        return
     conn.execute(
         f"""
         INSERT INTO {ANALYSIS_HORIZON_TABLE}(
             revision_id,intent,policy_version,support_status,created_at
         ) VALUES(?,?,?,?,?)
-        ON CONFLICT(revision_id) DO UPDATE SET
-            intent=excluded.intent,
-            policy_version=excluded.policy_version,
-            support_status=excluded.support_status
         """,
         (
             revision_id,
@@ -183,15 +201,33 @@ def set_validation_horizon(
     if context.is_legacy:
         return
     _require_table(conn, VALIDATION_HORIZON_TABLE)
+    existing = conn.execute(
+        f"""
+        SELECT intent,policy_version,support_status
+        FROM {VALIDATION_HORIZON_TABLE}
+        WHERE validation_id=?
+        LIMIT 1
+        """,
+        (validation_id,),
+    ).fetchone()
+    values = (
+        context.intent,
+        context.policy_version,
+        context.support_status,
+    )
+    if existing is not None:
+        stored = (str(existing[0]), str(existing[1]), str(existing[2]))
+        if stored != values:
+            raise HorizonStorageError(
+                "HORIZON_CONTEXT_IMMUTABLE",
+                "기존 Validation Run의 Horizon 문맥은 변경할 수 없습니다. 새 Run을 생성하세요.",
+            )
+        return
     conn.execute(
         f"""
         INSERT INTO {VALIDATION_HORIZON_TABLE}(
             validation_id,intent,policy_version,support_status,created_at
         ) VALUES(?,?,?,?,?)
-        ON CONFLICT(validation_id) DO UPDATE SET
-            intent=excluded.intent,
-            policy_version=excluded.policy_version,
-            support_status=excluded.support_status
         """,
         (
             validation_id,
