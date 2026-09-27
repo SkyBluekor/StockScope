@@ -36,6 +36,10 @@ from app.holdings.chart_prepare import (
     HoldingsChartPrepareService,
 )
 from app.holdings.decision_context import HoldingDecisionContextService
+from app.holdings.decision_support import (
+    HoldingDecisionSupportService,
+    HoldingsDecisionSupportError,
+)
 from app.holdings.freshness import (
     HoldingsMarketFreshnessError,
     HoldingsMarketFreshnessService,
@@ -89,6 +93,25 @@ class WatchStateRequest(BaseModel):
 class ApplyManagementPlanRequest(BaseModel):
     analysis_revision_id: str = Field(min_length=1)
     change_reason: str | None = Field(default=None, max_length=500)
+
+
+class HoldingDecisionResolutionRequest(BaseModel):
+    resolution_type: Literal[
+        "KEEP_CURRENT_PLAN",
+        "ACKNOWLEDGED",
+        "DEFERRED",
+    ]
+    selected_action: Literal[
+        "HOLD","ADD","REDUCE","TAKE_PROFIT","STOP","EXIT"
+    ] | None = None
+    note: str | None = Field(default=None, max_length=500)
+
+
+class HoldingDecisionApplyPlanRequest(BaseModel):
+    selected_action: Literal[
+        "HOLD","ADD","REDUCE","TAKE_PROFIT","STOP","EXIT"
+    ] | None = None
+    note: str | None = Field(default=None, max_length=500)
 
 
 class ManualBuyRequest(BaseModel):
@@ -191,6 +214,15 @@ def _decision_service(catalog: HoldingsCatalog) -> HoldingDecisionContextService
     return HoldingDecisionContextService(catalog)
 
 
+def _decision_support_service(
+    catalog: HoldingsCatalog,
+) -> HoldingDecisionSupportService:
+    return HoldingDecisionSupportService(
+        catalog,
+        market_store_db=_market_store_path(),
+    )
+
+
 def _freshness_service() -> HoldingsMarketFreshnessService:
     settings = get_settings()
     return HoldingsMarketFreshnessService(
@@ -235,6 +267,15 @@ def _http_status(code: str) -> int:
         "HOLD_PLAN_STOP_LOOSENING_BLOCKED",
         "HOLD_PLAN_CONFLICT",
         "HOLD_PLAN_HORIZON_NOT_ACTIVE",
+        "HOLD_DECISION_MIGRATION_REQUIRED",
+        "HOLD_DECISION_SCHEMA_UNSUPPORTED",
+        "HOLD_DECISION_CONFLICT",
+        "HOLD_DECISION_STALE",
+        "HOLD_DECISION_ACTION_BLOCKED",
+        "HOLD_DECISION_PLAN_UNAVAILABLE",
+        "HOLD_DECISION_PLAN_UNCHANGED",
+        "HOLD_DECISION_RESOLUTION_CONFLICT",
+        "HOLD_DECISION_APPLY_CONFLICT",
         "HOLD_KIS_SYNC_CONFIGURATION_ERROR",
         "HOLD_KIS_SYNC_ACCOUNT_CONFLICT",
         "HOLD_KIS_SYNC_INCOMPLETE",
@@ -545,6 +586,90 @@ def stock_detail(stock_id: str) -> dict[str, Any]:
         stock = catalog.get_monitored_stock(stock_id)
         return _stock_payload(catalog, stock, include_latest_event=True)
     except HoldingsCatalogError as error:
+        _raise_holdings_error(error)
+
+
+@router.get("/stocks/{stock_id}/decision-support")
+def stock_decision_support(stock_id: str) -> dict[str, Any]:
+    catalog = _catalog()
+    try:
+        return _decision_support_service(catalog).latest_for_stock(stock_id)
+    except (
+        HoldingsCatalogError,
+        HoldingsDecisionSupportError,
+    ) as error:
+        _raise_holdings_error(error)
+
+
+@router.post("/positions/{position_id}/decisions/evaluate")
+def evaluate_holding_decision(position_id: str) -> dict[str, Any]:
+    catalog = _catalog()
+    try:
+        return {
+            "decision": _decision_support_service(catalog).evaluate(position_id)
+        }
+    except (
+        HoldingsCatalogError,
+        HoldingsDecisionSupportError,
+    ) as error:
+        _raise_holdings_error(error)
+
+
+@router.get("/decisions/{decision_id}")
+def holding_decision_detail(decision_id: str) -> dict[str, Any]:
+    catalog = _catalog()
+    try:
+        return {
+            "decision": _decision_support_service(catalog).get_decision(
+                decision_id
+            )
+        }
+    except (
+        HoldingsCatalogError,
+        HoldingsDecisionSupportError,
+    ) as error:
+        _raise_holdings_error(error)
+
+
+@router.post("/decisions/{decision_id}/resolve")
+def resolve_holding_decision(
+    decision_id: str,
+    request: HoldingDecisionResolutionRequest,
+) -> dict[str, Any]:
+    catalog = _catalog()
+    try:
+        return {
+            "decision": _decision_support_service(catalog).resolve(
+                decision_id=decision_id,
+                resolution_type=request.resolution_type,
+                selected_action=request.selected_action,
+                note=request.note,
+            )
+        }
+    except (
+        HoldingsCatalogError,
+        HoldingsDecisionSupportError,
+    ) as error:
+        _raise_holdings_error(error)
+
+
+@router.post("/decisions/{decision_id}/apply-plan")
+def apply_holding_decision_plan(
+    decision_id: str,
+    request: HoldingDecisionApplyPlanRequest,
+) -> dict[str, Any]:
+    catalog = _catalog()
+    try:
+        return _decision_support_service(catalog).apply_plan(
+            decision_id=decision_id,
+            selected_action=request.selected_action,
+            note=request.note,
+        )
+    except (
+        HoldingsCatalogError,
+        HoldingsDecisionSupportError,
+        HoldingsManagementError,
+    ) as error:
         _raise_holdings_error(error)
 
 
