@@ -220,7 +220,8 @@ class WatchCoordinator:
             grouped.setdefault(key, []).append(demand)
 
         desired = set(grouped)
-        for key in tuple(self._consumer_tasks):
+        known = set(self._demands_by_key) | set(self._consumer_tasks)
+        for key in tuple(known):
             if key not in desired:
                 await self._remove_key(key)
 
