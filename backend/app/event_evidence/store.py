@@ -645,7 +645,7 @@ class EventEvidenceStore:
                     {
                         "sequence": int(item["sequence"]),
                         "source_ref_id": str(item["source_ref_id"]),
-                        "source_ref_hash": str(item["linked_source_ref_hash"]),
+                        "source_ref_hash": str(item["source_ref_hash"]),
                     }
                     for item in sources
                 ],
@@ -722,7 +722,7 @@ class EventEvidenceStore:
             linked = [
                 {
                     "source_ref_id": str(item["source_ref_id"]),
-                    "source_ref_hash": str(item["source_ref_hash"]),
+                    "source_ref_hash": str(item["linked_source_ref_hash"]),
                 }
                 for item in link_rows
             ]
