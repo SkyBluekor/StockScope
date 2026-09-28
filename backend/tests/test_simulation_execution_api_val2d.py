@@ -13,6 +13,21 @@ from app.horizon import resolve_horizon_context
 from app.simulation.execution_catalog import HistoricalExecutionCatalog
 from app.simulation.execution_service import HistoricalExecutionValidationService
 from app.simulation.validation_catalog import HistoricalValidationCatalog
+from app.strategy.production_selection_policy import SelectionPolicyPin
+
+
+TEST_PIN = SelectionPolicyPin(
+    policy_id="TEST-POLICY",
+    policy_hash="d" * 64,
+    policy_contract_version="VN_P5_S1_SELECTION_POLICY_V1",
+    policy_source="TEST",
+    fallback_used=False,
+    fallback_reason=None,
+    operating_strategies=((None, "pullback", None),),
+    scanner_baseline_id="0.21.3.8",
+    production_fingerprint=None,
+    production_policy_fingerprint=None,
+)
 from tools.data.migrate_horizon_context_vnp1s2 import migrate_simulation_horizon
 
 
@@ -32,6 +47,7 @@ def _completed_validation(
         resolved_start_date="2026-01-02",
         resolved_end_date="2026-01-02",
         trading_day_count=1,
+        selection_policy_pin=TEST_PIN.to_dict(),
     )
     candidates = []
     if candidate_count >= 1:
@@ -231,6 +247,7 @@ def test_execution_api_reports_pending_horizon_as_conflict(
         resolved_end_date="2026-01-02",
         trading_day_count=1,
         horizon_context=resolve_horizon_context("MEDIUM"),
+        selection_policy_pin=TEST_PIN.to_dict(),
     )
     with source.connect() as conn:
         conn.execute(
