@@ -280,7 +280,6 @@ class StrategyChangeService:
         *,
         affected_horizons: list[str] | tuple[str, ...],
         affected_regimes: list[str] | tuple[str, ...],
-        approval_protocol: StrategyApprovalProtocol | None = None,
     ) -> dict[str, Any]:
         horizons = sorted(
             {str(item).strip().upper() for item in affected_horizons}
@@ -694,6 +693,7 @@ class StrategyChangeService:
         evidence_artifact_ids: list[str] | tuple[str, ...],
         affected_horizons: list[str] | tuple[str, ...],
         affected_regimes: list[str] | tuple[str, ...],
+        approval_protocol: StrategyApprovalProtocol | None = None,
     ) -> dict[str, Any]:
         request_id = client_request_id.strip()
         if not request_id:
