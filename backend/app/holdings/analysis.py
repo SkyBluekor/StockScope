@@ -14,7 +14,8 @@ from app.core.config import PROJECT_ROOT
 from app.input_identity import read_input_generation_token
 
 
-ANALYSIS_ENGINE_VERSION = "HOLD_SINGLE_STOCK_V1"
+ANALYSIS_ENGINE_VERSION = "HOLD_SINGLE_STOCK_V2"
+INPUT_FINGERPRINT_CONTRACT_VERSION = "HOLD_INPUT_FINGERPRINT_V2"
 DEFAULT_MARKET_STORE_DB = (
     PROJECT_ROOT / "backend" / "runtime" / "market_history" / "market_history.db"
 )
@@ -250,6 +251,7 @@ class SingleStockAnalysisAdapter:
             clean_market,
             clean_ticker,
         )
+        selection_policy_pin = self.scanner.selection_registry.pin_active_selection_policy()
 
         if not self.store.has_data_day(clean_market, end_dd, "stock"):
             raise HoldingsAnalysisError(
@@ -311,6 +313,7 @@ class SingleStockAnalysisAdapter:
                 stock_rows=stock_rows,
                 index_rows=index_rows,
                 sector_input=None,
+                selection_policy_pin=selection_policy_pin,
             )
             if quick is None:
                 raise HoldingsAnalysisError(
@@ -345,12 +348,23 @@ class SingleStockAnalysisAdapter:
         candidate_state = str(candidate.get("candidate_state") or "EXCLUDED")
         action_state = _decision_state(candidate_state)
         policy_version = production_policy_cache_token()
+        strategy_version_id = (
+            str(candidate.get("strategy_version_id"))
+            if candidate.get("strategy_version_id") not in (None, "")
+            else None
+        )
+        strategy_definition_hash = (
+            str(candidate.get("strategy_definition_hash"))
+            if candidate.get("strategy_definition_hash") not in (None, "")
+            else None
+        )
 
         # Hash only rows that can influence the shared current snapshot:
         # stock: technical 60, RS 61, long SMA up to 120; index: RS up to 61.
         fingerprint_stock_rows = stock_rows[-120:]
         fingerprint_index_rows = index_rows[-61:]
         fingerprint_payload = {
+            "fingerprint_contract_version": INPUT_FINGERPRINT_CONTRACT_VERSION,
             "market": clean_market,
             "ticker": clean_ticker,
             "market_date": target_date.isoformat(),
@@ -358,6 +372,16 @@ class SingleStockAnalysisAdapter:
             "scanner_data_integrity_version": self.scanner.DATA_INTEGRITY_VERSION,
             "analysis_engine_version": ANALYSIS_ENGINE_VERSION,
             "policy_version": policy_version,
+            "selection_policy": {
+                "policy_id": selection_policy_pin.policy_id,
+                "policy_hash": selection_policy_pin.policy_hash,
+                "policy_contract_version": selection_policy_pin.policy_contract_version,
+            },
+            "selected_strategy": {
+                "strategy_key": strategy_key,
+                "strategy_version_id": strategy_version_id,
+                "strategy_definition_hash": strategy_definition_hash,
+            },
             "stock_rows": fingerprint_stock_rows,
             "index_rows": fingerprint_index_rows,
             "sector_input": None,
@@ -382,7 +406,14 @@ class SingleStockAnalysisAdapter:
             "scanner_version": self.scanner.VERSION,
             "scanner_data_integrity_version": self.scanner.DATA_INTEGRITY_VERSION,
             "analysis_engine_version": ANALYSIS_ENGINE_VERSION,
+            "fingerprint_contract_version": INPUT_FINGERPRINT_CONTRACT_VERSION,
             "policy_version": policy_version,
+            "selection_policy": selection_policy_pin.metadata(),
+            "selected_strategy": {
+                "strategy_key": strategy_key,
+                "strategy_version_id": strategy_version_id,
+                "strategy_definition_hash": strategy_definition_hash,
+            },
             "market_store": "market_history.db",
             "price_basis": "CONFIRMED_EOD",
             "fast_history_calendar_days": self.scanner.FAST_HISTORY_CALENDAR_DAYS,
@@ -397,6 +428,9 @@ class SingleStockAnalysisAdapter:
 
         snapshot = {
             "strategy_key": strategy_key,
+            "strategy_version_id": strategy_version_id,
+            "strategy_definition_hash": strategy_definition_hash,
+            "strategy_selection_policy": selection_policy_pin.metadata(),
             "action_state": action_state,
             "scanner_action": candidate.get("action"),
             "candidate_state": candidate_state,
