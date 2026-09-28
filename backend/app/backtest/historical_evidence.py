@@ -229,6 +229,8 @@ def evaluate_historical_evidence(
         "label": label,
         "summary": summary,
         "verified": True,
+        "unavailable_reason": None,
+        "preparation_available": False,
         "sample_sufficient": sample_count >= MIN_SAMPLE_FOR_EVALUATION,
         "minimum_sample": MIN_SAMPLE_FOR_EVALUATION,
         "validation_years": EVIDENCE_YEARS,
@@ -251,12 +253,21 @@ def evaluate_historical_evidence(
     }
 
 
-def unavailable_historical_evidence(*, validation_start: date, validation_end: date, reasons: list[str]) -> dict[str, Any]:
+def unavailable_historical_evidence(
+    *,
+    validation_start: date,
+    validation_end: date,
+    reasons: list[str],
+    unavailable_reason: str = "MISSING_HISTORY",
+    preparation_available: bool = True,
+) -> dict[str, Any]:
     return {
         "status": "DATA_UNAVAILABLE",
         "label": "3년 검증 데이터 부족",
         "summary": "저장된 Market Store만으로 3년 검증을 완료할 수 없습니다. Scanner가 대량 KRX 다운로드를 자동으로 시작하지는 않습니다.",
         "verified": False,
+        "unavailable_reason": unavailable_reason,
+        "preparation_available": preparation_available,
         "sample_sufficient": False,
         "minimum_sample": MIN_SAMPLE_FOR_EVALUATION,
         "validation_years": EVIDENCE_YEARS,
@@ -316,6 +327,8 @@ def build_historical_evidence(
             validation_start=validation_start,
             validation_end=validation_end,
             reasons=[f"지원하지 않는 전략: {strategy}"],
+            unavailable_reason="UNSUPPORTED_STRATEGY",
+            preparation_available=False,
         )
 
     rows = sorted(stock_rows, key=lambda row: _date_value(row))

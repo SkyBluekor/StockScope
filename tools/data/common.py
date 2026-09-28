@@ -18,6 +18,8 @@ BACKEND_ROOT = PROJECT_ROOT / "backend"
 FRONTEND_ROOT = PROJECT_ROOT / "frontend"
 DEFAULT_HOLDINGS_DB = BACKEND_ROOT / "runtime" / "holdings" / "holdings.db"
 DEFAULT_MARKET_DB = BACKEND_ROOT / "runtime" / "market_history" / "market_history.db"
+DEFAULT_SIMULATION_DB = BACKEND_ROOT / "runtime" / "simulation" / "simulation.db"
+DEFAULT_TRACKING_DB = BACKEND_ROOT / "runtime" / "tracking" / "recommendation_tracking.db"
 DEFAULT_BACKUP_ROOT = PROJECT_ROOT / "backups"
 BACKUP_FORMAT_VERSION = 1
 
@@ -43,11 +45,74 @@ REQUIRED_HOLDINGS_TABLES = frozenset(
     }
 )
 
+HOLDING_DECISION_SCHEMA_VERSION = "VN_P3_S1_HOLDING_DECISION_STORAGE_V1"
+HOLDING_DECISION_TABLES = frozenset(
+    {
+        "holding_decision_schema_meta",
+        "holding_decision_record",
+        "holding_decision_resolution",
+        "holding_management_plan_context_vnp3s1",
+    }
+)
+
+HOLDING_RECOVERY_SCHEMA_VERSION = "VN_P3_S2_RECOVERY_REVIEW_V1"
+HOLDING_RECOVERY_TABLES = frozenset(
+    {
+        "holding_recovery_schema_meta",
+        "holding_recovery_review",
+        "holding_recovery_assessment",
+    }
+)
+
+HOLDING_WATCH_SCHEMA_VERSION = "VN_P4_S1_WATCH_V1"
+HOLDING_WATCH_POLICY_CONTRACT_VERSION = "VN_P4_S1_WATCH_POLICY_CONTRACT_V1"
+HOLDING_WATCH_TABLES = frozenset(
+    {
+        "holding_watch_schema_meta",
+        "holding_watch_setting",
+        "holding_watch_rule",
+        "holding_watch_episode",
+        "holding_watch_coverage_gap",
+        "holding_watch_notification_outbox",
+    }
+)
+
 REQUIRED_MARKET_TABLES = frozenset(
     {
         "stock_daily",
         "main_index_daily",
         "day_status",
+    }
+)
+
+SIMULATION_TABLE_FAMILIES = (
+    frozenset({"simulation_schema_meta", "simulation_portfolio"}),
+    frozenset({"historical_validation_run", "historical_validation_day"}),
+    frozenset({"historical_execution_run"}),
+    frozenset({
+        "feedback_schema_meta",
+        "feedback_source_ref",
+        "feedback_cohort",
+        "feedback_cohort_source",
+        "feedback_cohort_member",
+        "feedback_report",
+    }),
+    frozenset({
+        "prospective_schema_meta",
+        "prospective_capture_run",
+        "prospective_recommendation_sample",
+        "prospective_evaluation_protocol",
+        "prospective_evaluation_run",
+        "prospective_evaluation_unit",
+        "prospective_evaluation_report",
+    }),
+)
+
+REQUIRED_TRACKING_TABLES = frozenset(
+    {
+        "tracking_meta",
+        "tracked_recommendation",
+        "recommendation_performance",
     }
 )
 
@@ -70,6 +135,16 @@ def holdings_db_path() -> Path:
 def market_db_path() -> Path:
     raw = (os.getenv("STOCKSCOPE_MARKET_STORE_DB") or "").strip()
     return Path(raw).expanduser() if raw else DEFAULT_MARKET_DB
+
+
+def simulation_db_path() -> Path:
+    raw = (os.getenv("STOCKSCOPE_SIM_DB") or "").strip()
+    return Path(raw).expanduser() if raw else DEFAULT_SIMULATION_DB
+
+
+def tracking_db_path() -> Path:
+    raw = (os.getenv("STOCKSCOPE_TRACKING_DB") or "").strip()
+    return Path(raw).expanduser() if raw else DEFAULT_TRACKING_DB
 
 
 def utc_stamp() -> str:
@@ -157,6 +232,188 @@ def validate_holdings_db(path: Path) -> dict[str, Any]:
         _integrity_check(conn)
         _foreign_key_check(conn)
 
+        decision_present = HOLDING_DECISION_TABLES & names
+        if decision_present and not HOLDING_DECISION_TABLES.issubset(names):
+            missing_decision = sorted(HOLDING_DECISION_TABLES - names)
+            raise DataToolError(
+                "Holdings decision store가 부분 migration 상태입니다: "
+                + ", ".join(missing_decision)
+            )
+        if HOLDING_DECISION_TABLES.issubset(names):
+            row = conn.execute(
+                """
+                SELECT value FROM holding_decision_schema_meta
+                WHERE key='schema_version'
+                """
+            ).fetchone()
+            if row is None or str(row[0]) != HOLDING_DECISION_SCHEMA_VERSION:
+                raise DataToolError(
+                    "Holdings decision schema version이 지원 범위와 다릅니다."
+                )
+
+            invalid_apply = conn.execute(
+                """
+                SELECT id FROM holding_decision_resolution
+                WHERE resolution_type='APPLY_NEW_PLAN'
+                  AND resulting_plan_id IS NULL
+                LIMIT 5
+                """
+            ).fetchall()
+            if invalid_apply:
+                raise DataToolError(
+                    "APPLY_NEW_PLAN resolution에 resulting plan 참조가 없습니다."
+                )
+
+            unsupported_numeric_context = conn.execute(
+                """
+                SELECT plan_id
+                FROM holding_management_plan_context_vnp3s1
+                WHERE review_cycle_trading_days IS NOT NULL
+                   OR time_stop_trading_days IS NOT NULL
+                LIMIT 5
+                """
+            ).fetchall()
+            if unsupported_numeric_context:
+                raise DataToolError(
+                    "P3-S1 plan context에 승인되지 않은 Review Cycle/Time Stop 수치가 있습니다."
+                )
+
+        recovery_present = HOLDING_RECOVERY_TABLES & names
+        if recovery_present and not HOLDING_RECOVERY_TABLES.issubset(names):
+            missing_recovery = sorted(HOLDING_RECOVERY_TABLES - names)
+            raise DataToolError(
+                "Holdings Recovery store가 부분 migration 상태입니다: "
+                + ", ".join(missing_recovery)
+            )
+        if HOLDING_RECOVERY_TABLES.issubset(names):
+            row = conn.execute(
+                """
+                SELECT value FROM holding_recovery_schema_meta
+                WHERE key='schema_version'
+                """
+            ).fetchone()
+            if row is None or str(row[0]) != HOLDING_RECOVERY_SCHEMA_VERSION:
+                raise DataToolError(
+                    "Holdings Recovery schema version이 지원 범위와 다릅니다."
+                )
+
+            duplicate_recovery = conn.execute(
+                """
+                SELECT position_id,COUNT(*) AS n
+                FROM holding_recovery_review
+                WHERE status='OPEN'
+                GROUP BY position_id
+                HAVING COUNT(*) > 1
+                LIMIT 5
+                """
+            ).fetchall()
+            if duplicate_recovery:
+                raise DataToolError(
+                    "한 Position에 OPEN Recovery review가 2개 이상 있습니다."
+                )
+
+            mismatched_assessment = conn.execute(
+                """
+                SELECT a.id
+                FROM holding_recovery_assessment a
+                JOIN holding_recovery_review r ON r.id=a.review_id
+                WHERE a.position_id<>r.position_id
+                LIMIT 5
+                """
+            ).fetchall()
+            if mismatched_assessment:
+                raise DataToolError(
+                    "Recovery assessment의 Position이 review와 일치하지 않습니다."
+                )
+
+        watch_present = HOLDING_WATCH_TABLES & names
+        if watch_present and not HOLDING_WATCH_TABLES.issubset(names):
+            missing_watch = sorted(HOLDING_WATCH_TABLES - names)
+            raise DataToolError(
+                "Holdings Watch store가 부분 migration 상태입니다: "
+                + ", ".join(missing_watch)
+            )
+        if HOLDING_WATCH_TABLES.issubset(names):
+            schema_row = conn.execute(
+                """
+                SELECT value FROM holding_watch_schema_meta
+                WHERE key='schema_version'
+                """
+            ).fetchone()
+            if (
+                schema_row is None
+                or str(schema_row[0]) != HOLDING_WATCH_SCHEMA_VERSION
+            ):
+                raise DataToolError(
+                    "Holdings Watch schema version이 지원 범위와 다릅니다."
+                )
+
+            contract_row = conn.execute(
+                """
+                SELECT value FROM holding_watch_schema_meta
+                WHERE key='policy_contract_version'
+                """
+            ).fetchone()
+            if (
+                contract_row is None
+                or str(contract_row[0]) != HOLDING_WATCH_POLICY_CONTRACT_VERSION
+            ):
+                raise DataToolError(
+                    "Holdings Watch policy contract version이 지원 범위와 다릅니다."
+                )
+
+            duplicate_watch = conn.execute(
+                """
+                SELECT position_id,COUNT(*) AS n
+                FROM holding_watch_setting
+                WHERE status='ACTIVE'
+                GROUP BY position_id
+                HAVING COUNT(*) > 1
+                LIMIT 5
+                """
+            ).fetchall()
+            if duplicate_watch:
+                raise DataToolError(
+                    "한 Position에 ACTIVE Watch setting이 2개 이상 있습니다."
+                )
+
+            stale_active_watch = conn.execute(
+                """
+                SELECT ws.id
+                FROM holding_watch_setting ws
+                JOIN holding_position p ON p.id=ws.position_id
+                JOIN holding_management_plan mp ON mp.id=ws.plan_id
+                WHERE ws.status='ACTIVE'
+                  AND (
+                    p.status<>'OPEN'
+                    OR mp.status<>'ACTIVE'
+                    OR mp.position_id<>ws.position_id
+                    OR mp.plan_version<>ws.plan_version
+                  )
+                LIMIT 5
+                """
+            ).fetchall()
+            if stale_active_watch:
+                raise DataToolError(
+                    "ACTIVE Watch setting이 현재 OPEN Position/ACTIVE Plan과 일치하지 않습니다."
+                )
+
+            mismatched_watch_rule = conn.execute(
+                """
+                SELECT wr.id
+                FROM holding_watch_rule wr
+                JOIN holding_watch_setting ws ON ws.id=wr.setting_id
+                WHERE wr.position_id<>ws.position_id
+                   OR wr.plan_id<>ws.plan_id
+                   OR wr.plan_version<>ws.plan_version
+                LIMIT 5
+                """
+            ).fetchall()
+            if mismatched_watch_rule:
+                raise DataToolError(
+                    "Watch rule의 Position/Plan snapshot이 setting과 일치하지 않습니다."
+                )
+
         duplicate_open = conn.execute(
             """
             SELECT monitored_stock_id,position_account_id,COUNT(*) AS n
@@ -220,11 +477,58 @@ def validate_holdings_db(path: Path) -> dict[str, Any]:
             name: int(conn.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0])
             for name in HOLDINGS_COUNT_TABLES
         }
+        decision_counts = None
+        if HOLDING_DECISION_TABLES.issubset(names):
+            decision_counts = {
+                table: int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+                for table in sorted(HOLDING_DECISION_TABLES)
+                if table != "holding_decision_schema_meta"
+            }
+        recovery_counts = None
+        if HOLDING_RECOVERY_TABLES.issubset(names):
+            recovery_counts = {
+                table: int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+                for table in sorted(HOLDING_RECOVERY_TABLES)
+                if table != "holding_recovery_schema_meta"
+            }
+        watch_counts = None
+        if HOLDING_WATCH_TABLES.issubset(names):
+            watch_counts = {
+                table: int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+                for table in sorted(HOLDING_WATCH_TABLES)
+                if table != "holding_watch_schema_meta"
+            }
         return {
             "integrity": "ok",
             "foreign_keys": "ok",
             "domain": "ok",
             "counts": counts,
+            "holding_decision": {
+                "present": decision_counts is not None,
+                "schema_version": (
+                    HOLDING_DECISION_SCHEMA_VERSION if decision_counts is not None else None
+                ),
+                "counts": decision_counts,
+            },
+            "holding_recovery": {
+                "present": recovery_counts is not None,
+                "schema_version": (
+                    HOLDING_RECOVERY_SCHEMA_VERSION if recovery_counts is not None else None
+                ),
+                "counts": recovery_counts,
+            },
+            "holding_watch": {
+                "present": watch_counts is not None,
+                "schema_version": (
+                    HOLDING_WATCH_SCHEMA_VERSION if watch_counts is not None else None
+                ),
+                "policy_contract_version": (
+                    HOLDING_WATCH_POLICY_CONTRACT_VERSION
+                    if watch_counts is not None
+                    else None
+                ),
+                "counts": watch_counts,
+            },
         }
 
 
@@ -241,6 +545,74 @@ def validate_market_db(path: Path) -> dict[str, Any]:
             "integrity": "ok",
             "tables": sorted(REQUIRED_MARKET_TABLES),
         }
+
+
+def validate_runtime_domain_db(
+    path: Path,
+    *,
+    required_tables: frozenset[str],
+    label: str,
+) -> dict[str, Any]:
+    """Validate an existing domain DB without creating or migrating it."""
+    with sqlite_readonly(path) as conn:
+        names = table_names(conn)
+        missing = sorted(required_tables - names)
+        if missing:
+            raise DataToolError(
+                f"{label} 필수 테이블이 없습니다: " + ", ".join(missing)
+            )
+        _integrity_check(conn)
+        _foreign_key_check(conn)
+        counts = {
+            name: int(conn.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0])
+            for name in sorted(required_tables)
+        }
+        return {
+            "integrity": "ok",
+            "foreign_keys": "ok",
+            "tables": sorted(required_tables),
+            "counts": counts,
+        }
+
+
+def validate_simulation_db(path: Path) -> dict[str, Any]:
+    """Accept the currently populated Simulation domain families without creating them.
+
+    Legacy SIM.1~3 and Historical/Execution Validation share one DB file but are
+    independently initialized. A valid validation-only DB must therefore not be
+    rejected merely because the legacy portfolio family was never created.
+    """
+    with sqlite_readonly(path) as conn:
+        names = table_names(conn)
+        present_families = [
+            family for family in SIMULATION_TABLE_FAMILIES
+            if family.issubset(names)
+        ]
+        if not present_families:
+            raise DataToolError(
+                "Simulation DB에서 지원되는 기존 도메인 테이블을 찾을 수 없습니다."
+            )
+        _integrity_check(conn)
+        _foreign_key_check(conn)
+        recognized = sorted(set().union(*present_families))
+        counts = {
+            name: int(conn.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0])
+            for name in recognized
+        }
+        return {
+            "integrity": "ok",
+            "foreign_keys": "ok",
+            "tables": recognized,
+            "counts": counts,
+        }
+
+
+def validate_tracking_db(path: Path) -> dict[str, Any]:
+    return validate_runtime_domain_db(
+        path,
+        required_tables=REQUIRED_TRACKING_TABLES,
+        label="Tracking DB",
+    )
 
 
 def sqlite_snapshot(source: Path, target: Path) -> None:

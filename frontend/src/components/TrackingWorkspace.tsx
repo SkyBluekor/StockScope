@@ -2,9 +2,15 @@ import { useState } from "react";
 import RecommendationTracking from "./RecommendationTracking";
 import SimulationWorkspace from "./SimulationWorkspace";
 import "../tracking.css";
+import { readTrackingMode, writeTrackingMode, type TrackingMode } from "../services/uiSession";
 
 export default function TrackingWorkspace() {
-  const [mode, setMode] = useState<"tracking" | "historical">("tracking");
+  const [mode, setModeState] = useState<TrackingMode>(readTrackingMode);
+
+  function setMode(next: TrackingMode) {
+    setModeState(next);
+    writeTrackingMode(next);
+  }
   return (
     <div className="tracking-shell">
       <div className="tracking-mode-switch" role="tablist" aria-label="종목 성과 추적과 전략 성과 검증">

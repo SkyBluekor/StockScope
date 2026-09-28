@@ -167,7 +167,7 @@ def test_verify_detects_new_imported_dependency(tmp_path: Path) -> None:
 
 def test_freeze_refuses_overwrite(tmp_path: Path) -> None:
     root = _project(tmp_path)
-    target = root / "backend/runtime/baseline/scanner-production-baseline_0.21.3.7.json"
+    target = root / "backend/runtime/baseline/scanner-production-baseline_0.21.3.8.json"
     freeze_baseline(root, target)
     with pytest.raises(BaselineError, match="BASELINE_ALREADY_EXISTS"):
         freeze_baseline(root, target)
@@ -176,7 +176,7 @@ def test_freeze_refuses_overwrite(tmp_path: Path) -> None:
 def test_wrong_scanner_version_is_blocked(tmp_path: Path) -> None:
     root = _project(tmp_path)
     scanner = root / "backend/app/backtest/scanner.py"
-    scanner.write_text(scanner.read_text(encoding="utf-8").replace(EXPECTED_SCANNER_VERSION, "0.21.3.8"), encoding="utf-8")
+    scanner.write_text(scanner.read_text(encoding="utf-8").replace(EXPECTED_SCANNER_VERSION, "0.21.3.9"), encoding="utf-8")
     with pytest.raises(BaselineError, match="SCANNER_VERSION_MISMATCH"):
         build_manifest(root, created_at="x", git=_fake_git())
 
@@ -187,3 +187,20 @@ def test_static_config_change_is_detected(tmp_path: Path) -> None:
     cfg = root / "backend/app/settings/scanner.json"
     cfg.write_text('{"mode":"changed"}\n', encoding="utf-8")
     assert verify_baseline(root, manifest).valid is False
+
+
+
+def test_verify_treats_crlf_and_lf_checkouts_as_same_source(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    manifest = build_manifest(root, created_at="x", git=_fake_git())
+
+    for row in manifest["production_files"]:
+        path = root / row["path"]
+        raw = path.read_bytes()
+        if b"\n" in raw:
+            path.write_bytes(raw.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
+
+    result = verify_baseline(root, manifest)
+    assert result.valid is True
+    assert result.changed_files == ()
+    assert result.production_fingerprint_current == manifest["production_fingerprint"]

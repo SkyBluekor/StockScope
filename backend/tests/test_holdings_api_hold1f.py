@@ -251,6 +251,25 @@ def test_analysis_read_timeline_revision_and_refresh_contract(client, monkeypatc
     assert refreshed.json()["created_revision"] is False
 
 
+def test_analysis_refresh_blocks_unapproved_horizon_before_analysis(client, monkeypatch):
+    stock_id = client.post(
+        "/api/holdings/watch",
+        json={"market": "KOSPI", "ticker": "005930", "name": "삼성전자"},
+    ).json()["stock"]["stock_id"]
+
+    def should_not_run(*args, **kwargs):
+        raise AssertionError("analysis service must not run for an unapproved Horizon")
+
+    monkeypatch.setattr(holdings_api, "_history_service", should_not_run)
+
+    response = client.post(
+        f"/api/holdings/stocks/{stock_id}/analysis/refresh?horizon_intent=MEDIUM"
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "HORIZON_POLICY_NOT_ACTIVE"
+
+
 def test_combined_timeline_and_kis_sync_endpoint_delegate_only(client, monkeypatch):
     stock_id = client.post(
         "/api/holdings/watch",

@@ -18,7 +18,11 @@ class StrategyEngine:
     score is a suitability score, NOT a probability of future profit.
     """
 
-    def evaluate_all(self, data: StrategyInput) -> list[StrategyEvaluation]:
+    def evaluate_all(
+        self,
+        data: StrategyInput,
+        allowed_strategies: set[StrategyName] | frozenset[StrategyName] | None = None,
+    ) -> list[StrategyEvaluation]:
         risk_blockers = self._risk_gate(data)
         evaluations = [
             self._trend_following(data),
@@ -32,6 +36,15 @@ class StrategyEngine:
             self._ma20_rebound(data),
             self._trend_recovery(data),
         ]
+        if allowed_strategies is not None:
+            allowed = {
+                item
+                for item in allowed_strategies
+                if item != StrategyName.NO_TRADE
+            }
+            evaluations = [
+                item for item in evaluations if item.strategy in allowed
+            ]
         evaluations.sort(key=lambda item: item.score or 0, reverse=True)
 
         if risk_blockers:

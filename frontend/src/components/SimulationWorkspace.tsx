@@ -7,25 +7,34 @@ import {
   getValidationDraft,
   getValidationOutcomeBreakdown,
   getValidationOutcomeSummary,
+  getHorizonPolicy,
   listLegacyValidations,
   listValidationDrafts,
   previewValidationPeriod,
   refreshValidationOutcomes,
   runValidationReplay,
+  verifyValidationInputIdentity,
   SimulationApiError,
   type HistoricalValidationDraft,
   type HistoricalValidationOutcomeBreakdown,
   type HistoricalValidationOutcomeSummary,
+  type HorizonPolicyCatalog,
+  type ValidationInputIdentitySummary,
   type ValidationOutcomeBreakdownRow,
   type LegacyValidation,
   type ValidationPeriodPreview,
 } from "../services/simulationApi";
+import FeedbackPanel from "./FeedbackPanel";
+import ProspectiveEvaluationPanel from "./ProspectiveEvaluationPanel";
+import StrategyOperationsPanel from "./StrategyOperationsPanel";
+import {
+  getStrategyGovernanceOverview,
+  type StrategyGovernanceOverview,
+} from "../services/strategyGovernanceApi";
 import "../simulation.css";
 
 type Mode = "new" | "saved";
 type Preset = "6m" | "1y" | "2y" | "custom";
-
-const PRODUCTION_SCANNER_VERSION = "0.21.3.7";
 
 function dateText(value: string | null | undefined) { return value ? value.replace(/-/g, ".") : "-"; }
 function money(value: string | null | undefined) {
@@ -45,6 +54,24 @@ function statusLabel(value: string) {
   if (value === "CANCELLED") return "중지됨";
   return value;
 }
+function horizonLabel(intent: string) {
+  if (intent === "SHORT") return "단기";
+  if (intent === "MEDIUM") return "중기";
+  if (intent === "LONG") return "장기";
+  return "기간 의도 미지정";
+}
+function horizonStatusText(row: HistoricalValidationDraft) {
+  const context = row.horizon_context;
+  if (!context || context.intent === "LEGACY_UNSPECIFIED") return "기간 의도 미지정 · 기존 분석 기준";
+  if (context.support_status === "SUPPORTED") return `${horizonLabel(context.intent)} · 사용 가능`;
+  if (context.support_status === "EVALUATION_PENDING") return `${horizonLabel(context.intent)} · 정책 평가 중`;
+  return `${horizonLabel(context.intent)} · 미지원`;
+}
+function horizonRunnable(row: HistoricalValidationDraft) {
+  const status = row.horizon_context?.support_status;
+  return !status || status === "LEGACY_UNSPECIFIED" || status === "SUPPORTED";
+}
+
 function replayPercent(row: HistoricalValidationDraft) {
   if (row.trading_day_count <= 0) return 0;
   return Math.max(0, Math.min(100, Math.round((row.processed_day_count / row.trading_day_count) * 100)));
@@ -167,10 +194,16 @@ export default function SimulationWorkspace() {
   const [replayBusy, setReplayBusy] = useState(false);
   const [outcomeBusy, setOutcomeBusy] = useState(false);
   const [outcomeSummary, setOutcomeSummary] = useState<HistoricalValidationOutcomeSummary | null>(null);
+  const [inputIdentitySummary, setInputIdentitySummary] = useState<ValidationInputIdentitySummary | null>(null);
+  const [inputIdentityBusy, setInputIdentityBusy] = useState(false);
   const [outcomeBreakdown, setOutcomeBreakdown] = useState<HistoricalValidationOutcomeBreakdown | null>(null);
   const [expandedStrategyKey, setExpandedStrategyKey] = useState<string | null>(null);
   const [expandedDecisionKey, setExpandedDecisionKey] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [horizonPolicy, setHorizonPolicy] = useState<HorizonPolicyCatalog | null>(null);
+  const [governanceOverview, setGovernanceOverview] = useState<StrategyGovernanceOverview | null>(null);
+  const [governanceBusy, setGovernanceBusy] = useState(true);
+  const [governanceMessage, setGovernanceMessage] = useState<string | null>(null);
 
   function defaultName(nextPreset: Preset, nextMarket: "ALL" | "KOSPI" | "KOSDAQ", nextPreview?: ValidationPeriodPreview | null) {
     const market = nextMarket === "ALL" ? "전체시장" : nextMarket;
@@ -213,12 +246,38 @@ export default function SimulationWorkspace() {
     } finally { setSavedBusy(false); }
   }
 
-  useEffect(() => { void loadPreview("1y", "ALL", "", "", true); }, []);
+  useEffect(() => {
+    void loadPreview("1y", "ALL", "", "", true);
+    void getHorizonPolicy()
+      .then(setHorizonPolicy)
+      .catch(() => setHorizonPolicy(null));
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    setGovernanceBusy(true);
+    setGovernanceMessage(null);
+    void getStrategyGovernanceOverview()
+      .then((result) => {
+        if (!disposed) setGovernanceOverview(result);
+      })
+      .catch((error) => {
+        if (!disposed) {
+          setGovernanceOverview(null);
+          setGovernanceMessage(errorText(error));
+        }
+      })
+      .finally(() => {
+        if (!disposed) setGovernanceBusy(false);
+      });
+    return () => { disposed = true; };
+  }, []);
   useEffect(() => { if (mode === "saved") void loadSaved(); }, [mode]);
 
   useEffect(() => {
     setExpandedStrategyKey(null);
     setExpandedDecisionKey(null);
+    setInputIdentitySummary(null);
     if (mode !== "saved" || !selectedDraft || selectedDraft.status !== "COMPLETED") {
       setOutcomeSummary(null);
       setOutcomeBreakdown(null);
@@ -305,6 +364,26 @@ export default function SimulationWorkspace() {
     } catch (error) {
       setMessage(errorText(error));
     } finally { setBusy(false); }
+  }
+
+  async function verifyReplayInput(row: HistoricalValidationDraft) {
+    setInputIdentityBusy(true);
+    setMessage(null);
+    try {
+      const result = await verifyValidationInputIdentity(row.id);
+      setInputIdentitySummary(result);
+      if (result.status === "VALID") {
+        setMessage("저장된 Replay 입력이 현재 보존된 Market Store와 일치합니다.");
+      } else if (result.status === "INVALID") {
+        setMessage("저장 이후 관련 Market Store 입력 변경이 감지되었습니다.");
+      } else {
+        setMessage("일부 거래일은 입력 증명을 갖고 있지 않아 완전 검증할 수 없습니다.");
+      }
+    } catch (error) {
+      setMessage(errorText(error));
+    } finally {
+      setInputIdentityBusy(false);
+    }
   }
 
   async function runReplay(row: HistoricalValidationDraft) {
@@ -401,6 +480,8 @@ export default function SimulationWorkspace() {
         {preview && <div className="sim-date-block"><span>Market Store 최신</span><strong>{dateText(preview.market_data_latest_date)}</strong><small>{preview.partial_end_month ? "현재 월은 확보된 거래일까지" : "확정 데이터 기준"}</small></div>}
       </header>
 
+      <StrategyOperationsPanel overview={governanceOverview} loading={governanceBusy} error={governanceMessage} />
+
       <div className="sim-validation-tabs" role="tablist" aria-label="전략 성과 검증">
         <button className={mode === "new" ? "active" : ""} onClick={startNew}>새 검증</button>
         <button className={mode === "saved" ? "active" : ""} onClick={() => setMode("saved")}>저장된 검증 <small>{drafts.length + legacy.length || ""}</small></button>
@@ -419,7 +500,7 @@ export default function SimulationWorkspace() {
 
           <div className="sim-validation-overview">
             <div><span>검증 대상</span><strong>Production Scanner</strong></div>
-            <div><span>Scanner 버전</span><strong>{PRODUCTION_SCANNER_VERSION}</strong></div>
+            <div><span>Scanner 버전</span><strong>{governanceOverview?.scanner_baseline.scanner_version ?? (governanceBusy ? "확인 중…" : "확인 필요")}</strong></div>
             <div><span>시장</span><strong>{marketLabel(marketScope)}</strong></div>
             <div><span>상태</span><strong>설정 저장 전</strong></div>
           </div>
@@ -428,6 +509,21 @@ export default function SimulationWorkspace() {
             <span>시장 범위</span>
             <div className="sim-inline-options">{(["ALL", "KOSPI", "KOSDAQ"] as const).map((value) => <button key={value} className={marketScope === value ? "active" : ""} onClick={() => chooseMarket(value)}>{value === "ALL" ? "전체" : value}</button>)}</div>
           </div>
+
+          <div className="sim-validation-row">
+            <span>투자 기간 의도</span>
+            <div className="sim-inline-options">
+              <button className="active" disabled>기존 기준</button>
+              {(horizonPolicy?.options ?? []).map((option) => (
+                <button key={option.intent} disabled title="정확한 기간·재검토·Time Stop 정책 승인 전에는 실행하지 않습니다.">
+                  {horizonLabel(option.intent)} · 평가 중
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="sim-validation-hint">
+            5·10·20거래일 성과 관찰은 투자 기간 의도가 아닙니다. 단기·중기·장기의 정확한 숫자 정책은 아직 승인되지 않아 기존 기준만 실행할 수 있습니다.
+          </p>
 
           <div className="sim-validation-row">
             <span>검증 기간</span>
@@ -465,7 +561,8 @@ export default function SimulationWorkspace() {
 
           {selectedDraft && <div className="sim-saved-detail sim-replay-detail">
             <div className="sim-saved-detail-head"><div><span>저장된 검증</span><h3>{selectedDraft.name}</h3></div><strong>{replayStatusLabel(selectedDraft)}</strong></div>
-            <dl><dt>검증 대상</dt><dd>Production Scanner {selectedDraft.scanner_version}</dd><dt>시장</dt><dd>{marketLabel(selectedDraft.market_scope)}</dd><dt>실제 기간</dt><dd>{dateText(selectedDraft.resolved_start_date)} ~ {dateText(selectedDraft.resolved_end_date)}</dd><dt>생성일</dt><dd>{dateText(selectedDraft.created_at.slice(0, 10))}</dd></dl>
+            <dl><dt>검증 대상</dt><dd>Production Scanner {selectedDraft.scanner_version}</dd><dt>시장</dt><dd>{marketLabel(selectedDraft.market_scope)}</dd><dt>투자 기간 의도</dt><dd>{horizonStatusText(selectedDraft)}</dd><dt>실제 기간</dt><dd>{dateText(selectedDraft.resolved_start_date)} ~ {dateText(selectedDraft.resolved_end_date)}</dd><dt>생성일</dt><dd>{dateText(selectedDraft.created_at.slice(0, 10))}</dd></dl>
+            {!horizonRunnable(selectedDraft) && <p className="sim-replay-note">이 검증은 Horizon 문맥은 저장되어 있지만 수치 정책이 아직 승인되지 않아 재생을 시작할 수 없습니다.</p>}
 
             <div className="sim-replay-status">
               <div className="sim-replay-progress-head"><span>과거 Scanner 재생</span><strong>{selectedDraft.processed_day_count ?? 0} / {selectedDraft.trading_day_count} 거래일 · {replayPercent(selectedDraft)}%</strong></div>
@@ -480,10 +577,20 @@ export default function SimulationWorkspace() {
               {selectedDraft.status === "RUNNING" && selectedDraft.runtime_active === false && <p className="sim-replay-note">이전 실행 프로세스가 종료되었습니다. 완료된 날짜는 보존되어 있으며 이어서 실행할 수 있습니다.</p>}
               {selectedDraft.status === "CANCELLED" && <p className="sim-replay-note">완료된 날짜까지 저장되었습니다. 이어 실행하면 다음 미완료 거래일부터 계속합니다.</p>}
               {selectedDraft.status === "COMPLETED" && <p className="sim-replay-note">모든 대상 거래일의 당시 Scanner 판단을 저장했습니다. 아래 성과 평가는 추천 당일을 제외하고 D+1부터 최대 20거래일까지 실제 확정 일봉을 관측합니다.</p>}
+              {selectedDraft.status === "COMPLETED" && <div className="sim-replay-note">
+                <button className="sim-secondary" disabled={inputIdentityBusy} onClick={() => void verifyReplayInput(selectedDraft)}>
+                  {inputIdentityBusy ? "입력 근거 확인 중…" : "Replay 입력 근거 확인"}
+                </button>
+                {inputIdentitySummary && <span>
+                  입력 증명 {inputIdentitySummary.status} · 유효 {inputIdentitySummary.counts.valid}/{inputIdentitySummary.counts.completed}일
+                  {inputIdentitySummary.counts.changed > 0 ? ` · 변경 ${inputIdentitySummary.counts.changed}일` : ""}
+                  {inputIdentitySummary.counts.unverified > 0 ? ` · 미증명 ${inputIdentitySummary.counts.unverified}일` : ""}
+                </span>}
+              </div>}
 
               <div className="sim-replay-actions">
-                {selectedDraft.status === "DRAFT" && <button className="sim-primary" disabled={replayBusy} onClick={() => void runReplay(selectedDraft)}>{replayBusy ? "시작 중…" : "과거 Scanner 재생 시작"}</button>}
-                {(selectedDraft.status === "FAILED" || selectedDraft.status === "CANCELLED" || (selectedDraft.status === "RUNNING" && selectedDraft.runtime_active === false)) && <button className="sim-primary" disabled={replayBusy} onClick={() => void runReplay(selectedDraft)}>{replayBusy ? "시작 중…" : "이어 실행"}</button>}
+                {selectedDraft.status === "DRAFT" && <button className="sim-primary" disabled={replayBusy || !horizonRunnable(selectedDraft)} onClick={() => void runReplay(selectedDraft)}>{replayBusy ? "시작 중…" : "과거 Scanner 재생 시작"}</button>}
+                {(selectedDraft.status === "FAILED" || selectedDraft.status === "CANCELLED" || (selectedDraft.status === "RUNNING" && selectedDraft.runtime_active === false)) && <button className="sim-primary" disabled={replayBusy || !horizonRunnable(selectedDraft)} onClick={() => void runReplay(selectedDraft)}>{replayBusy ? "시작 중…" : "이어 실행"}</button>}
                 {selectedDraft.status === "RUNNING" && selectedDraft.runtime_active !== false && <><span className="sim-replay-running">재생 중…</span><button className="sim-secondary" disabled={replayBusy || selectedDraft.cancel_requested} onClick={() => void cancelReplay(selectedDraft)}>{selectedDraft.cancel_requested ? "중지 요청됨" : replayBusy ? "처리 중…" : "중지"}</button></>}
               </div>
             </div>
@@ -693,6 +800,14 @@ export default function SimulationWorkspace() {
               </>}
             </div>}
           </div>}
+
+          <ProspectiveEvaluationPanel />
+
+          <details className="sim-advanced-feedback">
+            <summary>상세 평가 근거 · 고급</summary>
+            <p>원본 ID, cohort, 계산 기준을 직접 확인해야 할 때만 사용합니다.</p>
+            <FeedbackPanel selectedValidationId={selectedDraft?.status === "COMPLETED" ? selectedDraft.id : null} />
+          </details>
 
           <div className="sim-saved-group sim-legacy-group">
             <div className="sim-saved-group-head"><strong>이전 수동 Simulation</strong><span>{legacy.length}개</span></div>

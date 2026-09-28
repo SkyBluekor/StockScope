@@ -161,6 +161,35 @@ export function getSimulationQuote(portfolioId: string, stockCode: string, marke
 }
 
 
+export type HorizonContext = {
+  intent: "SHORT" | "MEDIUM" | "LONG" | "LEGACY_UNSPECIFIED" | string;
+  policy_version: string | null;
+  support_status: "SUPPORTED" | "EVALUATION_PENDING" | "UNSUPPORTED" | "LEGACY_UNSPECIFIED" | string;
+  reason_code: string | null;
+  review_cycle_trading_days: number | null;
+  time_stop_trading_days: number | null;
+  strategy_support: Record<string, string> | null;
+  required_inputs: string[] | null;
+  confirmation_policy: string | null;
+};
+
+export type HorizonPolicyCatalog = {
+  policy_version: string;
+  numeric_policy_approved: boolean;
+  legacy: HorizonContext;
+  options: HorizonContext[];
+  rules: {
+    tracking_5_10_20_are_observation_windows: boolean;
+    validation_20d_is_not_horizon_intent: boolean;
+    legacy_backfill_forbidden: boolean;
+  };
+};
+
+export function getHorizonPolicy() {
+  return apiJson<HorizonPolicyCatalog>("/api/simulation/horizon-policy");
+}
+
+
 export type ValidationPeriodPreview = {
   market_scope: "ALL" | "KOSPI" | "KOSDAQ" | string;
   preset: "6m" | "1y" | "2y" | null;
@@ -246,6 +275,7 @@ export type HistoricalValidationDraft = {
   error_message: string | null;
   cancel_requested: boolean;
   runtime_active?: boolean;
+  horizon_context: HorizonContext;
 };
 
 export type HistoricalValidationDay = {
@@ -268,6 +298,23 @@ export type HistoricalValidationDay = {
   error_message: string | null;
   started_at: string;
   completed_at: string | null;
+};
+
+export type ValidationInputIdentitySummary = {
+  validation_id: string;
+  status: "VALID" | "INVALID" | "UNVERIFIED" | string;
+  counts: {
+    completed: number;
+    valid: number;
+    changed: number;
+    source_mismatch: number;
+    unverified: number;
+  };
+  details: Array<{
+    trading_date: string;
+    status: string;
+    reason: string | null;
+  }>;
 };
 
 export type ValidationReplayResponse = {
@@ -323,6 +370,7 @@ export function createValidationDraft(input: {
   start_month?: string;
   end_month?: string;
   market_scope?: "ALL" | "KOSPI" | "KOSDAQ";
+  horizon_intent?: "SHORT" | "MEDIUM" | "LONG";
 }) {
   return apiJson<HistoricalValidationDraft>("/api/simulation/validations", json({
     ...input,
@@ -348,6 +396,13 @@ export function runValidationReplay(id: string) {
 export function cancelValidationReplay(id: string) {
   return apiJson<ValidationReplayResponse>(
     `/api/simulation/validations/${encodeURIComponent(id)}/cancel`,
+    { method: "POST" },
+  );
+}
+
+export function verifyValidationInputIdentity(id: string) {
+  return apiJson<ValidationInputIdentitySummary>(
+    `/api/simulation/validations/${encodeURIComponent(id)}/verify-input`,
     { method: "POST" },
   );
 }

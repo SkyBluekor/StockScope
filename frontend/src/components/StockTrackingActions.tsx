@@ -130,7 +130,7 @@ export default function StockTrackingActions({
       });
       setTracked(result.stock);
       setHeldOpen(false);
-      setMessage(`${name}을(를) ${parsedQuantity.toLocaleString("ko-KR")}주 보유 종목으로 등록했습니다.`);
+      setMessage(`${name}을(를) ${parsedQuantity.toLocaleString("ko-KR")}주 기존 보유 상태로 등록했습니다.`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "보유종목을 등록하지 못했습니다.");
     } finally {
@@ -164,7 +164,7 @@ export default function StockTrackingActions({
         )}
         {!loading && !tracked?.is_held && (
           <button type="button" className="stock-tracking-primary" onClick={() => setHeldOpen(true)} disabled={busy != null}>
-            보유종목으로 등록
+            기존 보유 등록
           </button>
         )}
         {!loading && tracked && (tracked.watch_enabled || tracked.is_held) && (
@@ -190,12 +190,12 @@ export default function StockTrackingActions({
             className="stock-tracking-dialog"
             role="dialog"
             aria-modal="true"
-            aria-label="보유종목 등록"
+            aria-label="기존 보유 등록"
             onMouseDown={(event) => event.stopPropagation()}
           >
             <header>
               <div>
-                <span>보유종목 등록</span>
+                <span>기존 보유 등록</span>
                 <h3>{name}</h3>
                 <p>{code} · {market}</p>
               </div>
@@ -252,7 +252,7 @@ export default function StockTrackingActions({
             <div className="stock-tracking-dialog-actions">
               <button type="button" className="stock-tracking-secondary" onClick={() => setHeldOpen(false)} disabled={busy != null}>취소</button>
               <button type="button" className="stock-tracking-primary" onClick={() => void addHeld()} disabled={busy != null}>
-                {busy === "held" ? "등록 중..." : "보유종목으로 등록"}
+                {busy === "held" ? "등록 중..." : "기존 보유 등록"}
               </button>
             </div>
           </div>

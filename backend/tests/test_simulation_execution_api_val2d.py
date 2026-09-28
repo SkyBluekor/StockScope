@@ -9,9 +9,11 @@ from fastapi import HTTPException
 from fastapi.routing import APIRoute
 
 import app.api.simulation as simulation_api
+from app.horizon import resolve_horizon_context
 from app.simulation.execution_catalog import HistoricalExecutionCatalog
 from app.simulation.execution_service import HistoricalExecutionValidationService
 from app.simulation.validation_catalog import HistoricalValidationCatalog
+from tools.data.migrate_horizon_context_vnp1s2 import migrate_simulation_horizon
 
 
 def _completed_validation(
@@ -206,6 +208,48 @@ def test_create_and_detail_freeze_policy_token_and_progress(
     detail = simulation_api.get_execution_validation(created["id"])
     assert detail["id"] == created["id"]
     assert detail["runtime_active"] is False
+
+
+def test_execution_api_reports_pending_horizon_as_conflict(
+    tmp_path: Path,
+    monkeypatch,
+):
+    db = tmp_path / "simulation.db"
+    source = HistoricalValidationCatalog(db)
+    source.initialize()
+    catalog = HistoricalExecutionCatalog(db)
+    catalog.initialize()
+    migrate_simulation_horizon(db)
+
+    draft = source.create_draft(
+        name="중기 정책 대기",
+        market_scope="KOSPI",
+        requested_period_type="custom",
+        requested_start_month="2026-01",
+        requested_end_month="2026-01",
+        resolved_start_date="2026-01-02",
+        resolved_end_date="2026-01-02",
+        trading_day_count=1,
+        horizon_context=resolve_horizon_context("MEDIUM"),
+    )
+    with source.connect() as conn:
+        conn.execute(
+            "UPDATE historical_validation_run SET status='COMPLETED' WHERE id=?",
+            (draft.id,),
+        )
+
+    monkeypatch.setattr(simulation_api, "_execution_catalog", lambda: catalog)
+
+    with pytest.raises(HTTPException) as caught:
+        simulation_api.create_execution_validation(
+            draft.id,
+            simulation_api.ExecutionValidationRequest(
+                market_data_cutoff_date="2026-02-03"
+            ),
+        )
+
+    assert caught.value.status_code == 409
+    assert caught.value.detail["code"] == "VAL2_HORIZON_NOT_ACTIVE"
 
 
 @pytest.mark.asyncio

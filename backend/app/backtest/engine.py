@@ -90,6 +90,7 @@ class BacktestEngine:
         index: int,
         config: BacktestConfig,
         sector_input: HistoricalSectorInput | None = None,
+        allowed_strategies: set[StrategyName] | frozenset[StrategyName] | None = None,
     ) -> dict[str, Any] | None:
         signal_row = stock_rows[index]
         signal_date = self._date(signal_row)
@@ -171,9 +172,29 @@ class BacktestEngine:
             relative_strength_context=relative,
             sector_relative_strength_context=sector_relative_context,
         )
-        evaluations = self.strategy.evaluate_all(strategy_input)
-        evaluation_map = {item.strategy.value: item for item in evaluations if item.strategy != StrategyName.NO_TRADE}
+        evaluations = (
+            self.strategy.evaluate_all(strategy_input)
+            if allowed_strategies is None
+            else self.strategy.evaluate_all(
+                strategy_input,
+                allowed_strategies=allowed_strategies,
+            )
+        )
+        evaluation_map = {
+            item.strategy.value: item
+            for item in evaluations
+            if item.strategy != StrategyName.NO_TRADE
+        }
         evaluation = self._pullback_evaluation(evaluations)
+        if evaluation is None and allowed_strategies is not None:
+            evaluation = next(
+                (
+                    item
+                    for item in evaluations
+                    if item.strategy != StrategyName.NO_TRADE
+                ),
+                None,
+            )
         if evaluation is None or evaluation.score is None:
             return None
         risk_gate_active, risk_gate_reasons = self._risk_gate_active(evaluations)

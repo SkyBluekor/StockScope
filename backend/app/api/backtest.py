@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
@@ -16,12 +18,33 @@ from app.backtest.exit_policy_validation_runner import (
 from app.backtest.risk_validation import RiskPolicyValidationService
 from app.backtest.scanner import StockScannerService
 from app.backtest.production_exit_policy import ProductionExitPolicyRegistry
-from app.core.config import get_settings
+from app.core.config import PROJECT_ROOT, get_settings
+from app.prospective import ProspectiveService
+from app.horizon import (
+    HorizonPolicyError,
+    require_horizon_activatable,
+    resolve_horizon_context,
+)
 from app.market.providers import KrxProvider
 from app.market.providers.base import ProviderError, ProviderNotConfigured
+from app.strategy.production_selection_policy import (
+    ProductionStrategySelectionRegistry,
+    SelectionPolicyPin,
+)
 
 router = APIRouter(prefix="/backtest", tags=["backtest"])
 
+
+def _prospective_service() -> ProspectiveService:
+    simulation_db = Path(
+        os.getenv("STOCKSCOPE_SIM_DB")
+        or PROJECT_ROOT / "backend" / "runtime" / "simulation" / "simulation.db"
+    )
+    market_db = Path(
+        (os.getenv("STOCKSCOPE_MARKET_STORE_DB") or os.getenv("STOCKSCOPE_MARKET_DB"))
+        or PROJECT_ROOT / "backend" / "runtime" / "market_history" / "market_history.db"
+    )
+    return ProspectiveService(simulation_db, market_db)
 
 
 
@@ -32,6 +55,16 @@ class ScannerRequest(BaseModel):
     candidate_limit: int = Field(default=5, ge=1, le=10)
     force_refresh: bool = False
     allow_large_sync: bool = False
+    horizon_intent: str | None = None
+
+
+class ScannerEvidencePrepareRequest(BaseModel):
+    market: Literal["KOSPI", "KOSDAQ"]
+    code: str = Field(..., min_length=1, max_length=12)
+    strategy: str = Field(default="", max_length=80)
+    data_end: str = Field(..., min_length=10, max_length=10)
+    market_scope: Literal["ALL", "KOSPI", "KOSDAQ"] = "ALL"
+    candidate_limit: int = Field(default=5, ge=1, le=10)
 
 
 class ScannerFreshnessRequest(BaseModel):
@@ -476,8 +509,14 @@ async def create_multi_strategy_backtest_job(payload: PullbackBacktestRequest) -
     return job.public()
 
 
-async def _run_scanner_job(job_id: str, payload: ScannerRequest, api_key: str | None) -> None:
+async def _run_scanner_job(
+    job_id: str,
+    payload: ScannerRequest,
+    api_key: str | None,
+    selection_policy_pin: SelectionPolicyPin,
+) -> None:
     service = StockScannerService(KrxProvider(api_key))
+    prospective = _prospective_service()
     progress_context: dict[str, object] = {
         "completed_stages": [],
         "reused_stages": [],
@@ -526,7 +565,14 @@ async def _run_scanner_job(job_id: str, payload: ScannerRequest, api_key: str | 
                         "freshness_failure": freshness,
                     },
                 })
-                backtest_jobs.fail(job_id, freshness.get("message") or "최신 확정 시세 준비에 실패했습니다.")
+                message = freshness.get("message") or "최신 확정 시세 준비에 실패했습니다."
+                backtest_jobs.fail(job_id, message)
+                prospective.try_mark_scanner_capture_terminal(
+                    source_job_id=job_id,
+                    status="FAILED",
+                    error_code="SCANNER_PREPARE_FAILED",
+                    error_message=message,
+                )
                 return
             update_progress({
                 "stage": "scanner_prepare_complete",
@@ -548,15 +594,50 @@ async def _run_scanner_job(job_id: str, payload: ScannerRequest, api_key: str | 
             force_refresh=payload.force_refresh,
             allow_large_sync=payload.allow_large_sync,
             progress=update_progress,
+            selection_policy_pin=selection_policy_pin,
         )
+        if isinstance(result, dict):
+            result["horizon_context"] = resolve_horizon_context(
+                payload.horizon_intent
+            ).to_dict()
+            result["prospective_capture"] = prospective.try_finalize_scanner_capture(
+                source_job_id=job_id,
+                payload=payload,
+                result=result,
+                selection_policy_pin=selection_policy_pin,
+            )
     except BacktestJobCancelled:
+        prospective.try_mark_scanner_capture_terminal(
+            source_job_id=job_id,
+            status="CANCELLED",
+            error_code="SCANNER_CANCELLED",
+            error_message="사용자가 Scanner 작업을 취소했습니다.",
+        )
         backtest_jobs.mark_cancelled(job_id)
     except asyncio.CancelledError:
+        prospective.try_mark_scanner_capture_terminal(
+            source_job_id=job_id,
+            status="CANCELLED",
+            error_code="SCANNER_CANCELLED",
+            error_message="Scanner task가 취소되었습니다.",
+        )
         backtest_jobs.mark_cancelled(job_id)
         raise
     except (ProviderNotConfigured, ProviderError, ValueError) as exc:
+        prospective.try_mark_scanner_capture_terminal(
+            source_job_id=job_id,
+            status="FAILED",
+            error_code="SCANNER_FAILED",
+            error_message=str(exc),
+        )
         backtest_jobs.fail(job_id, str(exc))
     except Exception as exc:  # pragma: no cover
+        prospective.try_mark_scanner_capture_terminal(
+            source_job_id=job_id,
+            status="FAILED",
+            error_code="SCANNER_UNEXPECTED_FAILURE",
+            error_message=str(exc),
+        )
         backtest_jobs.fail(job_id, f"종목 찾기 처리 중 예상하지 못한 오류가 발생했습니다: {exc}")
     else:
         backtest_jobs.complete(job_id, result)
@@ -597,11 +678,113 @@ async def scanner_data_integrity_audit(payload: ScannerDataIntegrityAuditRequest
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
-@router.post("/scanner/jobs", status_code=202)
-async def create_scanner_job(payload: ScannerRequest) -> dict:
+async def _run_scanner_evidence_job(
+    job_id: str,
+    payload: ScannerEvidencePrepareRequest,
+    api_key: str | None,
+    selection_policy_pin: SelectionPolicyPin,
+) -> None:
+    service = StockScannerService(KrxProvider(api_key))
+
+    def update_progress(progress_payload: dict) -> None:
+        if backtest_jobs.is_cancelled(job_id):
+            raise BacktestJobCancelled()
+        backtest_jobs.update_progress(job_id, progress_payload)
+
+    try:
+        preparation = await service.prepare_three_year_evidence_data(
+            market=payload.market,
+            code=payload.code,
+            data_end=payload.data_end,
+            progress=update_progress,
+        )
+        update_progress({
+            "stage": "evidence_reanalyze",
+            "message": "준비된 3년 데이터를 반영해 후보 분석을 다시 계산하는 중",
+            "current": 1,
+            "total": 1,
+            "details": {
+                "overall_percent": 100,
+                "market": payload.market,
+                "code": payload.code.strip().upper(),
+                "strategy": payload.strategy,
+                "validation_start": preparation.get("validation_start"),
+                "validation_end": preparation.get("validation_end"),
+                "evidence_data_ready": preparation.get("status") == "READY",
+                "evidence_readiness": preparation.get("readiness"),
+            },
+        })
+        result = await service.run(
+            market_scope=payload.market_scope,
+            as_of_date=payload.data_end,
+            candidate_limit=payload.candidate_limit,
+            force_refresh=True,
+            allow_large_sync=False,
+            progress=update_progress,
+            selection_policy_pin=selection_policy_pin,
+        )
+    except BacktestJobCancelled:
+        backtest_jobs.mark_cancelled(job_id)
+    except asyncio.CancelledError:
+        backtest_jobs.mark_cancelled(job_id)
+        raise
+    except (ProviderNotConfigured, ProviderError, ValueError) as exc:
+        backtest_jobs.fail(job_id, str(exc))
+    except Exception as exc:  # pragma: no cover
+        backtest_jobs.fail(job_id, f"3년 검증 데이터 준비 중 예상하지 못한 오류가 발생했습니다: {exc}")
+    else:
+        backtest_jobs.complete(job_id, result)
+
+
+@router.post("/scanner/evidence/jobs", status_code=202)
+async def create_scanner_evidence_job(payload: ScannerEvidencePrepareRequest) -> dict:
     settings = get_settings()
     job = backtest_jobs.create()
-    task = asyncio.create_task(_run_scanner_job(job.job_id, payload, settings.krx_api_key))
+    selection_policy_pin = (
+        ProductionStrategySelectionRegistry().pin_active_selection_policy()
+    )
+    task = asyncio.create_task(
+        _run_scanner_evidence_job(
+            job.job_id,
+            payload,
+            settings.krx_api_key,
+            selection_policy_pin,
+        )
+    )
+    backtest_jobs.attach_task(job.job_id, task)
+    return job.public()
+
+
+@router.post("/scanner/jobs", status_code=202)
+async def create_scanner_job(payload: ScannerRequest) -> dict:
+    try:
+        require_horizon_activatable(
+            resolve_horizon_context(payload.horizon_intent)
+        )
+    except HorizonPolicyError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
+
+    settings = get_settings()
+    job = backtest_jobs.create()
+    selection_policy_pin = (
+        ProductionStrategySelectionRegistry().pin_active_selection_policy()
+    )
+    _prospective_service().try_begin_scanner_capture(
+        source_job_id=job.job_id,
+        payload=payload,
+        selection_policy_pin=selection_policy_pin,
+    )
+    task = asyncio.create_task(
+        _run_scanner_job(
+            job.job_id,
+            payload,
+            settings.krx_api_key,
+            selection_policy_pin,
+        )
+    )
     backtest_jobs.attach_task(job.job_id, task)
     return job.public()
 

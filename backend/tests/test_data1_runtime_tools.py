@@ -3,13 +3,28 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 
 from app.holdings import HoldingsCatalog, PositionLifecycleService
 from app.holdings.management import HoldingManagementService
+from app.holdings.recovery import HoldingRecoveryService
+from app.quotes.models import QuoteSnapshot
+from app.watch import WatchPolicy, WatchService, load_active_plan_watch_demands
+from app.feedback import FeedbackCatalog, FeedbackEvidence
+from app.prospective import (
+    EvaluationProtocolSpec,
+    ProspectiveCaptureRequest,
+    ProspectiveCatalog,
+)
+from app.simulation.execution_catalog import HistoricalExecutionCatalog
+from app.simulation.sim1_store import SimulationRepository
+from app.simulation.validation_catalog import HistoricalValidationCatalog
+from app.tracking.store import RecommendationTrackingRepository
+from tools.data import backup_runtime as backup_module
 from tools.data.backup_runtime import create_backup
 from tools.data.bootstrap_runtime import bootstrap_runtime
 from tools.data.common import (
@@ -18,7 +33,30 @@ from tools.data.common import (
     sha256_file,
 )
 from tools.data.doctor import collect_report
+from tools.data import restore_runtime as restore_module
 from tools.data.restore_runtime import restore_backup
+from tools.data.migrate_feedback_vnp2s1 import migrate_feedback_store
+from tools.data.migrate_prospective_vnp2s2 import migrate_prospective_store
+from tools.data.migrate_holdings_decision_vnp3s1 import (
+    HOLDING_DECISION_POLICY_VERSION,
+    HOLDING_PLAN_CONTEXT_VERSION,
+    migrate_holdings_decision_store,
+)
+from tools.data.migrate_holdings_recovery_vnp3s2 import (
+    RECOVERY_SCHEMA_VERSION,
+    migrate_holdings_recovery_store,
+)
+from tools.data.migrate_watch_vnp4s1 import migrate_watch_store
+from app.watch.policy import WATCH_POLICY_CONTRACT_VERSION
+from app.watch.storage import WATCH_SCHEMA_VERSION
+from app.strategy import StrategyName
+from app.strategy.production_selection_policy import (
+    ProductionStrategySelectionRegistry,
+    SelectionPolicyError,
+)
+from tools.data.migrate_strategy_governance_vnp5s1 import (
+    migrate_strategy_governance_store,
+)
 
 
 T0 = "2026-09-24T09:00:00+09:00"
@@ -127,6 +165,17 @@ def _market_db(path: Path, rows: int = 70) -> Path:
     return path
 
 
+def _simulation_db(path: Path) -> Path:
+    SimulationRepository(path).initialize()
+    HistoricalValidationCatalog(path).initialize()
+    return path
+
+
+def _tracking_db(path: Path) -> Path:
+    RecommendationTrackingRepository(path).initialize()
+    return path
+
+
 def test_default_backup_excludes_market_and_secrets(tmp_path):
     holdings = _holdings_db(tmp_path / "holdings.db")
     market = _market_db(tmp_path / "market.db")
@@ -146,6 +195,45 @@ def test_default_backup_excludes_market_and_secrets(tmp_path):
     assert not any(path.name == ".env" for path in backup.rglob("*"))
 
 
+def test_backup_falls_back_when_windows_blocks_directory_rename(
+    tmp_path,
+    monkeypatch,
+):
+    holdings = _holdings_db(tmp_path / "holdings.db")
+    destination = tmp_path / "backup"
+
+    real_replace = backup_module.os.replace
+
+    def blocked_directory_replace(src, dst):
+        src_path = Path(src)
+        dst_path = Path(dst)
+        if (
+            src_path.name.startswith(".backup.")
+            and dst_path == destination
+        ):
+            raise PermissionError(5, "Access is denied")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(
+        backup_module.os,
+        "replace",
+        blocked_directory_replace,
+    )
+
+    backup = create_backup(
+        destination=destination,
+        holdings_db=holdings,
+    )
+
+    assert backup == destination
+    assert (backup / "holdings.db").is_file()
+    assert (backup / "backup_manifest.json").is_file()
+    assert not any(
+        path.name.startswith(".backup.")
+        for path in tmp_path.iterdir()
+    )
+
+
 def test_full_backup_includes_market_and_plan_counts(tmp_path):
     holdings = _holdings_db(tmp_path / "holdings.db")
     market = _market_db(tmp_path / "market.db")
@@ -162,6 +250,701 @@ def test_full_backup_includes_market_and_plan_counts(tmp_path):
     assert manifest["contents"]["market_history_db"] is True
     assert manifest["counts"]["holding_management_plan"] == 1
     assert manifest["counts"]["holding_position_event"] >= 1
+
+
+def test_backup_and_restore_include_existing_simulation_and_tracking(tmp_path):
+    holdings = _holdings_db(tmp_path / "holdings.db")
+    simulation = _simulation_db(tmp_path / "simulation.db")
+    tracking = _tracking_db(tmp_path / "tracking.db")
+
+    backup = create_backup(
+        destination=tmp_path / "runtime-backup",
+        holdings_db=holdings,
+        simulation_db=simulation,
+        tracking_db=tracking,
+    )
+    manifest = json.loads(
+        (backup / "backup_manifest.json").read_text(encoding="utf-8")
+    )
+
+    assert manifest["contents"]["simulation_db"] is True
+    assert manifest["contents"]["tracking_db"] is True
+    assert (backup / "simulation.db").is_file()
+    assert (backup / "recommendation_tracking.db").is_file()
+
+    target_holdings = tmp_path / "restored-holdings.db"
+    target_simulation = tmp_path / "restored-simulation.db"
+    target_tracking = tmp_path / "restored-tracking.db"
+    result = restore_backup(
+        backup,
+        restore_simulation=True,
+        restore_tracking=True,
+        target_holdings=target_holdings,
+        target_simulation=target_simulation,
+        target_tracking=target_tracking,
+    )
+
+    assert target_holdings.is_file()
+    assert target_simulation.is_file()
+    assert target_tracking.is_file()
+    assert result["simulation_db"] == str(target_simulation)
+    assert result["tracking_db"] == str(target_tracking)
+
+
+def test_feedback_store_roundtrip_is_declared_and_restored(tmp_path):
+    holdings = _holdings_db(tmp_path / "holdings.db")
+    simulation = _simulation_db(tmp_path / "simulation.db")
+    HistoricalExecutionCatalog(simulation).initialize()
+    migrate_feedback_store(simulation)
+
+    catalog = FeedbackCatalog(simulation)
+    evidence = FeedbackEvidence(
+        source_type="EXECUTION",
+        source_owner="SIMULATION_DB",
+        source_id="run-fixture",
+        source_item_id="2026-09-01|KOSPI|005930",
+        source_hash="source-hash-fixture",
+        durability="DURABLE",
+        origin_kind="VIRTUAL_EXECUTION",
+        market="KOSPI",
+        ticker="005930",
+        name="삼성전자",
+        signal_date="2026-09-01",
+        strategy="pullback",
+        decision_status="READY",
+        scanner_version="0.21.3.7",
+        scanner_baseline="BASELINE_A",
+        horizon_intent="LEGACY_UNSPECIFIED",
+        horizon_policy_version=None,
+        metric_definition="VAL2_VIRTUAL_EXECUTION_V1",
+        execution_policy_version="EXECUTION_V1",
+        exit_policy_token="POLICY-A",
+        fee_pct=0.1,
+        tax_pct=0.1,
+        slippage_pct=0.0,
+        maturity_status="MATURE_REALIZED",
+        inclusion_status="INCLUDED",
+        exclusion_reason=None,
+        available_trading_days=10,
+        metrics={"net_return_pct": 4.8},
+        source_observed_at="2026-09-25T00:00:00+00:00",
+        metadata={
+            "selection_method": "HISTORICAL_EXECUTION_VALIDATION",
+            "evaluation_window": "ENTRY_TO_EXIT_OR_CUTOFF",
+        },
+    )
+    cohort = catalog.create_cohort(
+        client_request_id="backup-cohort",
+        name="backup fixture",
+        filters={"purpose": "backup-test"},
+        selector_results=[
+            {
+                "source_type": "EXECUTION",
+                "source_id": "run-fixture",
+                "selector": {"source_type": "EXECUTION", "source_id": "run-fixture"},
+                "status": "READY",
+                "evidence_count": 1,
+            }
+        ],
+        evidence=[evidence],
+        created_at="2026-09-27T00:00:00+00:00",
+    )
+    catalog.create_report(
+        cohort_id=cohort["id"],
+        client_request_id="backup-report",
+        summary={"evidence_state": "SAMPLE_SIZE_POLICY_UNDEFINED"},
+        source_set_hash=catalog.source_set_hash(cohort["id"]),
+        status="READY",
+        created_at="2026-09-27T00:01:00+00:00",
+    )
+
+    backup = create_backup(
+        destination=tmp_path / "feedback-backup",
+        holdings_db=holdings,
+        simulation_db=simulation,
+        include_tracking=False,
+    )
+    manifest = json.loads(
+        (backup / "backup_manifest.json").read_text(encoding="utf-8")
+    )
+    feedback_manifest = manifest["extensions"]["feedback_v1"]
+    assert feedback_manifest["present"] is True
+    assert feedback_manifest["restorable"] is True
+    assert set(feedback_manifest["tables"]) == {
+        "feedback_schema_meta",
+        "feedback_source_ref",
+        "feedback_cohort",
+        "feedback_cohort_source",
+        "feedback_cohort_member",
+        "feedback_report",
+    }
+
+    restored_holdings = tmp_path / "restored-holdings.db"
+    restored_simulation = tmp_path / "restored-simulation.db"
+    result = restore_backup(
+        backup,
+        restore_simulation=True,
+        target_holdings=restored_holdings,
+        target_simulation=restored_simulation,
+    )
+
+    assert result["feedback"]["store_present_in_backup"] is True
+    assert result["feedback"]["store_restored"] is True
+    with sqlite3.connect(restored_simulation) as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM feedback_source_ref"
+        ).fetchone()[0] == 1
+        assert conn.execute(
+            "SELECT COUNT(*) FROM feedback_cohort"
+        ).fetchone()[0] == 1
+        assert conn.execute(
+            "SELECT COUNT(*) FROM feedback_report"
+        ).fetchone()[0] == 1
+
+
+def test_prospective_store_roundtrip_is_declared_and_restored(tmp_path):
+    holdings = _holdings_db(tmp_path / "holdings.db")
+    simulation = _simulation_db(tmp_path / "simulation.db")
+    migrate_prospective_store(simulation)
+    catalog = ProspectiveCatalog(simulation)
+
+    request = ProspectiveCaptureRequest(
+        market_scope="ALL",
+        requested_as_of="2026-09-23",
+        candidate_limit=5,
+        horizon_intent="LEGACY_UNSPECIFIED",
+        horizon_policy_version="VN_P1_S2_HORIZON_CONTEXT_V1",
+    )
+    catalog.begin_capture(
+        source_job_id="backup-scanner-job",
+        request=request,
+        created_at="2026-09-27T00:00:00+00:00",
+    )
+    capture = catalog.finalize_capture(
+        source_job_id="backup-scanner-job",
+        request=request,
+        result={
+            "version": "0.21.3.7",
+            "requested_as_of": "2026-09-23",
+            "market_scope": "ALL",
+            "data_dates": {"KOSPI": "2026-09-23"},
+            "input_fingerprint": "backup-input",
+            "partial_data": False,
+            "summary": {"candidate_count": 1, "shown_count": 1},
+            "candidates": [{
+                "market": "KOSPI",
+                "code": "005930",
+                "name": "삼성전자",
+                "rank": 1,
+                "strategy": "pullback",
+                "decision_status": "WATCH",
+                "candidate_state": "WATCH",
+                "action": "WAIT",
+            }],
+            "more_candidates": [],
+        },
+        completed_at="2026-09-27T00:01:00+00:00",
+    )
+    protocol = catalog.create_protocol(
+        client_request_id="backup-protocol",
+        spec=EvaluationProtocolSpec(
+            name="backup fixture",
+            market_scope="ALL",
+            strategy=None,
+            development_start="2026-01-01",
+            development_end="2026-03-31",
+            holdout_start="2026-05-01",
+            holdout_end="2026-07-31",
+            execution_mode="OBSERVATION_ONLY",
+            exit_policy_token=None,
+        ),
+        created_at="2026-09-27T00:02:00+00:00",
+    )
+    run = catalog.create_evaluation_run(
+        protocol_id=protocol["id"],
+        client_request_id="backup-evaluation",
+        created_at="2026-09-27T00:03:00+00:00",
+    )
+    catalog.begin_evaluation_run(run["id"])
+    catalog.replace_evaluation_units(
+        run_id=run["id"],
+        units=[{
+            "capture_run_id": capture["id"],
+            "sample_index": 0,
+            "split": "HOLDOUT",
+            "maturity_status": "MATURE",
+            "exclusion_reason": None,
+            "signal_date": "2026-09-23",
+            "market": "KOSPI",
+            "ticker": "005930",
+            "strategy": "pullback",
+            "available_trading_days": 20,
+            "evaluated_through": "2026-10-22",
+            "return_5d": 1.0,
+            "return_10d": 2.0,
+            "return_20d": 3.0,
+            "mfe_pct": 4.0,
+            "mae_pct": -2.0,
+            "entry_comparable": 1,
+            "entry_touched": 1,
+            "stop_comparable": 1,
+            "stop_touched": 0,
+            "target1_comparable": 1,
+            "target1_touched": 0,
+            "target2_comparable": 1,
+            "target2_touched": 0,
+            "execution_status": "NOT_EXECUTED",
+            "execution_reason": "SCANNER_WAIT",
+            "entry_date": None,
+            "entry_price": None,
+            "exit_date": None,
+            "exit_price": None,
+            "exit_reason": None,
+            "holding_days": None,
+            "gross_return_pct": None,
+            "net_return_pct": None,
+            "mark_return_pct": None,
+            "details": {"fixture": True},
+            "computed_at": "2026-09-27T00:04:00+00:00",
+        }],
+        counts={
+            "source_capture_count": 1,
+            "source_sample_count": 1,
+            "development_count": 0,
+            "holdout_count": 1,
+            "purged_count": 0,
+            "mature_count": 1,
+            "immature_count": 0,
+            "excluded_count": 0,
+            "failed_count": 0,
+        },
+        report_summary={"evidence_state": "SAMPLE_SIZE_POLICY_UNDEFINED"},
+        completed_at="2026-09-27T00:05:00+00:00",
+    )
+
+    backup = create_backup(
+        destination=tmp_path / "prospective-backup",
+        holdings_db=holdings,
+        simulation_db=simulation,
+        include_tracking=False,
+    )
+    manifest = json.loads(
+        (backup / "backup_manifest.json").read_text(encoding="utf-8")
+    )
+    extension = manifest["extensions"]["prospective_evaluation_v1"]
+    assert extension["present"] is True
+    assert extension["restorable"] is True
+
+    restored_holdings = tmp_path / "restored-holdings.db"
+    restored_simulation = tmp_path / "restored-simulation.db"
+    result = restore_backup(
+        backup,
+        restore_simulation=True,
+        target_holdings=restored_holdings,
+        target_simulation=restored_simulation,
+    )
+
+    assert result["prospective_evaluation"]["store_present_in_backup"] is True
+    assert result["prospective_evaluation"]["store_restored"] is True
+    with sqlite3.connect(restored_simulation) as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM prospective_capture_run"
+        ).fetchone()[0] == 1
+        assert conn.execute(
+            "SELECT COUNT(*) FROM prospective_recommendation_sample"
+        ).fetchone()[0] == 1
+        assert conn.execute(
+            "SELECT COUNT(*) FROM prospective_evaluation_protocol"
+        ).fetchone()[0] == 1
+        assert conn.execute(
+            "SELECT COUNT(*) FROM prospective_evaluation_report"
+        ).fetchone()[0] == 1
+
+
+def test_holding_decision_store_roundtrip_is_declared_and_restored(tmp_path):
+    holdings = _holdings_db(tmp_path / "holdings.db")
+    migrate_holdings_decision_store(holdings)
+
+    with sqlite3.connect(holdings) as conn:
+        conn.row_factory = sqlite3.Row
+        position = conn.execute(
+            "SELECT * FROM holding_position WHERE status='OPEN' LIMIT 1"
+        ).fetchone()
+        revision = conn.execute(
+            """
+            SELECT r.* FROM stock_analysis_revision r
+            JOIN stock_analysis_day d ON d.id=r.analysis_day_id
+            WHERE d.monitored_stock_id=?
+            ORDER BY d.market_date DESC,r.revision_no DESC
+            LIMIT 1
+            """,
+            (position["monitored_stock_id"],),
+        ).fetchone()
+        plan = conn.execute(
+            """
+            SELECT * FROM holding_management_plan
+            WHERE position_id=? AND status='ACTIVE'
+            LIMIT 1
+            """,
+            (position["id"],),
+        ).fetchone()
+
+        conn.execute(
+            """
+            INSERT INTO holding_decision_record(
+                id,position_id,decision_policy_version,status,primary_action,
+                source_analysis_revision_id,source_active_plan_id,
+                source_active_plan_version,source_position_status,
+                source_position_quantity,source_position_average_price,
+                valuation_market_date,valuation_price,valuation_source,
+                horizon_intent,horizon_policy_version,input_fingerprint,
+                evidence_json,alternatives_json,limitations_json,created_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                "decision-backup-fixture",
+                position["id"],
+                HOLDING_DECISION_POLICY_VERSION,
+                "ACTIONABLE",
+                "HOLD",
+                revision["id"],
+                plan["id"],
+                int(plan["plan_version"]),
+                position["status"],
+                position["current_quantity"],
+                position["current_average_price"],
+                "2026-09-24",
+                "100",
+                "MARKET_STORE_CONFIRMED_EOD",
+                "LEGACY_UNSPECIFIED",
+                None,
+                "fixture-fingerprint",
+                json.dumps({"plan_state": "WITHIN_PLAN"}),
+                json.dumps([{
+                    "action": "HOLD",
+                    "state": "AVAILABLE",
+                    "reason": "fixture",
+                }]),
+                json.dumps([{
+                    "code": "ADD_POLICY_UNDEFINED",
+                    "message": "fixture",
+                }]),
+                "2026-09-27T00:00:00+00:00",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO holding_decision_resolution(
+                id,decision_id,selected_action,resolution_type,note,
+                resulting_plan_id,created_at
+            ) VALUES(?,?,?,?,?,?,?)
+            """,
+            (
+                "resolution-backup-fixture",
+                "decision-backup-fixture",
+                "HOLD",
+                "APPLY_NEW_PLAN",
+                "fixture",
+                plan["id"],
+                "2026-09-27T00:01:00+00:00",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO holding_management_plan_context_vnp3s1(
+                plan_id,context_version,source_decision_id,selected_action,
+                review_cycle_trading_days,time_stop_trading_days,
+                adjustment_context_json,created_at
+            ) VALUES(?,?,?,?,?,?,?,?)
+            """,
+            (
+                plan["id"],
+                HOLDING_PLAN_CONTEXT_VERSION,
+                "decision-backup-fixture",
+                "HOLD",
+                None,
+                None,
+                json.dumps({
+                    "numeric_horizon_policy_approved": False,
+                    "fixture": True,
+                }),
+                "2026-09-27T00:01:00+00:00",
+            ),
+        )
+
+    backup = create_backup(
+        destination=tmp_path / "decision-backup",
+        holdings_db=holdings,
+        include_simulation=False,
+        include_tracking=False,
+    )
+    manifest = json.loads(
+        (backup / "backup_manifest.json").read_text(encoding="utf-8")
+    )
+    extension = manifest["extensions"]["holding_decision_v1"]
+    assert extension["present"] is True
+    assert extension["restorable"] is True
+
+    restored_holdings = tmp_path / "restored-holdings.db"
+    result = restore_backup(
+        backup,
+        target_holdings=restored_holdings,
+    )
+
+    assert result["holding_decision"]["store_present_in_backup"] is True
+    assert result["holding_decision"]["store_restored"] is True
+    with sqlite3.connect(restored_holdings) as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM holding_decision_record"
+        ).fetchone()[0] == 1
+        assert conn.execute(
+            "SELECT COUNT(*) FROM holding_decision_resolution"
+        ).fetchone()[0] == 1
+        row = conn.execute(
+            """
+            SELECT review_cycle_trading_days,time_stop_trading_days
+            FROM holding_management_plan_context_vnp3s1
+            """
+        ).fetchone()
+        assert row == (None, None)
+
+
+def test_holding_recovery_store_roundtrip_is_declared_and_restored(tmp_path):
+    holdings = _holdings_db(tmp_path / "holdings.db")
+    migrate_holdings_decision_store(holdings)
+    migrate_holdings_recovery_store(holdings)
+    catalog = HoldingsCatalog(holdings)
+
+    with sqlite3.connect(holdings) as conn:
+        position_id = str(
+            conn.execute(
+                "SELECT id FROM holding_position WHERE status='OPEN' LIMIT 1"
+            ).fetchone()[0]
+        )
+
+    service = HoldingRecoveryService(
+        catalog,
+        clock=lambda: "2026-09-27T03:00:00+00:00",
+    )
+    review = service.start_review(
+        position_id=position_id,
+        note="backup recovery fixture",
+    )["review"]
+    assessment = service.record_assessment(
+        review_id=review["review_id"],
+        thesis_state="WEAKENED",
+        review_action="REDUCE",
+        reason_note="backup roundtrip fixture",
+        valuation_market_date="2026-09-24",
+        valuation_price="80",
+        unrealized_pnl="-200",
+        unrealized_return_pct="-20",
+        limitations=["COMPANY_EVIDENCE_NOT_CONNECTED"],
+        evidence={"fixture": True},
+    )
+
+    backup = create_backup(
+        destination=tmp_path / "recovery-backup",
+        holdings_db=holdings,
+        include_simulation=False,
+        include_tracking=False,
+    )
+    manifest = json.loads(
+        (backup / "backup_manifest.json").read_text(encoding="utf-8")
+    )
+    extension = manifest["extensions"]["holding_recovery_v1"]
+
+    assert extension["schema_version"] == RECOVERY_SCHEMA_VERSION
+    assert extension["present"] is True
+    assert extension["restorable"] is True
+    assert set(extension["tables"]) == {
+        "holding_recovery_schema_meta",
+        "holding_recovery_review",
+        "holding_recovery_assessment",
+    }
+
+    restored_holdings = tmp_path / "restored-recovery-holdings.db"
+    result = restore_backup(
+        backup,
+        target_holdings=restored_holdings,
+    )
+
+    assert result["holding_recovery"]["schema_version"] == RECOVERY_SCHEMA_VERSION
+    assert result["holding_recovery"]["store_present_in_backup"] is True
+    assert result["holding_recovery"]["store_restored"] is True
+
+    with sqlite3.connect(restored_holdings) as conn:
+        conn.row_factory = sqlite3.Row
+        restored_review = conn.execute(
+            "SELECT * FROM holding_recovery_review WHERE id=?",
+            (review["review_id"],),
+        ).fetchone()
+        restored_assessment = conn.execute(
+            "SELECT * FROM holding_recovery_assessment WHERE id=?",
+            (assessment["assessment_id"],),
+        ).fetchone()
+
+    assert restored_review is not None
+    assert restored_review["status"] == "OPEN"
+    assert restored_review["opened_note"] == "backup recovery fixture"
+    assert restored_assessment is not None
+    assert restored_assessment["thesis_state"] == "WEAKENED"
+    assert restored_assessment["review_action"] == "REDUCE"
+    assert restored_assessment["valuation_price"] == "80"
+    assert restored_assessment["unrealized_pnl"] == "-200"
+
+
+def test_holding_watch_store_roundtrip_is_declared_and_restored(tmp_path):
+    holdings = _holdings_db(tmp_path / "holdings.db")
+    migrate_holdings_decision_store(holdings)
+    migrate_watch_store(holdings)
+    catalog = HoldingsCatalog(holdings)
+    demand = load_active_plan_watch_demands(catalog)[0]
+    policy = WatchPolicy(
+        policy_version="TEST_BACKUP_ONLY",
+        enabled=True,
+        confirmation_observations=2,
+        rearm_observations=2,
+        rearm_distance_bps=100,
+        max_quote_age_seconds=60,
+    )
+    now = datetime(2026, 9, 28, 0, 0, 10, tzinfo=timezone.utc)
+    service = WatchService(
+        catalog,
+        policy_provider=lambda: policy,
+        clock=lambda: now,
+    )
+    service.reconcile([demand])
+
+    def snapshot(seconds: int, price: str) -> QuoteSnapshot:
+        return QuoteSnapshot(
+            market="KOSPI",
+            ticker="005930",
+            name="삼성전자",
+            venue="INTEGRATED",
+            provider_market_division="UN",
+            environment="virtual",
+            current_price=Decimal(price),
+            change_amount=Decimal("0"),
+            change_rate=Decimal("0"),
+            change_sign="3",
+            open_price=Decimal("100"),
+            high_price=Decimal("100"),
+            low_price=Decimal(price),
+            base_price=Decimal("100"),
+            accumulated_volume=Decimal("1000"),
+            provider_timestamp=None,
+            received_at=now - timedelta(seconds=10-seconds),
+            transport="WEBSOCKET",
+        )
+
+    service.process_quote(demand, snapshot(1, "89"))
+    service.process_quote(demand, snapshot(2, "88"))
+    service.record_coverage_issue(
+        demand,
+        "WS_RECONNECT",
+        detail={"fixture": True},
+    )
+
+    with sqlite3.connect(holdings) as conn:
+        conn.row_factory = sqlite3.Row
+        setting = conn.execute(
+            "SELECT * FROM holding_watch_setting WHERE status='ACTIVE'"
+        ).fetchone()
+        stop_rule = conn.execute(
+            """
+            SELECT * FROM holding_watch_rule
+            WHERE rule_kind='STOP'
+            """
+        ).fetchone()
+        episode = conn.execute(
+            "SELECT * FROM holding_watch_episode"
+        ).fetchone()
+        gap = conn.execute(
+            "SELECT * FROM holding_watch_coverage_gap"
+        ).fetchone()
+        notification = conn.execute(
+            "SELECT * FROM holding_watch_notification_outbox"
+        ).fetchone()
+
+    assert setting is not None
+    assert stop_rule is not None
+    assert episode is not None
+    assert gap is not None
+    assert notification is not None
+
+    backup = create_backup(
+        destination=tmp_path / "watch-backup",
+        holdings_db=holdings,
+        include_simulation=False,
+        include_tracking=False,
+    )
+    manifest = json.loads(
+        (backup / "backup_manifest.json").read_text(encoding="utf-8")
+    )
+    extension = manifest["extensions"]["holding_watch_v1"]
+
+    assert extension["schema_version"] == WATCH_SCHEMA_VERSION
+    assert extension["policy_contract_version"] == WATCH_POLICY_CONTRACT_VERSION
+    assert extension["present"] is True
+    assert extension["restorable"] is True
+    assert set(extension["tables"]) == {
+        "holding_watch_schema_meta",
+        "holding_watch_setting",
+        "holding_watch_rule",
+        "holding_watch_episode",
+        "holding_watch_coverage_gap",
+        "holding_watch_notification_outbox",
+    }
+
+    restored_holdings = tmp_path / "restored-watch-holdings.db"
+    result = restore_backup(
+        backup,
+        target_holdings=restored_holdings,
+    )
+
+    assert result["holding_watch"]["schema_version"] == WATCH_SCHEMA_VERSION
+    assert (
+        result["holding_watch"]["policy_contract_version"]
+        == WATCH_POLICY_CONTRACT_VERSION
+    )
+    assert result["holding_watch"]["store_present_in_backup"] is True
+    assert result["holding_watch"]["store_restored"] is True
+    assert result["holding_watch"]["live_quote_replay_performed"] is False
+
+    with sqlite3.connect(restored_holdings) as conn:
+        conn.row_factory = sqlite3.Row
+        restored_setting = conn.execute(
+            "SELECT * FROM holding_watch_setting WHERE id=?",
+            (setting["id"],),
+        ).fetchone()
+        restored_rule = conn.execute(
+            "SELECT * FROM holding_watch_rule WHERE id=?",
+            (stop_rule["id"],),
+        ).fetchone()
+        restored_episode = conn.execute(
+            "SELECT * FROM holding_watch_episode WHERE id=?",
+            (episode["id"],),
+        ).fetchone()
+        restored_gap = conn.execute(
+            "SELECT * FROM holding_watch_coverage_gap WHERE id=?",
+            (gap["id"],),
+        ).fetchone()
+        restored_notification = conn.execute(
+            "SELECT * FROM holding_watch_notification_outbox WHERE id=?",
+            (notification["id"],),
+        ).fetchone()
+
+    assert restored_setting is not None
+    assert restored_setting["plan_id"] == setting["plan_id"]
+    assert restored_rule is not None
+    assert restored_rule["state"] == "CONFIRMED"
+    assert restored_episode is not None
+    assert restored_episode["confirmed_at"] is not None
+    assert restored_gap is not None
+    assert restored_gap["status"] == "OPEN"
+    assert restored_notification is not None
+    assert restored_notification["delivery_status"] == "PENDING"
 
 
 def test_restore_roundtrip_preserves_holdings_and_creates_pre_restore_backup(tmp_path):
@@ -183,6 +966,41 @@ def test_restore_roundtrip_preserves_holdings_and_creates_pre_restore_backup(tmp
     pre = result["pre_restore_backups"]["holdings"]
     assert pre is not None
     assert Path(pre).is_file()
+
+
+def test_full_restore_rolls_back_new_first_target_when_second_replace_fails(
+    tmp_path,
+    monkeypatch,
+):
+    source_holdings = _holdings_db(tmp_path / "source-holdings.db")
+    source_market = _market_db(tmp_path / "source-market.db")
+    backup = create_backup(
+        destination=tmp_path / "full-backup",
+        include_market=True,
+        holdings_db=source_holdings,
+        market_db=source_market,
+    )
+    target_holdings = tmp_path / "restored-holdings.db"
+    target_market = tmp_path / "restored-market.db"
+    real_replace = restore_module.os.replace
+
+    def fail_second_target(src, dst):
+        if Path(dst) == target_market:
+            raise OSError("simulated second-target replace failure")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(restore_module.os, "replace", fail_second_target)
+
+    with pytest.raises(OSError, match="simulated second-target"):
+        restore_backup(
+            backup,
+            restore_market=True,
+            target_holdings=target_holdings,
+            target_market=target_market,
+        )
+
+    assert not target_holdings.exists()
+    assert not target_market.exists()
 
 
 def test_corrupt_backup_is_blocked_before_target_change(tmp_path):
@@ -272,3 +1090,527 @@ def test_setup_and_env_template_expose_data1_entrypoints():
     assert "tools\\data\\doctor.py" in setup
     assert "STOCKSCOPE_HOLDINGS_DB=" in env_example
     assert "STOCKSCOPE_MARKET_STORE_DB=" in env_example
+
+
+
+def _p5_simulation_db(path: Path) -> Path:
+    simulation = _simulation_db(path)
+    migrate_prospective_store(simulation)
+    migrate_strategy_governance_store(simulation)
+    return simulation
+
+
+def _selection_runtime_with_active_policy(
+    runtime: Path,
+    simulation: Path,
+    *,
+    suffix: str = "A",
+) -> dict:
+    registry = ProductionStrategySelectionRegistry(
+        runtime_dir=runtime,
+        simulation_db=simulation,
+        clock=lambda: "2026-09-28T03:10:00+00:00",
+    )
+    snapshot = registry._build_snapshot(  # noqa: SLF001
+        source_kind="TEST_BACKUP_FIXTURE",
+        operating_strategies=[
+            {
+                "strategy_version_id": f"version-{strategy.value}",
+                "strategy_key": strategy.value,
+                "definition_hash": f"hash-{strategy.value}",
+            }
+            for strategy in StrategyName
+            if strategy is not StrategyName.NO_TRADE
+        ],
+        selection_semantics={
+            "risk_gate_preserved": True,
+            "no_trade_safety_path_preserved": True,
+            "score_formula_changed": False,
+            "candidate_priority_changed": False,
+        },
+        scanner_baseline_id=f"BASELINE-{suffix}",
+        production_fingerprint=f"PROD-{suffix}",
+        production_policy_fingerprint=f"POLICY-{suffix}",
+        proposal_id=f"proposal-backup-{suffix}",
+        proposal_hash=f"proposal-hash-{suffix}",
+        approval_artifact_id=f"approval-backup-{suffix}",
+        approval_hash=f"approval-hash-{suffix}",
+        created_at=f"2026-09-28T03:10:0{0 if suffix == 'A' else 1}+00:00",
+    )
+    registry._publish_snapshot(snapshot)  # noqa: SLF001
+    registry._publish_reference(  # noqa: SLF001
+        {
+            "schema_version": 1,
+            "active_policy_id": snapshot["policy_id"],
+            "active_policy_hash": snapshot["policy_hash"],
+            "rollback_policy_id": None,
+            "rollback_policy_hash": None,
+            "last_deactivated_policy_id": None,
+            "activation_source": "TEST_BACKUP_FIXTURE",
+            "approval_artifact_id": f"approval-backup-{suffix}",
+            "approval_hash": f"approval-hash-{suffix}",
+            "activated_at": "2026-09-28T03:10:00+00:00",
+            "generation": 1,
+        }
+    )
+    return snapshot
+
+
+def test_p5_backup_declares_legacy_fallback_without_creating_runtime(tmp_path):
+    holdings = _holdings_db(tmp_path / "holdings.db")
+    simulation = _p5_simulation_db(tmp_path / "simulation.db")
+    runtime = tmp_path / "strategy_selection"
+
+    backup = create_backup(
+        destination=tmp_path / "p5-legacy-backup",
+        holdings_db=holdings,
+        simulation_db=simulation,
+        include_tracking=False,
+        strategy_selection_runtime=runtime,
+    )
+
+    manifest = json.loads(
+        (backup / "backup_manifest.json").read_text(encoding="utf-8")
+    )
+    governance = manifest["extensions"]["strategy_governance_v1"]
+    selection = manifest["extensions"]["strategy_selection_v1"]
+
+    assert governance["present"] is True
+    assert governance["restorable"] is True
+    assert selection["runtime_present"] is False
+    assert selection["active_reference_present"] is False
+    assert selection["policy_snapshot_count"] == 0
+    assert selection["resolved_policy_source"] == "LEGACY_CURRENT_10_FALLBACK"
+    assert manifest["contents"]["strategy_selection_runtime"] is False
+    assert not (backup / "strategy_selection").exists()
+    assert not runtime.exists()
+
+
+def test_p5_backup_copies_valid_active_selection_runtime_with_hashes(tmp_path):
+    holdings = _holdings_db(tmp_path / "holdings.db")
+    simulation = _p5_simulation_db(tmp_path / "simulation.db")
+    runtime = tmp_path / "strategy_selection"
+    snapshot = _selection_runtime_with_active_policy(runtime, simulation)
+
+    backup = create_backup(
+        destination=tmp_path / "p5-active-backup",
+        holdings_db=holdings,
+        simulation_db=simulation,
+        include_tracking=False,
+        strategy_selection_runtime=runtime,
+    )
+
+    manifest = json.loads(
+        (backup / "backup_manifest.json").read_text(encoding="utf-8")
+    )
+    selection = manifest["extensions"]["strategy_selection_v1"]
+    copied_active = backup / "strategy_selection" / "active.json"
+    copied_policy = (
+        backup
+        / "strategy_selection"
+        / "policies"
+        / f"{snapshot['policy_id']}.json"
+    )
+
+    assert selection["runtime_present"] is True
+    assert selection["active_reference_present"] is True
+    assert selection["policy_snapshot_count"] == 1
+    assert selection["resolved_policy_source"] == "ACTIVE_SELECTION_POLICY"
+    assert selection["resolved_policy_id"] == snapshot["policy_id"]
+    assert manifest["contents"]["strategy_selection_runtime"] is True
+    assert copied_active.is_file()
+    assert copied_policy.is_file()
+    assert "strategy_selection/active.json" in manifest["files"]
+    assert (
+        f"strategy_selection/policies/{snapshot['policy_id']}.json"
+        in manifest["files"]
+    )
+    assert (
+        manifest["files"]["strategy_selection/active.json"]["sha256"]
+        == sha256_file(copied_active)
+    )
+
+
+def test_p5_backup_rejects_corrupt_selection_policy_before_publication(tmp_path):
+    holdings = _holdings_db(tmp_path / "holdings.db")
+    simulation = _p5_simulation_db(tmp_path / "simulation.db")
+    runtime = tmp_path / "strategy_selection"
+    snapshot = _selection_runtime_with_active_policy(runtime, simulation)
+    policy_path = runtime / "policies" / f"{snapshot['policy_id']}.json"
+    payload = json.loads(policy_path.read_text(encoding="utf-8"))
+    payload["operating_strategies"] = payload["operating_strategies"][:-1]
+    policy_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    destination = tmp_path / "corrupt-selection-backup"
+
+    with pytest.raises(DataToolError, match="Selection Policy 검증 실패"):
+        create_backup(
+            destination=destination,
+            holdings_db=holdings,
+            simulation_db=simulation,
+            include_tracking=False,
+            strategy_selection_runtime=runtime,
+        )
+
+    assert not destination.exists()
+
+
+
+def test_p5_active_selection_roundtrip_restores_exact_policy_state(tmp_path):
+    source_holdings = _holdings_db(tmp_path / "source-holdings.db")
+    source_simulation = _p5_simulation_db(tmp_path / "source-simulation.db")
+    source_runtime = tmp_path / "source-strategy-selection"
+    snapshot = _selection_runtime_with_active_policy(
+        source_runtime,
+        source_simulation,
+        suffix="A",
+    )
+
+    backup = create_backup(
+        destination=tmp_path / "p5-roundtrip-backup",
+        holdings_db=source_holdings,
+        simulation_db=source_simulation,
+        include_tracking=False,
+        strategy_selection_runtime=source_runtime,
+    )
+
+    target_holdings = _holdings_db(tmp_path / "target-holdings.db")
+    target_simulation = _p5_simulation_db(tmp_path / "target-simulation.db")
+    target_runtime = tmp_path / "target-strategy-selection"
+
+    result = restore_backup(
+        backup,
+        restore_simulation=True,
+        target_holdings=target_holdings,
+        target_simulation=target_simulation,
+        target_strategy_selection_runtime=target_runtime,
+    )
+
+    registry = ProductionStrategySelectionRegistry(
+        runtime_dir=target_runtime,
+        simulation_db=target_simulation,
+    )
+    resolution = registry.resolve_active_selection_policy()
+    assert resolution.policy_source == "ACTIVE_SELECTION_POLICY"
+    assert resolution.policy["policy_id"] == snapshot["policy_id"]
+    assert resolution.policy["policy_hash"] == snapshot["policy_hash"]
+    assert result["strategy_selection"]["store_restored"] is True
+    assert result["strategy_selection"]["active_reference_present"] is True
+    assert result["strategy_selection"]["policy_snapshot_count"] == 1
+    assert result["strategy_selection"]["resolved_policy_id"] == snapshot["policy_id"]
+
+
+def test_p5_legacy_restore_removes_existing_active_state_but_preserves_readme(
+    tmp_path,
+):
+    source_holdings = _holdings_db(tmp_path / "source-holdings.db")
+    source_simulation = _p5_simulation_db(tmp_path / "source-simulation.db")
+    source_runtime = tmp_path / "source-strategy-selection"
+
+    backup = create_backup(
+        destination=tmp_path / "p5-legacy-restore-backup",
+        holdings_db=source_holdings,
+        simulation_db=source_simulation,
+        include_tracking=False,
+        strategy_selection_runtime=source_runtime,
+    )
+
+    target_holdings = _holdings_db(tmp_path / "target-holdings.db")
+    target_simulation = _p5_simulation_db(tmp_path / "target-simulation.db")
+    target_runtime = tmp_path / "target-strategy-selection"
+    _selection_runtime_with_active_policy(
+        target_runtime,
+        target_simulation,
+        suffix="B",
+    )
+    target_runtime.mkdir(parents=True, exist_ok=True)
+    (target_runtime / "README.md").write_text(
+        "keep this file\n",
+        encoding="utf-8",
+    )
+
+    result = restore_backup(
+        backup,
+        restore_simulation=True,
+        target_holdings=target_holdings,
+        target_simulation=target_simulation,
+        target_strategy_selection_runtime=target_runtime,
+    )
+
+    registry = ProductionStrategySelectionRegistry(
+        runtime_dir=target_runtime,
+        simulation_db=target_simulation,
+    )
+    resolution = registry.resolve_active_selection_policy()
+    assert resolution.policy_source == "LEGACY_CURRENT_10_FALLBACK"
+    assert not (target_runtime / "active.json").exists()
+    assert not list((target_runtime / "policies").glob("*.json")) if (
+        target_runtime / "policies"
+    ).exists() else True
+    assert (target_runtime / "README.md").read_text(
+        encoding="utf-8"
+    ) == "keep this file\n"
+    pre = result["pre_restore_backups"]["strategy_selection"]
+    assert pre is not None
+    assert Path(pre).is_dir()
+    assert result["strategy_selection"]["store_present_in_backup"] is False
+    assert result["strategy_selection"]["store_restored"] is True
+    assert (
+        result["strategy_selection"]["resolved_policy_source"]
+        == "LEGACY_CURRENT_10_FALLBACK"
+    )
+
+
+def test_p5_restore_blocks_tampered_selection_snapshot_before_target_change(
+    tmp_path,
+):
+    source_holdings = _holdings_db(tmp_path / "source-holdings.db")
+    source_simulation = _p5_simulation_db(tmp_path / "source-simulation.db")
+    source_runtime = tmp_path / "source-strategy-selection"
+    snapshot = _selection_runtime_with_active_policy(
+        source_runtime,
+        source_simulation,
+        suffix="A",
+    )
+    backup = create_backup(
+        destination=tmp_path / "tampered-selection-backup",
+        holdings_db=source_holdings,
+        simulation_db=source_simulation,
+        include_tracking=False,
+        strategy_selection_runtime=source_runtime,
+    )
+    backup_policy = (
+        backup
+        / "strategy_selection"
+        / "policies"
+        / f"{snapshot['policy_id']}.json"
+    )
+    backup_policy.write_text(
+        backup_policy.read_text(encoding="utf-8") + "\n",
+        encoding="utf-8",
+    )
+
+    target_holdings = _holdings_db(tmp_path / "target-holdings.db")
+    target_simulation = _p5_simulation_db(tmp_path / "target-simulation.db")
+    target_runtime = tmp_path / "target-strategy-selection"
+    target_snapshot = _selection_runtime_with_active_policy(
+        target_runtime,
+        target_simulation,
+        suffix="B",
+    )
+    before_simulation_hash = sha256_file(target_simulation)
+    before_active_hash = sha256_file(target_runtime / "active.json")
+
+    with pytest.raises(DataToolError, match="SHA-256"):
+        restore_backup(
+            backup,
+            restore_simulation=True,
+            target_holdings=target_holdings,
+            target_simulation=target_simulation,
+            target_strategy_selection_runtime=target_runtime,
+        )
+
+    assert sha256_file(target_simulation) == before_simulation_hash
+    assert sha256_file(target_runtime / "active.json") == before_active_hash
+    restored = ProductionStrategySelectionRegistry(
+        runtime_dir=target_runtime,
+        simulation_db=target_simulation,
+    ).resolve_active_selection_policy()
+    assert restored.policy["policy_id"] == target_snapshot["policy_id"]
+
+
+def test_p5_restore_rolls_back_db_and_selection_when_active_publish_fails(
+    tmp_path,
+    monkeypatch,
+):
+    source_holdings = _holdings_db(tmp_path / "source-holdings.db")
+    source_simulation = _p5_simulation_db(tmp_path / "source-simulation.db")
+    source_runtime = tmp_path / "source-strategy-selection"
+    _selection_runtime_with_active_policy(
+        source_runtime,
+        source_simulation,
+        suffix="A",
+    )
+    backup = create_backup(
+        destination=tmp_path / "selection-failure-backup",
+        holdings_db=source_holdings,
+        simulation_db=source_simulation,
+        include_tracking=False,
+        strategy_selection_runtime=source_runtime,
+    )
+
+    target_holdings = _holdings_db(tmp_path / "target-holdings.db")
+    target_simulation = _p5_simulation_db(tmp_path / "target-simulation.db")
+    with sqlite3.connect(target_simulation) as conn:
+        conn.execute(
+            "CREATE TABLE restore_identity_fixture(value TEXT NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO restore_identity_fixture(value) VALUES('TARGET-BEFORE')"
+        )
+    target_runtime = tmp_path / "target-strategy-selection"
+    target_snapshot = _selection_runtime_with_active_policy(
+        target_runtime,
+        target_simulation,
+        suffix="B",
+    )
+    from tools.data import strategy_selection_runtime as selection_runtime_module
+
+    real_replace = selection_runtime_module.os.replace
+    failed = False
+
+    def fail_first_active_publish(src, dst):
+        nonlocal failed
+        if Path(dst) == target_runtime / "active.json" and not failed:
+            failed = True
+            raise OSError("simulated selection active publish failure")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(
+        selection_runtime_module.os,
+        "replace",
+        fail_first_active_publish,
+    )
+
+    with pytest.raises(
+        OSError,
+        match="simulated selection active publish failure",
+    ):
+        restore_backup(
+            backup,
+            restore_simulation=True,
+            target_holdings=target_holdings,
+            target_simulation=target_simulation,
+            target_strategy_selection_runtime=target_runtime,
+        )
+
+    with sqlite3.connect(target_simulation) as conn:
+        assert conn.execute(
+            "SELECT value FROM restore_identity_fixture"
+        ).fetchone()[0] == "TARGET-BEFORE"
+
+    restored = ProductionStrategySelectionRegistry(
+        runtime_dir=target_runtime,
+        simulation_db=target_simulation,
+    ).resolve_active_selection_policy()
+    assert restored.policy_source == "ACTIVE_SELECTION_POLICY"
+    assert restored.policy["policy_id"] == target_snapshot["policy_id"]
+
+
+
+def test_p5_rolled_back_selection_roundtrip_preserves_one_way_state(tmp_path):
+    source_holdings = _holdings_db(tmp_path / "source-holdings.db")
+    source_simulation = _p5_simulation_db(tmp_path / "source-simulation.db")
+    source_runtime = tmp_path / "source-strategy-selection"
+
+    registry = ProductionStrategySelectionRegistry(
+        runtime_dir=source_runtime,
+        simulation_db=source_simulation,
+        clock=lambda: "2026-09-28T04:10:00+00:00",
+    )
+    rollback_snapshot = _selection_runtime_with_active_policy(
+        source_runtime,
+        source_simulation,
+        suffix="A",
+    )
+    active_snapshot = registry._build_snapshot(  # noqa: SLF001
+        source_kind="TEST_BACKUP_FIXTURE",
+        operating_strategies=[
+            {
+                "strategy_version_id": f"version-{strategy.value}",
+                "strategy_key": strategy.value,
+                "definition_hash": f"hash-{strategy.value}",
+            }
+            for strategy in StrategyName
+            if strategy not in {StrategyName.NO_TRADE, StrategyName.BREAKOUT}
+        ],
+        selection_semantics={
+            "risk_gate_preserved": True,
+            "no_trade_safety_path_preserved": True,
+            "score_formula_changed": False,
+            "candidate_priority_changed": False,
+        },
+        scanner_baseline_id="BASELINE-B",
+        production_fingerprint="PROD-B",
+        production_policy_fingerprint="POLICY-B",
+        proposal_id="proposal-backup-B",
+        proposal_hash="proposal-hash-B",
+        approval_artifact_id="approval-backup-B",
+        approval_hash="approval-hash-B",
+        created_at="2026-09-28T04:10:01+00:00",
+    )
+    registry._publish_snapshot(active_snapshot)  # noqa: SLF001
+    registry._publish_reference(  # noqa: SLF001
+        {
+            "schema_version": 1,
+            "active_policy_id": active_snapshot["policy_id"],
+            "active_policy_hash": active_snapshot["policy_hash"],
+            "rollback_policy_id": rollback_snapshot["policy_id"],
+            "rollback_policy_hash": rollback_snapshot["policy_hash"],
+            "last_deactivated_policy_id": rollback_snapshot["policy_id"],
+            "activation_source": "TEST_BACKUP_FIXTURE",
+            "approval_artifact_id": "approval-backup-B",
+            "approval_hash": "approval-hash-B",
+            "activated_at": "2026-09-28T04:10:01+00:00",
+            "generation": 2,
+        }
+    )
+
+    rolled = registry.rollback_selection_policy(
+        expected_active_policy_id=active_snapshot["policy_id"],
+    )
+    rolled_ref = rolled["active_reference"]
+    assert rolled_ref["active_policy_id"] == rollback_snapshot["policy_id"]
+    assert rolled_ref["rollback_policy_id"] is None
+    assert rolled_ref["generation"] == 3
+
+    backup = create_backup(
+        destination=tmp_path / "p5-rolled-back-backup",
+        holdings_db=source_holdings,
+        simulation_db=source_simulation,
+        include_tracking=False,
+        strategy_selection_runtime=source_runtime,
+    )
+
+    target_holdings = _holdings_db(tmp_path / "target-holdings.db")
+    target_simulation = _p5_simulation_db(tmp_path / "target-simulation.db")
+    target_runtime = tmp_path / "target-strategy-selection"
+    _selection_runtime_with_active_policy(
+        target_runtime,
+        target_simulation,
+        suffix="B",
+    )
+
+    result = restore_backup(
+        backup,
+        restore_simulation=True,
+        target_holdings=target_holdings,
+        target_simulation=target_simulation,
+        target_strategy_selection_runtime=target_runtime,
+    )
+
+    restored_registry = ProductionStrategySelectionRegistry(
+        runtime_dir=target_runtime,
+        simulation_db=target_simulation,
+    )
+    resolution = restored_registry.resolve_active_selection_policy()
+    reference, reference_reason = restored_registry._load_reference()  # noqa: SLF001
+
+    assert reference_reason is None
+    assert reference is not None
+    assert resolution.policy_source == "ACTIVE_SELECTION_POLICY"
+    assert resolution.policy["policy_id"] == rollback_snapshot["policy_id"]
+    assert reference["active_policy_id"] == rollback_snapshot["policy_id"]
+    assert reference["rollback_policy_id"] is None
+    assert reference["rollback_policy_hash"] is None
+    assert reference["last_deactivated_policy_id"] == active_snapshot["policy_id"]
+    assert reference["generation"] == 3
+    assert result["strategy_selection"]["resolved_policy_id"] == rollback_snapshot["policy_id"]
+
+    with pytest.raises(SelectionPolicyError) as second_rollback:
+        restored_registry.rollback_selection_policy(
+            expected_active_policy_id=rollback_snapshot["policy_id"],
+        )
+    assert second_rollback.value.code == "ROLLBACK_POLICY_NOT_AVAILABLE"

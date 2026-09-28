@@ -104,6 +104,9 @@ temp/
 /backend/runtime/baseline/*
 !/backend/runtime/baseline/README.md
 !/backend/runtime/baseline/scanner-production-baseline_*.json
+!/backend/runtime/strategy_selection/
+/backend/runtime/strategy_selection/*
+!/backend/runtime/strategy_selection/README.md
 
 
 # ---------------------------------------------------------
@@ -185,3 +188,7 @@ desktop.ini
 
 # Local generated planning documents
 /StockScope_*_Brief_*.docx
+# Local runtime backups
+backups/
+*.db-shm
+*.db-wal

@@ -11,6 +11,7 @@ from typing import Any
 from app.backtest.production_exit_policy import production_policy_cache_token
 from app.backtest.scanner import StockScannerService
 from app.core.config import PROJECT_ROOT
+from app.input_identity import read_input_generation_token
 
 
 ANALYSIS_ENGINE_VERSION = "HOLD_SINGLE_STOCK_V1"
@@ -82,6 +83,14 @@ class _ReadOnlyMarketStore:
     def _load(raw: str) -> dict[str, Any]:
         value = json.loads(raw)
         return value if isinstance(value, dict) else {}
+
+    def input_generation_token(
+        self,
+        market: str,
+        ticker: str,
+    ) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            return read_input_generation_token(conn, market, ticker)
 
     def has_data_day(self, market: str, bas_dd: str, kind: str) -> bool:
         with self._connect() as conn:
@@ -237,6 +246,10 @@ class SingleStockAnalysisAdapter:
         clean_ticker = _normalize_ticker(ticker)
         target_date = _normalize_market_date(market_date)
         end_dd = target_date.strftime("%Y%m%d")
+        input_generation_before = self.store.input_generation_token(
+            clean_market,
+            clean_ticker,
+        )
 
         if not self.store.has_data_day(clean_market, end_dd, "stock"):
             raise HoldingsAnalysisError(
@@ -353,6 +366,18 @@ class SingleStockAnalysisAdapter:
             _canonical_json(fingerprint_payload).encode("utf-8")
         ).hexdigest()
 
+        input_generation_after = self.store.input_generation_token(
+            clean_market,
+            clean_ticker,
+        )
+        if input_generation_before != input_generation_after and (
+            input_generation_before is not None or input_generation_after is not None
+        ):
+            raise HoldingsAnalysisError(
+                "HOLD_ANALYSIS_INPUT_CHANGED_DURING_READ",
+                "분석 중 Market Store 입력 generation이 변경되었습니다. 다시 분석하세요.",
+            )
+
         source_versions = {
             "scanner_version": self.scanner.VERSION,
             "scanner_data_integrity_version": self.scanner.DATA_INTEGRITY_VERSION,
@@ -367,6 +392,8 @@ class SingleStockAnalysisAdapter:
             "fingerprinted_index_rows": len(fingerprint_index_rows),
             "sector_input_mode": "NONE_PRODUCTION_SAFE",
         }
+        if input_generation_after is not None:
+            source_versions["input_generation"] = input_generation_after
 
         snapshot = {
             "strategy_key": strategy_key,

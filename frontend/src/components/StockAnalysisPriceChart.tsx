@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchStockChart,
   prepareStockChartWithProgress,
@@ -6,6 +6,8 @@ import {
   type StockChartResponse,
   type StrategyAnalysis,
 } from "../services/api";
+import useStockDataContract from "../hooks/useStockDataContract";
+import { contractAction } from "../services/dataContract";
 
 const RANGE_OPTIONS: Array<{ key: StockChartRange; label: string }> = [
   { key: "1m", label: "1개월" },
@@ -47,6 +49,18 @@ export default function StockAnalysisPriceChart({ code, market, analysis }: Prop
   const [preparing, setPreparing] = useState(false);
   const [progress, setProgress] = useState<{ current: number; required: number; message: string } | null>(null);
 
+  const prepareGenerationRef = useRef(0);
+  const activeIdentityRef = useRef(`${market}:${code.trim().toUpperCase()}:${range}`);
+  activeIdentityRef.current = `${market}:${code.trim().toUpperCase()}:${range}`;
+  const {
+    contract: dataContract,
+    error: contractError,
+    refresh: refreshDataContract,
+  } = useStockDataContract({ code, market, range });
+  const chartContract = dataContract?.resources.chart ?? null;
+  const prepareChartAction = contractAction(dataContract, "PREPARE_CHART");
+
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -65,6 +79,7 @@ export default function StockAnalysisPriceChart({ code, market, analysis }: Prop
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+    prepareGenerationRef.current += 1;
     return () => { cancelled = true; };
   }, [code, market, range]);
 
@@ -110,23 +125,40 @@ export default function StockAnalysisPriceChart({ code, market, analysis }: Prop
   }, [chart, analysis]);
 
   async function prepareRange() {
-    if (preparing) return;
+    if (preparing || !prepareChartAction) return;
+    const identity = activeIdentityRef.current;
+    const generation = ++prepareGenerationRef.current;
+    const isCurrent = () =>
+      prepareGenerationRef.current === generation && activeIdentityRef.current === identity;
     setPreparing(true);
     setError(null);
     try {
       await prepareStockChartWithProgress(code, market, range, (item) => {
+        if (!isCurrent()) return;
         setProgress({ current: item.current ?? 0, required: item.required ?? 0, message: item.message });
       });
-      setChart(await fetchStockChart(code, market, range));
+      if (!isCurrent()) return;
+      const refreshed = await fetchStockChart(code, market, range);
+      if (!isCurrent()) return;
+      setChart(refreshed);
       setProgress(null);
+      await refreshDataContract();
     } catch (reason) {
+      if (!isCurrent()) return;
       setError(reason instanceof Error ? reason.message : "차트 데이터를 준비하지 못했습니다.");
+      await refreshDataContract();
     } finally {
-      setPreparing(false);
+      if (isCurrent()) setPreparing(false);
     }
   }
 
-  const partial = Boolean(chart && chart.count < chart.requested_bars);
+  const partial = Boolean(
+    chart && (
+      chart.count < chart.requested_bars
+      || chartContract?.reason_code === "INSUFFICIENT_COVERAGE"
+    ),
+  );
+  const needsPreparation = Boolean(prepareChartAction);
 
   return (
     <section className="stock-analysis-chart" aria-label="확정 일봉 차트">
@@ -153,10 +185,16 @@ export default function StockAnalysisPriceChart({ code, market, analysis }: Prop
         </div>
       )}
 
-      {partial && (
+      {(partial || needsPreparation) && (
         <div className="stock-analysis-chart-coverage">
-          <span>{preparing ? progress?.message ?? "과거 데이터를 준비하고 있습니다." : `현재 ${chart?.count ?? 0} / ${chart?.requested_bars ?? 0}거래일`}</span>
-          {!preparing && <button type="button" onClick={() => void prepareRange()}>이 기간 데이터 준비</button>}
+          <span>
+            {preparing
+              ? progress?.message ?? "과거 데이터를 준비하고 있습니다."
+              : chartContract?.reason_code === "STALE_TO_MARKET_CONFIRMED"
+                ? `저장 차트 최신일 ${chartContract.to_date ?? "-"} · 시장 확정 ${chartContract.market_confirmed_date ?? "-"}`
+                : `현재 ${chartContract?.row_count ?? chart?.count ?? 0} / ${chartContract?.required_rows ?? chart?.requested_bars ?? 0}거래일`}
+          </span>
+          {!preparing && prepareChartAction && <button type="button" onClick={() => void prepareRange()}>이 기간 데이터 준비</button>}
         </div>
       )}
 
@@ -205,6 +243,7 @@ export default function StockAnalysisPriceChart({ code, market, analysis }: Prop
       )}
 
       {error && model && <div className="stock-analysis-chart-inline-error">{error}</div>}
+      {contractError && <div className="stock-analysis-chart-inline-error contract">데이터 상태를 확인하지 못했습니다.</div>}
     </section>
   );
 }

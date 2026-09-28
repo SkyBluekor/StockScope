@@ -104,7 +104,8 @@ def test_stock_analysis_frontend_contract() -> None:
     assert "상세 기술지표 보기" in workspace
     assert "공식 확정 EOD 기준" in workspace
     assert "StockAnalysisPriceChart" in workspace
-    assert "현재 참고가격·보유상태 시나리오" in app
+    assert "가상 분석 조건" in app
+    assert "실제 보유 수량·평균단가와 원장을 변경하지 않습니다." in app
     assert "공식 확정 일봉 분석을 덮어쓰지 않습니다." in app
     assert "종목 종목 분석" not in app
     assert "INPUT UX v0.15.2" not in app

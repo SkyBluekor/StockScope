@@ -22,11 +22,23 @@ from app.simulation.validation_replay import (
     HistoricalValidationReplayError,
     HistoricalValidationReplayService,
 )
+from app.simulation.input_identity import verify_validation_input_identity
 from app.simulation.validation_outcome import (
     HistoricalValidationOutcomeError,
     HistoricalValidationOutcomeService,
 )
 from app.backtest.production_exit_policy import production_policy_cache_token
+from app.horizon import (
+    HorizonPolicyError,
+    horizon_policy_catalog,
+    require_horizon_activatable,
+    resolve_horizon_context,
+)
+from app.horizon_context import (
+    HorizonStorageError,
+    get_execution_horizon,
+    get_validation_horizon,
+)
 from app.simulation.execution_catalog import ExecutionCatalogError, HistoricalExecutionCatalog
 from app.simulation.execution_engine import HistoricalExecutionEngine
 from app.simulation.execution_service import (
@@ -127,6 +139,12 @@ def _validation_task_active(validation_id: str) -> bool:
 def _validation_payload(item):
     payload = item.to_dict()
     payload["runtime_active"] = _validation_task_active(item.id)
+    catalog = _validation_catalog()
+    with catalog.connect() as conn:
+        payload["horizon_context"] = get_validation_horizon(
+            conn,
+            item.id,
+        ).to_dict()
     return payload
 
 
@@ -239,6 +257,11 @@ def _validation_error(error: ValidationPeriodError) -> None:
     raise HTTPException(status_code=422, detail={"code": error.code, "message": error.message})
 
 
+@router.get("/simulation/horizon-policy", tags=["simulation-validation"])
+def get_horizon_policy():
+    return horizon_policy_catalog()
+
+
 @router.get("/simulation/validation-periods/preview", tags=["simulation-validation"])
 def validation_period_preview(
     preset: str | None = Query(default=None),
@@ -276,6 +299,7 @@ class ValidationDraftRequest(BaseModel):
     start_month: str | None = None
     end_month: str | None = None
     market_scope: str = "ALL"
+    horizon_intent: str | None = None
 
 
 @router.post("/simulation/validations", status_code=201, tags=["simulation-validation"])
@@ -289,7 +313,11 @@ def create_validation_draft(request: ValidationDraftRequest):
     }
     try:
         resolved = _validation_resolver().require_valid(**period_input)
-        draft = _validation_catalog().create_draft(
+        horizon_context = resolve_horizon_context(
+            payload.get("horizon_intent")
+        )
+        catalog = _validation_catalog()
+        draft = catalog.create_draft(
             name=payload.get("name") or "",
             market_scope=resolved["market_scope"],
             requested_period_type=(resolved.get("preset") or "custom"),
@@ -298,12 +326,23 @@ def create_validation_draft(request: ValidationDraftRequest):
             resolved_start_date=resolved["resolved_start_date"],
             resolved_end_date=resolved["resolved_end_date"],
             trading_day_count=resolved["trading_days"],
+            horizon_context=horizon_context,
         )
-        return draft.to_dict()
+        return _validation_payload(draft)
     except ValidationPeriodError as error:
         _validation_error(error)
     except ValidationCatalogError as error:
         _validation_catalog_error(error)
+    except HorizonPolicyError as error:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": error.code, "message": error.message},
+        ) from error
+    except HorizonStorageError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": error.code, "message": error.message},
+        ) from error
 
 
 @router.get("/simulation/validations", tags=["simulation-validation"])
@@ -342,6 +381,16 @@ async def run_validation_replay(validation_id: str):
             "VAL_REPLAY_INTERRUPTED",
             "이전 서버 프로세스에서 실행이 중단되었습니다. 완료된 날짜부터 이어 실행합니다.",
         )
+
+    try:
+        with catalog.connect() as conn:
+            horizon_context = get_validation_horizon(conn, validation_id)
+        require_horizon_activatable(horizon_context)
+    except HorizonPolicyError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": error.code, "message": error.message},
+        ) from error
 
     try:
         claimed = catalog.begin_replay(validation_id)
@@ -408,6 +457,37 @@ async def cancel_validation_replay(validation_id: str):
         "status": updated.status,
         "cancel_requested": updated.cancel_requested,
     }
+
+
+@router.post(
+    "/simulation/validations/{validation_id}/verify-input",
+    tags=["simulation-validation"],
+)
+def verify_validation_input(validation_id: str):
+    catalog = _validation_catalog()
+    item = catalog.get(validation_id)
+    if item is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "VAL_REPLAY_NOT_FOUND",
+                "message": "저장된 검증을 찾을 수 없습니다.",
+            },
+        )
+    if item.status != "COMPLETED":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "VAL_REPLAY_NOT_COMPLETED",
+                "message": "완료된 Historical Validation만 입력 근거를 검증할 수 있습니다.",
+            },
+        )
+    service = _validation_replay_service()
+    return verify_validation_input_identity(
+        catalog,
+        service.market_store,
+        validation_id,
+    )
 
 
 @router.get(
@@ -489,6 +569,12 @@ def _execution_task_active(execution_run_id: str) -> bool:
 def _execution_run_payload(item):
     payload = asdict(item)
     payload["runtime_active"] = _execution_task_active(item.id)
+    catalog = _execution_catalog()
+    with catalog.connect() as conn:
+        payload["horizon_context"] = get_execution_horizon(
+            conn,
+            item.id,
+        ).to_dict()
     return payload
 
 
@@ -501,6 +587,7 @@ def _execution_http_error(code: str, message: str) -> None:
         status = 404
     elif code in {
         "VAL2_SOURCE_NOT_COMPLETED",
+        "VAL2_HORIZON_NOT_ACTIVE",
         "VAL2_RUN_ALREADY_RUNNING",
         "VAL2_RUN_ALREADY_COMPLETED",
         "VAL2_RUN_INVALID_STATUS",

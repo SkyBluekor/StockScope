@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 BASELINE_SCHEMA_VERSION = "stockscope.sim0.v1"
-EXPECTED_SCANNER_VERSION = "0.21.3.7"
+EXPECTED_SCANNER_VERSION = "0.21.3.8"
 BASELINE_FILENAME = f"scanner-production-baseline_{EXPECTED_SCANNER_VERSION}.json"
 
 # These are the smallest stable production entry points we already know drive the
@@ -48,6 +48,8 @@ POLICY_SPEC: dict[str, Any] = {
     "ranking_tie_break": "STRUCTURAL_TARGET_NEAREST_PROMOTE_ONE_EXACT_BASE_PRIORITY_TIE",
     "overextension_guard": "NOT_PRODUCTION",
     "volume_low_guard": "REJECTED_NOT_PRODUCTION",
+    "strategy_selection_policy": "RUN_PINNED_ACTIVE_WITH_SAFE_FALLBACK",
+    "strategy_selection_scope": "POOL_MEMBERSHIP_ONLY_RISK_NO_TRADE_SCORE_PRIORITY_PRESERVED",
 }
 
 RESEARCH_STATUS: dict[str, Any] = {
@@ -406,6 +408,30 @@ def load_manifest(path: Path) -> dict[str, Any]:
         raise BaselineError(f"Unable to read baseline manifest {path}: {exc}") from exc
 
 
+def _compatible_recorded_hash(path: Path, expected_hash: str) -> str:
+    """Return the recorded hash when bytes differ only by CRLF/LF checkout policy.
+
+    Baseline manifests can be frozen on Windows and verified in Linux CI (or the
+    reverse). Git may materialize tracked text files with different newline bytes
+    even though repository content is identical. Production verification must
+    detect code changes, not checkout-platform line endings.
+    """
+    raw = path.read_bytes()
+    raw_hash = sha256_bytes(raw)
+    if raw_hash == expected_hash:
+        return expected_hash
+
+    lf = raw.replace(b"\r\n", b"\n")
+    if sha256_bytes(lf) == expected_hash:
+        return expected_hash
+
+    crlf = lf.replace(b"\n", b"\r\n")
+    if sha256_bytes(crlf) == expected_hash:
+        return expected_hash
+
+    return raw_hash
+
+
 def _hash_current_recorded_files(project_root: Path, recorded: list[dict[str, Any]]) -> tuple[list[dict[str, str]], list[str]]:
     root = project_root.resolve()
     rows: list[dict[str, str]] = []
@@ -418,7 +444,13 @@ def _hash_current_recorded_files(project_root: Path, recorded: list[dict[str, An
         if not path.is_file():
             missing.append(rel)
             continue
-        rows.append({"path": rel, "sha256": sha256_file(path)})
+        expected_hash = str(row.get("sha256") or "")
+        rows.append(
+            {
+                "path": rel,
+                "sha256": _compatible_recorded_hash(path, expected_hash),
+            }
+        )
     return rows, sorted(missing)
 
 

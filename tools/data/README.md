@@ -6,6 +6,8 @@
 
 - `backend/runtime/holdings/holdings.db`: 사용자 핵심 상태. 기본 백업 대상.
 - `backend/runtime/market_history/market_history.db`: 재수집 가능한 시장 데이터. `--include-market`일 때만 백업.
+- `backend/runtime/simulation/simulation.db`: 존재하면 기본 백업에 자동 포함. Validation/Feedback/Prospective 평가 상태를 보존.
+- `backend/runtime/tracking/recommendation_tracking.db`: 존재하면 기본 백업에 자동 포함. Tracking 원본 owner는 그대로 유지.
 - `.env`, KRX/KIS/DART 키, 인증 정보: 백업 대상 아님.
 - `market_history.db`와 `holdings.db`는 cleanup 과정에서 자동 삭제하지 않습니다.
 
@@ -53,7 +55,7 @@ Doctor는 SQLite를 read-only mode로 열며 네트워크 요청, 다운로드, 
 .\.venv\Scripts\python.exe .\tools\data\backup_runtime.py
 ```
 
-기본 백업은 `holdings.db`와 `backup_manifest.json`만 포함합니다.
+기본 백업은 `holdings.db`를 필수로 포함하고, 존재하는 `simulation.db`와 `recommendation_tracking.db`를 자동 포함합니다. Market Store는 재수집 가능 데이터이므로 기본 제외입니다.
 
 ## 전체 데이터 백업
 
@@ -63,9 +65,83 @@ Doctor는 SQLite를 read-only mode로 열며 네트워크 요청, 다운로드, 
 
 Market Store까지 SQLite backup API로 snapshot합니다.
 
+## P2-S2 실제 추천 평가 저장소 준비
+
+P2-S2는 새 Scanner 실행부터 실제 추천 표본을 사후 선택 전에 보존합니다. 과거 Scanner 실행을 prospective 표본으로 소급 생성하지 않습니다.
+
+명시적으로 한 번 실행합니다.
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\migrate_prospective_vnp2s2.py
+```
+
+조회/API import는 이 migration을 자동 실행하지 않습니다. Migration 전에도 기존 Scanner는 정상 동작하며 prospective 수집만 `NOT_READY` 상태입니다.
+
+## P3-S1 보유 판단 저장소 준비
+
+P3-S1은 기존 Holdings 원장과 적용 계획 위에 별도의 보유 판단/선택 이력을 추가합니다. 기존 Position, 거래 이벤트, 과거 관리 계획을 소급 변환하지 않습니다.
+
+명시적으로 한 번 실행합니다.
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\migrate_holdings_decision_vnp3s1.py
+```
+
+조회/API import는 이 migration을 자동 실행하지 않습니다. Migration 전에도 기존 Holdings·원장·관리 계획 기능은 유지되며 새 보유 판단 기능만 `HOLD_DECISION_MIGRATION_REQUIRED` 상태입니다.
+
+Decision, Resolution, Plan Context는 `holdings.db`에 저장되므로 기본 Holdings backup에 함께 포함됩니다. Manifest의 `holding_decision_v1` 항목은 해당 optional table family가 완전하고 복원 가능한지 별도로 기록합니다.
+
+## P3-S2 Recovery 검토 저장소 준비
+
+P3-S2는 기존 Position/원장/관리 계획을 바꾸지 않고, 같은 Position에 수동 Recovery 검토와 append-only assessment 이력을 추가합니다. P3-S1 migration이 선행되어야 하며, 과거 손실 Position을 자동으로 Recovery 상태로 backfill하지 않습니다.
+
+Recovery review/assessment는 `holdings.db`의 사용자 기록이므로 DATA.1 기본 Holdings snapshot에 함께 포함됩니다. Backup manifest의 `extensions.holding_recovery_v1`이 세 Recovery 테이블과 schema version을 명시하며, restore 후에도 동일 review/assessment ID와 당시 snapshot을 보존합니다.
+
+명시적으로 한 번 실행합니다.
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\migrate_holdings_recovery_vnp3s2.py
+```
+
+조회/API import는 이 migration을 자동 실행하지 않습니다. Migration 전에는 Recovery service가 `HOLD_RECOVERY_MIGRATION_REQUIRED`로 중단되고 기존 Holdings/Decision/Plan 기능은 그대로 유지됩니다.
+
+## VN-P4-S1 Watch 저장소 준비
+
+P4-S1은 기존 KIS quote 전달과 P3-S1의 ACTIVE Plan 위에 서버 Watch 설정·규칙·episode·coverage gap·앱 내 알림 outbox를 추가합니다. 기존 Position/원장/Plan을 수정하지 않으며, migration 시 과거 ACTIVE Plan을 Watch로 자동 backfill하거나 과거 알림을 생성하지 않습니다.
+
+명시적으로 한 번 실행합니다.
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\migrate_watch_vnp4s1.py
+```
+
+현재 운영 confirmation·재무장·freshness 수치는 검증 전이므로 기본 production Watch policy는 `OPERATING_THRESHOLDS_UNAPPROVED`로 비활성입니다. Migration은 저장 구조만 준비하며 실시간 감시를 임의로 활성화하지 않습니다. 테스트 fixture에서만 명시적인 수치를 주입해 lifecycle을 검증합니다.
+
+Watch 상태는 `holdings.db`에 저장되어 기본 Holdings backup에 포함됩니다. Backup manifest의 `extensions.holding_watch_v1`은 schema/policy contract와 여섯 Watch 테이블의 복원 가능성을 기록합니다. Quote tick 자체는 backup하지 않으며 restore 뒤 서버는 새 live coverage를 다시 확보해야 합니다. 서버 종료 구간의 가격이나 confirmation을 소급 재구성하지 않습니다.
+
+## VN-P3-S1-UAT.4 Stop-Loosening fixture
+
+이 도구는 브라우저 UAT에서 stop-loosening 보호를 확인하기 위한 **일회성 테스트 도구**입니다. 제품 분석 경로가 아니며, 기존 Analysis/Plan/Position을 수정하지 않고 현재 Analysis를 복제한 새 Revision 하나만 append합니다.
+
+기본 실행은 preview만 표시하고 DB를 변경하지 않습니다.
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\prepare_vnp3s1_stop_loosening_fixture.py --ticker 005930 --market KOSPI
+```
+
+출력된 Position/Active Plan/stop을 확인한 뒤 실제 fixture를 만들 때만 `--apply`를 추가합니다.
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\prepare_vnp3s1_stop_loosening_fixture.py --ticker 005930 --market KOSPI --apply
+```
+
+`--apply`는 변경 전에 Holdings snapshot을 자동 생성합니다. 현재 최신 Analysis가 이미 Active Plan의 source와 다르거나, Position/Plan/Analysis가 백업 이후 동시에 바뀌면 fixture 생성을 중단합니다. 생성되는 새 Revision은 현재 Active Plan보다 낮은 stop을 사용하며, 수량/평단/BUY·SELL·기존 Plan은 변경하지 않습니다.
+
+브라우저 UAT가 끝나면 서버를 종료한 뒤 도구가 출력한 restore 명령으로 fixture 전 상태를 복원합니다.
+
 ## 복원
 
-기본 복원은 Holdings DB만 복원합니다.
+기본 복원은 Holdings DB만 복원합니다. Simulation/Tracking은 백업에 포함되어 있어도 명시적으로 복원합니다.
 
 ```powershell
 .\.venv\Scripts\python.exe .\tools\data\restore_runtime.py .\backups\StockScope_...
@@ -75,6 +151,12 @@ Market Store까지 포함된 백업이라면 명시적으로:
 
 ```powershell
 .\.venv\Scripts\python.exe .\tools\data\restore_runtime.py .\backups\StockScope_... --restore-market
+```
+
+Simulation/Tracking 상태까지 복원할 때는 필요한 owner를 명시합니다.
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\restore_runtime.py .\backups\StockScope_... --restore-simulation --restore-tracking
 ```
 
 복원은 manifest/hash/integrity/FK/domain 검사를 먼저 수행합니다. 기존 DB가 있으면 `*.pre_restore_*.bak` snapshot을 만든 뒤 교체합니다. StockScope 서버가 DB를 사용 중이면 복원을 거부합니다.

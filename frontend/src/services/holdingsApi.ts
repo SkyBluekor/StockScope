@@ -1,3 +1,15 @@
+export type HoldingHorizonContext = {
+  intent: "SHORT" | "MEDIUM" | "LONG" | "LEGACY_UNSPECIFIED" | string;
+  policy_version: string | null;
+  support_status: "SUPPORTED" | "EVALUATION_PENDING" | "UNSUPPORTED" | "LEGACY_UNSPECIFIED" | string;
+  reason_code: string | null;
+  review_cycle_trading_days: number | null;
+  time_stop_trading_days: number | null;
+  strategy_support: Record<string, string> | null;
+  required_inputs: string[] | null;
+  confirmation_policy: string | null;
+};
+
 export type HoldingAnalysis = {
   market_date: string;
   revision_id: string;
@@ -14,6 +26,7 @@ export type HoldingAnalysis = {
   policy_version?: string | null;
   revision_reason?: string | null;
   computed_at?: string | null;
+  horizon_context: HoldingHorizonContext;
 };
 
 export type HoldingPosition = {
@@ -224,6 +237,18 @@ export type HoldingHistoryPrepare = {
   message: string;
 };
 
+export type HoldingAnalysisInputProof = {
+  revision_id: string;
+  market: string;
+  ticker: string;
+  market_date: string;
+  verification_result: "MATCH" | "MISMATCH";
+  stored_fingerprint: string;
+  current_fingerprint: string;
+  generation: Record<string, unknown>;
+  verified_at: string;
+};
+
 export type HoldingAnalysisRefreshResponse = HoldingAnalysis & {
   created_revision: boolean;
   promoted_current: boolean;
@@ -275,6 +300,74 @@ export type HoldingManagementPlan = {
   previous_plan_id: string | null;
   superseded_at: string | null;
   closed_at: string | null;
+  horizon_context?: HoldingHorizonContext;
+};
+
+export type HoldingDecisionAction =
+  | "HOLD"
+  | "ADD"
+  | "REDUCE"
+  | "TAKE_PROFIT"
+  | "STOP"
+  | "EXIT"
+  | string;
+
+export type HoldingDecisionOption = {
+  action: HoldingDecisionAction;
+  state: "AVAILABLE" | "REVIEW" | "MANUAL_REVIEW" | "BLOCKED" | "NOT_TRIGGERED" | "DEFERRED" | string;
+  reason: string;
+};
+
+export type HoldingDecisionRecord = {
+  decision_id: string;
+  position_id: string;
+  decision_policy_version: string;
+  status: "ACTIONABLE" | "REVIEW_REQUIRED" | "DEFERRED" | "INSUFFICIENT_DATA" | "CONFLICT" | string;
+  effective_status?: "STALE" | string;
+  primary_action: HoldingDecisionAction | null;
+  source_analysis_revision_id: string | null;
+  source_active_plan_id: string | null;
+  source_active_plan_version: number | null;
+  source_position_status: string;
+  source_position_quantity: string;
+  source_position_average_price: string | null;
+  valuation_market_date: string | null;
+  valuation_price: string | null;
+  valuation_source: string | null;
+  horizon_intent: string | null;
+  horizon_policy_version: string | null;
+  input_fingerprint: string;
+  evidence: {
+    plan_state?: string;
+    proposal_conflict?: string | null;
+    latest_analysis_differs_from_active_plan?: boolean;
+    new_plan_horizon_activatable?: boolean;
+    source?: Record<string, unknown>;
+  };
+  alternatives: HoldingDecisionOption[];
+  limitations: Array<{ code: string; message: string }>;
+  created_at: string;
+  stale?: boolean;
+  stale_reasons?: string[];
+  reused?: boolean;
+  resolutions?: Array<{
+    resolution_id: string;
+    selected_action: HoldingDecisionAction | null;
+    resolution_type: string;
+    note: string | null;
+    resulting_plan_id: string | null;
+    created_at: string;
+  }>;
+};
+
+export type HoldingDecisionSupportResponse = {
+  stock_id: string;
+  market: string;
+  ticker: string;
+  positions: Array<{
+    position_id: string;
+    decision: HoldingDecisionRecord | null;
+  }>;
 };
 
 export type HoldingManagementResponse = {
@@ -305,6 +398,35 @@ export type HoldingManagementResponse = {
       stop_price?: string | null;
       target1_price?: string | null;
       target2_price?: string | null;
+    };
+  }>;
+};
+
+export type LiveHoldingManagementProximityResponse = {
+  stock_id: string;
+  market: string;
+  ticker: string;
+  available: boolean;
+  state: "FRESH" | "STALE" | "UNAVAILABLE";
+  reason_code: string | null;
+  quote: {
+    provider: string;
+    mode: string;
+    venue: string;
+    price: string;
+    provider_timestamp: string | null;
+    received_at: string;
+    age_ms: number;
+    freshness_seconds: number;
+  } | null;
+  positions: Array<{
+    position_id: string;
+    active_plan_id: string | null;
+    plan_version: number | null;
+    distances: {
+      stop: { level: string | null; amount: string | null; pct: string | null };
+      target1: { level: string | null; amount: string | null; pct: string | null };
+      target2: { level: string | null; amount: string | null; pct: string | null };
     };
   }>;
 };
@@ -366,6 +488,108 @@ export type HoldingPerformanceResponse = {
   warnings: string[];
 };
 
+export type HoldingRecoveryThesisState = "INTACT" | "WEAKENED" | "BROKEN" | "UNKNOWN";
+export type HoldingRecoveryAction = "UNDECIDED" | "HOLD" | "REDUCE" | "EXIT" | "ADD_REVIEW";
+
+export type HoldingRecoveryReview = {
+  review_id: string;
+  position_id: string;
+  status: "OPEN" | "CLOSED";
+  opened_at: string;
+  opened_note: string | null;
+  closed_at: string | null;
+  close_reason: string | null;
+  close_note: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type HoldingRecoveryAssessment = {
+  assessment_id: string;
+  review_id: string;
+  position_id: string;
+  thesis_state: HoldingRecoveryThesisState;
+  review_action: HoldingRecoveryAction;
+  reason_note: string | null;
+  source_analysis_revision_id: string | null;
+  source_active_plan_id: string | null;
+  source_active_plan_version: number | null;
+  source_position_status: string;
+  source_position_quantity: string;
+  source_position_average_price: string | null;
+  valuation_market_date: string | null;
+  valuation_price: string | null;
+  unrealized_pnl: string | null;
+  unrealized_return_pct: string | null;
+  linked_decision_id: string | null;
+  limitations: string[];
+  evidence: Record<string, unknown>;
+  created_at: string;
+};
+
+export type HoldingRecoveryContext = {
+  position_id: string;
+  open_review: HoldingRecoveryReview | null;
+  latest_open_assessment: HoldingRecoveryAssessment | null;
+  reviews: HoldingRecoveryReview[];
+  review_history: Array<{
+    review: HoldingRecoveryReview;
+    assessments: HoldingRecoveryAssessment[];
+  }>;
+  current: {
+    evidence_version: string;
+    stock: { stock_id: string; market: string; ticker: string; name: string };
+    position: {
+      position_id: string;
+      status: string;
+      quantity: string;
+      average_price: string | null;
+      cost_basis: string | null;
+      opened_at: string;
+      closed_at: string | null;
+    };
+    valuation: HoldingPerformanceValuation;
+    performance: HoldingPositionPerformance | null;
+    analysis: {
+      market_date: string;
+      revision_id: string;
+      revision_no: number;
+      strategy_key: string | null;
+      action_state: string | null;
+      risk_state: string | null;
+      reference_price: string | null;
+      stop_price: string | null;
+      target1_price: string | null;
+      target2_price: string | null;
+      policy_version: string | null;
+      computed_at: string;
+    } | null;
+    active_plan: HoldingManagementPlan | null;
+    latest_decision: HoldingDecisionRecord | null;
+    limitations: string[];
+  };
+};
+
+export type LiveHoldingPerformanceResponse = {
+  stock_id: string;
+  market: string;
+  ticker: string;
+  available: boolean;
+  state: "FRESH" | "STALE" | "UNAVAILABLE";
+  reason_code: string | null;
+  quote: {
+    provider: string;
+    mode: string;
+    venue: string;
+    price: string;
+    provider_timestamp: string | null;
+    received_at: string;
+    age_ms: number;
+    freshness_seconds: number;
+  } | null;
+  performance: HoldingPerformanceResponse | null;
+};
+
 type ApiErrorBody = {
   detail?: string | ApiErrorDetail;
 };
@@ -418,8 +642,14 @@ export function listHoldingStocks(): Promise<HoldingStock[]> {
   return requestJson<HoldingStock[]>("/api/holdings/stocks");
 }
 
-export function getHoldingStock(stockId: string): Promise<HoldingStock> {
-  return requestJson<HoldingStock>(`/api/holdings/stocks/${encodeURIComponent(stockId)}`);
+export function getHoldingStock(
+  stockId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<HoldingStock> {
+  return requestJson<HoldingStock>(
+    `/api/holdings/stocks/${encodeURIComponent(stockId)}`,
+    { signal: options.signal },
+  );
 }
 
 export function addWatchStock(input: {
@@ -502,9 +732,124 @@ export function recordManualCorrection(
   );
 }
 
-export function getHoldingManagement(stockId: string): Promise<HoldingManagementResponse> {
+export function getHoldingDecisionSupport(
+  stockId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<HoldingDecisionSupportResponse> {
+  return requestJson<HoldingDecisionSupportResponse>(
+    `/api/holdings/stocks/${encodeURIComponent(stockId)}/decision-support`,
+    { signal: options.signal },
+  );
+}
+
+export function evaluateHoldingDecision(
+  positionId: string,
+): Promise<{ decision: HoldingDecisionRecord }> {
+  return requestJson<{ decision: HoldingDecisionRecord }>(
+    `/api/holdings/positions/${encodeURIComponent(positionId)}/decisions/evaluate`,
+    jsonInit("POST"),
+  );
+}
+
+export function resolveHoldingDecision(
+  decisionId: string,
+  input: {
+    resolution_type: "KEEP_CURRENT_PLAN" | "ACKNOWLEDGED" | "DEFERRED";
+    selected_action?: HoldingDecisionAction | null;
+    note?: string | null;
+  },
+): Promise<{ decision: HoldingDecisionRecord }> {
+  return requestJson<{ decision: HoldingDecisionRecord }>(
+    `/api/holdings/decisions/${encodeURIComponent(decisionId)}/resolve`,
+    jsonInit("POST", input),
+  );
+}
+
+export function applyHoldingDecisionPlan(
+  decisionId: string,
+  input: {
+    selected_action?: HoldingDecisionAction | null;
+    note?: string | null;
+  } = {},
+): Promise<{
+  decision: HoldingDecisionRecord;
+  plan: HoldingManagementPlan;
+  plan_context: {
+    context_version: string;
+    source_decision_id: string;
+    selected_action: HoldingDecisionAction | null;
+    review_cycle_trading_days: number | null;
+    time_stop_trading_days: number | null;
+  };
+}> {
+  return requestJson(
+    `/api/holdings/decisions/${encodeURIComponent(decisionId)}/apply-plan`,
+    jsonInit("POST", input),
+  );
+}
+
+export function getHoldingRecovery(
+  positionId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<HoldingRecoveryContext> {
+  return requestJson<HoldingRecoveryContext>(
+    `/api/holdings/positions/${encodeURIComponent(positionId)}/recovery`,
+    { signal: options.signal },
+  );
+}
+
+export function startHoldingRecovery(
+  positionId: string,
+  note?: string | null,
+): Promise<{ created: boolean; review: HoldingRecoveryReview; context: HoldingRecoveryContext }> {
+  return requestJson(
+    `/api/holdings/positions/${encodeURIComponent(positionId)}/recovery/start`,
+    jsonInit("POST", { note: note ?? null }),
+  );
+}
+
+export function recordHoldingRecoveryAssessment(
+  reviewId: string,
+  input: {
+    thesis_state: HoldingRecoveryThesisState;
+    review_action: HoldingRecoveryAction;
+    reason_note?: string | null;
+    linked_decision_id?: string | null;
+  },
+): Promise<{ assessment: HoldingRecoveryAssessment; context: HoldingRecoveryContext }> {
+  return requestJson(
+    `/api/holdings/recovery/${encodeURIComponent(reviewId)}/assessments`,
+    jsonInit("POST", input),
+  );
+}
+
+export function closeHoldingRecovery(
+  reviewId: string,
+  input: { reason?: string | null; note?: string | null } = {},
+): Promise<{ closed: boolean; review: HoldingRecoveryReview; context: HoldingRecoveryContext }> {
+  return requestJson(
+    `/api/holdings/recovery/${encodeURIComponent(reviewId)}/close`,
+    jsonInit("POST", input),
+  );
+}
+
+export function getHoldingManagement(
+  stockId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<HoldingManagementResponse> {
   return requestJson<HoldingManagementResponse>(
     `/api/holdings/stocks/${encodeURIComponent(stockId)}/management`,
+    { signal: options.signal },
+  );
+}
+
+export function getLiveHoldingManagementProximity(
+  stockId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<LiveHoldingManagementProximityResponse> {
+  return requestJson<LiveHoldingManagementProximityResponse>(
+    `/api/holdings/stocks/${encodeURIComponent(stockId)}/management/live-proximity`,
+    { signal: options.signal },
   );
 }
 
@@ -520,15 +865,36 @@ export function applyHoldingManagementPlan(
 
 export function getHoldingPerformance(
   stockId: string,
+  options: { signal?: AbortSignal } = {},
 ): Promise<HoldingPerformanceResponse> {
   return requestJson<HoldingPerformanceResponse>(
     `/api/holdings/stocks/${encodeURIComponent(stockId)}/performance`,
+    { signal: options.signal },
+  );
+}
+
+export function getLiveHoldingPerformance(
+  stockId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<LiveHoldingPerformanceResponse> {
+  return requestJson<LiveHoldingPerformanceResponse>(
+    `/api/holdings/stocks/${encodeURIComponent(stockId)}/performance/live`,
+    { signal: options.signal },
   );
 }
 
 export function getCurrentHoldingAnalysis(stockId: string): Promise<CurrentAnalysisResponse> {
   return requestJson<CurrentAnalysisResponse>(
     `/api/holdings/stocks/${encodeURIComponent(stockId)}/analysis`,
+  );
+}
+
+export function verifyHoldingAnalysisInput(
+  stockId: string,
+): Promise<{ proof: HoldingAnalysisInputProof }> {
+  return requestJson<{ proof: HoldingAnalysisInputProof }>(
+    `/api/holdings/stocks/${encodeURIComponent(stockId)}/analysis/verify-input`,
+    jsonInit("POST"),
   );
 }
 
@@ -611,10 +977,12 @@ export async function prepareHoldingAnalysisWithProgress(
 export function getHoldingTimeline(
   stockId: string,
   limit = 100,
+  options: { signal?: AbortSignal } = {},
 ): Promise<HoldingTimelineItem[]> {
   const query = new URLSearchParams({ limit: String(limit) });
   return requestJson<HoldingTimelineItem[]>(
     `/api/holdings/stocks/${encodeURIComponent(stockId)}/timeline?${query.toString()}`,
+    { signal: options.signal },
   );
 }
 

@@ -13,6 +13,12 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
+from app.horizon import (
+    HorizonPolicyError,
+    require_horizon_activatable,
+    resolve_horizon_context,
+)
+from app.horizon_context import get_analysis_horizon
 
 from app.holdings.analysis_history import (
     HoldingAnalysisHistoryService,
@@ -30,6 +36,10 @@ from app.holdings.chart_prepare import (
     HoldingsChartPrepareService,
 )
 from app.holdings.decision_context import HoldingDecisionContextService
+from app.holdings.decision_support import (
+    HoldingDecisionSupportService,
+    HoldingsDecisionSupportError,
+)
 from app.holdings.freshness import (
     HoldingsMarketFreshnessError,
     HoldingsMarketFreshnessService,
@@ -37,6 +47,12 @@ from app.holdings.freshness import (
 from app.holdings.history_prepare import (
     HoldingsHistoryPrepareError,
     HoldingsHistoryPrepareService,
+)
+from app.holdings.live_performance import HoldingsLivePerformanceService
+from app.holdings.live_management import HoldingsLiveManagementService
+from app.holdings.input_proof import (
+    HoldingsInputProofError,
+    verify_current_analysis_input,
 )
 from app.holdings.kis_sync import (
     HoldingsKisSyncError,
@@ -49,6 +65,7 @@ from app.holdings.lifecycle import (
 )
 from app.holdings.performance import HoldingsPerformanceError, HoldingPerformanceService
 from app.holdings.management import HoldingsManagementError, HoldingManagementService
+from app.holdings.recovery import HoldingRecoveryService, HoldingsRecoveryError
 
 
 router = APIRouter(prefix="/holdings", tags=["holdings"])
@@ -79,6 +96,41 @@ class ApplyManagementPlanRequest(BaseModel):
     change_reason: str | None = Field(default=None, max_length=500)
 
 
+class HoldingDecisionResolutionRequest(BaseModel):
+    resolution_type: Literal[
+        "KEEP_CURRENT_PLAN",
+        "ACKNOWLEDGED",
+        "DEFERRED",
+    ]
+    selected_action: Literal[
+        "HOLD","ADD","REDUCE","TAKE_PROFIT","STOP","EXIT"
+    ] | None = None
+    note: str | None = Field(default=None, max_length=500)
+
+
+class HoldingDecisionApplyPlanRequest(BaseModel):
+    selected_action: Literal[
+        "HOLD","ADD","REDUCE","TAKE_PROFIT","STOP","EXIT"
+    ] | None = None
+    note: str | None = Field(default=None, max_length=500)
+
+
+class HoldingRecoveryStartRequest(BaseModel):
+    note: str | None = Field(default=None, max_length=1000)
+
+
+class HoldingRecoveryAssessmentRequest(BaseModel):
+    thesis_state: Literal["INTACT", "WEAKENED", "BROKEN", "UNKNOWN"]
+    review_action: Literal["UNDECIDED", "HOLD", "REDUCE", "EXIT", "ADD_REVIEW"]
+    reason_note: str | None = Field(default=None, max_length=2000)
+    linked_decision_id: str | None = Field(default=None, min_length=1, max_length=100)
+
+
+class HoldingRecoveryCloseRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=100)
+    note: str | None = Field(default=None, max_length=1000)
+
+
 class ManualBuyRequest(BaseModel):
     stock_id: str = Field(min_length=1)
     account_id: str | None = None
@@ -105,6 +157,16 @@ class ManualCorrectionRequest(BaseModel):
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _require_analysis_horizon(horizon_intent: str | None) -> None:
+    try:
+        require_horizon_activatable(resolve_horizon_context(horizon_intent))
+    except HorizonPolicyError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": error.code, "message": error.message},
+        ) from error
 
 
 def _catalog() -> HoldingsCatalog:
@@ -138,6 +200,18 @@ def _performance_service(catalog: HoldingsCatalog) -> HoldingPerformanceService:
     )
 
 
+def _live_performance_service() -> HoldingsLivePerformanceService:
+    raw = os.getenv("STOCKSCOPE_HOLDINGS_DB")
+    path = Path(raw) if raw else DEFAULT_HOLDINGS_DB
+    return HoldingsLivePerformanceService(path)
+
+
+def _live_management_service() -> HoldingsLiveManagementService:
+    raw = os.getenv("STOCKSCOPE_HOLDINGS_DB")
+    path = Path(raw) if raw else DEFAULT_HOLDINGS_DB
+    return HoldingsLiveManagementService(path)
+
+
 def _management_service(catalog: HoldingsCatalog) -> HoldingManagementService:
     return HoldingManagementService(
         catalog,
@@ -155,6 +229,22 @@ def _chart_prepare_service() -> HoldingsChartPrepareService:
 
 def _decision_service(catalog: HoldingsCatalog) -> HoldingDecisionContextService:
     return HoldingDecisionContextService(catalog)
+
+
+def _decision_support_service(
+    catalog: HoldingsCatalog,
+) -> HoldingDecisionSupportService:
+    return HoldingDecisionSupportService(
+        catalog,
+        market_store_db=_market_store_path(),
+    )
+
+
+def _recovery_service(catalog: HoldingsCatalog) -> HoldingRecoveryService:
+    return HoldingRecoveryService(
+        catalog,
+        market_store_db=_market_store_path(),
+    )
 
 
 def _freshness_service() -> HoldingsMarketFreshnessService:
@@ -200,6 +290,22 @@ def _http_status(code: str) -> int:
         "HOLD_PLAN_REVISION_FROM_FUTURE",
         "HOLD_PLAN_STOP_LOOSENING_BLOCKED",
         "HOLD_PLAN_CONFLICT",
+        "HOLD_PLAN_HORIZON_NOT_ACTIVE",
+        "HOLD_DECISION_MIGRATION_REQUIRED",
+        "HOLD_DECISION_SCHEMA_UNSUPPORTED",
+        "HOLD_DECISION_CONFLICT",
+        "HOLD_DECISION_STALE",
+        "HOLD_DECISION_ACTION_BLOCKED",
+        "HOLD_DECISION_PLAN_UNAVAILABLE",
+        "HOLD_DECISION_PLAN_UNCHANGED",
+        "HOLD_DECISION_RESOLUTION_CONFLICT",
+        "HOLD_DECISION_APPLY_CONFLICT",
+        "HOLD_RECOVERY_MIGRATION_REQUIRED",
+        "HOLD_RECOVERY_SCHEMA_UNSUPPORTED",
+        "HOLD_RECOVERY_POSITION_NOT_OPEN",
+        "HOLD_RECOVERY_REVIEW_CLOSED",
+        "HOLD_RECOVERY_DECISION_POSITION_MISMATCH",
+        "HOLD_RECOVERY_SOURCE_CHANGED",
         "HOLD_KIS_SYNC_CONFIGURATION_ERROR",
         "HOLD_KIS_SYNC_ACCOUNT_CONFLICT",
         "HOLD_KIS_SYNC_INCOMPLETE",
@@ -207,6 +313,8 @@ def _http_status(code: str) -> int:
         "HOLD_KIS_SYNC_MARKET_UNRESOLVED",
         "HOLD_KIS_SYNC_STORAGE_CONFLICT",
         "HOLD_ANALYSIS_HISTORY_CONFLICT",
+        "HOLD_INPUT_PROOF_MIGRATION_REQUIRED",
+        "HOLD_INPUT_PROOF_REVISION_CHANGED",
     }:
         return 409
     if code in {
@@ -330,6 +438,11 @@ def _current_analysis_payload(
             """,
             (stock_id,),
         ).fetchone()
+        horizon_context = (
+            get_analysis_horizon(conn, str(row["revision_id"])).to_dict()
+            if row is not None
+            else None
+        )
     if row is None:
         return None
     return {
@@ -348,6 +461,7 @@ def _current_analysis_payload(
         "policy_version": row["policy_version"],
         "revision_reason": row["revision_reason"],
         "computed_at": row["computed_at"],
+        "horizon_context": horizon_context,
     }
 
 
@@ -453,6 +567,10 @@ def _stored_analysis_payload(
             "SELECT market_date FROM stock_analysis_day WHERE id=?",
             (stored.analysis_day_id,),
         ).fetchone()
+        horizon_context = get_analysis_horizon(
+            conn,
+            stored.revision.id,
+        ).to_dict()
     if row is None:
         raise HTTPException(
             status_code=409,
@@ -477,6 +595,7 @@ def _stored_analysis_payload(
         "target2_price": _json_safe(revision.target2_price),
         "revision_reason": revision.revision_reason,
         "computed_at": revision.computed_at,
+        "horizon_context": horizon_context,
     }
 
 
@@ -497,6 +616,175 @@ def stock_detail(stock_id: str) -> dict[str, Any]:
         stock = catalog.get_monitored_stock(stock_id)
         return _stock_payload(catalog, stock, include_latest_event=True)
     except HoldingsCatalogError as error:
+        _raise_holdings_error(error)
+
+
+@router.get("/stocks/{stock_id}/decision-support")
+def stock_decision_support(stock_id: str) -> dict[str, Any]:
+    catalog = _catalog()
+    try:
+        return _decision_support_service(catalog).latest_for_stock(stock_id)
+    except (
+        HoldingsCatalogError,
+        HoldingsDecisionSupportError,
+    ) as error:
+        _raise_holdings_error(error)
+
+
+@router.post("/positions/{position_id}/decisions/evaluate")
+def evaluate_holding_decision(position_id: str) -> dict[str, Any]:
+    catalog = _catalog()
+    try:
+        return {
+            "decision": _decision_support_service(catalog).evaluate(position_id)
+        }
+    except (
+        HoldingsCatalogError,
+        HoldingsDecisionSupportError,
+    ) as error:
+        _raise_holdings_error(error)
+
+
+@router.get("/decisions/{decision_id}")
+def holding_decision_detail(decision_id: str) -> dict[str, Any]:
+    catalog = _catalog()
+    try:
+        return {
+            "decision": _decision_support_service(catalog).get_decision(
+                decision_id
+            )
+        }
+    except (
+        HoldingsCatalogError,
+        HoldingsDecisionSupportError,
+    ) as error:
+        _raise_holdings_error(error)
+
+
+@router.post("/decisions/{decision_id}/resolve")
+def resolve_holding_decision(
+    decision_id: str,
+    request: HoldingDecisionResolutionRequest,
+) -> dict[str, Any]:
+    catalog = _catalog()
+    try:
+        return {
+            "decision": _decision_support_service(catalog).resolve(
+                decision_id=decision_id,
+                resolution_type=request.resolution_type,
+                selected_action=request.selected_action,
+                note=request.note,
+            )
+        }
+    except (
+        HoldingsCatalogError,
+        HoldingsDecisionSupportError,
+    ) as error:
+        _raise_holdings_error(error)
+
+
+@router.post("/decisions/{decision_id}/apply-plan")
+def apply_holding_decision_plan(
+    decision_id: str,
+    request: HoldingDecisionApplyPlanRequest,
+) -> dict[str, Any]:
+    catalog = _catalog()
+    try:
+        return _decision_support_service(catalog).apply_plan(
+            decision_id=decision_id,
+            selected_action=request.selected_action,
+            note=request.note,
+        )
+    except (
+        HoldingsCatalogError,
+        HoldingsDecisionSupportError,
+        HoldingsManagementError,
+    ) as error:
+        _raise_holdings_error(error)
+
+
+@router.get("/positions/{position_id}/recovery")
+def holding_recovery_context(position_id: str) -> dict[str, Any]:
+    catalog = _catalog()
+    try:
+        return _recovery_service(catalog).get_context(position_id)
+    except (
+        HoldingsCatalogError,
+        HoldingsRecoveryError,
+    ) as error:
+        _raise_holdings_error(error)
+
+
+@router.post("/positions/{position_id}/recovery/start")
+def start_holding_recovery(
+    position_id: str,
+    request: HoldingRecoveryStartRequest,
+) -> dict[str, Any]:
+    catalog = _catalog()
+    try:
+        service = _recovery_service(catalog)
+        result = service.start_review(
+            position_id=position_id,
+            note=request.note,
+        )
+        return {
+            **result,
+            "context": service.get_context(position_id),
+        }
+    except (
+        HoldingsCatalogError,
+        HoldingsRecoveryError,
+    ) as error:
+        _raise_holdings_error(error)
+
+
+@router.post("/recovery/{review_id}/assessments")
+def record_holding_recovery_assessment(
+    review_id: str,
+    request: HoldingRecoveryAssessmentRequest,
+) -> dict[str, Any]:
+    catalog = _catalog()
+    try:
+        service = _recovery_service(catalog)
+        assessment = service.record_current_assessment(
+            review_id=review_id,
+            thesis_state=request.thesis_state,
+            review_action=request.review_action,
+            reason_note=request.reason_note,
+            linked_decision_id=request.linked_decision_id,
+        )
+        return {
+            "assessment": assessment,
+            "context": service.get_context(assessment["position_id"]),
+        }
+    except (
+        HoldingsCatalogError,
+        HoldingsRecoveryError,
+    ) as error:
+        _raise_holdings_error(error)
+
+
+@router.post("/recovery/{review_id}/close")
+def close_holding_recovery(
+    review_id: str,
+    request: HoldingRecoveryCloseRequest,
+) -> dict[str, Any]:
+    catalog = _catalog()
+    try:
+        service = _recovery_service(catalog)
+        result = service.close_review(
+            review_id=review_id,
+            reason=request.reason,
+            note=request.note,
+        )
+        return {
+            **result,
+            "context": service.get_context(result["review"]["position_id"]),
+        }
+    except (
+        HoldingsCatalogError,
+        HoldingsRecoveryError,
+    ) as error:
         _raise_holdings_error(error)
 
 
@@ -523,11 +811,27 @@ def apply_management_plan(position_id: str, request: ApplyManagementPlanRequest)
         _raise_holdings_error(error)
 
 
+@router.get("/stocks/{stock_id}/management/live-proximity")
+def stock_live_management_proximity(stock_id: str) -> dict[str, Any]:
+    try:
+        return _live_management_service().calculate(stock_id).to_dict()
+    except (HoldingsCatalogError, HoldingsManagementError) as error:
+        _raise_holdings_error(error)
+
+
 @router.get("/stocks/{stock_id}/performance")
 def stock_performance(stock_id: str) -> dict[str, Any]:
     catalog = _catalog()
     try:
         return _performance_service(catalog).calculate(stock_id).to_dict()
+    except (HoldingsCatalogError, HoldingsPerformanceError) as error:
+        _raise_holdings_error(error)
+
+
+@router.get("/stocks/{stock_id}/performance/live")
+def stock_live_performance(stock_id: str) -> dict[str, Any]:
+    try:
+        return _live_performance_service().calculate(stock_id).to_dict()
     except (HoldingsCatalogError, HoldingsPerformanceError) as error:
         _raise_holdings_error(error)
 
@@ -786,12 +1090,28 @@ def current_analysis(stock_id: str) -> dict[str, Any]:
     return {"available": analysis is not None, "analysis": analysis}
 
 
+@router.post("/stocks/{stock_id}/analysis/verify-input")
+def verify_analysis_input(stock_id: str) -> dict[str, Any]:
+    catalog = _catalog()
+    try:
+        result = verify_current_analysis_input(
+            catalog,
+            stock_id,
+            market_store_db=_market_store_path(),
+        )
+        return {"proof": result.to_dict()}
+    except (HoldingsCatalogError, HoldingsInputProofError) as error:
+        _raise_holdings_error(error)
+
+
 @router.post("/stocks/{stock_id}/analysis/refresh")
 async def refresh_analysis(
     stock_id: str,
     prepare_latest: bool = Query(default=False),
     prepare_history: bool = Query(default=False),
+    horizon_intent: str | None = Query(default=None),
 ) -> dict[str, Any]:
+    _require_analysis_horizon(horizon_intent)
     catalog = _catalog()
     try:
         # Existing API callers keep the HOLD.1-F behavior and make no external
@@ -853,7 +1173,12 @@ async def refresh_analysis(
 
 
 @router.post("/stocks/{stock_id}/analysis/prepare-stream")
-async def prepare_analysis_stream(stock_id: str) -> StreamingResponse:
+async def prepare_analysis_stream(
+    stock_id: str,
+    horizon_intent: str | None = Query(default=None),
+) -> StreamingResponse:
+    _require_analysis_horizon(horizon_intent)
+
     async def event_stream():
         catalog = _catalog()
 

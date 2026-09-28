@@ -9,6 +9,7 @@ from app.backtest.market_store import HistoricalMarketStore
 from app.backtest.scanner import StockScannerService
 from app.market.providers.krx import KrxProvider
 
+from .input_identity import build_replay_market_manifest
 from .validation_catalog import (
     HistoricalValidationCatalog,
     HistoricalValidationDraft,
@@ -366,6 +367,11 @@ class HistoricalValidationReplayService:
             started_clock = perf_counter()
             try:
                 self._assert_local_inputs(draft, replay_day)
+                input_manifest_before = build_replay_market_manifest(
+                    self.market_store,
+                    draft,
+                    replay_day,
+                )
                 scanner = self.scanner_factory()
                 result = await scanner.run(
                     market_scope=draft.market_scope,
@@ -380,6 +386,16 @@ class HistoricalValidationReplayService:
                         "Scanner 결과 형식이 올바르지 않습니다.",
                     )
                 self._validate_point_in_time(draft, replay_day, result)
+                input_manifest_after = build_replay_market_manifest(
+                    self.market_store,
+                    draft,
+                    replay_day,
+                )
+                if input_manifest_before != input_manifest_after:
+                    raise HistoricalValidationReplayError(
+                        "VAL_REPLAY_INPUT_CHANGED_DURING_READ",
+                        "Replay 중 Market Store 입력이 변경되었습니다. 해당 거래일부터 다시 실행하세요.",
+                    )
                 candidates = self._normalize_candidates(result)
                 duration_ms = max(0, int((perf_counter() - started_clock) * 1000))
 
@@ -391,6 +407,7 @@ class HistoricalValidationReplayService:
                     scanner_cache_hit=bool(result.get("scanner_cache_hit")),
                     partial_data=bool(result.get("partial_data")),
                     input_fingerprint=result.get("input_fingerprint"),
+                    input_manifest=input_manifest_after,
                     market_summary=result.get("market_summary"),
                     summary=result.get("summary"),
                     methodology=result.get("methodology"),

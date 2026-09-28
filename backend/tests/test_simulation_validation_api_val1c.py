@@ -9,7 +9,10 @@ from fastapi import HTTPException
 from fastapi.routing import APIRoute
 
 import app.api.simulation as simulation_api
+from app.horizon import resolve_horizon_context
+from app.simulation.execution_catalog import HistoricalExecutionCatalog
 from app.simulation.validation_catalog import HistoricalValidationCatalog
+from tools.data.migrate_horizon_context_vnp1s2 import migrate_simulation_horizon
 from app.simulation.validation_replay import HistoricalValidationReplayService
 
 
@@ -233,6 +236,59 @@ def test_detail_and_days_expose_progress_and_runtime_state(tmp_path: Path, monke
     assert days[0]["trading_date"] == "2026-01-05"
     assert days[0]["candidate_count"] == 1
     assert days[0]["diagnostics"]["network_requests"] == 0
+
+
+def test_horizon_policy_is_explicitly_pending_without_numeric_defaults():
+    policy = simulation_api.get_horizon_policy()
+
+    assert policy["numeric_policy_approved"] is False
+    assert {item["intent"] for item in policy["options"]} == {
+        "SHORT",
+        "MEDIUM",
+        "LONG",
+    }
+    assert all(
+        item["support_status"] == "EVALUATION_PENDING"
+        for item in policy["options"]
+    )
+    assert all(
+        item["review_cycle_trading_days"] is None
+        and item["time_stop_trading_days"] is None
+        for item in policy["options"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_pending_horizon_blocks_replay_before_background_task(
+    tmp_path: Path,
+    monkeypatch,
+):
+    db = tmp_path / "simulation.db"
+    catalog = HistoricalValidationCatalog(db)
+    catalog.initialize()
+    HistoricalExecutionCatalog(db).initialize()
+    migrate_simulation_horizon(db)
+    draft = catalog.create_draft(
+        name="중기 정책 대기",
+        market_scope="KOSPI",
+        requested_period_type="custom",
+        requested_start_month="2026-01",
+        requested_end_month="2026-01",
+        resolved_start_date="2026-01-05",
+        resolved_end_date="2026-01-05",
+        trading_day_count=1,
+        horizon_context=resolve_horizon_context("MEDIUM"),
+    )
+
+    monkeypatch.setattr(simulation_api, "_validation_catalog", lambda: catalog)
+
+    with pytest.raises(HTTPException) as caught:
+        await simulation_api.run_validation_replay(draft.id)
+
+    assert caught.value.status_code == 409
+    assert caught.value.detail["code"] == "HORIZON_POLICY_NOT_ACTIVE"
+    assert simulation_api._validation_task_active(draft.id) is False
+    assert catalog.get(draft.id).status == "DRAFT"
 
 
 def test_replay_service_accepts_preclaimed_run_parameter():

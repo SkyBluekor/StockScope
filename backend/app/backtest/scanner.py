@@ -16,7 +16,7 @@ from app.backtest.entry_risk_guide import build_entry_risk_guide
 from app.backtest.production_exit_policy import production_policy_cache_token
 from app.backtest.sector_rs_input import HistoricalSectorInput
 from app.backtest.sector_rs_prefetch import HistoricalSectorInputPrefetcher
-from app.backtest.historical_evidence import build_historical_evidence, validation_start_for_years
+from app.backtest.historical_evidence import build_historical_evidence, data_readiness, validation_start_for_years
 from app.backtest.market_store import HistoricalMarketStore
 from app.backtest.reproducibility_audit import write_scanner_reproducibility_audit
 from app.backtest.models import BacktestConfig
@@ -25,6 +25,11 @@ from app.backtest.selector import build_condition_state, current_readiness, stra
 from app.market.providers import KrxProvider
 from app.market.providers.base import ProviderError
 from app.strategy.context import regime_from_index
+from app.strategy.models import StrategyName
+from app.strategy.production_selection_policy import (
+    ProductionStrategySelectionRegistry,
+    SelectionPolicyPin,
+)
 
 ProgressCallback = Callable[[dict[str, Any]], None]
 
@@ -40,7 +45,7 @@ class StockScannerService:
     presented to the user as probabilities.
     """
 
-    VERSION = "0.21.3.7"
+    VERSION = "0.21.3.8"
     HISTORY_CALENDAR_DAYS = 485  # local-only historical evidence window
     FAST_HISTORY_CALENDAR_DAYS = 220  # current-condition scan only; ~150 weekdays
     EVIDENCE_CALENDAR_DAYS = 365
@@ -68,17 +73,41 @@ class StockScannerService:
         engine: BacktestEngine | None = None,
         sector_company_provider: Any | None = None,
         sector_prefetcher: HistoricalSectorInputPrefetcher | None = None,
+        selection_registry: ProductionStrategySelectionRegistry | None = None,
     ) -> None:
         self.krx = krx
         self.market_store = market_store or HistoricalMarketStore()
         self.engine = engine or BacktestEngine()
         self.multi = MultiStrategyBacktestEngine(self.engine)
+        self.selection_registry = (
+            selection_registry or ProductionStrategySelectionRegistry()
+        )
         # c.4f: optional audit-only sector input source. Current OpenDART metadata is
         # STATIC_CURRENT, so the temporal gate in BacktestEngine prevents it from
         # changing Production strategy scores. Scanner itself never calls DART.
         self.sector_prefetcher = sector_prefetcher
         if self.sector_prefetcher is None and sector_company_provider is not None:
             self.sector_prefetcher = HistoricalSectorInputPrefetcher(self.krx, sector_company_provider)
+
+    @staticmethod
+    def _allowed_strategy_names(
+        pin: SelectionPolicyPin,
+    ) -> frozenset[StrategyName]:
+        try:
+            return frozenset(
+                StrategyName(key)
+                for key in pin.operating_strategy_keys
+            )
+        except ValueError as exc:
+            raise ValueError(
+                "Selection Policy에 현재 StockScope가 지원하지 않는 전략이 포함되어 있습니다."
+            ) from exc
+
+    @staticmethod
+    def _selection_policy_metadata(
+        pin: SelectionPolicyPin,
+    ) -> dict[str, Any]:
+        return pin.metadata()
 
     @staticmethod
     def _emit(callback: ProgressCallback | None, **payload: Any) -> None:
@@ -114,14 +143,39 @@ class StockScannerService:
         return min(parsed, today - timedelta(days=1))
 
     @classmethod
-    def _cache_path(cls, scope: str, stable_end: date, candidate_limit: int) -> Path:
+    def _cache_path(
+        cls,
+        scope: str,
+        stable_end: date,
+        candidate_limit: int,
+        selection_policy_token: str | None = None,
+    ) -> Path:
         cls.CACHE_ROOT.mkdir(parents=True, exist_ok=True)
         exit_token = re.sub(r"[^A-Za-z0-9_-]+", "_", production_policy_cache_token())
-        return cls.CACHE_ROOT / f"scanner_{scope.lower()}_{stable_end.isoformat()}_{candidate_limit}_{cls.VERSION}_{exit_token}.json"
+        selection_token = (
+            re.sub(r"[^A-Za-z0-9_-]+", "_", selection_policy_token)
+            if selection_policy_token
+            else "legacy-unpinned"
+        )
+        return cls.CACHE_ROOT / (
+            f"scanner_{scope.lower()}_{stable_end.isoformat()}_{candidate_limit}_"
+            f"{cls.VERSION}_{exit_token}_{selection_token}.json"
+        )
 
     @classmethod
-    def _load_cache(cls, scope: str, stable_end: date, candidate_limit: int) -> dict[str, Any] | None:
-        path = cls._cache_path(scope, stable_end, candidate_limit)
+    def _load_cache(
+        cls,
+        scope: str,
+        stable_end: date,
+        candidate_limit: int,
+        selection_policy_pin: SelectionPolicyPin | None = None,
+    ) -> dict[str, Any] | None:
+        path = cls._cache_path(
+            scope,
+            stable_end,
+            candidate_limit,
+            selection_policy_pin.cache_token if selection_policy_pin else None,
+        )
         if not path.exists():
             return None
         try:
@@ -130,12 +184,35 @@ class StockScannerService:
             return None
         if payload.get("version") != cls.VERSION:
             return None
+        if selection_policy_pin is not None:
+            policy_meta = payload.get("strategy_selection_policy")
+            if not isinstance(policy_meta, dict):
+                return None
+            if (
+                str(policy_meta.get("policy_id") or "")
+                != selection_policy_pin.policy_id
+                or str(policy_meta.get("policy_hash") or "")
+                != selection_policy_pin.policy_hash
+            ):
+                return None
         payload["scanner_cache_hit"] = True
         return payload
 
     @classmethod
-    def _save_cache(cls, scope: str, stable_end: date, candidate_limit: int, payload: dict[str, Any]) -> None:
-        path = cls._cache_path(scope, stable_end, candidate_limit)
+    def _save_cache(
+        cls,
+        scope: str,
+        stable_end: date,
+        candidate_limit: int,
+        payload: dict[str, Any],
+        selection_policy_pin: SelectionPolicyPin | None = None,
+    ) -> None:
+        path = cls._cache_path(
+            scope,
+            stable_end,
+            candidate_limit,
+            selection_policy_pin.cache_token if selection_policy_pin else None,
+        )
         try:
             path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         except OSError:
@@ -143,16 +220,52 @@ class StockScannerService:
             pass
 
     @classmethod
-    def _evidence_cache_path(cls, *, market: str, code: str, strategy: str, data_end: date) -> Path:
+    def _evidence_cache_path(
+        cls,
+        *,
+        market: str,
+        code: str,
+        strategy: str,
+        data_end: date,
+        strategy_version_id: str | None = None,
+        definition_hash: str | None = None,
+    ) -> Path:
         root = cls.CACHE_ROOT / "historical_evidence"
         root.mkdir(parents=True, exist_ok=True)
         safe_strategy = re.sub(r"[^A-Za-z0-9_-]+", "_", strategy)
         exit_token = re.sub(r"[^A-Za-z0-9_-]+", "_", production_policy_cache_token())
-        return root / f"{market}_{code}_{safe_strategy}_{data_end.isoformat()}_{cls.HISTORICAL_EVIDENCE_POLICY_VERSION}_{exit_token}.json"
+        strategy_identity = re.sub(
+            r"[^A-Za-z0-9_-]+",
+            "_",
+            (
+                f"{strategy_version_id or 'legacy'}-"
+                f"{(definition_hash or cls.VERSION)[:16]}"
+            ),
+        )
+        return root / (
+            f"{market}_{code}_{safe_strategy}_{data_end.isoformat()}_"
+            f"{cls.HISTORICAL_EVIDENCE_POLICY_VERSION}_{exit_token}_{strategy_identity}.json"
+        )
 
     @classmethod
-    def _load_evidence_cache(cls, *, market: str, code: str, strategy: str, data_end: date) -> dict[str, Any] | None:
-        path = cls._evidence_cache_path(market=market, code=code, strategy=strategy, data_end=data_end)
+    def _load_evidence_cache(
+        cls,
+        *,
+        market: str,
+        code: str,
+        strategy: str,
+        data_end: date,
+        strategy_version_id: str | None = None,
+        definition_hash: str | None = None,
+    ) -> dict[str, Any] | None:
+        path = cls._evidence_cache_path(
+            market=market,
+            code=code,
+            strategy=strategy,
+            data_end=data_end,
+            strategy_version_id=strategy_version_id,
+            definition_hash=definition_hash,
+        )
         if not path.exists():
             return None
         try:
@@ -169,16 +282,35 @@ class StockScannerService:
         return dict(evidence)
 
     @classmethod
-    def _save_evidence_cache(cls, *, market: str, code: str, strategy: str, data_end: date, evidence: dict[str, Any]) -> None:
+    def _save_evidence_cache(
+        cls,
+        *,
+        market: str,
+        code: str,
+        strategy: str,
+        data_end: date,
+        evidence: dict[str, Any],
+        strategy_version_id: str | None = None,
+        definition_hash: str | None = None,
+    ) -> None:
         if not bool(evidence.get("verified")):
             return
-        path = cls._evidence_cache_path(market=market, code=code, strategy=strategy, data_end=data_end)
+        path = cls._evidence_cache_path(
+            market=market,
+            code=code,
+            strategy=strategy,
+            data_end=data_end,
+            strategy_version_id=strategy_version_id,
+            definition_hash=definition_hash,
+        )
         payload = {
             "policy_version": cls.HISTORICAL_EVIDENCE_POLICY_VERSION,
             "exit_policy_cache_token": production_policy_cache_token(),
             "market": market,
             "code": code,
             "strategy": strategy,
+            "strategy_version_id": strategy_version_id,
+            "strategy_definition_hash": definition_hash,
             "data_end": data_end.isoformat(),
             "evidence": evidence,
         }
@@ -1203,6 +1335,166 @@ class StockScannerService:
             "final_concurrency_limit": current_limit,
         }
 
+    async def prepare_three_year_evidence_data(
+        self,
+        *,
+        market: str,
+        code: str,
+        data_end: str,
+        progress: ProgressCallback | None = None,
+    ) -> dict[str, Any]:
+        """Prepare the exact local history required by three-year Historical Evidence.
+
+        This is intentionally separate from the Scanner fast-history bootstrap.
+        It reuses Market Store/day cache first, fetches only missing market/day
+        snapshots, and leaves the actual evidence calculation to the subsequent
+        forced Scanner run so priority text and all public analysis fields are
+        rebuilt from one server-side result.
+        """
+        market_key = market.upper().strip()
+        if market_key not in {"KOSPI", "KOSDAQ"}:
+            raise ValueError("market은 KOSPI 또는 KOSDAQ이어야 합니다.")
+        code_key = code.strip().upper()
+        if not code_key:
+            raise ValueError("code가 필요합니다.")
+        try:
+            end = date.fromisoformat(data_end)
+        except ValueError as exc:
+            raise ValueError("data_end는 YYYY-MM-DD 형식이어야 합니다.") from exc
+
+        validation_start = validation_start_for_years(end)
+        warmup_start = validation_start - timedelta(days=self.THREE_YEAR_WARMUP_DAYS)
+        started_at = time.perf_counter()
+        plan = self._history_plan(market=market_key, start=warmup_start, end=end)
+
+        self._emit(
+            progress,
+            stage="evidence_plan",
+            message="3년 검증에 필요한 과거 데이터 범위를 확인했습니다.",
+            current=int(plan["reused"]),
+            total=max(int(plan["total"]), 1),
+            details=self._progress_payload(
+                overall_percent=3,
+                started_at=started_at,
+                current_item=f"{market_key} {code_key}",
+                market=market_key,
+                code=code_key,
+                warmup_start=warmup_start.isoformat(),
+                validation_start=validation_start.isoformat(),
+                validation_end=end.isoformat(),
+                reused_items=int(plan["reused"]),
+                missing_items=len(plan["work"]),
+                estimated_network_requests=int(plan["estimated_network_requests"]),
+            ),
+        )
+
+        def evidence_progress(payload: dict[str, Any]) -> None:
+            forwarded = dict(payload)
+            forwarded["stage"] = "evidence_prepare"
+            forwarded["message"] = "3년 검증용 과거 시장 데이터를 준비하는 중"
+            details = dict(forwarded.get("details") or {})
+            details.update({
+                "market": market_key,
+                "code": code_key,
+                "warmup_start": warmup_start.isoformat(),
+                "validation_start": validation_start.isoformat(),
+                "validation_end": end.isoformat(),
+            })
+            forwarded["details"] = details
+            if progress is not None:
+                progress(forwarded)
+
+        await self.krx.open_session()
+        try:
+            sync = await self._ensure_market_history(
+                market=market_key,
+                start=warmup_start,
+                end=end,
+                progress=evidence_progress,
+                progress_base=5,
+                progress_span=88,
+                started_at=started_at,
+                plan=plan,
+            )
+
+            self._emit(
+                progress,
+                stage="evidence_validate",
+                message="준비된 데이터로 3년 검증 가능 여부를 확인하는 중",
+                current=1,
+                total=1,
+                details=self._progress_payload(
+                    overall_percent=96,
+                    started_at=started_at,
+                    current_item=f"{market_key} {code_key}",
+                    market=market_key,
+                    code=code_key,
+                    warmup_start=warmup_start.isoformat(),
+                    validation_start=validation_start.isoformat(),
+                    validation_end=end.isoformat(),
+                ),
+            )
+
+            stock_series = self.market_store.stock_series(
+                market_key,
+                code_key,
+                self._compact(warmup_start),
+                self._compact(end),
+            )
+            index_series = self.market_store.index_series(
+                market_key,
+                self._compact(warmup_start),
+                self._compact(end),
+            )
+            readiness = data_readiness(
+                stock_rows=list(stock_series.rows.values()),
+                index_rows=list(index_series.rows.values()),
+                validation_start=validation_start,
+                validation_end=end,
+            )
+            ready = bool(readiness.get("ready"))
+            message = (
+                "3년 검증용 과거 데이터 준비가 완료되었습니다. 같은 기준일로 Scanner 분석을 다시 계산합니다."
+                if ready
+                else "과거 데이터 준비 후에도 3년 검증 요건을 모두 충족하지 못했습니다. 실제 보유 데이터 기준으로 다시 분석합니다."
+            )
+            self._emit(
+                progress,
+                stage="evidence_complete",
+                message=message,
+                current=1,
+                total=1,
+                details=self._progress_payload(
+                    overall_percent=100,
+                    started_at=started_at,
+                    current_item=f"{market_key} {code_key}",
+                    market=market_key,
+                    code=code_key,
+                    warmup_start=warmup_start.isoformat(),
+                    validation_start=validation_start.isoformat(),
+                    validation_end=end.isoformat(),
+                    ready=ready,
+                    stock_rows=int(readiness.get("stock_rows") or 0),
+                    index_rows=int(readiness.get("index_rows") or 0),
+                    stock_warmup_rows=int(readiness.get("stock_warmup_rows") or 0),
+                    index_warmup_rows=int(readiness.get("index_warmup_rows") or 0),
+                    errors=int(sync.get("errors") or 0),
+                ),
+            )
+            return {
+                "status": "READY" if ready else "DATA_UNAVAILABLE",
+                "market": market_key,
+                "code": code_key,
+                "warmup_start": warmup_start.isoformat(),
+                "validation_start": validation_start.isoformat(),
+                "validation_end": end.isoformat(),
+                "readiness": readiness,
+                "sync": sync,
+                "message": message,
+            }
+        finally:
+            await self.krx.close_session()
+
     @staticmethod
     def _fingerprint_rows(rows: list[dict[str, Any]]) -> str:
         canonical = [
@@ -1334,6 +1626,7 @@ class StockScannerService:
         stock_rows: list[dict[str, Any]],
         index_rows: list[dict[str, Any]],
         sector_input: HistoricalSectorInput | None = None,
+        selection_policy_pin: SelectionPolicyPin | None = None,
     ) -> dict[str, Any] | None:
         if len(stock_rows) < self.MIN_HISTORY_ROWS:
             return None
@@ -1348,12 +1641,17 @@ class StockScannerService:
             max_holding_days=20,
             round_trip_cost_pct=0.0,
         )
+        run_policy = (
+            selection_policy_pin
+            or self.selection_registry.pin_active_selection_policy()
+        )
         snapshot = self.engine._signal_snapshot(  # noqa: SLF001 - shared live/backtest snapshot by design
             stock_rows=rows,
             index_rows=indices,
             index=len(rows) - 1,
             config=config,
             sector_input=sector_input,
+            allowed_strategies=self._allowed_strategy_names(run_policy),
         )
         if snapshot is None:
             return None
@@ -1447,6 +1745,9 @@ class StockScannerService:
         entry_risk_guide["historical_policy"] = self.multi.production_exit.historical_policy_metadata(
             quick_exit_resolution
         )
+        strategy_ref = run_policy.strategy_reference(
+            best["strategy"]
+        )
         return {
             "code": str(row.get("code") or ""),
             "name": str(row.get("name") or ""),
@@ -1457,6 +1758,16 @@ class StockScannerService:
             "market_cap": row.get("market_cap"),
             "history_points": len(rows),
             "quick_strategy": best["strategy"],
+            "quick_strategy_version_id": (
+                strategy_ref.get("strategy_version_id")
+                if strategy_ref
+                else None
+            ),
+            "quick_strategy_definition_hash": (
+                strategy_ref.get("definition_hash")
+                if strategy_ref
+                else None
+            ),
             "quick_guide": best["guide"],
             "quick_current": current,
             "quick_condition_state": best.get("condition_state") or {},
@@ -1525,6 +1836,10 @@ class StockScannerService:
             "candidate_state": candidate_state,
             "candidate_label": candidate_label,
             "strategy": item.get("quick_strategy"),
+            "strategy_version_id": item.get("quick_strategy_version_id"),
+            "strategy_definition_hash": item.get(
+                "quick_strategy_definition_hash"
+            ),
             "strategy_easy_name": guide.get("easy_name") or guide.get("professional_name") or str(item.get("quick_strategy") or ""),
             "strategy_name": guide.get("professional_name") or str(item.get("quick_strategy") or ""),
             "strategy_description": guide.get("description") or "현재 조건을 바탕으로 먼저 확인할 후보입니다.",
@@ -1747,7 +2062,22 @@ class StockScannerService:
                 strategy = str(candidate.get("strategy") or "")
                 data_end = date.fromisoformat(str(candidate.get("data_date")))
                 validation_start = validation_start_for_years(data_end)
-                cached = self._load_evidence_cache(market=market, code=code, strategy=strategy, data_end=data_end)
+                cached = self._load_evidence_cache(
+                    market=market,
+                    code=code,
+                    strategy=strategy,
+                    data_end=data_end,
+                    strategy_version_id=(
+                        str(candidate.get("strategy_version_id"))
+                        if candidate.get("strategy_version_id") is not None
+                        else None
+                    ),
+                    definition_hash=(
+                        str(candidate.get("strategy_definition_hash"))
+                        if candidate.get("strategy_definition_hash") is not None
+                        else None
+                    ),
+                )
                 if cached is not None:
                     evidence = cached
                     stats["cache_hits"] += 1
@@ -1771,7 +2101,21 @@ class StockScannerService:
                     # result never becomes a stale "검증 전" snapshot.
                     if bool(evidence.get("verified")):
                         self._save_evidence_cache(
-                            market=market, code=code, strategy=strategy, data_end=data_end, evidence=evidence
+                            market=market,
+                            code=code,
+                            strategy=strategy,
+                            data_end=data_end,
+                            evidence=evidence,
+                            strategy_version_id=(
+                                str(candidate.get("strategy_version_id"))
+                                if candidate.get("strategy_version_id") is not None
+                                else None
+                            ),
+                            definition_hash=(
+                                str(candidate.get("strategy_definition_hash"))
+                                if candidate.get("strategy_definition_hash") is not None
+                                else None
+                            ),
                         )
 
                 candidate["historical_evidence"] = evidence
@@ -1811,7 +2155,12 @@ class StockScannerService:
         force_refresh: bool = False,
         allow_large_sync: bool = False,
         progress: ProgressCallback | None = None,
+        selection_policy_pin: SelectionPolicyPin | None = None,
     ) -> dict[str, Any]:
+        run_policy = (
+            selection_policy_pin
+            or self.selection_registry.pin_active_selection_policy()
+        )
         scope = market_scope.upper().strip()
         if scope not in {"ALL", "KOSPI", "KOSDAQ"}:
             raise ValueError("market_scope은 ALL, KOSPI, KOSDAQ 중 하나여야 합니다.")
@@ -1822,7 +2171,12 @@ class StockScannerService:
         markets = ["KOSPI", "KOSDAQ"] if scope == "ALL" else [scope]
 
         if not force_refresh:
-            cached = self._load_cache(scope, stable_end, candidate_limit)
+            cached = self._load_cache(
+                scope,
+                stable_end,
+                candidate_limit,
+                run_policy,
+            )
             expected_dates = {market: stable_end.isoformat() for market in markets}
             current_fingerprint = (
                 self._build_input_fingerprint(markets, expected_dates)
@@ -2093,6 +2447,7 @@ class StockScannerService:
                     stock_rows=stock_rows,
                     index_rows=index_rows_by_market.get(market, []),
                     sector_input=sector_inputs_by_code.get((market, code)),
+                    selection_policy_pin=run_policy,
                 )
                 if quick is None:
                     data_insufficient += 1
@@ -2240,6 +2595,9 @@ class StockScannerService:
                 "requested_as_of": stable_end.isoformat(),
                 "market_scope": scope,
                 "data_dates": latest_dates,
+                "strategy_selection_policy": self._selection_policy_metadata(
+                    run_policy
+                ),
                 "input_fingerprint": input_fingerprint,
                 "market_summary": market_summaries,
                 "partial_data": partial_data,
@@ -2277,7 +2635,13 @@ class StockScannerService:
                 },
                 "methodology": {
                     "meaning": "상승 확률 순위가 아니라 현재 조건, Risk, 실제 진입 기준까지의 거리, 현재 전략 적합도로 먼저 확인할 후보를 정합니다. 3년 과거 근거는 현재 판단과 분리된 참고 정보입니다.",
-                    "pipeline": ["최근 데이터 확인", "전체 종목 빠른 필터", "현재 10개 전략·Risk 확인", "현재 조건 → Risk → 진입 근접도 → 전략 적합도로 최종 우선순위", "후보별 3년 과거 근거를 참고 정보로 부착"],
+                    "pipeline": [
+                        "최근 데이터 확인",
+                        "전체 종목 빠른 필터",
+                        f"현재 {len(run_policy.operating_strategies)}개 운영 전략·Risk 확인",
+                        "현재 조건 → Risk → 진입 근접도 → 전략 적합도로 최종 우선순위",
+                        "후보별 3년 과거 근거를 참고 정보로 부착",
+                    ],
                     "guardrail": "로컬 3년 데이터 보유량은 현재 전략·Risk·순위를 바꾸지 않습니다. 이 순위는 미래 상승 확률이나 매수 추천이 아닙니다.",
                 },
                 "diagnostics": {
@@ -2308,7 +2672,13 @@ class StockScannerService:
             # A partial result should not be frozen for the whole day; once the user
             # prepares missing recent data, a subsequent scan must recompute it.
             if not partial_data:
-                self._save_cache(scope, stable_end, candidate_limit, result)
+                self._save_cache(
+                    scope,
+                    stable_end,
+                    candidate_limit,
+                    result,
+                    run_policy,
+                )
             self._emit(
                 progress,
                 stage="scanner_complete",
