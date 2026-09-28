@@ -598,6 +598,8 @@ def _execution_http_error(code: str, message: str) -> None:
         "VAL2_RUN_ALREADY_COMPLETED",
         "VAL2_RUN_INVALID_STATUS",
         "VAL2_RUN_INCOMPLETE",
+        "VAL2_SELECTION_POLICY_IDENTITY_REQUIRED",
+        "VAL2_SELECTION_POLICY_PIN_INVALID",
     }:
         status = 409
     else:
