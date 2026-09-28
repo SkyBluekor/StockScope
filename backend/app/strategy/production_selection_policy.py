@@ -505,6 +505,13 @@ class ProductionStrategySelectionRegistry:
             return False, "POLICY_DUPLICATE_STRATEGY_KEY"
         if StrategyName.NO_TRADE.value in keys:
             return False, "POLICY_NO_TRADE_FORBIDDEN"
+        supported_keys = {
+            item.value
+            for item in StrategyName
+            if item is not StrategyName.NO_TRADE
+        }
+        if any(key not in supported_keys for key in keys):
+            return False, "POLICY_STRATEGY_KEY_UNSUPPORTED"
 
         semantics = snapshot.get("selection_semantics")
         if not isinstance(semantics, dict):
