@@ -251,22 +251,28 @@ class StrategyGovernanceQueryService:
             kwargs["runtime_dir"] = self.runtime_dir
         registry = ProductionStrategySelectionRegistry(**kwargs)
         resolution = registry.resolve_active_selection_policy()
+        pin = registry.pin_active_selection_policy()
 
         # _load_reference performs the same validation used by activation and
-        # resolution. This read-only view must not infer active state from the
-        # latest Simulation row.
+        # resolution. The effective Production state below comes from the same
+        # baseline-aware pin used by Scanner runs, never from a latest DB row.
         reference, reference_reason = registry._load_reference()  # noqa: SLF001
-        policy = resolution.policy
-        operating = list(policy.get("operating_strategies") or [])
+        operating = [
+            {
+                "strategy_version_id": strategy_version_id,
+                "strategy_key": strategy_key,
+                "definition_hash": definition_hash,
+            }
+            for strategy_version_id, strategy_key, definition_hash
+            in pin.operating_strategies
+        ]
         return {
-            "policy_id": str(policy.get("policy_id") or ""),
-            "policy_hash": str(policy.get("policy_hash") or ""),
-            "policy_contract_version": str(
-                policy.get("policy_contract_version") or ""
-            ),
-            "policy_source": resolution.policy_source,
-            "fallback_used": resolution.fallback_used,
-            "fallback_reason": resolution.fallback_reason,
+            "policy_id": pin.policy_id,
+            "policy_hash": pin.policy_hash,
+            "policy_contract_version": pin.policy_contract_version,
+            "policy_source": pin.policy_source,
+            "fallback_used": pin.fallback_used,
+            "fallback_reason": pin.fallback_reason,
             "active_reference_valid": resolution.active_reference_valid,
             "policy_hash_valid": resolution.policy_hash_valid,
             "operating_strategy_count": len(operating),
