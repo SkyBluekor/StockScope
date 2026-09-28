@@ -27,6 +27,11 @@ from app.event_evidence.evaluation import (
     EVENT_OUTCOME_CONTRACT_VERSION,
     EVENT_EVALUATION_REPORT_CONTRACT_VERSION,
 )
+from app.event_evidence.value_gate import (
+    INCREMENTAL_VALUE_GATE_CONTRACT_VERSION,
+    VALUE_GATE_PROTOCOL_CONTRACT_VERSION,
+    VALUE_GATE_DECISION_CONTRACT_VERSION,
+)
 from app.event_evidence.policy import SOURCE_POLICY_CONTRACT_VERSION
 from app.event_evidence.store import (
     EVENT_EVIDENCE_HASH_CONTRACT_VERSION,
@@ -130,6 +135,24 @@ TABLE_COLUMNS: dict[str, set[str]] = {
         "statistical_test_status","observation_bundle_json","report_json",
         "report_hash","created_at",
     },
+    "event_evidence_value_gate_protocol": {
+        "protocol_id","protocol_contract_version","status","gate_kind",
+        "criteria_precommitted","sample_rule_approved",
+        "uncertainty_rule_approved","multiple_testing_policy_approved",
+        "control_rule_approved","required_horizons_json",
+        "minimum_sample_count","minimum_clean_control_count",
+        "minimum_observed_difference_pct_points","protocol_json",
+        "protocol_hash","created_at",
+    },
+    "event_evidence_value_gate_decision": {
+        "decision_id","decision_contract_version","gate_protocol_id",
+        "gate_protocol_hash","evaluation_report_id","evaluation_report_hash",
+        "evidence_population","integrity_state","decision",
+        "decision_reasons_json","sample_sufficiency","control_status_json",
+        "uncertainty_status","multiple_testing_status",
+        "horizon_results_json","product_scope","prediction_eligible",
+        "decision_json","decision_hash","created_at",
+    },
 }
 
 
@@ -203,6 +226,15 @@ def _ensure_meta(conn: sqlite3.Connection) -> None:
         "outcome_contract_version": EVENT_OUTCOME_CONTRACT_VERSION,
         "evaluation_report_contract_version": (
             EVENT_EVALUATION_REPORT_CONTRACT_VERSION
+        ),
+        "incremental_value_gate_contract_version": (
+            INCREMENTAL_VALUE_GATE_CONTRACT_VERSION
+        ),
+        "value_gate_protocol_contract_version": (
+            VALUE_GATE_PROTOCOL_CONTRACT_VERSION
+        ),
+        "value_gate_decision_contract_version": (
+            VALUE_GATE_DECISION_CONTRACT_VERSION
         ),
     }
     for key, value in expected.items():
@@ -628,6 +660,73 @@ def _create_tables(conn: sqlite3.Connection) -> None:
 
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS event_evidence_value_gate_protocol(
+            protocol_id TEXT PRIMARY KEY,
+            protocol_contract_version TEXT NOT NULL,
+            status TEXT NOT NULL CHECK(
+                status IN ('UNAPPROVED','SYNTHETIC_TEST_ONLY')
+            ),
+            gate_kind TEXT NOT NULL CHECK(
+                gate_kind='OBSERVATIONAL_INCREMENTAL_VALUE'
+            ),
+            criteria_precommitted INTEGER NOT NULL CHECK(criteria_precommitted IN (0,1)),
+            sample_rule_approved INTEGER NOT NULL CHECK(sample_rule_approved IN (0,1)),
+            uncertainty_rule_approved INTEGER NOT NULL CHECK(uncertainty_rule_approved IN (0,1)),
+            multiple_testing_policy_approved INTEGER NOT NULL CHECK(multiple_testing_policy_approved IN (0,1)),
+            control_rule_approved INTEGER NOT NULL CHECK(control_rule_approved IN (0,1)),
+            required_horizons_json TEXT NOT NULL,
+            minimum_sample_count INTEGER,
+            minimum_clean_control_count INTEGER,
+            minimum_observed_difference_pct_points REAL,
+            protocol_json TEXT NOT NULL,
+            protocol_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS event_evidence_value_gate_decision(
+            decision_id TEXT PRIMARY KEY,
+            decision_contract_version TEXT NOT NULL,
+            gate_protocol_id TEXT NOT NULL,
+            gate_protocol_hash TEXT NOT NULL,
+            evaluation_report_id TEXT NOT NULL,
+            evaluation_report_hash TEXT NOT NULL,
+            evidence_population TEXT NOT NULL CHECK(
+                evidence_population IN (
+                    'SYNTHETIC_ONLY','REAL_CORPUS','MIXED','UNKNOWN'
+                )
+            ),
+            integrity_state TEXT NOT NULL,
+            decision TEXT NOT NULL CHECK(
+                decision IN ('PASS','HOLD','FAIL','BLOCKED')
+            ),
+            decision_reasons_json TEXT NOT NULL,
+            sample_sufficiency TEXT NOT NULL,
+            control_status_json TEXT NOT NULL,
+            uncertainty_status TEXT NOT NULL,
+            multiple_testing_status TEXT NOT NULL,
+            horizon_results_json TEXT NOT NULL,
+            product_scope TEXT NOT NULL CHECK(
+                product_scope IN ('RESEARCH_ONLY','REFERENCE_CONTEXT','PREDICTION')
+            ),
+            prediction_eligible INTEGER NOT NULL CHECK(prediction_eligible=0),
+            decision_json TEXT NOT NULL,
+            decision_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(gate_protocol_id)
+                REFERENCES event_evidence_value_gate_protocol(protocol_id)
+                ON DELETE RESTRICT,
+            FOREIGN KEY(evaluation_report_id)
+                REFERENCES event_evidence_evaluation_report(report_id)
+                ON DELETE RESTRICT
+        )
+        """
+    )
+
+    conn.execute(
+        """
         CREATE INDEX IF NOT EXISTS idx_event_evidence_source_kind_available
         ON event_evidence_source_ref(source_kind,available_at)
         """
@@ -700,6 +799,14 @@ def _create_tables(conn: sqlite3.Connection) -> None:
         ON event_evidence_evaluation_report(protocol_id,created_at)
         """
     )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_event_value_gate_decision_report
+        ON event_evidence_value_gate_decision(
+            evaluation_report_id,gate_protocol_id,created_at
+        )
+        """
+    )
 
     for name, table in (
         ("trg_event_policy_immutable_update", "event_evidence_policy_snapshot"),
@@ -757,6 +864,22 @@ def _create_tables(conn: sqlite3.Connection) -> None:
         (
             "trg_event_eval_report_immutable_delete",
             "event_evidence_evaluation_report",
+        ),
+        (
+            "trg_event_value_gate_protocol_immutable_update",
+            "event_evidence_value_gate_protocol",
+        ),
+        (
+            "trg_event_value_gate_protocol_immutable_delete",
+            "event_evidence_value_gate_protocol",
+        ),
+        (
+            "trg_event_value_gate_decision_immutable_update",
+            "event_evidence_value_gate_decision",
+        ),
+        (
+            "trg_event_value_gate_decision_immutable_delete",
+            "event_evidence_value_gate_decision",
         ),
     ):
         operation = "UPDATE" if name.endswith("update") else "DELETE"
@@ -852,6 +975,16 @@ def migrate_event_evidence_store(path: Path) -> dict[str, object]:
             "evaluation_report_count": int(
                 conn.execute(
                     "SELECT COUNT(*) FROM event_evidence_evaluation_report"
+                ).fetchone()[0]
+            ),
+            "value_gate_protocol_count": int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM event_evidence_value_gate_protocol"
+                ).fetchone()[0]
+            ),
+            "value_gate_decision_count": int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM event_evidence_value_gate_decision"
                 ).fetchone()[0]
             ),
         }

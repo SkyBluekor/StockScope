@@ -1483,3 +1483,98 @@ class HistoricalEventEvaluator:
                 "report": json.loads(str(row["report_json"])),
                 "created_at": str(row["created_at"]),
             }
+
+    def verify_control_match(self, control_id: str) -> dict[str, Any]:
+        control = self.get_control_match(control_id)
+        payload = control["control"]
+        if _digest(payload) != control["control_hash"]:
+            raise EventEvidenceContractError(
+                "EVENT_CONTROL_INTEGRITY_MISMATCH",
+                "Event Control Match hash가 저장 내용과 일치하지 않습니다.",
+            )
+        observation = self.get_observation(control["observation_id"])
+        protocol = self.get_protocol(control["protocol_id"])
+        if payload.get("protocol_hash") != protocol["protocol_hash"]:
+            raise EventEvidenceContractError(
+                "EVENT_CONTROL_PROTOCOL_HASH_MISMATCH",
+                "Control이 pin한 Evaluation Protocol hash가 다릅니다.",
+            )
+        if observation["protocol_id"] != control["protocol_id"]:
+            raise EventEvidenceContractError(
+                "EVENT_CONTROL_OBSERVATION_PROTOCOL_MISMATCH",
+                "Control과 Observation의 Evaluation Protocol이 다릅니다.",
+            )
+        return {
+            "status": "MATCH",
+            "control_id": control_id,
+            "control_hash": control["control_hash"],
+        }
+
+    def verify_report(self, report_id: str) -> dict[str, Any]:
+        report = self.get_report(report_id)
+        payload = report["report"]
+        if _digest(payload) != report["report_hash"]:
+            raise EventEvidenceContractError(
+                "EVENT_EVALUATION_REPORT_INTEGRITY_MISMATCH",
+                "Historical Event Evaluation Report hash가 저장 내용과 일치하지 않습니다.",
+            )
+        protocol = self.get_protocol(report["protocol_id"])
+        if protocol["protocol_hash"] != report["protocol_hash"]:
+            raise EventEvidenceContractError(
+                "EVENT_EVALUATION_REPORT_PROTOCOL_HASH_MISMATCH",
+                "Report가 pin한 Evaluation Protocol hash가 다릅니다.",
+            )
+
+        observation_pins = list(payload.get("observations") or [])
+        if observation_pins != list(report["observation_bundle"]):
+            raise EventEvidenceContractError(
+                "EVENT_EVALUATION_REPORT_OBSERVATION_BUNDLE_MISMATCH",
+                "Report observation bundle이 payload와 일치하지 않습니다.",
+            )
+        seen_samples: set[str] = set()
+        for pin in observation_pins:
+            observation = self.get_observation(str(pin["observation_id"]))
+            verified = self.verify_observation(observation["observation_id"])
+            if verified["observation_hash"] != str(pin["observation_hash"]):
+                raise EventEvidenceContractError(
+                    "EVENT_EVALUATION_REPORT_OBSERVATION_HASH_MISMATCH",
+                    "Report가 pin한 Observation hash가 다릅니다.",
+                )
+            if observation["sample_identity"] != str(pin["sample_identity"]):
+                raise EventEvidenceContractError(
+                    "EVENT_EVALUATION_REPORT_SAMPLE_IDENTITY_MISMATCH",
+                    "Report가 pin한 canonical sample identity가 다릅니다.",
+                )
+            if observation["sample_identity"] in seen_samples:
+                raise EventEvidenceContractError(
+                    "EVENT_EVALUATION_REPORT_DUPLICATE_SAMPLE",
+                    "Report observation bundle에 canonical sample이 중복되어 있습니다.",
+                )
+            seen_samples.add(observation["sample_identity"])
+
+        control_pins = list(payload.get("controls") or [])
+        for pin in control_pins:
+            control = self.get_control_match(str(pin["control_id"]))
+            verified = self.verify_control_match(control["control_id"])
+            if verified["control_hash"] != str(pin["control_hash"]):
+                raise EventEvidenceContractError(
+                    "EVENT_EVALUATION_REPORT_CONTROL_HASH_MISMATCH",
+                    "Report가 pin한 Control hash가 다릅니다.",
+                )
+            if control["observation_id"] != str(pin["observation_id"]):
+                raise EventEvidenceContractError(
+                    "EVENT_EVALUATION_REPORT_CONTROL_OBSERVATION_MISMATCH",
+                    "Report Control pin의 Observation identity가 다릅니다.",
+                )
+
+        if int(report["sample_count"]) != len(observation_pins):
+            raise EventEvidenceContractError(
+                "EVENT_EVALUATION_REPORT_SAMPLE_COUNT_MISMATCH",
+                "Report sample_count가 canonical observation bundle과 다릅니다.",
+            )
+        return {
+            "status": "MATCH",
+            "report_id": report_id,
+            "report_hash": report["report_hash"],
+            "sample_count": report["sample_count"],
+        }

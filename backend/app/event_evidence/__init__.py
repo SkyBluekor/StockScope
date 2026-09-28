@@ -123,3 +123,29 @@ __all__ += [
     "HistoricalEventEvaluator",
     "HorizonStatus",
 ]
+
+from app.event_evidence.value_gate import (
+    INCREMENTAL_VALUE_GATE_CONTRACT_VERSION,
+    VALUE_GATE_DECISION_CONTRACT_VERSION,
+    VALUE_GATE_PROTOCOL_CONTRACT_VERSION,
+    EvidencePopulation,
+    EventIncrementalValueGate,
+    IncrementalValueGateProtocol,
+    ProductScope,
+    ValueGateDecision,
+    ValueGateKind,
+    ValueGateProtocolStatus,
+)
+
+__all__ += [
+    "INCREMENTAL_VALUE_GATE_CONTRACT_VERSION",
+    "VALUE_GATE_DECISION_CONTRACT_VERSION",
+    "VALUE_GATE_PROTOCOL_CONTRACT_VERSION",
+    "EvidencePopulation",
+    "EventIncrementalValueGate",
+    "IncrementalValueGateProtocol",
+    "ProductScope",
+    "ValueGateDecision",
+    "ValueGateKind",
+    "ValueGateProtocolStatus",
+]
