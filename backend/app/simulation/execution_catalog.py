@@ -91,6 +91,10 @@ class HistoricalExecutionRun:
     censored_count: int
     created_at: str
     updated_at: str
+    selection_policy_id: str | None = None
+    selection_policy_hash: str | None = None
+    selection_policy_contract_version: str | None = None
+    selection_policy_pin: dict[str, Any] | None = None
     started_at: str | None = None
     completed_at: str | None = None
     error_code: str | None = None
@@ -195,6 +199,10 @@ class HistoricalExecutionCatalog:
                     censored_count INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
+                    selection_policy_id TEXT,
+                    selection_policy_hash TEXT,
+                    selection_policy_contract_version TEXT,
+                    selection_policy_pin_json TEXT,
                     UNIQUE(
                         validation_id,
                         execution_policy_version,
@@ -281,6 +289,10 @@ class HistoricalExecutionCatalog:
                     "error_code": "TEXT",
                     "error_message": "TEXT",
                     "cancel_requested": "INTEGER NOT NULL DEFAULT 0",
+                    "selection_policy_id": "TEXT",
+                    "selection_policy_hash": "TEXT",
+                    "selection_policy_contract_version": "TEXT",
+                    "selection_policy_pin_json": "TEXT",
                 },
             )
 
@@ -304,6 +316,10 @@ class HistoricalExecutionCatalog:
             censored_count=int(row["censored_count"] or 0),
             created_at=row["created_at"],
             updated_at=row["updated_at"],
+            selection_policy_id=row["selection_policy_id"],
+            selection_policy_hash=row["selection_policy_hash"],
+            selection_policy_contract_version=row["selection_policy_contract_version"],
+            selection_policy_pin=_json_value(row["selection_policy_pin_json"]),
             started_at=row["started_at"],
             completed_at=row["completed_at"],
             error_code=row["error_code"],
@@ -375,6 +391,16 @@ class HistoricalExecutionCatalog:
                 "VAL2_SOURCE_NOT_COMPLETED",
                 f"VAL.2는 완료된 VAL.1만 입력으로 사용할 수 있습니다: {validation.status}",
             )
+        if (
+            validation.selection_policy_pin is None
+            or not validation.selection_policy_id
+            or not validation.selection_policy_hash
+            or not validation.selection_policy_contract_version
+        ):
+            raise ExecutionCatalogError(
+                "VAL2_SELECTION_POLICY_IDENTITY_REQUIRED",
+                "legacy VAL.1에는 Selection Policy identity를 추정 backfill하지 않습니다. 새 Historical Validation을 실행하세요.",
+            )
 
         with self.connect() as horizon_conn:
             horizon_context = get_validation_horizon(
@@ -442,8 +468,9 @@ class HistoricalExecutionCatalog:
                     id,validation_id,execution_policy_version,
                     production_exit_policy_token,market_data_cutoff_date,
                     scanner_version,source_candidate_count,status,
-                    created_at,updated_at
-                ) VALUES(?,?,?,?,?,?,?,'DRAFT',?,?)
+                    created_at,updated_at,selection_policy_id,selection_policy_hash,
+                    selection_policy_contract_version,selection_policy_pin_json
+                ) VALUES(?,?,?,?,?,?,?,'DRAFT',?,?,?,?,?,?)
                 """,
                 (
                     run_id,
@@ -455,6 +482,10 @@ class HistoricalExecutionCatalog:
                     source_count,
                     now,
                     now,
+                    validation.selection_policy_id,
+                    validation.selection_policy_hash,
+                    validation.selection_policy_contract_version,
+                    _json_text(validation.selection_policy_pin),
                 ),
             )
             copy_validation_horizon_to_execution(
