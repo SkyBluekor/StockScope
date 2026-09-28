@@ -7,7 +7,14 @@ from pathlib import Path
 
 import pytest
 
+from app.backtest.production_exit_policy import production_policy_cache_token
+from app.backtest.scanner import StockScannerService
 from app.holdings import HoldingsCatalog, PositionLifecycleService
+from app.holdings.analysis import (
+    ANALYSIS_ENGINE_VERSION,
+    INPUT_FINGERPRINT_CONTRACT_VERSION,
+)
+from app.input_identity import read_input_generation_token
 from app.holdings.decision_support import (
     HoldingDecisionSupportService,
     HoldingsDecisionSupportError,
@@ -19,6 +26,10 @@ from app.holdings.management import (
 from tools.data.common import DataToolError
 from tools.data.migrate_holdings_decision_vnp3s1 import (
     migrate_holdings_decision_store,
+)
+from tools.data.migrate_input_identity_vnp1s1 import (
+    migrate_holdings as migrate_holdings_input_identity,
+    migrate_market_store as migrate_market_input_identity,
 )
 from tools.data.prepare_vnp3s1_stop_loosening_fixture import (
     prepare_stop_loosening_fixture,
@@ -39,6 +50,9 @@ def _market(path: Path, close: str = "100") -> None:
             CREATE TABLE stock_daily(
                 market TEXT,bas_dd TEXT,stock_code TEXT,row_json TEXT
             );
+            CREATE TABLE main_index_daily(
+                market TEXT,bas_dd TEXT,row_json TEXT
+            );
             """
         )
         payload = {
@@ -56,6 +70,10 @@ def _market(path: Path, close: str = "100") -> None:
             "INSERT INTO stock_daily VALUES('KOSPI','20260924','005930',?)",
             (json.dumps(payload),),
         )
+        conn.execute(
+            "INSERT INTO main_index_daily VALUES('KOSPI','20260924',?)",
+            (json.dumps({"date": "2026-09-24", "close": "3000"}),),
+        )
 
 
 def _env(tmp_path: Path, close: str = "100", migrate: bool = True):
@@ -64,6 +82,8 @@ def _env(tmp_path: Path, close: str = "100", migrate: bool = True):
     _market(mdb, close)
     catalog = HoldingsCatalog(hdb)
     catalog.initialize()
+    migrate_market_input_identity(mdb)
+    migrate_holdings_input_identity(hdb)
     if migrate:
         migrate_holdings_decision_store(hdb)
     life = PositionLifecycleService(catalog)
@@ -98,6 +118,10 @@ def _rev(
         monitored_stock_id=stock_id,
         market_date=market_date,
     )
+    market_db = catalog.db_path.with_name("market.db")
+    with sqlite3.connect(market_db) as conn:
+        conn.row_factory = sqlite3.Row
+        generation = read_input_generation_token(conn, "KOSPI", "005930")
     revision = catalog.append_analysis_revision(
         analysis_day_id=day.id,
         input_fingerprint=fingerprint,
@@ -108,10 +132,14 @@ def _rev(
         stop_price=stop,
         target1_price=t1,
         target2_price=t2,
-        scanner_version="test",
-        analysis_engine_version="test",
-        policy_version="test",
-        source_versions={"fixture": fingerprint},
+        scanner_version=StockScannerService.VERSION,
+        analysis_engine_version=ANALYSIS_ENGINE_VERSION,
+        policy_version=production_policy_cache_token(),
+        source_versions={
+            "fixture": fingerprint,
+            "fingerprint_contract_version": INPUT_FINGERPRINT_CONTRACT_VERSION,
+            "input_generation": generation,
+        },
         snapshot={"fixture": fingerprint},
         computed_at=f"{market_date}T00:00:00+00:00",
     )
