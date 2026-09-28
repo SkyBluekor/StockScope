@@ -39,3 +39,17 @@ __all__ = [
     "EventEvidenceState",
     "EventRevisionIdentity",
 ]
+
+from app.event_evidence.store import (
+    EVENT_EVIDENCE_HASH_CONTRACT_VERSION,
+    EVENT_EVIDENCE_RECORD_VERSION,
+    EVENT_EVIDENCE_STORE_SCHEMA_VERSION,
+    EventEvidenceStore,
+)
+
+__all__ += [
+    "EVENT_EVIDENCE_STORE_SCHEMA_VERSION",
+    "EVENT_EVIDENCE_RECORD_VERSION",
+    "EVENT_EVIDENCE_HASH_CONTRACT_VERSION",
+    "EventEvidenceStore",
+]
