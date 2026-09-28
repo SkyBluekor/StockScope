@@ -42,6 +42,8 @@ class ProspectiveCaptureRequest:
     candidate_limit: int
     horizon_intent: str
     horizon_policy_version: str | None
+    selection_policy_id: str | None = None
+    selection_policy_hash: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
