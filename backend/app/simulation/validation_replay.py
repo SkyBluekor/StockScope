@@ -8,6 +8,10 @@ from typing import Any, Callable
 from app.backtest.market_store import HistoricalMarketStore
 from app.backtest.scanner import StockScannerService
 from app.market.providers.krx import KrxProvider
+from app.strategy.production_selection_policy import (
+    SelectionPolicyError,
+    SelectionPolicyPin,
+)
 
 from .input_identity import build_replay_market_manifest
 from .validation_catalog import (
@@ -335,6 +339,20 @@ class HistoricalValidationReplayService:
             )
 
         try:
+            if draft.selection_policy is None:
+                raise HistoricalValidationReplayError(
+                    "VAL_REPLAY_SELECTION_POLICY_UNAVAILABLE",
+                    "이 Historical Validation은 Selection Policy pin 이전에 생성되어 안전하게 재생할 수 없습니다. 새 검증을 생성하세요.",
+                )
+            try:
+                selection_policy_pin = SelectionPolicyPin.from_persisted_snapshot(
+                    draft.selection_policy
+                )
+            except SelectionPolicyError as exc:
+                raise HistoricalValidationReplayError(
+                    "VAL_REPLAY_SELECTION_POLICY_INVALID",
+                    exc.message,
+                ) from exc
             if draft.scanner_version != StockScannerService.VERSION:
                 raise HistoricalValidationReplayError(
                     "VAL_REPLAY_SCANNER_VERSION_MISMATCH",
@@ -379,6 +397,7 @@ class HistoricalValidationReplayService:
                     candidate_limit=self.CANDIDATE_LIMIT,
                     force_refresh=False,
                     allow_large_sync=False,
+                    selection_policy_pin=selection_policy_pin,
                 )
                 if not isinstance(result, dict):
                     raise HistoricalValidationReplayError(
