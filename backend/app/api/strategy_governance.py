@@ -67,7 +67,7 @@ def _http_error(error: Exception) -> None:
     code = str(getattr(error, "code", "STRATEGY_GOVERNANCE_ERROR"))
     message = str(getattr(error, "message", str(error)))
 
-    if "NOT_FOUND" in code:
+    if "NOT_FOUND" in code or code == "APPROVAL_ARTIFACT_NOT_AVAILABLE":
         status = 404
     elif code in {
         "STRATEGY_GOVERNANCE_SCHEMA_NOT_READY",
