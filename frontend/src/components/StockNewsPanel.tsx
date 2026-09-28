@@ -85,7 +85,7 @@ function relationLabel(value: string) {
 function sourceKindLabel(value: string) {
   if (value === "OPENDART_DISCLOSURE") return "OpenDART";
   if (value.startsWith("NAVER")) return "네이버 뉴스";
-  return value.replaceAll("_", " ");
+  return value.replace(/_/g, " ");
 }
 
 function qualityLabel(value: StockEventEvidenceItem["quality_state"]) {
