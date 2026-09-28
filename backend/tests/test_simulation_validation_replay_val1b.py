@@ -8,6 +8,10 @@ import pytest
 from app.backtest.scanner import StockScannerService
 from app.simulation.validation_catalog import HistoricalValidationCatalog
 from app.strategy.production_selection_policy import SelectionPolicyPin
+from app.simulation.selection_policy_pin import (
+    deserialize_selection_policy_pin,
+    serialize_selection_policy_pin,
+)
 from app.simulation.validation_replay import (
     HistoricalValidationReplayError,
     HistoricalValidationReplayService,
@@ -154,7 +158,7 @@ def _draft(catalog: HistoricalValidationCatalog):
         resolved_start_date="2026-01-05",
         resolved_end_date="2026-01-07",
         trading_day_count=3,
-        selection_policy_pin=TEST_PIN.to_dict(),
+        selection_policy_pin=serialize_selection_policy_pin(TEST_PIN),
     )
 
 
