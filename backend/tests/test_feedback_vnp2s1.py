@@ -95,6 +95,13 @@ def _tracking_fixture(path: Path) -> Path:
                 0,1,"ACTIVE","2026-09-01T08:10:00+00:00",
             ),
         )
+
+    # The tracking repository uses WAL. Ensure fixture commits are checkpointed
+    # before byte-level read-only assertions; otherwise SQLite may checkpoint a
+    # previously committed WAL on a later open and change the main-file hash
+    # even though the adapter itself issued no write.
+    with sqlite3.connect(path) as conn:
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     return path
 
 
