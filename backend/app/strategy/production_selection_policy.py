@@ -76,6 +76,73 @@ class SelectionPolicyPin:
             "production_policy_fingerprint": self.production_policy_fingerprint,
         }
 
+    def persisted_snapshot(self) -> dict[str, Any]:
+        return {
+            **self.metadata(),
+            "operating_strategies": [
+                {
+                    "strategy_version_id": strategy_version_id,
+                    "strategy_key": strategy_key,
+                    "definition_hash": definition_hash,
+                }
+                for strategy_version_id, strategy_key, definition_hash
+                in self.operating_strategies
+            ],
+        }
+
+    @classmethod
+    def from_persisted_snapshot(cls, payload: dict[str, Any]) -> "SelectionPolicyPin":
+        strategies = payload.get("operating_strategies")
+        if not isinstance(strategies, list) or not strategies:
+            raise SelectionPolicyError(
+                "SELECTION_POLICY_PIN_INVALID",
+                "저장된 Selection Policy pin에 operating strategy가 없습니다.",
+            )
+        return cls(
+            policy_id=str(payload.get("policy_id") or ""),
+            policy_hash=str(payload.get("policy_hash") or ""),
+            policy_contract_version=str(payload.get("policy_contract_version") or ""),
+            policy_source=str(payload.get("policy_source") or "PERSISTED_RUN_PIN"),
+            fallback_used=bool(payload.get("fallback_used")),
+            fallback_reason=(
+                str(payload.get("fallback_reason"))
+                if payload.get("fallback_reason") not in (None, "")
+                else None
+            ),
+            operating_strategies=tuple(
+                (
+                    (
+                        str(item.get("strategy_version_id"))
+                        if item.get("strategy_version_id") not in (None, "")
+                        else None
+                    ),
+                    str(item.get("strategy_key") or ""),
+                    (
+                        str(item.get("definition_hash"))
+                        if item.get("definition_hash") not in (None, "")
+                        else None
+                    ),
+                )
+                for item in strategies
+                if isinstance(item, dict) and str(item.get("strategy_key") or "")
+            ),
+            scanner_baseline_id=(
+                str(payload.get("scanner_baseline_id"))
+                if payload.get("scanner_baseline_id") not in (None, "")
+                else None
+            ),
+            production_fingerprint=(
+                str(payload.get("production_fingerprint"))
+                if payload.get("production_fingerprint") not in (None, "")
+                else None
+            ),
+            production_policy_fingerprint=(
+                str(payload.get("production_policy_fingerprint"))
+                if payload.get("production_policy_fingerprint") not in (None, "")
+                else None
+            ),
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class SelectionPolicyResolution:
