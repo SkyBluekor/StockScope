@@ -707,6 +707,7 @@ class EventRiskAnalyzer:
         position_mode: str = "NOT_HELD",
         days: int = 60,
         detail_limit: int = 4,
+        as_of: str | None = None,
         history: list[dict[str, Any]] | None = None,
         reference_price: float | None = None,
         reference_volume: float | None = None,
@@ -727,7 +728,37 @@ class EventRiskAnalyzer:
                 "events": [],
             }
 
-        end_date = date.today()
+        if as_of:
+            try:
+                clean_as_of = str(as_of).strip()
+                end_date = (
+                    date.fromisoformat(clean_as_of)
+                    if "-" in clean_as_of
+                    else date(
+                        int(clean_as_of[:4]),
+                        int(clean_as_of[4:6]),
+                        int(clean_as_of[6:8]),
+                    )
+                )
+            except (TypeError, ValueError):
+                return {
+                    "available": False,
+                    "high_count": 0,
+                    "medium_count": 0,
+                    "low_count": 0,
+                    "positive_count": 0,
+                    "negative_count": 0,
+                    "mixed_count": 0,
+                    "risk_gate": False,
+                    "message": "공시 기준일 형식이 올바르지 않습니다.",
+                    "events": [],
+                    "temporal_boundary": {
+                        "mode": "AS_OF_INVALID",
+                        "as_of": str(as_of),
+                    },
+                }
+        else:
+            end_date = date.today()
         begin_date = end_date - timedelta(days=max(7, days))
         begin = begin_date.strftime("%Y%m%d")
         end = end_date.strftime("%Y%m%d")
