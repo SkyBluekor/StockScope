@@ -9,8 +9,6 @@ from pathlib import Path
 from typing import Any, Callable
 from uuid import uuid4
 
-from app.data_contract.builder import build_stock_data_contract
-from app.data_contract.reader import ReadOnlyDataStateReader
 from app.horizon import HorizonPolicyError, require_horizon_activatable
 from app.horizon_context import get_analysis_horizon
 
@@ -411,6 +409,9 @@ class HoldingDecisionSupportService:
             )
         finally:
             conn.close()
+
+        from app.data_contract.builder import build_stock_data_contract
+        from app.data_contract.reader import ReadOnlyDataStateReader
 
         valuation = self._valuation(str(stock["market"]), str(stock["ticker"]))
         price = _decimal(valuation["price"]) if valuation["available"] else None
