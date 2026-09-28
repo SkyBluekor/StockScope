@@ -1102,6 +1102,8 @@ def _p5_simulation_db(path: Path) -> Path:
 def _selection_runtime_with_active_policy(
     runtime: Path,
     simulation: Path,
+    *,
+    suffix: str = "A",
 ) -> dict:
     registry = ProductionStrategySelectionRegistry(
         runtime_dir=runtime,
@@ -1125,14 +1127,14 @@ def _selection_runtime_with_active_policy(
             "score_formula_changed": False,
             "candidate_priority_changed": False,
         },
-        scanner_baseline_id="BASELINE-A",
-        production_fingerprint="PROD-A",
-        production_policy_fingerprint="POLICY-A",
-        proposal_id="proposal-backup-fixture",
-        proposal_hash="proposal-hash",
-        approval_artifact_id="approval-backup-fixture",
-        approval_hash="approval-hash",
-        created_at="2026-09-28T03:10:00+00:00",
+        scanner_baseline_id=f"BASELINE-{suffix}",
+        production_fingerprint=f"PROD-{suffix}",
+        production_policy_fingerprint=f"POLICY-{suffix}",
+        proposal_id=f"proposal-backup-{suffix}",
+        proposal_hash=f"proposal-hash-{suffix}",
+        approval_artifact_id=f"approval-backup-{suffix}",
+        approval_hash=f"approval-hash-{suffix}",
+        created_at=f"2026-09-28T03:10:0{0 if suffix == 'A' else 1}+00:00",
     )
     registry._publish_snapshot(snapshot)  # noqa: SLF001
     registry._publish_reference(  # noqa: SLF001
@@ -1144,8 +1146,8 @@ def _selection_runtime_with_active_policy(
             "rollback_policy_hash": None,
             "last_deactivated_policy_id": None,
             "activation_source": "TEST_BACKUP_FIXTURE",
-            "approval_artifact_id": "approval-backup-fixture",
-            "approval_hash": "approval-hash",
+            "approval_artifact_id": f"approval-backup-{suffix}",
+            "approval_hash": f"approval-hash-{suffix}",
             "activated_at": "2026-09-28T03:10:00+00:00",
             "generation": 1,
         }
@@ -1252,3 +1254,248 @@ def test_p5_backup_rejects_corrupt_selection_policy_before_publication(tmp_path)
         )
 
     assert not destination.exists()
+
+
+
+def test_p5_active_selection_roundtrip_restores_exact_policy_state(tmp_path):
+    source_holdings = _holdings_db(tmp_path / "source-holdings.db")
+    source_simulation = _p5_simulation_db(tmp_path / "source-simulation.db")
+    source_runtime = tmp_path / "source-strategy-selection"
+    snapshot = _selection_runtime_with_active_policy(
+        source_runtime,
+        source_simulation,
+        suffix="A",
+    )
+
+    backup = create_backup(
+        destination=tmp_path / "p5-roundtrip-backup",
+        holdings_db=source_holdings,
+        simulation_db=source_simulation,
+        include_tracking=False,
+        strategy_selection_runtime=source_runtime,
+    )
+
+    target_holdings = _holdings_db(tmp_path / "target-holdings.db")
+    target_simulation = _p5_simulation_db(tmp_path / "target-simulation.db")
+    target_runtime = tmp_path / "target-strategy-selection"
+
+    result = restore_backup(
+        backup,
+        restore_simulation=True,
+        target_holdings=target_holdings,
+        target_simulation=target_simulation,
+        target_strategy_selection_runtime=target_runtime,
+    )
+
+    registry = ProductionStrategySelectionRegistry(
+        runtime_dir=target_runtime,
+        simulation_db=target_simulation,
+    )
+    resolution = registry.resolve_active_selection_policy()
+    assert resolution.policy_source == "ACTIVE_SELECTION_POLICY"
+    assert resolution.policy["policy_id"] == snapshot["policy_id"]
+    assert resolution.policy["policy_hash"] == snapshot["policy_hash"]
+    assert result["strategy_selection"]["store_restored"] is True
+    assert result["strategy_selection"]["active_reference_present"] is True
+    assert result["strategy_selection"]["policy_snapshot_count"] == 1
+    assert result["strategy_selection"]["resolved_policy_id"] == snapshot["policy_id"]
+
+
+def test_p5_legacy_restore_removes_existing_active_state_but_preserves_readme(
+    tmp_path,
+):
+    source_holdings = _holdings_db(tmp_path / "source-holdings.db")
+    source_simulation = _p5_simulation_db(tmp_path / "source-simulation.db")
+    source_runtime = tmp_path / "source-strategy-selection"
+
+    backup = create_backup(
+        destination=tmp_path / "p5-legacy-restore-backup",
+        holdings_db=source_holdings,
+        simulation_db=source_simulation,
+        include_tracking=False,
+        strategy_selection_runtime=source_runtime,
+    )
+
+    target_holdings = _holdings_db(tmp_path / "target-holdings.db")
+    target_simulation = _p5_simulation_db(tmp_path / "target-simulation.db")
+    target_runtime = tmp_path / "target-strategy-selection"
+    _selection_runtime_with_active_policy(
+        target_runtime,
+        target_simulation,
+        suffix="B",
+    )
+    target_runtime.mkdir(parents=True, exist_ok=True)
+    (target_runtime / "README.md").write_text(
+        "keep this file\n",
+        encoding="utf-8",
+    )
+
+    result = restore_backup(
+        backup,
+        restore_simulation=True,
+        target_holdings=target_holdings,
+        target_simulation=target_simulation,
+        target_strategy_selection_runtime=target_runtime,
+    )
+
+    registry = ProductionStrategySelectionRegistry(
+        runtime_dir=target_runtime,
+        simulation_db=target_simulation,
+    )
+    resolution = registry.resolve_active_selection_policy()
+    assert resolution.policy_source == "LEGACY_CURRENT_10_FALLBACK"
+    assert not (target_runtime / "active.json").exists()
+    assert not list((target_runtime / "policies").glob("*.json")) if (
+        target_runtime / "policies"
+    ).exists() else True
+    assert (target_runtime / "README.md").read_text(
+        encoding="utf-8"
+    ) == "keep this file\n"
+    pre = result["pre_restore_backups"]["strategy_selection"]
+    assert pre is not None
+    assert Path(pre).is_dir()
+    assert result["strategy_selection"]["store_present_in_backup"] is False
+    assert result["strategy_selection"]["store_restored"] is True
+    assert (
+        result["strategy_selection"]["resolved_policy_source"]
+        == "LEGACY_CURRENT_10_FALLBACK"
+    )
+
+
+def test_p5_restore_blocks_tampered_selection_snapshot_before_target_change(
+    tmp_path,
+):
+    source_holdings = _holdings_db(tmp_path / "source-holdings.db")
+    source_simulation = _p5_simulation_db(tmp_path / "source-simulation.db")
+    source_runtime = tmp_path / "source-strategy-selection"
+    snapshot = _selection_runtime_with_active_policy(
+        source_runtime,
+        source_simulation,
+        suffix="A",
+    )
+    backup = create_backup(
+        destination=tmp_path / "tampered-selection-backup",
+        holdings_db=source_holdings,
+        simulation_db=source_simulation,
+        include_tracking=False,
+        strategy_selection_runtime=source_runtime,
+    )
+    backup_policy = (
+        backup
+        / "strategy_selection"
+        / "policies"
+        / f"{snapshot['policy_id']}.json"
+    )
+    backup_policy.write_text(
+        backup_policy.read_text(encoding="utf-8") + "\n",
+        encoding="utf-8",
+    )
+
+    target_holdings = _holdings_db(tmp_path / "target-holdings.db")
+    target_simulation = _p5_simulation_db(tmp_path / "target-simulation.db")
+    target_runtime = tmp_path / "target-strategy-selection"
+    target_snapshot = _selection_runtime_with_active_policy(
+        target_runtime,
+        target_simulation,
+        suffix="B",
+    )
+    before_simulation_hash = sha256_file(target_simulation)
+    before_active_hash = sha256_file(target_runtime / "active.json")
+
+    with pytest.raises(DataToolError, match="SHA-256"):
+        restore_backup(
+            backup,
+            restore_simulation=True,
+            target_holdings=target_holdings,
+            target_simulation=target_simulation,
+            target_strategy_selection_runtime=target_runtime,
+        )
+
+    assert sha256_file(target_simulation) == before_simulation_hash
+    assert sha256_file(target_runtime / "active.json") == before_active_hash
+    restored = ProductionStrategySelectionRegistry(
+        runtime_dir=target_runtime,
+        simulation_db=target_simulation,
+    ).resolve_active_selection_policy()
+    assert restored.policy["policy_id"] == target_snapshot["policy_id"]
+
+
+def test_p5_restore_rolls_back_db_and_selection_when_active_publish_fails(
+    tmp_path,
+    monkeypatch,
+):
+    source_holdings = _holdings_db(tmp_path / "source-holdings.db")
+    source_simulation = _p5_simulation_db(tmp_path / "source-simulation.db")
+    source_runtime = tmp_path / "source-strategy-selection"
+    _selection_runtime_with_active_policy(
+        source_runtime,
+        source_simulation,
+        suffix="A",
+    )
+    backup = create_backup(
+        destination=tmp_path / "selection-failure-backup",
+        holdings_db=source_holdings,
+        simulation_db=source_simulation,
+        include_tracking=False,
+        strategy_selection_runtime=source_runtime,
+    )
+
+    target_holdings = _holdings_db(tmp_path / "target-holdings.db")
+    target_simulation = _p5_simulation_db(tmp_path / "target-simulation.db")
+    with sqlite3.connect(target_simulation) as conn:
+        conn.execute(
+            "CREATE TABLE restore_identity_fixture(value TEXT NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO restore_identity_fixture(value) VALUES('TARGET-BEFORE')"
+        )
+    target_runtime = tmp_path / "target-strategy-selection"
+    target_snapshot = _selection_runtime_with_active_policy(
+        target_runtime,
+        target_simulation,
+        suffix="B",
+    )
+    before_simulation_hash = sha256_file(target_simulation)
+
+    from tools.data import strategy_selection_runtime as selection_runtime_module
+
+    real_replace = selection_runtime_module.os.replace
+    failed = False
+
+    def fail_first_active_publish(src, dst):
+        nonlocal failed
+        if Path(dst) == target_runtime / "active.json" and not failed:
+            failed = True
+            raise OSError("simulated selection active publish failure")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(
+        selection_runtime_module.os,
+        "replace",
+        fail_first_active_publish,
+    )
+
+    with pytest.raises(
+        OSError,
+        match="simulated selection active publish failure",
+    ):
+        restore_backup(
+            backup,
+            restore_simulation=True,
+            target_holdings=target_holdings,
+            target_simulation=target_simulation,
+            target_strategy_selection_runtime=target_runtime,
+        )
+
+    assert sha256_file(target_simulation) == before_simulation_hash
+    with sqlite3.connect(target_simulation) as conn:
+        assert conn.execute(
+            "SELECT value FROM restore_identity_fixture"
+        ).fetchone()[0] == "TARGET-BEFORE"
+
+    restored = ProductionStrategySelectionRegistry(
+        runtime_dir=target_runtime,
+        simulation_db=target_simulation,
+    ).resolve_active_selection_policy()
+    assert restored.policy_source == "ACTIVE_SELECTION_POLICY"
+    assert restored.policy["policy_id"] == target_snapshot["policy_id"]
