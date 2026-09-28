@@ -27,6 +27,10 @@ from app.horizon import (
 )
 from app.market.providers import KrxProvider
 from app.market.providers.base import ProviderError, ProviderNotConfigured
+from app.strategy.production_selection_policy import (
+    ProductionStrategySelectionRegistry,
+    SelectionPolicyPin,
+)
 
 router = APIRouter(prefix="/backtest", tags=["backtest"])
 
@@ -191,6 +195,7 @@ async def _run_job(job_id: str, config: BacktestConfig, api_key: str | None) -> 
         result = await service.run_pullback(
             config,
             progress=update_progress,
+            selection_policy_pin=selection_policy_pin,
         )
     except BacktestJobCancelled:
         backtest_jobs.mark_cancelled(job_id)
@@ -505,7 +510,12 @@ async def create_multi_strategy_backtest_job(payload: PullbackBacktestRequest) -
     return job.public()
 
 
-async def _run_scanner_job(job_id: str, payload: ScannerRequest, api_key: str | None) -> None:
+async def _run_scanner_job(
+    job_id: str,
+    payload: ScannerRequest,
+    api_key: str | None,
+    selection_policy_pin: SelectionPolicyPin,
+) -> None:
     service = StockScannerService(KrxProvider(api_key))
     prospective = _prospective_service()
     progress_context: dict[str, object] = {
@@ -594,6 +604,7 @@ async def _run_scanner_job(job_id: str, payload: ScannerRequest, api_key: str | 
                 source_job_id=job_id,
                 payload=payload,
                 result=result,
+                selection_policy_pin=selection_policy_pin,
             )
     except BacktestJobCancelled:
         prospective.try_mark_scanner_capture_terminal(
@@ -671,6 +682,7 @@ async def _run_scanner_evidence_job(
     job_id: str,
     payload: ScannerEvidencePrepareRequest,
     api_key: str | None,
+    selection_policy_pin: SelectionPolicyPin,
 ) -> None:
     service = StockScannerService(KrxProvider(api_key))
 
@@ -709,6 +721,7 @@ async def _run_scanner_evidence_job(
             force_refresh=True,
             allow_large_sync=False,
             progress=update_progress,
+            selection_policy_pin=selection_policy_pin,
         )
     except BacktestJobCancelled:
         backtest_jobs.mark_cancelled(job_id)
@@ -727,7 +740,17 @@ async def _run_scanner_evidence_job(
 async def create_scanner_evidence_job(payload: ScannerEvidencePrepareRequest) -> dict:
     settings = get_settings()
     job = backtest_jobs.create()
-    task = asyncio.create_task(_run_scanner_evidence_job(job.job_id, payload, settings.krx_api_key))
+    selection_policy_pin = (
+        ProductionStrategySelectionRegistry().pin_active_selection_policy()
+    )
+    task = asyncio.create_task(
+        _run_scanner_evidence_job(
+            job.job_id,
+            payload,
+            settings.krx_api_key,
+            selection_policy_pin,
+        )
+    )
     backtest_jobs.attach_task(job.job_id, task)
     return job.public()
 
@@ -746,11 +769,22 @@ async def create_scanner_job(payload: ScannerRequest) -> dict:
 
     settings = get_settings()
     job = backtest_jobs.create()
+    selection_policy_pin = (
+        ProductionStrategySelectionRegistry().pin_active_selection_policy()
+    )
     _prospective_service().try_begin_scanner_capture(
         source_job_id=job.job_id,
         payload=payload,
+        selection_policy_pin=selection_policy_pin,
     )
-    task = asyncio.create_task(_run_scanner_job(job.job_id, payload, settings.krx_api_key))
+    task = asyncio.create_task(
+        _run_scanner_job(
+            job.job_id,
+            payload,
+            settings.krx_api_key,
+            selection_policy_pin,
+        )
+    )
     backtest_jobs.attach_task(job.job_id, task)
     return job.public()
 
