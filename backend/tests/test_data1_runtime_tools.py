@@ -49,6 +49,13 @@ from tools.data.migrate_holdings_recovery_vnp3s2 import (
 from tools.data.migrate_watch_vnp4s1 import migrate_watch_store
 from app.watch.policy import WATCH_POLICY_CONTRACT_VERSION
 from app.watch.storage import WATCH_SCHEMA_VERSION
+from app.strategy import StrategyName
+from app.strategy.production_selection_policy import (
+    ProductionStrategySelectionRegistry,
+)
+from tools.data.migrate_strategy_governance_vnp5s1 import (
+    migrate_strategy_governance_store,
+)
 
 
 T0 = "2026-09-24T09:00:00+09:00"
@@ -1082,3 +1089,166 @@ def test_setup_and_env_template_expose_data1_entrypoints():
     assert "tools\\data\\doctor.py" in setup
     assert "STOCKSCOPE_HOLDINGS_DB=" in env_example
     assert "STOCKSCOPE_MARKET_STORE_DB=" in env_example
+
+
+
+def _p5_simulation_db(path: Path) -> Path:
+    simulation = _simulation_db(path)
+    migrate_prospective_store(simulation)
+    migrate_strategy_governance_store(simulation)
+    return simulation
+
+
+def _selection_runtime_with_active_policy(
+    runtime: Path,
+    simulation: Path,
+) -> dict:
+    registry = ProductionStrategySelectionRegistry(
+        runtime_dir=runtime,
+        simulation_db=simulation,
+        clock=lambda: "2026-09-28T03:10:00+00:00",
+    )
+    snapshot = registry._build_snapshot(  # noqa: SLF001
+        source_kind="TEST_BACKUP_FIXTURE",
+        operating_strategies=[
+            {
+                "strategy_version_id": f"version-{strategy.value}",
+                "strategy_key": strategy.value,
+                "definition_hash": f"hash-{strategy.value}",
+            }
+            for strategy in StrategyName
+            if strategy is not StrategyName.NO_TRADE
+        ],
+        selection_semantics={
+            "risk_gate_preserved": True,
+            "no_trade_safety_path_preserved": True,
+            "score_formula_changed": False,
+            "candidate_priority_changed": False,
+        },
+        scanner_baseline_id="BASELINE-A",
+        production_fingerprint="PROD-A",
+        production_policy_fingerprint="POLICY-A",
+        proposal_id="proposal-backup-fixture",
+        proposal_hash="proposal-hash",
+        approval_artifact_id="approval-backup-fixture",
+        approval_hash="approval-hash",
+        created_at="2026-09-28T03:10:00+00:00",
+    )
+    registry._publish_snapshot(snapshot)  # noqa: SLF001
+    registry._publish_reference(  # noqa: SLF001
+        {
+            "schema_version": 1,
+            "active_policy_id": snapshot["policy_id"],
+            "active_policy_hash": snapshot["policy_hash"],
+            "rollback_policy_id": None,
+            "rollback_policy_hash": None,
+            "last_deactivated_policy_id": None,
+            "activation_source": "TEST_BACKUP_FIXTURE",
+            "approval_artifact_id": "approval-backup-fixture",
+            "approval_hash": "approval-hash",
+            "activated_at": "2026-09-28T03:10:00+00:00",
+            "generation": 1,
+        }
+    )
+    return snapshot
+
+
+def test_p5_backup_declares_legacy_fallback_without_creating_runtime(tmp_path):
+    holdings = _holdings_db(tmp_path / "holdings.db")
+    simulation = _p5_simulation_db(tmp_path / "simulation.db")
+    runtime = tmp_path / "strategy_selection"
+
+    backup = create_backup(
+        destination=tmp_path / "p5-legacy-backup",
+        holdings_db=holdings,
+        simulation_db=simulation,
+        include_tracking=False,
+        strategy_selection_runtime=runtime,
+    )
+
+    manifest = json.loads(
+        (backup / "backup_manifest.json").read_text(encoding="utf-8")
+    )
+    governance = manifest["extensions"]["strategy_governance_v1"]
+    selection = manifest["extensions"]["strategy_selection_v1"]
+
+    assert governance["present"] is True
+    assert governance["restorable"] is True
+    assert selection["runtime_present"] is False
+    assert selection["active_reference_present"] is False
+    assert selection["policy_snapshot_count"] == 0
+    assert selection["resolved_policy_source"] == "LEGACY_CURRENT_10_FALLBACK"
+    assert manifest["contents"]["strategy_selection_runtime"] is False
+    assert not (backup / "strategy_selection").exists()
+    assert not runtime.exists()
+
+
+def test_p5_backup_copies_valid_active_selection_runtime_with_hashes(tmp_path):
+    holdings = _holdings_db(tmp_path / "holdings.db")
+    simulation = _p5_simulation_db(tmp_path / "simulation.db")
+    runtime = tmp_path / "strategy_selection"
+    snapshot = _selection_runtime_with_active_policy(runtime, simulation)
+
+    backup = create_backup(
+        destination=tmp_path / "p5-active-backup",
+        holdings_db=holdings,
+        simulation_db=simulation,
+        include_tracking=False,
+        strategy_selection_runtime=runtime,
+    )
+
+    manifest = json.loads(
+        (backup / "backup_manifest.json").read_text(encoding="utf-8")
+    )
+    selection = manifest["extensions"]["strategy_selection_v1"]
+    copied_active = backup / "strategy_selection" / "active.json"
+    copied_policy = (
+        backup
+        / "strategy_selection"
+        / "policies"
+        / f"{snapshot['policy_id']}.json"
+    )
+
+    assert selection["runtime_present"] is True
+    assert selection["active_reference_present"] is True
+    assert selection["policy_snapshot_count"] == 1
+    assert selection["resolved_policy_source"] == "ACTIVE_SELECTION_POLICY"
+    assert selection["resolved_policy_id"] == snapshot["policy_id"]
+    assert manifest["contents"]["strategy_selection_runtime"] is True
+    assert copied_active.is_file()
+    assert copied_policy.is_file()
+    assert "strategy_selection/active.json" in manifest["files"]
+    assert (
+        f"strategy_selection/policies/{snapshot['policy_id']}.json"
+        in manifest["files"]
+    )
+    assert (
+        manifest["files"]["strategy_selection/active.json"]["sha256"]
+        == sha256_file(copied_active)
+    )
+
+
+def test_p5_backup_rejects_corrupt_selection_policy_before_publication(tmp_path):
+    holdings = _holdings_db(tmp_path / "holdings.db")
+    simulation = _p5_simulation_db(tmp_path / "simulation.db")
+    runtime = tmp_path / "strategy_selection"
+    snapshot = _selection_runtime_with_active_policy(runtime, simulation)
+    policy_path = runtime / "policies" / f"{snapshot['policy_id']}.json"
+    payload = json.loads(policy_path.read_text(encoding="utf-8"))
+    payload["operating_strategies"] = payload["operating_strategies"][:-1]
+    policy_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    destination = tmp_path / "corrupt-selection-backup"
+
+    with pytest.raises(DataToolError, match="Selection Policy 검증 실패"):
+        create_backup(
+            destination=destination,
+            holdings_db=holdings,
+            simulation_db=simulation,
+            include_tracking=False,
+            strategy_selection_runtime=runtime,
+        )
+
+    assert not destination.exists()
