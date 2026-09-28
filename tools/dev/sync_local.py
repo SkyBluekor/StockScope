@@ -48,6 +48,7 @@ class MigrationState(str, Enum):
     PARTIAL = "PARTIAL"
     INCOMPATIBLE = "INCOMPATIBLE"
     PREREQUISITE_MISSING = "PREREQUISITE_MISSING"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,6 +148,51 @@ def _one_db_state(
     return MigrationState.CURRENT, ""
 
 
+def _optional_db_state(
+    *,
+    path: Path,
+    expected_tables: set[str],
+    required_base: set[str],
+    meta_table: str | None,
+    expected_version: str | None,
+) -> tuple[MigrationState, str]:
+    """Inspect a migration component whose owning runtime domain is optional.
+
+    If no migration tables exist and the domain's full base schema is not
+    initialized on this PC, the component is not applicable rather than
+    broken. Any partial migration artifacts still fail closed.
+    """
+    if not path.is_file():
+        return MigrationState.NOT_APPLICABLE, f"optional DB missing: {path}"
+
+    names = _tables(path)
+    present = expected_tables & names
+    if present:
+        if present != expected_tables:
+            missing = sorted(expected_tables - names)
+            return (
+                MigrationState.PARTIAL,
+                "partial tables; missing: " + ", ".join(missing),
+            )
+        if meta_table and expected_version:
+            actual = _meta_value(path, meta_table)
+            if actual != expected_version:
+                return (
+                    MigrationState.INCOMPATIBLE,
+                    f"{meta_table}.schema_version={actual!r}, expected={expected_version!r}",
+                )
+        return MigrationState.CURRENT, ""
+
+    missing_base = sorted(required_base - names)
+    if missing_base:
+        return (
+            MigrationState.NOT_APPLICABLE,
+            "optional runtime domain not initialized; missing base tables: "
+            + ", ".join(missing_base),
+        )
+    return MigrationState.MISSING, ""
+
+
 def _combine(
     key: str,
     label: str,
@@ -164,73 +210,140 @@ def _combine(
         state = MigrationState.INCOMPATIBLE
     elif any(state is MigrationState.PARTIAL for state in states):
         state = MigrationState.PARTIAL
-    elif all(state is MigrationState.CURRENT for state in states):
-        state = MigrationState.CURRENT
-    elif all(state is MigrationState.MISSING for state in states):
-        state = MigrationState.MISSING
     else:
-        state = MigrationState.PARTIAL
-        if not details:
-            details.append("migration state differs across runtime DBs")
+        applicable = [
+            state for state in states
+            if state is not MigrationState.NOT_APPLICABLE
+        ]
+        if not applicable:
+            state = MigrationState.NOT_APPLICABLE
+        elif any(state is MigrationState.MISSING for state in applicable):
+            state = MigrationState.MISSING
+        elif all(state is MigrationState.CURRENT for state in applicable):
+            state = MigrationState.CURRENT
+        else:
+            state = MigrationState.PARTIAL
+            if not details:
+                details.append("migration state differs across runtime DBs")
     return MigrationStatus(key, label, state, "; ".join(details))
 
 
+def _component_result(
+    state: tuple[MigrationState, str],
+    migrate: Callable[[], dict[str, Any]],
+) -> dict[str, Any]:
+    migration_state, detail = state
+    if migration_state is MigrationState.MISSING:
+        return migrate()
+    if migration_state is MigrationState.CURRENT:
+        return {"status": "CURRENT"}
+    if migration_state is MigrationState.NOT_APPLICABLE:
+        return {"status": "SKIPPED_NOT_APPLICABLE", "detail": detail}
+    raise DataToolError(
+        f"Migration component state is not safe to run: "
+        f"{migration_state.value} {detail}"
+    )
+
+
+def _p1s1_parts(paths: RuntimePaths) -> dict[str, tuple[MigrationState, str]]:
+    return {
+        "market": _one_db_state(
+            path=paths.market,
+            expected_tables={"input_identity_meta", "input_change_generation"},
+            required_base={"stock_daily", "main_index_daily", "day_status"},
+            meta_table="input_identity_meta",
+            expected_version=p1s1.INPUT_IDENTITY_SCHEMA_VERSION,
+        ),
+        "holdings": _one_db_state(
+            path=paths.holdings,
+            expected_tables={p1s1.PROOF_TABLE},
+            required_base={
+                "stock_analysis_day", "stock_analysis_revision", "monitored_stock"
+            },
+            meta_table=None,
+            expected_version=None,
+        ),
+        "simulation": _optional_db_state(
+            path=paths.simulation,
+            expected_tables={p1s1.VALIDATION_PROOF_TABLE},
+            required_base={"historical_validation_run", "historical_validation_day"},
+            meta_table=None,
+            expected_version=None,
+        ),
+    }
+
+
+def _p1s2_parts(paths: RuntimePaths) -> dict[str, tuple[MigrationState, str]]:
+    return {
+        "holdings": _one_db_state(
+            path=paths.holdings,
+            expected_tables={
+                p1s2.HORIZON_META_TABLE,
+                p1s2.ANALYSIS_HORIZON_TABLE,
+                p1s2.PLAN_HORIZON_TABLE,
+            },
+            required_base={"stock_analysis_revision", "holding_management_plan"},
+            meta_table=p1s2.HORIZON_META_TABLE,
+            expected_version=p1s2.HORIZON_SCHEMA_VERSION,
+        ),
+        "simulation": _optional_db_state(
+            path=paths.simulation,
+            expected_tables={
+                p1s2.HORIZON_META_TABLE,
+                p1s2.VALIDATION_HORIZON_TABLE,
+                p1s2.EXECUTION_HORIZON_TABLE,
+            },
+            required_base={"historical_validation_run", "historical_execution_run"},
+            meta_table=p1s2.HORIZON_META_TABLE,
+            expected_version=p1s2.HORIZON_SCHEMA_VERSION,
+        ),
+    }
+
+
+def _run_p1s1(paths: RuntimePaths) -> dict[str, Any]:
+    parts = _p1s1_parts(paths)
+    return {
+        "market": _component_result(
+            parts["market"], lambda: p1s1.migrate_market_store(paths.market)
+        ),
+        "holdings": _component_result(
+            parts["holdings"], lambda: p1s1.migrate_holdings(paths.holdings)
+        ),
+        "simulation": _component_result(
+            parts["simulation"], lambda: p1s1.migrate_simulation(paths.simulation)
+        ),
+    }
+
+
+def _run_p1s2(paths: RuntimePaths) -> dict[str, Any]:
+    parts = _p1s2_parts(paths)
+    return {
+        "holdings": _component_result(
+            parts["holdings"], lambda: p1s2.migrate_holdings_horizon(paths.holdings)
+        ),
+        "simulation": _component_result(
+            parts["simulation"],
+            lambda: p1s2.migrate_simulation_horizon(paths.simulation),
+        ),
+    }
+
+
+
 def _detect_p1s1(paths: RuntimePaths) -> MigrationStatus:
-    market = _one_db_state(
-        path=paths.market,
-        expected_tables={"input_identity_meta", "input_change_generation"},
-        required_base={"stock_daily", "main_index_daily", "day_status"},
-        meta_table="input_identity_meta",
-        expected_version=p1s1.INPUT_IDENTITY_SCHEMA_VERSION,
-    )
-    holdings = _one_db_state(
-        path=paths.holdings,
-        expected_tables={p1s1.PROOF_TABLE},
-        required_base={"stock_analysis_day", "stock_analysis_revision", "monitored_stock"},
-        meta_table=None,
-        expected_version=None,
-    )
-    simulation = _one_db_state(
-        path=paths.simulation,
-        expected_tables={p1s1.VALIDATION_PROOF_TABLE},
-        required_base={"historical_validation_run", "historical_validation_day"},
-        meta_table=None,
-        expected_version=None,
-    )
+    parts = _p1s1_parts(paths)
     return _combine(
         "VN-P1-S1",
         "Input Identity",
-        [("market", market), ("holdings", holdings), ("simulation", simulation)],
+        [(name, state) for name, state in parts.items()],
     )
 
 
 def _detect_p1s2(paths: RuntimePaths) -> MigrationStatus:
-    holdings = _one_db_state(
-        path=paths.holdings,
-        expected_tables={
-            p1s2.HORIZON_META_TABLE,
-            p1s2.ANALYSIS_HORIZON_TABLE,
-            p1s2.PLAN_HORIZON_TABLE,
-        },
-        required_base={"stock_analysis_revision", "holding_management_plan"},
-        meta_table=p1s2.HORIZON_META_TABLE,
-        expected_version=p1s2.HORIZON_SCHEMA_VERSION,
-    )
-    simulation = _one_db_state(
-        path=paths.simulation,
-        expected_tables={
-            p1s2.HORIZON_META_TABLE,
-            p1s2.VALIDATION_HORIZON_TABLE,
-            p1s2.EXECUTION_HORIZON_TABLE,
-        },
-        required_base={"historical_validation_run", "historical_execution_run"},
-        meta_table=p1s2.HORIZON_META_TABLE,
-        expected_version=p1s2.HORIZON_SCHEMA_VERSION,
-    )
+    parts = _p1s2_parts(paths)
     return _combine(
         "VN-P1-S2",
         "Horizon Context",
-        [("holdings", holdings), ("simulation", simulation)],
+        [(name, state) for name, state in parts.items()],
     )
 
 
@@ -286,21 +399,6 @@ def _detect_p6(paths: RuntimePaths) -> MigrationStatus:
         "VN-P6-S1",
         "Event Evidence",
         MigrationState.CURRENT,
-    )
-
-
-def _run_p1s1(paths: RuntimePaths) -> dict[str, Any]:
-    return p1s1.migrate_input_identity(
-        holdings_db=paths.holdings,
-        market_db=paths.market,
-        simulation_db=paths.simulation,
-    )
-
-
-def _run_p1s2(paths: RuntimePaths) -> dict[str, Any]:
-    return p1s2.migrate_horizon_context(
-        holdings_db=paths.holdings,
-        simulation_db=paths.simulation,
     )
 
 
