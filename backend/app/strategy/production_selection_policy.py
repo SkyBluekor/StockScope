@@ -32,6 +32,52 @@ class SelectionPolicyError(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
+class SelectionPolicyPin:
+    policy_id: str
+    policy_hash: str
+    policy_contract_version: str
+    policy_source: str
+    fallback_used: bool
+    fallback_reason: str | None
+    operating_strategies: tuple[tuple[str | None, str, str | None], ...]
+    scanner_baseline_id: str | None
+    production_fingerprint: str | None
+    production_policy_fingerprint: str | None
+
+    @property
+    def operating_strategy_keys(self) -> tuple[str, ...]:
+        return tuple(item[1] for item in self.operating_strategies)
+
+    @property
+    def cache_token(self) -> str:
+        return f"{self.policy_contract_version}-{self.policy_hash[:16]}"
+
+    def strategy_reference(self, strategy_key: str) -> dict[str, str | None] | None:
+        for strategy_version_id, key, definition_hash in self.operating_strategies:
+            if key == strategy_key:
+                return {
+                    "strategy_version_id": strategy_version_id,
+                    "strategy_key": key,
+                    "definition_hash": definition_hash,
+                }
+        return None
+
+    def metadata(self) -> dict[str, Any]:
+        return {
+            "policy_id": self.policy_id,
+            "policy_hash": self.policy_hash,
+            "policy_contract_version": self.policy_contract_version,
+            "policy_source": self.policy_source,
+            "fallback_used": self.fallback_used,
+            "fallback_reason": self.fallback_reason,
+            "operating_strategy_count": len(self.operating_strategies),
+            "scanner_baseline_id": self.scanner_baseline_id,
+            "production_fingerprint": self.production_fingerprint,
+            "production_policy_fingerprint": self.production_policy_fingerprint,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class SelectionPolicyResolution:
     policy: dict[str, Any]
     policy_source: str
@@ -125,6 +171,7 @@ class ProductionStrategySelectionRegistry:
         change_service: Any | None = None,
         allow_test_activation: bool = False,
         clock: Callable[[], str] | None = None,
+        baseline_identity_provider: Callable[[], dict[str, str]] | None = None,
     ) -> None:
         self.runtime_dir = Path(runtime_dir or DEFAULT_RUNTIME_DIR)
         self.policies_dir = self.runtime_dir / "policies"
@@ -133,6 +180,163 @@ class ProductionStrategySelectionRegistry:
         self._change_service = change_service
         self.allow_test_activation = allow_test_activation
         self.clock = clock or _now
+        self.baseline_identity_provider = (
+            baseline_identity_provider or self._current_baseline_identity
+        )
+
+    @staticmethod
+    def _current_baseline_identity() -> dict[str, str]:
+        from app.baseline.scanner_production_baseline import (
+            load_manifest,
+            manifest_path,
+            verify_baseline,
+        )
+
+        path = manifest_path(PROJECT_ROOT)
+        manifest = load_manifest(path)
+        verification = verify_baseline(PROJECT_ROOT, manifest)
+        if not verification.valid:
+            raise SelectionPolicyError(
+                "SELECTION_POLICY_BASELINE_NOT_CURRENT",
+                "현재 Scanner production baseline 검증에 실패했습니다.",
+            )
+        return {
+            "scanner_baseline_id": str(manifest.get("baseline_id") or ""),
+            "production_fingerprint": str(
+                manifest.get("production_fingerprint") or ""
+            ),
+            "production_policy_fingerprint": str(
+                manifest.get("policy_fingerprint") or ""
+            ),
+        }
+
+    @staticmethod
+    def _pin_from_resolution(
+        resolution: SelectionPolicyResolution,
+    ) -> SelectionPolicyPin:
+        policy = resolution.policy
+        strategies = tuple(
+            (
+                (
+                    str(item.get("strategy_version_id"))
+                    if item.get("strategy_version_id") is not None
+                    else None
+                ),
+                str(item.get("strategy_key") or ""),
+                (
+                    str(item.get("definition_hash"))
+                    if item.get("definition_hash") is not None
+                    else None
+                ),
+            )
+            for item in list(policy.get("operating_strategies") or [])
+        )
+        return SelectionPolicyPin(
+            policy_id=str(policy.get("policy_id") or ""),
+            policy_hash=str(policy.get("policy_hash") or ""),
+            policy_contract_version=str(
+                policy.get("policy_contract_version")
+                or SELECTION_POLICY_CONTRACT_VERSION
+            ),
+            policy_source=resolution.policy_source,
+            fallback_used=resolution.fallback_used,
+            fallback_reason=resolution.fallback_reason,
+            operating_strategies=strategies,
+            scanner_baseline_id=(
+                str(policy.get("scanner_baseline_id"))
+                if policy.get("scanner_baseline_id") is not None
+                else None
+            ),
+            production_fingerprint=(
+                str(policy.get("production_fingerprint"))
+                if policy.get("production_fingerprint") is not None
+                else None
+            ),
+            production_policy_fingerprint=(
+                str(policy.get("production_policy_fingerprint"))
+                if policy.get("production_policy_fingerprint") is not None
+                else None
+            ),
+        )
+
+    @staticmethod
+    def _baseline_matches(
+        policy: dict[str, Any],
+        current: dict[str, str],
+    ) -> bool:
+        return (
+            str(policy.get("scanner_baseline_id") or "")
+            == str(current.get("scanner_baseline_id") or "")
+            and str(policy.get("production_fingerprint") or "")
+            == str(current.get("production_fingerprint") or "")
+            and str(policy.get("production_policy_fingerprint") or "")
+            == str(current.get("production_policy_fingerprint") or "")
+        )
+
+    def pin_active_selection_policy(self) -> SelectionPolicyPin:
+        resolution = self.resolve_active_selection_policy()
+        if resolution.policy_source == "LEGACY_CURRENT_10_FALLBACK":
+            return self._pin_from_resolution(resolution)
+
+        try:
+            current = self.baseline_identity_provider()
+        except Exception:
+            legacy = legacy_selection_policy()
+            return self._pin_from_resolution(
+                SelectionPolicyResolution(
+                    policy=legacy,
+                    policy_source="LEGACY_CURRENT_10_FALLBACK",
+                    fallback_used=True,
+                    fallback_reason="CURRENT_BASELINE_UNAVAILABLE",
+                    active_reference_valid=resolution.active_reference_valid,
+                    policy_hash_valid=True,
+                )
+            )
+
+        if self._baseline_matches(resolution.policy, current):
+            return self._pin_from_resolution(resolution)
+
+        reference, _ = self._load_reference()
+        if reference is not None:
+            rollback, rollback_reason = self._load_snapshot(
+                reference.get("rollback_policy_id"),
+                reference.get("rollback_policy_hash"),
+            )
+            if (
+                rollback is not None
+                and self._baseline_matches(rollback, current)
+            ):
+                return self._pin_from_resolution(
+                    SelectionPolicyResolution(
+                        policy=rollback,
+                        policy_source="ROLLBACK_FALLBACK",
+                        fallback_used=True,
+                        fallback_reason="ACTIVE_POLICY_BASELINE_MISMATCH",
+                        active_reference_valid=True,
+                        policy_hash_valid=True,
+                    )
+                )
+            if rollback_reason is not None:
+                fallback_reason = (
+                    "ACTIVE_POLICY_BASELINE_MISMATCH;"
+                    + rollback_reason
+                )
+            else:
+                fallback_reason = "ACTIVE_POLICY_BASELINE_MISMATCH"
+        else:
+            fallback_reason = "ACTIVE_POLICY_BASELINE_MISMATCH"
+
+        legacy = legacy_selection_policy()
+        return self._pin_from_resolution(
+            SelectionPolicyResolution(
+                policy=legacy,
+                policy_source="LEGACY_CURRENT_10_FALLBACK",
+                fallback_used=True,
+                fallback_reason=fallback_reason,
+                active_reference_valid=resolution.active_reference_valid,
+                policy_hash_valid=True,
+            )
+        )
 
     def _change(self):
         if self._change_service is None:
@@ -900,3 +1104,22 @@ def resolve_active_selection_policy(
     return ProductionStrategySelectionRegistry(
         runtime_dir=runtime_dir
     ).resolve_active_selection_policy()
+
+
+
+def pin_active_selection_policy(
+    *,
+    runtime_dir: Path | None = None,
+) -> SelectionPolicyPin:
+    return ProductionStrategySelectionRegistry(
+        runtime_dir=runtime_dir
+    ).pin_active_selection_policy()
+
+
+def selection_policy_cache_token(
+    pin: SelectionPolicyPin | None = None,
+    *,
+    runtime_dir: Path | None = None,
+) -> str:
+    resolved = pin or pin_active_selection_policy(runtime_dir=runtime_dir)
+    return resolved.cache_token
