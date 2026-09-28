@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
 from app.core.config import get_settings
+from app.api.analysis_temporal_boundary import PointInTimeEventRiskAnalyzer
 from app.holdings.chart import HoldingsChartError, HoldingsChartService
 from app.holdings.chart_prepare import HoldingsChartPrepareError, HoldingsChartPrepareService
 from app.market.providers import KrxProvider, OpenDartProvider
@@ -295,6 +296,8 @@ async def stock_strategy_analysis(
 ) -> dict[str, Any]:
     krx, dart = _providers()
     service = StrategyAnalysisService(krx, dart)
+    if as_of:
+        service.event = PointInTimeEventRiskAnalyzer(dart, as_of)
     try:
         return await service.analyze(
             code,
