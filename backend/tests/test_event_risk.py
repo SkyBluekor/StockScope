@@ -58,6 +58,28 @@ def test_title_classification():
 
 
 @pytest.mark.asyncio
+async def test_event_risk_uses_explicit_as_of_boundary():
+    class CapturingDart(FakeDart):
+        def __init__(self):
+            self.window = None
+
+        async def disclosures(self, corp_code, begin_date, end_date, page_count=20):
+            self.window = (begin_date, end_date)
+            return {"count": 0, "rows": []}
+
+    dart = CapturingDart()
+    result = await EventRiskAnalyzer(dart).analyze(
+        "005930",
+        as_of="2025-03-10",
+        days=60,
+    )
+
+    assert dart.window is not None
+    assert dart.window[1] == "20250310"
+    assert result["risk_gate"] is False
+
+
+@pytest.mark.asyncio
 async def test_rights_issue_activates_high_event_gate_and_structured_summary():
     result = await EventRiskAnalyzer(FakeDart()).analyze(
         "005930",
