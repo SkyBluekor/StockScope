@@ -21,6 +21,12 @@ from app.event_evidence.models import (
 )
 from app.event_evidence.resolution import EVENT_RESOLUTION_CONTRACT_VERSION
 from app.event_evidence.quality import EVENT_EVIDENCE_QUALITY_CONTRACT_VERSION
+from app.event_evidence.evaluation import (
+    EVENT_EVALUATION_CONTRACT_VERSION,
+    EVENT_EVALUATION_PROTOCOL_CONTRACT_VERSION,
+    EVENT_OUTCOME_CONTRACT_VERSION,
+    EVENT_EVALUATION_REPORT_CONTRACT_VERSION,
+)
 from app.event_evidence.policy import SOURCE_POLICY_CONTRACT_VERSION
 from app.event_evidence.store import (
     EVENT_EVIDENCE_HASH_CONTRACT_VERSION,
@@ -92,6 +98,38 @@ TABLE_COLUMNS: dict[str, set[str]] = {
         "quality_state","blocking_reasons_json","insufficient_reasons_json",
         "limitations_json","quality_json","quality_hash","created_at",
     },
+    "event_evidence_evaluation_protocol": {
+        "protocol_id","protocol_contract_version","control_method",
+        "control_approved","observation_windows_json","reference_price_rule",
+        "benchmark_rule","statistical_test_status","minimum_control_count",
+        "protocol_json","protocol_hash","created_at",
+    },
+    "event_evidence_outcome_observation": {
+        "observation_id","evaluation_contract_version",
+        "outcome_contract_version","protocol_id","protocol_hash",
+        "quality_assessment_id","quality_hash","event_id","event_version",
+        "entity_id","entity_hash","canonical_event_id","sample_identity",
+        "assessment_as_of","market","ticker","reference_price_rule",
+        "benchmark_rule","sector_benchmark_status","market_evidence_hash",
+        "evaluation_status","evaluation_reason","reference_trading_day",
+        "reference_close","benchmark_reference_close","price_basis",
+        "adjustment_basis","horizons_json","observation_json",
+        "observation_hash","created_at",
+    },
+    "event_evidence_control_match": {
+        "control_id","evaluation_contract_version","observation_id",
+        "protocol_id","protocol_hash","control_as_of_date",
+        "contamination_state","contaminated_by_json","market_evidence_hash",
+        "evaluation_status","reference_trading_day","reference_close",
+        "benchmark_reference_close","horizons_json","control_json",
+        "control_hash","created_at",
+    },
+    "event_evidence_evaluation_report": {
+        "report_id","report_contract_version","protocol_id","protocol_hash",
+        "report_status","sample_count","sample_sufficiency",
+        "statistical_test_status","observation_bundle_json","report_json",
+        "report_hash","created_at",
+    },
 }
 
 
@@ -158,6 +196,14 @@ def _ensure_meta(conn: sqlite3.Connection) -> None:
         "relevance_contract_version": EVENT_RELEVANCE_CONTRACT_VERSION,
         "resolution_contract_version": EVENT_RESOLUTION_CONTRACT_VERSION,
         "quality_contract_version": EVENT_EVIDENCE_QUALITY_CONTRACT_VERSION,
+        "evaluation_contract_version": EVENT_EVALUATION_CONTRACT_VERSION,
+        "evaluation_protocol_contract_version": (
+            EVENT_EVALUATION_PROTOCOL_CONTRACT_VERSION
+        ),
+        "outcome_contract_version": EVENT_OUTCOME_CONTRACT_VERSION,
+        "evaluation_report_contract_version": (
+            EVENT_EVALUATION_REPORT_CONTRACT_VERSION
+        ),
     }
     for key, value in expected.items():
         row = conn.execute(
@@ -460,6 +506,128 @@ def _create_tables(conn: sqlite3.Connection) -> None:
 
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS event_evidence_evaluation_protocol(
+            protocol_id TEXT PRIMARY KEY,
+            protocol_contract_version TEXT NOT NULL,
+            control_method TEXT NOT NULL CHECK(
+                control_method IN ('NONE','EXPLICIT_MATCH_SET')
+            ),
+            control_approved INTEGER NOT NULL CHECK(control_approved IN (0,1)),
+            observation_windows_json TEXT NOT NULL,
+            reference_price_rule TEXT NOT NULL,
+            benchmark_rule TEXT NOT NULL,
+            statistical_test_status TEXT NOT NULL,
+            minimum_control_count INTEGER,
+            protocol_json TEXT NOT NULL,
+            protocol_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS event_evidence_outcome_observation(
+            observation_id TEXT PRIMARY KEY,
+            evaluation_contract_version TEXT NOT NULL,
+            outcome_contract_version TEXT NOT NULL,
+            protocol_id TEXT NOT NULL,
+            protocol_hash TEXT NOT NULL,
+            quality_assessment_id TEXT NOT NULL,
+            quality_hash TEXT NOT NULL,
+            event_id TEXT NOT NULL,
+            event_version INTEGER NOT NULL,
+            entity_id TEXT NOT NULL,
+            entity_hash TEXT NOT NULL,
+            canonical_event_id TEXT,
+            sample_identity TEXT NOT NULL,
+            assessment_as_of TEXT NOT NULL,
+            market TEXT NOT NULL,
+            ticker TEXT NOT NULL,
+            reference_price_rule TEXT NOT NULL,
+            benchmark_rule TEXT NOT NULL,
+            sector_benchmark_status TEXT NOT NULL,
+            market_evidence_hash TEXT NOT NULL,
+            evaluation_status TEXT NOT NULL,
+            evaluation_reason TEXT,
+            reference_trading_day TEXT,
+            reference_close REAL,
+            benchmark_reference_close REAL,
+            price_basis TEXT NOT NULL,
+            adjustment_basis TEXT NOT NULL,
+            horizons_json TEXT NOT NULL,
+            observation_json TEXT NOT NULL,
+            observation_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(protocol_id)
+                REFERENCES event_evidence_evaluation_protocol(protocol_id)
+                ON DELETE RESTRICT,
+            FOREIGN KEY(quality_assessment_id)
+                REFERENCES event_evidence_quality_assessment(assessment_id)
+                ON DELETE RESTRICT,
+            FOREIGN KEY(event_id,event_version)
+                REFERENCES event_evidence_record(event_id,event_version)
+                ON DELETE RESTRICT,
+            FOREIGN KEY(entity_id)
+                REFERENCES event_evidence_entity(entity_id)
+                ON DELETE RESTRICT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS event_evidence_control_match(
+            control_id TEXT PRIMARY KEY,
+            evaluation_contract_version TEXT NOT NULL,
+            observation_id TEXT NOT NULL,
+            protocol_id TEXT NOT NULL,
+            protocol_hash TEXT NOT NULL,
+            control_as_of_date TEXT NOT NULL,
+            contamination_state TEXT NOT NULL CHECK(
+                contamination_state IN ('CLEAN','CONTAMINATED')
+            ),
+            contaminated_by_json TEXT NOT NULL,
+            market_evidence_hash TEXT NOT NULL,
+            evaluation_status TEXT NOT NULL,
+            reference_trading_day TEXT,
+            reference_close REAL,
+            benchmark_reference_close REAL,
+            horizons_json TEXT NOT NULL,
+            control_json TEXT NOT NULL,
+            control_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(observation_id)
+                REFERENCES event_evidence_outcome_observation(observation_id)
+                ON DELETE RESTRICT,
+            FOREIGN KEY(protocol_id)
+                REFERENCES event_evidence_evaluation_protocol(protocol_id)
+                ON DELETE RESTRICT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS event_evidence_evaluation_report(
+            report_id TEXT PRIMARY KEY,
+            report_contract_version TEXT NOT NULL,
+            protocol_id TEXT NOT NULL,
+            protocol_hash TEXT NOT NULL,
+            report_status TEXT NOT NULL,
+            sample_count INTEGER NOT NULL CHECK(sample_count >= 0),
+            sample_sufficiency TEXT NOT NULL,
+            statistical_test_status TEXT NOT NULL,
+            observation_bundle_json TEXT NOT NULL,
+            report_json TEXT NOT NULL,
+            report_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(protocol_id)
+                REFERENCES event_evidence_evaluation_protocol(protocol_id)
+                ON DELETE RESTRICT
+        )
+        """
+    )
+
+    conn.execute(
+        """
         CREATE INDEX IF NOT EXISTS idx_event_evidence_source_kind_available
         ON event_evidence_source_ref(source_kind,available_at)
         """
@@ -510,6 +678,28 @@ def _create_tables(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_event_outcome_sample
+        ON event_evidence_outcome_observation(
+            protocol_id,sample_identity,assessment_as_of
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_event_control_observation
+        ON event_evidence_control_match(
+            observation_id,control_as_of_date
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_event_report_protocol
+        ON event_evidence_evaluation_report(protocol_id,created_at)
+        """
+    )
 
     for name, table in (
         ("trg_event_policy_immutable_update", "event_evidence_policy_snapshot"),
@@ -535,6 +725,38 @@ def _create_tables(conn: sqlite3.Connection) -> None:
         (
             "trg_event_quality_immutable_delete",
             "event_evidence_quality_assessment",
+        ),
+        (
+            "trg_event_eval_protocol_immutable_update",
+            "event_evidence_evaluation_protocol",
+        ),
+        (
+            "trg_event_eval_protocol_immutable_delete",
+            "event_evidence_evaluation_protocol",
+        ),
+        (
+            "trg_event_outcome_immutable_update",
+            "event_evidence_outcome_observation",
+        ),
+        (
+            "trg_event_outcome_immutable_delete",
+            "event_evidence_outcome_observation",
+        ),
+        (
+            "trg_event_control_immutable_update",
+            "event_evidence_control_match",
+        ),
+        (
+            "trg_event_control_immutable_delete",
+            "event_evidence_control_match",
+        ),
+        (
+            "trg_event_eval_report_immutable_update",
+            "event_evidence_evaluation_report",
+        ),
+        (
+            "trg_event_eval_report_immutable_delete",
+            "event_evidence_evaluation_report",
         ),
     ):
         operation = "UPDATE" if name.endswith("update") else "DELETE"
@@ -612,6 +834,26 @@ def migrate_event_evidence_store(path: Path) -> dict[str, object]:
                     "SELECT COUNT(*) FROM event_evidence_quality_assessment"
                 ).fetchone()[0]
             ),
+            "evaluation_protocol_count": int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM event_evidence_evaluation_protocol"
+                ).fetchone()[0]
+            ),
+            "outcome_observation_count": int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM event_evidence_outcome_observation"
+                ).fetchone()[0]
+            ),
+            "control_match_count": int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM event_evidence_control_match"
+                ).fetchone()[0]
+            ),
+            "evaluation_report_count": int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM event_evidence_evaluation_report"
+                ).fetchone()[0]
+            ),
         }
         conn.commit()
         return {
@@ -623,6 +865,7 @@ def migrate_event_evidence_store(path: Path) -> dict[str, object]:
             "news_backfill_performed": False,
             "dart_eventrisk_backfill_performed": False,
             "external_network_requests": 0,
+            "real_corpus_evaluation_performed": False,
             "source_state": source_state,
         }
     except Exception:
