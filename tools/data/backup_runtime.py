@@ -443,7 +443,22 @@ def create_backup(
                 "백업에 민감 파일이 포함되어 중단했습니다: " + ", ".join(blocked)
             )
 
-        os.replace(temp_dir, final_dir)
+        try:
+            os.replace(temp_dir, final_dir)
+        except PermissionError:
+            # Some managed Windows/EDR environments allow creating and reading
+            # the validated snapshot directory but block directory rename.
+            # Fall back to a copy-only publish. The destination is unique and
+            # removed again if the copy fails, so a partial backup is never
+            # returned as successful.
+            if final_dir.exists():
+                raise
+            try:
+                shutil.copytree(temp_dir, final_dir)
+            except Exception:
+                shutil.rmtree(final_dir, ignore_errors=True)
+                raise
+            shutil.rmtree(temp_dir, ignore_errors=True)
         return final_dir
     except Exception:
         shutil.rmtree(temp_dir, ignore_errors=True)
