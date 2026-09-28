@@ -25,6 +25,11 @@ from app.backtest.selector import build_condition_state, current_readiness, stra
 from app.market.providers import KrxProvider
 from app.market.providers.base import ProviderError
 from app.strategy.context import regime_from_index
+from app.strategy.models import StrategyName
+from app.strategy.production_selection_policy import (
+    ProductionStrategySelectionRegistry,
+    SelectionPolicyPin,
+)
 
 ProgressCallback = Callable[[dict[str, Any]], None]
 
@@ -40,7 +45,7 @@ class StockScannerService:
     presented to the user as probabilities.
     """
 
-    VERSION = "0.21.3.7"
+    VERSION = "0.21.3.8"
     HISTORY_CALENDAR_DAYS = 485  # local-only historical evidence window
     FAST_HISTORY_CALENDAR_DAYS = 220  # current-condition scan only; ~150 weekdays
     EVIDENCE_CALENDAR_DAYS = 365
@@ -68,17 +73,41 @@ class StockScannerService:
         engine: BacktestEngine | None = None,
         sector_company_provider: Any | None = None,
         sector_prefetcher: HistoricalSectorInputPrefetcher | None = None,
+        selection_registry: ProductionStrategySelectionRegistry | None = None,
     ) -> None:
         self.krx = krx
         self.market_store = market_store or HistoricalMarketStore()
         self.engine = engine or BacktestEngine()
         self.multi = MultiStrategyBacktestEngine(self.engine)
+        self.selection_registry = (
+            selection_registry or ProductionStrategySelectionRegistry()
+        )
         # c.4f: optional audit-only sector input source. Current OpenDART metadata is
         # STATIC_CURRENT, so the temporal gate in BacktestEngine prevents it from
         # changing Production strategy scores. Scanner itself never calls DART.
         self.sector_prefetcher = sector_prefetcher
         if self.sector_prefetcher is None and sector_company_provider is not None:
             self.sector_prefetcher = HistoricalSectorInputPrefetcher(self.krx, sector_company_provider)
+
+    @staticmethod
+    def _allowed_strategy_names(
+        pin: SelectionPolicyPin,
+    ) -> frozenset[StrategyName]:
+        try:
+            return frozenset(
+                StrategyName(key)
+                for key in pin.operating_strategy_keys
+            )
+        except ValueError as exc:
+            raise ValueError(
+                "Selection Policy에 현재 StockScope가 지원하지 않는 전략이 포함되어 있습니다."
+            ) from exc
+
+    @staticmethod
+    def _selection_policy_metadata(
+        pin: SelectionPolicyPin,
+    ) -> dict[str, Any]:
+        return pin.metadata()
 
     @staticmethod
     def _emit(callback: ProgressCallback | None, **payload: Any) -> None:
@@ -114,14 +143,39 @@ class StockScannerService:
         return min(parsed, today - timedelta(days=1))
 
     @classmethod
-    def _cache_path(cls, scope: str, stable_end: date, candidate_limit: int) -> Path:
+    def _cache_path(
+        cls,
+        scope: str,
+        stable_end: date,
+        candidate_limit: int,
+        selection_policy_token: str | None = None,
+    ) -> Path:
         cls.CACHE_ROOT.mkdir(parents=True, exist_ok=True)
         exit_token = re.sub(r"[^A-Za-z0-9_-]+", "_", production_policy_cache_token())
-        return cls.CACHE_ROOT / f"scanner_{scope.lower()}_{stable_end.isoformat()}_{candidate_limit}_{cls.VERSION}_{exit_token}.json"
+        selection_token = (
+            re.sub(r"[^A-Za-z0-9_-]+", "_", selection_policy_token)
+            if selection_policy_token
+            else "legacy-unpinned"
+        )
+        return cls.CACHE_ROOT / (
+            f"scanner_{scope.lower()}_{stable_end.isoformat()}_{candidate_limit}_"
+            f"{cls.VERSION}_{exit_token}_{selection_token}.json"
+        )
 
     @classmethod
-    def _load_cache(cls, scope: str, stable_end: date, candidate_limit: int) -> dict[str, Any] | None:
-        path = cls._cache_path(scope, stable_end, candidate_limit)
+    def _load_cache(
+        cls,
+        scope: str,
+        stable_end: date,
+        candidate_limit: int,
+        selection_policy_pin: SelectionPolicyPin | None = None,
+    ) -> dict[str, Any] | None:
+        path = cls._cache_path(
+            scope,
+            stable_end,
+            candidate_limit,
+            selection_policy_pin.cache_token if selection_policy_pin else None,
+        )
         if not path.exists():
             return None
         try:
@@ -130,12 +184,35 @@ class StockScannerService:
             return None
         if payload.get("version") != cls.VERSION:
             return None
+        if selection_policy_pin is not None:
+            policy_meta = payload.get("strategy_selection_policy")
+            if not isinstance(policy_meta, dict):
+                return None
+            if (
+                str(policy_meta.get("policy_id") or "")
+                != selection_policy_pin.policy_id
+                or str(policy_meta.get("policy_hash") or "")
+                != selection_policy_pin.policy_hash
+            ):
+                return None
         payload["scanner_cache_hit"] = True
         return payload
 
     @classmethod
-    def _save_cache(cls, scope: str, stable_end: date, candidate_limit: int, payload: dict[str, Any]) -> None:
-        path = cls._cache_path(scope, stable_end, candidate_limit)
+    def _save_cache(
+        cls,
+        scope: str,
+        stable_end: date,
+        candidate_limit: int,
+        payload: dict[str, Any],
+        selection_policy_pin: SelectionPolicyPin | None = None,
+    ) -> None:
+        path = cls._cache_path(
+            scope,
+            stable_end,
+            candidate_limit,
+            selection_policy_pin.cache_token if selection_policy_pin else None,
+        )
         try:
             path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         except OSError:
@@ -143,16 +220,52 @@ class StockScannerService:
             pass
 
     @classmethod
-    def _evidence_cache_path(cls, *, market: str, code: str, strategy: str, data_end: date) -> Path:
+    def _evidence_cache_path(
+        cls,
+        *,
+        market: str,
+        code: str,
+        strategy: str,
+        data_end: date,
+        strategy_version_id: str | None = None,
+        definition_hash: str | None = None,
+    ) -> Path:
         root = cls.CACHE_ROOT / "historical_evidence"
         root.mkdir(parents=True, exist_ok=True)
         safe_strategy = re.sub(r"[^A-Za-z0-9_-]+", "_", strategy)
         exit_token = re.sub(r"[^A-Za-z0-9_-]+", "_", production_policy_cache_token())
-        return root / f"{market}_{code}_{safe_strategy}_{data_end.isoformat()}_{cls.HISTORICAL_EVIDENCE_POLICY_VERSION}_{exit_token}.json"
+        strategy_identity = re.sub(
+            r"[^A-Za-z0-9_-]+",
+            "_",
+            (
+                f"{strategy_version_id or 'legacy'}-"
+                f"{(definition_hash or cls.VERSION)[:16]}"
+            ),
+        )
+        return root / (
+            f"{market}_{code}_{safe_strategy}_{data_end.isoformat()}_"
+            f"{cls.HISTORICAL_EVIDENCE_POLICY_VERSION}_{exit_token}_{strategy_identity}.json"
+        )
 
     @classmethod
-    def _load_evidence_cache(cls, *, market: str, code: str, strategy: str, data_end: date) -> dict[str, Any] | None:
-        path = cls._evidence_cache_path(market=market, code=code, strategy=strategy, data_end=data_end)
+    def _load_evidence_cache(
+        cls,
+        *,
+        market: str,
+        code: str,
+        strategy: str,
+        data_end: date,
+        strategy_version_id: str | None = None,
+        definition_hash: str | None = None,
+    ) -> dict[str, Any] | None:
+        path = cls._evidence_cache_path(
+            market=market,
+            code=code,
+            strategy=strategy,
+            data_end=data_end,
+            strategy_version_id=strategy_version_id,
+            definition_hash=definition_hash,
+        )
         if not path.exists():
             return None
         try:
@@ -169,16 +282,35 @@ class StockScannerService:
         return dict(evidence)
 
     @classmethod
-    def _save_evidence_cache(cls, *, market: str, code: str, strategy: str, data_end: date, evidence: dict[str, Any]) -> None:
+    def _save_evidence_cache(
+        cls,
+        *,
+        market: str,
+        code: str,
+        strategy: str,
+        data_end: date,
+        evidence: dict[str, Any],
+        strategy_version_id: str | None = None,
+        definition_hash: str | None = None,
+    ) -> None:
         if not bool(evidence.get("verified")):
             return
-        path = cls._evidence_cache_path(market=market, code=code, strategy=strategy, data_end=data_end)
+        path = cls._evidence_cache_path(
+            market=market,
+            code=code,
+            strategy=strategy,
+            data_end=data_end,
+            strategy_version_id=strategy_version_id,
+            definition_hash=definition_hash,
+        )
         payload = {
             "policy_version": cls.HISTORICAL_EVIDENCE_POLICY_VERSION,
             "exit_policy_cache_token": production_policy_cache_token(),
             "market": market,
             "code": code,
             "strategy": strategy,
+            "strategy_version_id": strategy_version_id,
+            "strategy_definition_hash": definition_hash,
             "data_end": data_end.isoformat(),
             "evidence": evidence,
         }
@@ -1494,6 +1626,7 @@ class StockScannerService:
         stock_rows: list[dict[str, Any]],
         index_rows: list[dict[str, Any]],
         sector_input: HistoricalSectorInput | None = None,
+        selection_policy_pin: SelectionPolicyPin,
     ) -> dict[str, Any] | None:
         if len(stock_rows) < self.MIN_HISTORY_ROWS:
             return None
@@ -1514,6 +1647,7 @@ class StockScannerService:
             index=len(rows) - 1,
             config=config,
             sector_input=sector_input,
+            allowed_strategies=self._allowed_strategy_names(selection_policy_pin),
         )
         if snapshot is None:
             return None
@@ -1607,6 +1741,9 @@ class StockScannerService:
         entry_risk_guide["historical_policy"] = self.multi.production_exit.historical_policy_metadata(
             quick_exit_resolution
         )
+        strategy_ref = selection_policy_pin.strategy_reference(
+            best["strategy"]
+        )
         return {
             "code": str(row.get("code") or ""),
             "name": str(row.get("name") or ""),
@@ -1617,6 +1754,16 @@ class StockScannerService:
             "market_cap": row.get("market_cap"),
             "history_points": len(rows),
             "quick_strategy": best["strategy"],
+            "quick_strategy_version_id": (
+                strategy_ref.get("strategy_version_id")
+                if strategy_ref
+                else None
+            ),
+            "quick_strategy_definition_hash": (
+                strategy_ref.get("definition_hash")
+                if strategy_ref
+                else None
+            ),
             "quick_guide": best["guide"],
             "quick_current": current,
             "quick_condition_state": best.get("condition_state") or {},
@@ -1685,6 +1832,10 @@ class StockScannerService:
             "candidate_state": candidate_state,
             "candidate_label": candidate_label,
             "strategy": item.get("quick_strategy"),
+            "strategy_version_id": item.get("quick_strategy_version_id"),
+            "strategy_definition_hash": item.get(
+                "quick_strategy_definition_hash"
+            ),
             "strategy_easy_name": guide.get("easy_name") or guide.get("professional_name") or str(item.get("quick_strategy") or ""),
             "strategy_name": guide.get("professional_name") or str(item.get("quick_strategy") or ""),
             "strategy_description": guide.get("description") or "현재 조건을 바탕으로 먼저 확인할 후보입니다.",
@@ -1907,7 +2058,22 @@ class StockScannerService:
                 strategy = str(candidate.get("strategy") or "")
                 data_end = date.fromisoformat(str(candidate.get("data_date")))
                 validation_start = validation_start_for_years(data_end)
-                cached = self._load_evidence_cache(market=market, code=code, strategy=strategy, data_end=data_end)
+                cached = self._load_evidence_cache(
+                    market=market,
+                    code=code,
+                    strategy=strategy,
+                    data_end=data_end,
+                    strategy_version_id=(
+                        str(candidate.get("strategy_version_id"))
+                        if candidate.get("strategy_version_id") is not None
+                        else None
+                    ),
+                    definition_hash=(
+                        str(candidate.get("strategy_definition_hash"))
+                        if candidate.get("strategy_definition_hash") is not None
+                        else None
+                    ),
+                )
                 if cached is not None:
                     evidence = cached
                     stats["cache_hits"] += 1
@@ -1931,7 +2097,21 @@ class StockScannerService:
                     # result never becomes a stale "검증 전" snapshot.
                     if bool(evidence.get("verified")):
                         self._save_evidence_cache(
-                            market=market, code=code, strategy=strategy, data_end=data_end, evidence=evidence
+                            market=market,
+                            code=code,
+                            strategy=strategy,
+                            data_end=data_end,
+                            evidence=evidence,
+                            strategy_version_id=(
+                                str(candidate.get("strategy_version_id"))
+                                if candidate.get("strategy_version_id") is not None
+                                else None
+                            ),
+                            definition_hash=(
+                                str(candidate.get("strategy_definition_hash"))
+                                if candidate.get("strategy_definition_hash") is not None
+                                else None
+                            ),
                         )
 
                 candidate["historical_evidence"] = evidence
@@ -1971,7 +2151,12 @@ class StockScannerService:
         force_refresh: bool = False,
         allow_large_sync: bool = False,
         progress: ProgressCallback | None = None,
+        selection_policy_pin: SelectionPolicyPin | None = None,
     ) -> dict[str, Any]:
+        run_policy = (
+            selection_policy_pin
+            or self.selection_registry.pin_active_selection_policy()
+        )
         scope = market_scope.upper().strip()
         if scope not in {"ALL", "KOSPI", "KOSDAQ"}:
             raise ValueError("market_scope은 ALL, KOSPI, KOSDAQ 중 하나여야 합니다.")
@@ -1982,7 +2167,12 @@ class StockScannerService:
         markets = ["KOSPI", "KOSDAQ"] if scope == "ALL" else [scope]
 
         if not force_refresh:
-            cached = self._load_cache(scope, stable_end, candidate_limit)
+            cached = self._load_cache(
+                scope,
+                stable_end,
+                candidate_limit,
+                run_policy,
+            )
             expected_dates = {market: stable_end.isoformat() for market in markets}
             current_fingerprint = (
                 self._build_input_fingerprint(markets, expected_dates)
@@ -2253,6 +2443,7 @@ class StockScannerService:
                     stock_rows=stock_rows,
                     index_rows=index_rows_by_market.get(market, []),
                     sector_input=sector_inputs_by_code.get((market, code)),
+                    selection_policy_pin=run_policy,
                 )
                 if quick is None:
                     data_insufficient += 1
@@ -2400,6 +2591,9 @@ class StockScannerService:
                 "requested_as_of": stable_end.isoformat(),
                 "market_scope": scope,
                 "data_dates": latest_dates,
+                "strategy_selection_policy": self._selection_policy_metadata(
+                    run_policy
+                ),
                 "input_fingerprint": input_fingerprint,
                 "market_summary": market_summaries,
                 "partial_data": partial_data,
@@ -2468,7 +2662,13 @@ class StockScannerService:
             # A partial result should not be frozen for the whole day; once the user
             # prepares missing recent data, a subsequent scan must recompute it.
             if not partial_data:
-                self._save_cache(scope, stable_end, candidate_limit, result)
+                self._save_cache(
+                    scope,
+                    stable_end,
+                    candidate_limit,
+                    result,
+                    run_policy,
+                )
             self._emit(
                 progress,
                 stage="scanner_complete",
