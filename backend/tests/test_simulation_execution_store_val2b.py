@@ -92,6 +92,7 @@ def test_val2b_initialize_and_run_preserve_completed_val1_source(tmp_path: Path)
 
     assert run.validation_id == validation.id
     assert run.execution_policy_version == EXECUTION_POLICY_VERSION
+    assert run.selection_policy == validation.selection_policy
     assert run.source_candidate_count == 2
     assert run.processed_candidate_count == 0
     assert run.status == "DRAFT"
