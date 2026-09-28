@@ -18,7 +18,7 @@ from app.simulation.strategy_change import (
     StrategyChangeError,
     StrategyChangeService,
     production_blocked_approval_protocol,
-    test_only_approval_protocol,
+    test_only_approval_protocol as make_test_approval_protocol,
 )
 from app.simulation.strategy_evidence import StrategyEvidenceService
 from tools.data.migrate_prospective_vnp2s2 import migrate_prospective_store
@@ -348,7 +348,7 @@ def test_q7_unapproved_proposal_cannot_be_approved(tmp_path: Path):
         service.approve_proposal(proposal_id=proposal["id"])
     assert exc.value.code == "Q7_APPROVAL_PROTOCOL_UNAPPROVED"
 
-    test_protocol = test_only_approval_protocol()
+    test_protocol = make_test_approval_protocol()
     service_with_test = _service(path, allow_test_protocol=True)
     with pytest.raises(StrategyChangeError) as changed:
         service_with_test.approve_proposal(
@@ -366,7 +366,7 @@ def test_test_only_precommitted_protocol_exercises_immutable_approval(
 ):
     path = _db(tmp_path)
     version_id, artifact_id = _artifact(path)
-    protocol = test_only_approval_protocol()
+    protocol = make_test_approval_protocol()
     service = _service(path, allow_test_protocol=True)
 
     proposal = _proposal(
@@ -509,7 +509,7 @@ def test_proposal_requires_current_evidence_for_every_changed_version(
 def test_registry_change_makes_existing_proposal_stale(tmp_path: Path):
     path = _db(tmp_path)
     version_id, artifact_id = _artifact(path)
-    protocol = test_only_approval_protocol()
+    protocol = make_test_approval_protocol()
     service = _service(path, allow_test_protocol=True)
     proposal = _proposal(
         service,
@@ -546,7 +546,7 @@ def test_baseline_change_makes_existing_proposal_stale(tmp_path: Path):
     path = _db(tmp_path)
     version_id, artifact_id = _artifact(path)
     baseline_state = _baseline("A")
-    protocol = test_only_approval_protocol()
+    protocol = make_test_approval_protocol()
     service = _service(
         path,
         baseline_state=baseline_state,
@@ -570,7 +570,7 @@ def test_explicit_horizon_remains_blocked_even_with_test_protocol(
 ):
     path = _db(tmp_path)
     version_id, artifact_id = _artifact(path)
-    protocol = test_only_approval_protocol()
+    protocol = make_test_approval_protocol()
     service = _service(path, allow_test_protocol=True)
 
     proposal = _proposal(
@@ -626,7 +626,7 @@ def test_test_protocol_is_forbidden_without_explicit_test_mode(
 ):
     path = _db(tmp_path)
     version_id, artifact_id = _artifact(path)
-    protocol = test_only_approval_protocol()
+    protocol = make_test_approval_protocol()
     service = _service(path, allow_test_protocol=False)
 
     with pytest.raises(StrategyChangeError) as exc:
