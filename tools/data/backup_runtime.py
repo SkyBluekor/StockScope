@@ -32,7 +32,17 @@ from app.holdings.decision_support import HOLDING_DECISION_SCHEMA_VERSION
 from app.holdings.recovery import RECOVERY_SCHEMA_VERSION
 from app.watch.policy import WATCH_POLICY_CONTRACT_VERSION
 from app.watch.storage import WATCH_SCHEMA_VERSION
+from app.simulation.strategy_governance import STRATEGY_GOVERNANCE_SCHEMA_VERSION
+from app.strategy.production_selection_policy import (
+    DEFAULT_RUNTIME_DIR as DEFAULT_STRATEGY_SELECTION_RUNTIME_DIR,
+    SELECTION_POLICY_CONTRACT_VERSION,
+)
 
+from tools.data.strategy_selection_runtime import (
+    copy_strategy_selection_runtime,
+    state_file_paths as strategy_selection_state_file_paths,
+    validate_strategy_selection_runtime,
+)
 from tools.data.common import (
     BACKUP_FORMAT_VERSION,
     DEFAULT_BACKUP_ROOT,
@@ -280,6 +290,76 @@ def _holding_watch_extension(
     }
 
 
+STRATEGY_GOVERNANCE_TABLES = (
+    "strategy_governance_schema_meta",
+    "strategy_registry_version",
+    "strategy_evaluation_artifact",
+    "strategy_change_proposal",
+    "strategy_change_proposal_evidence",
+    "strategy_approval_artifact",
+)
+
+
+def _strategy_governance_extension(
+    simulation_copy: Path | None,
+) -> dict[str, object]:
+    if simulation_copy is None or not simulation_copy.is_file():
+        return {
+            "schema_version": STRATEGY_GOVERNANCE_SCHEMA_VERSION,
+            "present": False,
+            "tables": [],
+            "restorable": False,
+        }
+
+    present = [
+        table
+        for table in STRATEGY_GOVERNANCE_TABLES
+        if _table_exists(simulation_copy, table)
+    ]
+    if present and len(present) != len(STRATEGY_GOVERNANCE_TABLES):
+        missing = sorted(set(STRATEGY_GOVERNANCE_TABLES) - set(present))
+        raise DataToolError(
+            "P5 Strategy Governance가 부분 migration 상태입니다: "
+            + ", ".join(missing)
+        )
+
+    if present:
+        uri = f"file:{simulation_copy.resolve().as_posix()}?mode=ro"
+        with sqlite3.connect(uri, uri=True) as conn:
+            row = conn.execute(
+                """
+                SELECT value FROM strategy_governance_schema_meta
+                WHERE key='schema_version'
+                """
+            ).fetchone()
+        if row is None or str(row[0]) != STRATEGY_GOVERNANCE_SCHEMA_VERSION:
+            raise DataToolError(
+                "P5 Strategy Governance schema version이 현재 코드와 다릅니다."
+            )
+
+    return {
+        "schema_version": STRATEGY_GOVERNANCE_SCHEMA_VERSION,
+        "present": bool(present),
+        "tables": present,
+        "restorable": len(present) == len(STRATEGY_GOVERNANCE_TABLES),
+    }
+
+
+def _strategy_selection_extension_absent() -> dict[str, object]:
+    return {
+        "contract_version": SELECTION_POLICY_CONTRACT_VERSION,
+        "runtime_present": False,
+        "active_reference_present": False,
+        "policy_snapshot_count": 0,
+        "resolved_policy_source": "LEGACY_CURRENT_10_FALLBACK",
+        "resolved_policy_id": "LEGACY_CURRENT_10_FALLBACK",
+        "fallback_used": True,
+        "fallback_reason": "ACTIVE_REFERENCE_MISSING",
+        "state_files": [],
+        "paired_with_simulation_db": True,
+    }
+
+
 def _horizon_context_extension(
     holdings_copy: Path,
     simulation_copy: Path | None,
@@ -322,11 +402,20 @@ def create_backup(
     tracking_db: Path | None = None,
     include_simulation: bool = True,
     include_tracking: bool = True,
+    strategy_selection_runtime: Path | None = None,
 ) -> Path:
     source_holdings = Path(holdings_db or holdings_db_path())
     source_market = Path(market_db or market_db_path())
     source_simulation = Path(simulation_db or simulation_db_path())
     source_tracking = Path(tracking_db or tracking_db_path())
+    source_strategy_selection = Path(
+        strategy_selection_runtime
+        or (
+            DEFAULT_STRATEGY_SELECTION_RUNTIME_DIR
+            if simulation_db is None
+            else source_simulation.parent / "strategy_selection"
+        )
+    )
 
     validate_holdings_db(source_holdings)
     if include_market:
@@ -360,6 +449,7 @@ def create_backup(
             "market_history_db": False,
             "simulation_db": False,
             "tracking_db": False,
+            "strategy_selection_runtime": False,
         }
 
         market_summary = None
@@ -388,6 +478,47 @@ def create_backup(
             tracking_summary = validate_tracking_db(tracking_copy)
             files["recommendation_tracking.db"] = manifest_file_entry(tracking_copy)
             contents["tracking_db"] = True
+
+        strategy_governance_extension = _strategy_governance_extension(
+            simulation_copy
+        )
+        strategy_selection_extension = _strategy_selection_extension_absent()
+        if (
+            include_simulation
+            and simulation_copy is not None
+            and strategy_governance_extension["restorable"]
+        ):
+            source_selection_state = validate_strategy_selection_runtime(
+                source_strategy_selection,
+                simulation_db=source_simulation,
+            )
+            if source_selection_state["runtime_present"]:
+                selection_copy = temp_dir / "strategy_selection"
+                strategy_selection_extension = copy_strategy_selection_runtime(
+                    source_strategy_selection,
+                    selection_copy,
+                    simulation_db=simulation_copy,
+                )
+                strategy_selection_extension["paired_with_simulation_db"] = True
+                for path in strategy_selection_state_file_paths(selection_copy):
+                    relative = path.relative_to(temp_dir).as_posix()
+                    files[relative] = manifest_file_entry(path)
+                contents["strategy_selection_runtime"] = True
+            else:
+                strategy_selection_extension = {
+                    **source_selection_state,
+                    "paired_with_simulation_db": True,
+                }
+        elif include_simulation and simulation_copy is not None:
+            source_selection_state = validate_strategy_selection_runtime(
+                source_strategy_selection,
+                simulation_db=source_simulation,
+            )
+            if source_selection_state["runtime_present"]:
+                raise DataToolError(
+                    "Strategy Selection runtime은 존재하지만 P5 Strategy Governance "
+                    "schema가 없어 일관된 백업을 만들 수 없습니다."
+                )
 
         manifest = {
             "format_version": BACKUP_FORMAT_VERSION,
@@ -432,6 +563,8 @@ def create_backup(
                 "holding_watch_v1": _holding_watch_extension(
                     holdings_copy,
                 ),
+                "strategy_governance_v1": strategy_governance_extension,
+                "strategy_selection_v1": strategy_selection_extension,
             },
             "secret_files_included": [],
         }
