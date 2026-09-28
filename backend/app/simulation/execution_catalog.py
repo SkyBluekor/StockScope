@@ -391,17 +391,6 @@ class HistoricalExecutionCatalog:
                 "VAL2_SOURCE_NOT_COMPLETED",
                 f"VAL.2는 완료된 VAL.1만 입력으로 사용할 수 있습니다: {validation.status}",
             )
-        if (
-            validation.selection_policy_pin is None
-            or not validation.selection_policy_id
-            or not validation.selection_policy_hash
-            or not validation.selection_policy_contract_version
-        ):
-            raise ExecutionCatalogError(
-                "VAL2_SELECTION_POLICY_IDENTITY_REQUIRED",
-                "legacy VAL.1에는 Selection Policy identity를 추정 backfill하지 않습니다. 새 Historical Validation을 실행하세요.",
-            )
-
         with self.connect() as horizon_conn:
             horizon_context = get_validation_horizon(
                 horizon_conn,
@@ -414,6 +403,17 @@ class HistoricalExecutionCatalog:
                 "VAL2_HORIZON_NOT_ACTIVE",
                 exc.message,
             ) from exc
+
+        if (
+            validation.selection_policy_pin is None
+            or not validation.selection_policy_id
+            or not validation.selection_policy_hash
+            or not validation.selection_policy_contract_version
+        ):
+            raise ExecutionCatalogError(
+                "VAL2_SELECTION_POLICY_IDENTITY_REQUIRED",
+                "legacy VAL.1에는 Selection Policy identity를 추정 backfill하지 않습니다. 새 Historical Validation을 실행하세요.",
+            )
 
         try:
             date.fromisoformat(market_data_cutoff_date)
