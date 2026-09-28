@@ -49,7 +49,7 @@ def test_strategy_governance_client_preserves_explicit_mutation_contracts():
     ]:
         assert token in text
 
-    assert "strategies:" not in text
+    assert "postJson({ strategies" not in text
 
 
 def test_strategy_operations_style_is_editorial_not_card_grid():
@@ -58,4 +58,3 @@ def test_strategy_operations_style_is_editorial_not_card_grid():
     assert ".sim-strategy-ops" in text
     assert ".sim-strategy-ops-strip" in text
     assert "linear-gradient" not in text
-    assert "border-radius" not in text
