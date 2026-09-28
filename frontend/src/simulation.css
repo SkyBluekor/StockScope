@@ -987,3 +987,28 @@
   .sim-prospective-capture-list>div span:nth-of-type(2),
   .sim-prospective-capture-list>div small{grid-column:1 / -1}
 }
+
+
+/* VN-P5-S1-F — compact strategy operations status */
+.sim-strategy-ops{background:var(--bg-surface);border-top:1px solid var(--border-default);border-bottom:1px solid var(--border-default);padding:18px 0}
+.sim-strategy-ops-head{display:flex;align-items:flex-end;justify-content:space-between;gap:28px;padding:0 18px 15px}
+.sim-strategy-ops-head h2{margin:3px 0 4px;font-size:var(--font-section-title)}
+.sim-strategy-ops-head p{max-width:820px;margin:0;color:var(--text-secondary);font-size:var(--font-body-small);line-height:1.55}
+.sim-strategy-ops-head>strong{flex:0 0 auto;color:var(--text-secondary);font-size:var(--font-body-small)}
+.sim-strategy-ops-head>strong.locked{color:var(--status-warning)}
+.sim-strategy-ops-strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-top:1px solid var(--border-default)}
+.sim-strategy-ops-strip>div{min-width:0;padding:15px 18px 3px;border-right:1px solid var(--border-subtle)}
+.sim-strategy-ops-strip>div:last-child{border-right:0}
+.sim-strategy-ops-strip span,.sim-strategy-ops-strip small{display:block;color:var(--text-muted);font-size:var(--font-meta)}
+.sim-strategy-ops-strip strong{display:block;margin:4px 0 3px;font-size:var(--font-body)}
+.sim-strategy-ops-lock,.sim-strategy-ops-warning,.sim-strategy-ops-loading{margin:14px 18px 0!important;color:var(--text-secondary);font-size:var(--font-body-small);line-height:1.55}
+.sim-strategy-ops-lock{padding-left:12px;border-left:3px solid var(--status-warning)}
+.sim-strategy-ops-warning{padding-left:12px;border-left:3px solid var(--status-warning)}
+.sim-strategy-ops-details{margin:14px 18px 0;padding-top:12px;border-top:1px solid var(--border-subtle);color:var(--text-secondary);font-size:var(--font-meta)}
+.sim-strategy-ops-details summary{cursor:pointer;font-weight:800}
+.sim-strategy-ops-details dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 28px;margin:12px 0 0}
+.sim-strategy-ops-details dl>div{display:grid;grid-template-columns:120px minmax(0,1fr);gap:12px;padding:8px 0;border-top:1px solid var(--border-subtle)}
+.sim-strategy-ops-details dt{color:var(--text-muted);font-weight:800}
+.sim-strategy-ops-details dd{min-width:0;margin:0;overflow-wrap:anywhere;color:var(--text-primary)}
+@media(max-width:900px){.sim-strategy-ops-strip{grid-template-columns:repeat(2,minmax(0,1fr))}.sim-strategy-ops-strip>div:nth-child(2){border-right:0}.sim-strategy-ops-details dl{grid-template-columns:1fr}}
+@media(max-width:620px){.sim-strategy-ops-head{align-items:flex-start;flex-direction:column}.sim-strategy-ops-strip{grid-template-columns:1fr}.sim-strategy-ops-strip>div{border-right:0;border-bottom:1px solid var(--border-subtle)}.sim-strategy-ops-strip>div:last-child{border-bottom:0}.sim-strategy-ops-details dl>div{grid-template-columns:1fr;gap:3px}}

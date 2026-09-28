@@ -26,12 +26,15 @@ import {
 } from "../services/simulationApi";
 import FeedbackPanel from "./FeedbackPanel";
 import ProspectiveEvaluationPanel from "./ProspectiveEvaluationPanel";
+import StrategyOperationsPanel from "./StrategyOperationsPanel";
+import {
+  getStrategyGovernanceOverview,
+  type StrategyGovernanceOverview,
+} from "../services/strategyGovernanceApi";
 import "../simulation.css";
 
 type Mode = "new" | "saved";
 type Preset = "6m" | "1y" | "2y" | "custom";
-
-const PRODUCTION_SCANNER_VERSION = "0.21.3.7";
 
 function dateText(value: string | null | undefined) { return value ? value.replace(/-/g, ".") : "-"; }
 function money(value: string | null | undefined) {
@@ -198,6 +201,9 @@ export default function SimulationWorkspace() {
   const [expandedDecisionKey, setExpandedDecisionKey] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [horizonPolicy, setHorizonPolicy] = useState<HorizonPolicyCatalog | null>(null);
+  const [governanceOverview, setGovernanceOverview] = useState<StrategyGovernanceOverview | null>(null);
+  const [governanceBusy, setGovernanceBusy] = useState(true);
+  const [governanceMessage, setGovernanceMessage] = useState<string | null>(null);
 
   function defaultName(nextPreset: Preset, nextMarket: "ALL" | "KOSPI" | "KOSDAQ", nextPreview?: ValidationPeriodPreview | null) {
     const market = nextMarket === "ALL" ? "전체시장" : nextMarket;
@@ -245,6 +251,26 @@ export default function SimulationWorkspace() {
     void getHorizonPolicy()
       .then(setHorizonPolicy)
       .catch(() => setHorizonPolicy(null));
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    setGovernanceBusy(true);
+    setGovernanceMessage(null);
+    void getStrategyGovernanceOverview()
+      .then((result) => {
+        if (!disposed) setGovernanceOverview(result);
+      })
+      .catch((error) => {
+        if (!disposed) {
+          setGovernanceOverview(null);
+          setGovernanceMessage(errorText(error));
+        }
+      })
+      .finally(() => {
+        if (!disposed) setGovernanceBusy(false);
+      });
+    return () => { disposed = true; };
   }, []);
   useEffect(() => { if (mode === "saved") void loadSaved(); }, [mode]);
 
@@ -454,6 +480,8 @@ export default function SimulationWorkspace() {
         {preview && <div className="sim-date-block"><span>Market Store 최신</span><strong>{dateText(preview.market_data_latest_date)}</strong><small>{preview.partial_end_month ? "현재 월은 확보된 거래일까지" : "확정 데이터 기준"}</small></div>}
       </header>
 
+      <StrategyOperationsPanel overview={governanceOverview} loading={governanceBusy} error={governanceMessage} />
+
       <div className="sim-validation-tabs" role="tablist" aria-label="전략 성과 검증">
         <button className={mode === "new" ? "active" : ""} onClick={startNew}>새 검증</button>
         <button className={mode === "saved" ? "active" : ""} onClick={() => setMode("saved")}>저장된 검증 <small>{drafts.length + legacy.length || ""}</small></button>
@@ -472,7 +500,7 @@ export default function SimulationWorkspace() {
 
           <div className="sim-validation-overview">
             <div><span>검증 대상</span><strong>Production Scanner</strong></div>
-            <div><span>Scanner 버전</span><strong>{PRODUCTION_SCANNER_VERSION}</strong></div>
+            <div><span>Scanner 버전</span><strong>{governanceOverview?.scanner_baseline.scanner_version ?? (governanceBusy ? "확인 중…" : "확인 필요")}</strong></div>
             <div><span>시장</span><strong>{marketLabel(marketScope)}</strong></div>
             <div><span>상태</span><strong>설정 저장 전</strong></div>
           </div>
