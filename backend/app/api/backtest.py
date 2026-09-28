@@ -195,7 +195,6 @@ async def _run_job(job_id: str, config: BacktestConfig, api_key: str | None) -> 
         result = await service.run_pullback(
             config,
             progress=update_progress,
-            selection_policy_pin=selection_policy_pin,
         )
     except BacktestJobCancelled:
         backtest_jobs.mark_cancelled(job_id)
@@ -595,6 +594,7 @@ async def _run_scanner_job(
             force_refresh=payload.force_refresh,
             allow_large_sync=payload.allow_large_sync,
             progress=update_progress,
+            selection_policy_pin=selection_policy_pin,
         )
         if isinstance(result, dict):
             result["horizon_context"] = resolve_horizon_context(
