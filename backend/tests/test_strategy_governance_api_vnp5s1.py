@@ -5,8 +5,10 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from types import SimpleNamespace
 
 from app.api.strategy_governance import router
+from app.simulation.strategy_governance_query import StrategyGovernanceQueryService
 from tools.data.migrate_prospective_vnp2s2 import migrate_prospective_store
 from tools.data.migrate_strategy_governance_vnp5s1 import (
     migrate_strategy_governance_store,
@@ -197,3 +199,62 @@ def test_rollback_requires_existing_active_reference(
         response.json()["detail"]["code"]
         == "ACTIVE_REFERENCE_NOT_AVAILABLE"
     )
+
+
+def test_production_status_uses_same_baseline_aware_pin_as_scanner(
+    tmp_path: Path,
+    monkeypatch,
+):
+    class FakeRegistry:
+        def __init__(self, **_kwargs):
+            pass
+
+        def resolve_active_selection_policy(self):
+            return SimpleNamespace(
+                active_reference_valid=True,
+                policy_hash_valid=True,
+            )
+
+        def pin_active_selection_policy(self):
+            return SimpleNamespace(
+                policy_id="LEGACY_CURRENT_10_FALLBACK",
+                policy_hash="legacy-hash",
+                policy_contract_version="VN_P5_S1_SELECTION_POLICY_V1",
+                policy_source="LEGACY_CURRENT_10_FALLBACK",
+                fallback_used=True,
+                fallback_reason="ACTIVE_POLICY_BASELINE_MISMATCH",
+                operating_strategies=(
+                    (None, "trend_following", None),
+                    (None, "pullback", None),
+                ),
+            )
+
+        def _load_reference(self):
+            return (
+                {
+                    "active_policy_id": "ACTIVE-OLD-BASELINE",
+                    "active_policy_hash": "active-hash",
+                    "rollback_policy_id": None,
+                    "rollback_policy_hash": None,
+                    "generation": 3,
+                    "activation_source": "EXPLICIT_APPROVAL",
+                },
+                None,
+            )
+
+    monkeypatch.setattr(
+        "app.simulation.strategy_governance_query.ProductionStrategySelectionRegistry",
+        FakeRegistry,
+    )
+
+    status = StrategyGovernanceQueryService(
+        tmp_path / "simulation.db",
+        runtime_dir=tmp_path / "selection",
+    ).production_policy()
+
+    assert status["policy_id"] == "LEGACY_CURRENT_10_FALLBACK"
+    assert status["policy_source"] == "LEGACY_CURRENT_10_FALLBACK"
+    assert status["fallback_used"] is True
+    assert status["fallback_reason"] == "ACTIVE_POLICY_BASELINE_MISMATCH"
+    assert status["operating_strategy_count"] == 2
+    assert status["generation"] == 3
