@@ -15,6 +15,10 @@ from app.strategy.production_selection_policy import (
     DEFAULT_RUNTIME_DIR as DEFAULT_STRATEGY_SELECTION_RUNTIME_DIR,
     SELECTION_POLICY_CONTRACT_VERSION,
 )
+from tools.data.event_evidence_runtime import (
+    inspect_event_evidence_store,
+    validate_event_evidence_state,
+)
 from tools.data.strategy_selection_runtime import (
     copy_strategy_selection_runtime,
     replace_strategy_selection_state,
@@ -99,6 +103,10 @@ def restore_backup(
     strategy_selection_manifest = dict(
         extensions.get("strategy_selection_v1") or {}
     )
+    event_evidence_manifest = dict(
+        extensions.get("event_evidence_v1") or {}
+    )
+    event_evidence_manifest_present = bool(event_evidence_manifest)
 
     if not contents.get("holdings_db"):
         raise DataToolError("백업에 holdings.db가 없습니다.")
@@ -130,6 +138,7 @@ def restore_backup(
         validate_market_db(source_market)
 
     source_simulation: Path | None = None
+    source_event_evidence_state = inspect_event_evidence_store(None)
     if restore_simulation:
         if not contents.get("simulation_db"):
             raise DataToolError(
@@ -144,6 +153,15 @@ def restore_backup(
             "simulation.db",
         )
         validate_simulation_db(source_simulation)
+        source_event_evidence_state = inspect_event_evidence_store(
+            source_simulation
+        )
+        if event_evidence_manifest_present:
+            validate_event_evidence_state(
+                event_evidence_manifest,
+                source_event_evidence_state,
+                label="backup manifest",
+            )
 
         if strategy_selection_manifest:
             if (
@@ -301,6 +319,7 @@ def restore_backup(
 
     strategy_selection_touched = False
     strategy_selection_result: dict[str, object] | None = None
+    restored_event_evidence_state = inspect_event_evidence_store(None)
 
     try:
         for label, _, target, validator in targets:
@@ -373,6 +392,16 @@ def restore_backup(
                     strategy_selection_target,
                     simulation_db=simulation_target,
                 )
+
+            if restore_simulation:
+                restored_event_evidence_state = inspect_event_evidence_store(
+                    simulation_target
+                )
+                validate_event_evidence_state(
+                    source_event_evidence_state,
+                    restored_event_evidence_state,
+                    label="restore",
+                )
         except Exception as restore_error:
             selection_rollback_error: Exception | None = None
             if restore_strategy_selection and strategy_selection_touched:
@@ -426,6 +455,11 @@ def restore_backup(
         )
         holding_watch_manifest = dict(
             extensions.get("holding_watch_v1") or {}
+        )
+        event_evidence_result_source = (
+            source_event_evidence_state
+            if restore_simulation
+            else event_evidence_manifest
         )
         revision_identity_restored = bool(
             identity_manifest.get("revision_identity_metadata")
@@ -583,6 +617,30 @@ def restore_backup(
                 ),
                 "tables": list(holding_watch_manifest.get("tables") or []),
                 "live_quote_replay_performed": False,
+            },
+            "event_evidence": {
+                "manifest_present": event_evidence_manifest_present,
+                "schema_version": event_evidence_result_source.get(
+                    "schema_version"
+                ),
+                "store_present_in_backup": bool(
+                    event_evidence_result_source.get("present")
+                ),
+                "store_restored": bool(
+                    restore_simulation
+                    and restored_event_evidence_state.get("restorable")
+                ),
+                "tables": list(
+                    event_evidence_result_source.get("tables") or []
+                ),
+                "counts": dict(
+                    event_evidence_result_source.get("counts") or {}
+                ),
+                "prediction_enabled": bool(
+                    event_evidence_result_source.get(
+                        "prediction_enabled", False
+                    )
+                ),
             },
         }
     finally:

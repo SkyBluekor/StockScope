@@ -38,6 +38,7 @@ from app.strategy.production_selection_policy import (
     SELECTION_POLICY_CONTRACT_VERSION,
 )
 
+from tools.data.event_evidence_runtime import inspect_event_evidence_store
 from tools.data.strategy_selection_runtime import (
     copy_strategy_selection_runtime,
     state_file_paths as strategy_selection_state_file_paths,
@@ -565,6 +566,9 @@ def create_backup(
                 ),
                 "strategy_governance_v1": strategy_governance_extension,
                 "strategy_selection_v1": strategy_selection_extension,
+                "event_evidence_v1": inspect_event_evidence_store(
+                    simulation_copy
+                ),
             },
             "secret_files_included": [],
         }
