@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any, Callable
 from uuid import uuid4
 
-from app.data_contract import ReadOnlyDataStateReader, build_stock_data_contract
 from app.horizon import HorizonPolicyError, require_horizon_activatable
 from app.horizon_context import get_analysis_horizon
 
@@ -104,10 +103,6 @@ class HoldingDecisionSupportService:
             catalog,
             market_store_db=market_store_db,
             clock=clock,
-        )
-        self.data_reader = ReadOnlyDataStateReader(
-            market_store_db=self.chart.market_store_db,
-            holdings_db=self.catalog.db_path,
         )
         self.clock = clock or _now
 
@@ -360,8 +355,19 @@ class HoldingDecisionSupportService:
         price = _decimal(valuation["price"]) if valuation["available"] else None
         plan_state = self._plan_state(active, price)
 
+        # Import lazily to keep the holdings package independent from the
+        # data-contract package during application module initialization.
+        from app.data_contract import (
+            ReadOnlyDataStateReader,
+            build_stock_data_contract,
+        )
+
+        data_reader = ReadOnlyDataStateReader(
+            market_store_db=self.chart.market_store_db,
+            holdings_db=self.catalog.db_path,
+        )
         data_contract = build_stock_data_contract(
-            self.data_reader.read_stock_state(
+            data_reader.read_stock_state(
                 str(stock["market"]),
                 str(stock["ticker"]),
             )
