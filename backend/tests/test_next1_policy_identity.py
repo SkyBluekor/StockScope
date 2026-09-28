@@ -112,7 +112,7 @@ def test_completed_legacy_validation_cannot_be_policy_backfilled(tmp_path: Path)
         )
 
     with pytest.raises(ValidationCatalogError) as caught:
-        catalog.ensure_selection_policy_pin(draft.id, _pin().to_dict())
+        catalog.ensure_selection_policy_pin(draft.id, serialize_selection_policy_pin(_pin()))
 
     assert caught.value.code == "VAL_SELECTION_POLICY_LEGACY_UNAVAILABLE"
     assert catalog.get(draft.id).selection_policy_pin is None
