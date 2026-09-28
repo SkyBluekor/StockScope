@@ -52,6 +52,7 @@ from app.watch.storage import WATCH_SCHEMA_VERSION
 from app.strategy import StrategyName
 from app.strategy.production_selection_policy import (
     ProductionStrategySelectionRegistry,
+    SelectionPolicyError,
 )
 from tools.data.migrate_strategy_governance_vnp5s1 import (
     migrate_strategy_governance_store,
