@@ -369,6 +369,15 @@ def test_committed_scanner_02138_baseline_matches_current_production():
     result = verify_baseline(PROJECT_ROOT, manifest)
 
     assert manifest["scanner_version"] == StockScannerService.VERSION
+    for changed in result.changed_files:
+        print("BASELINE_CHANGED_FILE", changed)
+    print(
+        "BASELINE_FINGERPRINTS",
+        result.production_fingerprint_expected,
+        result.production_fingerprint_current,
+        result.policy_fingerprint_expected,
+        result.policy_fingerprint_current,
+    )
     assert result.valid is True, {
         "production_fingerprint_expected": result.production_fingerprint_expected,
         "production_fingerprint_current": result.production_fingerprint_current,
