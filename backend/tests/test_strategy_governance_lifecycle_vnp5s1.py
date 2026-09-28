@@ -14,7 +14,7 @@ from app.prospective.models import (
 )
 from app.simulation.strategy_change import (
     StrategyChangeService,
-    test_only_approval_protocol,
+    test_only_approval_protocol as make_test_approval_protocol,
 )
 from app.simulation.strategy_evidence import StrategyEvidenceService
 from app.strategy import MarketRegime, StrategyEngine, StrategyInput, StrategyName
@@ -236,7 +236,7 @@ def test_synthetic_evidence_to_activation_run_pin_and_rollback(tmp_path: Path):
     assert checked_artifact["artifact_integrity"] == "MATCH"
     assert checked_artifact["current_source_status"] == "CURRENT"
 
-    protocol = test_only_approval_protocol()
+    protocol = make_test_approval_protocol()
     change = StrategyChangeService(
         simulation,
         evidence_service=evidence_service,
