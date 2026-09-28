@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable
 from uuid import uuid4
 
+from app.data_contract import ReadOnlyDataStateReader, build_stock_data_contract
 from app.horizon import HorizonPolicyError, require_horizon_activatable
 from app.horizon_context import get_analysis_horizon
 
@@ -20,7 +21,7 @@ from .management import (
 )
 
 HOLDING_DECISION_SCHEMA_VERSION = "VN_P3_S1_HOLDING_DECISION_STORAGE_V1"
-HOLDING_DECISION_POLICY_VERSION = "VN_P3_S1_HOLDING_DECISION_POLICY_V1"
+HOLDING_DECISION_POLICY_VERSION = "VN_P3_S1_HOLDING_DECISION_POLICY_V2"
 HOLDING_PLAN_CONTEXT_VERSION = "VN_P3_S1_PLAN_CONTEXT_V1"
 
 DECISION_TABLES = {
@@ -103,6 +104,10 @@ class HoldingDecisionSupportService:
             catalog,
             market_store_db=market_store_db,
             clock=clock,
+        )
+        self.data_reader = ReadOnlyDataStateReader(
+            market_store_db=self.chart.market_store_db,
+            holdings_db=self.catalog.db_path,
         )
         self.clock = clock or _now
 
@@ -256,121 +261,62 @@ class HoldingDecisionSupportService:
         plan_state: str,
         *,
         has_active_plan: bool,
-        data_ready: bool,
+        protection_ready: bool,
+        proposal_ready: bool,
     ) -> list[dict[str, Any]]:
         def option(action: str, state: str, reason: str) -> dict[str, str]:
             return {"action": action, "state": state, "reason": reason}
 
         options: list[dict[str, Any]] = []
-        if not data_ready:
-            options.append(
-                option(
-                    "HOLD",
-                    "DEFERRED",
-                    "확정 EOD 또는 최신 분석이 부족해 보유 판단을 확정하지 않습니다.",
-                )
-            )
-        elif plan_state == "STOP_BREACHED":
-            options.extend(
-                [
-                    option(
-                        "STOP",
-                        "AVAILABLE",
-                        "현재 확정 EOD 가격이 적용 중인 손절 기준 이하입니다.",
-                    ),
-                    option(
-                        "REDUCE",
-                        "REVIEW",
-                        "전량 종료 대신 일부 축소는 사용자가 별도로 검토할 수 있습니다.",
-                    ),
-                    option(
-                        "EXIT",
-                        "REVIEW",
-                        "전량 종료 여부는 사용자 선택이며 자동 주문하지 않습니다.",
-                    ),
-                ]
-            )
-        elif plan_state == "TARGET2_REACHED":
-            options.extend(
-                [
-                    option(
-                        "TAKE_PROFIT",
-                        "AVAILABLE",
-                        "현재 확정 EOD 가격이 적용 중인 2차 목표 이상입니다.",
-                    ),
-                    option(
-                        "EXIT",
-                        "REVIEW",
-                        "전량 이익 실현 여부는 사용자가 검토합니다.",
-                    ),
-                    option(
-                        "HOLD",
-                        "REVIEW",
-                        "기존 계획을 유지할 수도 있지만 목표 도달 상태를 먼저 확인해야 합니다.",
-                    ),
-                ]
-            )
-        elif plan_state == "TARGET1_REACHED":
-            options.extend(
-                [
-                    option(
-                        "TAKE_PROFIT",
-                        "AVAILABLE",
-                        "현재 확정 EOD 가격이 적용 중인 1차 목표 이상입니다.",
-                    ),
-                    option(
-                        "REDUCE",
-                        "REVIEW",
-                        "일부 이익 실현은 검토할 수 있으나 비율은 자동 결정하지 않습니다.",
-                    ),
-                    option(
-                        "HOLD",
-                        "REVIEW",
-                        "기존 계획을 유지할 수 있으나 목표 도달 상태를 확인해야 합니다.",
-                    ),
-                ]
-            )
-        elif has_active_plan:
-            options.append(
-                option(
-                    "HOLD",
-                    "AVAILABLE",
-                    "현재 확정 EOD 가격이 적용 중인 손절·목표 범위 안에 있습니다.",
-                )
-            )
-            options.append(
-                option(
-                    "REDUCE",
-                    "MANUAL_REVIEW",
-                    "일부 축소는 사용자가 검토할 수 있으나 자동 비율 정책은 없습니다.",
-                )
-            )
+        if has_active_plan and protection_ready and plan_state == "STOP_BREACHED":
+            options.extend([
+                option("STOP", "AVAILABLE", "현재 확정 EOD 가격이 적용 중인 손절 기준 이하입니다."),
+                option("REDUCE", "REVIEW", "전량 종료 대신 일부 축소는 사용자가 별도로 검토할 수 있습니다."),
+                option("EXIT", "REVIEW", "전량 종료 여부는 사용자 선택이며 자동 주문하지 않습니다."),
+            ])
+        elif has_active_plan and protection_ready and plan_state == "TARGET2_REACHED":
+            options.extend([
+                option("TAKE_PROFIT", "AVAILABLE", "현재 확정 EOD 가격이 적용 중인 2차 목표 이상입니다."),
+                option("EXIT", "REVIEW", "전량 이익 실현 여부는 사용자가 검토합니다."),
+                option("HOLD", "REVIEW", "기존 계획을 유지할 수도 있지만 목표 도달 상태를 먼저 확인해야 합니다."),
+            ])
+        elif has_active_plan and protection_ready and plan_state == "TARGET1_REACHED":
+            options.extend([
+                option("TAKE_PROFIT", "AVAILABLE", "현재 확정 EOD 가격이 적용 중인 1차 목표 이상입니다."),
+                option("REDUCE", "REVIEW", "일부 이익 실현은 검토할 수 있으나 비율은 자동 결정하지 않습니다."),
+                option("HOLD", "REVIEW", "기존 계획을 유지할 수 있으나 목표 도달 상태를 확인해야 합니다."),
+            ])
+        elif has_active_plan and protection_ready:
+            options.extend([
+                option("HOLD", "AVAILABLE", "현재 확정 EOD 가격이 적용 중인 손절·목표 범위 안에 있습니다."),
+                option("REDUCE", "MANUAL_REVIEW", "일부 축소는 사용자가 검토할 수 있으나 자동 비율 정책은 없습니다."),
+            ])
+        elif not proposal_ready:
+            options.append(option(
+                "HOLD",
+                "DEFERRED",
+                "새 판단에 사용할 수 있는 최신 Analysis 근거가 없어 새 계획 판단을 보류합니다.",
+            ))
         else:
-            options.append(
-                option(
-                    "HOLD",
-                    "REVIEW",
-                    "현재 적용된 관리 계획이 없어 새 계획 적용 여부를 먼저 검토해야 합니다.",
-                )
-            )
+            options.append(option(
+                "HOLD",
+                "REVIEW",
+                "현재 적용된 관리 계획이 없어 새 계획 적용 여부를 먼저 검토해야 합니다.",
+            ))
 
-        options.append(
-            option(
-                "ADD",
-                "BLOCKED",
-                "추가매수를 허용할 검증된 P3-S1 정책이 아직 정의되지 않았습니다.",
-            )
-        )
+        options.append(option(
+            "ADD",
+            "BLOCKED",
+            "추가매수를 허용할 검증된 P3-S1 정책이 아직 정의되지 않았습니다.",
+        ))
         present = {str(item["action"]) for item in options}
         for action in ("STOP", "TAKE_PROFIT", "EXIT"):
             if action not in present:
-                options.append(
-                    option(
-                        action,
-                        "NOT_TRIGGERED",
-                        "현재 적용 계획의 명시 조건에서 해당 행동이 발생하지 않았습니다.",
-                    )
-                )
+                options.append(option(
+                    action,
+                    "NOT_TRIGGERED",
+                    "현재 적용 계획의 명시 조건에서 해당 행동이 발생하지 않았습니다.",
+                ))
         return options
 
     def _current_source(
@@ -413,19 +359,42 @@ class HoldingDecisionSupportService:
         valuation = self._valuation(str(stock["market"]), str(stock["ticker"]))
         price = _decimal(valuation["price"]) if valuation["available"] else None
         plan_state = self._plan_state(active, price)
-        conflict = self._proposal_conflict(latest, active)
 
-        data_ready = (
-            str(position["status"]) == "OPEN"
+        data_contract = build_stock_data_contract(
+            self.data_reader.read_stock_state(
+                str(stock["market"]),
+                str(stock["ticker"]),
+            )
+        )
+        analysis_contract = data_contract.resources.analysis_result
+        analysis_current_use_allowed = bool(analysis_contract.current_use_allowed)
+        position_open = str(position["status"]) == "OPEN"
+        protection_ready = bool(
+            position_open and active is not None and valuation["available"]
+        )
+        proposal_ready = bool(
+            position_open
             and latest is not None
             and valuation["available"]
+            and analysis_current_use_allowed
         )
+        conflict = self._proposal_conflict(latest, active) if proposal_ready else None
         limitations: list[dict[str, str]] = []
         if latest is None:
             limitations.append(
                 {
                     "code": "ANALYSIS_UNAVAILABLE",
                     "message": "최신 확정 EOD 분석이 없습니다.",
+                }
+            )
+        elif not analysis_current_use_allowed:
+            limitations.append(
+                {
+                    "code": str(
+                        analysis_contract.reason_code
+                        or "ANALYSIS_NOT_CURRENTLY_USABLE"
+                    ),
+                    "message": "저장된 Analysis는 표시할 수 있지만 새 관리 계획의 근거로는 사용할 수 없습니다.",
                 }
             )
         if not valuation["available"]:
@@ -458,27 +427,30 @@ class HoldingDecisionSupportService:
             }
         )
 
-        if str(position["status"]) != "OPEN":
+        if not position_open:
             status = "DEFERRED"
             primary_action = None
-        elif not data_ready:
-            status = "INSUFFICIENT_DATA"
-            primary_action = None
-        elif conflict:
+        elif protection_ready and plan_state == "STOP_BREACHED":
+            status = "ACTIONABLE"
+            primary_action = "STOP"
+        elif protection_ready and plan_state in {"TARGET1_REACHED", "TARGET2_REACHED"}:
+            status = "REVIEW_REQUIRED"
+            primary_action = "TAKE_PROFIT"
+        elif active is not None and conflict:
             status = "CONFLICT"
+            primary_action = None
+        elif active is not None and protection_ready:
+            status = "ACTIONABLE"
+            primary_action = "HOLD"
+        elif not proposal_ready:
+            status = "INSUFFICIENT_DATA"
             primary_action = None
         elif active is None:
             status = "DEFERRED" if not horizon_activatable else "REVIEW_REQUIRED"
             primary_action = None
-        elif plan_state == "STOP_BREACHED":
-            status = "ACTIONABLE"
-            primary_action = "STOP"
-        elif plan_state in {"TARGET1_REACHED", "TARGET2_REACHED"}:
-            status = "REVIEW_REQUIRED"
-            primary_action = "TAKE_PROFIT"
         else:
-            status = "ACTIONABLE"
-            primary_action = "HOLD"
+            status = "INSUFFICIENT_DATA"
+            primary_action = None
 
         latest_id = str(latest["id"]) if latest is not None else None
         active_id = str(active["id"]) if active is not None else None
@@ -560,6 +532,9 @@ class HoldingDecisionSupportService:
             "valuation_market_date": valuation["market_date"],
             "valuation_price": valuation["price"],
             "valuation_source": valuation["source"],
+            "analysis_contract_status": analysis_contract.status,
+            "analysis_contract_reason": analysis_contract.reason_code,
+            "analysis_current_use_allowed": analysis_current_use_allowed,
             "horizon": horizon,
         }
         evidence = {
@@ -571,12 +546,18 @@ class HoldingDecisionSupportService:
                 and str(active["source_analysis_revision_id"]) != latest_id
             ),
             "new_plan_horizon_activatable": horizon_activatable,
+            "analysis_current_use_allowed": analysis_current_use_allowed,
+            "analysis_contract_status": analysis_contract.status,
+            "analysis_contract_reason": analysis_contract.reason_code,
+            "protection_ready": protection_ready,
+            "proposal_ready": proposal_ready,
             "source": source,
         }
         alternatives = self._action_options(
             plan_state,
             has_active_plan=active is not None,
-            data_ready=data_ready,
+            protection_ready=protection_ready,
+            proposal_ready=proposal_ready,
         )
         fingerprint_payload = {
             "decision_policy_version": HOLDING_DECISION_POLICY_VERSION,
@@ -761,6 +742,16 @@ class HoldingDecisionSupportService:
             != _decimal_text(decision["valuation_price"])
         ):
             reasons.append("VALUATION_PRICE_CHANGED")
+        prior_use_allowed = bool(
+            (decision.get("evidence") or {}).get("analysis_current_use_allowed")
+        )
+        current_use_allowed = bool(
+            (current.get("evidence") or {}).get("analysis_current_use_allowed")
+        )
+        if prior_use_allowed != current_use_allowed:
+            reasons.append("ANALYSIS_USABILITY_CHANGED")
+        elif current["input_fingerprint"] != decision["input_fingerprint"]:
+            reasons.append("DECISION_SOURCE_CONTEXT_CHANGED")
         return reasons
 
     def get_decision(self, decision_id: str) -> dict[str, Any]:
@@ -956,6 +947,13 @@ class HoldingDecisionSupportService:
             raise HoldingsDecisionSupportError(
                 "HOLD_DECISION_STALE",
                 "보유 상태가 변경되었습니다. 최신 판단을 다시 확인하세요.",
+            )
+        if not bool(
+            (decision.get("evidence") or {}).get("analysis_current_use_allowed")
+        ):
+            raise HoldingsDecisionSupportError(
+                "HOLD_DECISION_ANALYSIS_NOT_CURRENTLY_USABLE",
+                "현재 기준에서 사용할 수 없는 Analysis로 새 관리 계획을 적용할 수 없습니다.",
             )
         revision_id = decision["source_analysis_revision_id"]
         if revision_id is None:
