@@ -188,6 +188,9 @@ class ProspectiveCatalog:
             "summary": result.get("summary"),
             "candidates": candidates,
             "horizon_context": result.get("horizon_context"),
+            "strategy_selection_policy": result.get(
+                "strategy_selection_policy"
+            ),
         }
         source_snapshot_hash = digest_json(snapshot)
         source_execution_key = digest_json(
@@ -197,6 +200,8 @@ class ProspectiveCatalog:
                 "requested_as_of": result.get("requested_as_of"),
                 "candidate_limit": request.candidate_limit,
                 "input_fingerprint": result.get("input_fingerprint"),
+                "selection_policy_id": request.selection_policy_id,
+                "selection_policy_hash": request.selection_policy_hash,
                 "source_snapshot_hash": source_snapshot_hash,
             }
         )
