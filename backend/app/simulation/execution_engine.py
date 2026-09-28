@@ -9,11 +9,9 @@ from app.backtest.production_exit_policy import production_policy_cache_token
 from app.backtest.scanner import StockScannerService
 from app.market.providers.krx import KrxProvider
 from app.strategy.models import StrategyName
-from app.strategy.production_selection_policy import (
-    SelectionPolicyError,
-    SelectionPolicyPin,
-)
+from app.strategy.production_selection_policy import SelectionPolicyPin
 
+from .selection_policy_pin import restore_selection_policy_pin
 from .execution_catalog import (
     HistoricalExecutionCatalog,
     HistoricalExecutionOutcome,
@@ -332,13 +330,13 @@ class HistoricalExecutionEngine:
                 "이 Execution run은 Selection Policy pin 이전에 생성되어 안전하게 재개할 수 없습니다.",
             )
         try:
-            selection_policy_pin = SelectionPolicyPin.from_persisted_snapshot(
+            selection_policy_pin = restore_selection_policy_pin(
                 run.selection_policy
             )
-        except SelectionPolicyError as exc:
+        except ValueError as exc:
             raise ExecutionEngineError(
                 "VAL2_SELECTION_POLICY_INVALID",
-                exc.message,
+                str(exc),
             ) from exc
 
         current_policy_token = str(self.policy_token_provider())
