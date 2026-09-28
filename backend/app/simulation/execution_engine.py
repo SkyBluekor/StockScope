@@ -9,6 +9,10 @@ from app.backtest.production_exit_policy import production_policy_cache_token
 from app.backtest.scanner import StockScannerService
 from app.market.providers.krx import KrxProvider
 from app.strategy.models import StrategyName
+from app.strategy.production_selection_policy import (
+    SelectionPolicyError,
+    SelectionPolicyPin,
+)
 
 from .execution_catalog import (
     HistoricalExecutionCatalog,
@@ -189,6 +193,7 @@ class HistoricalExecutionEngine:
         index_rows: list[dict[str, Any]],
         signal_index: int,
         config: BacktestConfig,
+        selection_policy_pin: SelectionPolicyPin,
     ) -> tuple[dict[str, Any], StrategyName, dict[str, Any]]:
         signal_row = dict(stock_rows[signal_index])
         signal_row.setdefault("code", candidate.ticker)
@@ -202,6 +207,7 @@ class HistoricalExecutionEngine:
             stock_rows=asof_rows,
             index_rows=index_rows,
             sector_input=None,
+            selection_policy_pin=selection_policy_pin,
         )
         if quick is None:
             raise ExecutionEngineError(
@@ -223,6 +229,10 @@ class HistoricalExecutionEngine:
         rebuilt_state = str(rebuilt.get("candidate_state") or "").strip()
         stored_strategy = str(candidate.strategy or "").strip()
         rebuilt_strategy = str(quick.get("quick_strategy") or "").strip()
+        stored_strategy_version = candidate.snapshot.get("strategy_version_id")
+        rebuilt_strategy_version = rebuilt.get("strategy_version_id")
+        stored_definition_hash = candidate.snapshot.get("strategy_definition_hash")
+        rebuilt_definition_hash = rebuilt.get("strategy_definition_hash")
 
         mismatches: list[str] = []
         if rebuilt_strategy != stored_strategy:
@@ -233,6 +243,14 @@ class HistoricalExecutionEngine:
             mismatches.append(f"action {rebuilt_action!r}!={stored_action!r}")
         if rebuilt_state != stored_state:
             mismatches.append(f"state {rebuilt_state!r}!={stored_state!r}")
+        if rebuilt_strategy_version != stored_strategy_version:
+            mismatches.append(
+                f"strategy_version {rebuilt_strategy_version!r}!={stored_strategy_version!r}"
+            )
+        if rebuilt_definition_hash != stored_definition_hash:
+            mismatches.append(
+                f"strategy_definition {rebuilt_definition_hash!r}!={stored_definition_hash!r}"
+            )
 
         if mismatches:
             raise ExecutionEngineError(
@@ -320,6 +338,16 @@ class HistoricalExecutionEngine:
                 "candidate가 Execution Validation source와 다릅니다.",
             )
 
+        try:
+            selection_policy_pin = SelectionPolicyPin.from_dict(
+                run.selection_policy_pin
+            )
+        except SelectionPolicyError as exc:
+            raise ExecutionEngineError(
+                "VAL2_SELECTION_POLICY_PIN_INVALID",
+                exc.message,
+            ) from exc
+
         current_policy_token = str(self.policy_token_provider())
         if current_policy_token != run.production_exit_policy_token:
             raise ExecutionEngineError(
@@ -378,6 +406,7 @@ class HistoricalExecutionEngine:
             index_rows,
             signal_index,
             config,
+            selection_policy_pin,
         )
 
         entry_index = signal_index + 1
