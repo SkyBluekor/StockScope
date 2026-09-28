@@ -100,6 +100,7 @@ class FakeScanner:
         stock_rows,
         index_rows,
         sector_input=None,
+        selection_policy_pin=None,
     ):
         return {"quick_strategy": "pullback"}
 
