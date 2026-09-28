@@ -1,5 +1,6 @@
 import pytest
 
+from app.api.analysis_temporal_boundary import PointInTimeEventRiskAnalyzer
 from app.market.event_risk import EventRiskAnalyzer
 
 
@@ -185,10 +186,10 @@ async def test_explicit_historical_as_of_bounds_disclosures_and_skips_current_en
             return {"business_year": 2025, "revenue": 1}
 
     dart = HistoricalDart()
-    result = await EventRiskAnalyzer(dart).analyze(
-        "005930",
-        as_of="2025-01-15",
-    )
+    result = await PointInTimeEventRiskAnalyzer(
+        dart,
+        "2025-01-15",
+    ).analyze("005930")
 
     assert dart.range[1] == "20250115"
     assert dart.detail_calls == 0
