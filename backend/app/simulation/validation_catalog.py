@@ -17,7 +17,7 @@ from app.horizon import HorizonContext
 from app.horizon_context import set_validation_horizon
 
 
-PRODUCTION_SCANNER_VERSION = "0.21.3.7"
+PRODUCTION_SCANNER_VERSION = "0.21.3.8"
 
 
 class ValidationCatalogError(RuntimeError):
