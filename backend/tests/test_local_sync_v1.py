@@ -324,6 +324,93 @@ def test_dorm_pc_case_p5_missing_p6_current_is_repaired_without_rewriting_p6(
     assert operating == 10
 
 
+
+def test_p1s2_skips_uninitialized_optional_simulation_domain(tmp_path: Path):
+    holdings = tmp_path / "holdings.db"
+    simulation = tmp_path / "simulation.db"
+
+    with sqlite3.connect(holdings) as conn:
+        conn.execute("CREATE TABLE stock_analysis_revision(id TEXT PRIMARY KEY)")
+        conn.execute("CREATE TABLE holding_management_plan(id TEXT PRIMARY KEY)")
+
+    with sqlite3.connect(simulation) as conn:
+        conn.execute("CREATE TABLE historical_validation_run(id TEXT PRIMARY KEY)")
+
+    paths = sync_local.RuntimePaths(
+        holdings=holdings,
+        market=tmp_path / "unused-market.db",
+        simulation=simulation,
+    )
+
+    before = sync_local._detect_p1s2(paths)
+    assert before.state is sync_local.MigrationState.MISSING
+    assert "historical_execution_run" in before.detail
+
+    result = sync_local._run_p1s2(paths)
+
+    assert result["holdings"]["schema_version"] == sync_local.p1s2.HORIZON_SCHEMA_VERSION
+    assert result["simulation"]["status"] == "SKIPPED_NOT_APPLICABLE"
+    assert sync_local._detect_p1s2(paths).state is sync_local.MigrationState.CURRENT
+
+    with sqlite3.connect(simulation) as conn:
+        tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+    assert sync_local.p1s2.HORIZON_META_TABLE not in tables
+    assert sync_local.p1s2.VALIDATION_HORIZON_TABLE not in tables
+    assert sync_local.p1s2.EXECUTION_HORIZON_TABLE not in tables
+
+
+def test_p1s1_skips_uninitialized_optional_validation_domain(tmp_path: Path):
+    market = tmp_path / "market.db"
+    holdings = tmp_path / "holdings.db"
+    simulation = tmp_path / "simulation.db"
+
+    with sqlite3.connect(market) as conn:
+        conn.execute("CREATE TABLE stock_daily(market TEXT, stock_code TEXT, bas_dd TEXT, row_json TEXT)")
+        conn.execute("CREATE TABLE main_index_daily(market TEXT, bas_dd TEXT, row_json TEXT)")
+        conn.execute("CREATE TABLE day_status(market TEXT, bas_dd TEXT, kind TEXT, status TEXT)")
+
+    with sqlite3.connect(holdings) as conn:
+        conn.execute("CREATE TABLE monitored_stock(id TEXT PRIMARY KEY)")
+        conn.execute("CREATE TABLE stock_analysis_day(id TEXT PRIMARY KEY, current_revision_id TEXT)")
+        conn.execute(
+            "CREATE TABLE stock_analysis_revision("
+            "id TEXT PRIMARY KEY, analysis_day_id TEXT, "
+            "FOREIGN KEY(analysis_day_id) REFERENCES stock_analysis_day(id))"
+        )
+
+    with sqlite3.connect(simulation) as conn:
+        conn.execute("CREATE TABLE prospective_schema_meta(key TEXT PRIMARY KEY, value TEXT)")
+
+    paths = sync_local.RuntimePaths(
+        holdings=holdings,
+        market=market,
+        simulation=simulation,
+    )
+
+    before = sync_local._detect_p1s1(paths)
+    assert before.state is sync_local.MigrationState.MISSING
+
+    result = sync_local._run_p1s1(paths)
+
+    assert result["market"]["schema_version"] == sync_local.p1s1.INPUT_IDENTITY_SCHEMA_VERSION
+    assert result["holdings"]["proof_version"] == sync_local.p1s1.ANALYSIS_PROOF_VERSION
+    assert result["simulation"]["status"] == "SKIPPED_NOT_APPLICABLE"
+    assert sync_local._detect_p1s1(paths).state is sync_local.MigrationState.CURRENT
+
+    with sqlite3.connect(simulation) as conn:
+        tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+    assert sync_local.p1s1.VALIDATION_PROOF_TABLE not in tables
+
 def test_launcher_contracts_are_safe_and_one_click():
     root = Path(__file__).resolve().parents[2]
     ps = (root / "sync_local.ps1").read_text(encoding="utf-8")
