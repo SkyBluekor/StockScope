@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -182,3 +184,97 @@ def copy_strategy_selection_runtime(
             "Strategy Selection runtime 백업 파일 집합이 원본과 다릅니다."
         )
     return copied
+
+
+
+def clear_strategy_selection_state(runtime_dir: Path) -> None:
+    runtime_dir = Path(runtime_dir)
+    active = runtime_dir / "active.json"
+    if active.exists():
+        active.unlink()
+
+    policies = runtime_dir / "policies"
+    if policies.is_dir():
+        for path in policies.glob("*.json"):
+            if path.is_file():
+                path.unlink()
+        try:
+            policies.rmdir()
+        except OSError:
+            pass
+
+
+def replace_strategy_selection_state(
+    source: Path | None,
+    target: Path,
+    *,
+    simulation_db: Path | None = None,
+) -> dict[str, Any]:
+    target = Path(target)
+    source_state: dict[str, Any] | None = None
+    if source is not None:
+        source = Path(source)
+        source_state = validate_strategy_selection_runtime(
+            source,
+            simulation_db=simulation_db,
+        )
+        if not source_state["runtime_present"]:
+            source = None
+
+    clear_strategy_selection_state(target)
+    if source is None:
+        return validate_strategy_selection_runtime(
+            target,
+            simulation_db=simulation_db,
+        )
+
+    target.mkdir(parents=True, exist_ok=True)
+    source_policies = source / "policies"
+    if source_policies.is_dir():
+        target_policies = target / "policies"
+        target_policies.mkdir(parents=True, exist_ok=True)
+        for source_path in sorted(source_policies.glob("*.json")):
+            if not source_path.is_file():
+                continue
+            target_path = target_policies / source_path.name
+            temp = target_path.with_name(
+                f".{target_path.name}.restore.{uuid.uuid4().hex}.tmp"
+            )
+            try:
+                shutil.copy2(source_path, temp)
+                os.replace(temp, target_path)
+            finally:
+                if temp.exists():
+                    temp.unlink()
+
+    source_active = source / "active.json"
+    if source_active.is_file():
+        target_active = target / "active.json"
+        temp = target_active.with_name(
+            f".{target_active.name}.restore.{uuid.uuid4().hex}.tmp"
+        )
+        try:
+            shutil.copy2(source_active, temp)
+            os.replace(temp, target_active)
+        finally:
+            if temp.exists():
+                temp.unlink()
+
+    restored = validate_strategy_selection_runtime(
+        target,
+        simulation_db=simulation_db,
+    )
+    if source_state is not None:
+        for key in (
+            "runtime_present",
+            "active_reference_present",
+            "policy_snapshot_count",
+            "resolved_policy_source",
+            "resolved_policy_id",
+        ):
+            if restored[key] != source_state[key]:
+                raise DataToolError(
+                    "Strategy Selection runtime 복원 결과가 백업 상태와 다릅니다: "
+                    + key
+                )
+    return restored
