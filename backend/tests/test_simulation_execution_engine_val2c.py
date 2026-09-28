@@ -14,6 +14,10 @@ from app.simulation.execution_engine import (
 )
 from app.simulation.validation_catalog import HistoricalValidationCatalog
 from app.strategy.production_selection_policy import SelectionPolicyPin
+from app.simulation.selection_policy_pin import (
+    deserialize_selection_policy_pin,
+    serialize_selection_policy_pin,
+)
 
 
 TEST_PIN = SelectionPolicyPin(
@@ -138,7 +142,7 @@ def _source(db: Path, *, action="ENTRY_CANDIDATE", state="READY"):
         resolved_start_date="2026-01-02",
         resolved_end_date="2026-01-02",
         trading_day_count=1,
-        selection_policy_pin=TEST_PIN.to_dict(),
+        selection_policy_pin=serialize_selection_policy_pin(TEST_PIN),
     )
     source.save_completed_day(
         validation_id=draft.id,
