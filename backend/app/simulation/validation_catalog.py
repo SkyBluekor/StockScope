@@ -15,6 +15,10 @@ from app.input_identity import (
 )
 from app.horizon import HorizonContext
 from app.horizon_context import set_validation_horizon
+from app.strategy.production_selection_policy import (
+    ProductionStrategySelectionRegistry,
+    SelectionPolicyPin,
+)
 
 
 PRODUCTION_SCANNER_VERSION = "0.21.3.8"
@@ -50,6 +54,7 @@ class HistoricalValidationDraft:
     market_scope: str
     scanner_version: str
     scanner_baseline: str | None
+    selection_policy: dict[str, Any] | None
     requested_period_type: str
     requested_start_month: str
     requested_end_month: str
@@ -76,6 +81,7 @@ class HistoricalValidationDraft:
             "market_scope": self.market_scope,
             "scanner_version": self.scanner_version,
             "scanner_baseline": self.scanner_baseline,
+            "selection_policy": self.selection_policy,
             "requested_period_type": self.requested_period_type,
             "requested_start_month": self.requested_start_month,
             "requested_end_month": self.requested_end_month,
@@ -163,6 +169,7 @@ class HistoricalValidationCatalog:
                     market_scope TEXT NOT NULL,
                     scanner_version TEXT NOT NULL,
                     scanner_baseline TEXT,
+                    selection_policy_json TEXT,
                     requested_period_type TEXT NOT NULL,
                     requested_start_month TEXT NOT NULL,
                     requested_end_month TEXT NOT NULL,
@@ -187,6 +194,7 @@ class HistoricalValidationCatalog:
                 conn,
                 "historical_validation_run",
                 {
+                    "selection_policy_json": "TEXT",
                     "started_at": "TEXT",
                     "completed_at": "TEXT",
                     "processed_day_count": "INTEGER NOT NULL DEFAULT 0",
@@ -298,7 +306,9 @@ class HistoricalValidationCatalog:
         return HistoricalValidationDraft(
             id=row["id"], name=row["name"], validation_target=row["validation_target"],
             market_scope=row["market_scope"], scanner_version=row["scanner_version"],
-            scanner_baseline=row["scanner_baseline"], requested_period_type=row["requested_period_type"],
+            scanner_baseline=row["scanner_baseline"],
+            selection_policy=_json_value(row["selection_policy_json"]),
+            requested_period_type=row["requested_period_type"],
             requested_start_month=row["requested_start_month"], requested_end_month=row["requested_end_month"],
             resolved_start_date=row["resolved_start_date"], resolved_end_date=row["resolved_end_date"],
             trading_day_count=int(row["trading_day_count"]), status=row["status"],
@@ -364,6 +374,7 @@ class HistoricalValidationCatalog:
         trading_day_count: int,
         scanner_baseline: str | None = None,
         horizon_context: HorizonContext | None = None,
+        selection_policy_pin: SelectionPolicyPin | None = None,
     ) -> HistoricalValidationDraft:
         clean_name = name.strip()
         if not clean_name:
@@ -371,10 +382,16 @@ class HistoricalValidationCatalog:
         if len(clean_name) > 120:
             raise ValidationCatalogError("SIM_VALIDATION_NAME_TOO_LONG", "검증 이름은 120자 이내로 입력해주세요.")
         now = datetime.now(timezone.utc).isoformat()
+        pinned_policy = (
+            selection_policy_pin
+            or ProductionStrategySelectionRegistry().pin_active_selection_policy()
+        )
+        selection_policy = pinned_policy.persisted_snapshot()
         draft = HistoricalValidationDraft(
             id=str(uuid4()), name=clean_name, validation_target="PRODUCTION_SCANNER",
             market_scope=market_scope, scanner_version=PRODUCTION_SCANNER_VERSION,
-            scanner_baseline=scanner_baseline, requested_period_type=requested_period_type,
+            scanner_baseline=scanner_baseline, selection_policy=selection_policy,
+            requested_period_type=requested_period_type,
             requested_start_month=requested_start_month, requested_end_month=requested_end_month,
             resolved_start_date=resolved_start_date, resolved_end_date=resolved_end_date,
             trading_day_count=int(trading_day_count), status="DRAFT", created_at=now, updated_at=now,
@@ -383,12 +400,13 @@ class HistoricalValidationCatalog:
             conn.execute(
                 """INSERT INTO historical_validation_run(
                     id,name,validation_target,market_scope,scanner_version,scanner_baseline,
-                    requested_period_type,requested_start_month,requested_end_month,
+                    selection_policy_json,requested_period_type,requested_start_month,requested_end_month,
                     resolved_start_date,resolved_end_date,trading_day_count,status,created_at,updated_at
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     draft.id, draft.name, draft.validation_target, draft.market_scope,
-                    draft.scanner_version, draft.scanner_baseline, draft.requested_period_type,
+                    draft.scanner_version, draft.scanner_baseline, _json_text(draft.selection_policy),
+                    draft.requested_period_type,
                     draft.requested_start_month, draft.requested_end_month, draft.resolved_start_date,
                     draft.resolved_end_date, draft.trading_day_count, draft.status, draft.created_at, draft.updated_at,
                 ),
