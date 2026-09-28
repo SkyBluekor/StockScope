@@ -53,3 +53,35 @@ __all__ += [
     "EVENT_EVIDENCE_HASH_CONTRACT_VERSION",
     "EventEvidenceStore",
 ]
+
+from app.event_evidence.entity import (
+    ENTITY_IDENTITY_CONTRACT_VERSION,
+    EVENT_RELEVANCE_CONTRACT_VERSION,
+    EntityType,
+    EventEntityRef,
+    EventEntityRelevance,
+    EventEntityService,
+    RelevanceEvidenceKind,
+    RelevanceRelation,
+    RelevanceState,
+)
+from app.event_evidence.resolution import (
+    EVENT_RESOLUTION_CONTRACT_VERSION,
+    DuplicateClassification,
+    EventResolutionService,
+)
+
+__all__ += [
+    "ENTITY_IDENTITY_CONTRACT_VERSION",
+    "EVENT_RELEVANCE_CONTRACT_VERSION",
+    "EntityType",
+    "EventEntityRef",
+    "EventEntityRelevance",
+    "EventEntityService",
+    "RelevanceEvidenceKind",
+    "RelevanceRelation",
+    "RelevanceState",
+    "EVENT_RESOLUTION_CONTRACT_VERSION",
+    "DuplicateClassification",
+    "EventResolutionService",
+]

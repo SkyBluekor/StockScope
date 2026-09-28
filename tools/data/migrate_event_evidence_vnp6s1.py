@@ -11,10 +11,15 @@ for candidate in (ROOT, BACKEND):
     if str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
+from app.event_evidence.entity import (
+    ENTITY_IDENTITY_CONTRACT_VERSION,
+    EVENT_RELEVANCE_CONTRACT_VERSION,
+)
 from app.event_evidence.models import (
     REVISION_IDENTITY_CONTRACT_VERSION,
     SOURCE_REF_CONTRACT_VERSION,
 )
+from app.event_evidence.resolution import EVENT_RESOLUTION_CONTRACT_VERSION
 from app.event_evidence.policy import SOURCE_POLICY_CONTRACT_VERSION
 from app.event_evidence.store import (
     EVENT_EVIDENCE_HASH_CONTRACT_VERSION,
@@ -51,6 +56,28 @@ TABLE_COLUMNS: dict[str, set[str]] = {
     },
     "event_evidence_record_source": {
         "event_id","event_version","sequence","source_ref_id","source_ref_hash",
+    },
+    "event_evidence_entity": {
+        "entity_id","entity_contract_version","entity_type","entity_key",
+        "market","ticker","name","identity_source","identity_as_of",
+        "identity_json","identity_hash","created_at",
+    },
+    "event_evidence_entity_relevance": {
+        "relevance_id","relevance_contract_version","event_id","event_version",
+        "event_hash","entity_id","entity_hash","relation_type",
+        "relevance_state","evidence_kind","evidence_ref","evidence_as_of",
+        "relation_json","relation_hash","created_at",
+    },
+    "event_evidence_canonical_group": {
+        "canonical_event_id","canonical_version","resolution_contract_version",
+        "representative_event_id","representative_event_version",
+        "resolution_method","resolution_confidence","canonical_fingerprint",
+        "canonical_hash","created_at",
+    },
+    "event_evidence_resolution": {
+        "resolution_id","resolution_contract_version","event_id","event_version",
+        "canonical_event_id","canonical_version","resolution_type",
+        "resolution_basis_json","resolution_hash","created_at",
     },
 }
 
@@ -114,6 +141,9 @@ def _ensure_meta(conn: sqlite3.Connection) -> None:
         "revision_identity_contract_version": REVISION_IDENTITY_CONTRACT_VERSION,
         "event_record_version": EVENT_EVIDENCE_RECORD_VERSION,
         "hash_contract_version": EVENT_EVIDENCE_HASH_CONTRACT_VERSION,
+        "entity_contract_version": ENTITY_IDENTITY_CONTRACT_VERSION,
+        "relevance_contract_version": EVENT_RELEVANCE_CONTRACT_VERSION,
+        "resolution_contract_version": EVENT_RESOLUTION_CONTRACT_VERSION,
     }
     for key, value in expected.items():
         row = conn.execute(
@@ -240,6 +270,121 @@ def _create_tables(conn: sqlite3.Connection) -> None:
 
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS event_evidence_entity(
+            entity_id TEXT PRIMARY KEY,
+            entity_contract_version TEXT NOT NULL,
+            entity_type TEXT NOT NULL CHECK(
+                entity_type IN (
+                    'LISTED_COMPANY','INDUSTRY','POLICY','MACRO',
+                    'COUNTRY','COMMODITY','OTHER'
+                )
+            ),
+            entity_key TEXT NOT NULL,
+            market TEXT,
+            ticker TEXT,
+            name TEXT NOT NULL,
+            identity_source TEXT NOT NULL,
+            identity_as_of TEXT NOT NULL,
+            identity_json TEXT NOT NULL,
+            identity_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(entity_type,entity_key)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS event_evidence_entity_relevance(
+            relevance_id TEXT PRIMARY KEY,
+            relevance_contract_version TEXT NOT NULL,
+            event_id TEXT NOT NULL,
+            event_version INTEGER NOT NULL,
+            event_hash TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            entity_hash TEXT NOT NULL,
+            relation_type TEXT NOT NULL CHECK(
+                relation_type IN (
+                    'DIRECT_COMPANY','SUBSIDIARY','CUSTOMER','SUPPLIER',
+                    'COMPETITOR','INDUSTRY','POLICY_EXPOSURE','MACRO_EXPOSURE'
+                )
+            ),
+            relevance_state TEXT NOT NULL CHECK(
+                relevance_state IN (
+                    'CONFIRMED','SUPPORTED','WEAK','UNKNOWN','REJECTED'
+                )
+            ),
+            evidence_kind TEXT NOT NULL CHECK(
+                evidence_kind IN (
+                    'SOURCE_DIRECT','CORP_CODE_MAPPING','STRUCTURED_RELATION',
+                    'MANUAL_REVIEW','TITLE_HINT'
+                )
+            ),
+            evidence_ref TEXT NOT NULL,
+            evidence_as_of TEXT NOT NULL,
+            relation_json TEXT NOT NULL,
+            relation_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(event_id,event_version,entity_id,relation_type),
+            FOREIGN KEY(event_id,event_version)
+                REFERENCES event_evidence_record(event_id,event_version)
+                ON DELETE RESTRICT,
+            FOREIGN KEY(entity_id)
+                REFERENCES event_evidence_entity(entity_id)
+                ON DELETE RESTRICT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS event_evidence_canonical_group(
+            canonical_event_id TEXT NOT NULL,
+            canonical_version INTEGER NOT NULL CHECK(canonical_version >= 1),
+            resolution_contract_version TEXT NOT NULL,
+            representative_event_id TEXT NOT NULL,
+            representative_event_version INTEGER NOT NULL,
+            resolution_method TEXT NOT NULL,
+            resolution_confidence TEXT NOT NULL,
+            canonical_fingerprint TEXT NOT NULL,
+            canonical_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY(canonical_event_id,canonical_version),
+            FOREIGN KEY(representative_event_id,representative_event_version)
+                REFERENCES event_evidence_record(event_id,event_version)
+                ON DELETE RESTRICT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS event_evidence_resolution(
+            resolution_id TEXT PRIMARY KEY,
+            resolution_contract_version TEXT NOT NULL,
+            event_id TEXT NOT NULL,
+            event_version INTEGER NOT NULL,
+            canonical_event_id TEXT NOT NULL,
+            canonical_version INTEGER NOT NULL,
+            resolution_type TEXT NOT NULL CHECK(
+                resolution_type IN ('CANONICAL','EXACT_DUPLICATE')
+            ),
+            resolution_basis_json TEXT NOT NULL,
+            resolution_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(event_id,event_version),
+            UNIQUE(canonical_event_id,canonical_version,event_id),
+            FOREIGN KEY(event_id,event_version)
+                REFERENCES event_evidence_record(event_id,event_version)
+                ON DELETE RESTRICT,
+            FOREIGN KEY(canonical_event_id,canonical_version)
+                REFERENCES event_evidence_canonical_group(
+                    canonical_event_id,canonical_version
+                )
+                ON DELETE RESTRICT
+        )
+        """
+    )
+
+    conn.execute(
+        """
         CREATE INDEX IF NOT EXISTS idx_event_evidence_source_kind_available
         ON event_evidence_source_ref(source_kind,available_at)
         """
@@ -256,6 +401,24 @@ def _create_tables(conn: sqlite3.Connection) -> None:
         ON event_evidence_record_source(source_ref_id,event_id,event_version)
         """
     )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_event_entity_key
+        ON event_evidence_entity(entity_type,entity_key)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_event_relevance_event
+        ON event_evidence_entity_relevance(event_id,event_version,relevance_state)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_event_resolution_group
+        ON event_evidence_resolution(canonical_event_id,canonical_version)
+        """
+    )
 
     for name, table in (
         ("trg_event_policy_immutable_update", "event_evidence_policy_snapshot"),
@@ -266,6 +429,14 @@ def _create_tables(conn: sqlite3.Connection) -> None:
         ("trg_event_record_immutable_delete", "event_evidence_record"),
         ("trg_event_record_source_immutable_update", "event_evidence_record_source"),
         ("trg_event_record_source_immutable_delete", "event_evidence_record_source"),
+        ("trg_event_entity_immutable_update", "event_evidence_entity"),
+        ("trg_event_entity_immutable_delete", "event_evidence_entity"),
+        ("trg_event_relevance_immutable_update", "event_evidence_entity_relevance"),
+        ("trg_event_relevance_immutable_delete", "event_evidence_entity_relevance"),
+        ("trg_event_canonical_immutable_update", "event_evidence_canonical_group"),
+        ("trg_event_canonical_immutable_delete", "event_evidence_canonical_group"),
+        ("trg_event_resolution_immutable_update", "event_evidence_resolution"),
+        ("trg_event_resolution_immutable_delete", "event_evidence_resolution"),
     ):
         operation = "UPDATE" if name.endswith("update") else "DELETE"
         conn.execute(
@@ -315,6 +486,26 @@ def migrate_event_evidence_store(path: Path) -> dict[str, object]:
             "event_evidence_count": int(
                 conn.execute(
                     "SELECT COUNT(*) FROM event_evidence_record"
+                ).fetchone()[0]
+            ),
+            "entity_count": int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM event_evidence_entity"
+                ).fetchone()[0]
+            ),
+            "relevance_count": int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM event_evidence_entity_relevance"
+                ).fetchone()[0]
+            ),
+            "canonical_group_count": int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM event_evidence_canonical_group"
+                ).fetchone()[0]
+            ),
+            "resolution_count": int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM event_evidence_resolution"
                 ).fetchone()[0]
             ),
         }
