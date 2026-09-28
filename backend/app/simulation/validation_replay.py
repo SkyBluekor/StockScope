@@ -11,10 +11,13 @@ from app.market.providers.krx import KrxProvider
 from app.strategy.production_selection_policy import (
     ProductionStrategySelectionRegistry,
     SelectionPolicyError,
-    SelectionPolicyPin,
 )
 
 from .input_identity import build_replay_market_manifest
+from .selection_policy_pin import (
+    deserialize_selection_policy_pin,
+    serialize_selection_policy_pin,
+)
 from .validation_catalog import (
     HistoricalValidationCatalog,
     HistoricalValidationDraft,
@@ -348,10 +351,10 @@ class HistoricalValidationReplayService:
                 pinned = self.selection_registry.pin_active_selection_policy()
                 draft = self.catalog.ensure_selection_policy_pin(
                     validation_id,
-                    pinned.to_dict(),
+                    serialize_selection_policy_pin(pinned),
                 )
             try:
-                selection_policy_pin = SelectionPolicyPin.from_dict(
+                selection_policy_pin = deserialize_selection_policy_pin(
                     draft.selection_policy_pin
                 )
             except SelectionPolicyError as exc:
