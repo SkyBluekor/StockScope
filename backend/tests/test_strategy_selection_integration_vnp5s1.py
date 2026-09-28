@@ -373,3 +373,66 @@ def test_committed_scanner_02138_baseline_matches_current_production():
     assert result.changed_files == ()
     assert result.missing_files == ()
     assert result.extra_relevant_files == ()
+
+
+
+def test_historical_evidence_cache_isolated_by_strategy_version(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        StockScannerService,
+        "CACHE_ROOT",
+        tmp_path / "scanner-cache",
+    )
+    day = __import__("datetime").date(2026, 9, 28)
+
+    v1 = StockScannerService._evidence_cache_path(
+        market="KOSPI",
+        code="005930",
+        strategy="breakout",
+        data_end=day,
+        strategy_version_id="breakout-v1",
+        definition_hash="1" * 64,
+    )
+    v2 = StockScannerService._evidence_cache_path(
+        market="KOSPI",
+        code="005930",
+        strategy="breakout",
+        data_end=day,
+        strategy_version_id="breakout-v2",
+        definition_hash="2" * 64,
+    )
+
+    assert v1 != v2
+
+
+class _NeverResolveRegistry:
+    def __init__(self):
+        self.calls = 0
+
+    def pin_active_selection_policy(self):
+        self.calls += 1
+        raise AssertionError("supplied run pin must be reused")
+
+
+class _NoopKrx:
+    def _today_kst(self):
+        return __import__("datetime").date(2026, 9, 29)
+
+
+@pytest.mark.asyncio
+async def test_scanner_supplied_run_pin_is_not_reresolved():
+    registry = _NeverResolveRegistry()
+    scanner = StockScannerService(
+        _NoopKrx(),
+        selection_registry=registry,
+    )
+
+    with pytest.raises(ValueError):
+        await scanner.run(
+            market_scope="INVALID",
+            selection_policy_pin=_pin(),
+        )
+
+    assert registry.calls == 0
