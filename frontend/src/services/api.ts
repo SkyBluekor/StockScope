@@ -372,6 +372,48 @@ export type StockNewsResponse = {
   discarded_items: number;
 };
 
+export type StockEventEvidenceItem = {
+  event_type: string;
+  relation_type: string;
+  relevance_state: string;
+  quality_state: "USABLE" | "LIMITED";
+  source_kinds: string[];
+  available_at: string;
+  evidence_as_of: string;
+  revision_state: string;
+  assessment_as_of: string;
+};
+
+export type StockEventEvidenceResponse = {
+  contract_version: string;
+  code: string;
+  market: "KOSPI" | "KOSDAQ";
+  recent_news: {
+    mode: "DISPLAY_ONLY";
+    decision_input: false;
+  };
+  event_evidence: {
+    status:
+      | "NO_VALIDATED_EVIDENCE"
+      | "REFERENCE_AVAILABLE"
+      | "REFERENCE_LIMITED"
+      | "EVIDENCE_BLOCKED";
+    reference_count: number;
+    latest_as_of: string | null;
+    items: StockEventEvidenceItem[];
+  };
+  value_validation: {
+    status: "NOT_EVALUATED" | "HOLD" | "PASS" | "FAIL" | "BLOCKED";
+    product_scope: "RESEARCH_ONLY" | "REFERENCE_CONTEXT";
+  };
+  prediction: {
+    status: "NOT_VALIDATED";
+    direction: null;
+    horizon_sessions: null;
+    probability: null;
+  };
+};
+
 export class ApiError extends Error {
   status: number;
   code: string | null;
@@ -532,6 +574,21 @@ export async function fetchStockNews(
   return asJson<StockNewsResponse>(
     await fetch(
       `/api/stocks/${encodeURIComponent(code.trim().toUpperCase())}/news?${query.toString()}`,
+      { signal: options.signal },
+    ),
+  );
+}
+
+
+export async function fetchStockEventEvidence(
+  code: string,
+  market: "KOSPI" | "KOSDAQ",
+  options: { signal?: AbortSignal } = {},
+): Promise<StockEventEvidenceResponse> {
+  const query = new URLSearchParams({ market });
+  return asJson<StockEventEvidenceResponse>(
+    await fetch(
+      `/api/stocks/${encodeURIComponent(code.trim().toUpperCase())}/event-evidence?${query.toString()}`,
       { signal: options.signal },
     ),
   );

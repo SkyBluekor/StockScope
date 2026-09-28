@@ -4,6 +4,7 @@ from app.api.backtest import router as backtest_router
 from app.api.data_contract import router as data_contract_router
 from app.api.data_sources import router as data_sources_router
 from app.api.feedback import router as feedback_router
+from app.api.event_evidence import router as event_evidence_router
 from app.api.prospective import router as prospective_router
 from app.api.health import router as health_router
 from app.api.market_session import router as market_session_router
@@ -20,6 +21,7 @@ api_router = APIRouter()
 api_router.include_router(health_router)
 api_router.include_router(market_session_router)
 api_router.include_router(news_router)
+api_router.include_router(event_evidence_router)
 api_router.include_router(quotes_router)
 api_router.include_router(watch_router)
 api_router.include_router(data_contract_router)

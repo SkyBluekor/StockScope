@@ -1811,3 +1811,46 @@
     justify-self: start;
   }
 }
+
+
+/* VN-P6-S1-G — read-only event-evidence status inside existing NEWS.1 */
+.stock-news-evidence-state {
+  margin: 10px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: var(--font-meta);
+  line-height: 1.5;
+}
+
+.stock-news-evidence-state.error {
+  color: var(--status-warning);
+}
+
+.stock-news-scope-details > div > strong:not(:first-child) {
+  margin-top: 12px;
+}
+
+.stock-news-evidence-detail-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stock-news-evidence-detail-list li {
+  display: grid;
+  gap: 2px;
+  padding: 7px 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.stock-news-evidence-detail-list b {
+  color: var(--text-secondary);
+  font-size: var(--font-meta);
+}
+
+.stock-news-evidence-detail-list span {
+  color: var(--text-muted);
+  font-size: var(--font-meta);
+  line-height: 1.45;
+}

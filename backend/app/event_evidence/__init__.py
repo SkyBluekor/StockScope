@@ -149,3 +149,13 @@ __all__ += [
     "ValueGateKind",
     "ValueGateProtocolStatus",
 ]
+
+from app.event_evidence.product import (
+    EVENT_EVIDENCE_PRODUCT_CONTRACT_VERSION,
+    EventEvidenceProductQuery,
+)
+
+__all__ += [
+    "EVENT_EVIDENCE_PRODUCT_CONTRACT_VERSION",
+    "EventEvidenceProductQuery",
+]
