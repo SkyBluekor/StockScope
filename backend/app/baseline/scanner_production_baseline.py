@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 BASELINE_SCHEMA_VERSION = "stockscope.sim0.v1"
-EXPECTED_SCANNER_VERSION = "0.21.3.7"
+EXPECTED_SCANNER_VERSION = "0.21.3.8"
 BASELINE_FILENAME = f"scanner-production-baseline_{EXPECTED_SCANNER_VERSION}.json"
 
 # These are the smallest stable production entry points we already know drive the
@@ -48,6 +48,8 @@ POLICY_SPEC: dict[str, Any] = {
     "ranking_tie_break": "STRUCTURAL_TARGET_NEAREST_PROMOTE_ONE_EXACT_BASE_PRIORITY_TIE",
     "overextension_guard": "NOT_PRODUCTION",
     "volume_low_guard": "REJECTED_NOT_PRODUCTION",
+    "strategy_selection_policy": "RUN_PINNED_ACTIVE_WITH_SAFE_FALLBACK",
+    "strategy_selection_scope": "POOL_MEMBERSHIP_ONLY_RISK_NO_TRADE_SCORE_PRIORITY_PRESERVED",
 }
 
 RESEARCH_STATUS: dict[str, Any] = {
