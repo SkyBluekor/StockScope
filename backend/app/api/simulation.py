@@ -212,6 +212,9 @@ def _validation_replay_http_error(code: str, message: str) -> None:
         "VAL_REPLAY_NOT_RUNNING",
         "VAL_REPLAY_INVALID_STATUS",
         "VAL_REPLAY_SCANNER_VERSION_MISMATCH",
+        "VAL_SELECTION_POLICY_MIGRATION_REQUIRED",
+        "VAL_REPLAY_SELECTION_POLICY_PIN_INVALID",
+        "VAL_REPLAY_SELECTION_POLICY_MISMATCH",
     }:
         status = 409
     else:
@@ -251,7 +254,16 @@ async def _run_validation_background(validation_id: str) -> None:
 
 
 def _validation_catalog_error(error: ValidationCatalogError) -> None:
-    status = 409 if error.code == "SIM_VALIDATION_RUNNING" else 422
+    status = (
+        409
+        if error.code in {
+            "SIM_VALIDATION_RUNNING",
+            "VAL_SELECTION_POLICY_MIGRATION_REQUIRED",
+            "VAL_SELECTION_POLICY_PIN_CONFLICT",
+            "VAL_SELECTION_POLICY_LEGACY_UNAVAILABLE",
+        }
+        else 422
+    )
     raise HTTPException(status_code=status, detail={"code": error.code, "message": error.message})
 
 
@@ -600,6 +612,7 @@ def _execution_http_error(code: str, message: str) -> None:
         "VAL2_RUN_INCOMPLETE",
         "VAL2_SELECTION_POLICY_IDENTITY_REQUIRED",
         "VAL2_SELECTION_POLICY_PIN_INVALID",
+        "VAL2_POLICY_IDENTITY_MIGRATION_REQUIRED",
     }:
         status = 409
     else:
