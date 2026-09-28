@@ -28,6 +28,7 @@ from app.simulation.validation_outcome import (
     HistoricalValidationOutcomeService,
 )
 from app.backtest.production_exit_policy import production_policy_cache_token
+from app.strategy.production_selection_policy import ProductionStrategySelectionRegistry
 from app.horizon import (
     HorizonPolicyError,
     horizon_policy_catalog,
@@ -327,6 +328,11 @@ def create_validation_draft(request: ValidationDraftRequest):
             resolved_end_date=resolved["resolved_end_date"],
             trading_day_count=resolved["trading_days"],
             horizon_context=horizon_context,
+            selection_policy_pin=(
+                ProductionStrategySelectionRegistry()
+                .pin_active_selection_policy()
+                .to_dict()
+            ),
         )
         return _validation_payload(draft)
     except ValidationPeriodError as error:
