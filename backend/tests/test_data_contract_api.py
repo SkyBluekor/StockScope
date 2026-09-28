@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from app.backtest.jobs import backtest_jobs
 from app.backtest.production_exit_policy import PRODUCTION_EXIT_POLICY_VERSION
 from app.backtest.scanner import StockScannerService
-from app.holdings.analysis import ANALYSIS_ENGINE_VERSION
+from app.holdings.analysis import ANALYSIS_ENGINE_VERSION, ANALYSIS_FINGERPRINT_VERSION
 from app.main import app
 
 
@@ -192,7 +192,11 @@ def _create_holdings_db(
                     StockScannerService.VERSION,
                     ANALYSIS_ENGINE_VERSION,
                     f"{PRODUCTION_EXIT_POLICY_VERSION}-fixture",
-                    '{"market_store":"market_history.db","price_basis":"CONFIRMED_EOD"}',
+                    (
+                        '{"fingerprint_contract_version":"'
+                        + ANALYSIS_FINGERPRINT_VERSION
+                        + '","market_store":"market_history.db","price_basis":"CONFIRMED_EOD"}'
+                    ),
                     '{"stored":true}',
                     "test",
                     "2026-09-25T07:10:00+00:00",
@@ -896,3 +900,29 @@ def test_data_contract_realtime_intermission_snapshot_is_valid_last_snapshot(
     assert result.session_phase == "INTERMISSION"
     assert result.market_active is False
 
+
+
+def test_data_contract_marks_legacy_analysis_identity_unverified(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = tmp_path / "market.db"
+    holdings_db = tmp_path / "holdings.db"
+    _create_market_db(market_db)
+    _create_holdings_db(holdings_db)
+    with sqlite3.connect(holdings_db) as conn:
+        conn.execute(
+            "UPDATE stock_analysis_revision SET source_versions_json=? WHERE id='rev-1'",
+            ('{"market_store":"market_history.db","price_basis":"CONFIRMED_EOD"}',),
+        )
+    _configure_paths(monkeypatch, market_db, holdings_db)
+
+    response = client.get(
+        "/api/data-contract/stocks/005930",
+        params={"market": "KOSPI"},
+    )
+    assert response.status_code == 200
+    analysis = response.json()["resources"]["analysis_result"]
+    assert analysis["status"] == "UNVERIFIED"
+    assert analysis["current_use_allowed"] is False
+    assert analysis["reason_code"] == "ANALYSIS_IDENTITY_LEGACY"
