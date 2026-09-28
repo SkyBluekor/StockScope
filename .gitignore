@@ -104,6 +104,9 @@ temp/
 /backend/runtime/baseline/*
 !/backend/runtime/baseline/README.md
 !/backend/runtime/baseline/scanner-production-baseline_*.json
+!/backend/runtime/strategy_selection/
+/backend/runtime/strategy_selection/*
+!/backend/runtime/strategy_selection/README.md
 
 
 # ---------------------------------------------------------
