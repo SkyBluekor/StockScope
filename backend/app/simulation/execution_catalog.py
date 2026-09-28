@@ -289,15 +289,16 @@ class HistoricalExecutionCatalog:
                     "error_code": "TEXT",
                     "error_message": "TEXT",
                     "cancel_requested": "INTEGER NOT NULL DEFAULT 0",
-                    "selection_policy_id": "TEXT",
-                    "selection_policy_hash": "TEXT",
-                    "selection_policy_contract_version": "TEXT",
-                    "selection_policy_pin_json": "TEXT",
                 },
             )
 
     @staticmethod
+    def _optional_row_value(row: sqlite3.Row, name: str) -> Any:
+        return row[name] if name in row.keys() else None
+
+    @staticmethod
     def _run_from_row(row: sqlite3.Row) -> HistoricalExecutionRun:
+        optional = HistoricalExecutionCatalog._optional_row_value
         return HistoricalExecutionRun(
             id=row["id"],
             validation_id=row["validation_id"],
@@ -316,10 +317,14 @@ class HistoricalExecutionCatalog:
             censored_count=int(row["censored_count"] or 0),
             created_at=row["created_at"],
             updated_at=row["updated_at"],
-            selection_policy_id=row["selection_policy_id"],
-            selection_policy_hash=row["selection_policy_hash"],
-            selection_policy_contract_version=row["selection_policy_contract_version"],
-            selection_policy_pin=_json_value(row["selection_policy_pin_json"]),
+            selection_policy_id=optional(row, "selection_policy_id"),
+            selection_policy_hash=optional(row, "selection_policy_hash"),
+            selection_policy_contract_version=optional(
+                row, "selection_policy_contract_version"
+            ),
+            selection_policy_pin=_json_value(
+                optional(row, "selection_policy_pin_json")
+            ),
             started_at=row["started_at"],
             completed_at=row["completed_at"],
             error_code=row["error_code"],
@@ -432,6 +437,23 @@ class HistoricalExecutionCatalog:
             )
 
         with self.connect() as conn:
+            columns = {
+                str(row["name"])
+                for row in conn.execute(
+                    "PRAGMA table_info(historical_execution_run)"
+                ).fetchall()
+            }
+            required = {
+                "selection_policy_id",
+                "selection_policy_hash",
+                "selection_policy_contract_version",
+                "selection_policy_pin_json",
+            }
+            if not required.issubset(columns):
+                raise ExecutionCatalogError(
+                    "VAL2_POLICY_IDENTITY_MIGRATION_REQUIRED",
+                    "NEXT-1 Policy Identity migration을 먼저 실행해야 합니다.",
+                )
             existing = conn.execute(
                 """
                 SELECT * FROM historical_execution_run
