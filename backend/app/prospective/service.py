@@ -7,6 +7,7 @@ from typing import Any
 from app.backtest.production_exit_policy import production_policy_cache_token
 from app.horizon import resolve_horizon_context
 from app.simulation.execution_catalog import EXECUTION_POLICY_VERSION
+from app.strategy.production_selection_policy import SelectionPolicyPin
 
 from .catalog import ProspectiveCatalog, ProspectiveCatalogError
 from .evaluation import ProspectiveEvaluationError, ProspectiveEvaluator
@@ -23,7 +24,10 @@ class ProspectiveService:
         self.evaluator = ProspectiveEvaluator(market_store_db)
 
     @staticmethod
-    def capture_request_from_scanner_payload(payload: Any) -> ProspectiveCaptureRequest:
+    def capture_request_from_scanner_payload(
+        payload: Any,
+        selection_policy_pin: SelectionPolicyPin | None = None,
+    ) -> ProspectiveCaptureRequest:
         horizon = resolve_horizon_context(getattr(payload, "horizon_intent", None))
         return ProspectiveCaptureRequest(
             market_scope=str(getattr(payload, "market_scope", "ALL") or "ALL").upper(),
@@ -31,6 +35,16 @@ class ProspectiveService:
             candidate_limit=int(getattr(payload, "candidate_limit", 5) or 5),
             horizon_intent=horizon.intent,
             horizon_policy_version=horizon.policy_version,
+            selection_policy_id=(
+                selection_policy_pin.policy_id
+                if selection_policy_pin is not None
+                else None
+            ),
+            selection_policy_hash=(
+                selection_policy_pin.policy_hash
+                if selection_policy_pin is not None
+                else None
+            ),
         )
 
     def try_begin_scanner_capture(
@@ -38,8 +52,12 @@ class ProspectiveService:
         *,
         source_job_id: str,
         payload: Any,
+        selection_policy_pin: SelectionPolicyPin | None = None,
     ) -> dict[str, Any]:
-        request = self.capture_request_from_scanner_payload(payload)
+        request = self.capture_request_from_scanner_payload(
+            payload,
+            selection_policy_pin,
+        )
         try:
             capture = self.catalog.begin_capture(
                 source_job_id=source_job_id,
@@ -67,8 +85,12 @@ class ProspectiveService:
         source_job_id: str,
         payload: Any,
         result: dict[str, Any],
+        selection_policy_pin: SelectionPolicyPin | None = None,
     ) -> dict[str, Any]:
-        request = self.capture_request_from_scanner_payload(payload)
+        request = self.capture_request_from_scanner_payload(
+            payload,
+            selection_policy_pin,
+        )
         try:
             capture = self.catalog.finalize_capture(
                 source_job_id=source_job_id,
