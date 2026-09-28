@@ -321,6 +321,7 @@ export default function StockNewsPanel({ code, market, companyLabel, variant = "
             <div>
               <strong>최근 뉴스</strong>
               <p>기업명 기반 최근 검색 결과를 표시합니다. 기사 목록 자체는 Strategy·Scanner·Ranking·Risk 계산에 사용하지 않습니다.</p>
+              <p>검증되지 않은 자동 영향 연결과 주가 방향 예측은 현재 이 화면에서는 제공하지 않습니다.</p>
 
               <strong>검증된 이벤트 근거</strong>
               <p>{eventEvidenceDetail(evidence, evidenceLoading, evidenceError)}</p>
