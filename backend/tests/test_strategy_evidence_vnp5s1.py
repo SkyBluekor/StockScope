@@ -462,6 +462,9 @@ def test_feedback_keeps_comparison_groups_separate_and_blocks_stale_source(
         path,
         feedback_service=_FakeFeedbackService(stale),
     )
+    stale_checked = stale_service.get_artifact(artifact["id"])
+    assert stale_checked["current_source_status"] == "SOURCE_CHANGED"
+
     with pytest.raises(StrategyEvidenceError) as exc:
         stale_service.create_from_feedback(
             strategy_version_id=version_id,
@@ -507,3 +510,61 @@ def test_unknown_strategy_version_is_blocked(tmp_path: Path):
             report_id="pros-report-1",
         )
     assert exc.value.code == "STRATEGY_VERSION_NOT_FOUND"
+
+
+
+def test_feedback_cross_group_aggregation_permission_is_rejected(tmp_path: Path):
+    path = _db(tmp_path)
+    version_id = _strategy_version(path, "breakout")
+    report = _feedback_report()
+    report["summary"]["comparison"]["cross_group_aggregation_allowed"] = True
+    service = StrategyEvidenceService(
+        path,
+        feedback_service=_FakeFeedbackService(report),
+    )
+
+    with pytest.raises(StrategyEvidenceError) as exc:
+        service.create_from_feedback(
+            strategy_version_id=version_id,
+            report_id=report["id"],
+        )
+    assert exc.value.code == "FEEDBACK_CROSS_GROUP_AGGREGATION_FORBIDDEN"
+
+
+def test_no_trade_registry_row_cannot_receive_strategy_evidence(tmp_path: Path):
+    path = _db(tmp_path)
+    _seed_prospective_report(path)
+    with sqlite3.connect(path) as conn:
+        conn.execute(
+            """
+            INSERT INTO strategy_registry_version(
+                strategy_version_id,strategy_key,definition_version,
+                definition_hash,fingerprint_contract_version,
+                implementation_key,operational_status,validation_status,
+                source,definition_json,created_at,retired_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                "no-trade-test-version",
+                "no_trade",
+                "TEST_ONLY",
+                "f" * 64,
+                "VN_P5_S1_STRATEGY_FINGERPRINT_V1",
+                "StrategyEngine._no_trade",
+                "CANDIDATE",
+                "UNVERIFIED",
+                "TEST_ONLY",
+                "{}",
+                NOW,
+                None,
+            ),
+        )
+        conn.commit()
+
+    service = StrategyEvidenceService(path)
+    with pytest.raises(StrategyEvidenceError) as exc:
+        service.create_from_prospective(
+            strategy_version_id="no-trade-test-version",
+            report_id="pros-report-1",
+        )
+    assert exc.value.code == "NO_TRADE_NOT_STRATEGY"
