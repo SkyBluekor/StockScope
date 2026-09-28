@@ -366,6 +366,27 @@ class HistoricalValidationReplayService:
                     f"저장된 Scanner {draft.scanner_version}와 현재 Production Scanner {StockScannerService.VERSION}가 다릅니다.",
                 )
             replay_days = self._resolve_replay_days(draft)
+        except ValidationCatalogError as exc:
+            error = HistoricalValidationReplayError(exc.code, exc.message)
+            if preclaimed:
+                self.catalog.mark_replay_failed(
+                    validation_id,
+                    error.code,
+                    error.message,
+                )
+            raise error from exc
+        except SelectionPolicyError as exc:
+            error = HistoricalValidationReplayError(
+                "VAL_REPLAY_SELECTION_POLICY_PIN_INVALID",
+                exc.message,
+            )
+            if preclaimed:
+                self.catalog.mark_replay_failed(
+                    validation_id,
+                    error.code,
+                    error.message,
+                )
+            raise error from exc
         except HistoricalValidationReplayError as exc:
             if preclaimed:
                 self.catalog.mark_replay_failed(validation_id, exc.code, exc.message)
