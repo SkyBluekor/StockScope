@@ -14,6 +14,7 @@ for candidate in (ROOT, BACKEND):
         sys.path.insert(0, str(candidate))
 
 from app.prospective.models import PROSPECTIVE_SCHEMA_VERSION
+from app.simulation.strategy_evidence import STRATEGY_EVALUATION_ARTIFACT_VERSION
 from app.simulation.strategy_governance import (
     STRATEGY_BOOTSTRAP_DEFINITION_VERSION,
     STRATEGY_BOOTSTRAP_SOURCE,
@@ -41,6 +42,7 @@ STRATEGY_GOVERNANCE_TABLES = frozenset(
     {
         "strategy_governance_schema_meta",
         "strategy_registry_version",
+        "strategy_evaluation_artifact",
     }
 )
 
@@ -58,6 +60,24 @@ TABLE_COLUMNS: dict[str, set[str]] = {
         "definition_json",
         "created_at",
         "retired_at",
+    },
+    "strategy_evaluation_artifact": {
+        "id",
+        "strategy_version_id",
+        "strategy_key",
+        "artifact_version",
+        "source_kind",
+        "source_report_id",
+        "source_report_version",
+        "source_parent_id",
+        "source_set_hash",
+        "source_summary_hash",
+        "evidence_state",
+        "evidence_json",
+        "limitations_json",
+        "source_contract_json",
+        "artifact_hash",
+        "created_at",
     },
 }
 
@@ -156,6 +176,7 @@ def _ensure_meta(
         "bootstrap_definition_version": STRATEGY_BOOTSTRAP_DEFINITION_VERSION,
         "bootstrap_source": STRATEGY_BOOTSTRAP_SOURCE,
         "bootstrap_strategy_set_fingerprint": strategy_set_fingerprint,
+        "evaluation_artifact_version": STRATEGY_EVALUATION_ARTIFACT_VERSION,
     }
     for key, expected in values.items():
         row = conn.execute(
@@ -228,6 +249,85 @@ def _create_registry(conn: sqlite3.Connection) -> None:
         CREATE UNIQUE INDEX IF NOT EXISTS ux_strategy_registry_operating_key
         ON strategy_registry_version(strategy_key)
         WHERE operational_status='OPERATING'
+        """
+    )
+
+
+def _create_evidence_artifacts(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS strategy_evaluation_artifact(
+            id TEXT PRIMARY KEY,
+            strategy_version_id TEXT NOT NULL,
+            strategy_key TEXT NOT NULL,
+            artifact_version TEXT NOT NULL,
+            source_kind TEXT NOT NULL CHECK(
+                source_kind IN ('FEEDBACK_REPORT','PROSPECTIVE_REPORT')
+            ),
+            source_report_id TEXT NOT NULL,
+            source_report_version TEXT NOT NULL,
+            source_parent_id TEXT NOT NULL,
+            source_set_hash TEXT NOT NULL,
+            source_summary_hash TEXT NOT NULL,
+            evidence_state TEXT NOT NULL,
+            evidence_json TEXT NOT NULL,
+            limitations_json TEXT NOT NULL,
+            source_contract_json TEXT NOT NULL,
+            artifact_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(
+                strategy_version_id,
+                source_kind,
+                source_report_id,
+                source_set_hash
+            ),
+            FOREIGN KEY(strategy_version_id)
+                REFERENCES strategy_registry_version(strategy_version_id)
+                ON DELETE RESTRICT
+        )
+        """
+    )
+    _require_columns(conn, "strategy_evaluation_artifact")
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_strategy_evidence_strategy_created
+        ON strategy_evaluation_artifact(
+            strategy_version_id,
+            created_at DESC
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_strategy_evidence_source
+        ON strategy_evaluation_artifact(
+            source_kind,
+            source_report_id
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS trg_strategy_evidence_immutable_update
+        BEFORE UPDATE ON strategy_evaluation_artifact
+        BEGIN
+            SELECT RAISE(
+                ABORT,
+                'strategy_evaluation_artifact is immutable'
+            );
+        END
+        """
+    )
+    conn.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS trg_strategy_evidence_immutable_delete
+        BEFORE DELETE ON strategy_evaluation_artifact
+        BEGIN
+            SELECT RAISE(
+                ABORT,
+                'strategy_evaluation_artifact is immutable'
+            );
+        END
         """
     )
 
@@ -324,6 +424,7 @@ def migrate_strategy_governance_store(path: Path) -> dict[str, object]:
             strategy_set_fingerprint=strategy_set_fingerprint,
         )
         _create_registry(conn)
+        _create_evidence_artifacts(conn)
         inserted, verified = _bootstrap_registry(conn)
 
         counts = {
@@ -369,6 +470,12 @@ def migrate_strategy_governance_store(path: Path) -> dict[str, object]:
             "no_trade_registered": False,
             "performance_validation_backfill_performed": False,
             "production_selection_policy_changed": False,
+            "evaluation_artifact_version": STRATEGY_EVALUATION_ARTIFACT_VERSION,
+            "evaluation_artifact_count": int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM strategy_evaluation_artifact"
+                ).fetchone()[0]
+            ),
             "source_state": source_state,
         }
     except Exception:
