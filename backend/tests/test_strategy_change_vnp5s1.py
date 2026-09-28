@@ -21,6 +21,9 @@ from app.simulation.strategy_change import (
     test_only_approval_protocol as make_test_approval_protocol,
 )
 from app.simulation.strategy_evidence import StrategyEvidenceService
+from app.strategy.production_selection_policy import (
+    ProductionStrategySelectionRegistry,
+)
 from tools.data.migrate_prospective_vnp2s2 import migrate_prospective_store
 from tools.data.migrate_strategy_governance_vnp5s1 import (
     migrate_strategy_governance_store,
@@ -637,3 +640,74 @@ def test_test_protocol_is_forbidden_without_explicit_test_mode(
             protocol=protocol,
         )
     assert exc.value.code == "TEST_APPROVAL_PROTOCOL_FORBIDDEN"
+
+
+
+def test_real_approval_artifact_publishes_selection_policy_without_registry_mutation(
+    tmp_path: Path,
+):
+    path = _db(tmp_path)
+    version_id, artifact_id = _artifact(path)
+    protocol = make_test_approval_protocol()
+    service = _service(path, allow_test_protocol=True)
+
+    proposal = _proposal(
+        service,
+        version_id=version_id,
+        artifact_id=artifact_id,
+        protocol=protocol,
+        request_id="selection-policy-integration",
+    )
+    approval = service.approve_proposal(
+        proposal_id=proposal["id"],
+        protocol=protocol,
+        approved_by="TEST_FIXTURE",
+    )
+
+    with sqlite3.connect(path) as conn:
+        before = conn.execute(
+            """
+            SELECT operational_status,validation_status
+            FROM strategy_registry_version
+            WHERE strategy_version_id=?
+            """,
+            (version_id,),
+        ).fetchone()
+
+    registry = ProductionStrategySelectionRegistry(
+        runtime_dir=tmp_path / "strategy-selection-runtime",
+        change_service=service,
+        allow_test_activation=True,
+        clock=lambda: NOW,
+    )
+    activated = registry.activate_approved_policy(
+        approval_artifact_id=approval["id"],
+        expected_active_policy_id=None,
+    )
+
+    policy = activated["active_policy"]
+    assert policy["approval_artifact_id"] == approval["id"]
+    assert policy["approval_hash"] == approval["approval_hash"]
+    assert policy["proposal_id"] == proposal["id"]
+    assert policy["proposal_hash"] == proposal["proposal_hash"]
+    assert policy["selection_semantics"] == {
+        "risk_gate_preserved": True,
+        "no_trade_safety_path_preserved": True,
+        "score_formula_changed": False,
+        "candidate_priority_changed": False,
+    }
+
+    resolution = registry.resolve_active_selection_policy()
+    assert resolution.policy_source == "ACTIVE_SELECTION_POLICY"
+    assert resolution.policy["policy_id"] == policy["policy_id"]
+
+    with sqlite3.connect(path) as conn:
+        after = conn.execute(
+            """
+            SELECT operational_status,validation_status
+            FROM strategy_registry_version
+            WHERE strategy_version_id=?
+            """,
+            (version_id,),
+        ).fetchone()
+    assert after == before
