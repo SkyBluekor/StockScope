@@ -1,6 +1,6 @@
 {
   "schema_version": "stockscope.sim0.v1",
-  "baseline_id": "SS-SCANNER-0.21.3.8-f785f43dcce12dcf",
+  "baseline_id": "SS-SCANNER-0.21.3.8-dd1e7a75ab4aaac9",
   "scanner_version": "0.21.3.8",
   "created_at": "2026-09-28T02:00:00+00:00",
   "production_changed": false,
@@ -77,7 +77,7 @@
     },
     {
       "path": "backend/app/backtest/historical_evidence.py",
-      "sha256": "39ae285587f294ff88d0f294e271ae1000155f0397edcfbad566e757627b09a7"
+      "sha256": "2d7f3006277ab45aa2b4c9b68531689b127e6e442af46f10492d0fe563150308"
     },
     {
       "path": "backend/app/backtest/history_store.py",
@@ -197,7 +197,7 @@
     },
     {
       "path": "backend/app/market/providers/krx.py",
-      "sha256": "aa7c63d66ab71c6b28c0f5d2eb01cbdc0aa6070bd46a6fb4103fbdeb01e196c8"
+      "sha256": "2bd3a6e83ae9efb4f16bbc2af5546e9b391d753d75f6f63c5436f9dd970a95ec"
     },
     {
       "path": "backend/app/market/pullback_confirmation.py",
@@ -233,7 +233,7 @@
     },
     {
       "path": "backend/app/strategy/__init__.py",
-      "sha256": "4da64a1be9049eab75838306d69c465b029d45000519e31742f5ccf8b234ebfa"
+      "sha256": "0f0a170a87b08fca3f818545c073ebc3edc332251828f7eb15dc1298d482d572"
     },
     {
       "path": "backend/app/strategy/analysis_hub.py",
@@ -260,7 +260,7 @@
       "sha256": "0f029a4e4dd8130b3f3c52ab694adf3b544535f2381d55cbb7ec198dcd747f6a"
     }
   ],
-  "production_fingerprint": "6bed3947da7066921e056a2a786ef8bad73a9271fa9ee65ed906c5efefd94bff",
+  "production_fingerprint": "0b580e597a1b656c9b8bbe3e819c76cde18023b8d652f43b5db6f563a4e2c6eb",
   "policies": {
     "scanner_version": "0.21.3.8",
     "ma120": "NO_LOOKAHEAD",
