@@ -8,6 +8,10 @@ import pytest
 from app.simulation.execution_catalog import ExecutionCatalogError, HistoricalExecutionCatalog
 from app.simulation.validation_catalog import HistoricalValidationCatalog, ValidationCatalogError
 from app.strategy.production_selection_policy import SelectionPolicyPin
+from app.simulation.selection_policy_pin import (
+    deserialize_selection_policy_pin,
+    serialize_selection_policy_pin,
+)
 from tools.data.migrate_policy_identity_next1 import (
     META_TABLE,
     PIN_COLUMNS,
@@ -41,13 +45,13 @@ def _draft(catalog: HistoricalValidationCatalog, *, pin: SelectionPolicyPin | No
         resolved_start_date="2026-01-02",
         resolved_end_date="2026-01-02",
         trading_day_count=1,
-        selection_policy_pin=pin.to_dict() if pin else None,
+        selection_policy_pin=serialize_selection_policy_pin(pin) if pin else None,
     )
 
 
 def test_selection_policy_pin_round_trip_preserves_identity():
     original = _pin()
-    restored = SelectionPolicyPin.from_dict(original.to_dict())
+    restored = deserialize_selection_policy_pin(serialize_selection_policy_pin(original))
 
     assert restored == original
     assert restored.strategy_reference("pullback") == {
