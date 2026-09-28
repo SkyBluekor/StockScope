@@ -475,3 +475,108 @@ def test_legacy_policy_contract_excludes_no_trade():
     ]
     assert len(keys) == 10
     assert StrategyName.NO_TRADE.value not in keys
+
+
+
+def test_pin_uses_active_policy_when_baseline_identity_matches(tmp_path: Path):
+    rows = _fake_rows()
+    fake = _FakeChangeService(rows)
+    baseline = {
+        "scanner_baseline_id": "BASELINE-A",
+        "production_fingerprint": "PROD-A",
+        "production_policy_fingerprint": "POLICY-A",
+    }
+    registry = ProductionStrategySelectionRegistry(
+        runtime_dir=tmp_path / "selection",
+        change_service=fake,
+        allow_test_activation=True,
+        clock=lambda: NOW,
+        baseline_identity_provider=lambda: dict(baseline),
+    )
+
+    activated = registry.activate_approved_policy(
+        approval_artifact_id="approval-1",
+        expected_active_policy_id=None,
+    )
+    pin = registry.pin_active_selection_policy()
+
+    assert pin.policy_id == activated["active_policy"]["policy_id"]
+    assert pin.policy_source == "ACTIVE_SELECTION_POLICY"
+    assert pin.fallback_used is False
+    assert "breakout" not in pin.operating_strategy_keys
+    assert pin.strategy_reference("pullback") is not None
+
+
+def test_pin_falls_back_to_rollback_when_active_baseline_mismatches(
+    tmp_path: Path,
+):
+    rows = _fake_rows()
+    approval2, proposal2 = rows["approval-2"]
+    proposal2 = dict(proposal2)
+    proposal2["scanner_baseline_id"] = "BASELINE-B"
+    proposal2["production_fingerprint"] = "PROD-B"
+    proposal2["production_policy_fingerprint"] = "POLICY-B"
+    rows["approval-2"] = (approval2, proposal2)
+
+    fake = _FakeChangeService(rows)
+    baseline = {
+        "scanner_baseline_id": "BASELINE-A",
+        "production_fingerprint": "PROD-A",
+        "production_policy_fingerprint": "POLICY-A",
+    }
+    registry = ProductionStrategySelectionRegistry(
+        runtime_dir=tmp_path / "selection",
+        change_service=fake,
+        allow_test_activation=True,
+        clock=lambda: NOW,
+        baseline_identity_provider=lambda: dict(baseline),
+    )
+    first = registry.activate_approved_policy(
+        approval_artifact_id="approval-1",
+        expected_active_policy_id=None,
+    )
+    first_id = first["active_policy"]["policy_id"]
+    second = registry.activate_approved_policy(
+        approval_artifact_id="approval-2",
+        expected_active_policy_id=first_id,
+    )
+
+    assert second["active_policy"]["scanner_baseline_id"] == "BASELINE-B"
+    pin = registry.pin_active_selection_policy()
+    assert pin.policy_id == first_id
+    assert pin.policy_source == "ROLLBACK_FALLBACK"
+    assert pin.fallback_used is True
+    assert pin.fallback_reason == "ACTIVE_POLICY_BASELINE_MISMATCH"
+
+
+def test_snapshot_rejects_unknown_strategy_key():
+    snapshot = ProductionStrategySelectionRegistry._build_snapshot(  # noqa: SLF001
+        source_kind="TEST",
+        operating_strategies=[
+            {
+                "strategy_version_id": "unknown-v1",
+                "strategy_key": "unknown_strategy",
+                "definition_hash": "x",
+            }
+        ],
+        selection_semantics={
+            "risk_gate_preserved": True,
+            "no_trade_safety_path_preserved": True,
+            "score_formula_changed": False,
+            "candidate_priority_changed": False,
+        },
+        scanner_baseline_id="BASELINE-A",
+        production_fingerprint="PROD-A",
+        production_policy_fingerprint="POLICY-A",
+        proposal_id=None,
+        proposal_hash=None,
+        approval_artifact_id=None,
+        approval_hash=None,
+        created_at=NOW,
+    )
+
+    valid, reason = ProductionStrategySelectionRegistry.validate_snapshot(
+        snapshot
+    )
+    assert valid is False
+    assert reason == "POLICY_STRATEGY_KEY_UNSUPPORTED"
