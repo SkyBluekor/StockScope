@@ -1626,7 +1626,7 @@ class StockScannerService:
         stock_rows: list[dict[str, Any]],
         index_rows: list[dict[str, Any]],
         sector_input: HistoricalSectorInput | None = None,
-        selection_policy_pin: SelectionPolicyPin,
+        selection_policy_pin: SelectionPolicyPin | None = None,
     ) -> dict[str, Any] | None:
         if len(stock_rows) < self.MIN_HISTORY_ROWS:
             return None
@@ -1641,13 +1641,17 @@ class StockScannerService:
             max_holding_days=20,
             round_trip_cost_pct=0.0,
         )
+        run_policy = (
+            selection_policy_pin
+            or self.selection_registry.pin_active_selection_policy()
+        )
         snapshot = self.engine._signal_snapshot(  # noqa: SLF001 - shared live/backtest snapshot by design
             stock_rows=rows,
             index_rows=indices,
             index=len(rows) - 1,
             config=config,
             sector_input=sector_input,
-            allowed_strategies=self._allowed_strategy_names(selection_policy_pin),
+            allowed_strategies=self._allowed_strategy_names(run_policy),
         )
         if snapshot is None:
             return None
@@ -1741,7 +1745,7 @@ class StockScannerService:
         entry_risk_guide["historical_policy"] = self.multi.production_exit.historical_policy_metadata(
             quick_exit_resolution
         )
-        strategy_ref = selection_policy_pin.strategy_reference(
+        strategy_ref = run_policy.strategy_reference(
             best["strategy"]
         )
         return {
