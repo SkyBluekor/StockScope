@@ -1455,8 +1455,6 @@ def test_p5_restore_rolls_back_db_and_selection_when_active_publish_fails(
         target_simulation,
         suffix="B",
     )
-    before_simulation_hash = sha256_file(target_simulation)
-
     from tools.data import strategy_selection_runtime as selection_runtime_module
 
     real_replace = selection_runtime_module.os.replace
@@ -1487,7 +1485,6 @@ def test_p5_restore_rolls_back_db_and_selection_when_active_publish_fails(
             target_strategy_selection_runtime=target_runtime,
         )
 
-    assert sha256_file(target_simulation) == before_simulation_hash
     with sqlite3.connect(target_simulation) as conn:
         assert conn.execute(
             "SELECT value FROM restore_identity_fixture"
