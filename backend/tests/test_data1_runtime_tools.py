@@ -1496,3 +1496,120 @@ def test_p5_restore_rolls_back_db_and_selection_when_active_publish_fails(
     ).resolve_active_selection_policy()
     assert restored.policy_source == "ACTIVE_SELECTION_POLICY"
     assert restored.policy["policy_id"] == target_snapshot["policy_id"]
+
+
+
+def test_p5_rolled_back_selection_roundtrip_preserves_one_way_state(tmp_path):
+    source_holdings = _holdings_db(tmp_path / "source-holdings.db")
+    source_simulation = _p5_simulation_db(tmp_path / "source-simulation.db")
+    source_runtime = tmp_path / "source-strategy-selection"
+
+    registry = ProductionStrategySelectionRegistry(
+        runtime_dir=source_runtime,
+        simulation_db=source_simulation,
+        clock=lambda: "2026-09-28T04:10:00+00:00",
+    )
+    rollback_snapshot = _selection_runtime_with_active_policy(
+        source_runtime,
+        source_simulation,
+        suffix="A",
+    )
+    active_snapshot = registry._build_snapshot(  # noqa: SLF001
+        source_kind="TEST_BACKUP_FIXTURE",
+        operating_strategies=[
+            {
+                "strategy_version_id": f"version-{strategy.value}",
+                "strategy_key": strategy.value,
+                "definition_hash": f"hash-{strategy.value}",
+            }
+            for strategy in StrategyName
+            if strategy not in {StrategyName.NO_TRADE, StrategyName.BREAKOUT}
+        ],
+        selection_semantics={
+            "risk_gate_preserved": True,
+            "no_trade_safety_path_preserved": True,
+            "score_formula_changed": False,
+            "candidate_priority_changed": False,
+        },
+        scanner_baseline_id="BASELINE-B",
+        production_fingerprint="PROD-B",
+        production_policy_fingerprint="POLICY-B",
+        proposal_id="proposal-backup-B",
+        proposal_hash="proposal-hash-B",
+        approval_artifact_id="approval-backup-B",
+        approval_hash="approval-hash-B",
+        created_at="2026-09-28T04:10:01+00:00",
+    )
+    registry._publish_snapshot(active_snapshot)  # noqa: SLF001
+    registry._publish_reference(  # noqa: SLF001
+        {
+            "schema_version": 1,
+            "active_policy_id": active_snapshot["policy_id"],
+            "active_policy_hash": active_snapshot["policy_hash"],
+            "rollback_policy_id": rollback_snapshot["policy_id"],
+            "rollback_policy_hash": rollback_snapshot["policy_hash"],
+            "last_deactivated_policy_id": rollback_snapshot["policy_id"],
+            "activation_source": "TEST_BACKUP_FIXTURE",
+            "approval_artifact_id": "approval-backup-B",
+            "approval_hash": "approval-hash-B",
+            "activated_at": "2026-09-28T04:10:01+00:00",
+            "generation": 2,
+        }
+    )
+
+    rolled = registry.rollback_selection_policy(
+        expected_active_policy_id=active_snapshot["policy_id"],
+    )
+    rolled_ref = rolled["active_reference"]
+    assert rolled_ref["active_policy_id"] == rollback_snapshot["policy_id"]
+    assert rolled_ref["rollback_policy_id"] is None
+    assert rolled_ref["generation"] == 3
+
+    backup = create_backup(
+        destination=tmp_path / "p5-rolled-back-backup",
+        holdings_db=source_holdings,
+        simulation_db=source_simulation,
+        include_tracking=False,
+        strategy_selection_runtime=source_runtime,
+    )
+
+    target_holdings = _holdings_db(tmp_path / "target-holdings.db")
+    target_simulation = _p5_simulation_db(tmp_path / "target-simulation.db")
+    target_runtime = tmp_path / "target-strategy-selection"
+    _selection_runtime_with_active_policy(
+        target_runtime,
+        target_simulation,
+        suffix="B",
+    )
+
+    result = restore_backup(
+        backup,
+        restore_simulation=True,
+        target_holdings=target_holdings,
+        target_simulation=target_simulation,
+        target_strategy_selection_runtime=target_runtime,
+    )
+
+    restored_registry = ProductionStrategySelectionRegistry(
+        runtime_dir=target_runtime,
+        simulation_db=target_simulation,
+    )
+    resolution = restored_registry.resolve_active_selection_policy()
+    reference, reference_reason = restored_registry._load_reference()  # noqa: SLF001
+
+    assert reference_reason is None
+    assert reference is not None
+    assert resolution.policy_source == "ACTIVE_SELECTION_POLICY"
+    assert resolution.policy["policy_id"] == rollback_snapshot["policy_id"]
+    assert reference["active_policy_id"] == rollback_snapshot["policy_id"]
+    assert reference["rollback_policy_id"] is None
+    assert reference["rollback_policy_hash"] is None
+    assert reference["last_deactivated_policy_id"] == active_snapshot["policy_id"]
+    assert reference["generation"] == 3
+    assert result["strategy_selection"]["resolved_policy_id"] == rollback_snapshot["policy_id"]
+
+    with pytest.raises(SelectionPolicyError) as second_rollback:
+        restored_registry.rollback_selection_policy(
+            expected_active_policy_id=rollback_snapshot["policy_id"],
+        )
+    assert second_rollback.value.code == "ROLLBACK_POLICY_NOT_AVAILABLE"
