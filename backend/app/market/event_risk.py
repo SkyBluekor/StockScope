@@ -710,7 +710,6 @@ class EventRiskAnalyzer:
         history: list[dict[str, Any]] | None = None,
         reference_price: float | None = None,
         reference_volume: float | None = None,
-        as_of: str | None = None,
     ) -> dict[str, Any]:
         try:
             corp_code = await self.dart.resolve_corp_code(stock_code)
@@ -728,17 +727,7 @@ class EventRiskAnalyzer:
                 "events": [],
             }
 
-        historical_point_in_time = bool((as_of or "").strip())
-        if historical_point_in_time:
-            raw_as_of = str(as_of).strip()
-            if len(raw_as_of) == 8 and raw_as_of.isdigit():
-                raw_as_of = f"{raw_as_of[:4]}-{raw_as_of[4:6]}-{raw_as_of[6:8]}"
-            try:
-                end_date = min(date.fromisoformat(raw_as_of), date.today())
-            except ValueError as exc:
-                raise ValueError("as_of는 YYYY-MM-DD 형식이어야 합니다.") from exc
-        else:
-            end_date = date.today()
+        end_date = date.today()
         begin_date = end_date - timedelta(days=max(7, days))
         begin = begin_date.strftime("%Y%m%d")
         end = end_date.strftime("%Y%m%d")
@@ -787,42 +776,23 @@ class EventRiskAnalyzer:
         )
 
         # Company-scale comparison is most useful for contract-like events.
-        revenue = (
-            None
-            if historical_point_in_time
-            else (
-                await self._latest_revenue(corp_code)
-                if any(
-                    item["rule"].event_type == "LARGE_CONTRACT"
-                    for item in classified[: max(1, detail_limit)]
-                )
-                else None
-            )
-        )
+        revenue = await self._latest_revenue(corp_code) if any(
+            item["rule"].event_type == "LARGE_CONTRACT" for item in classified[: max(1, detail_limit)]
+        ) else None
 
         async def detail(item: dict[str, Any]) -> dict[str, Any]:
             rule: EventRule = item["rule"]
-            if historical_point_in_time:
-                summary = None
-                structured_facts = []
-                structured_source = None
-                metrics = {}
-                document_facts = []
-                highlights = []
-                document_metrics = {}
-                document_source = None
-            else:
-                summary, structured_facts, structured_source, metrics = await self._structured_detail(
-                    rule,
-                    corp_code,
-                    begin,
-                    end,
-                    item.get("receipt_no"),
-                )
-                document_facts, highlights, document_metrics, document_source = await self._document_detail(
-                    rule,
-                    item.get("receipt_no"),
-                )
+            summary, structured_facts, structured_source, metrics = await self._structured_detail(
+                rule,
+                corp_code,
+                begin,
+                end,
+                item.get("receipt_no"),
+            )
+            document_facts, highlights, document_metrics, document_source = await self._document_detail(
+                rule,
+                item.get("receipt_no"),
+            )
             facts = structured_facts[:]
             existing_labels = {fact.get("label") for fact in facts}
             for fact in document_facts:
@@ -941,11 +911,6 @@ class EventRiskAnalyzer:
             "version": "0.13",
             "corp_code": corp_code,
             "period": {"begin": begin, "end": end, "days": days},
-            "temporal_mode": (
-                "POINT_IN_TIME_LIST_ONLY"
-                if historical_point_in_time
-                else "CURRENT_ENRICHED"
-            ),
             "total_disclosures": disclosures.get("count", 0),
             "classified_count": len(classified),
             "high_count": counts["HIGH"],
