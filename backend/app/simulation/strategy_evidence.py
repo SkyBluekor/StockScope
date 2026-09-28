@@ -8,9 +8,10 @@ from pathlib import Path
 from typing import Any, Callable
 from uuid import NAMESPACE_URL, uuid5
 
-from app.feedback import FeedbackService
+from app.feedback import FEEDBACK_REPORT_VERSION, FeedbackService
 from app.feedback.adapter import DEFAULT_TRACKING_DB
 from app.prospective.models import (
+    PROSPECTIVE_EVALUATION_VERSION,
     PROSPECTIVE_PROTOCOL_VERSION,
     PROSPECTIVE_REPORT_VERSION,
     digest_json as prospective_digest_json,
@@ -343,6 +344,11 @@ class StrategyEvidenceService:
                     "PROSPECTIVE_PROTOCOL_NOT_FOUND",
                     "Prospective Evaluation Protocol을 찾을 수 없습니다.",
                 )
+            if str(run["evaluation_version"]) != PROSPECTIVE_EVALUATION_VERSION:
+                raise StrategyEvidenceError(
+                    "PROSPECTIVE_EVALUATION_VERSION_UNSUPPORTED",
+                    "지원하지 않는 Prospective evaluation version입니다.",
+                )
             if str(report["report_version"]) != PROSPECTIVE_REPORT_VERSION:
                 raise StrategyEvidenceError(
                     "PROSPECTIVE_REPORT_VERSION_UNSUPPORTED",
@@ -422,6 +428,13 @@ class StrategyEvidenceService:
                     "P2-S2 report가 허용하지 않은 성능 결론/승격 상태를 포함합니다.",
                 )
 
+            source_set_hash = str(report["source_set_hash"] or "")
+            if not source_set_hash:
+                raise StrategyEvidenceError(
+                    "PROSPECTIVE_SOURCE_HASH_MISSING",
+                    "Prospective Report source_set_hash가 없습니다.",
+                )
+
             evidence = {
                 "strategy_breakdown": strategy_rows[0],
                 "counts": summary.get("counts") or {},
@@ -457,7 +470,7 @@ class StrategyEvidenceService:
                 source_report_id=str(report["id"]),
                 source_report_version=str(report["report_version"]),
                 source_parent_id=str(report["evaluation_run_id"]),
-                source_set_hash=str(report["source_set_hash"]),
+                source_set_hash=source_set_hash,
                 source_summary_hash=_digest(summary),
                 evidence_state=str(
                     summary.get("evidence_state")
@@ -490,6 +503,12 @@ class StrategyEvidenceService:
                 "FEEDBACK_REPORT_NOT_AVAILABLE",
                 f"Feedback Report를 읽을 수 없습니다: {exc}",
             ) from exc
+
+        if str(report.get("report_version") or "") != FEEDBACK_REPORT_VERSION:
+            raise StrategyEvidenceError(
+                "FEEDBACK_REPORT_VERSION_UNSUPPORTED",
+                "지원하지 않는 Feedback report version입니다.",
+            )
 
         current = report.get("source_verification_current") or {}
         if (
@@ -534,6 +553,17 @@ class StrategyEvidenceService:
                 raise StrategyEvidenceError(
                     "FEEDBACK_STRATEGY_EVIDENCE_MISSING",
                     "Feedback Report에 해당 Strategy 비교 그룹이 없습니다.",
+                )
+
+            if bool(
+                (comparison or {}).get(
+                    "cross_group_aggregation_allowed",
+                    False,
+                )
+            ):
+                raise StrategyEvidenceError(
+                    "FEEDBACK_CROSS_GROUP_AGGREGATION_FORBIDDEN",
+                    "서로 다른 Feedback comparison group은 P5에서 합산할 수 없습니다.",
                 )
 
             if bool(summary.get("performance_conclusion_allowed", False)):
