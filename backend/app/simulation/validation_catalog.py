@@ -19,6 +19,7 @@ from app.strategy.production_selection_policy import (
     ProductionStrategySelectionRegistry,
     SelectionPolicyPin,
 )
+from .selection_policy_pin import serialize_selection_policy_pin
 
 
 PRODUCTION_SCANNER_VERSION = "0.21.3.8"
@@ -386,7 +387,7 @@ class HistoricalValidationCatalog:
             selection_policy_pin
             or ProductionStrategySelectionRegistry().pin_active_selection_policy()
         )
-        selection_policy = pinned_policy.persisted_snapshot()
+        selection_policy = serialize_selection_policy_pin(pinned_policy)
         draft = HistoricalValidationDraft(
             id=str(uuid4()), name=clean_name, validation_target="PRODUCTION_SCANNER",
             market_scope=market_scope, scanner_version=PRODUCTION_SCANNER_VERSION,
