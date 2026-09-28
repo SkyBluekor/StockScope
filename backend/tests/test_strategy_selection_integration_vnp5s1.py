@@ -5,6 +5,12 @@ from pathlib import Path
 import pytest
 
 from app.backtest.scanner import StockScannerService
+from app.baseline.scanner_production_baseline import (
+    load_manifest,
+    manifest_path,
+    verify_baseline,
+)
+from app.core.config import PROJECT_ROOT
 from app.prospective.catalog import ProspectiveCatalog
 from app.prospective.models import ProspectiveCaptureRequest
 from app.strategy import (
@@ -355,3 +361,15 @@ async def test_single_stock_eod_and_reference_share_one_selection_pin():
             assert item["strategy_version_id"] == (
                 f"version-{item['strategy']}"
             )
+
+
+
+def test_committed_scanner_02138_baseline_matches_current_production():
+    manifest = load_manifest(manifest_path(PROJECT_ROOT))
+    result = verify_baseline(PROJECT_ROOT, manifest)
+
+    assert manifest["scanner_version"] == StockScannerService.VERSION
+    assert result.valid is True
+    assert result.changed_files == ()
+    assert result.missing_files == ()
+    assert result.extra_relevant_files == ()
