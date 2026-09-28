@@ -645,7 +645,7 @@ class EventEvidenceStore:
                     {
                         "sequence": int(item["sequence"]),
                         "source_ref_id": str(item["source_ref_id"]),
-                        "source_ref_hash": str(item["source_ref_hash"]),
+                        "source_ref_hash": str(item["linked_source_ref_hash"]),
                     }
                     for item in sources
                 ],
@@ -689,7 +689,8 @@ class EventEvidenceStore:
                 )
             link_rows = conn.execute(
                 """
-                SELECT rs.sequence,rs.source_ref_id,rs.source_ref_hash,
+                SELECT rs.sequence,rs.source_ref_id,
+                       rs.source_ref_hash AS linked_source_ref_hash,
                        sr.*
                 FROM event_evidence_record_source rs
                 JOIN event_evidence_source_ref sr
@@ -708,7 +709,7 @@ class EventEvidenceStore:
             source_rows: list[sqlite3.Row] = []
             for source_row in link_rows:
                 self._verify_source_row(conn, source_row)
-                if str(source_row["source_ref_hash"]) != str(
+                if str(source_row["linked_source_ref_hash"]) != str(
                     source_row["source_ref_hash"]
                 ):
                     raise EventEvidenceContractError(
