@@ -280,6 +280,7 @@ class StrategyChangeService:
         *,
         affected_horizons: list[str] | tuple[str, ...],
         affected_regimes: list[str] | tuple[str, ...],
+        approval_protocol: StrategyApprovalProtocol | None = None,
     ) -> dict[str, Any]:
         horizons = sorted(
             {str(item).strip().upper() for item in affected_horizons}
@@ -543,30 +544,33 @@ class StrategyChangeService:
         return bundle, _digest(bundle)
 
     @staticmethod
-    def _approval_gate_state(scope: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    def _approval_gate_state(
+        scope: dict[str, Any],
+        protocol: StrategyApprovalProtocol,
+    ) -> tuple[str, dict[str, Any]]:
         catalog = horizon_policy_catalog()
         explicit = [
             item
             for item in scope["affected_horizons"]
             if item != LEGACY_UNSPECIFIED
         ]
-        if explicit and not bool(catalog.get("numeric_policy_approved")):
-            return (
-                "BLOCKED_HORIZON_POLICY",
-                {
-                    "q7_protocol_approved": False,
-                    "horizon_numeric_policy_approved": False,
-                    "automatic_rotation_enabled": False,
-                    "production_activation_performed": False,
-                },
-            )
+        horizon_approved = bool(catalog.get("numeric_policy_approved"))
+        if explicit and not horizon_approved:
+            state = "BLOCKED_HORIZON_POLICY"
+        elif not protocol.activation_eligible or not protocol.q7_precommitted:
+            state = "REVIEW_ONLY_Q7_UNAPPROVED"
+        else:
+            state = "APPROVAL_ELIGIBLE"
         return (
-            "REVIEW_ONLY_Q7_UNAPPROVED",
+            state,
             {
-                "q7_protocol_approved": False,
-                "horizon_numeric_policy_approved": bool(
-                    catalog.get("numeric_policy_approved")
+                "q7_protocol_approved": bool(
+                    protocol.activation_eligible
+                    and protocol.q7_precommitted
                 ),
+                "proposal_protocol_version": protocol.protocol_version,
+                "proposal_protocol_hash": protocol.protocol_hash,
+                "horizon_numeric_policy_approved": horizon_approved,
                 "automatic_rotation_enabled": False,
                 "production_activation_performed": False,
             },
@@ -587,6 +591,8 @@ class StrategyChangeService:
         rollback_basis: dict[str, Any],
         rollback_basis_hash: str,
         baseline: dict[str, str],
+        proposal_protocol_version: str,
+        proposal_protocol_hash: str,
         approval_gate_state: str,
         limitations: dict[str, Any],
     ) -> dict[str, Any]:
@@ -608,6 +614,8 @@ class StrategyChangeService:
             "production_policy_fingerprint": baseline[
                 "production_policy_fingerprint"
             ],
+            "proposal_protocol_version": proposal_protocol_version,
+            "proposal_protocol_hash": proposal_protocol_hash,
             "approval_gate_state": approval_gate_state,
             "limitations": limitations,
         }
@@ -641,6 +649,10 @@ class StrategyChangeService:
             "production_policy_fingerprint": str(
                 row["production_policy_fingerprint"]
             ),
+            "proposal_protocol_version": str(
+                row["proposal_protocol_version"]
+            ),
+            "proposal_protocol_hash": str(row["proposal_protocol_hash"]),
             "approval_gate_state": str(row["approval_gate_state"]),
             "limitations": json.loads(str(row["limitations_json"])),
             "proposal_hash": str(row["proposal_hash"]),
@@ -688,6 +700,15 @@ class StrategyChangeService:
             raise StrategyChangeError(
                 "PROPOSAL_IDEMPOTENCY_KEY_REQUIRED",
                 "Change Proposal 생성에는 client_request_id가 필요합니다.",
+            )
+
+        proposal_protocol = (
+            approval_protocol or production_blocked_approval_protocol()
+        )
+        if proposal_protocol.test_only and not self.allow_test_protocol:
+            raise StrategyChangeError(
+                "TEST_APPROVAL_PROTOCOL_FORBIDDEN",
+                "TEST-only approval protocol은 production 경로에서 사용할 수 없습니다.",
             )
 
         baseline = self._normalize_baseline(self.baseline_provider())
@@ -752,7 +773,10 @@ class StrategyChangeService:
                 "production_policy_reference_created": False,
             }
             rollback_basis_hash = _digest(rollback_basis)
-            gate_state, gate_limits = self._approval_gate_state(scope)
+            gate_state, gate_limits = self._approval_gate_state(
+                scope,
+                proposal_protocol,
+            )
             limitations = {
                 **gate_limits,
                 "performance_ranking_created": False,
@@ -774,6 +798,8 @@ class StrategyChangeService:
                 rollback_basis=rollback_basis,
                 rollback_basis_hash=rollback_basis_hash,
                 baseline=baseline,
+                proposal_protocol_version=proposal_protocol.protocol_version,
+                proposal_protocol_hash=proposal_protocol.protocol_hash,
                 approval_gate_state=gate_state,
                 limitations=limitations,
             )
@@ -812,9 +838,10 @@ class StrategyChangeService:
                     evidence_bundle_hash,rollback_basis_json,
                     rollback_basis_hash,scanner_baseline_id,
                     production_fingerprint,production_policy_fingerprint,
+                    proposal_protocol_version,proposal_protocol_hash,
                     approval_gate_state,limitations_json,proposal_hash,
                     created_at
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     proposal_id,
@@ -833,6 +860,8 @@ class StrategyChangeService:
                     baseline["scanner_baseline_id"],
                     baseline["production_fingerprint"],
                     baseline["production_policy_fingerprint"],
+                    proposal_protocol.protocol_version,
+                    proposal_protocol.protocol_hash,
                     gate_state,
                     _canonical_json(limitations),
                     proposal_hash,
@@ -904,6 +933,12 @@ class StrategyChangeService:
                 rollback_basis=proposal["rollback_basis"],
                 rollback_basis_hash=proposal["rollback_basis_hash"],
                 baseline=baseline,
+                proposal_protocol_version=proposal[
+                    "proposal_protocol_version"
+                ],
+                proposal_protocol_hash=proposal[
+                    "proposal_protocol_hash"
+                ],
                 approval_gate_state=proposal["approval_gate_state"],
                 limitations=proposal["limitations"],
             )
@@ -1187,6 +1222,21 @@ class StrategyChangeService:
             )
 
         proposal = self.get_proposal(proposal_id)
+        if (
+            proposal["proposal_protocol_version"]
+            != active_protocol.protocol_version
+            or proposal["proposal_protocol_hash"]
+            != active_protocol.protocol_hash
+        ):
+            raise StrategyChangeError(
+                "APPROVAL_PROTOCOL_CHANGED_SINCE_PROPOSAL",
+                "Proposal 생성 후 Approval Protocol이 변경되어 새 Proposal이 필요합니다.",
+            )
+        if proposal["approval_gate_state"] != "APPROVAL_ELIGIBLE":
+            raise StrategyChangeError(
+                "PROPOSAL_NOT_APPROVAL_ELIGIBLE",
+                "이 Proposal은 생성 시점의 정책 기준에서 승인 가능 상태가 아닙니다.",
+            )
         verification = self.verify_proposal(proposal_id)
         if verification["status"] != "CURRENT":
             raise StrategyChangeError(
