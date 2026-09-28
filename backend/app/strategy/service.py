@@ -16,6 +16,10 @@ from app.strategy.analysis_hub import AnalysisHubBuilder
 from app.strategy.context import build_strategy_input, regime_from_index
 from app.strategy.engine import StrategyEngine
 from app.strategy.models import MarketRegime, StrategyInput, StrategyName
+from app.strategy.production_selection_policy import (
+    ProductionStrategySelectionRegistry,
+    SelectionPolicyPin,
+)
 
 
 class StrategyAnalysisService:
@@ -32,7 +36,13 @@ class StrategyAnalysisService:
         StrategyName.TREND_RECOVERY: [],
     }
 
-    def __init__(self, krx: KrxProvider, dart: OpenDartProvider | None = None) -> None:
+    def __init__(
+        self,
+        krx: KrxProvider,
+        dart: OpenDartProvider | None = None,
+        *,
+        selection_registry: ProductionStrategySelectionRegistry | None = None,
+    ) -> None:
         self.krx = krx
         self.dart = dart
         self.event = EventRiskAnalyzer(dart) if dart is not None else None
@@ -40,6 +50,9 @@ class StrategyAnalysisService:
         self.investor_style = InvestorStyleAnalyzer()
         self.technical = TechnicalAnalyzer()
         self.engine = StrategyEngine()
+        self.selection_registry = (
+            selection_registry or ProductionStrategySelectionRegistry()
+        )
         self.risk = RiskEngine()
         self.relative_strength = RelativeStrengthAnalyzer()
         self.sector_relative_strength = SectorRelativeStrengthAnalyzer()
@@ -438,6 +451,7 @@ class StrategyAnalysisService:
         technical: dict[str, Any],
         *,
         source: str,
+        selection_policy_pin: SelectionPolicyPin | None = None,
     ) -> list[dict[str, Any]]:
         payloads: list[dict[str, Any]] = []
         for evaluation in evaluations:
@@ -447,6 +461,19 @@ class StrategyAnalysisService:
                 if evaluation.strategy == StrategyName.NO_TRADE
                 else cls._automatic_checks(evaluation.strategy, data, technical, source=source)
             )
+            if (
+                selection_policy_pin is not None
+                and evaluation.strategy != StrategyName.NO_TRADE
+            ):
+                ref = selection_policy_pin.strategy_reference(
+                    evaluation.strategy.value
+                )
+                payload["strategy_version_id"] = (
+                    ref.get("strategy_version_id") if ref else None
+                )
+                payload["strategy_definition_hash"] = (
+                    ref.get("definition_hash") if ref else None
+                )
             payloads.append(payload)
         return payloads
 
@@ -814,7 +841,22 @@ class StrategyAnalysisService:
         position_mode: str = "NOT_HELD",
         average_price: float | None = None,
         quantity: float | None = None,
+        selection_policy_pin: SelectionPolicyPin | None = None,
     ) -> dict[str, Any]:
+        run_policy = (
+            selection_policy_pin
+            or self.selection_registry.pin_active_selection_policy()
+        )
+        try:
+            allowed_strategies = frozenset(
+                StrategyName(key)
+                for key in run_policy.operating_strategy_keys
+            )
+        except ValueError as exc:
+            raise ValueError(
+                "Selection Policy에 현재 StockScope가 지원하지 않는 전략이 포함되어 있습니다."
+            ) from exc
+
         # 상대강도 60거래일 수익률 계산에는 시작값까지 61개의 확정 종가가 필요합니다.
         # 기술지표는 기존 요청 구간만 사용하고, 상대강도 계산에만 한 개 이상의 과거값을 더 보관합니다.
         extended_history = await self.krx.stock_history(
@@ -1063,7 +1105,10 @@ class StrategyAnalysisService:
             relative_strength_context=relative_strength,
             sector_relative_strength_context=sector_relative_strength,
         )
-        eod_evaluations = self.engine.evaluate_all(eod_input)
+        eod_evaluations = self.engine.evaluate_all(
+            eod_input,
+            allowed_strategies=allowed_strategies,
+        )
 
         reference_context = None
         reference_evaluations = eod_evaluations
@@ -1117,7 +1162,10 @@ class StrategyAnalysisService:
                 relative_strength_context=relative_strength,
                 sector_relative_strength_context=sector_relative_strength,
             )
-            reference_evaluations = self.engine.evaluate_all(reference_input)
+            reference_evaluations = self.engine.evaluate_all(
+                reference_input,
+                allowed_strategies=allowed_strategies,
+            )
 
         current_evaluations = reference_evaluations if reference_price is not None else eod_evaluations
         current_risk_gate = self._risk_gate_payload(current_evaluations)
@@ -1145,13 +1193,27 @@ class StrategyAnalysisService:
 
         current_source = "USER_INPUT" if reference_price is not None else "KRX_EOD"
         current_strategy_payloads = self._evaluation_payloads(
-            current_evaluations, reference_input, technical, source=current_source
+            current_evaluations,
+            reference_input,
+            technical,
+            source=current_source,
+            selection_policy_pin=run_policy,
         )
         eod_strategy_payloads = self._evaluation_payloads(
-            eod_evaluations, eod_input, technical, source="KRX_EOD"
+            eod_evaluations,
+            eod_input,
+            technical,
+            source="KRX_EOD",
+            selection_policy_pin=run_policy,
         )
         reference_strategy_payloads = (
-            self._evaluation_payloads(reference_evaluations, reference_input, technical, source="USER_INPUT")
+            self._evaluation_payloads(
+                reference_evaluations,
+                reference_input,
+                technical,
+                source="USER_INPUT",
+                selection_policy_pin=run_policy,
+            )
             if reference_context is not None
             else None
         )
@@ -1278,6 +1340,7 @@ class StrategyAnalysisService:
                 "atr_pct": effective_atr,
                 "volume_ratio_20": effective_volume,
             },
+            "strategy_selection_policy": run_policy.metadata(),
             "market_context": {
                 "regime": regime.value,
                 "index_name": market_index.get("name") if market_index else None,
