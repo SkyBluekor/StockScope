@@ -5,10 +5,12 @@ import json
 import sqlite3
 from datetime import date, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from app.backtest.scanner import StockScannerService
+from app.strategy.production_selection_policy import SelectionPolicyPin
 from app.holdings.analysis import (
     HoldingsAnalysisError,
     SingleStockAnalysisAdapter,
@@ -232,6 +234,56 @@ def test_same_input_same_fingerprint_and_history_change_changes_it(market_db):
         market_store_db=db_path,
     )
     assert changed.input_fingerprint != first.input_fingerprint
+
+
+def test_selection_policy_change_changes_holdings_fingerprint(market_db):
+    db_path, _, _ = market_db
+
+    base_scanner = StockScannerService(object(), market_store=object())
+    base_pin = base_scanner.selection_registry.pin_active_selection_policy()
+    base_scanner.selection_registry = SimpleNamespace(
+        pin_active_selection_policy=lambda: base_pin
+    )
+    base = SingleStockAnalysisAdapter(
+        market_store_db=db_path,
+        scanner=base_scanner,
+    ).analyze(
+        market="KOSPI",
+        ticker="005930",
+        market_date=TARGET_DATE.isoformat(),
+    )
+
+    alternate_pin = SelectionPolicyPin(
+        policy_id=f"{base_pin.policy_id}-alternate",
+        policy_hash=("a" if not base_pin.policy_hash.startswith("a") else "b") * 64,
+        policy_contract_version=base_pin.policy_contract_version,
+        policy_source="TEST_PIN",
+        fallback_used=base_pin.fallback_used,
+        fallback_reason=base_pin.fallback_reason,
+        operating_strategies=base_pin.operating_strategies,
+        scanner_baseline_id=base_pin.scanner_baseline_id,
+        production_fingerprint=base_pin.production_fingerprint,
+        production_policy_fingerprint=base_pin.production_policy_fingerprint,
+    )
+    alternate_scanner = StockScannerService(object(), market_store=object())
+    alternate_scanner.selection_registry = SimpleNamespace(
+        pin_active_selection_policy=lambda: alternate_pin
+    )
+    alternate = SingleStockAnalysisAdapter(
+        market_store_db=db_path,
+        scanner=alternate_scanner,
+    ).analyze(
+        market="KOSPI",
+        ticker="005930",
+        market_date=TARGET_DATE.isoformat(),
+    )
+
+    assert alternate.input_fingerprint != base.input_fingerprint
+    assert base.source_versions["selection_policy"]["policy_hash"] == base_pin.policy_hash
+    assert (
+        alternate.source_versions["selection_policy"]["policy_hash"]
+        == alternate_pin.policy_hash
+    )
 
 
 def test_missing_market_date_is_error_not_no_trade(market_db):
