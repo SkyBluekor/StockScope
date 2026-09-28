@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from app.backtest.production_exit_policy import PRODUCTION_EXIT_POLICY_VERSION
 from app.backtest.scanner import StockScannerService
-from app.holdings.analysis import ANALYSIS_ENGINE_VERSION
+from app.holdings.analysis import ANALYSIS_ENGINE_VERSION, ANALYSIS_FINGERPRINT_VERSION
 from app.holdings.chart import RANGE_BARS
 
 from .models import StockStateObservation
@@ -129,8 +129,48 @@ def _analysis_contract(
     eod: EodResourceContract,
 ) -> AnalysisResourceContract:
     observed = state.analysis
+    source_versions = observed.source_versions or {}
+    selection_policy = (
+        source_versions.get("strategy_selection_policy")
+        if isinstance(source_versions.get("strategy_selection_policy"), dict)
+        else {}
+    )
+    selected_strategy = (
+        source_versions.get("selected_strategy")
+        if isinstance(source_versions.get("selected_strategy"), dict)
+        else {}
+    )
     identity = AnalysisIdentityContract(
         input_fingerprint=observed.input_fingerprint,
+        fingerprint_contract_version=(
+            str(source_versions.get("fingerprint_contract_version"))
+            if source_versions.get("fingerprint_contract_version") is not None
+            else None
+        ),
+        selection_policy_id=(
+            str(selection_policy.get("policy_id"))
+            if selection_policy.get("policy_id") is not None else None
+        ),
+        selection_policy_hash=(
+            str(selection_policy.get("policy_hash"))
+            if selection_policy.get("policy_hash") is not None else None
+        ),
+        selection_policy_contract_version=(
+            str(selection_policy.get("policy_contract_version"))
+            if selection_policy.get("policy_contract_version") is not None else None
+        ),
+        selection_policy_source=(
+            str(selection_policy.get("policy_source"))
+            if selection_policy.get("policy_source") is not None else None
+        ),
+        strategy_version_id=(
+            str(selected_strategy.get("strategy_version_id"))
+            if selected_strategy.get("strategy_version_id") is not None else None
+        ),
+        strategy_definition_hash=(
+            str(selected_strategy.get("definition_hash"))
+            if selected_strategy.get("definition_hash") is not None else None
+        ),
         scanner_version=observed.scanner_version,
         analysis_engine_version=observed.analysis_engine_version,
         policy_version=observed.policy_version,
@@ -177,6 +217,9 @@ def _analysis_contract(
     elif observed.policy_version and not _policy_family_matches(observed.policy_version):
         status = "INVALID"
         reason = "POLICY_VERSION_FAMILY_MISMATCH"
+    elif source_versions.get("fingerprint_contract_version") != ANALYSIS_FINGERPRINT_VERSION:
+        status = "UNVERIFIED"
+        reason = "ANALYSIS_IDENTITY_LEGACY"
     elif not (
         observed.input_fingerprint
         and observed.analysis_engine_version

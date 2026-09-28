@@ -332,7 +332,9 @@ def test_validation_horizon_is_stored_and_blocks_replay_policy_use(tmp_path: Pat
     assert caught.value.code == "VAL2_HORIZON_NOT_ACTIVE"
 
 
-def test_legacy_validation_execution_stays_legacy(tmp_path: Path) -> None:
+def test_legacy_validation_horizon_stays_readable_but_new_execution_requires_policy_identity(
+    tmp_path: Path,
+) -> None:
     holdings, _, _ = _holdings_fixture(tmp_path / "holdings.db")
     validation, execution = _simulation_fixture(tmp_path / "simulation.db")
     migrate_horizon_context(
@@ -346,15 +348,16 @@ def test_legacy_validation_execution_stays_legacy(tmp_path: Path) -> None:
             "UPDATE historical_validation_run SET status='COMPLETED' WHERE id=?",
             (legacy.id,),
         )
-
-    run = execution.create_run(
-        validation_id=legacy.id,
-        market_data_cutoff_date="2026-09-27",
-        production_exit_policy_token="TEST-POLICY",
-    )
-    with execution.connect() as conn:
-        context = get_execution_horizon(conn, run.id)
+        context = get_validation_horizon(conn, legacy.id)
     assert context.intent == "LEGACY_UNSPECIFIED"
+
+    with pytest.raises(ExecutionCatalogError) as caught:
+        execution.create_run(
+            validation_id=legacy.id,
+            market_data_cutoff_date="2026-09-27",
+            production_exit_policy_token="TEST-POLICY",
+        )
+    assert caught.value.code == "VAL2_SELECTION_POLICY_IDENTITY_REQUIRED"
 
 
 def test_horizon_context_survives_runtime_backup_restore(tmp_path: Path) -> None:

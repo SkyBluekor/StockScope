@@ -36,6 +36,7 @@ from tools.data import migrate_holdings_recovery_vnp3s2 as p3s2
 from tools.data import migrate_watch_vnp4s1 as p4s1
 from tools.data import migrate_strategy_governance_vnp5s1 as p5s1
 from tools.data import migrate_event_evidence_vnp6s1 as p6s1
+from tools.data import migrate_policy_identity_next1 as next1
 
 
 SYNC_VERSION = "LOCAL_SYNC_V1"
@@ -402,6 +403,39 @@ def _detect_p6(paths: RuntimePaths) -> MigrationStatus:
     )
 
 
+def _detect_next1(paths: RuntimePaths) -> MigrationStatus:
+    state = next1.inspect_policy_identity(paths.simulation)
+    if not state.get("applicable"):
+        return MigrationStatus(
+            "NEXT-1",
+            "Policy Identity",
+            MigrationState.CURRENT,
+            str(state.get("reason") or "optional runtime domain not initialized"),
+        )
+    if state.get("current"):
+        return MigrationStatus(
+            "NEXT-1",
+            "Policy Identity",
+            MigrationState.CURRENT,
+        )
+    validation_missing = list(state.get("validation_missing_columns") or [])
+    execution_missing = list(state.get("execution_missing_columns") or [])
+    partial = (
+        (0 < len(validation_missing) < len(next1.PIN_COLUMNS))
+        or (0 < len(execution_missing) < len(next1.PIN_COLUMNS))
+    )
+    return MigrationStatus(
+        "NEXT-1",
+        "Policy Identity",
+        MigrationState.PARTIAL if partial else MigrationState.MISSING,
+        (
+            f"validation missing={validation_missing}; "
+            f"execution missing={execution_missing}; "
+            f"meta_current={state.get('meta_current')}"
+        ),
+    )
+
+
 def _run_p2s1(paths: RuntimePaths) -> dict[str, Any]:
     return p2s1.migrate_feedback(simulation_db=paths.simulation)
 
@@ -434,6 +468,21 @@ def _run_p5s1(paths: RuntimePaths) -> dict[str, Any]:
         )
     if result.get("no_trade_registered") is not False:
         raise DataToolError("VN-P5-S1 migration이 NO_TRADE를 Strategy로 등록했습니다.")
+    return result
+
+
+def _run_next1(paths: RuntimePaths) -> dict[str, Any]:
+    result = next1.migrate_policy_identity(paths.simulation)
+    if result.get("historical_policy_backfill_performed") is not False:
+        raise DataToolError(
+            "NEXT-1 migration이 legacy Selection Policy를 backfill했습니다."
+        )
+    if result.get("completed_run_rewrite_performed") is not False:
+        raise DataToolError(
+            "NEXT-1 migration이 완료된 Historical run을 rewrite했습니다."
+        )
+    if int(result.get("external_network_requests", -1)) != 0:
+        raise DataToolError("NEXT-1 migration에서 외부 network request가 발생했습니다.")
     return result
 
 
@@ -548,6 +597,7 @@ MIGRATIONS: tuple[MigrationSpec, ...] = (
         _run_p5s1,
     ),
     MigrationSpec("VN-P6-S1", "Event Evidence", _detect_p6, _run_p6s1),
+    MigrationSpec("NEXT-1", "Policy Identity", _detect_next1, _run_next1),
 )
 
 

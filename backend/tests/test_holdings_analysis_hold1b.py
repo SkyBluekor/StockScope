@@ -10,6 +10,7 @@ import pytest
 
 from app.backtest.scanner import StockScannerService
 from app.holdings.analysis import (
+    ANALYSIS_FINGERPRINT_VERSION,
     HoldingsAnalysisError,
     SingleStockAnalysisAdapter,
     analyze_single_stock,
@@ -296,3 +297,22 @@ def test_analysis_module_has_no_kis_or_holdings_db_dependency():
     assert "HoldingsCatalog" not in source
     assert "holdings.db" not in source
     assert "self.scanner.run(" not in source
+
+
+def test_analysis_identity_includes_selection_policy_and_selected_strategy(market_db):
+    db_path, _, _ = market_db
+    result = analyze_single_stock(
+        market="KOSPI",
+        ticker="005930",
+        market_date=TARGET_DATE.isoformat(),
+        market_store_db=db_path,
+    )
+
+    assert result.source_versions["fingerprint_contract_version"] == ANALYSIS_FINGERPRINT_VERSION
+    policy = result.source_versions["strategy_selection_policy"]
+    selected = result.source_versions["selected_strategy"]
+    assert policy["policy_id"]
+    assert policy["policy_hash"]
+    assert policy["policy_contract_version"]
+    assert selected["strategy_key"] == result.strategy_key
+    assert result.snapshot["strategy_selection_policy"]["policy_hash"] == policy["policy_hash"]

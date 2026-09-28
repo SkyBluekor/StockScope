@@ -117,6 +117,24 @@ def _simulation_fixture(path: Path):
         resolved_start_date="2026-09-01",
         resolved_end_date="2026-09-01",
         trading_day_count=1,
+        selection_policy_pin={
+            "policy_id": "TEST-POLICY",
+            "policy_hash": "f" * 64,
+            "policy_contract_version": "VN_P5_S1_SELECTION_POLICY_V1",
+            "policy_source": "TEST",
+            "fallback_used": False,
+            "fallback_reason": None,
+            "operating_strategies": [
+                {
+                    "strategy_version_id": "pullback-test-v1",
+                    "strategy_key": "pullback",
+                    "definition_hash": "a" * 64,
+                }
+            ],
+            "scanner_baseline_id": "0.21.3.8",
+            "production_fingerprint": None,
+            "production_policy_fingerprint": None,
+        },
     )
     validation.save_completed_day(
         validation_id=draft.id,

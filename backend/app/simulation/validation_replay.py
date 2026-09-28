@@ -8,8 +8,16 @@ from typing import Any, Callable
 from app.backtest.market_store import HistoricalMarketStore
 from app.backtest.scanner import StockScannerService
 from app.market.providers.krx import KrxProvider
+from app.strategy.production_selection_policy import (
+    ProductionStrategySelectionRegistry,
+    SelectionPolicyError,
+)
 
 from .input_identity import build_replay_market_manifest
+from .selection_policy_pin import (
+    deserialize_selection_policy_pin,
+    serialize_selection_policy_pin,
+)
 from .validation_catalog import (
     HistoricalValidationCatalog,
     HistoricalValidationDraft,
@@ -109,11 +117,15 @@ class HistoricalValidationReplayService:
         market_store: HistoricalMarketStore | Any | None = None,
         *,
         scanner_factory: Callable[[], Any] | None = None,
+        selection_registry: ProductionStrategySelectionRegistry | None = None,
     ) -> None:
         self.catalog = catalog
         self.catalog.initialize()
         self.market_store = market_store or HistoricalMarketStore()
         self.scanner_factory = scanner_factory or self._production_scanner
+        self.selection_registry = (
+            selection_registry or ProductionStrategySelectionRegistry()
+        )
 
     def _production_scanner(self) -> StockScannerService:
         return _ReplayStockScannerService(
@@ -335,12 +347,49 @@ class HistoricalValidationReplayService:
             )
 
         try:
+            if draft.selection_policy_pin is None:
+                pinned = self.selection_registry.pin_active_selection_policy()
+                draft = self.catalog.ensure_selection_policy_pin(
+                    validation_id,
+                    serialize_selection_policy_pin(pinned),
+                )
+            try:
+                selection_policy_pin = deserialize_selection_policy_pin(
+                    draft.selection_policy_pin
+                )
+            except SelectionPolicyError as exc:
+                raise HistoricalValidationReplayError(
+                    "VAL_REPLAY_SELECTION_POLICY_PIN_INVALID",
+                    exc.message,
+                ) from exc
+
             if draft.scanner_version != StockScannerService.VERSION:
                 raise HistoricalValidationReplayError(
                     "VAL_REPLAY_SCANNER_VERSION_MISMATCH",
                     f"저장된 Scanner {draft.scanner_version}와 현재 Production Scanner {StockScannerService.VERSION}가 다릅니다.",
                 )
             replay_days = self._resolve_replay_days(draft)
+        except ValidationCatalogError as exc:
+            error = HistoricalValidationReplayError(exc.code, exc.message)
+            if preclaimed:
+                self.catalog.mark_replay_failed(
+                    validation_id,
+                    error.code,
+                    error.message,
+                )
+            raise error from exc
+        except SelectionPolicyError as exc:
+            error = HistoricalValidationReplayError(
+                "VAL_REPLAY_SELECTION_POLICY_PIN_INVALID",
+                exc.message,
+            )
+            if preclaimed:
+                self.catalog.mark_replay_failed(
+                    validation_id,
+                    error.code,
+                    error.message,
+                )
+            raise error from exc
         except HistoricalValidationReplayError as exc:
             if preclaimed:
                 self.catalog.mark_replay_failed(validation_id, exc.code, exc.message)
@@ -379,11 +428,24 @@ class HistoricalValidationReplayService:
                     candidate_limit=self.CANDIDATE_LIMIT,
                     force_refresh=False,
                     allow_large_sync=False,
+                    selection_policy_pin=selection_policy_pin,
                 )
                 if not isinstance(result, dict):
                     raise HistoricalValidationReplayError(
                         "VAL_REPLAY_SCANNER_FAILED",
                         "Scanner 결과 형식이 올바르지 않습니다.",
+                    )
+                policy_meta = result.get("strategy_selection_policy")
+                if (
+                    not isinstance(policy_meta, dict)
+                    or str(policy_meta.get("policy_id") or "")
+                    != selection_policy_pin.policy_id
+                    or str(policy_meta.get("policy_hash") or "")
+                    != selection_policy_pin.policy_hash
+                ):
+                    raise HistoricalValidationReplayError(
+                        "VAL_REPLAY_SELECTION_POLICY_MISMATCH",
+                        "Replay 결과의 Selection Policy identity가 run pin과 다릅니다.",
                     )
                 self._validate_point_in_time(draft, replay_day, result)
                 input_manifest_after = build_replay_market_manifest(

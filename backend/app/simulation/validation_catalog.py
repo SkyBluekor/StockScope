@@ -59,6 +59,10 @@ class HistoricalValidationDraft:
     status: str
     created_at: str
     updated_at: str
+    selection_policy_id: str | None = None
+    selection_policy_hash: str | None = None
+    selection_policy_contract_version: str | None = None
+    selection_policy_pin: dict[str, Any] | None = None
     started_at: str | None = None
     completed_at: str | None = None
     processed_day_count: int = 0
@@ -85,6 +89,10 @@ class HistoricalValidationDraft:
             "status": self.status,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+            "selection_policy_id": self.selection_policy_id,
+            "selection_policy_hash": self.selection_policy_hash,
+            "selection_policy_contract_version": self.selection_policy_contract_version,
+            "selection_policy_pin": self.selection_policy_pin,
             "started_at": self.started_at,
             "completed_at": self.completed_at,
             "processed_day_count": self.processed_day_count,
@@ -179,7 +187,11 @@ class HistoricalValidationCatalog:
                     last_completed_date TEXT,
                     error_code TEXT,
                     error_message TEXT,
-                    cancel_requested INTEGER NOT NULL DEFAULT 0
+                    cancel_requested INTEGER NOT NULL DEFAULT 0,
+                    selection_policy_id TEXT,
+                    selection_policy_hash TEXT,
+                    selection_policy_contract_version TEXT,
+                    selection_policy_pin_json TEXT
                 );
                 """
             )
@@ -294,7 +306,12 @@ class HistoricalValidationCatalog:
             )
 
     @staticmethod
+    def _optional_row_value(row: sqlite3.Row, name: str) -> Any:
+        return row[name] if name in row.keys() else None
+
+    @staticmethod
     def _from_row(row: sqlite3.Row) -> HistoricalValidationDraft:
+        optional = HistoricalValidationCatalog._optional_row_value
         return HistoricalValidationDraft(
             id=row["id"], name=row["name"], validation_target=row["validation_target"],
             market_scope=row["market_scope"], scanner_version=row["scanner_version"],
@@ -303,6 +320,14 @@ class HistoricalValidationCatalog:
             resolved_start_date=row["resolved_start_date"], resolved_end_date=row["resolved_end_date"],
             trading_day_count=int(row["trading_day_count"]), status=row["status"],
             created_at=row["created_at"], updated_at=row["updated_at"],
+            selection_policy_id=optional(row, "selection_policy_id"),
+            selection_policy_hash=optional(row, "selection_policy_hash"),
+            selection_policy_contract_version=optional(
+                row, "selection_policy_contract_version"
+            ),
+            selection_policy_pin=_json_value(
+                optional(row, "selection_policy_pin_json")
+            ),
             started_at=row["started_at"], completed_at=row["completed_at"],
             processed_day_count=int(row["processed_day_count"] or 0),
             candidate_count=int(row["candidate_count"] or 0),
@@ -364,6 +389,7 @@ class HistoricalValidationCatalog:
         trading_day_count: int,
         scanner_baseline: str | None = None,
         horizon_context: HorizonContext | None = None,
+        selection_policy_pin: dict[str, Any] | None = None,
     ) -> HistoricalValidationDraft:
         clean_name = name.strip()
         if not clean_name:
@@ -371,6 +397,17 @@ class HistoricalValidationCatalog:
         if len(clean_name) > 120:
             raise ValidationCatalogError("SIM_VALIDATION_NAME_TOO_LONG", "검증 이름은 120자 이내로 입력해주세요.")
         now = datetime.now(timezone.utc).isoformat()
+        pin_payload = dict(selection_policy_pin or {})
+        pin_id = str(pin_payload.get("policy_id") or "").strip() or None
+        pin_hash = str(pin_payload.get("policy_hash") or "").strip() or None
+        pin_contract = (
+            str(pin_payload.get("policy_contract_version") or "").strip() or None
+        )
+        if pin_payload and (not pin_id or not pin_hash or not pin_contract):
+            raise ValidationCatalogError(
+                "VAL_SELECTION_POLICY_PIN_INVALID",
+                "Selection Policy pin identity가 불완전합니다.",
+            )
         draft = HistoricalValidationDraft(
             id=str(uuid4()), name=clean_name, validation_target="PRODUCTION_SCANNER",
             market_scope=market_scope, scanner_version=PRODUCTION_SCANNER_VERSION,
@@ -378,19 +415,46 @@ class HistoricalValidationCatalog:
             requested_start_month=requested_start_month, requested_end_month=requested_end_month,
             resolved_start_date=resolved_start_date, resolved_end_date=resolved_end_date,
             trading_day_count=int(trading_day_count), status="DRAFT", created_at=now, updated_at=now,
+            selection_policy_id=pin_id,
+            selection_policy_hash=pin_hash,
+            selection_policy_contract_version=pin_contract,
+            selection_policy_pin=pin_payload or None,
         )
         with self.connect() as conn:
+            if pin_payload:
+                columns = {
+                    str(row["name"])
+                    for row in conn.execute(
+                        "PRAGMA table_info(historical_validation_run)"
+                    ).fetchall()
+                }
+                required = {
+                    "selection_policy_id",
+                    "selection_policy_hash",
+                    "selection_policy_contract_version",
+                    "selection_policy_pin_json",
+                }
+                if not required.issubset(columns):
+                    raise ValidationCatalogError(
+                        "VAL_SELECTION_POLICY_MIGRATION_REQUIRED",
+                        "NEXT-1 Policy Identity migration을 먼저 실행해야 합니다.",
+                    )
             conn.execute(
                 """INSERT INTO historical_validation_run(
                     id,name,validation_target,market_scope,scanner_version,scanner_baseline,
                     requested_period_type,requested_start_month,requested_end_month,
-                    resolved_start_date,resolved_end_date,trading_day_count,status,created_at,updated_at
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    resolved_start_date,resolved_end_date,trading_day_count,status,created_at,updated_at,
+                    selection_policy_id,selection_policy_hash,
+                    selection_policy_contract_version,selection_policy_pin_json
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     draft.id, draft.name, draft.validation_target, draft.market_scope,
                     draft.scanner_version, draft.scanner_baseline, draft.requested_period_type,
                     draft.requested_start_month, draft.requested_end_month, draft.resolved_start_date,
                     draft.resolved_end_date, draft.trading_day_count, draft.status, draft.created_at, draft.updated_at,
+                    draft.selection_policy_id, draft.selection_policy_hash,
+                    draft.selection_policy_contract_version,
+                    _json_text(draft.selection_policy_pin) if draft.selection_policy_pin else None,
                 ),
             )
             if horizon_context is not None:
@@ -401,6 +465,96 @@ class HistoricalValidationCatalog:
                     created_at=now,
                 )
         return draft
+
+    def ensure_selection_policy_pin(
+        self,
+        validation_id: str,
+        pin_payload: dict[str, Any],
+    ) -> HistoricalValidationDraft:
+        policy_id = str(pin_payload.get("policy_id") or "").strip()
+        policy_hash = str(pin_payload.get("policy_hash") or "").strip()
+        contract = str(pin_payload.get("policy_contract_version") or "").strip()
+        if not policy_id or not policy_hash or not contract:
+            raise ValidationCatalogError(
+                "VAL_SELECTION_POLICY_PIN_INVALID",
+                "Selection Policy pin identity가 불완전합니다.",
+            )
+        with self.connect() as conn:
+            columns = {
+                str(row["name"])
+                for row in conn.execute(
+                    "PRAGMA table_info(historical_validation_run)"
+                ).fetchall()
+            }
+            required = {
+                "selection_policy_id",
+                "selection_policy_hash",
+                "selection_policy_contract_version",
+                "selection_policy_pin_json",
+            }
+            if not required.issubset(columns):
+                raise ValidationCatalogError(
+                    "VAL_SELECTION_POLICY_MIGRATION_REQUIRED",
+                    "NEXT-1 Policy Identity migration을 먼저 실행해야 합니다.",
+                )
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT * FROM historical_validation_run WHERE id=?",
+                (validation_id,),
+            ).fetchone()
+            if row is None:
+                raise ValidationCatalogError(
+                    "SIM_VALIDATION_NOT_FOUND",
+                    "저장된 검증을 찾을 수 없습니다.",
+                )
+            existing_id = str(row["selection_policy_id"] or "")
+            existing_hash = str(row["selection_policy_hash"] or "")
+            if existing_id or existing_hash:
+                if existing_id != policy_id or existing_hash != policy_hash:
+                    raise ValidationCatalogError(
+                        "VAL_SELECTION_POLICY_PIN_CONFLICT",
+                        "Historical Validation의 Selection Policy pin은 변경할 수 없습니다.",
+                    )
+                conn.rollback()
+                return self._from_row(row)
+
+            completed_days = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(*) FROM historical_validation_day
+                    WHERE validation_id=? AND status='COMPLETED'
+                    """,
+                    (validation_id,),
+                ).fetchone()[0]
+            )
+            if str(row["status"]) == "COMPLETED" or completed_days:
+                raise ValidationCatalogError(
+                    "VAL_SELECTION_POLICY_LEGACY_UNAVAILABLE",
+                    "이미 실행된 legacy Validation에는 Selection Policy를 추정 backfill하지 않습니다.",
+                )
+            conn.execute(
+                """
+                UPDATE historical_validation_run
+                SET selection_policy_id=?,selection_policy_hash=?,
+                    selection_policy_contract_version=?,selection_policy_pin_json=?,
+                    updated_at=?
+                WHERE id=?
+                """,
+                (
+                    policy_id,
+                    policy_hash,
+                    contract,
+                    _json_text(pin_payload),
+                    datetime.now(timezone.utc).isoformat(),
+                    validation_id,
+                ),
+            )
+            pinned = conn.execute(
+                "SELECT * FROM historical_validation_run WHERE id=?",
+                (validation_id,),
+            ).fetchone()
+            conn.commit()
+        return self._from_row(pinned)
 
     def list(self) -> list[HistoricalValidationDraft]:
         with self.connect() as conn:

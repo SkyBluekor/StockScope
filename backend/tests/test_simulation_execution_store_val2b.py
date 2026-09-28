@@ -11,6 +11,25 @@ from app.simulation.execution_catalog import (
     HistoricalExecutionCatalog,
 )
 from app.simulation.validation_catalog import HistoricalValidationCatalog
+from app.strategy.production_selection_policy import SelectionPolicyPin
+from app.simulation.selection_policy_pin import (
+    deserialize_selection_policy_pin,
+    serialize_selection_policy_pin,
+)
+
+
+TEST_PIN = SelectionPolicyPin(
+    policy_id="TEST-POLICY",
+    policy_hash="b" * 64,
+    policy_contract_version="VN_P5_S1_SELECTION_POLICY_V1",
+    policy_source="TEST",
+    fallback_used=False,
+    fallback_reason=None,
+    operating_strategies=((None, "pullback", None),),
+    scanner_baseline_id="0.21.3.8",
+    production_fingerprint=None,
+    production_policy_fingerprint=None,
+)
 
 
 def _completed_source(db: Path):
@@ -25,6 +44,7 @@ def _completed_source(db: Path):
         resolved_start_date="2026-01-02",
         resolved_end_date="2026-01-02",
         trading_day_count=1,
+        selection_policy_pin=serialize_selection_policy_pin(TEST_PIN),
     )
     day = source.save_completed_day(
         validation_id=draft.id,

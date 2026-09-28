@@ -9,7 +9,11 @@ from typing import Callable
 
 from app.input_identity import ANALYSIS_PROOF_VERSION, PROOF_TABLE
 
-from .analysis import DEFAULT_MARKET_STORE_DB, analyze_single_stock
+from .analysis import (
+    ANALYSIS_FINGERPRINT_VERSION,
+    DEFAULT_MARKET_STORE_DB,
+    analyze_single_stock,
+)
 from .catalog import HoldingsCatalog
 
 
@@ -75,7 +79,7 @@ def verify_current_analysis_input(
         row = conn.execute(
             """
             SELECT s.market,s.ticker,d.id AS analysis_day_id,d.market_date,
-                   d.current_revision_id,r.input_fingerprint
+                   d.current_revision_id,r.input_fingerprint,r.source_versions_json
             FROM monitored_stock s
             JOIN stock_analysis_day d ON d.monitored_stock_id=s.id
             JOIN stock_analysis_revision r ON r.id=d.current_revision_id
@@ -96,6 +100,23 @@ def verify_current_analysis_input(
     market_date = str(row["market_date"])
     revision_id = str(row["current_revision_id"])
     stored_fingerprint = str(row["input_fingerprint"])
+    try:
+        stored_source_versions = json.loads(str(row["source_versions_json"] or "{}"))
+    except json.JSONDecodeError as exc:
+        raise HoldingsInputProofError(
+            "HOLD_INPUT_PROOF_IDENTITY_INVALID",
+            "저장 Analysis의 source identity를 읽을 수 없습니다.",
+        ) from exc
+    if (
+        not isinstance(stored_source_versions, dict)
+        or stored_source_versions.get("fingerprint_contract_version")
+        != ANALYSIS_FINGERPRINT_VERSION
+    ):
+        raise HoldingsInputProofError(
+            "HOLD_INPUT_PROOF_IDENTITY_VERSION_UNSUPPORTED",
+            "이 Analysis는 이전 identity contract로 생성되었습니다. 기존 revision은 유지하고 새 분석을 실행하세요.",
+        )
+
     current = analyze_single_stock(
         market=market,
         ticker=ticker,

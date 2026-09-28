@@ -8,6 +8,10 @@ from pathlib import Path
 import pytest
 
 from app.holdings import HoldingsCatalog, PositionLifecycleService
+from app.backtest.production_exit_policy import PRODUCTION_EXIT_POLICY_VERSION
+from app.backtest.scanner import StockScannerService
+from app.holdings.analysis import ANALYSIS_ENGINE_VERSION, ANALYSIS_FINGERPRINT_VERSION
+from app.input_identity import INPUT_IDENTITY_SCHEMA_VERSION
 from app.holdings.decision_support import (
     HoldingDecisionSupportService,
     HoldingsDecisionSupportError,
@@ -55,6 +59,26 @@ def _market(path: Path, close: str = "100") -> None:
         conn.execute(
             "INSERT INTO stock_daily VALUES('KOSPI','20260924','005930',?)",
             (json.dumps(payload),),
+        )
+        conn.execute(
+            "CREATE TABLE input_identity_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL)"
+        )
+        conn.execute(
+            "CREATE TABLE input_change_generation("
+            "market TEXT NOT NULL,scope TEXT NOT NULL,subject TEXT NOT NULL,"
+            "generation INTEGER NOT NULL,PRIMARY KEY(market,scope,subject))"
+        )
+        conn.execute(
+            "INSERT INTO input_identity_meta VALUES('schema_version',?)",
+            (INPUT_IDENTITY_SCHEMA_VERSION,),
+        )
+        conn.executemany(
+            "INSERT INTO input_change_generation VALUES(?,?,?,1)",
+            [
+                ("KOSPI", "STOCK", "005930"),
+                ("KOSPI", "STOCK_STATUS", "*"),
+                ("KOSPI", "INDEX", "*"),
+            ],
         )
 
 
@@ -108,10 +132,19 @@ def _rev(
         stop_price=stop,
         target1_price=t1,
         target2_price=t2,
-        scanner_version="test",
-        analysis_engine_version="test",
-        policy_version="test",
-        source_versions={"fixture": fingerprint},
+        scanner_version=StockScannerService.VERSION,
+        analysis_engine_version=ANALYSIS_ENGINE_VERSION,
+        policy_version=f"{PRODUCTION_EXIT_POLICY_VERSION}-fixture",
+        source_versions={
+            "fixture": fingerprint,
+            "fingerprint_contract_version": ANALYSIS_FINGERPRINT_VERSION,
+            "input_generation": {
+                "schema_version": INPUT_IDENTITY_SCHEMA_VERSION,
+                "stock_generation": 1,
+                "stock_status_generation": 1,
+                "index_generation": 1,
+            },
+        },
         snapshot={"fixture": fingerprint},
         computed_at=f"{market_date}T00:00:00+00:00",
     )
@@ -638,3 +671,56 @@ def test_decision_and_resolution_are_append_only(tmp_path: Path):
                 "DELETE FROM holding_decision_resolution WHERE id=?",
                 (resolution_id,),
             )
+
+
+def test_unusable_analysis_keeps_active_stop_protection(tmp_path: Path):
+    catalog, _, opened, mdb = _env(tmp_path, close="85")
+    revision = _rev(catalog, opened.stock_id, "r1", "90")
+    _apply(catalog, mdb, opened.position.id, revision.id)
+
+    with sqlite3.connect(mdb) as conn:
+        conn.execute(
+            """
+            UPDATE input_change_generation
+            SET generation=2
+            WHERE market='KOSPI' AND scope='STOCK' AND subject='005930'
+            """
+        )
+
+    service = HoldingDecisionSupportService(catalog, market_store_db=mdb)
+    decision = service.evaluate(opened.position.id)
+
+    assert decision["status"] == "ACTIONABLE"
+    assert decision["primary_action"] == "STOP"
+    assert decision["evidence"]["analysis_current_use_allowed"] is False
+    assert decision["evidence"]["protection_ready"] is True
+    assert decision["evidence"]["proposal_ready"] is False
+    stop = next(
+        item for item in decision["alternatives"]
+        if item["action"] == "STOP"
+    )
+    assert stop["state"] == "AVAILABLE"
+
+
+def test_unusable_analysis_cannot_apply_new_plan(tmp_path: Path):
+    catalog, _, opened, mdb = _env(tmp_path, close="100")
+    _rev(catalog, opened.stock_id, "r1", "90")
+
+    with sqlite3.connect(mdb) as conn:
+        conn.execute(
+            """
+            UPDATE input_change_generation
+            SET generation=2
+            WHERE market='KOSPI' AND scope='STOCK' AND subject='005930'
+            """
+        )
+
+    service = HoldingDecisionSupportService(catalog, market_store_db=mdb)
+    decision = service.evaluate(opened.position.id)
+
+    assert decision["status"] == "INSUFFICIENT_DATA"
+    assert decision["evidence"]["analysis_current_use_allowed"] is False
+    assert decision["evidence"]["proposal_ready"] is False
+    with pytest.raises(HoldingsDecisionSupportError) as caught:
+        service.apply_plan(decision_id=decision["decision_id"])
+    assert caught.value.code == "HOLD_DECISION_ANALYSIS_NOT_CURRENTLY_USABLE"

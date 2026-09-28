@@ -9,7 +9,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import app.api.holdings as holdings_api
+from app.backtest.production_exit_policy import PRODUCTION_EXIT_POLICY_VERSION
+from app.backtest.scanner import StockScannerService
 from app.holdings import HoldingsCatalog, PositionLifecycleService
+from app.holdings.analysis import ANALYSIS_ENGINE_VERSION, ANALYSIS_FINGERPRINT_VERSION
+from app.input_identity import INPUT_IDENTITY_SCHEMA_VERSION
 from app.holdings.management import HoldingManagementService
 from tools.data.migrate_holdings_decision_vnp3s1 import (
     migrate_holdings_decision_store,
@@ -25,6 +29,14 @@ def _market(path: Path, close: str = "100") -> None:
             );
             CREATE TABLE stock_daily(
                 market TEXT,bas_dd TEXT,stock_code TEXT,row_json TEXT
+            );
+            CREATE TABLE input_identity_meta(
+                key TEXT PRIMARY KEY,value TEXT NOT NULL
+            );
+            CREATE TABLE input_change_generation(
+                market TEXT NOT NULL,scope TEXT NOT NULL,subject TEXT NOT NULL,
+                generation INTEGER NOT NULL,
+                PRIMARY KEY(market,scope,subject)
             );
             """
         )
@@ -42,6 +54,18 @@ def _market(path: Path, close: str = "100") -> None:
         conn.execute(
             "INSERT INTO stock_daily VALUES('KOSPI','20260924','005930',?)",
             (json.dumps(payload),),
+        )
+        conn.execute(
+            "INSERT INTO input_identity_meta VALUES('schema_version',?)",
+            (INPUT_IDENTITY_SCHEMA_VERSION,),
+        )
+        conn.executemany(
+            "INSERT INTO input_change_generation VALUES(?,?,?,1)",
+            [
+                ("KOSPI", "STOCK", "005930"),
+                ("KOSPI", "STOCK_STATUS", "*"),
+                ("KOSPI", "INDEX", "*"),
+            ],
         )
 
 
@@ -84,10 +108,19 @@ def api_env(tmp_path: Path, monkeypatch):
         stop_price="90",
         target1_price="120",
         target2_price="130",
-        scanner_version="test",
-        analysis_engine_version="test",
-        policy_version="test",
-        source_versions={"fixture": "api"},
+        scanner_version=StockScannerService.VERSION,
+        analysis_engine_version=ANALYSIS_ENGINE_VERSION,
+        policy_version=f"{PRODUCTION_EXIT_POLICY_VERSION}-fixture",
+        source_versions={
+            "fixture": "api",
+            "fingerprint_contract_version": ANALYSIS_FINGERPRINT_VERSION,
+            "input_generation": {
+                "schema_version": INPUT_IDENTITY_SCHEMA_VERSION,
+                "stock_generation": 1,
+                "stock_status_generation": 1,
+                "index_generation": 1,
+            },
+        },
         snapshot={"fixture": True},
         computed_at="2026-09-24T00:00:00+00:00",
     )
@@ -187,10 +220,19 @@ def test_decision_api_blocks_add_and_applies_new_plan_without_ledger_event(api_e
         stop_price="95",
         target1_price="125",
         target2_price="135",
-        scanner_version="test",
-        analysis_engine_version="test",
-        policy_version="test",
-        source_versions={"fixture": "api-2"},
+        scanner_version=StockScannerService.VERSION,
+        analysis_engine_version=ANALYSIS_ENGINE_VERSION,
+        policy_version=f"{PRODUCTION_EXIT_POLICY_VERSION}-fixture",
+        source_versions={
+            "fixture": "api-2",
+            "fingerprint_contract_version": ANALYSIS_FINGERPRINT_VERSION,
+            "input_generation": {
+                "schema_version": INPUT_IDENTITY_SCHEMA_VERSION,
+                "stock_generation": 1,
+                "stock_status_generation": 1,
+                "index_generation": 1,
+            },
+        },
         snapshot={"fixture": True},
         computed_at="2026-09-24T01:00:00+00:00",
     )

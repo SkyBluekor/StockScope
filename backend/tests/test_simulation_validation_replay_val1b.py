@@ -7,9 +7,31 @@ import pytest
 
 from app.backtest.scanner import StockScannerService
 from app.simulation.validation_catalog import HistoricalValidationCatalog
+from app.strategy.production_selection_policy import SelectionPolicyPin
+from app.simulation.selection_policy_pin import (
+    deserialize_selection_policy_pin,
+    serialize_selection_policy_pin,
+)
 from app.simulation.validation_replay import (
     HistoricalValidationReplayError,
     HistoricalValidationReplayService,
+)
+
+
+TEST_PIN = SelectionPolicyPin(
+    policy_id="TEST-POLICY",
+    policy_hash="a" * 64,
+    policy_contract_version="VN_P5_S1_SELECTION_POLICY_V1",
+    policy_source="TEST",
+    fallback_used=False,
+    fallback_reason=None,
+    operating_strategies=(
+        (None, "pullback", None),
+        (None, "breakout", None),
+    ),
+    scanner_baseline_id="0.21.3.8",
+    production_fingerprint=None,
+    production_policy_fingerprint=None,
 )
 
 
@@ -68,7 +90,16 @@ class FakeScanner:
         self.mode = mode
         self.calls: list[str] = []
 
-    async def run(self, *, market_scope, as_of_date, candidate_limit, force_refresh, allow_large_sync):
+    async def run(
+        self,
+        *,
+        market_scope,
+        as_of_date,
+        candidate_limit,
+        force_refresh,
+        allow_large_sync,
+        selection_policy_pin=None,
+    ):
         self.calls.append(as_of_date)
         day = date.fromisoformat(as_of_date)
         candidate_day = day + timedelta(days=1) if self.mode == "lookahead" else day
@@ -78,6 +109,7 @@ class FakeScanner:
             "scanner_cache_hit": False,
             "requested_as_of": as_of_date,
             "market_scope": market_scope,
+            "strategy_selection_policy": selection_policy_pin.metadata(),
             "data_dates": {market: as_of_date for market in markets},
             "input_fingerprint": {"id": f"fp-{as_of_date}"},
             "market_summary": [{"market": market, "date": as_of_date} for market in markets],
@@ -126,6 +158,7 @@ def _draft(catalog: HistoricalValidationCatalog):
         resolved_start_date="2026-01-05",
         resolved_end_date="2026-01-07",
         trading_day_count=3,
+        selection_policy_pin=serialize_selection_policy_pin(TEST_PIN),
     )
 
 

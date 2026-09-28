@@ -28,6 +28,7 @@ def test_registry_order_is_explicit_and_stable():
         "VN-P4-S1",
         "VN-P5-S1",
         "VN-P6-S1",
+        "NEXT-1",
     ]
 
 
