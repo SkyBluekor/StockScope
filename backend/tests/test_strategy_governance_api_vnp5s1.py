@@ -173,7 +173,7 @@ def test_activation_cannot_skip_immutable_approval(
     )
 
     assert response.status_code == 404
-    assert response.json()["detail"]["code"] == "APPROVAL_NOT_FOUND"
+    assert response.json()["detail"]["code"] == "APPROVAL_ARTIFACT_NOT_AVAILABLE"
 
 
 def test_rollback_requires_existing_active_reference(
