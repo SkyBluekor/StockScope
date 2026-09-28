@@ -51,6 +51,9 @@ export function analysisContractMessage(contract: StockDataContract | null) {
     return "저장된 분석 결과는 현재 기준으로 갱신이 필요합니다.";
   }
   if (resource.status === "UNVERIFIED") {
+    if (resource.reason_code === "ANALYSIS_IDENTITY_LEGACY") {
+      return "이전 분석 기록은 유지되어 있지만 현재 정책·전략 identity 기준으로는 새 판단에 사용하지 않습니다. 새 분석을 실행하세요.";
+    }
     if (resource.reason_code === "CURRENT_INPUT_IDENTITY_NOT_PROVEN") {
       return "저장 결과는 있지만 현재 입력과 같은 조건인지 아직 증명되지 않았습니다.";
     }
