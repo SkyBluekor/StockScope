@@ -20,6 +20,7 @@ from app.event_evidence.models import (
     SOURCE_REF_CONTRACT_VERSION,
 )
 from app.event_evidence.resolution import EVENT_RESOLUTION_CONTRACT_VERSION
+from app.event_evidence.quality import EVENT_EVIDENCE_QUALITY_CONTRACT_VERSION
 from app.event_evidence.policy import SOURCE_POLICY_CONTRACT_VERSION
 from app.event_evidence.store import (
     EVENT_EVIDENCE_HASH_CONTRACT_VERSION,
@@ -78,6 +79,18 @@ TABLE_COLUMNS: dict[str, set[str]] = {
         "resolution_id","resolution_contract_version","event_id","event_version",
         "canonical_event_id","canonical_version","resolution_type",
         "resolution_basis_json","resolution_hash","created_at",
+    },
+    "event_evidence_quality_assessment": {
+        "assessment_id","quality_contract_version","assessment_scope",
+        "assessment_as_of","event_id","event_version","event_hash",
+        "source_bundle_hash","entity_id","entity_hash","relevance_id",
+        "relevance_hash","relation_type","rights_policy_bundle_hash",
+        "canonical_event_id","canonical_version","canonical_hash",
+        "resolution_hash","rights_state","integrity_state","temporal_state",
+        "relevance_state","resolution_state","revision_state",
+        "corroboration_state","source_count","distinct_source_origin_count",
+        "quality_state","blocking_reasons_json","insufficient_reasons_json",
+        "limitations_json","quality_json","quality_hash","created_at",
     },
 }
 
@@ -144,6 +157,7 @@ def _ensure_meta(conn: sqlite3.Connection) -> None:
         "entity_contract_version": ENTITY_IDENTITY_CONTRACT_VERSION,
         "relevance_contract_version": EVENT_RELEVANCE_CONTRACT_VERSION,
         "resolution_contract_version": EVENT_RESOLUTION_CONTRACT_VERSION,
+        "quality_contract_version": EVENT_EVIDENCE_QUALITY_CONTRACT_VERSION,
     }
     for key, value in expected.items():
         row = conn.execute(
@@ -385,6 +399,67 @@ def _create_tables(conn: sqlite3.Connection) -> None:
 
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS event_evidence_quality_assessment(
+            assessment_id TEXT PRIMARY KEY,
+            quality_contract_version TEXT NOT NULL,
+            assessment_scope TEXT NOT NULL CHECK(
+                assessment_scope IN ('REFERENCE','HISTORICAL_EVALUATION')
+            ),
+            assessment_as_of TEXT NOT NULL,
+            event_id TEXT NOT NULL,
+            event_version INTEGER NOT NULL,
+            event_hash TEXT NOT NULL,
+            source_bundle_hash TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            entity_hash TEXT NOT NULL,
+            relevance_id TEXT NOT NULL,
+            relevance_hash TEXT NOT NULL,
+            relation_type TEXT NOT NULL,
+            rights_policy_bundle_hash TEXT NOT NULL,
+            canonical_event_id TEXT,
+            canonical_version INTEGER,
+            canonical_hash TEXT,
+            resolution_hash TEXT,
+            rights_state TEXT NOT NULL,
+            integrity_state TEXT NOT NULL,
+            temporal_state TEXT NOT NULL,
+            relevance_state TEXT NOT NULL,
+            resolution_state TEXT NOT NULL,
+            revision_state TEXT NOT NULL,
+            corroboration_state TEXT NOT NULL,
+            source_count INTEGER NOT NULL CHECK(source_count >= 0),
+            distinct_source_origin_count INTEGER NOT NULL CHECK(
+                distinct_source_origin_count >= 0
+            ),
+            quality_state TEXT NOT NULL CHECK(
+                quality_state IN ('USABLE','LIMITED','INSUFFICIENT','BLOCKED')
+            ),
+            blocking_reasons_json TEXT NOT NULL,
+            insufficient_reasons_json TEXT NOT NULL,
+            limitations_json TEXT NOT NULL,
+            quality_json TEXT NOT NULL,
+            quality_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(event_id,event_version)
+                REFERENCES event_evidence_record(event_id,event_version)
+                ON DELETE RESTRICT,
+            FOREIGN KEY(entity_id)
+                REFERENCES event_evidence_entity(entity_id)
+                ON DELETE RESTRICT,
+            FOREIGN KEY(relevance_id)
+                REFERENCES event_evidence_entity_relevance(relevance_id)
+                ON DELETE RESTRICT,
+            FOREIGN KEY(canonical_event_id,canonical_version)
+                REFERENCES event_evidence_canonical_group(
+                    canonical_event_id,canonical_version
+                )
+                ON DELETE RESTRICT
+        )
+        """
+    )
+
+    conn.execute(
+        """
         CREATE INDEX IF NOT EXISTS idx_event_evidence_source_kind_available
         ON event_evidence_source_ref(source_kind,available_at)
         """
@@ -419,6 +494,22 @@ def _create_tables(conn: sqlite3.Connection) -> None:
         ON event_evidence_resolution(canonical_event_id,canonical_version)
         """
     )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_event_quality_event_asof
+        ON event_evidence_quality_assessment(
+            event_id,entity_id,assessment_as_of
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_event_quality_state
+        ON event_evidence_quality_assessment(
+            assessment_scope,quality_state,assessment_as_of
+        )
+        """
+    )
 
     for name, table in (
         ("trg_event_policy_immutable_update", "event_evidence_policy_snapshot"),
@@ -437,6 +528,14 @@ def _create_tables(conn: sqlite3.Connection) -> None:
         ("trg_event_canonical_immutable_delete", "event_evidence_canonical_group"),
         ("trg_event_resolution_immutable_update", "event_evidence_resolution"),
         ("trg_event_resolution_immutable_delete", "event_evidence_resolution"),
+        (
+            "trg_event_quality_immutable_update",
+            "event_evidence_quality_assessment",
+        ),
+        (
+            "trg_event_quality_immutable_delete",
+            "event_evidence_quality_assessment",
+        ),
     ):
         operation = "UPDATE" if name.endswith("update") else "DELETE"
         conn.execute(
@@ -506,6 +605,11 @@ def migrate_event_evidence_store(path: Path) -> dict[str, object]:
             "resolution_count": int(
                 conn.execute(
                     "SELECT COUNT(*) FROM event_evidence_resolution"
+                ).fetchone()[0]
+            ),
+            "quality_assessment_count": int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM event_evidence_quality_assessment"
                 ).fetchone()[0]
             ),
         }

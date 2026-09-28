@@ -85,3 +85,17 @@ __all__ += [
     "DuplicateClassification",
     "EventResolutionService",
 ]
+
+from app.event_evidence.quality import (
+    EVENT_EVIDENCE_QUALITY_CONTRACT_VERSION,
+    EvidenceQualityScope,
+    EvidenceQualityState,
+    EventEvidenceQualityService,
+)
+
+__all__ += [
+    "EVENT_EVIDENCE_QUALITY_CONTRACT_VERSION",
+    "EvidenceQualityScope",
+    "EvidenceQualityState",
+    "EventEvidenceQualityService",
+]
