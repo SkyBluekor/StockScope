@@ -127,6 +127,13 @@ export type StockDataContract = {
       risk_state: string | null;
       identity: {
         input_fingerprint: string | null;
+        fingerprint_contract_version: string | null;
+        selection_policy_id: string | null;
+        selection_policy_hash: string | null;
+        selection_policy_contract_version: string | null;
+        selection_policy_source: string | null;
+        strategy_version_id: string | null;
+        strategy_definition_hash: string | null;
         scanner_version: string | null;
         analysis_engine_version: string | null;
         policy_version: string | null;
