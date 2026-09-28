@@ -756,7 +756,10 @@ class HoldingDecisionSupportService:
         )
         if prior_use_allowed != current_use_allowed:
             reasons.append("ANALYSIS_USABILITY_CHANGED")
-        elif current["input_fingerprint"] != decision["input_fingerprint"]:
+        elif (
+            not reasons
+            and current["input_fingerprint"] != decision["input_fingerprint"]
+        ):
             reasons.append("DECISION_SOURCE_CONTEXT_CHANGED")
         return reasons
 
