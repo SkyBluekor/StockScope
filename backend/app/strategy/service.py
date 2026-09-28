@@ -1040,7 +1040,6 @@ class StrategyAnalysisService:
                     position_mode=position_mode,
                     days=60,
                     detail_limit=4,
-                    as_of=str(latest.get("date") or technical.get("date_to") or as_of or ""),
                     history=history,
                     reference_price=reference_price,
                     reference_volume=reference_volume,
