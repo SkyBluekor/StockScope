@@ -207,10 +207,6 @@ class HistoricalValidationCatalog:
                     "error_code": "TEXT",
                     "error_message": "TEXT",
                     "cancel_requested": "INTEGER NOT NULL DEFAULT 0",
-                    "selection_policy_id": "TEXT",
-                    "selection_policy_hash": "TEXT",
-                    "selection_policy_contract_version": "TEXT",
-                    "selection_policy_pin_json": "TEXT",
                 },
             )
             conn.executescript(
@@ -310,7 +306,12 @@ class HistoricalValidationCatalog:
             )
 
     @staticmethod
+    def _optional_row_value(row: sqlite3.Row, name: str) -> Any:
+        return row[name] if name in row.keys() else None
+
+    @staticmethod
     def _from_row(row: sqlite3.Row) -> HistoricalValidationDraft:
+        optional = HistoricalValidationCatalog._optional_row_value
         return HistoricalValidationDraft(
             id=row["id"], name=row["name"], validation_target=row["validation_target"],
             market_scope=row["market_scope"], scanner_version=row["scanner_version"],
@@ -319,10 +320,14 @@ class HistoricalValidationCatalog:
             resolved_start_date=row["resolved_start_date"], resolved_end_date=row["resolved_end_date"],
             trading_day_count=int(row["trading_day_count"]), status=row["status"],
             created_at=row["created_at"], updated_at=row["updated_at"],
-            selection_policy_id=row["selection_policy_id"],
-            selection_policy_hash=row["selection_policy_hash"],
-            selection_policy_contract_version=row["selection_policy_contract_version"],
-            selection_policy_pin=_json_value(row["selection_policy_pin_json"]),
+            selection_policy_id=optional(row, "selection_policy_id"),
+            selection_policy_hash=optional(row, "selection_policy_hash"),
+            selection_policy_contract_version=optional(
+                row, "selection_policy_contract_version"
+            ),
+            selection_policy_pin=_json_value(
+                optional(row, "selection_policy_pin_json")
+            ),
             started_at=row["started_at"], completed_at=row["completed_at"],
             processed_day_count=int(row["processed_day_count"] or 0),
             candidate_count=int(row["candidate_count"] or 0),
@@ -416,6 +421,24 @@ class HistoricalValidationCatalog:
             selection_policy_pin=pin_payload or None,
         )
         with self.connect() as conn:
+            if pin_payload:
+                columns = {
+                    str(row["name"])
+                    for row in conn.execute(
+                        "PRAGMA table_info(historical_validation_run)"
+                    ).fetchall()
+                }
+                required = {
+                    "selection_policy_id",
+                    "selection_policy_hash",
+                    "selection_policy_contract_version",
+                    "selection_policy_pin_json",
+                }
+                if not required.issubset(columns):
+                    raise ValidationCatalogError(
+                        "VAL_SELECTION_POLICY_MIGRATION_REQUIRED",
+                        "NEXT-1 Policy Identity migration을 먼저 실행해야 합니다.",
+                    )
             conn.execute(
                 """INSERT INTO historical_validation_run(
                     id,name,validation_target,market_scope,scanner_version,scanner_baseline,
@@ -457,6 +480,23 @@ class HistoricalValidationCatalog:
                 "Selection Policy pin identity가 불완전합니다.",
             )
         with self.connect() as conn:
+            columns = {
+                str(row["name"])
+                for row in conn.execute(
+                    "PRAGMA table_info(historical_validation_run)"
+                ).fetchall()
+            }
+            required = {
+                "selection_policy_id",
+                "selection_policy_hash",
+                "selection_policy_contract_version",
+                "selection_policy_pin_json",
+            }
+            if not required.issubset(columns):
+                raise ValidationCatalogError(
+                    "VAL_SELECTION_POLICY_MIGRATION_REQUIRED",
+                    "NEXT-1 Policy Identity migration을 먼저 실행해야 합니다.",
+                )
             conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(
                 "SELECT * FROM historical_validation_run WHERE id=?",
