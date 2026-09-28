@@ -14,6 +14,11 @@ for candidate in (ROOT, BACKEND):
         sys.path.insert(0, str(candidate))
 
 from app.prospective.models import PROSPECTIVE_SCHEMA_VERSION
+from app.simulation.strategy_change import (
+    STRATEGY_APPROVAL_ARTIFACT_VERSION,
+    STRATEGY_APPROVAL_PROTOCOL_CONTRACT_VERSION,
+    STRATEGY_CHANGE_PROPOSAL_VERSION,
+)
 from app.simulation.strategy_evidence import STRATEGY_EVALUATION_ARTIFACT_VERSION
 from app.simulation.strategy_governance import (
     STRATEGY_BOOTSTRAP_DEFINITION_VERSION,
@@ -43,6 +48,9 @@ STRATEGY_GOVERNANCE_TABLES = frozenset(
         "strategy_governance_schema_meta",
         "strategy_registry_version",
         "strategy_evaluation_artifact",
+        "strategy_change_proposal",
+        "strategy_change_proposal_evidence",
+        "strategy_approval_artifact",
     }
 )
 
@@ -78,6 +86,53 @@ TABLE_COLUMNS: dict[str, set[str]] = {
         "source_contract_json",
         "artifact_hash",
         "created_at",
+    },
+    "strategy_change_proposal": {
+        "id",
+        "proposal_version",
+        "client_request_id",
+        "base_registry_snapshot_hash",
+        "base_strategy_set_fingerprint",
+        "change_set_json",
+        "change_set_hash",
+        "scope_json",
+        "candidate_policy_intent_json",
+        "candidate_policy_intent_hash",
+        "evidence_bundle_hash",
+        "rollback_basis_json",
+        "rollback_basis_hash",
+        "scanner_baseline_id",
+        "production_fingerprint",
+        "production_policy_fingerprint",
+        "approval_gate_state",
+        "limitations_json",
+        "proposal_hash",
+        "created_at",
+    },
+    "strategy_change_proposal_evidence": {
+        "proposal_id",
+        "sequence",
+        "artifact_id",
+        "artifact_hash",
+        "strategy_version_id",
+        "source_kind",
+        "evidence_state",
+    },
+    "strategy_approval_artifact": {
+        "id",
+        "approval_version",
+        "proposal_id",
+        "proposal_hash",
+        "approval_protocol_version",
+        "approval_protocol_hash",
+        "evidence_bundle_hash",
+        "registry_snapshot_hash",
+        "candidate_policy_intent_hash",
+        "rollback_basis_hash",
+        "source_verification_json",
+        "approval_context_json",
+        "approval_hash",
+        "approved_at",
     },
 }
 
@@ -177,6 +232,9 @@ def _ensure_meta(
         "bootstrap_source": STRATEGY_BOOTSTRAP_SOURCE,
         "bootstrap_strategy_set_fingerprint": strategy_set_fingerprint,
         "evaluation_artifact_version": STRATEGY_EVALUATION_ARTIFACT_VERSION,
+        "change_proposal_version": STRATEGY_CHANGE_PROPOSAL_VERSION,
+        "approval_artifact_version": STRATEGY_APPROVAL_ARTIFACT_VERSION,
+        "approval_protocol_contract_version": STRATEGY_APPROVAL_PROTOCOL_CONTRACT_VERSION,
     }
     for key, expected in values.items():
         row = conn.execute(
@@ -332,6 +390,148 @@ def _create_evidence_artifacts(conn: sqlite3.Connection) -> None:
     )
 
 
+def _create_change_governance(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS strategy_change_proposal(
+            id TEXT PRIMARY KEY,
+            proposal_version TEXT NOT NULL,
+            client_request_id TEXT NOT NULL UNIQUE,
+            base_registry_snapshot_hash TEXT NOT NULL,
+            base_strategy_set_fingerprint TEXT NOT NULL,
+            change_set_json TEXT NOT NULL,
+            change_set_hash TEXT NOT NULL,
+            scope_json TEXT NOT NULL,
+            candidate_policy_intent_json TEXT NOT NULL,
+            candidate_policy_intent_hash TEXT NOT NULL,
+            evidence_bundle_hash TEXT NOT NULL,
+            rollback_basis_json TEXT NOT NULL,
+            rollback_basis_hash TEXT NOT NULL,
+            scanner_baseline_id TEXT NOT NULL,
+            production_fingerprint TEXT NOT NULL,
+            production_policy_fingerprint TEXT NOT NULL,
+            approval_gate_state TEXT NOT NULL CHECK(
+                approval_gate_state IN (
+                    'REVIEW_ONLY_Q7_UNAPPROVED',
+                    'BLOCKED_HORIZON_POLICY',
+                    'APPROVAL_ELIGIBLE'
+                )
+            ),
+            limitations_json TEXT NOT NULL,
+            proposal_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    _require_columns(conn, "strategy_change_proposal")
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS strategy_change_proposal_evidence(
+            proposal_id TEXT NOT NULL,
+            sequence INTEGER NOT NULL CHECK(sequence >= 1),
+            artifact_id TEXT NOT NULL,
+            artifact_hash TEXT NOT NULL,
+            strategy_version_id TEXT NOT NULL,
+            source_kind TEXT NOT NULL CHECK(
+                source_kind IN ('FEEDBACK_REPORT','PROSPECTIVE_REPORT')
+            ),
+            evidence_state TEXT NOT NULL,
+            PRIMARY KEY(proposal_id,sequence),
+            UNIQUE(proposal_id,artifact_id),
+            FOREIGN KEY(proposal_id)
+                REFERENCES strategy_change_proposal(id)
+                ON DELETE RESTRICT,
+            FOREIGN KEY(artifact_id)
+                REFERENCES strategy_evaluation_artifact(id)
+                ON DELETE RESTRICT,
+            FOREIGN KEY(strategy_version_id)
+                REFERENCES strategy_registry_version(strategy_version_id)
+                ON DELETE RESTRICT
+        )
+        """
+    )
+    _require_columns(conn, "strategy_change_proposal_evidence")
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS strategy_approval_artifact(
+            id TEXT PRIMARY KEY,
+            approval_version TEXT NOT NULL,
+            proposal_id TEXT NOT NULL,
+            proposal_hash TEXT NOT NULL,
+            approval_protocol_version TEXT NOT NULL,
+            approval_protocol_hash TEXT NOT NULL,
+            evidence_bundle_hash TEXT NOT NULL,
+            registry_snapshot_hash TEXT NOT NULL,
+            candidate_policy_intent_hash TEXT NOT NULL,
+            rollback_basis_hash TEXT NOT NULL,
+            source_verification_json TEXT NOT NULL,
+            approval_context_json TEXT NOT NULL,
+            approval_hash TEXT NOT NULL,
+            approved_at TEXT NOT NULL,
+            FOREIGN KEY(proposal_id)
+                REFERENCES strategy_change_proposal(id)
+                ON DELETE RESTRICT
+        )
+        """
+    )
+    _require_columns(conn, "strategy_approval_artifact")
+
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_strategy_change_created
+        ON strategy_change_proposal(created_at DESC,id DESC)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_strategy_change_evidence_artifact
+        ON strategy_change_proposal_evidence(artifact_id,proposal_id)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_strategy_approval_proposal
+        ON strategy_approval_artifact(proposal_id,approved_at DESC)
+        """
+    )
+
+    for name, table in (
+        ("trg_strategy_change_immutable_update", "strategy_change_proposal"),
+        ("trg_strategy_change_immutable_delete", "strategy_change_proposal"),
+        (
+            "trg_strategy_change_evidence_immutable_update",
+            "strategy_change_proposal_evidence",
+        ),
+        (
+            "trg_strategy_change_evidence_immutable_delete",
+            "strategy_change_proposal_evidence",
+        ),
+        (
+            "trg_strategy_approval_immutable_update",
+            "strategy_approval_artifact",
+        ),
+        (
+            "trg_strategy_approval_immutable_delete",
+            "strategy_approval_artifact",
+        ),
+    ):
+        operation = "UPDATE" if name.endswith("update") else "DELETE"
+        conn.execute(
+            f"""
+            CREATE TRIGGER IF NOT EXISTS {name}
+            BEFORE {operation} ON {table}
+            BEGIN
+                SELECT RAISE(
+                    ABORT,
+                    '{table} is immutable'
+                );
+            END
+            """
+        )
+
+
 def _bootstrap_registry(conn: sqlite3.Connection) -> tuple[int, int]:
     definitions = current_strategy_definitions()
     bootstrap_rows = conn.execute(
@@ -425,6 +625,7 @@ def migrate_strategy_governance_store(path: Path) -> dict[str, object]:
         )
         _create_registry(conn)
         _create_evidence_artifacts(conn)
+        _create_change_governance(conn)
         inserted, verified = _bootstrap_registry(conn)
 
         counts = {
@@ -476,6 +677,19 @@ def migrate_strategy_governance_store(path: Path) -> dict[str, object]:
                     "SELECT COUNT(*) FROM strategy_evaluation_artifact"
                 ).fetchone()[0]
             ),
+            "change_proposal_version": STRATEGY_CHANGE_PROPOSAL_VERSION,
+            "change_proposal_count": int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM strategy_change_proposal"
+                ).fetchone()[0]
+            ),
+            "approval_artifact_version": STRATEGY_APPROVAL_ARTIFACT_VERSION,
+            "approval_artifact_count": int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM strategy_approval_artifact"
+                ).fetchone()[0]
+            ),
+            "approval_protocol_contract_version": STRATEGY_APPROVAL_PROTOCOL_CONTRACT_VERSION,
             "source_state": source_state,
         }
     except Exception:
