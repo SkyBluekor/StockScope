@@ -172,9 +172,13 @@ class BacktestEngine:
             relative_strength_context=relative,
             sector_relative_strength_context=sector_relative_context,
         )
-        evaluations = self.strategy.evaluate_all(
-            strategy_input,
-            allowed_strategies=allowed_strategies,
+        evaluations = (
+            self.strategy.evaluate_all(strategy_input)
+            if allowed_strategies is None
+            else self.strategy.evaluate_all(
+                strategy_input,
+                allowed_strategies=allowed_strategies,
+            )
         )
         evaluation_map = {
             item.strategy.value: item
