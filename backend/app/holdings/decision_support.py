@@ -500,6 +500,9 @@ class HoldingDecisionSupportService:
         elif protection_ready and plan_state == "STOP_BREACHED":
             status = "ACTIONABLE"
             primary_action = "STOP"
+        elif proposal_ready and conflict:
+            status = "CONFLICT"
+            primary_action = None
         elif protection_ready and plan_state in {"TARGET1_REACHED", "TARGET2_REACHED"}:
             status = "REVIEW_REQUIRED"
             primary_action = "TAKE_PROFIT"
@@ -508,9 +511,6 @@ class HoldingDecisionSupportService:
             primary_action = "HOLD"
         elif not proposal_ready:
             status = "INSUFFICIENT_DATA"
-            primary_action = None
-        elif conflict:
-            status = "CONFLICT"
             primary_action = None
         elif active is None:
             status = "DEFERRED" if not horizon_activatable else "REVIEW_REQUIRED"
