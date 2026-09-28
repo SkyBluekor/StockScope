@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shutil
 import sys
 from pathlib import Path
 from uuid import uuid4
@@ -374,7 +373,8 @@ def restore_backup(
                     strategy_selection_target,
                     simulation_db=simulation_target,
                 )
-        except Exception:
+        except Exception as restore_error:
+            selection_rollback_error: Exception | None = None
             if restore_strategy_selection and strategy_selection_touched:
                 safe_selection = pre_restore.get("strategy_selection")
                 try:
@@ -387,10 +387,8 @@ def restore_backup(
                             else None
                         ),
                     )
-                except Exception:
-                    # Continue DB rollback below; the original exception still
-                    # represents a failed all-or-nothing restore.
-                    pass
+                except Exception as exc:
+                    selection_rollback_error = exc
 
             for label, _, target, validator in reversed(targets):
                 if label not in replaced:
@@ -406,6 +404,12 @@ def restore_backup(
                     validator(target)
                 elif not existed_before.get(label, False) and target.exists():
                     target.unlink()
+
+            if selection_rollback_error is not None:
+                raise DataToolError(
+                    "Strategy Selection 복원 실패 후 기존 상태 원복에도 실패했습니다: "
+                    + str(selection_rollback_error)
+                ) from restore_error
             raise
 
         identity_manifest = dict(extensions.get("input_identity_v1") or {})
