@@ -9,7 +9,10 @@ from app.data_contract.builder import build_stock_data_contract
 from app.data_contract.reader import ReadOnlyDataStateReader
 from app.backtest.scanner import StockScannerService
 from app.holdings import HoldingsCatalog
-from app.holdings.analysis import ANALYSIS_ENGINE_VERSION
+from app.holdings.analysis import (
+    ANALYSIS_ENGINE_VERSION,
+    INPUT_FINGERPRINT_CONTRACT_VERSION,
+)
 from app.backtest.production_exit_policy import production_policy_cache_token
 from app.holdings.input_proof import verify_current_analysis_input
 from app.input_identity import read_input_generation_token
@@ -80,7 +83,7 @@ def _holdings_db(path: Path) -> tuple[Path, str, str]:
         scanner_version=StockScannerService.VERSION,
         analysis_engine_version=ANALYSIS_ENGINE_VERSION,
         policy_version=production_policy_cache_token(),
-        source_versions={},
+        source_versions={"fingerprint_contract_version": INPUT_FINGERPRINT_CONTRACT_VERSION},
         snapshot={},
         computed_at="2026-09-25T00:00:00+00:00",
     )
@@ -177,7 +180,7 @@ def test_explicit_mismatch_proof_does_not_modify_revision(tmp_path: Path, monkey
         analysis_engine_version=ANALYSIS_ENGINE_VERSION,
         policy_version=production_policy_cache_token(),
         input_fingerprint="different-current-fingerprint",
-        source_versions={"input_generation": generation},
+        source_versions={"fingerprint_contract_version": INPUT_FINGERPRINT_CONTRACT_VERSION, "input_generation": generation},
         snapshot={},
     )
     monkeypatch.setattr(proof_module, "analyze_single_stock", lambda **_: fake)
