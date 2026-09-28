@@ -9,10 +9,21 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import app.api.holdings as holdings_api
+from app.backtest.production_exit_policy import production_policy_cache_token
+from app.backtest.scanner import StockScannerService
 from app.holdings import HoldingsCatalog, PositionLifecycleService
+from app.holdings.analysis import (
+    ANALYSIS_ENGINE_VERSION,
+    INPUT_FINGERPRINT_CONTRACT_VERSION,
+)
+from app.input_identity import read_input_generation_token
 from app.holdings.management import HoldingManagementService
 from tools.data.migrate_holdings_decision_vnp3s1 import (
     migrate_holdings_decision_store,
+)
+from tools.data.migrate_input_identity_vnp1s1 import (
+    migrate_holdings as migrate_holdings_input_identity,
+    migrate_market_store as migrate_market_input_identity,
 )
 
 
@@ -25,6 +36,9 @@ def _market(path: Path, close: str = "100") -> None:
             );
             CREATE TABLE stock_daily(
                 market TEXT,bas_dd TEXT,stock_code TEXT,row_json TEXT
+            );
+            CREATE TABLE main_index_daily(
+                market TEXT,bas_dd TEXT,row_json TEXT
             );
             """
         )
@@ -43,6 +57,10 @@ def _market(path: Path, close: str = "100") -> None:
             "INSERT INTO stock_daily VALUES('KOSPI','20260924','005930',?)",
             (json.dumps(payload),),
         )
+        conn.execute(
+            "INSERT INTO main_index_daily VALUES('KOSPI','20260924',?)",
+            (json.dumps({"date": "2026-09-24", "close": "3000"}),),
+        )
 
 
 @pytest.fixture()
@@ -55,6 +73,11 @@ def api_env(tmp_path: Path, monkeypatch):
 
     catalog = HoldingsCatalog(holdings_db)
     catalog.initialize()
+    migrate_market_input_identity(market_db)
+    migrate_holdings_input_identity(holdings_db)
+    with sqlite3.connect(market_db) as conn:
+        conn.row_factory = sqlite3.Row
+        generation = read_input_generation_token(conn, "KOSPI", "005930")
     life = PositionLifecycleService(catalog)
     account = catalog.create_position_account(
         provider="MANUAL",
@@ -84,10 +107,14 @@ def api_env(tmp_path: Path, monkeypatch):
         stop_price="90",
         target1_price="120",
         target2_price="130",
-        scanner_version="test",
-        analysis_engine_version="test",
-        policy_version="test",
-        source_versions={"fixture": "api"},
+        scanner_version=StockScannerService.VERSION,
+        analysis_engine_version=ANALYSIS_ENGINE_VERSION,
+        policy_version=production_policy_cache_token(),
+        source_versions={
+            "fixture": "api",
+            "fingerprint_contract_version": INPUT_FINGERPRINT_CONTRACT_VERSION,
+            "input_generation": generation,
+        },
         snapshot={"fixture": True},
         computed_at="2026-09-24T00:00:00+00:00",
     )
