@@ -15,6 +15,7 @@ from app.input_identity import read_input_generation_token
 
 
 ANALYSIS_ENGINE_VERSION = "HOLD_SINGLE_STOCK_V1"
+ANALYSIS_FINGERPRINT_VERSION = "HOLD_INPUT_FINGERPRINT_V2"
 DEFAULT_MARKET_STORE_DB = (
     PROJECT_ROOT / "backend" / "runtime" / "market_history" / "market_history.db"
 )
@@ -250,6 +251,9 @@ class SingleStockAnalysisAdapter:
             clean_market,
             clean_ticker,
         )
+        selection_policy_pin = (
+            self.scanner.selection_registry.pin_active_selection_policy()
+        )
 
         if not self.store.has_data_day(clean_market, end_dd, "stock"):
             raise HoldingsAnalysisError(
@@ -311,6 +315,7 @@ class SingleStockAnalysisAdapter:
                 stock_rows=stock_rows,
                 index_rows=index_rows,
                 sector_input=None,
+                selection_policy_pin=selection_policy_pin,
             )
             if quick is None:
                 raise HoldingsAnalysisError(
@@ -338,6 +343,13 @@ class SingleStockAnalysisAdapter:
                 "Production Scanner가 전략 식별자를 반환하지 않았습니다.",
             )
 
+        strategy_reference = selection_policy_pin.strategy_reference(strategy_key) or {
+            "strategy_version_id": None,
+            "strategy_key": strategy_key,
+            "definition_hash": None,
+        }
+        selection_policy_metadata = selection_policy_pin.metadata()
+
         condition_state = dict(quick.get("quick_condition_state") or {})
         readiness_state = dict(quick.get("quick_current") or {})
         entry_risk_guide = dict(candidate.get("entry_risk_guide") or {})
@@ -351,6 +363,7 @@ class SingleStockAnalysisAdapter:
         fingerprint_stock_rows = stock_rows[-120:]
         fingerprint_index_rows = index_rows[-61:]
         fingerprint_payload = {
+            "fingerprint_contract_version": ANALYSIS_FINGERPRINT_VERSION,
             "market": clean_market,
             "ticker": clean_ticker,
             "market_date": target_date.isoformat(),
@@ -358,6 +371,12 @@ class SingleStockAnalysisAdapter:
             "scanner_data_integrity_version": self.scanner.DATA_INTEGRITY_VERSION,
             "analysis_engine_version": ANALYSIS_ENGINE_VERSION,
             "policy_version": policy_version,
+            "strategy_selection_policy": {
+                "policy_id": selection_policy_pin.policy_id,
+                "policy_hash": selection_policy_pin.policy_hash,
+                "policy_contract_version": selection_policy_pin.policy_contract_version,
+            },
+            "selected_strategy": strategy_reference,
             "stock_rows": fingerprint_stock_rows,
             "index_rows": fingerprint_index_rows,
             "sector_input": None,
@@ -379,6 +398,7 @@ class SingleStockAnalysisAdapter:
             )
 
         source_versions = {
+            "fingerprint_contract_version": ANALYSIS_FINGERPRINT_VERSION,
             "scanner_version": self.scanner.VERSION,
             "scanner_data_integrity_version": self.scanner.DATA_INTEGRITY_VERSION,
             "analysis_engine_version": ANALYSIS_ENGINE_VERSION,
@@ -391,6 +411,8 @@ class SingleStockAnalysisAdapter:
             "fingerprinted_stock_rows": len(fingerprint_stock_rows),
             "fingerprinted_index_rows": len(fingerprint_index_rows),
             "sector_input_mode": "NONE_PRODUCTION_SAFE",
+            "strategy_selection_policy": selection_policy_metadata,
+            "selected_strategy": strategy_reference,
         }
         if input_generation_after is not None:
             source_versions["input_generation"] = input_generation_after
@@ -405,6 +427,8 @@ class SingleStockAnalysisAdapter:
             "risk": risk_payload,
             "entry_risk_guide": entry_risk_guide,
             "strategy_trace": dict(quick.get("_strategy_trace") or {}),
+            "strategy_selection_policy": selection_policy_metadata,
+            "selected_strategy": strategy_reference,
             "sector_input_audit": dict(quick.get("_sector_input_audit") or {}),
             "source": {
                 "market": clean_market,
