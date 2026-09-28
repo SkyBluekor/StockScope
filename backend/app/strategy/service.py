@@ -1043,7 +1043,6 @@ class StrategyAnalysisService:
                     history=history,
                     reference_price=reference_price,
                     reference_volume=reference_volume,
-                    as_of=as_of,
                 )
             except Exception as exc:  # DART 실패가 기술 분석 전체를 막지 않도록 격리
                 event_analysis = {
