@@ -24,6 +24,7 @@ from app.simulation.execution_catalog import HistoricalExecutionCatalog
 from app.simulation.sim1_store import SimulationRepository
 from app.simulation.validation_catalog import HistoricalValidationCatalog
 from app.tracking.store import RecommendationTrackingRepository
+from tools.data import backup_runtime as backup_module
 from tools.data.backup_runtime import create_backup
 from tools.data.bootstrap_runtime import bootstrap_runtime
 from tools.data.common import (
@@ -184,6 +185,45 @@ def test_default_backup_excludes_market_and_secrets(tmp_path):
     assert manifest["contents"]["market_history_db"] is False
     assert manifest["secret_files_included"] == []
     assert not any(path.name == ".env" for path in backup.rglob("*"))
+
+
+def test_backup_falls_back_when_windows_blocks_directory_rename(
+    tmp_path,
+    monkeypatch,
+):
+    holdings = _holdings_db(tmp_path / "holdings.db")
+    destination = tmp_path / "backup"
+
+    real_replace = backup_module.os.replace
+
+    def blocked_directory_replace(src, dst):
+        src_path = Path(src)
+        dst_path = Path(dst)
+        if (
+            src_path.name.startswith(".backup.")
+            and dst_path == destination
+        ):
+            raise PermissionError(5, "Access is denied")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(
+        backup_module.os,
+        "replace",
+        blocked_directory_replace,
+    )
+
+    backup = create_backup(
+        destination=destination,
+        holdings_db=holdings,
+    )
+
+    assert backup == destination
+    assert (backup / "holdings.db").is_file()
+    assert (backup / "backup_manifest.json").is_file()
+    assert not any(
+        path.name.startswith(".backup.")
+        for path in tmp_path.iterdir()
+    )
 
 
 def test_full_backup_includes_market_and_plan_counts(tmp_path):
