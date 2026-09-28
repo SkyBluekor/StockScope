@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 from uuid import uuid4
@@ -10,6 +11,17 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from app.strategy.production_selection_policy import (
+    DEFAULT_RUNTIME_DIR as DEFAULT_STRATEGY_SELECTION_RUNTIME_DIR,
+    SELECTION_POLICY_CONTRACT_VERSION,
+)
+from tools.data.strategy_selection_runtime import (
+    copy_strategy_selection_runtime,
+    replace_strategy_selection_state,
+    state_file_paths as strategy_selection_state_file_paths,
+    validate_strategy_selection_runtime,
+)
 
 from tools.data.common import (
     BACKUP_FORMAT_VERSION,
@@ -68,6 +80,7 @@ def restore_backup(
     target_market: Path | None = None,
     target_simulation: Path | None = None,
     target_tracking: Path | None = None,
+    target_strategy_selection_runtime: Path | None = None,
 ) -> dict[str, object]:
     backup_dir = Path(backup_dir)
     if not backup_dir.is_dir():
@@ -83,6 +96,10 @@ def restore_backup(
     manifest = _load_manifest(backup_dir)
     contents = dict(manifest.get("contents") or {})
     files = dict(manifest.get("files") or {})
+    extensions = dict(manifest.get("extensions") or {})
+    strategy_selection_manifest = dict(
+        extensions.get("strategy_selection_v1") or {}
+    )
 
     if not contents.get("holdings_db"):
         raise DataToolError("백업에 holdings.db가 없습니다.")
@@ -129,6 +146,98 @@ def restore_backup(
         )
         validate_simulation_db(source_simulation)
 
+        if strategy_selection_manifest:
+            if (
+                strategy_selection_manifest.get("contract_version")
+                != SELECTION_POLICY_CONTRACT_VERSION
+            ):
+                raise DataToolError(
+                    "지원하지 않는 Strategy Selection backup contract입니다."
+                )
+            if not strategy_selection_manifest.get(
+                "paired_with_simulation_db", False
+            ):
+                raise DataToolError(
+                    "Strategy Selection backup이 Simulation DB와 묶여 있지 않습니다."
+                )
+
+            runtime_present = bool(
+                strategy_selection_manifest.get("runtime_present")
+            )
+            content_present = bool(
+                contents.get("strategy_selection_runtime")
+            )
+            if runtime_present != content_present:
+                raise DataToolError(
+                    "Strategy Selection manifest와 contents 상태가 일치하지 않습니다."
+                )
+
+            source_selection = backup_dir / "strategy_selection"
+            if runtime_present:
+                if not source_selection.is_dir():
+                    raise DataToolError(
+                        "백업 Strategy Selection runtime 디렉터리가 없습니다."
+                    )
+                declared_files = {
+                    str(item)
+                    for item in (
+                        strategy_selection_manifest.get("state_files") or []
+                    )
+                }
+                actual_files = {
+                    path.relative_to(source_selection).as_posix()
+                    for path in strategy_selection_state_file_paths(
+                        source_selection
+                    )
+                }
+                if actual_files != declared_files:
+                    raise DataToolError(
+                        "Strategy Selection state file 집합이 manifest와 다릅니다."
+                    )
+                for relative in sorted(declared_files):
+                    relative_path = Path(relative)
+                    if (
+                        relative_path.is_absolute()
+                        or ".." in relative_path.parts
+                    ):
+                        raise DataToolError(
+                            "Strategy Selection manifest에 안전하지 않은 경로가 있습니다."
+                        )
+                    source_path = source_selection / relative_path
+                    validate_manifest_hash(
+                        source_path,
+                        dict(
+                            files.get(
+                                "strategy_selection/"
+                                + relative_path.as_posix()
+                            )
+                            or {}
+                        ),
+                        "strategy_selection/" + relative_path.as_posix(),
+                    )
+                source_state = validate_strategy_selection_runtime(
+                    source_selection,
+                    simulation_db=source_simulation,
+                )
+                for key in (
+                    "active_reference_present",
+                    "policy_snapshot_count",
+                    "resolved_policy_source",
+                    "resolved_policy_id",
+                ):
+                    if source_state[key] != strategy_selection_manifest.get(
+                        key
+                    ):
+                        raise DataToolError(
+                            "Strategy Selection backup metadata가 실제 상태와 다릅니다: "
+                            + key
+                        )
+            else:
+                if strategy_selection_state_file_paths(source_selection):
+                    raise DataToolError(
+                        "Legacy fallback backup에 Strategy Selection state file이 존재합니다."
+                    )
+
     source_tracking: Path | None = None
     if restore_tracking:
         if not contents.get("tracking_db"):
@@ -149,6 +258,23 @@ def restore_backup(
     market_target = Path(target_market or market_db_path())
     simulation_target = Path(target_simulation or simulation_db_path())
     tracking_target = Path(target_tracking or tracking_db_path())
+    strategy_selection_target = Path(
+        target_strategy_selection_runtime
+        or (
+            DEFAULT_STRATEGY_SELECTION_RUNTIME_DIR
+            if target_simulation is None
+            else simulation_target.parent / "strategy_selection"
+        )
+    )
+    restore_strategy_selection = bool(
+        restore_simulation and strategy_selection_manifest
+    )
+    source_strategy_selection = (
+        backup_dir / "strategy_selection"
+        if restore_strategy_selection
+        and strategy_selection_manifest.get("runtime_present")
+        else None
+    )
 
     targets: list[tuple[str, Path, Path, object]] = [
         ("holdings", source_holdings, holdings_target, validate_holdings_db)
@@ -174,6 +300,9 @@ def restore_backup(
     existed_before: dict[str, bool] = {}
     temps: dict[str, Path] = {}
 
+    strategy_selection_touched = False
+    strategy_selection_result: dict[str, object] | None = None
+
     try:
         for label, _, target, validator in targets:
             existed = target.exists()
@@ -192,6 +321,38 @@ def restore_backup(
             else:
                 pre_restore[label] = None
 
+        if restore_strategy_selection:
+            current_state = validate_strategy_selection_runtime(
+                strategy_selection_target,
+                simulation_db=(
+                    simulation_target if simulation_target.is_file() else None
+                ),
+            )
+            if current_state["runtime_present"]:
+                backup_path = strategy_selection_target.with_name(
+                    f"{strategy_selection_target.name}.pre_restore_{stamp}"
+                )
+                if backup_path.exists():
+                    raise DataToolError(
+                        "복원 전 Strategy Selection 안전 백업 경로가 이미 존재합니다: "
+                        + str(backup_path)
+                    )
+                copy_strategy_selection_runtime(
+                    strategy_selection_target,
+                    backup_path,
+                    simulation_db=(
+                        simulation_target
+                        if simulation_target.is_file()
+                        else None
+                    ),
+                )
+                pre_restore["strategy_selection"] = backup_path
+            else:
+                pre_restore["strategy_selection"] = None
+            existed_before["strategy_selection"] = bool(
+                current_state["runtime_present"]
+            )
+
         for label, source, target, validator in targets:
             temps[label] = _prepare_restore_copy(
                 source,
@@ -205,7 +366,32 @@ def restore_backup(
                 os.replace(temps[label], target)
                 replaced.append(label)
                 validator(target)
+
+            if restore_strategy_selection:
+                strategy_selection_touched = True
+                strategy_selection_result = replace_strategy_selection_state(
+                    source_strategy_selection,
+                    strategy_selection_target,
+                    simulation_db=simulation_target,
+                )
         except Exception:
+            if restore_strategy_selection and strategy_selection_touched:
+                safe_selection = pre_restore.get("strategy_selection")
+                try:
+                    replace_strategy_selection_state(
+                        safe_selection,
+                        strategy_selection_target,
+                        simulation_db=(
+                            simulation_target
+                            if simulation_target.is_file()
+                            else None
+                        ),
+                    )
+                except Exception:
+                    # Continue DB rollback below; the original exception still
+                    # represents a failed all-or-nothing restore.
+                    pass
+
             for label, _, target, validator in reversed(targets):
                 if label not in replaced:
                     continue
@@ -222,7 +408,6 @@ def restore_backup(
                     target.unlink()
             raise
 
-        extensions = dict(manifest.get("extensions") or {})
         identity_manifest = dict(extensions.get("input_identity_v1") or {})
         horizon_manifest = dict(extensions.get("horizon_context_v1") or {})
         feedback_manifest = dict(extensions.get("feedback_v1") or {})
@@ -262,6 +447,11 @@ def restore_backup(
             ),
             "tracking_db": (
                 str(tracking_target) if restore_tracking else None
+            ),
+            "strategy_selection_runtime": (
+                str(strategy_selection_target)
+                if restore_strategy_selection
+                else None
             ),
             "pre_restore_backups": {
                 key: (str(value) if value else None)
@@ -336,6 +526,45 @@ def restore_backup(
                     holding_recovery_manifest.get("restorable")
                 ),
                 "tables": list(holding_recovery_manifest.get("tables") or []),
+            },
+            "strategy_selection": {
+                "contract_version": strategy_selection_manifest.get(
+                    "contract_version"
+                ),
+                "store_present_in_backup": bool(
+                    strategy_selection_manifest.get("runtime_present")
+                ),
+                "store_restored": bool(restore_strategy_selection),
+                "active_reference_present": (
+                    bool(
+                        strategy_selection_result.get(
+                            "active_reference_present"
+                        )
+                    )
+                    if strategy_selection_result is not None
+                    else False
+                ),
+                "policy_snapshot_count": (
+                    int(
+                        strategy_selection_result.get(
+                            "policy_snapshot_count", 0
+                        )
+                    )
+                    if strategy_selection_result is not None
+                    else 0
+                ),
+                "resolved_policy_source": (
+                    strategy_selection_result.get(
+                        "resolved_policy_source"
+                    )
+                    if strategy_selection_result is not None
+                    else None
+                ),
+                "resolved_policy_id": (
+                    strategy_selection_result.get("resolved_policy_id")
+                    if strategy_selection_result is not None
+                    else None
+                ),
             },
             "holding_watch": {
                 "schema_version": holding_watch_manifest.get("schema_version"),
