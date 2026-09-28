@@ -188,3 +188,7 @@ desktop.ini
 
 # Local generated planning documents
 /StockScope_*_Brief_*.docx
+# Local runtime backups
+backups/
+*.db-shm
+*.db-wal
