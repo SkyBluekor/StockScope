@@ -14,6 +14,8 @@ from app.strategy.production_selection_policy import (
     SelectionPolicyPin,
 )
 
+from .selection_policy_pin import deserialize_selection_policy_pin
+
 from .execution_catalog import (
     HistoricalExecutionCatalog,
     HistoricalExecutionOutcome,
@@ -339,7 +341,7 @@ class HistoricalExecutionEngine:
             )
 
         try:
-            selection_policy_pin = SelectionPolicyPin.from_dict(
+            selection_policy_pin = deserialize_selection_policy_pin(
                 run.selection_policy_pin
             )
         except SelectionPolicyError as exc:
