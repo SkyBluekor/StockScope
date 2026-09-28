@@ -68,7 +68,7 @@ class FakeScanner:
         self.mode = mode
         self.calls: list[str] = []
 
-    async def run(self, *, market_scope, as_of_date, candidate_limit, force_refresh, allow_large_sync):
+    async def run(self, *, market_scope, as_of_date, candidate_limit, force_refresh, allow_large_sync, selection_policy_pin=None):
         self.calls.append(as_of_date)
         day = date.fromisoformat(as_of_date)
         candidate_day = day + timedelta(days=1) if self.mode == "lookahead" else day
