@@ -44,9 +44,16 @@ class ChartResourceContract(BaseModel):
 
 class AnalysisIdentityContract(BaseModel):
     input_fingerprint: str | None = None
+    fingerprint_contract_version: str | None = None
     scanner_version: str | None = None
     analysis_engine_version: str | None = None
     policy_version: str | None = None
+    selection_policy_id: str | None = None
+    selection_policy_hash: str | None = None
+    selection_policy_contract_version: str | None = None
+    selection_policy_source: str | None = None
+    strategy_version_id: str | None = None
+    strategy_definition_hash: str | None = None
     horizon_intent: str | None = None
     horizon_policy_version: str | None = None
     horizon_support_status: str | None = None
