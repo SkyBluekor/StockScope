@@ -18,6 +18,10 @@ def test_validation_draft_create_list_get_delete(tmp_path: Path):
     )
     assert draft.status == "DRAFT"
     assert draft.scanner_version == PRODUCTION_SCANNER_VERSION
+    assert draft.selection_policy is not None
+    assert draft.selection_policy["policy_id"]
+    assert draft.selection_policy["policy_hash"]
+    assert len(draft.selection_policy["operating_strategies"]) == 10
     assert catalog.get(draft.id) == draft
     assert [item.id for item in catalog.list()] == [draft.id]
     assert catalog.delete(draft.id) is True
