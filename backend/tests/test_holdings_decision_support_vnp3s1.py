@@ -671,3 +671,56 @@ def test_decision_and_resolution_are_append_only(tmp_path: Path):
                 "DELETE FROM holding_decision_resolution WHERE id=?",
                 (resolution_id,),
             )
+
+
+def test_unusable_analysis_keeps_active_stop_protection(tmp_path: Path):
+    catalog, _, opened, mdb = _env(tmp_path, close="85")
+    revision = _rev(catalog, opened.stock_id, "r1", "90")
+    _apply(catalog, mdb, opened.position.id, revision.id)
+
+    with sqlite3.connect(mdb) as conn:
+        conn.execute(
+            """
+            UPDATE input_change_generation
+            SET generation=2
+            WHERE market='KOSPI' AND scope='STOCK' AND subject='005930'
+            """
+        )
+
+    service = HoldingDecisionSupportService(catalog, market_store_db=mdb)
+    decision = service.evaluate(opened.position.id)
+
+    assert decision["status"] == "ACTIONABLE"
+    assert decision["primary_action"] == "STOP"
+    assert decision["evidence"]["analysis_current_use_allowed"] is False
+    assert decision["evidence"]["protection_ready"] is True
+    assert decision["evidence"]["proposal_ready"] is False
+    stop = next(
+        item for item in decision["alternatives"]
+        if item["action"] == "STOP"
+    )
+    assert stop["state"] == "AVAILABLE"
+
+
+def test_unusable_analysis_cannot_apply_new_plan(tmp_path: Path):
+    catalog, _, opened, mdb = _env(tmp_path, close="100")
+    _rev(catalog, opened.stock_id, "r1", "90")
+
+    with sqlite3.connect(mdb) as conn:
+        conn.execute(
+            """
+            UPDATE input_change_generation
+            SET generation=2
+            WHERE market='KOSPI' AND scope='STOCK' AND subject='005930'
+            """
+        )
+
+    service = HoldingDecisionSupportService(catalog, market_store_db=mdb)
+    decision = service.evaluate(opened.position.id)
+
+    assert decision["status"] == "INSUFFICIENT_DATA"
+    assert decision["evidence"]["analysis_current_use_allowed"] is False
+    assert decision["evidence"]["proposal_ready"] is False
+    with pytest.raises(HoldingsDecisionSupportError) as caught:
+        service.apply_plan(decision_id=decision["decision_id"])
+    assert caught.value.code == "HOLD_DECISION_ANALYSIS_NOT_CURRENTLY_USABLE"
