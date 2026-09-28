@@ -151,3 +151,48 @@ async def test_positive_contract_is_impact_not_hard_risk_gate_and_uses_price_rea
     assert event["price_reaction"]["price_change_pct"] == pytest.approx(14.29, abs=0.02)
     assert event["user_response"]["action"] == "신규 추격 주의"
     assert any(item["direction"] == "UP" for item in event["strategy_effects"])
+
+
+@pytest.mark.asyncio
+async def test_explicit_historical_as_of_bounds_disclosures_and_skips_current_enrichment():
+    class HistoricalDart(FakeDart):
+        def __init__(self):
+            self.range = None
+            self.detail_calls = 0
+            self.revenue_calls = 0
+
+        async def disclosures(self, corp_code, begin_date, end_date, page_count=20):
+            self.range = (begin_date, end_date)
+            return {
+                "count": 1,
+                "rows": [{
+                    "receipt_no": "20250110000001",
+                    "receipt_date": "20250110",
+                    "report_name": "유상증자 결정",
+                }],
+            }
+
+        async def major_event(self, *args, **kwargs):
+            self.detail_calls += 1
+            return {"rows": []}
+
+        async def document_text(self, receipt_no):
+            self.detail_calls += 1
+            return "CURRENT DOCUMENT"
+
+        async def latest_annual_revenue(self, corp_code):
+            self.revenue_calls += 1
+            return {"business_year": 2025, "revenue": 1}
+
+    dart = HistoricalDart()
+    result = await EventRiskAnalyzer(dart).analyze(
+        "005930",
+        as_of="2025-01-15",
+    )
+
+    assert dart.range[1] == "20250115"
+    assert dart.detail_calls == 0
+    assert dart.revenue_calls == 0
+    assert result["temporal_mode"] == "POINT_IN_TIME_LIST_ONLY"
+    assert result["risk_gate"] is True
+    assert result["events"][0]["detail_source"] == "TITLE_RULE"
