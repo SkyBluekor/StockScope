@@ -104,6 +104,8 @@ TABLE_COLUMNS: dict[str, set[str]] = {
         "scanner_baseline_id",
         "production_fingerprint",
         "production_policy_fingerprint",
+        "proposal_protocol_version",
+        "proposal_protocol_hash",
         "approval_gate_state",
         "limitations_json",
         "proposal_hash",
@@ -410,6 +412,8 @@ def _create_change_governance(conn: sqlite3.Connection) -> None:
             scanner_baseline_id TEXT NOT NULL,
             production_fingerprint TEXT NOT NULL,
             production_policy_fingerprint TEXT NOT NULL,
+            proposal_protocol_version TEXT NOT NULL,
+            proposal_protocol_hash TEXT NOT NULL,
             approval_gate_state TEXT NOT NULL CHECK(
                 approval_gate_state IN (
                     'REVIEW_ONLY_Q7_UNAPPROVED',
