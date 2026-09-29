@@ -15,6 +15,13 @@ import {
   type ProspectiveStatus,
 } from "../services/prospectiveApi";
 import { SimulationApiError } from "../services/simulationApi";
+import {
+  createStrategyEvidenceArtifact,
+  getStrategyEvidenceEligibility,
+  StrategyGovernanceApiError,
+  type StrategyEvidenceEligibility,
+  type StrategyEvidenceEligibilityRow,
+} from "../services/strategyGovernanceApi";
 
 function count(value: number | null | undefined) {
   return Number(value ?? 0).toLocaleString("ko-KR");
@@ -31,6 +38,7 @@ function dateText(value: string | null | undefined) {
 
 function errorText(error: unknown) {
   if (error instanceof SimulationApiError) return error.message;
+  if (error instanceof StrategyGovernanceApiError) return error.message;
   return error instanceof Error ? error.message : "추천 평가 정보를 불러오지 못했습니다.";
 }
 
@@ -38,6 +46,17 @@ function evidenceLabel(value: string | null | undefined) {
   if (value === "SAMPLE_SIZE_POLICY_UNDEFINED") return "데이터는 있으나 표본 기준 미정";
   if (value === "INSUFFICIENT_EVIDENCE") return "아직 판단할 근거 부족";
   return value || "아직 평가 결과 없음";
+}
+
+function strategyIdentityLabel(value: string | null | undefined) {
+  if (value === "EXACT") return "버전 확인됨";
+  if (value === "STRATEGY_IDENTITY_UNPROVEN") return "버전 근거 없음";
+  if (value === "MIXED_STRATEGY_VERSION") return "여러 버전 혼합";
+  if (value === "STRATEGY_DEFINITION_MISMATCH") return "정의 불일치";
+  if (value === "STRATEGY_VERSION_NOT_FOUND") return "등록 버전 없음";
+  if (value === "SOURCE_SAMPLE_MISMATCH") return "원본 표본 불일치";
+  if (value === "NO_TRADE_NOT_STRATEGY") return "전략 대상 아님";
+  return value || "확인 불가";
 }
 
 export default function ProspectiveEvaluationPanel() {
@@ -49,6 +68,9 @@ export default function ProspectiveEvaluationPanel() {
   const [migrationRequired, setMigrationRequired] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [evidenceEligibility, setEvidenceEligibility] = useState<StrategyEvidenceEligibility | null>(null);
+  const [evidenceBusy, setEvidenceBusy] = useState<string | null>(null);
+  const [evidenceMessage, setEvidenceMessage] = useState<string | null>(null);
 
   const [name, setName] = useState("실제 추천 시간 분리 평가");
   const [marketScope, setMarketScope] = useState<"ALL" | "KOSPI" | "KOSDAQ">("ALL");
@@ -58,6 +80,17 @@ export default function ProspectiveEvaluationPanel() {
   const [holdoutEnd, setHoldoutEnd] = useState("");
   const [executionMode, setExecutionMode] = useState<"PRODUCTION_POLICY" | "OBSERVATION_ONLY">("PRODUCTION_POLICY");
   const [selectedProtocolId, setSelectedProtocolId] = useState("");
+
+  async function loadEvidenceEligibility(reportId: string) {
+    try {
+      const next = await getStrategyEvidenceEligibility(reportId);
+      setEvidenceEligibility(next);
+      setEvidenceMessage(null);
+    } catch (error) {
+      setEvidenceEligibility(null);
+      setEvidenceMessage(errorText(error));
+    }
+  }
 
   async function load() {
     setMessage(null);
@@ -77,9 +110,18 @@ export default function ProspectiveEvaluationPanel() {
 
       const completed = nextRuns.find((row) => row.status === "COMPLETED");
       if (completed) {
-        setLatestDetail(await getProspectiveRun(completed.id));
+        const detail = await getProspectiveRun(completed.id);
+        setLatestDetail(detail);
+        if (detail.report?.id) {
+          await loadEvidenceEligibility(detail.report.id);
+        } else {
+          setEvidenceEligibility(null);
+          setEvidenceMessage(null);
+        }
       } else {
         setLatestDetail(null);
+        setEvidenceEligibility(null);
+        setEvidenceMessage(null);
       }
     } catch (error) {
       if (
@@ -144,6 +186,25 @@ export default function ProspectiveEvaluationPanel() {
       setMessage(errorText(error));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function registerP5Evidence(row: StrategyEvidenceEligibilityRow) {
+    if (!latestDetail?.report?.id || !row.strategy_version_id || !row.creation_allowed) return;
+    setEvidenceBusy(row.strategy_key);
+    setEvidenceMessage(null);
+    try {
+      await createStrategyEvidenceArtifact({
+        source_kind: "PROSPECTIVE_REPORT",
+        source_report_id: latestDetail.report.id,
+        strategy_version_id: row.strategy_version_id,
+      });
+      await loadEvidenceEligibility(latestDetail.report.id);
+      setEvidenceMessage("평가 결과를 P5 검토 근거로 보존했습니다. 전략 상태나 운영 정책은 자동 변경되지 않습니다.");
+    } catch (error) {
+      setEvidenceMessage(errorText(error));
+    } finally {
+      setEvidenceBusy(null);
     }
   }
 
@@ -279,6 +340,76 @@ export default function ProspectiveEvaluationPanel() {
           </div>
         )}
       </section>
+
+      {latestDetail?.report && (
+        <section className="sim-prospective-p5">
+          <div className="sim-prospective-p5-head">
+            <div>
+              <span>P5 평가 근거</span>
+              <strong>완료된 Prospective Report를 전략별 검토 근거로 보존합니다.</strong>
+            </div>
+            <p>근거 등록은 승격·강등·Proposal·Production Policy를 자동 실행하지 않습니다.</p>
+          </div>
+
+          {evidenceMessage && <p className="sim-prospective-message">{evidenceMessage}</p>}
+
+          {evidenceEligibility ? (
+            <div className="sim-prospective-p5-table-wrap">
+              <table className="sim-prospective-p5-table">
+                <thead>
+                  <tr>
+                    <th>전략</th>
+                    <th>표본</th>
+                    <th>성숙</th>
+                    <th>Strategy identity</th>
+                    <th>P5 상태</th>
+                    <th>작업</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {evidenceEligibility.strategies.map((row) => (
+                    <tr key={`${row.strategy_key}:${row.strategy_version_id ?? row.identity_status}`}>
+                      <td><strong>{row.strategy_key}</strong></td>
+                      <td>{count(row.sample_count)}건</td>
+                      <td>{count(row.mature_count)}건</td>
+                      <td>{strategyIdentityLabel(row.identity_status)}</td>
+                      <td>
+                        {row.existing_artifact_id
+                          ? "근거 등록됨"
+                          : row.creation_allowed
+                            ? evidenceLabel(row.evidence_state)
+                            : "등록 차단"}
+                      </td>
+                      <td>
+                        {row.existing_artifact_id ? (
+                          <span className="sim-prospective-p5-done">보존됨</span>
+                        ) : row.creation_allowed && row.strategy_version_id ? (
+                          <button
+                            className="sim-secondary"
+                            disabled={evidenceBusy != null}
+                            onClick={() => void registerP5Evidence(row)}
+                          >
+                            {evidenceBusy === row.strategy_key ? "등록 중…" : "P5 근거로 등록"}
+                          </button>
+                        ) : (
+                          <span className="sim-prospective-p5-blocked">
+                            {row.block_reason ? strategyIdentityLabel(row.block_reason) : "등록 불가"}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            !evidenceMessage && <p className="sim-prospective-note">P5 근거 등록 가능 여부를 확인하고 있습니다.</p>
+          )}
+          <p className="sim-prospective-note">
+            최소 표본 기준은 아직 정의되지 않았습니다. Artifact는 평가 근거를 보존할 뿐 전략 우수성을 확정하지 않습니다.
+          </p>
+        </section>
+      )}
 
       <details className="sim-prospective-protocol">
         <summary>평가 기준 설정 · 상세</summary>
