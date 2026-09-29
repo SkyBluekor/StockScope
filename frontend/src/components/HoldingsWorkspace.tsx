@@ -1002,7 +1002,6 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
       if (selectedStockIdRef.current === targetStockId) {
         await loadSelected(targetStockId);
         setChartRefreshKey((value) => value + 1);
-        await contractRefreshRef.current();
         const dateLabel = compactDate(result.market_date);
         setMessage(
           result.data_freshness.status === "UPDATED"
@@ -1052,7 +1051,6 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
         setHistoryProgress({ type: "progress", stage: "refresh", message: "화면을 갱신하고 있습니다." });
         await loadSelected(targetStockId);
         setChartRefreshKey((value) => value + 1);
-        await contractRefreshRef.current();
         const prepared = result.history_prepare;
         const preparedText = prepared && prepared.prepared_rows > 0
           ? `과거 가격 ${prepared.prepared_rows}거래일을 추가로 준비하고 `
@@ -1090,7 +1088,6 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
       if (currentStockId) {
         await loadSelected(currentStockId);
         setLivePerformanceRefreshKey((value) => value + 1);
-        await contractRefreshRef.current();
       }
       setMessage(`잔고 동기화 완료 · 확인 ${result.holding_count}종목`);
     } catch (syncError) {
@@ -1410,7 +1407,6 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
       setQuickZeroConfirm(false);
       await Promise.all([reloadStocks(detail.stock_id), loadSelected(detail.stock_id)]);
       setLivePerformanceRefreshKey((value) => value + 1);
-      await contractRefreshRef.current();
       window.requestAnimationFrame(() => {
         holdingOverviewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       });
@@ -1556,7 +1552,6 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
       setManualOpen(false);
       await Promise.all([reloadStocks(detail.stock_id), loadSelected(detail.stock_id)]);
       setLivePerformanceRefreshKey((value) => value + 1);
-      await contractRefreshRef.current();
       window.requestAnimationFrame(() => {
         holdingOverviewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       });
