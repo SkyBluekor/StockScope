@@ -177,6 +177,38 @@ Development/Holdout은 chronology가 겹치면 거부됩니다. 각 dataset은 �
 
 S2는 threshold, minimum sample, episode policy를 결정하지 않습니다. Holdout은 calibration candidate freeze 전까지 잠긴 상태이며 `RATE_SPIKE`는 계속 `UNCALIBRATED`입니다. DATE_ONLY archive는 연구용 분포 준비에는 사용할 수 있지만 Historical PIT 평가 입력으로 승격하지 않습니다.
 
+## NEXT-6B-S3 Development Distribution Research
+### 개발 구간 금리 변화 분포 분석
+
+NEXT-6B-S3는 S2에서 고정한 **Development artifact만** 읽어 DGS10 금리 수준/변화 분포를 조사합니다. Holdout 파일은 입력으로 받지 않으며 calibration threshold, minimum sample, rolling lookback, episode policy를 선택하지 않습니다.
+
+분석 입력:
+
+- `DEV-*.json`: Development feature dataset
+- `PROTOCOL-*.json`: Holdout lock과 연구 경계를 고정한 protocol
+- `HOLDOUT-*.json`: S3에서는 읽지 않음
+
+분석 항목:
+
+- 금리 수준과 1/5/10 observation 변화의 count/min/max/평균/중앙값/표준편차/MAD
+- 상승/하락/절대 변화 tail profile
+- 전체 empirical CDF
+- 현재 시점보다 **이전 Development row만** 사용하는 expanding percentile
+- 이전 Development row만 사용하는 MAD 기반 robust deviation
+- 동일 규칙의 연도별 요약
+
+실행 예시:
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\research_macro_distribution_next6b_s3.py `
+  --development-artifact .\backend\runtime\macro\calibration\DEV-7c3f6660b3aae03f.json `
+  --protocol-artifact .\backend\runtime\macro\calibration\PROTOCOL-e1de868dc8f16670.json
+```
+
+검증 후 full immutable research artifact가 필요할 때만 `--write-artifact`를 추가합니다. 결과는 `backend/runtime/macro/calibration/RESEARCH-<hash>.json`에 저장되며 Git 대상이 아닙니다.
+
+S3 완료 후에도 `RATE_SPIKE`는 `UNCALIBRATED`입니다. `NORMAL`/`DETECTED` label은 생성하지 않으며 Holdout은 S4 calibration candidate freeze 전까지 잠긴 상태를 유지합니다. 분석 중 network request와 Macro DB write는 모두 0입니다.
+
 ## P2-S2 실제 추천 평가 저장소 준비
 
 P2-S2는 새 Scanner 실행부터 실제 추천 표본을 사후 선택 전에 보존합니다. 과거 Scanner 실행을 prospective 표본으로 소급 생성하지 않습니다.
