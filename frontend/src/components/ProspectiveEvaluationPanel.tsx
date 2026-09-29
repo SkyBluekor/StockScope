@@ -59,6 +59,20 @@ function strategyIdentityLabel(value: string | null | undefined) {
   return value || "확인 불가";
 }
 
+function accumulationLabel(value: string | null | undefined) {
+  if (value === "EVALUATION_AVAILABLE") return "평가 결과 있음";
+  if (value === "EVIDENCE_ACCUMULATING") return "실제 표본 축적 중";
+  if (value === "NEEDS_ATTENTION") return "정책 판정 보류";
+  if (value === "NO_VALID_CAPTURE") return "실제 표본 대기";
+  return "수집 상태 확인 중";
+}
+
+function captureReasonText(code: string | null | undefined, message: string | null | undefined) {
+  if (code === "SCANNER_PARTIAL_DATA") {
+    return message || "Scanner가 일부 데이터만 준비된 상태로 종료되었습니다.";
+  }
+  return message || code || "상세 원인을 확인할 수 없습니다.";
+}
 export default function ProspectiveEvaluationPanel() {
   const [status, setStatus] = useState<ProspectiveStatus | null>(null);
   const [captures, setCaptures] = useState<ProspectiveCapture[]>([]);
@@ -289,6 +303,56 @@ export default function ProspectiveEvaluationPanel() {
           <small>평가 결과가 운영 정책을 자동 변경하지 않음</small>
         </div>
       </div>
+
+      {status?.evidence_accumulation && (
+        <section className="sim-prospective-readiness" aria-label="근거 축적 상태">
+          <div className="sim-prospective-readiness-head">
+            <div>
+              <span>근거 축적 상태</span>
+              <strong>{accumulationLabel(status.evidence_accumulation.state)}</strong>
+            </div>
+            <p>
+              최소 표본·승격/강등 기준은 아직 정의되지 않았습니다.
+              현재 단계는 정책을 정하는 것이 아니라 실제 표본을 안전하게 축적하는 단계입니다.
+            </p>
+          </div>
+          <dl className="sim-prospective-readiness-facts">
+            <div>
+              <dt>정상 완료</dt>
+              <dd>{count(status.evidence_accumulation.complete_capture_count)}회</dd>
+            </div>
+            <div>
+              <dt>확인 필요</dt>
+              <dd>{count(status.evidence_accumulation.attention_capture_count)}회</dd>
+            </div>
+            <div>
+              <dt>평가 Report</dt>
+              <dd>{count(status.evidence_accumulation.report_count)}개</dd>
+            </div>
+            <div>
+              <dt>최근 정상 기준일</dt>
+              <dd>{dateText(status.evidence_accumulation.latest_complete_date)}</dd>
+            </div>
+          </dl>
+          {status.evidence_accumulation.complete_capture_count === 0 && (
+            <p className="sim-prospective-readiness-note">
+              정상 완료된 실제 추천 수집이 아직 없습니다.
+              PARTIAL·실패·중지 기록은 보존하지만 평가 표본으로 사용하지 않습니다.
+            </p>
+          )}
+          {status.evidence_accumulation.recent_attention.length > 0 && (
+            <div className="sim-prospective-attention">
+              <span>최근 확인 필요</span>
+              {status.evidence_accumulation.recent_attention.map((item) => (
+                <div key={`${item.source_job_id}:${item.completed_at ?? item.status}`}>
+                  <strong>{dateText(item.actual_data_date)} · {item.status}</strong>
+                  <p>{captureReasonText(item.error_code, item.error_message)}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       {message && <p className="sim-prospective-message">{message}</p>}
 
