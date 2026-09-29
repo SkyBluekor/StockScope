@@ -45,7 +45,7 @@ class StockScannerService:
     presented to the user as probabilities.
     """
 
-    VERSION = "0.21.3.8"
+    VERSION = "0.21.3.9"
     HISTORY_CALENDAR_DAYS = 485  # local-only historical evidence window
     FAST_HISTORY_CALENDAR_DAYS = 220  # current-condition scan only; ~150 weekdays
     EVIDENCE_CALENDAR_DAYS = 365
