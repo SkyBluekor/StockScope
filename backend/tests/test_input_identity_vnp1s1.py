@@ -4,6 +4,8 @@ import json
 import sqlite3
 from pathlib import Path
 
+import pytest
+
 from app.backtest.market_store import HistoricalMarketStore
 from app.data_contract.builder import build_stock_data_contract
 from app.data_contract.reader import ReadOnlyDataStateReader
