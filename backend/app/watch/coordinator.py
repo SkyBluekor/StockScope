@@ -272,10 +272,22 @@ class WatchCoordinator:
             accepted = bool(self.websocket_manager.touch_demand(key))
             if not accepted:
                 rejected += 1
+                reason = (
+                    self.websocket_manager.subscription_error(key)
+                    or "SUBSCRIPTION_REJECTED"
+                )
                 await self._emit_coverage_issue(
                     item_tuple,
-                    self.websocket_manager.subscription_error(key)
-                    or "SUBSCRIPTION_REJECTED",
+                    reason,
+                )
+                await self._emit_runtime_event(
+                    "SUBSCRIPTION_REJECTED",
+                    {
+                        "market": key.market,
+                        "ticker": key.ticker,
+                        "venue": key.venue,
+                        "error_code": reason,
+                    },
                 )
                 task = self._consumer_tasks.pop(key, None)
                 if task is not None:
