@@ -188,6 +188,10 @@ class MacroObservation:
         }
 
     def normalized_payload(self) -> dict[str, Any]:
+        # Operational fetch/first-seen timestamps are intentionally excluded
+        # from normalization identity. Re-fetching the same provider row later
+        # must remain a no-op, while a provider revision or normalizer change
+        # still creates a new immutable observation revision.
         return {
             **self.identity_payload(),
             "normalized_value": self.normalized_value,
@@ -195,7 +199,11 @@ class MacroObservation:
             "realtime_start": self.realtime_start,
             "realtime_end": self.realtime_end,
             "vintage_id": self.vintage_id,
-            "temporal": self.temporal.to_dict(),
+            "time_quality": self.temporal.time_quality.value,
+            "event_time": self.temporal.event_time,
+            "source_published_at": self.temporal.source_published_at,
+            "provider_published_at": self.temporal.provider_published_at,
+            "corrected_at": self.temporal.corrected_at,
             "normalizer_version": self.normalizer_version,
         }
 
