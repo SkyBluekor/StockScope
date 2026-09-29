@@ -12,8 +12,10 @@ for candidate in (ROOT, BACKEND):
     if str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
-from app.macro.calibration_candidate import summarize_candidate_set
-from app.macro.identity import content_hash
+from app.macro.calibration_candidate import (
+    summarize_candidate_set,
+    validate_candidate_set_artifact,
+)
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -24,34 +26,6 @@ def _load_json(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("Candidate artifact root must be an object.")
     return payload
-
-
-def _validate_hash(candidate_set: dict[str, Any]) -> None:
-    identity_payload = {
-        "contract_version": candidate_set["contract_version"],
-        "development_dataset_hash": candidate_set[
-            "development_dataset_hash"
-        ],
-        "protocol_hash": candidate_set["protocol_hash"],
-        "research_hash": candidate_set["research_hash"],
-        "holdout_dataset_hash_reference": candidate_set[
-            "holdout_dataset_hash_reference"
-        ],
-        "exploration_manifest": candidate_set["exploration_manifest"],
-        "candidate_set_status": candidate_set["candidate_set_status"],
-        "holdout_locked": candidate_set["holdout_locked"],
-        "holdout_accessed": candidate_set["holdout_accessed"],
-        "final_candidate_selected": candidate_set[
-            "final_candidate_selected"
-        ],
-        "rate_spike_state": candidate_set["rate_spike_state"],
-        "production_decision_approved": candidate_set[
-            "production_decision_approved"
-        ],
-    }
-    expected = content_hash(identity_payload)
-    if expected != candidate_set.get("candidate_set_hash"):
-        raise ValueError("Candidate set hash mismatch.")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -65,7 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = build_parser().parse_args()
     candidate_set = _load_json(args.artifact)
-    _validate_hash(candidate_set)
+    validate_candidate_set_artifact(candidate_set)
     print(
         json.dumps(
             summarize_candidate_set(candidate_set),
