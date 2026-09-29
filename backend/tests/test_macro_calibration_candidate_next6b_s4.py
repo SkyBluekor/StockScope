@@ -10,6 +10,10 @@ from app.macro.calibration_candidate import (
     generate_feature_candidates,
     validate_candidate_set_artifact,
 )
+from app.macro.candidate_compression import (
+    build_compressed_candidate_frontier,
+    validate_compressed_frontier_artifact,
+)
 from app.macro.calibration_protocol import build_calibration_research_protocol
 from app.macro.calibration_research import build_distribution_research
 from app.macro.features import MACRO_FEATURE_CONTRACT_VERSION
@@ -338,3 +342,46 @@ def test_candidate_set_artifact_validator_detects_payload_tampering():
             validate_candidate_set_artifact(tampered)
     else:
         pytest.skip("Synthetic fixture produced no frozen candidates.")
+
+
+def test_s4_1_compression_replays_v1_and_preserves_holdout_guardrails():
+    development, protocol, research = _inputs()
+    v1 = build_rate_spike_candidate_set(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+    )
+    frontier = build_compressed_candidate_frontier(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+    )
+    state = validate_compressed_frontier_artifact(frontier)
+    manifest = frontier["stage_manifest"]
+
+    assert manifest["raw_candidate_count"] == v1["exploration_manifest"][
+        "generated_candidate_count"
+    ]
+    assert manifest["method_local_pareto_count"] == v1[
+        "exploration_manifest"
+    ]["frozen_candidate_count"]
+    assert manifest["compressed_frontier_count"] <= manifest[
+        "method_local_pareto_count"
+    ]
+    assert state["holdout_accessed"] is False
+    assert frontier["holdout_locked"] is True
+    assert frontier["holdout_accessed"] is False
+    assert frontier["final_candidate_selected"] is False
+    assert frontier["minimum_sample_selected"] is False
+    assert frontier["rate_spike_state"] == "UNCALIBRATED"
+    assert frontier["normal_labels_created"] == 0
+    assert frontier["detected_labels_created"] == 0
+    assert frontier["network_requests"] == 0
+    assert frontier["macro_db_writes"] == 0
+    assert frontier["production_decision_approved"] is False
+
+    behavior_hashes = [
+        group["behavior_signature_hash"]
+        for group in frontier["behavior_groups"]
+    ]
+    assert len(behavior_hashes) == len(set(behavior_hashes))

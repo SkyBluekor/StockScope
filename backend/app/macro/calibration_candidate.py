@@ -255,6 +255,64 @@ def _candidate_from_threshold(
     }
 
 
+def generate_raw_feature_candidates(
+    *,
+    feature_id: str,
+    feature_result: dict[str, Any],
+    development_dataset_hash: str,
+    protocol_hash: str,
+    research_hash: str,
+) -> dict[str, list[dict[str, Any]]]:
+    if feature_id not in RATE_SPIKE_FEATURE_IDS:
+        raise ValueError(f"Unsupported RATE_SPIKE feature: {feature_id}")
+
+    generated_by_method: dict[str, list[dict[str, Any]]] = {}
+    rows = list(feature_result["expanding"]["rows"])
+    for method in RATE_SPIKE_METHODS:
+        thresholds = _threshold_values(rows, method)
+        generated_by_method[method] = [
+            _candidate_from_threshold(
+                feature_id=feature_id,
+                feature_result=feature_result,
+                method=method,
+                threshold=threshold,
+                development_dataset_hash=development_dataset_hash,
+                protocol_hash=protocol_hash,
+                research_hash=research_hash,
+            )
+            for threshold in thresholds
+        ]
+    return generated_by_method
+
+
+def evaluate_candidate_behavior(
+    *,
+    feature_result: dict[str, Any],
+    candidate: dict[str, Any],
+) -> list[dict[str, Any]]:
+    method = str(candidate["method"])
+    threshold = _decimal(candidate["threshold_value"])
+    behavior_rows: list[dict[str, Any]] = []
+
+    for row in feature_result["expanding"]["rows"]:
+        eligible, signal = _signal_for_row(
+            row,
+            method=method,
+            threshold=threshold,
+        )
+        raw_value = _decimal(row["value"])
+        behavior_rows.append(
+            {
+                "observation_date": str(row["observation_date"]),
+                "row_hash": str(row["row_hash"]),
+                "eligible": eligible,
+                "signal": signal,
+                "positive_move": bool(eligible and raw_value > 0),
+            }
+        )
+    return behavior_rows
+
+
 def generate_feature_candidates(
     *,
     feature_id: str,
@@ -270,23 +328,16 @@ def generate_feature_candidates(
     all_frozen: list[dict[str, Any]] = []
     all_dominated: list[dict[str, Any]] = []
 
+    generated_by_method = generate_raw_feature_candidates(
+        feature_id=feature_id,
+        feature_result=feature_result,
+        development_dataset_hash=development_dataset_hash,
+        protocol_hash=protocol_hash,
+        research_hash=research_hash,
+    )
+
     for method in RATE_SPIKE_METHODS:
-        thresholds = _threshold_values(
-            list(feature_result["expanding"]["rows"]),
-            method,
-        )
-        generated = [
-            _candidate_from_threshold(
-                feature_id=feature_id,
-                feature_result=feature_result,
-                method=method,
-                threshold=threshold,
-                development_dataset_hash=development_dataset_hash,
-                protocol_hash=protocol_hash,
-                research_hash=research_hash,
-            )
-            for threshold in thresholds
-        ]
+        generated = generated_by_method[method]
         frozen, dominated = pareto_prune_candidates(generated)
         generated_hashes = sorted(
             str(candidate["candidate_hash"]) for candidate in generated
