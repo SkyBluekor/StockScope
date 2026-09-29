@@ -73,19 +73,34 @@ def build_uncalibrated_shock_assessment(
     feature_set: dict[str, Any],
     rate_calibration: MacroShockCalibration,
 ) -> dict[str, Any]:
-    rate_features = tuple(
-        feature["feature_id"]
+    rate_feature_rows = [
+        feature
         for feature in feature_set.get("features", [])
         if str(feature.get("feature_id", "")).startswith(("rate_level_", "delta_bp_"))
+    ]
+    rate_features = tuple(feature["feature_id"] for feature in rate_feature_rows)
+    rate_feature_available = any(
+        feature.get("status") == "AVAILABLE"
+        for feature in rate_feature_rows
+    )
+    rate_state = (
+        ShockState.UNCALIBRATED
+        if rate_feature_available
+        else ShockState.UNKNOWN
+    )
+    rate_reason = (
+        "CALIBRATION_NOT_DEFINED"
+        if rate_feature_available
+        else "RATE_FEATURES_UNAVAILABLE"
     )
     components = [
         ShockComponentAssessment(
             shock_type=ShockType.RATE_SPIKE,
-            state=ShockState.UNCALIBRATED,
+            state=rate_state,
             calibration_id=rate_calibration.calibration_id,
             calibration_version=rate_calibration.version,
             raw_feature_ids=rate_features,
-            reason="CALIBRATION_NOT_DEFINED",
+            reason=rate_reason,
         ),
         ShockComponentAssessment(
             shock_type=ShockType.VOLATILITY_SHOCK,
@@ -126,10 +141,18 @@ def build_uncalibrated_shock_assessment(
         "contract_version": MACRO_SHOCK_CONTRACT_VERSION,
         "components": [component.to_dict() for component in components],
         "composite": {
-            "state": ShockState.UNCALIBRATED.value,
+            "state": (
+                ShockState.UNCALIBRATED.value
+                if rate_feature_available
+                else ShockState.UNKNOWN.value
+            ),
             "component_types": [component.shock_type.value for component in components],
             "weighted_severity": None,
-            "reason": "NO_APPROVED_CALIBRATION",
+            "reason": (
+                "NO_APPROVED_CALIBRATION"
+                if rate_feature_available
+                else "FEATURES_UNAVAILABLE"
+            ),
         },
         "episode": episode.to_dict(),
         "production_decision_approved": False,
