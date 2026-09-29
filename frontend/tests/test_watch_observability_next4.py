@@ -16,7 +16,7 @@ def test_holdings_watch_exposes_runtime_health_and_notification_inbox():
     assert "markWatchNotificationRead" in panel
     assert "Watch 정책" in panel
     assert "시세 연결" in panel
-    assert "실행 연속성" in panel
+    assert "Watch 서비스" in panel
     assert "미확인 알림" in panel
     assert "알림 보기" in panel
     assert "감시 연속성 미확인" in panel
@@ -50,3 +50,21 @@ def test_watch_observability_ui_does_not_claim_production_policy_is_active():
     assert 'systemStatus?.policy_enabled' in panel
     assert "OPERATING_THRESHOLDS_UNAPPROVED" not in panel
     assert "자동 주문" not in panel
+
+
+def test_watch_layout_responds_to_component_width_not_only_viewport():
+    panel = (
+        ROOT / "src/components/HoldingWatchStatus.tsx"
+    ).read_text(encoding="utf-8")
+    css = (ROOT / "src/holdings.css").read_text(encoding="utf-8")
+
+    assert "holding-watch-summary-copy" in panel
+    assert '"서비스 실행 중"' in panel
+    assert 'return "실행 중"' not in panel
+
+    assert "container-type: inline-size" in css
+    assert "container-name: holding-watch" in css
+    assert "@container holding-watch" in css
+    assert "grid-template-columns: repeat(4, minmax(0, 1fr)) auto" not in css
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr))" in css
+    assert "overflow-wrap: anywhere" in css
