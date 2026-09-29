@@ -195,7 +195,6 @@ class HistoricalValidationCatalog:
                 conn,
                 "historical_validation_run",
                 {
-                    "selection_policy_json": "TEXT",
                     "started_at": "TEXT",
                     "completed_at": "TEXT",
                     "processed_day_count": "INTEGER NOT NULL DEFAULT 0",
