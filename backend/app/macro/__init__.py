@@ -1,3 +1,14 @@
+from app.macro.calibration_dataset import (
+    MACRO_CALIBRATION_DATASET_CONTRACT_VERSION,
+    CalibrationSplitRole,
+    build_calibration_dataset,
+)
+from app.macro.calibration_protocol import (
+    MACRO_CALIBRATION_PROTOCOL_CONTRACT_VERSION,
+    MacroCalibrationProtocol,
+    build_calibration_research_protocol,
+    validate_split_ranges,
+)
 from app.macro.calibration import (
     CalibrationStatus,
     MacroShockCalibration,
@@ -43,6 +54,13 @@ from app.macro.store import (
 )
 
 __all__ = [
+    "MACRO_CALIBRATION_DATASET_CONTRACT_VERSION",
+    "MACRO_CALIBRATION_PROTOCOL_CONTRACT_VERSION",
+    "CalibrationSplitRole",
+    "MacroCalibrationProtocol",
+    "build_calibration_dataset",
+    "build_calibration_research_protocol",
+    "validate_split_ranges",
     "CalibrationStatus",
     "MACRO_CONTEXT_CONTRACT_VERSION",
     "MACRO_EPISODE_CONTRACT_VERSION",
