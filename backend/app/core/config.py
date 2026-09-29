@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     krx_api_key: str | None = None
     dart_api_key: str | None = None
     llm_api_key: str | None = None
+    fred_api_key: str | None = None
 
     # NAVER Search News API credentials are backend-only.
     # provider_kind: "api_hub" (NCP) or "developer_center" (legacy).
