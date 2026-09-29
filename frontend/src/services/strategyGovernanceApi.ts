@@ -83,6 +83,35 @@ export type StrategyEvidenceArtifact = Record<string, unknown> & {
   current_source_status?: string;
 };
 
+export type StrategyEvidenceEligibilityRow = {
+  strategy_key: string;
+  sample_count: number;
+  mature_count: number;
+  evidence_state: string;
+  identity_status: string;
+  block_reason: string | null;
+  creation_allowed: boolean;
+  strategy_version_id: string | null;
+  definition_hash: string | null;
+  observed_sample_count: number;
+  existing_artifact_id: string | null;
+};
+
+export type StrategyEvidenceEligibility = {
+  source_kind: "PROSPECTIVE_REPORT" | string;
+  source_report_id: string;
+  source_status: string;
+  report_version: string;
+  evidence_state: string;
+  restrictions: {
+    minimum_sample_policy_defined: boolean;
+    performance_conclusion_allowed: boolean;
+    strategy_promotion_allowed: boolean;
+    adaptive_rotation_enabled: boolean;
+  };
+  strategies: StrategyEvidenceEligibilityRow[];
+};
+
 export type StrategyChangeProposal = Record<string, unknown> & {
   id: string;
   approval_gate_state: string;
@@ -174,6 +203,29 @@ export function listStrategyEvidence(
   query.set("verify_source", String(verifySource));
   return apiJson<StrategyEvidenceArtifact[]>(
     "/api/simulation/strategy-governance/evidence?" + query.toString(),
+  );
+}
+
+export function getStrategyEvidenceEligibility(
+  sourceReportId: string,
+) {
+  const query = new URLSearchParams({
+    source_kind: "PROSPECTIVE_REPORT",
+    source_report_id: sourceReportId,
+  });
+  return apiJson<StrategyEvidenceEligibility>(
+    "/api/simulation/strategy-governance/evidence/eligibility?" + query.toString(),
+  );
+}
+
+export function createStrategyEvidenceArtifact(input: {
+  source_kind: "PROSPECTIVE_REPORT";
+  source_report_id: string;
+  strategy_version_id: string;
+}) {
+  return apiJson<StrategyEvidenceArtifact>(
+    "/api/simulation/strategy-governance/evidence",
+    postJson(input),
   );
 }
 
