@@ -4,6 +4,7 @@ from datetime import date, timedelta
 
 from app.backtest.historical_evidence import (
     MIN_SAMPLE_FOR_EVALUATION,
+    build_historical_evidence,
     data_readiness,
     evaluate_historical_evidence,
     unavailable_historical_evidence,
@@ -130,6 +131,44 @@ def test_v0212_data_readiness_requires_real_three_year_start_and_warmup() -> Non
     )
     assert short["ready"] is False
     assert any("3년 시작구간" in reason for reason in short["reasons"])
+
+
+def test_v0212_complete_market_window_classifies_short_stock_history_as_structural() -> None:
+    validation_start = date(2023, 9, 14)
+    validation_end = date(2026, 9, 14)
+    index_rows = _daily_rows(validation_start - timedelta(days=220), 980)
+    short_stock_rows = _daily_rows(date(2025, 1, 1), 450)
+
+    recoverable = build_historical_evidence(
+        engine=None,
+        strategy="pullback",
+        code="295310",
+        market="KOSDAQ",
+        stock_rows=short_stock_rows,
+        index_rows=index_rows,
+        validation_start=validation_start,
+        validation_end=validation_end,
+        history_scope_complete=False,
+    )
+    assert recoverable["unavailable_reason"] == "MISSING_HISTORY"
+    assert recoverable["preparation_available"] is True
+
+    structural = build_historical_evidence(
+        engine=None,
+        strategy="pullback",
+        code="295310",
+        market="KOSDAQ",
+        stock_rows=short_stock_rows,
+        index_rows=index_rows,
+        validation_start=validation_start,
+        validation_end=validation_end,
+        history_scope_complete=True,
+    )
+    assert structural["status"] == "DATA_UNAVAILABLE"
+    assert structural["verified"] is False
+    assert structural["unavailable_reason"] == "INSUFFICIENT_AVAILABLE_HISTORY"
+    assert structural["preparation_available"] is False
+    assert structural["label"] == "3년 검증 이력 부족"
 
 
 def test_v0212_unavailable_history_stays_separate_from_current_entry_condition() -> None:
