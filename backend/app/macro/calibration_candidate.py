@@ -465,6 +465,119 @@ def build_rate_spike_candidate_set(
     }
 
 
+def validate_candidate_set_artifact(
+    candidate_set: dict[str, Any],
+) -> dict[str, Any]:
+    if candidate_set.get("contract_version") != MACRO_CANDIDATE_SET_CONTRACT_VERSION:
+        raise ValueError("Unsupported candidate set contract.")
+    if candidate_set.get("candidate_set_status") != "FROZEN":
+        raise ValueError("Candidate set must be FROZEN.")
+    if candidate_set.get("holdout_locked") is not True:
+        raise ValueError("Candidate set must keep Holdout locked.")
+    if candidate_set.get("holdout_accessed") is not False:
+        raise ValueError("Candidate set must not access Holdout.")
+    if candidate_set.get("final_candidate_selected") is not False:
+        raise ValueError("S4 must not select a final candidate.")
+    if candidate_set.get("selected_candidate_id") is not None:
+        raise ValueError("S4 selected_candidate_id must be null.")
+    if candidate_set.get("selected_candidate_hash") is not None:
+        raise ValueError("S4 selected_candidate_hash must be null.")
+    if candidate_set.get("rate_spike_state") != "UNCALIBRATED":
+        raise ValueError("S4 RATE_SPIKE must remain UNCALIBRATED.")
+    if int(candidate_set.get("normal_labels_created") or 0) != 0:
+        raise ValueError("S4 must not create NORMAL labels.")
+    if int(candidate_set.get("detected_labels_created") or 0) != 0:
+        raise ValueError("S4 must not create DETECTED labels.")
+    if candidate_set.get("production_decision_approved") is not False:
+        raise ValueError("S4 must not be Production-approved.")
+
+    manifest = candidate_set.get("exploration_manifest") or {}
+    frozen_candidates = list(candidate_set.get("frozen_candidates") or [])
+    dominated_candidates = list(candidate_set.get("dominated_candidates") or [])
+
+    recomputed_frozen_hashes: list[str] = []
+    for candidate in frozen_candidates:
+        payload = {
+            key: value
+            for key, value in candidate.items()
+            if key not in {"candidate_id", "candidate_hash"}
+        }
+        expected = content_hash(payload)
+        if expected != candidate.get("candidate_hash"):
+            raise ValueError("Frozen candidate_hash mismatch.")
+        if candidate.get("candidate_id") != f"RATECAND-{expected[:16]}":
+            raise ValueError("Frozen candidate_id mismatch.")
+        recomputed_frozen_hashes.append(expected)
+
+    frozen_hashes = sorted(recomputed_frozen_hashes)
+    dominated_hashes = sorted(
+        str(candidate["candidate_hash"])
+        for candidate in dominated_candidates
+    )
+    generated_hashes = sorted(
+        [*frozen_hashes, *dominated_hashes]
+    )
+
+    if frozen_hashes != sorted(manifest.get("frozen_candidate_hashes") or []):
+        raise ValueError("Frozen candidate manifest mismatch.")
+    if dominated_hashes != sorted(
+        manifest.get("dominated_candidate_hashes") or []
+    ):
+        raise ValueError("Dominated candidate manifest mismatch.")
+    if generated_hashes != sorted(
+        manifest.get("generated_candidate_hashes") or []
+    ):
+        raise ValueError("Generated candidate manifest mismatch.")
+    if int(manifest.get("frozen_candidate_count") or 0) != len(frozen_hashes):
+        raise ValueError("Frozen candidate count mismatch.")
+    if int(manifest.get("dominated_candidate_count") or 0) != len(
+        dominated_hashes
+    ):
+        raise ValueError("Dominated candidate count mismatch.")
+    if int(manifest.get("generated_candidate_count") or 0) != len(
+        generated_hashes
+    ):
+        raise ValueError("Generated candidate count mismatch.")
+
+    identity_payload = {
+        "contract_version": candidate_set["contract_version"],
+        "development_dataset_hash": candidate_set[
+            "development_dataset_hash"
+        ],
+        "protocol_hash": candidate_set["protocol_hash"],
+        "research_hash": candidate_set["research_hash"],
+        "holdout_dataset_hash_reference": candidate_set[
+            "holdout_dataset_hash_reference"
+        ],
+        "exploration_manifest": manifest,
+        "candidate_set_status": candidate_set["candidate_set_status"],
+        "holdout_locked": candidate_set["holdout_locked"],
+        "holdout_accessed": candidate_set["holdout_accessed"],
+        "final_candidate_selected": candidate_set[
+            "final_candidate_selected"
+        ],
+        "rate_spike_state": candidate_set["rate_spike_state"],
+        "production_decision_approved": candidate_set[
+            "production_decision_approved"
+        ],
+    }
+    expected_set_hash = content_hash(identity_payload)
+    if expected_set_hash != candidate_set.get("candidate_set_hash"):
+        raise ValueError("Candidate set hash mismatch.")
+    if candidate_set.get("candidate_set_id") != (
+        f"RATECANDSET-{expected_set_hash[:16]}"
+    ):
+        raise ValueError("Candidate set id mismatch.")
+
+    return {
+        "candidate_set_hash": expected_set_hash,
+        "generated_candidate_count": len(generated_hashes),
+        "frozen_candidate_count": len(frozen_hashes),
+        "dominated_candidate_count": len(dominated_hashes),
+        "holdout_accessed": False,
+    }
+
+
 def summarize_candidate_set(candidate_set: dict[str, Any]) -> dict[str, Any]:
     features: dict[str, Any] = {}
     for feature_id in RATE_SPIKE_FEATURE_IDS:
