@@ -93,6 +93,38 @@ def test_scanner_history_plan_counts_only_uncached_network_requests() -> None:
     assert plan["estimated_network_requests"] == 3
 
 
+def test_scanner_completion_separates_current_data_from_historical_evidence() -> None:
+    partial, cache_allowed = StockScannerService._completion_state(
+        preparation_required=[],
+        evidence_stats={
+            "recoverable_unavailable": 0,
+            "structural_unavailable": 2,
+        },
+    )
+    assert partial is False
+    assert cache_allowed is True
+
+    partial, cache_allowed = StockScannerService._completion_state(
+        preparation_required=[],
+        evidence_stats={
+            "recoverable_unavailable": 1,
+            "structural_unavailable": 0,
+        },
+    )
+    assert partial is False
+    assert cache_allowed is False
+
+    partial, cache_allowed = StockScannerService._completion_state(
+        preparation_required=[{"market": "KOSDAQ"}],
+        evidence_stats={
+            "recoverable_unavailable": 0,
+            "structural_unavailable": 0,
+        },
+    )
+    assert partial is True
+    assert cache_allowed is False
+
+
 def test_scanner_current_only_candidate_is_labeled_as_unverified_history() -> None:
     service = object.__new__(StockScannerService)
     item = {
