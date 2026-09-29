@@ -110,6 +110,13 @@ def inspect_macro_store(path: Path | None) -> dict[str, Any]:
     }
 
 
+def validate_macro_db(path: Path) -> dict[str, Any]:
+    state = inspect_macro_store(path)
+    if not state.get("present") or not state.get("restorable"):
+        raise DataToolError("Macro Store가 초기화되지 않았거나 복원 가능 상태가 아닙니다.")
+    return state
+
+
 def validate_macro_state(
     expected: dict[str, Any],
     actual: dict[str, Any],
