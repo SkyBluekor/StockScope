@@ -27,6 +27,15 @@ function post(body?: unknown): RequestInit {
   };
 }
 
+export type ProspectiveAttentionCapture = {
+  source_job_id: string;
+  status: string;
+  actual_data_date: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  completed_at: string | null;
+};
+
 export type ProspectiveStatus = {
   schema_version: string;
   capture_counts: Record<string, number>;
@@ -35,6 +44,15 @@ export type ProspectiveStatus = {
   latest_signal_date: string | null;
   protocol_count: number;
   evaluation_run_count: number;
+  evidence_accumulation: {
+    state: "NO_VALID_CAPTURE" | "NEEDS_ATTENTION" | "EVIDENCE_ACCUMULATING" | "EVALUATION_AVAILABLE" | string;
+    complete_capture_count: number;
+    attention_capture_count: number;
+    report_count: number;
+    latest_complete_date: string | null;
+    recent_attention: ProspectiveAttentionCapture[];
+    policy_criteria_defined: false;
+  };
   minimum_sample_policy_defined: false;
   strategy_promotion_allowed: false;
   adaptive_rotation_enabled: false;
