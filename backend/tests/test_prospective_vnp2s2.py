@@ -282,6 +282,8 @@ def test_partial_capture_is_preserved_but_not_evaluation_sample(
     )
     result = _scanner_result("2026-09-23", fingerprint="partial-fp")
     result["partial_data"] = True
+    result["preparation_required"] = True
+    result["summary"]["three_year_evidence_data_unavailable"] = 2
     finalized = service.try_finalize_scanner_capture(
         source_job_id="partial-job",
         payload=_payload("2026-09-23"),
@@ -292,6 +294,24 @@ def test_partial_capture_is_preserved_but_not_evaluation_sample(
     assert service.catalog.list_samples() == []
     captures = service.catalog.list_captures()
     assert captures[0]["status"] == "PARTIAL"
+    assert captures[0]["error_code"] == "SCANNER_PARTIAL_DATA"
+    assert "preparation_required=true" in captures[0]["error_message"]
+    assert "three_year_evidence_data_unavailable=2" in captures[0]["error_message"]
+
+    status = service.catalog.status_summary()
+    assert status["evidence_accumulation"]["state"] == "NEEDS_ATTENTION"
+    assert status["evidence_accumulation"]["complete_capture_count"] == 0
+    assert status["evidence_accumulation"]["attention_capture_count"] == 1
+    assert status["evidence_accumulation"]["report_count"] == 0
+    assert status["evidence_accumulation"]["policy_criteria_defined"] is False
+    assert status["evidence_accumulation"]["recent_attention"][0] == {
+        "source_job_id": "partial-job",
+        "status": "PARTIAL",
+        "actual_data_date": "2026-09-23",
+        "error_code": "SCANNER_PARTIAL_DATA",
+        "error_message": captures[0]["error_message"],
+        "completed_at": captures[0]["completed_at"],
+    }
 
 
 def test_same_job_finalize_retry_returns_terminal_capture_unchanged(
