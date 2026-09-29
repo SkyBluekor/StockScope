@@ -5,14 +5,13 @@ from pathlib import Path
 import httpx
 import pytest
 
-from app.core.config import Settings
-from app.integrations.fred.client import FredApiError, FredClient
+from app.integrations.fred.client import FredApiError, FredClient, FredSettings
 from app.macro import LocalMacroReader, MacroStore
 from app.macro.providers.fred import collect_fred_dgs10, probe_fred_dgs10
 
 
-def _settings(key: str | None = "a" * 32) -> Settings:
-    return Settings(_env_file=None, fred_api_key=key)
+def _settings(key: str | None = "a" * 32) -> FredSettings:
+    return FredSettings(_env_file=None, fred_api_key=key)
 
 
 def test_fred_client_paginates_without_exposing_api_key():
