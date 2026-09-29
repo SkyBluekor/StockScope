@@ -86,9 +86,10 @@ class WatchRuntimeObserver:
                         """,
                         (now, previous_id),
                     )
-                    continuity_state = "UNMONITORED"
-                else:
-                    continuity_state = "CONTINUOUS"
+                # Any interval between two runtime sessions is not observed by
+                # StockScope. Do not call it a market-data outage, but do not
+                # claim continuous monitoring either.
+                continuity_state = "UNMONITORED"
 
             session_id = str(uuid4())
             conn.execute(
