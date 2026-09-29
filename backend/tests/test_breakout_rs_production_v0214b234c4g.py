@@ -28,7 +28,7 @@ def test_c4g_production_breakout_definition_is_10_plus_8() -> None:
 def test_c4g_scanner_cache_and_frontend_persistence_match_current_contract() -> None:
     scanner = SCANNER.read_text(encoding="utf-8")
     frontend = FRONTEND_SESSION.read_text(encoding="utf-8")
-    assert 'VERSION = "0.21.3.8"' in scanner
+    assert 'VERSION = "0.21.3.9"' in scanner
     assert "SCANNER_DECISION_VERSION" not in frontend
     assert "SCANNER_SESSION_SCHEMA_VERSION = 1" in frontend
     assert "algorithm version belongs to the" in frontend
