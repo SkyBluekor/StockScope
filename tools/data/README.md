@@ -209,6 +209,36 @@ NEXT-6B-S3는 S2에서 고정한 **Development artifact만** 읽어 DGS10 금리
 
 S3 완료 후에도 `RATE_SPIKE`는 `UNCALIBRATED`입니다. `NORMAL`/`DETECTED` label은 생성하지 않으며 Holdout은 S4 calibration candidate freeze 전까지 잠긴 상태를 유지합니다. 분석 중 network request와 Macro DB write는 모두 0입니다.
 
+## NEXT-6B-S4 Calibration Candidate Set Freeze
+### 개발 데이터만으로 금리 충격 후보 규칙 집합 고정
+
+NEXT-6B-S4는 S2 Development dataset, S2 Protocol, S3 Research artifact만 읽어 RATE_SPIKE 후보 집합을 고정합니다. Holdout artifact는 입력 옵션 자체가 없으며 S5 전까지 읽지 않습니다.
+
+후보 생성은 사람이 임의의 bp/percentile/MAD 숫자를 코드에 입력하지 않고 Development에서 실제 관측된 breakpoint를 사용합니다.
+
+- `EMPIRICAL_POSITIVE_TAIL`: 실제 양(+)의 bp 변화값
+- `EXPANDING_POSITIVE_TAIL_FRACTION`: 각 시점 이전 Development 분포에서 실제 관측된 positive-tail fraction
+- `EXPANDING_ROBUST_MAD`: 각 시점 이전 Development 분포에서 실제 관측된 양(+)의 MAD deviation
+
+`rate_level_pct`는 RATE_SPIKE 후보에서 제외하고 `delta_bp_1obs`, `delta_bp_5obs`, `delta_bp_10obs`를 서로 합치지 않고 별도로 평가합니다.
+
+후보 축소는 weighted score가 아니라 Pareto dominance를 사용합니다. 비교 목적은 희소성, 연도 coverage, episode separation, 단일 연도 집중도이며 다른 후보보다 모든 목적에서 나쁜 후보만 제거합니다.
+
+Episode 정책은 `CONSECUTIVE_TRUE_RUN_V1`입니다. 관측 순서에서 TRUE가 연속되는 구간을 하나의 episode로 보고 gap tolerance는 0이며 episode 시작 시 한 번만 알림 가능한 구조로 고정합니다. calendar day 수를 임의로 넣지 않습니다.
+
+Preview:
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\freeze_macro_calibration_candidates_next6b_s4.py `
+  --development-artifact .\backend\runtime\macro\calibration\DEV-7c3f6660b3aae03f.json `
+  --protocol-artifact .\backend\runtime\macro\calibration\PROTOCOL-e1de868dc8f16670.json `
+  --research-artifact .\backend\runtime\macro\calibration\RESEARCH-cdd96e164e12017d.json
+```
+
+검증 후 `--write-artifact`를 추가하면 `backend/runtime/macro/calibration/CANDIDATES-<hash>.json`이 생성됩니다.
+
+S4 완료 후에도 최종 candidate는 선택하지 않으며 `RATE_SPIKE`는 `UNCALIBRATED`입니다. `NORMAL`/`DETECTED` label, Scanner/Strategy/Risk/Holdings/Watch 변경, network request, Macro DB write는 모두 0입니다.
+
 ## P2-S2 실제 추천 평가 저장소 준비
 
 P2-S2는 새 Scanner 실행부터 실제 추천 표본을 사후 선택 전에 보존합니다. 과거 Scanner 실행을 prospective 표본으로 소급 생성하지 않습니다.
