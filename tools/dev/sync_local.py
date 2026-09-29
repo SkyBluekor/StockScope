@@ -708,11 +708,22 @@ def final_verify(paths: RuntimePaths) -> dict[str, Any]:
     simulation = validate_simulation_db(paths.simulation)
     governance = _verify_p5_p6(paths)
     statuses = inspect_all(paths)
-    not_current = [s for s in statuses if s.state is not MigrationState.CURRENT]
-    if not_current:
+    invalid_final = [
+        status
+        for status in statuses
+        if status.state
+        not in {
+            MigrationState.CURRENT,
+            MigrationState.NOT_APPLICABLE,
+        }
+    ]
+    if invalid_final:
         raise DataToolError(
             "Migration final verification 실패: "
-            + ", ".join(f"{s.key}={s.state.value}" for s in not_current)
+            + ", ".join(
+                f"{status.key}={status.state.value}"
+                for status in invalid_final
+            )
         )
     return {
         "holdings": holdings,
