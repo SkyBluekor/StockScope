@@ -14,6 +14,7 @@ for candidate in (ROOT, BACKEND):
         sys.path.insert(0, str(candidate))
 
 from app.core.config import get_settings
+from app.integrations.fred import get_fred_settings
 from app.macro.identity import content_hash
 from app.macro.providers import probe_fred_dgs10, probe_kis_macro_capabilities
 
@@ -39,12 +40,13 @@ def build_report(
     provider_name = provider.strip().upper()
     if provider_name not in {"FRED", "KIS", "ALL"}:
         raise ValueError("provider must be FRED, KIS, or ALL.")
-    settings = get_settings()
+    kis_settings = get_settings()
+    fred_settings = get_fred_settings()
     results: list[dict[str, Any]] = []
     if provider_name in {"FRED", "ALL"}:
         results.append(
             probe_fred_dgs10(
-                settings=settings,
+                settings=fred_settings,
                 observation_start=start_date,
                 observation_end=end_date,
             ).to_dict()
@@ -53,7 +55,7 @@ def build_report(
         results.extend(
             item.to_dict()
             for item in probe_kis_macro_capabilities(
-                settings=settings,
+                settings=kis_settings,
                 start_date=start_date,
                 end_date=end_date,
                 index_code=kis_index_code,
