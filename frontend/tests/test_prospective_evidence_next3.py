@@ -41,3 +41,14 @@ def test_p5_handoff_style_remains_editorial_table_not_card_grid():
     assert ".sim-prospective-p5-table" in css
     assert ".sim-prospective-p5-head" in css
     assert "linear-gradient" not in css
+
+
+def test_p5_evidence_section_remains_visible_before_report_exists():
+    panel = (
+        ROOT / "src/components/ProspectiveEvaluationPanel.tsx"
+    ).read_text(encoding="utf-8")
+
+    assert "아직 등록할 평가 근거가 없습니다." in panel
+    assert "평가 Report 없음" in panel
+    assert "Prospective 평가가 완료되면 Strategy Version을 확인한 뒤" in panel
+    assert "{latestDetail?.report && (" not in panel.split("P5 평가 근거", 1)[0][-120:]

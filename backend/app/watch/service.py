@@ -12,6 +12,7 @@ from app.quotes.models import QuoteSnapshot
 
 from .coordinator import WatchDemand
 from .models import WatchObservation, WatchRuleRuntimeState, WatchRuleSpec
+from .observability import read_watch_runtime_health
 from .policy import WatchPolicy, production_watch_policy
 from .state_machine import advance_watch_rule
 from .storage import require_watch_schema, watch_schema_available
@@ -643,6 +644,75 @@ class WatchService:
             "reason": reason,
         }
 
+    def check_quote_silence(
+        self,
+        demands: Iterable[WatchDemand],
+        *,
+        market_session_phase: str,
+        policy: WatchPolicy | None = None,
+    ) -> dict[str, int]:
+        selected = policy or self.policy_provider()
+        if not selected.enabled:
+            return {"checked": 0, "gaps": 0}
+        selected.require_enabled()
+        if market_session_phase not in {"PRE_MARKET", "REGULAR", "AFTER_MARKET"}:
+            return {"checked": 0, "gaps": 0}
+
+        now = self.clock().astimezone(timezone.utc)
+        max_age = float(selected.max_quote_age_seconds or 0)
+        checked = 0
+        gaps = 0
+        for demand in tuple(demands):
+            with self.catalog.connection() as conn:
+                require_watch_schema(conn)
+                setting = conn.execute(
+                    """
+                    SELECT id,created_at
+                    FROM holding_watch_setting
+                    WHERE position_id=? AND plan_id=? AND plan_version=?
+                      AND status='ACTIVE'
+                    LIMIT 1
+                    """,
+                    (
+                        demand.position_id,
+                        demand.plan_id,
+                        demand.plan_version,
+                    ),
+                ).fetchone()
+                if setting is None:
+                    continue
+                last_row = conn.execute(
+                    """
+                    SELECT MAX(last_observed_at)
+                    FROM holding_watch_rule
+                    WHERE setting_id=? AND status='ACTIVE'
+                    """,
+                    (str(setting["id"]),),
+                ).fetchone()
+                baseline_text = (
+                    str(last_row[0])
+                    if last_row is not None and last_row[0] is not None
+                    else str(setting["created_at"])
+                )
+            baseline = _parse_dt(baseline_text)
+            if baseline is None:
+                continue
+            checked += 1
+            age_seconds = max(0.0, (now - baseline).total_seconds())
+            if age_seconds <= max_age:
+                continue
+            self.record_coverage_issue(
+                demand,
+                "QUOTE_NOT_RECEIVED",
+                detail={
+                    "age_seconds": age_seconds,
+                    "market_session_phase": market_session_phase,
+                },
+                policy=selected,
+            )
+            gaps += 1
+        return {"checked": checked, "gaps": gaps}
+
     def process_quote(
         self,
         demand: WatchDemand,
@@ -814,30 +884,65 @@ class WatchService:
                     "pending_notifications": 0,
                 }
 
-            return {
-                "available": True,
-                "migration_required": False,
-                "policy_enabled": policy.enabled,
-                "blocked_reason": policy.blocked_reason,
-                "active_settings": int(
-                    conn.execute(
-                        "SELECT COUNT(*) FROM holding_watch_setting WHERE status='ACTIVE'"
-                    ).fetchone()[0]
-                ),
-                "open_gaps": int(
-                    conn.execute(
-                        "SELECT COUNT(*) FROM holding_watch_coverage_gap WHERE status='OPEN'"
-                    ).fetchone()[0]
-                ),
-                "pending_notifications": int(
-                    conn.execute(
-                        """
-                        SELECT COUNT(*) FROM holding_watch_notification_outbox
-                        WHERE read_at IS NULL
-                        """
-                    ).fetchone()[0]
-                ),
-            }
+            active_settings = int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM holding_watch_setting WHERE status='ACTIVE'"
+                ).fetchone()[0]
+            )
+            open_gaps = int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM holding_watch_coverage_gap WHERE status='OPEN'"
+                ).fetchone()[0]
+            )
+            unread = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(*) FROM holding_watch_notification_outbox
+                    WHERE read_at IS NULL
+                    """
+                ).fetchone()[0]
+            )
+
+        runtime = read_watch_runtime_health(self.catalog)
+        try:
+            from app.quotes.websocket_manager import quote_websocket_manager
+            transport_state = quote_websocket_manager.transport_state
+            market_session_phase = quote_websocket_manager.session_phase
+        except Exception:
+            transport_state = "UNKNOWN"
+            market_session_phase = "UNKNOWN"
+
+        session = runtime.get("session") if isinstance(runtime, dict) else None
+        continuity_state = (
+            str(session.get("continuity_state"))
+            if isinstance(session, dict)
+            else "UNKNOWN"
+        )
+        if not policy.enabled:
+            coverage_state = "POLICY_DISABLED"
+        elif open_gaps > 0:
+            coverage_state = "GAP"
+        elif continuity_state == "UNMONITORED":
+            coverage_state = "UNMONITORED"
+        elif active_settings > 0:
+            coverage_state = "ACTIVE"
+        else:
+            coverage_state = "NO_ACTIVE_SETTING"
+
+        return {
+            "available": True,
+            "migration_required": False,
+            "policy_enabled": policy.enabled,
+            "blocked_reason": policy.blocked_reason,
+            "active_settings": active_settings,
+            "open_gaps": open_gaps,
+            "pending_notifications": unread,
+            "runtime": runtime,
+            "transport": {"state": transport_state},
+            "market_session": {"phase": market_session_phase},
+            "coverage": {"state": coverage_state},
+            "notifications": {"unread": unread},
+        }
 
     def get_position_status(self, position_id: str) -> dict[str, object]:
         policy = self.policy_provider()
@@ -1030,12 +1135,10 @@ class WatchService:
             conn.execute(
                 """
                 UPDATE holding_watch_notification_outbox
-                SET delivery_status='DELIVERED',
-                    delivered_at=COALESCE(delivered_at,?),
-                    read_at=COALESCE(read_at,?)
+                SET read_at=COALESCE(read_at,?)
                 WHERE id=?
                 """,
-                (now_text, now_text, notification_id),
+                (now_text, notification_id),
             )
             updated = conn.execute(
                 """

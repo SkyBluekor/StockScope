@@ -60,6 +60,7 @@ class QuoteWebSocketManager:
         self._approval_key: str | None = None
         self._stop = False
         self._auth_refresh_used = False
+        self._session_phase_value = "UNKNOWN"
 
     @property
     def transport_state(self) -> TransportState:
@@ -69,6 +70,15 @@ class QuoteWebSocketManager:
     def _set_state(self, value: TransportState) -> None:
         with self._lock:
             self._state = value
+
+    @property
+    def session_phase(self) -> str:
+        with self._lock:
+            return self._session_phase_value
+
+    def _set_session_phase(self, value: str) -> None:
+        with self._lock:
+            self._session_phase_value = value
 
     def touch_demand(self, key: QuoteCacheKey) -> bool:
         settings = self.settings_getter()
@@ -140,9 +150,11 @@ class QuoteWebSocketManager:
     async def _session_phase(self) -> str:
         try:
             session = await asyncio.to_thread(self.session_service.get_session, "INTEGRATED")
-            return session.phase
+            phase = session.phase
         except Exception:
-            return "UNKNOWN"
+            phase = "UNKNOWN"
+        self._set_session_phase(phase)
+        return phase
 
     async def _expire(self, settings: Settings) -> None:
         ttl = max(1.0, float(settings.kis_ws_demand_ttl_seconds))

@@ -205,7 +205,8 @@ def test_watch_notification_api_lists_and_marks_durable_notification_read(api_en
         f"/api/watch/notifications/{item['notification_id']}/read"
     )
     assert read.status_code == 200
-    assert read.json()["delivery_status"] == "DELIVERED"
+    assert read.json()["delivery_status"] == "PENDING"
+    assert read.json()["delivered_at"] is None
     assert read.json()["read_at"] is not None
 
     unread = api_env["client"].get(

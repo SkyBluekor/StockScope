@@ -3191,3 +3191,99 @@ button.holdings-direct-value:hover { border-bottom-color: var(--accent-primary);
     border-bottom: 0;
   }
 }
+
+
+/* NEXT-4 — Watch runtime health + durable notification inbox */
+.holding-watch-health {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+  gap: 0;
+  margin: 8px 0 10px;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.holding-watch-health > div {
+  min-width: 0;
+  padding: 9px 12px;
+  border-right: 1px solid var(--border-subtle);
+}
+.holding-watch-health > div span,
+.holding-watch-health > div strong {
+  display: block;
+}
+.holding-watch-health > div span {
+  color: var(--text-muted);
+  font-size: var(--font-badge);
+}
+.holding-watch-health > div strong {
+  margin-top: 3px;
+  color: var(--text-primary);
+  font-size: var(--font-meta);
+}
+.holding-watch-health > button {
+  align-self: center;
+  margin: 0 12px;
+}
+.holding-watch-error,
+.holding-watch-continuity {
+  margin: 8px 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--status-warning);
+  color: var(--text-secondary);
+  font-size: var(--font-meta);
+  line-height: var(--line-body);
+}
+.holding-watch-inbox {
+  margin: 10px 0 12px;
+  border-top: 1px solid var(--border-default);
+}
+.holding-watch-inbox > p {
+  margin: 10px 0;
+  color: var(--text-muted);
+  font-size: var(--font-meta);
+}
+.holding-watch-notification {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.holding-watch-notification > div { min-width: 0; }
+.holding-watch-notification strong,
+.holding-watch-notification span,
+.holding-watch-notification small {
+  display: block;
+}
+.holding-watch-notification strong {
+  color: var(--text-primary);
+  font-size: var(--font-meta);
+}
+.holding-watch-notification span {
+  margin-top: 3px;
+  color: var(--text-secondary);
+  font-size: var(--font-meta);
+}
+.holding-watch-notification small {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: var(--font-badge);
+}
+@media (max-width: 760px) {
+  .holding-watch-health {
+    grid-template-columns: 1fr 1fr;
+  }
+  .holding-watch-health > div {
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .holding-watch-health > button {
+    grid-column: 1 / -1;
+    margin: 10px 0;
+    justify-self: start;
+  }
+  .holding-watch-notification {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

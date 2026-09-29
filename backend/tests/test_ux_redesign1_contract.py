@@ -1648,10 +1648,13 @@ def test_vnp4s1_watch_status_is_observational_and_adds_no_primary_action_buttons
     assert '"감시 공백"' in panel
     assert '"기준 확인됨"' in panel
     assert '"감시 중"' in panel
-    assert "<button" not in panel
-    assert "onClick=" not in panel
+    assert "알림 보기" in panel
+    assert "markWatchNotificationRead" in panel
     assert "감시 시작" not in panel
     assert "감시 새로고침" not in panel
+    assert "recordManualBuy" not in panel
+    assert "recordManualSell" not in panel
+    assert "applyHoldingDecisionPlan" not in panel
     assert "/api/watch/positions/" in api
     assert "/api/watch/notifications" in api
     assert "markWatchNotificationRead" in api
