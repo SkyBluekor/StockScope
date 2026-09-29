@@ -1,3 +1,21 @@
+from app.macro.calibration_research import (
+    MACRO_DISTRIBUTION_RESEARCH_CONTRACT_VERSION,
+    build_distribution_research,
+    summarize_distribution_research,
+    validate_development_artifact,
+    validate_research_protocol,
+)
+from app.macro.distribution import (
+    MACRO_DISTRIBUTION_CONTRACT_VERSION,
+    RESEARCH_FEATURE_IDS,
+    analyze_feature_distribution,
+    build_expanding_analysis,
+    build_yearly_summary,
+    empirical_cdf,
+    median_absolute_deviation,
+    summarize_values,
+    tail_profile,
+)
 from app.macro.calibration_dataset import (
     MACRO_CALIBRATION_DATASET_CONTRACT_VERSION,
     CalibrationSplitRole,
@@ -54,6 +72,20 @@ from app.macro.store import (
 )
 
 __all__ = [
+    "MACRO_DISTRIBUTION_RESEARCH_CONTRACT_VERSION",
+    "MACRO_DISTRIBUTION_CONTRACT_VERSION",
+    "RESEARCH_FEATURE_IDS",
+    "analyze_feature_distribution",
+    "build_distribution_research",
+    "build_expanding_analysis",
+    "build_yearly_summary",
+    "empirical_cdf",
+    "median_absolute_deviation",
+    "summarize_distribution_research",
+    "summarize_values",
+    "tail_profile",
+    "validate_development_artifact",
+    "validate_research_protocol",
     "MACRO_CALIBRATION_DATASET_CONTRACT_VERSION",
     "MACRO_CALIBRATION_PROTOCOL_CONTRACT_VERSION",
     "CalibrationSplitRole",
