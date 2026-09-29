@@ -1,19 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   closeHoldingRecovery,
-  getHoldingRecovery,
   recordHoldingRecoveryAssessment,
   startHoldingRecovery,
-  HoldingsApiError,
   type HoldingPosition,
   type HoldingRecoveryAction,
   type HoldingRecoveryContext,
   type HoldingRecoveryThesisState,
+  type HoldingWorkspaceSourceStatus,
 } from "../services/holdingsApi";
 
 type Props = {
   positions: HoldingPosition[];
-  sourceKey: string;
+  contexts: Record<string, HoldingRecoveryContext>;
+  status?: HoldingWorkspaceSourceStatus;
+  loading?: boolean;
+  onContextChanged?: () => Promise<void> | void;
 };
 
 const thesisOptions: Array<{
@@ -64,14 +66,18 @@ function scrollToDecision() {
   });
 }
 
-export default function HoldingRecoveryPanel({ positions, sourceKey }: Props) {
+export default function HoldingRecoveryPanel({
+  positions,
+  contexts,
+  status,
+  loading = false,
+  onContextChanged,
+}: Props) {
   const openPositions = useMemo(
     () => positions.filter((position) => position.status === "OPEN"),
     [positions],
   );
-  const [contexts, setContexts] = useState<Record<string, HoldingRecoveryContext>>({});
-  const [migrationRequired, setMigrationRequired] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const migrationRequired = status?.status === "MIGRATION_REQUIRED";
   const [busyPositionId, setBusyPositionId] = useState<string | null>(null);
   const [thesisByPosition, setThesisByPosition] = useState<Record<string, HoldingRecoveryThesisState>>({});
   const [actionByPosition, setActionByPosition] = useState<Record<string, HoldingRecoveryAction>>({});
@@ -79,60 +85,20 @@ export default function HoldingRecoveryPanel({ positions, sourceKey }: Props) {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function load(signal?: AbortSignal) {
-    if (openPositions.length === 0) {
-      setContexts({});
-      setLoading(false);
-      return;
-    }
-    setError(null);
-    try {
-      const rows = await Promise.all(
-        openPositions.map(async (position) => {
-          const context = await getHoldingRecovery(position.position_id, { signal });
-          return [position.position_id, context] as const;
-        }),
-      );
-      const next = Object.fromEntries(rows);
-      setContexts(next);
-      setMigrationRequired(false);
-
-      const thesis: Record<string, HoldingRecoveryThesisState> = {};
-      const actions: Record<string, HoldingRecoveryAction> = {};
-      const reasons: Record<string, string> = {};
-      for (const [positionId, context] of rows) {
-        const latest = currentAssessment(context);
-        thesis[positionId] = latest?.thesis_state ?? "UNKNOWN";
-        actions[positionId] = latest?.review_action ?? "UNDECIDED";
-        reasons[positionId] = latest?.reason_note ?? "";
-      }
-      setThesisByPosition(thesis);
-      setActionByPosition(actions);
-      setReasonByPosition(reasons);
-    } catch (loadError) {
-      if (loadError instanceof DOMException && loadError.name === "AbortError") return;
-      if (
-        loadError instanceof HoldingsApiError
-        && loadError.code === "HOLD_RECOVERY_MIGRATION_REQUIRED"
-      ) {
-        setMigrationRequired(true);
-        setContexts({});
-        return;
-      }
-      setError(loadError instanceof Error ? loadError.message : "Recovery 검토 정보를 불러오지 못했습니다.");
-    } finally {
-      if (!signal?.aborted) setLoading(false);
-    }
-  }
-
   useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    setMessage(null);
-    setMigrationRequired(false);
-    void load(controller.signal);
-    return () => controller.abort();
-  }, [sourceKey, openPositions.map((item) => item.position_id).join("|")]);
+    const thesis: Record<string, HoldingRecoveryThesisState> = {};
+    const actions: Record<string, HoldingRecoveryAction> = {};
+    const reasons: Record<string, string> = {};
+    for (const [positionId, context] of Object.entries(contexts)) {
+      const latest = currentAssessment(context);
+      thesis[positionId] = latest?.thesis_state ?? "UNKNOWN";
+      actions[positionId] = latest?.review_action ?? "UNDECIDED";
+      reasons[positionId] = latest?.reason_note ?? "";
+    }
+    setThesisByPosition(thesis);
+    setActionByPosition(actions);
+    setReasonByPosition(reasons);
+  }, [contexts]);
 
   async function start(positionId: string) {
     setBusyPositionId(positionId);
@@ -143,7 +109,7 @@ export default function HoldingRecoveryPanel({ positions, sourceKey }: Props) {
         positionId,
         "보유 이유와 현재 위험을 별도 Recovery 문맥에서 재검토",
       );
-      setContexts((current) => ({ ...current, [positionId]: result.context }));
+      await onContextChanged?.();
       setThesisByPosition((current) => ({ ...current, [positionId]: "UNKNOWN" }));
       setActionByPosition((current) => ({ ...current, [positionId]: "UNDECIDED" }));
       setReasonByPosition((current) => ({ ...current, [positionId]: "" }));
@@ -173,7 +139,7 @@ export default function HoldingRecoveryPanel({ positions, sourceKey }: Props) {
         reason_note: reasonByPosition[positionId]?.trim() || null,
         linked_decision_id: context.current.latest_decision?.decision_id ?? null,
       });
-      setContexts((current) => ({ ...current, [positionId]: result.context }));
+      await onContextChanged?.();
       setThesisByPosition((current) => ({
         ...current,
         [positionId]: result.assessment.thesis_state,
@@ -206,7 +172,7 @@ export default function HoldingRecoveryPanel({ positions, sourceKey }: Props) {
         reason: "MANUAL_REVIEW_COMPLETED",
         note: "사용자가 Recovery 검토를 명시적으로 종료",
       });
-      setContexts((current) => ({ ...current, [positionId]: result.context }));
+      await onContextChanged?.();
       setMessage("Recovery 검토를 종료했습니다. 가격 변화만으로 자동 종료되지는 않습니다.");
     } catch (closeError) {
       setError(closeError instanceof Error ? closeError.message : "Recovery 검토를 종료하지 못했습니다.");
