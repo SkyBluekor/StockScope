@@ -9,7 +9,11 @@ from typing import Callable
 
 from app.input_identity import ANALYSIS_PROOF_VERSION, PROOF_TABLE
 
-from .analysis import DEFAULT_MARKET_STORE_DB, analyze_single_stock
+from .analysis import (
+    DEFAULT_MARKET_STORE_DB,
+    INPUT_FINGERPRINT_CONTRACT_VERSION,
+    analyze_single_stock,
+)
 from .catalog import HoldingsCatalog
 
 
@@ -75,7 +79,7 @@ def verify_current_analysis_input(
         row = conn.execute(
             """
             SELECT s.market,s.ticker,d.id AS analysis_day_id,d.market_date,
-                   d.current_revision_id,r.input_fingerprint
+                   d.current_revision_id,r.input_fingerprint,r.source_versions_json
             FROM monitored_stock s
             JOIN stock_analysis_day d ON d.monitored_stock_id=s.id
             JOIN stock_analysis_revision r ON r.id=d.current_revision_id
@@ -96,6 +100,20 @@ def verify_current_analysis_input(
     market_date = str(row["market_date"])
     revision_id = str(row["current_revision_id"])
     stored_fingerprint = str(row["input_fingerprint"])
+    try:
+        source_versions = json.loads(str(row["source_versions_json"] or "{}"))
+    except json.JSONDecodeError:
+        source_versions = {}
+    stored_contract = (
+        str(source_versions.get("fingerprint_contract_version") or "")
+        if isinstance(source_versions, dict)
+        else ""
+    )
+    if stored_contract != INPUT_FINGERPRINT_CONTRACT_VERSION:
+        raise HoldingsInputProofError(
+            "HOLD_INPUT_PROOF_FINGERPRINT_VERSION_UNSUPPORTED",
+            "이 분석 revision은 이전 fingerprint 계약으로 생성되어 현재 입력 증명과 직접 비교할 수 없습니다. 새 분석을 실행하세요.",
+        )
     current = analyze_single_stock(
         market=market,
         ticker=ticker,

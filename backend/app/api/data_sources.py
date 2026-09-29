@@ -43,6 +43,61 @@ def _stock_chart_service() -> HoldingsChartService:
     return HoldingsChartService(_market_store_path())
 
 
+class _PointInTimeDartProxy:
+    """Cap legacy DART event queries at an explicit analysis as-of boundary."""
+
+    def __init__(self, base: OpenDartProvider, as_of: str) -> None:
+        compact = str(as_of or "").strip().replace("-", "")
+        if len(compact) != 8 or not compact.isdigit():
+            raise ValueError("as_of는 YYYY-MM-DD 형식이어야 합니다.")
+        self._base = base
+        self._as_of = compact
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._base, name)
+
+    @staticmethod
+    def _compact(value: str) -> str:
+        return str(value or "").strip().replace("-", "")
+
+    async def disclosures(
+        self,
+        corp_code: str,
+        begin_date: str,
+        end_date: str,
+        page_count: int = 20,
+    ) -> dict[str, Any]:
+        end = min(self._compact(end_date), self._as_of)
+        begin = min(self._compact(begin_date), end)
+        return await self._base.disclosures(
+            corp_code,
+            begin,
+            end,
+            page_count,
+        )
+
+    async def major_event(
+        self,
+        path: str,
+        corp_code: str,
+        begin_date: str,
+        end_date: str,
+    ) -> dict[str, Any]:
+        end = min(self._compact(end_date), self._as_of)
+        begin = min(self._compact(begin_date), end)
+        return await self._base.major_event(
+            path,
+            corp_code,
+            begin,
+            end,
+        )
+
+    async def latest_annual_revenue(self, corp_code: str) -> None:
+        # The legacy helper has no as-of parameter. Returning no value is safer
+        # than mixing a later annual figure into a historical event assessment.
+        return None
+
+
 def _stock_chart_prepare_service() -> HoldingsChartPrepareService:
     settings = get_settings()
     return HoldingsChartPrepareService(
@@ -294,7 +349,8 @@ async def stock_strategy_analysis(
     quantity: float | None = Query(default=None, gt=0),
 ) -> dict[str, Any]:
     krx, dart = _providers()
-    service = StrategyAnalysisService(krx, dart)
+    analysis_dart = _PointInTimeDartProxy(dart, as_of) if as_of else dart
+    service = StrategyAnalysisService(krx, analysis_dart)
     try:
         return await service.analyze(
             code,

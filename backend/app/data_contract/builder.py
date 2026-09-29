@@ -129,11 +129,53 @@ def _analysis_contract(
     eod: EodResourceContract,
 ) -> AnalysisResourceContract:
     observed = state.analysis
+    source_versions = observed.source_versions or {}
+    selection_policy = source_versions.get("selection_policy")
+    if not isinstance(selection_policy, dict):
+        selection_policy = {}
+    selected_strategy = source_versions.get("selected_strategy")
+    if not isinstance(selected_strategy, dict):
+        selected_strategy = {}
     identity = AnalysisIdentityContract(
         input_fingerprint=observed.input_fingerprint,
+        fingerprint_contract_version=(
+            str(source_versions.get("fingerprint_contract_version"))
+            if source_versions.get("fingerprint_contract_version") not in (None, "")
+            else None
+        ),
         scanner_version=observed.scanner_version,
         analysis_engine_version=observed.analysis_engine_version,
         policy_version=observed.policy_version,
+        selection_policy_id=(
+            str(selection_policy.get("policy_id"))
+            if selection_policy.get("policy_id") not in (None, "")
+            else None
+        ),
+        selection_policy_hash=(
+            str(selection_policy.get("policy_hash"))
+            if selection_policy.get("policy_hash") not in (None, "")
+            else None
+        ),
+        selection_policy_contract_version=(
+            str(selection_policy.get("policy_contract_version"))
+            if selection_policy.get("policy_contract_version") not in (None, "")
+            else None
+        ),
+        selection_policy_source=(
+            str(selection_policy.get("policy_source"))
+            if selection_policy.get("policy_source") not in (None, "")
+            else None
+        ),
+        strategy_version_id=(
+            str(selected_strategy.get("strategy_version_id"))
+            if selected_strategy.get("strategy_version_id") not in (None, "")
+            else None
+        ),
+        strategy_definition_hash=(
+            str(selected_strategy.get("strategy_definition_hash"))
+            if selected_strategy.get("strategy_definition_hash") not in (None, "")
+            else None
+        ),
         horizon_intent=observed.horizon_intent,
         horizon_policy_version=observed.horizon_policy_version,
         horizon_support_status=observed.horizon_support_status,

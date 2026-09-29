@@ -67,9 +67,13 @@ class FakeScanner:
     def __init__(self, *, mode: str = "ok"):
         self.mode = mode
         self.calls: list[str] = []
+        self.policy_hashes: list[str | None] = []
 
-    async def run(self, *, market_scope, as_of_date, candidate_limit, force_refresh, allow_large_sync):
+    async def run(self, *, market_scope, as_of_date, candidate_limit, force_refresh, allow_large_sync, selection_policy_pin=None):
         self.calls.append(as_of_date)
+        self.policy_hashes.append(
+            selection_policy_pin.policy_hash if selection_policy_pin is not None else None
+        )
         day = date.fromisoformat(as_of_date)
         candidate_day = day + timedelta(days=1) if self.mode == "lookahead" else day
         markets = ["KOSPI", "KOSDAQ"] if market_scope == "ALL" else [market_scope]
@@ -148,6 +152,11 @@ async def test_replay_runs_three_days_and_persists_candidates(tmp_path: Path):
     assert completed.processed_day_count == 3
     assert completed.candidate_count == 6
     assert scanner.calls == ["2026-01-05", "2026-01-06", "2026-01-07"]
+    assert scanner.policy_hashes == [
+        draft.selection_policy["policy_hash"],
+        draft.selection_policy["policy_hash"],
+        draft.selection_policy["policy_hash"],
+    ]
     assert len(catalog.list_days(draft.id)) == 3
     assert len(catalog.list_candidates(draft.id)) == 6
     assert progress[-1]["current"] == 3
@@ -204,8 +213,32 @@ async def test_replay_resume_skips_completed_days(tmp_path: Path):
 
     assert completed.status == "COMPLETED"
     assert scanner.calls == ["2026-01-07"]
+    assert scanner.policy_hashes == [draft.selection_policy["policy_hash"]]
     assert catalog.get_day(draft.id, "2026-01-05").result_hash == hashes[0]
     assert catalog.get_day(draft.id, "2026-01-06").result_hash == hashes[1]
+
+
+@pytest.mark.asyncio
+async def test_replay_legacy_run_without_selection_pin_fails_closed(tmp_path: Path):
+    catalog = HistoricalValidationCatalog(tmp_path / "simulation.db")
+    catalog.initialize()
+    draft = _draft(catalog)
+    with catalog.connect() as conn:
+        conn.execute(
+            "UPDATE historical_validation_run SET selection_policy_json=NULL WHERE id=?",
+            (draft.id,),
+        )
+
+    service = HistoricalValidationReplayService(
+        catalog,
+        FakeMarketStore(),
+        scanner_factory=lambda: FakeScanner(),
+    )
+
+    with pytest.raises(HistoricalValidationReplayError) as caught:
+        await service.run(draft.id)
+
+    assert caught.value.code == "VAL_REPLAY_SELECTION_POLICY_UNAVAILABLE"
 
 
 @pytest.mark.asyncio

@@ -80,6 +80,7 @@ class HistoricalExecutionRun:
     production_exit_policy_token: str
     market_data_cutoff_date: str
     scanner_version: str
+    selection_policy: dict[str, Any] | None
     source_candidate_count: int
     status: str
     processed_candidate_count: int
@@ -184,6 +185,7 @@ class HistoricalExecutionCatalog:
                     production_exit_policy_token TEXT NOT NULL,
                     market_data_cutoff_date TEXT NOT NULL,
                     scanner_version TEXT NOT NULL,
+                    selection_policy_json TEXT,
                     source_candidate_count INTEGER NOT NULL DEFAULT 0,
                     status TEXT NOT NULL DEFAULT 'DRAFT',
                     processed_candidate_count INTEGER NOT NULL DEFAULT 0,
@@ -293,6 +295,11 @@ class HistoricalExecutionCatalog:
             production_exit_policy_token=row["production_exit_policy_token"],
             market_data_cutoff_date=row["market_data_cutoff_date"],
             scanner_version=row["scanner_version"],
+            selection_policy=(
+                _json_value(row["selection_policy_json"])
+                if "selection_policy_json" in row.keys()
+                else None
+            ),
             source_candidate_count=int(row["source_candidate_count"] or 0),
             status=row["status"],
             processed_candidate_count=int(row["processed_candidate_count"] or 0),
@@ -375,6 +382,11 @@ class HistoricalExecutionCatalog:
                 "VAL2_SOURCE_NOT_COMPLETED",
                 f"VAL.2는 완료된 VAL.1만 입력으로 사용할 수 있습니다: {validation.status}",
             )
+        if validation.selection_policy is None:
+            raise ExecutionCatalogError(
+                "VAL2_SELECTION_POLICY_UNAVAILABLE",
+                "이 VAL.1은 Selection Policy pin 이전 기록이라 새 Execution Validation의 근거로 사용할 수 없습니다.",
+            )
 
         with self.connect() as horizon_conn:
             horizon_context = get_validation_horizon(
@@ -441,9 +453,9 @@ class HistoricalExecutionCatalog:
                 INSERT INTO historical_execution_run(
                     id,validation_id,execution_policy_version,
                     production_exit_policy_token,market_data_cutoff_date,
-                    scanner_version,source_candidate_count,status,
+                    scanner_version,selection_policy_json,source_candidate_count,status,
                     created_at,updated_at
-                ) VALUES(?,?,?,?,?,?,?,'DRAFT',?,?)
+                ) VALUES(?,?,?,?,?,?,?,?,'DRAFT',?,?)
                 """,
                 (
                     run_id,
@@ -452,6 +464,7 @@ class HistoricalExecutionCatalog:
                     exit_token,
                     market_data_cutoff_date,
                     validation.scanner_version,
+                    _json_text(validation.selection_policy),
                     source_count,
                     now,
                     now,

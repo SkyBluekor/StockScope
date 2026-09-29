@@ -1,5 +1,6 @@
 import pytest
 
+from app.api.data_sources import _PointInTimeDartProxy
 from app.market.event_risk import EventRiskAnalyzer
 
 
@@ -55,6 +56,33 @@ def test_title_classification():
     assert rule is not None
     assert rule.event_type == "CONVERTIBLE_BOND"
     assert rule.level == "HIGH"
+
+
+@pytest.mark.asyncio
+async def test_point_in_time_dart_proxy_caps_historical_event_window():
+    class CapturingDart(FakeDart):
+        def __init__(self):
+            self.window = None
+
+        async def disclosures(self, corp_code, begin_date, end_date, page_count=20):
+            self.window = (begin_date, end_date)
+            return {"count": 0, "rows": []}
+
+        async def latest_annual_revenue(self, corp_code):
+            raise AssertionError("historical proxy must not use current annual revenue")
+
+    dart = CapturingDart()
+    proxy = _PointInTimeDartProxy(dart, "2025-03-10")
+    result = await proxy.disclosures(
+        "00126380",
+        "20250101",
+        "20260929",
+        30,
+    )
+
+    assert result == {"count": 0, "rows": []}
+    assert dart.window == ("20250101", "20250310")
+    assert await proxy.latest_annual_revenue("00126380") is None
 
 
 @pytest.mark.asyncio

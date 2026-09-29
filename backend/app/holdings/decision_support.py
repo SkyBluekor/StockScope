@@ -410,15 +410,41 @@ class HoldingDecisionSupportService:
         finally:
             conn.close()
 
+        from app.data_contract.builder import build_stock_data_contract
+        from app.data_contract.reader import ReadOnlyDataStateReader
+
         valuation = self._valuation(str(stock["market"]), str(stock["ticker"]))
         price = _decimal(valuation["price"]) if valuation["available"] else None
         plan_state = self._plan_state(active, price)
-        conflict = self._proposal_conflict(latest, active)
 
-        data_ready = (
+        data_state = ReadOnlyDataStateReader(
+            market_store_db=self.chart.market_store_db,
+            holdings_db=self.catalog.db_path,
+        ).read_stock_state(str(stock["market"]), str(stock["ticker"]))
+        analysis_contract = build_stock_data_contract(
+            data_state,
+            chart_range=None,
+        ).resources.analysis_result
+        analysis_current_use_allowed = bool(
+            latest is not None
+            and analysis_contract.revision_id == str(latest["id"])
+            and analysis_contract.current_use_allowed
+        )
+        proposal_ready = (
             str(position["status"]) == "OPEN"
-            and latest is not None
             and valuation["available"]
+            and analysis_current_use_allowed
+        )
+        protection_ready = (
+            str(position["status"]) == "OPEN"
+            and valuation["available"]
+            and active is not None
+        )
+        data_ready = proposal_ready or protection_ready
+        conflict = (
+            self._proposal_conflict(latest, active)
+            if proposal_ready
+            else None
         )
         limitations: list[dict[str, str]] = []
         if latest is None:
@@ -426,6 +452,16 @@ class HoldingDecisionSupportService:
                 {
                     "code": "ANALYSIS_UNAVAILABLE",
                     "message": "최신 확정 EOD 분석이 없습니다.",
+                }
+            )
+        elif not analysis_current_use_allowed:
+            limitations.append(
+                {
+                    "code": str(
+                        analysis_contract.reason_code
+                        or "ANALYSIS_CURRENT_USE_NOT_ALLOWED"
+                    ),
+                    "message": "저장된 분석은 표시할 수 있지만 현재 새 판단·계획 제안의 근거로 사용할 수 없습니다.",
                 }
             )
         if not valuation["available"]:
@@ -461,21 +497,24 @@ class HoldingDecisionSupportService:
         if str(position["status"]) != "OPEN":
             status = "DEFERRED"
             primary_action = None
-        elif not data_ready:
-            status = "INSUFFICIENT_DATA"
-            primary_action = None
-        elif conflict:
+        elif protection_ready and plan_state == "STOP_BREACHED":
+            status = "ACTIONABLE"
+            primary_action = "STOP"
+        elif proposal_ready and conflict:
             status = "CONFLICT"
+            primary_action = None
+        elif protection_ready and plan_state in {"TARGET1_REACHED", "TARGET2_REACHED"}:
+            status = "REVIEW_REQUIRED"
+            primary_action = "TAKE_PROFIT"
+        elif active is not None and protection_ready:
+            status = "ACTIONABLE"
+            primary_action = "HOLD"
+        elif not proposal_ready:
+            status = "INSUFFICIENT_DATA"
             primary_action = None
         elif active is None:
             status = "DEFERRED" if not horizon_activatable else "REVIEW_REQUIRED"
             primary_action = None
-        elif plan_state == "STOP_BREACHED":
-            status = "ACTIONABLE"
-            primary_action = "STOP"
-        elif plan_state in {"TARGET1_REACHED", "TARGET2_REACHED"}:
-            status = "REVIEW_REQUIRED"
-            primary_action = "TAKE_PROFIT"
         else:
             status = "ACTIONABLE"
             primary_action = "HOLD"
@@ -561,9 +600,14 @@ class HoldingDecisionSupportService:
             "valuation_price": valuation["price"],
             "valuation_source": valuation["source"],
             "horizon": horizon,
+            "analysis_current_use_allowed": analysis_current_use_allowed,
+            "analysis_contract_status": analysis_contract.status,
+            "analysis_contract_reason_code": analysis_contract.reason_code,
         }
         evidence = {
             "plan_state": plan_state,
+            "proposal_ready": proposal_ready,
+            "protection_ready": protection_ready,
             "proposal_conflict": conflict,
             "latest_analysis_differs_from_active_plan": bool(
                 latest_id

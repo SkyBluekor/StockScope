@@ -29,6 +29,7 @@ from tools.data.common import (
 from tools.data.event_evidence_runtime import inspect_event_evidence_store
 from tools.data import migrate_input_identity_vnp1s1 as p1s1
 from tools.data import migrate_horizon_context_vnp1s2 as p1s2
+from tools.data import migrate_selection_policy_pin_vnp1s3 as p1s3
 from tools.data import migrate_feedback_vnp2s1 as p2s1
 from tools.data import migrate_prospective_vnp2s2 as p2s2
 from tools.data import migrate_holdings_decision_vnp3s1 as p3s1
@@ -328,6 +329,41 @@ def _run_p1s2(paths: RuntimePaths) -> dict[str, Any]:
     }
 
 
+def _detect_p1s3(paths: RuntimePaths) -> MigrationStatus:
+    state = p1s3.inspect_selection_policy_pin_schema(paths.simulation)
+    raw = str(state.get("status") or "")
+    mapping = {
+        "CURRENT": MigrationState.CURRENT,
+        "MISSING": MigrationState.MISSING,
+        "PARTIAL": MigrationState.PARTIAL,
+        "INCOMPATIBLE": MigrationState.INCOMPATIBLE,
+        "NOT_APPLICABLE": MigrationState.NOT_APPLICABLE,
+    }
+    migration_state = mapping.get(raw, MigrationState.INCOMPATIBLE)
+    detail = ""
+    if state.get("missing_base_tables"):
+        detail = "optional runtime domain not initialized; missing base tables: " + ", ".join(
+            str(item) for item in state["missing_base_tables"]
+        )
+    elif migration_state is MigrationState.PARTIAL:
+        detail = (
+            f"meta={state.get('meta_present')}, "
+            f"validation_column={state.get('validation_column')}, "
+            f"execution_column={state.get('execution_column')}"
+        )
+    elif migration_state is MigrationState.INCOMPATIBLE:
+        detail = f"schema_version={state.get('schema_version')!r}"
+    return MigrationStatus(
+        "VN-P1-S3",
+        "Selection Policy Pin",
+        migration_state,
+        detail,
+    )
+
+
+def _run_p1s3(paths: RuntimePaths) -> dict[str, Any]:
+    return p1s3.migrate_selection_policy_pin(paths.simulation)
+
 
 def _detect_p1s1(paths: RuntimePaths) -> MigrationStatus:
     parts = _p1s1_parts(paths)
@@ -456,6 +492,7 @@ def _run_p6s1(paths: RuntimePaths) -> dict[str, Any]:
 MIGRATIONS: tuple[MigrationSpec, ...] = (
     MigrationSpec("VN-P1-S1", "Input Identity", _detect_p1s1, _run_p1s1),
     MigrationSpec("VN-P1-S2", "Horizon Context", _detect_p1s2, _run_p1s2),
+    MigrationSpec("VN-P1-S3", "Selection Policy Pin", _detect_p1s3, _run_p1s3),
     MigrationSpec(
         "VN-P2-S1",
         "Feedback",

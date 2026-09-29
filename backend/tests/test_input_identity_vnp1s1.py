@@ -4,14 +4,22 @@ import json
 import sqlite3
 from pathlib import Path
 
+import pytest
+
 from app.backtest.market_store import HistoricalMarketStore
 from app.data_contract.builder import build_stock_data_contract
 from app.data_contract.reader import ReadOnlyDataStateReader
 from app.backtest.scanner import StockScannerService
 from app.holdings import HoldingsCatalog
-from app.holdings.analysis import ANALYSIS_ENGINE_VERSION
+from app.holdings.analysis import (
+    ANALYSIS_ENGINE_VERSION,
+    INPUT_FINGERPRINT_CONTRACT_VERSION,
+)
 from app.backtest.production_exit_policy import production_policy_cache_token
-from app.holdings.input_proof import verify_current_analysis_input
+from app.holdings.input_proof import (
+    HoldingsInputProofError,
+    verify_current_analysis_input,
+)
 from app.input_identity import read_input_generation_token
 from app.simulation.input_identity import (
     build_replay_market_manifest,
@@ -80,7 +88,7 @@ def _holdings_db(path: Path) -> tuple[Path, str, str]:
         scanner_version=StockScannerService.VERSION,
         analysis_engine_version=ANALYSIS_ENGINE_VERSION,
         policy_version=production_policy_cache_token(),
-        source_versions={},
+        source_versions={"fingerprint_contract_version": INPUT_FINGERPRINT_CONTRACT_VERSION},
         snapshot={},
         computed_at="2026-09-25T00:00:00+00:00",
     )
@@ -177,7 +185,7 @@ def test_explicit_mismatch_proof_does_not_modify_revision(tmp_path: Path, monkey
         analysis_engine_version=ANALYSIS_ENGINE_VERSION,
         policy_version=production_policy_cache_token(),
         input_fingerprint="different-current-fingerprint",
-        source_versions={"input_generation": generation},
+        source_versions={"fingerprint_contract_version": INPUT_FINGERPRINT_CONTRACT_VERSION, "input_generation": generation},
         snapshot={},
     )
     monkeypatch.setattr(proof_module, "analyze_single_stock", lambda **_: fake)
@@ -207,6 +215,55 @@ def test_explicit_mismatch_proof_does_not_modify_revision(tmp_path: Path, monkey
     assert contract.resources.analysis_result.status == "INVALID"
     assert contract.resources.analysis_result.reason_code == "CURRENT_INPUT_IDENTITY_MISMATCH"
     assert any(action.id == "VERIFY_ANALYSIS_INPUT" for action in contract.actions)
+
+
+def test_legacy_fingerprint_revision_fails_closed_without_false_mismatch(
+    tmp_path: Path,
+) -> None:
+    market = _market_db(tmp_path / "market.db")
+    holdings, stock_id, _ = _holdings_db(tmp_path / "holdings.db")
+    catalog = HoldingsCatalog(holdings)
+    day = catalog.get_or_create_analysis_day(
+        monitored_stock_id=stock_id,
+        market_date="2026-09-25",
+    )
+    legacy = catalog.append_analysis_revision(
+        analysis_day_id=day.id,
+        input_fingerprint="legacy-fingerprint",
+        strategy_key="test",
+        action_state="WATCH",
+        risk_state="READY",
+        reference_price="100",
+        stop_price="90",
+        target1_price="110",
+        target2_price="120",
+        scanner_version=StockScannerService.VERSION,
+        analysis_engine_version="HOLD_SINGLE_STOCK_V1",
+        policy_version=production_policy_cache_token(),
+        source_versions={},
+        snapshot={"legacy": True},
+        computed_at="2026-09-25T01:00:00+00:00",
+    )
+    catalog.promote_current_revision(
+        analysis_day_id=day.id,
+        revision_id=legacy.id,
+    )
+    migrate_input_identity(holdings_db=holdings, market_db=market)
+
+    with pytest.raises(HoldingsInputProofError) as caught:
+        verify_current_analysis_input(
+            catalog,
+            stock_id,
+            market_store_db=market,
+        )
+
+    assert caught.value.code == "HOLD_INPUT_PROOF_FINGERPRINT_VERSION_UNSUPPORTED"
+    with sqlite3.connect(holdings) as conn:
+        proof = conn.execute(
+            "SELECT verification_result FROM analysis_input_proof WHERE revision_id=?",
+            (legacy.id,),
+        ).fetchone()
+    assert proof is None
 
 
 def test_backup_manifest_reports_partial_and_full_identity_restore(tmp_path: Path) -> None:
@@ -290,7 +347,10 @@ def test_match_proof_becomes_invalid_only_after_related_input_change(
         analysis_engine_version=ANALYSIS_ENGINE_VERSION,
         policy_version=production_policy_cache_token(),
         input_fingerprint="stored-fingerprint",
-        source_versions={"input_generation": generation},
+        source_versions={
+            "fingerprint_contract_version": INPUT_FINGERPRINT_CONTRACT_VERSION,
+            "input_generation": generation,
+        },
         snapshot={},
     )
     monkeypatch.setattr(proof_module, "analyze_single_stock", lambda **_: fake)

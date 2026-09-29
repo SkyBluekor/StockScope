@@ -9,7 +9,9 @@ from app.backtest.production_exit_policy import production_policy_cache_token
 from app.backtest.scanner import StockScannerService
 from app.market.providers.krx import KrxProvider
 from app.strategy.models import StrategyName
+from app.strategy.production_selection_policy import SelectionPolicyPin
 
+from .selection_policy_pin import restore_selection_policy_pin
 from .execution_catalog import (
     HistoricalExecutionCatalog,
     HistoricalExecutionOutcome,
@@ -189,6 +191,7 @@ class HistoricalExecutionEngine:
         index_rows: list[dict[str, Any]],
         signal_index: int,
         config: BacktestConfig,
+        selection_policy_pin: SelectionPolicyPin,
     ) -> tuple[dict[str, Any], StrategyName, dict[str, Any]]:
         signal_row = dict(stock_rows[signal_index])
         signal_row.setdefault("code", candidate.ticker)
@@ -202,6 +205,7 @@ class HistoricalExecutionEngine:
             stock_rows=asof_rows,
             index_rows=index_rows,
             sector_input=None,
+            selection_policy_pin=selection_policy_pin,
         )
         if quick is None:
             raise ExecutionEngineError(
@@ -320,6 +324,21 @@ class HistoricalExecutionEngine:
                 "candidate가 Execution Validation source와 다릅니다.",
             )
 
+        if run.selection_policy is None:
+            raise ExecutionEngineError(
+                "VAL2_SELECTION_POLICY_UNAVAILABLE",
+                "이 Execution run은 Selection Policy pin 이전에 생성되어 안전하게 재개할 수 없습니다.",
+            )
+        try:
+            selection_policy_pin = restore_selection_policy_pin(
+                run.selection_policy
+            )
+        except ValueError as exc:
+            raise ExecutionEngineError(
+                "VAL2_SELECTION_POLICY_INVALID",
+                str(exc),
+            ) from exc
+
         current_policy_token = str(self.policy_token_provider())
         if current_policy_token != run.production_exit_policy_token:
             raise ExecutionEngineError(
@@ -378,6 +397,7 @@ class HistoricalExecutionEngine:
             index_rows,
             signal_index,
             config,
+            selection_policy_pin,
         )
 
         entry_index = signal_index + 1
