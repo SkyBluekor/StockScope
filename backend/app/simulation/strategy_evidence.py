@@ -299,6 +299,291 @@ class StrategyEvidenceService:
             )
         return self._row_payload(row)
 
+    def _prospective_report_context(
+        self,
+        conn: sqlite3.Connection,
+        report_id: str,
+    ) -> tuple[sqlite3.Row, sqlite3.Row, sqlite3.Row, dict[str, Any], dict[str, bool]]:
+        required = {
+            "prospective_recommendation_sample",
+            "prospective_evaluation_unit",
+        }
+        missing = sorted(required - self._tables(conn))
+        if missing:
+            raise StrategyEvidenceError(
+                "STRATEGY_EVIDENCE_MIGRATION_REQUIRED",
+                "Prospective identity 원본이 준비되지 않았습니다: " + ", ".join(missing),
+            )
+        report = conn.execute(
+            "SELECT * FROM prospective_evaluation_report WHERE id=?",
+            (report_id,),
+        ).fetchone()
+        if report is None:
+            raise StrategyEvidenceError(
+                "PROSPECTIVE_REPORT_NOT_FOUND",
+                "Prospective Evaluation Report를 찾을 수 없습니다.",
+            )
+        run = conn.execute(
+            "SELECT * FROM prospective_evaluation_run WHERE id=?",
+            (str(report["evaluation_run_id"]),),
+        ).fetchone()
+        if run is None or str(run["status"]) != "COMPLETED":
+            raise StrategyEvidenceError(
+                "PROSPECTIVE_RUN_NOT_COMPLETED",
+                "COMPLETED Prospective Evaluation Run만 근거로 연결할 수 있습니다.",
+            )
+        protocol = conn.execute(
+            "SELECT * FROM prospective_evaluation_protocol WHERE id=?",
+            (str(run["protocol_id"]),),
+        ).fetchone()
+        if protocol is None:
+            raise StrategyEvidenceError(
+                "PROSPECTIVE_PROTOCOL_NOT_FOUND",
+                "Prospective Evaluation Protocol을 찾을 수 없습니다.",
+            )
+        if str(run["evaluation_version"]) != PROSPECTIVE_EVALUATION_VERSION:
+            raise StrategyEvidenceError(
+                "PROSPECTIVE_EVALUATION_VERSION_UNSUPPORTED",
+                "지원하지 않는 Prospective evaluation version입니다.",
+            )
+        if str(report["report_version"]) != PROSPECTIVE_REPORT_VERSION:
+            raise StrategyEvidenceError(
+                "PROSPECTIVE_REPORT_VERSION_UNSUPPORTED",
+                "지원하지 않는 Prospective report version입니다.",
+            )
+        if str(protocol["protocol_version"]) != PROSPECTIVE_PROTOCOL_VERSION:
+            raise StrategyEvidenceError(
+                "PROSPECTIVE_PROTOCOL_VERSION_UNSUPPORTED",
+                "지원하지 않는 Prospective protocol version입니다.",
+            )
+
+        protocol_spec = json.loads(str(protocol["spec_json"]))
+        protocol_spec_hash = prospective_digest_json(protocol_spec)
+        if protocol_spec_hash != str(protocol["spec_hash"]):
+            raise StrategyEvidenceError(
+                "PROSPECTIVE_PROTOCOL_HASH_MISMATCH",
+                "Prospective protocol spec hash가 현재 내용과 일치하지 않습니다.",
+            )
+
+        summary = json.loads(str(report["summary_json"]))
+        if str(summary.get("protocol_id") or "") != str(protocol["id"]):
+            raise StrategyEvidenceError(
+                "PROSPECTIVE_PROTOCOL_LINK_MISMATCH",
+                "Prospective report의 protocol 연결이 일치하지 않습니다.",
+            )
+        if str(summary.get("protocol_version") or "") != str(protocol["protocol_version"]):
+            raise StrategyEvidenceError(
+                "PROSPECTIVE_PROTOCOL_LINK_MISMATCH",
+                "Prospective report의 protocol version이 일치하지 않습니다.",
+            )
+        if str(summary.get("protocol_spec_hash") or "") != str(protocol["spec_hash"]):
+            raise StrategyEvidenceError(
+                "PROSPECTIVE_PROTOCOL_LINK_MISMATCH",
+                "Prospective report의 protocol hash가 일치하지 않습니다.",
+            )
+
+        restrictions = {
+            "minimum_sample_policy_defined": bool(
+                summary.get("minimum_sample_policy_defined", False)
+            ),
+            "performance_conclusion_allowed": bool(
+                summary.get("performance_conclusion_allowed", False)
+            ),
+            "strategy_promotion_allowed": bool(
+                summary.get("strategy_promotion_allowed", False)
+            ),
+            "adaptive_rotation_enabled": bool(
+                summary.get("adaptive_rotation_enabled", False)
+            ),
+        }
+        return report, run, protocol, summary, restrictions
+
+    def _prospective_identity_state(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        evaluation_run_id: str,
+        report_id: str,
+        strategy_key: str,
+        expected_sample_count: int,
+    ) -> dict[str, Any]:
+        if strategy_key == "no_trade":
+            return {
+                "identity_status": "NO_TRADE_NOT_STRATEGY",
+                "block_reason": "NO_TRADE_NOT_STRATEGY",
+                "creation_allowed": False,
+                "strategy_version_id": None,
+                "definition_hash": None,
+                "observed_sample_count": 0,
+                "existing_artifact_id": None,
+            }
+
+        rows = conn.execute(
+            """
+            SELECT u.capture_run_id,u.sample_index,u.strategy,u.maturity_status,
+                   s.snapshot_json
+            FROM prospective_evaluation_unit u
+            JOIN prospective_recommendation_sample s
+              ON s.capture_run_id=u.capture_run_id
+             AND s.sample_index=u.sample_index
+            WHERE u.evaluation_run_id=?
+              AND u.strategy=?
+              AND u.split NOT IN ('PURGED','EXCLUDED')
+            ORDER BY u.capture_run_id,u.sample_index
+            """,
+            (evaluation_run_id, strategy_key),
+        ).fetchall()
+        if not rows or len(rows) != expected_sample_count:
+            return {
+                "identity_status": "SOURCE_SAMPLE_MISMATCH",
+                "block_reason": "SOURCE_SAMPLE_MISMATCH",
+                "creation_allowed": False,
+                "strategy_version_id": None,
+                "definition_hash": None,
+                "observed_sample_count": len(rows),
+                "existing_artifact_id": None,
+            }
+
+        identities: set[tuple[str, str]] = set()
+        for row in rows:
+            try:
+                snapshot = json.loads(str(row["snapshot_json"]))
+            except json.JSONDecodeError:
+                snapshot = {}
+            version_id = str(snapshot.get("strategy_version_id") or "")
+            definition_hash = str(snapshot.get("strategy_definition_hash") or "")
+            snapshot_strategy = str(snapshot.get("strategy") or snapshot.get("quick_strategy") or "")
+            if snapshot_strategy and snapshot_strategy != strategy_key:
+                return {
+                    "identity_status": "STRATEGY_KEY_MISMATCH",
+                    "block_reason": "STRATEGY_KEY_MISMATCH",
+                    "creation_allowed": False,
+                    "strategy_version_id": version_id or None,
+                    "definition_hash": definition_hash or None,
+                    "observed_sample_count": len(rows),
+                    "existing_artifact_id": None,
+                }
+            if not version_id or not definition_hash:
+                return {
+                    "identity_status": "STRATEGY_IDENTITY_UNPROVEN",
+                    "block_reason": "STRATEGY_IDENTITY_UNPROVEN",
+                    "creation_allowed": False,
+                    "strategy_version_id": version_id or None,
+                    "definition_hash": definition_hash or None,
+                    "observed_sample_count": len(rows),
+                    "existing_artifact_id": None,
+                }
+            identities.add((version_id, definition_hash))
+
+        if len(identities) != 1:
+            return {
+                "identity_status": "MIXED_STRATEGY_VERSION",
+                "block_reason": "MIXED_STRATEGY_VERSION",
+                "creation_allowed": False,
+                "strategy_version_id": None,
+                "definition_hash": None,
+                "observed_sample_count": len(rows),
+                "existing_artifact_id": None,
+            }
+
+        version_id, definition_hash = next(iter(identities))
+        registry = conn.execute(
+            """
+            SELECT strategy_version_id,strategy_key,definition_hash
+            FROM strategy_registry_version
+            WHERE strategy_version_id=?
+            """,
+            (version_id,),
+        ).fetchone()
+        if registry is None:
+            status = "STRATEGY_VERSION_NOT_FOUND"
+        elif str(registry["strategy_key"]) != strategy_key:
+            status = "STRATEGY_VERSION_KEY_MISMATCH"
+        elif str(registry["definition_hash"]) != definition_hash:
+            status = "STRATEGY_DEFINITION_MISMATCH"
+        else:
+            status = "EXACT"
+
+        existing = conn.execute(
+            """
+            SELECT id
+            FROM strategy_evaluation_artifact
+            WHERE strategy_version_id=?
+              AND source_kind=?
+              AND source_report_id=?
+            ORDER BY created_at DESC,id DESC
+            LIMIT 1
+            """,
+            (version_id, SOURCE_PROSPECTIVE_REPORT, report_id),
+        ).fetchone()
+        return {
+            "identity_status": status,
+            "block_reason": None if status == "EXACT" else status,
+            "creation_allowed": status == "EXACT",
+            "strategy_version_id": version_id,
+            "definition_hash": definition_hash,
+            "observed_sample_count": len(rows),
+            "existing_artifact_id": str(existing["id"]) if existing is not None else None,
+        }
+
+    def prospective_eligibility(self, report_id: str) -> dict[str, Any]:
+        with self._connect() as conn:
+            self._require_ready(conn)
+            report, run, _protocol, summary, restrictions = self._prospective_report_context(
+                conn,
+                report_id,
+            )
+            guard_blocked = (
+                restrictions["performance_conclusion_allowed"]
+                or restrictions["strategy_promotion_allowed"]
+                or restrictions["adaptive_rotation_enabled"]
+            )
+            breakdown = summary.get("strategy_breakdown")
+            rows = breakdown if isinstance(breakdown, list) else []
+            strategies: list[dict[str, Any]] = []
+            for item in rows:
+                if not isinstance(item, dict):
+                    continue
+                strategy_key = str(item.get("strategy") or "")
+                if not strategy_key:
+                    continue
+                expected_sample_count = int(item.get("sample_count") or 0)
+                state = self._prospective_identity_state(
+                    conn,
+                    evaluation_run_id=str(run["id"]),
+                    report_id=str(report["id"]),
+                    strategy_key=strategy_key,
+                    expected_sample_count=expected_sample_count,
+                )
+                if guard_blocked and state["creation_allowed"]:
+                    state = {
+                        **state,
+                        "creation_allowed": False,
+                        "block_reason": "PROSPECTIVE_PROMOTION_GUARD_VIOLATION",
+                    }
+                strategies.append(
+                    {
+                        "strategy_key": strategy_key,
+                        "sample_count": expected_sample_count,
+                        "mature_count": int(item.get("mature_count") or 0),
+                        "evidence_state": str(
+                            summary.get("evidence_state") or "INSUFFICIENT_EVIDENCE"
+                        ),
+                        **state,
+                    }
+                )
+            return {
+                "source_kind": SOURCE_PROSPECTIVE_REPORT,
+                "source_report_id": str(report["id"]),
+                "source_status": "CURRENT",
+                "report_version": str(report["report_version"]),
+                "evidence_state": str(
+                    summary.get("evidence_state") or "INSUFFICIENT_EVIDENCE"
+                ),
+                "restrictions": restrictions,
+                "strategies": strategies,
+            }
+
     def create_from_prospective(
         self,
         *,
@@ -308,86 +593,10 @@ class StrategyEvidenceService:
         with self._connect() as conn:
             self._require_ready(conn)
             strategy = self._strategy_row(conn, strategy_version_id)
-            report = conn.execute(
-                """
-                SELECT * FROM prospective_evaluation_report
-                WHERE id=?
-                """,
-                (report_id,),
-            ).fetchone()
-            if report is None:
-                raise StrategyEvidenceError(
-                    "PROSPECTIVE_REPORT_NOT_FOUND",
-                    "Prospective Evaluation Report를 찾을 수 없습니다.",
-                )
-            run = conn.execute(
-                """
-                SELECT * FROM prospective_evaluation_run
-                WHERE id=?
-                """,
-                (str(report["evaluation_run_id"]),),
-            ).fetchone()
-            if run is None or str(run["status"]) != "COMPLETED":
-                raise StrategyEvidenceError(
-                    "PROSPECTIVE_RUN_NOT_COMPLETED",
-                    "COMPLETED Prospective Evaluation Run만 근거로 연결할 수 있습니다.",
-                )
-            protocol = conn.execute(
-                """
-                SELECT * FROM prospective_evaluation_protocol
-                WHERE id=?
-                """,
-                (str(run["protocol_id"]),),
-            ).fetchone()
-            if protocol is None:
-                raise StrategyEvidenceError(
-                    "PROSPECTIVE_PROTOCOL_NOT_FOUND",
-                    "Prospective Evaluation Protocol을 찾을 수 없습니다.",
-                )
-            if str(run["evaluation_version"]) != PROSPECTIVE_EVALUATION_VERSION:
-                raise StrategyEvidenceError(
-                    "PROSPECTIVE_EVALUATION_VERSION_UNSUPPORTED",
-                    "지원하지 않는 Prospective evaluation version입니다.",
-                )
-            if str(report["report_version"]) != PROSPECTIVE_REPORT_VERSION:
-                raise StrategyEvidenceError(
-                    "PROSPECTIVE_REPORT_VERSION_UNSUPPORTED",
-                    "지원하지 않는 Prospective report version입니다.",
-                )
-            if str(protocol["protocol_version"]) != PROSPECTIVE_PROTOCOL_VERSION:
-                raise StrategyEvidenceError(
-                    "PROSPECTIVE_PROTOCOL_VERSION_UNSUPPORTED",
-                    "지원하지 않는 Prospective protocol version입니다.",
-                )
-
-            protocol_spec = json.loads(str(protocol["spec_json"]))
-            protocol_spec_hash = prospective_digest_json(protocol_spec)
-            if protocol_spec_hash != str(protocol["spec_hash"]):
-                raise StrategyEvidenceError(
-                    "PROSPECTIVE_PROTOCOL_HASH_MISMATCH",
-                    "Prospective protocol spec hash가 현재 내용과 일치하지 않습니다.",
-                )
-
-            summary = json.loads(str(report["summary_json"]))
-            if str(summary.get("protocol_id") or "") != str(protocol["id"]):
-                raise StrategyEvidenceError(
-                    "PROSPECTIVE_PROTOCOL_LINK_MISMATCH",
-                    "Prospective report의 protocol 연결이 일치하지 않습니다.",
-                )
-            if str(summary.get("protocol_version") or "") != str(
-                protocol["protocol_version"]
-            ):
-                raise StrategyEvidenceError(
-                    "PROSPECTIVE_PROTOCOL_LINK_MISMATCH",
-                    "Prospective report의 protocol version이 일치하지 않습니다.",
-                )
-            if str(summary.get("protocol_spec_hash") or "") != str(
-                protocol["spec_hash"]
-            ):
-                raise StrategyEvidenceError(
-                    "PROSPECTIVE_PROTOCOL_LINK_MISMATCH",
-                    "Prospective report의 protocol hash가 일치하지 않습니다.",
-                )
+            report, run, protocol, summary, restrictions = self._prospective_report_context(
+                conn,
+                report_id,
+            )
 
             strategy_key = str(strategy["strategy_key"])
             breakdown = summary.get("strategy_breakdown")
@@ -404,20 +613,6 @@ class StrategyEvidenceService:
                     "Prospective report에 해당 Strategy의 단일 breakdown이 없습니다.",
                 )
 
-            restrictions = {
-                "minimum_sample_policy_defined": bool(
-                    summary.get("minimum_sample_policy_defined", False)
-                ),
-                "performance_conclusion_allowed": bool(
-                    summary.get("performance_conclusion_allowed", False)
-                ),
-                "strategy_promotion_allowed": bool(
-                    summary.get("strategy_promotion_allowed", False)
-                ),
-                "adaptive_rotation_enabled": bool(
-                    summary.get("adaptive_rotation_enabled", False)
-                ),
-            }
             if (
                 restrictions["performance_conclusion_allowed"]
                 or restrictions["strategy_promotion_allowed"]
@@ -426,6 +621,24 @@ class StrategyEvidenceService:
                 raise StrategyEvidenceError(
                     "PROSPECTIVE_PROMOTION_GUARD_VIOLATION",
                     "P2-S2 report가 허용하지 않은 성능 결론/승격 상태를 포함합니다.",
+                )
+
+            identity = self._prospective_identity_state(
+                conn,
+                evaluation_run_id=str(run["id"]),
+                report_id=str(report["id"]),
+                strategy_key=strategy_key,
+                expected_sample_count=int(strategy_rows[0].get("sample_count") or 0),
+            )
+            if not identity["creation_allowed"]:
+                raise StrategyEvidenceError(
+                    str(identity["block_reason"] or identity["identity_status"]),
+                    "Prospective 원본의 Strategy Version identity를 안전하게 증명할 수 없습니다.",
+                )
+            if identity["strategy_version_id"] != strategy_version_id:
+                raise StrategyEvidenceError(
+                    "STRATEGY_VERSION_MISMATCH",
+                    "Prospective 원본 Strategy Version과 요청한 Strategy Version이 일치하지 않습니다.",
                 )
 
             source_set_hash = str(report["source_set_hash"] or "")
@@ -460,6 +673,12 @@ class StrategyEvidenceService:
                 "evaluation_run_id": str(run["id"]),
                 "evaluation_version": str(run["evaluation_version"]),
                 "run_status": str(run["status"]),
+                "strategy_identity": {
+                    "identity_status": identity["identity_status"],
+                    "strategy_version_id": identity["strategy_version_id"],
+                    "definition_hash": identity["definition_hash"],
+                    "observed_sample_count": identity["observed_sample_count"],
+                },
                 "cross_report_aggregation_performed": False,
             }
             return self._insert_artifact(
