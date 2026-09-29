@@ -550,8 +550,6 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
 
   const selectedDataContract = workspaceContext?.data_contract ?? null;
   const selectedDataContractBusy = loadingDetail;
-  const selectedDataContractError = null;
-
   const {
     quote: selectedQuote,
     state: selectedQuoteState,
@@ -1606,6 +1604,32 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
     selectedDataContract,
     "VERIFY_ANALYSIS_INPUT",
   );
+  const workspaceDecisionData = workspaceContext
+    ? {
+        stock_id: workspaceContext.stock.stock_id,
+        market: workspaceContext.stock.market,
+        ticker: workspaceContext.stock.ticker,
+        positions: workspaceContext.positions.map((item) => ({
+          position_id: item.position.position_id,
+          decision: item.decision,
+        })),
+      }
+    : null;
+  const workspaceRecoveryContexts = workspaceContext
+    ? Object.fromEntries(
+        workspaceContext.positions
+          .filter((item) => item.recovery != null)
+          .map((item) => [item.position.position_id, item.recovery!]),
+      )
+    : {};
+  const workspaceWatchStatuses = workspaceContext
+    ? Object.fromEntries(
+        workspaceContext.positions.map((item) => [
+          item.position.position_id,
+          item.watch,
+        ]),
+      )
+    : {};
   const detailPerspective: "watch" | "held" = stockFilter === "held"
     ? "held"
     : stockFilter === "watch"
@@ -1621,7 +1645,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
     setMessage(null);
     try {
       const result = await verifyHoldingAnalysisInput(detail.stock_id);
-      await contractRefreshRef.current();
+      await loadSelected(detail.stock_id);
       setMessage(
         result.proof.verification_result === "MATCH"
           ? "저장된 분석이 현재 입력과 같은 조건임을 확인했습니다."
@@ -1974,11 +1998,6 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                         : "원장 상태를 현재 화면 값과 별도로 확인합니다."}
                   </small>
                 </div>
-                {selectedDataContractError && (
-                  <button type="button" className="holdings-text-button" onClick={() => void contractRefreshRef.current()}>
-                    데이터 상태 다시 확인
-                  </button>
-                )}
               </div>
 
               {historyRecovery?.stockId === detail.stock_id && (
@@ -2229,23 +2248,66 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                   )}
 
 
+                {workspaceContext && (
+                  <section className="holdings-context-overview" aria-label="현재 보유 상태">
+                    <div>
+                      <span>현재 상태</span>
+                      <strong>{workspaceContext.current_state.held ? "보유 중" : "관심 종목"}</strong>
+                    </div>
+                    <div>
+                      <span>분석 근거</span>
+                      <strong>
+                        {workspaceContext.current_state.analysis_current_use_allowed
+                          ? "현재 사용 가능"
+                          : "재확인 필요"}
+                      </strong>
+                    </div>
+                    <div className="holdings-context-overview-wide">
+                      <span>확인할 내용</span>
+                      <strong>
+                        {workspaceContext.current_state.review_conditions.length > 0
+                          ? workspaceContext.current_state.review_conditions
+                            .map((code) => ({
+                              ANALYSIS_REFRESH_REQUIRED: "분석 갱신 필요",
+                              DECISION_REVIEW_REQUIRED: "보유 판단 재검토",
+                              ACTIVE_PLAN_STOP_BREACHED: "손절 기준 확인",
+                              ACTIVE_PLAN_TARGET_REACHED: "목표 구간 확인",
+                              RECOVERY_REVIEW_OPEN: "Recovery 검토 진행 중",
+                              WATCH_PREPARATION_REQUIRED: "Watch 준비 필요",
+                              WATCH_GAP_PRESENT: "실시간 감시 공백",
+                            } as Record<string, string>)[code] ?? code)
+                            .join(" · ")
+                          : "즉시 확인할 조건 없음"}
+                      </strong>
+                    </div>
+                  </section>
+                )}
+
                 <HoldingDecisionPanel
-                  stockId={detail.stock_id}
                   positions={detail.positions}
-                  sourceKey={holdingDecisionSourceKey(detail, management)}
-                  onPlanChanged={async () => {
+                  data={workspaceDecisionData}
+                  status={workspaceContext?.source_status.decision}
+                  loading={loadingDetail}
+                  onContextChanged={async () => {
                     await loadSelected(detail.stock_id);
                   }}
                 />
 
                 <HoldingRecoveryPanel
                   positions={detail.positions}
-                  sourceKey={holdingDecisionSourceKey(detail, management)}
+                  contexts={workspaceRecoveryContexts}
+                  status={workspaceContext?.source_status.recovery}
+                  loading={loadingDetail}
+                  onContextChanged={async () => {
+                    await loadSelected(detail.stock_id);
+                  }}
                 />
 
                 <HoldingWatchStatus
                   positions={detail.positions}
-                  sourceKey={holdingDecisionSourceKey(detail, management)}
+                  statuses={workspaceWatchStatuses}
+                  status={workspaceContext?.source_status.watch}
+                  loading={loadingDetail}
                 />
 
                 {management && management.positions.length > 0 && (
