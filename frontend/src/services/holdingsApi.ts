@@ -1,3 +1,6 @@
+import type { StockDataContract } from "./api";
+import type { WatchPositionStatus } from "./watchApi";
+
 export type HoldingHorizonContext = {
   intent: "SHORT" | "MEDIUM" | "LONG" | "LEGACY_UNSPECIFIED" | string;
   policy_version: string | null;
@@ -570,6 +573,66 @@ export type HoldingRecoveryContext = {
   };
 };
 
+export type HoldingWorkspaceSourceStatus = {
+  status: string;
+  reason_code: string | null;
+};
+
+export type HoldingWorkspacePositionContext = {
+  position: HoldingPosition;
+  performance: HoldingPositionPerformance | null;
+  management: HoldingManagementResponse["positions"][number] | null;
+  decision: HoldingDecisionRecord | null;
+  user_choice: NonNullable<HoldingDecisionRecord["resolutions"]>[number] | null;
+  recovery: HoldingRecoveryContext | null;
+  recovery_status: HoldingWorkspaceSourceStatus;
+  watch: WatchPositionStatus;
+  review_conditions: string[];
+};
+
+export type HoldingWorkspaceContext = {
+  context_version: "HOLDINGS_WORKSPACE_CONTEXT_V1" | string;
+  checked_at: string;
+  stock: HoldingStock;
+  context_identity: {
+    stock_id: string;
+    market: string;
+    ticker: string;
+    market_confirmed_date: string | null;
+    analysis_revision_id: string | null;
+    analysis_market_date: string | null;
+    analysis_input_fingerprint: string | null;
+    fingerprint_contract_version: string | null;
+    selection_policy_id: string | null;
+    selection_policy_hash: string | null;
+    selection_policy_contract_version: string | null;
+    strategy_version_id: string | null;
+    strategy_definition_hash: string | null;
+    positions: Array<{
+      position_id: string;
+      active_plan_id: string | null;
+      active_plan_version: number | null;
+      decision_id: string | null;
+      recovery_review_id: string | null;
+      watch_setting_id: string | null;
+    }>;
+  };
+  source_status: Record<string, HoldingWorkspaceSourceStatus>;
+  current_state: {
+    held: boolean;
+    analysis_status: string;
+    analysis_current_use_allowed: boolean;
+    analysis_reason_code: string | null;
+    valuation: HoldingPerformanceValuation | null;
+    attention_required: boolean;
+    review_conditions: string[];
+  };
+  data_contract: StockDataContract;
+  performance: HoldingPerformanceResponse | null;
+  management: HoldingManagementResponse | null;
+  positions: HoldingWorkspacePositionContext[];
+};
+
 export type LiveHoldingPerformanceResponse = {
   stock_id: string;
   market: string;
@@ -640,6 +703,16 @@ function jsonInit(method: string, body?: unknown): RequestInit {
 
 export function listHoldingStocks(): Promise<HoldingStock[]> {
   return requestJson<HoldingStock[]>("/api/holdings/stocks");
+}
+
+export function getHoldingWorkspaceContext(
+  stockId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<HoldingWorkspaceContext> {
+  return requestJson<HoldingWorkspaceContext>(
+    `/api/holdings/stocks/${encodeURIComponent(stockId)}/workspace-context`,
+    { signal: options.signal },
+  );
 }
 
 export function getHoldingStock(

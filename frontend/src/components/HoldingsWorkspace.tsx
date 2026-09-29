@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { searchStocks, type StockSearchItem } from "../services/api";
 import { readHoldingsViewContext, writeHoldingsViewContext } from "../services/uiSession";
-import useStockDataContract from "../hooks/useStockDataContract";
 import useStockQuote from "../hooks/useStockQuote";
 import { analysisContractMessage, contractAction, dataContractStatusLabel, dataContractTone } from "../services/dataContract";
 import { quoteReceivedTime } from "../services/quote";
@@ -14,13 +13,11 @@ import StockNewsPanel from "./StockNewsPanel";
 import StockQuoteStrip from "./StockQuoteStrip";
 import {
   addWatchStock,
-  getHoldingStock,
-  getHoldingPerformance,
   getLiveHoldingPerformance,
   getLiveHoldingManagementProximity,
-  getHoldingManagement,
   getHoldingChart,
   getHoldingTimeline,
+  getHoldingWorkspaceContext,
   listHoldingAccounts,
   listHoldingStocks,
   recordManualBuy,
@@ -44,6 +41,7 @@ import {
   type HoldingManagementResponse,
   type HoldingStock,
   type HoldingTimelineItem,
+  type HoldingWorkspaceContext,
 } from "../services/holdingsApi";
 import "../holdings.css";
 
@@ -66,32 +64,6 @@ type HistoryRecoveryState = {
   requiredRows: number | null;
   exhausted: boolean;
 };
-
-function holdingDecisionSourceKey(
-  detail: HoldingStock,
-  management: HoldingManagementResponse | null,
-) {
-  return JSON.stringify({
-    analysisRevisionId: detail.current_analysis?.revision_id ?? null,
-    positions: detail.positions.map((position) => ({
-      id: position.position_id,
-      status: position.status,
-      quantity: position.quantity,
-      averagePrice: position.average_price,
-    })),
-    valuation: management
-      ? {
-          marketDate: management.valuation.market_date,
-          price: management.valuation.price,
-        }
-      : null,
-    activePlans: management?.positions.map((position) => ({
-      positionId: position.position_id,
-      planId: position.active_plan?.plan_id ?? null,
-      version: position.active_plan?.version ?? null,
-    })) ?? [],
-  });
-}
 
 function readHoldingsNavigationTarget(): HoldingsNavigationTarget | null {
   try {
@@ -506,6 +478,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
   const [livePerformanceError, setLivePerformanceError] = useState<string | null>(null);
   const [livePerformanceRefreshKey, setLivePerformanceRefreshKey] = useState(0);
   const [management, setManagement] = useState<HoldingManagementResponse | null>(null);
+  const [workspaceContext, setWorkspaceContext] = useState<HoldingWorkspaceContext | null>(null);
   const [liveManagementProximity, setLiveManagementProximity] = useState<LiveHoldingManagementProximityResponse | null>(null);
   const [liveManagementError, setLiveManagementError] = useState<string | null>(null);
   const [stockFilter, setStockFilter] = useState<StockFilter>(
@@ -575,19 +548,8 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
   const liveManagementAbortRef = useRef<AbortController | null>(null);
   const addSearchRequestIdRef = useRef(0);
 
-  const {
-    contract: selectedDataContract,
-    loading: selectedDataContractBusy,
-    error: selectedDataContractError,
-    refresh: refreshSelectedDataContract,
-  } = useStockDataContract({
-    code: detail?.ticker ?? "",
-    market: detail?.market === "KOSDAQ" ? "KOSDAQ" : "KOSPI",
-    enabled: Boolean(detail && selectedStockId === detail.stock_id),
-  });
-  const contractRefreshRef = useRef(refreshSelectedDataContract);
-  contractRefreshRef.current = refreshSelectedDataContract;
-
+  const selectedDataContract = workspaceContext?.data_contract ?? null;
+  const selectedDataContractBusy = loadingDetail;
   const {
     quote: selectedQuote,
     state: selectedQuoteState,
@@ -792,6 +754,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
         setLivePerformance(null);
         setLivePerformanceError(null);
         setManagement(null);
+        setWorkspaceContext(null);
         setLiveManagementProximity(null);
         setLiveManagementError(null);
       }
@@ -821,17 +784,16 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
     }
 
     try {
-      const [stock, rows, pnl, managementResult] = await Promise.all([
-        getHoldingStock(stockId, { signal: controller.signal }),
+      const [context, rows] = await Promise.all([
+        getHoldingWorkspaceContext(stockId, { signal: controller.signal }),
         getHoldingTimeline(stockId, 100, { signal: controller.signal }),
-        getHoldingPerformance(stockId, { signal: controller.signal }),
-        getHoldingManagement(stockId, { signal: controller.signal }),
       ]);
       if (requestId !== detailRequestIdRef.current || selectedStockIdRef.current !== stockId) return;
-      setDetail(stock);
+      setWorkspaceContext(context);
+      setDetail(context.stock);
       setTimeline(rows);
-      setPerformance(pnl);
-      setManagement(managementResult);
+      setPerformance(context.performance);
+      setManagement(context.management);
     } catch (loadError) {
       if (isAbortError(loadError)) return;
       if (requestId !== detailRequestIdRef.current || selectedStockIdRef.current !== stockId) return;
@@ -884,6 +846,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
     setLivePerformance(null);
     setLivePerformanceError(null);
     setManagement(null);
+    setWorkspaceContext(null);
     setLiveManagementProximity(null);
     setLiveManagementError(null);
   }, [selectedStockId]);
@@ -1039,7 +1002,6 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
       if (selectedStockIdRef.current === targetStockId) {
         await loadSelected(targetStockId);
         setChartRefreshKey((value) => value + 1);
-        await contractRefreshRef.current();
         const dateLabel = compactDate(result.market_date);
         setMessage(
           result.data_freshness.status === "UPDATED"
@@ -1089,7 +1051,6 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
         setHistoryProgress({ type: "progress", stage: "refresh", message: "화면을 갱신하고 있습니다." });
         await loadSelected(targetStockId);
         setChartRefreshKey((value) => value + 1);
-        await contractRefreshRef.current();
         const prepared = result.history_prepare;
         const preparedText = prepared && prepared.prepared_rows > 0
           ? `과거 가격 ${prepared.prepared_rows}거래일을 추가로 준비하고 `
@@ -1127,7 +1088,6 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
       if (currentStockId) {
         await loadSelected(currentStockId);
         setLivePerformanceRefreshKey((value) => value + 1);
-        await contractRefreshRef.current();
       }
       setMessage(`잔고 동기화 완료 · 확인 ${result.holding_count}종목`);
     } catch (syncError) {
@@ -1447,7 +1407,6 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
       setQuickZeroConfirm(false);
       await Promise.all([reloadStocks(detail.stock_id), loadSelected(detail.stock_id)]);
       setLivePerformanceRefreshKey((value) => value + 1);
-      await contractRefreshRef.current();
       window.requestAnimationFrame(() => {
         holdingOverviewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       });
@@ -1593,7 +1552,6 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
       setManualOpen(false);
       await Promise.all([reloadStocks(detail.stock_id), loadSelected(detail.stock_id)]);
       setLivePerformanceRefreshKey((value) => value + 1);
-      await contractRefreshRef.current();
       window.requestAnimationFrame(() => {
         holdingOverviewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       });
@@ -1641,6 +1599,32 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
     selectedDataContract,
     "VERIFY_ANALYSIS_INPUT",
   );
+  const workspaceDecisionData = workspaceContext
+    ? {
+        stock_id: workspaceContext.stock.stock_id,
+        market: workspaceContext.stock.market,
+        ticker: workspaceContext.stock.ticker,
+        positions: workspaceContext.positions.map((item) => ({
+          position_id: item.position.position_id,
+          decision: item.decision,
+        })),
+      }
+    : null;
+  const workspaceRecoveryContexts = workspaceContext
+    ? Object.fromEntries(
+        workspaceContext.positions
+          .filter((item) => item.recovery != null)
+          .map((item) => [item.position.position_id, item.recovery!]),
+      )
+    : {};
+  const workspaceWatchStatuses = workspaceContext
+    ? Object.fromEntries(
+        workspaceContext.positions.map((item) => [
+          item.position.position_id,
+          item.watch,
+        ]),
+      )
+    : {};
   const detailPerspective: "watch" | "held" = stockFilter === "held"
     ? "held"
     : stockFilter === "watch"
@@ -1656,7 +1640,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
     setMessage(null);
     try {
       const result = await verifyHoldingAnalysisInput(detail.stock_id);
-      await contractRefreshRef.current();
+      await loadSelected(detail.stock_id);
       setMessage(
         result.proof.verification_result === "MATCH"
           ? "저장된 분석이 현재 입력과 같은 조건임을 확인했습니다."
@@ -2009,11 +1993,6 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                         : "원장 상태를 현재 화면 값과 별도로 확인합니다."}
                   </small>
                 </div>
-                {selectedDataContractError && (
-                  <button type="button" className="holdings-text-button" onClick={() => void contractRefreshRef.current()}>
-                    데이터 상태 다시 확인
-                  </button>
-                )}
               </div>
 
               {historyRecovery?.stockId === detail.stock_id && (
@@ -2264,23 +2243,66 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                   )}
 
 
+                {workspaceContext && (
+                  <section className="holdings-context-overview" aria-label="현재 보유 상태">
+                    <div>
+                      <span>현재 상태</span>
+                      <strong>{workspaceContext.current_state.held ? "보유 중" : "관심 종목"}</strong>
+                    </div>
+                    <div>
+                      <span>분석 근거</span>
+                      <strong>
+                        {workspaceContext.current_state.analysis_current_use_allowed
+                          ? "현재 사용 가능"
+                          : "재확인 필요"}
+                      </strong>
+                    </div>
+                    <div className="holdings-context-overview-wide">
+                      <span>확인할 내용</span>
+                      <strong>
+                        {workspaceContext.current_state.review_conditions.length > 0
+                          ? workspaceContext.current_state.review_conditions
+                            .map((code) => ({
+                              ANALYSIS_REFRESH_REQUIRED: "분석 갱신 필요",
+                              DECISION_REVIEW_REQUIRED: "보유 판단 재검토",
+                              ACTIVE_PLAN_STOP_BREACHED: "손절 기준 확인",
+                              ACTIVE_PLAN_TARGET_REACHED: "목표 구간 확인",
+                              RECOVERY_REVIEW_OPEN: "Recovery 검토 진행 중",
+                              WATCH_PREPARATION_REQUIRED: "Watch 준비 필요",
+                              WATCH_GAP_PRESENT: "실시간 감시 공백",
+                            } as Record<string, string>)[code] ?? code)
+                            .join(" · ")
+                          : "즉시 확인할 조건 없음"}
+                      </strong>
+                    </div>
+                  </section>
+                )}
+
                 <HoldingDecisionPanel
-                  stockId={detail.stock_id}
                   positions={detail.positions}
-                  sourceKey={holdingDecisionSourceKey(detail, management)}
-                  onPlanChanged={async () => {
+                  data={workspaceDecisionData}
+                  status={workspaceContext?.source_status.decision}
+                  loading={loadingDetail}
+                  onContextChanged={async () => {
                     await loadSelected(detail.stock_id);
                   }}
                 />
 
                 <HoldingRecoveryPanel
                   positions={detail.positions}
-                  sourceKey={holdingDecisionSourceKey(detail, management)}
+                  contexts={workspaceRecoveryContexts}
+                  status={workspaceContext?.source_status.recovery}
+                  loading={loadingDetail}
+                  onContextChanged={async () => {
+                    await loadSelected(detail.stock_id);
+                  }}
                 />
 
                 <HoldingWatchStatus
                   positions={detail.positions}
-                  sourceKey={holdingDecisionSourceKey(detail, management)}
+                  statuses={workspaceWatchStatuses}
+                  status={workspaceContext?.source_status.watch}
+                  loading={loadingDetail}
                 />
 
                 {management && management.positions.length > 0 && (

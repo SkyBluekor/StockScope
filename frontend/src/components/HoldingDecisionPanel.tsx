@@ -1,20 +1,21 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   applyHoldingDecisionPlan,
   evaluateHoldingDecision,
-  getHoldingDecisionSupport,
   resolveHoldingDecision,
-  HoldingsApiError,
   type HoldingDecisionAction,
   type HoldingDecisionRecord,
   type HoldingDecisionSupportResponse,
   type HoldingPosition,
+  type HoldingWorkspaceSourceStatus,
 } from "../services/holdingsApi";
 
 type Props = {
-  stockId: string;
   positions: HoldingPosition[];
-  sourceKey: string;
+  data: HoldingDecisionSupportResponse | null;
+  status?: HoldingWorkspaceSourceStatus;
+  loading?: boolean;
+  onContextChanged?: () => Promise<void> | void;
   onPlanChanged?: () => Promise<void> | void;
 };
 
@@ -133,48 +134,17 @@ function optionStateText(state: string) {
 }
 
 export default function HoldingDecisionPanel({
-  stockId,
   positions,
-  sourceKey,
+  data,
+  status,
+  loading = false,
+  onContextChanged,
   onPlanChanged,
 }: Props) {
-  const [data, setData] = useState<HoldingDecisionSupportResponse | null>(null);
-  const [migrationRequired, setMigrationRequired] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [busyPositionId, setBusyPositionId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  async function load(signal?: AbortSignal) {
-    setError(null);
-    try {
-      const result = await getHoldingDecisionSupport(stockId, { signal });
-      setData(result);
-      setMigrationRequired(false);
-    } catch (loadError) {
-      if (loadError instanceof DOMException && loadError.name === "AbortError") return;
-      if (
-        loadError instanceof HoldingsApiError
-        && loadError.code === "HOLD_DECISION_MIGRATION_REQUIRED"
-      ) {
-        setMigrationRequired(true);
-        setData(null);
-        return;
-      }
-      setError(loadError instanceof Error ? loadError.message : "보유 판단을 불러오지 못했습니다.");
-    } finally {
-      if (!signal?.aborted) setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    setMessage(null);
-    setMigrationRequired(false);
-    void load(controller.signal);
-    return () => controller.abort();
-  }, [stockId, sourceKey]);
+  const migrationRequired = status?.status === "MIGRATION_REQUIRED";
 
   const byPosition = useMemo(() => {
     const map = new Map<string, HoldingDecisionRecord | null>();
@@ -193,7 +163,7 @@ export default function HoldingDecisionPanel({
           ? "달라진 정보가 없어 현재 판단을 유지했습니다."
           : "현재 확정 EOD·최신 분석·적용 계획을 기준으로 판단을 업데이트했습니다.",
       );
-      await load();
+      await onContextChanged?.();
     } catch (evaluateError) {
       setError(evaluateError instanceof Error ? evaluateError.message : "현재 판단을 만들지 못했습니다.");
     } finally {
@@ -217,7 +187,7 @@ export default function HoldingDecisionPanel({
           ? "현재 적용 계획을 유지하기로 기록했습니다."
           : "현재 판단을 확인한 것으로 기록했습니다.",
       );
-      await load();
+      await onContextChanged?.();
     } catch (resolveError) {
       setError(resolveError instanceof Error ? resolveError.message : "판단 확인을 저장하지 못했습니다.");
     } finally {
@@ -236,7 +206,7 @@ export default function HoldingDecisionPanel({
       });
       setMessage("새 분석의 관리 계획을 적용했습니다. 실제 매수·매도 거래는 발생하지 않았습니다.");
       await onPlanChanged?.();
-      await load();
+      await onContextChanged?.();
     } catch (applyError) {
       setError(applyError instanceof Error ? applyError.message : "새 관리 계획을 적용하지 못했습니다.");
     } finally {

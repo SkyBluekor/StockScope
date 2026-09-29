@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
-import type { HoldingPosition } from "../services/holdingsApi";
-import {
-  getWatchPosition,
-  type WatchPositionStatus,
-} from "../services/watchApi";
+import { useMemo } from "react";
+import type {
+  HoldingPosition,
+  HoldingWorkspaceSourceStatus,
+} from "../services/holdingsApi";
+import type { WatchPositionStatus } from "../services/watchApi";
 
 type Props = {
   positions: HoldingPosition[];
-  sourceKey: string;
+  statuses: Record<string, WatchPositionStatus>;
+  status?: HoldingWorkspaceSourceStatus;
+  loading?: boolean;
 };
 
 function statusLabel(status: WatchPositionStatus) {
@@ -42,42 +44,17 @@ function statusDetail(status: WatchPositionStatus) {
   return "현재 적용 계획에 연결된 Watch가 없습니다.";
 }
 
-export default function HoldingWatchStatus({ positions, sourceKey }: Props) {
+export default function HoldingWatchStatus({
+  positions,
+  statuses,
+  status,
+  loading = false,
+}: Props) {
   const openPositions = useMemo(
     () => positions.filter((position) => position.status === "OPEN"),
     [positions],
   );
-  const [statuses, setStatuses] = useState<Record<string, WatchPositionStatus>>({});
-  const [error, setError] = useState(false);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setError(false);
-
-    if (openPositions.length === 0) {
-      setStatuses({});
-      return () => controller.abort();
-    }
-
-    void Promise.all(
-      openPositions.map(async (position) => {
-        const status = await getWatchPosition(
-          position.position_id,
-          { signal: controller.signal },
-        );
-        return [position.position_id, status] as const;
-      }),
-    ).then((rows) => {
-      if (!controller.signal.aborted) {
-        setStatuses(Object.fromEntries(rows));
-      }
-    }).catch((loadError) => {
-      if (loadError instanceof DOMException && loadError.name === "AbortError") return;
-      if (!controller.signal.aborted) setError(true);
-    });
-
-    return () => controller.abort();
-  }, [sourceKey, openPositions.map((position) => position.position_id).join("|")]);
+  const error = status?.status === "PARTIAL" || status?.status === "UNAVAILABLE";
 
   if (openPositions.length === 0) return null;
 
@@ -94,14 +71,14 @@ export default function HoldingWatchStatus({ positions, sourceKey }: Props) {
                   ? "상태 확인 실패"
                   : status
                     ? statusLabel(status)
-                    : "확인 중"}
+                    : loading ? "확인 중" : "상태 없음"}
               </strong>
               <span>
                 {error
                   ? "기존 보유 판단과 관리 계획은 그대로 유지됩니다."
                   : status
                     ? statusDetail(status)
-                    : "Watch 상태를 확인하고 있습니다."}
+                    : loading ? "Watch 상태를 확인하고 있습니다." : "저장된 Watch 상태가 없습니다."}
               </span>
               {openPositions.length > 1 && (
                 <small>{position.account_name || position.provider || "보유 기록"}</small>

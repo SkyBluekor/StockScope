@@ -66,6 +66,10 @@ from app.holdings.lifecycle import (
 from app.holdings.performance import HoldingsPerformanceError, HoldingPerformanceService
 from app.holdings.management import HoldingsManagementError, HoldingManagementService
 from app.holdings.recovery import HoldingRecoveryService, HoldingsRecoveryError
+from app.holdings.workspace_query import (
+    HoldingsWorkspaceQueryError,
+    HoldingsWorkspaceQueryService,
+)
 
 
 router = APIRouter(prefix="/holdings", tags=["holdings"])
@@ -243,6 +247,15 @@ def _decision_support_service(
 def _recovery_service(catalog: HoldingsCatalog) -> HoldingRecoveryService:
     return HoldingRecoveryService(
         catalog,
+        market_store_db=_market_store_path(),
+    )
+
+
+def _workspace_query_service() -> HoldingsWorkspaceQueryService:
+    raw = os.getenv("STOCKSCOPE_HOLDINGS_DB")
+    path = Path(raw) if raw else DEFAULT_HOLDINGS_DB
+    return HoldingsWorkspaceQueryService(
+        path,
         market_store_db=_market_store_path(),
     )
 
@@ -616,6 +629,17 @@ def stock_detail(stock_id: str) -> dict[str, Any]:
         stock = catalog.get_monitored_stock(stock_id)
         return _stock_payload(catalog, stock, include_latest_event=True)
     except HoldingsCatalogError as error:
+        _raise_holdings_error(error)
+
+
+@router.get("/stocks/{stock_id}/workspace-context")
+def stock_workspace_context(stock_id: str) -> dict[str, Any]:
+    try:
+        return _workspace_query_service().build(stock_id)
+    except (
+        HoldingsCatalogError,
+        HoldingsWorkspaceQueryError,
+    ) as error:
         _raise_holdings_error(error)
 
 
