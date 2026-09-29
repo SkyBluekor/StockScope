@@ -283,3 +283,21 @@ def fred_dgs10_candidate_contract() -> MacroSeriesContract:
         owner_status=MacroOwnerStatus.CANDIDATE,
         active_owner=False,
     )
+
+
+def fred_dgs10_research_contract() -> MacroSeriesContract:
+    return MacroSeriesContract(
+        series_id="US_10Y_CONSTANT_MATURITY_YIELD",
+        semantic_id="US_10Y_CONSTANT_MATURITY_YIELD",
+        provider="FRED",
+        provider_series_id="DGS10",
+        instrument_type="INTEREST_RATE",
+        measurement_definition="US 10-Year Treasury Constant Maturity Rate",
+        unit="PERCENT",
+        currency=None,
+        session_definition="SOURCE_DAILY_OBSERVATION",
+        observation_frequency="DAILY",
+        owner_status=MacroOwnerStatus.APPROVED_RESEARCH,
+        active_owner=True,
+        allowed_usage_scope=("REFERENCE_ONLY", "SHADOW_RESEARCH"),
+    )
