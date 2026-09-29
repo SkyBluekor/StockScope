@@ -321,6 +321,40 @@ def test_partial_capture_is_preserved_but_not_evaluation_sample(
     }
 
 
+def test_historical_evidence_unavailable_does_not_override_complete_scanner_contract(
+    tmp_path: Path,
+) -> None:
+    simulation_db = _simulation_db(tmp_path / "simulation.db")
+    market_db = _market_db(tmp_path / "market.db")
+    migrate_prospective_store(simulation_db)
+    service = ProspectiveService(simulation_db, market_db)
+
+    service.try_begin_scanner_capture(
+        source_job_id="structural-history-job",
+        payload=_payload("2026-09-23"),
+    )
+    result = _scanner_result("2026-09-23", fingerprint="structural-history-fp")
+    result["partial_data"] = False
+    result["summary"]["three_year_evidence_data_unavailable"] = 2
+    result["summary"]["three_year_evidence_structural_unavailable"] = 2
+
+    finalized = service.try_finalize_scanner_capture(
+        source_job_id="structural-history-job",
+        payload=_payload("2026-09-23"),
+        result=result,
+    )
+
+    assert finalized["status"] == "COMPLETE"
+    samples = service.catalog.list_samples()
+    assert len(samples) == 1
+    assert samples[0]["ticker"] == "005930"
+
+    status = service.catalog.status_summary()
+    assert status["capture_counts"]["COMPLETE"] == 1
+    assert status["sample_count"] == 1
+    assert status["evidence_accumulation"]["state"] == "EVIDENCE_ACCUMULATING"
+
+
 def test_same_job_finalize_retry_returns_terminal_capture_unchanged(
     tmp_path: Path,
 ) -> None:
