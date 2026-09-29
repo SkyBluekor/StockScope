@@ -260,6 +260,11 @@ def build_compressed_candidate_frontier(
     if unique_behavior_count - cross_dominated_count != compressed_count:
         raise ValueError("Cross-method Pareto accounting is invalid.")
 
+    trivial_refs = _trivial_source_refs(
+        candidate_set=v1,
+        trivial_hashes=all_trivial_hashes,
+    )
+
     stage_manifest = {
         "compression_contract_version": MACRO_COMPRESSION_CONTRACT_VERSION,
         "behavior_group_contract_version": (
@@ -296,6 +301,8 @@ def build_compressed_candidate_frontier(
         "cross_method_dominated_summary_hash": content_hash(
             all_cross_dominated
         ),
+        "trivial_direction_summary_hash": content_hash(trivial_refs),
+        "per_feature_payload_hash": content_hash(per_feature),
     }
 
     status = (
@@ -336,10 +343,7 @@ def build_compressed_candidate_frontier(
         "holdout_accessed": False,
         "stage_manifest": stage_manifest,
         "per_feature": per_feature,
-        "trivial_direction_candidates": _trivial_source_refs(
-            candidate_set=v1,
-            trivial_hashes=all_trivial_hashes,
-        ),
+        "trivial_direction_candidates": trivial_refs,
         "behavior_groups": all_groups,
         "frontier_groups": all_frontier,
         "cross_method_dominated_groups": all_cross_dominated,
@@ -389,6 +393,8 @@ def validate_compressed_frontier_artifact(
     groups = list(frontier.get("behavior_groups") or [])
     frontier_groups = list(frontier.get("frontier_groups") or [])
     dominated = list(frontier.get("cross_method_dominated_groups") or [])
+    trivial_refs = list(frontier.get("trivial_direction_candidates") or [])
+    per_feature = frontier.get("per_feature") or {}
 
     if manifest.get("behavior_group_payload_hash") != content_hash(groups):
         raise ValueError("Behavior group payload hash mismatch.")
@@ -400,6 +406,62 @@ def validate_compressed_frontier_artifact(
         dominated
     ):
         raise ValueError("Cross-method dominated summary hash mismatch.")
+    if manifest.get("trivial_direction_summary_hash") != content_hash(
+        trivial_refs
+    ):
+        raise ValueError("Trivial-direction summary hash mismatch.")
+    if manifest.get("per_feature_payload_hash") != content_hash(per_feature):
+        raise ValueError("Per-feature compression payload hash mismatch.")
+
+    raw_count = int(manifest.get("raw_candidate_count") or 0)
+    method_dominated = int(
+        manifest.get("v1_method_local_dominated_count") or 0
+    )
+    method_pareto = int(manifest.get("method_local_pareto_count") or 0)
+    trivial_count = int(
+        manifest.get("trivial_direction_removed_count") or 0
+    )
+    nontrivial_count = int(manifest.get("nontrivial_candidate_count") or 0)
+    duplicate_count = int(
+        manifest.get("behavior_duplicate_removed_count") or 0
+    )
+    unique_count = int(manifest.get("unique_behavior_group_count") or 0)
+    cross_dominated_count = int(
+        manifest.get("cross_method_dominated_count") or 0
+    )
+    compressed_count = int(
+        manifest.get("compressed_frontier_count") or 0
+    )
+    if raw_count != method_dominated + method_pareto:
+        raise ValueError("Raw candidate accounting mismatch.")
+    if method_pareto != trivial_count + nontrivial_count:
+        raise ValueError("Trivial-direction accounting mismatch.")
+    if nontrivial_count != duplicate_count + unique_count:
+        raise ValueError("Behavior grouping accounting mismatch.")
+    if unique_count != cross_dominated_count + compressed_count:
+        raise ValueError("Cross-method frontier accounting mismatch.")
+    if trivial_count != len(trivial_refs):
+        raise ValueError("Trivial-direction count mismatch.")
+    if unique_count != len(groups):
+        raise ValueError("Behavior group count mismatch.")
+    if cross_dominated_count != len(dominated):
+        raise ValueError("Cross-method dominated count mismatch.")
+    if compressed_count != len(frontier_groups):
+        raise ValueError("Compressed frontier count mismatch.")
+
+    for group in groups:
+        payload = {
+            key: value
+            for key, value in group.items()
+            if key not in {"behavior_group_id", "behavior_group_hash"}
+        }
+        expected_group_hash = content_hash(payload)
+        if group.get("behavior_group_hash") != expected_group_hash:
+            raise ValueError("Behavior group hash mismatch.")
+        if group.get("behavior_group_id") != (
+            f"RATEBG-{expected_group_hash[:16]}"
+        ):
+            raise ValueError("Behavior group id mismatch.")
 
     behavior_hashes = [
         str(group["behavior_signature_hash"]) for group in groups
