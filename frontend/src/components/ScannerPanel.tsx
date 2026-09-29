@@ -211,6 +211,7 @@ function targetCapExplanation(candidate: ScannerCandidate) {
 function evidenceValidationLabel(candidate: ScannerCandidate) {
   const evidence = candidate.historical_evidence;
   if (!evidence) return candidate.historical_fit.verified === false ? "3년 검증 전" : candidate.historical_fit.label;
+  if (evidence.unavailable_reason === "INSUFFICIENT_AVAILABLE_HISTORY") return "최근 3년 검증 제한";
   return evidence.verified ? "최근 3년 검증 완료" : "최근 3년 검증 미완료";
 }
 
@@ -218,9 +219,13 @@ function evidenceAssessmentLabel(candidate: ScannerCandidate) {
   const evidence = candidate.historical_evidence;
   if (!evidence) return candidate.historical_fit.label;
   if (!evidence.verified) {
-    return evidence.unavailable_reason === "UNSUPPORTED_STRATEGY"
-      ? "현재 전략은 3년 검증을 지원하지 않음"
-      : "검증에 필요한 과거 데이터 확인 필요";
+    if (evidence.unavailable_reason === "UNSUPPORTED_STRATEGY") {
+      return "현재 전략은 3년 검증을 지원하지 않음";
+    }
+    if (evidence.unavailable_reason === "INSUFFICIENT_AVAILABLE_HISTORY") {
+      return "사용 가능한 종목 이력 부족";
+    }
+    return "검증에 필요한 과거 데이터 확인 필요";
   }
   if (evidence.status === "GOOD") return "과거 성과 근거 양호";
   if (evidence.status === "FAIR") return "과거 성과 근거 보통";
@@ -256,7 +261,11 @@ function evidencePreparationAvailable(candidate: ScannerCandidate) {
 function evidenceCompactText(candidate: ScannerCandidate) {
   const evidence = candidate.historical_evidence;
   if (!evidence) return candidate.historical_fit.label;
-  if (!evidence.verified) return "3년 검증 미완료";
+  if (!evidence.verified) {
+    return evidence.unavailable_reason === "INSUFFICIENT_AVAILABLE_HISTORY"
+      ? "3년 검증 제한 · 이력 부족"
+      : "3년 검증 미완료";
+  }
   if (evidence.status === "GOOD") return "3년 검증 완료 · 근거 양호";
   if (evidence.status === "FAIR") return "3년 검증 완료 · 근거 보통";
   if (evidence.status === "WEAK") return "3년 검증 완료 · 근거 약함";
@@ -632,6 +641,9 @@ function CandidateDetail({
                 <span>{evidence.summary}</span>
                 <span>검증 기간 · {formatDate(evidence.period.start)} ~ {formatDate(evidence.period.end)}</span>
                 {evidence.warnings.length > 0 && <small>확인 내용 · {evidence.warnings.join(" · ")}</small>}
+                {evidence.unavailable_reason === "INSUFFICIENT_AVAILABLE_HISTORY" && (
+                  <small>현재 후보 판단·Risk·순위에는 영향을 주지 않습니다.</small>
+                )}
                 {canPrepareEvidence && (
                   <p className="scanner-evidence-recovery-note">필요한 과거 데이터를 준비하면 같은 후보를 다시 검증할 수 있습니다.</p>
                 )}
