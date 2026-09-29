@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from app.prospective.models import (
+    PROSPECTIVE_CAPTURE_VERSION,
     PROSPECTIVE_EVALUATION_VERSION,
     PROSPECTIVE_PROTOCOL_VERSION,
     PROSPECTIVE_REPORT_VERSION,
@@ -78,6 +79,7 @@ def _seed_prospective_report(
     strategy: str = "breakout",
     run_status: str = "COMPLETED",
     promotion_allowed: bool = False,
+    identity_mode: str = "EXACT",
 ) -> None:
     protocol_id = f"{report_id}-protocol"
     run_id = f"{report_id}-run"
@@ -122,7 +124,7 @@ def _seed_prospective_report(
         "strategy_breakdown": [
             {
                 "strategy": strategy,
-                "sample_count": 12,
+                "sample_count": 10,
                 "mature_count": 8,
                 "return_20d": {
                     "sample_count": 8,
@@ -152,6 +154,20 @@ def _seed_prospective_report(
 
     with sqlite3.connect(path) as conn:
         conn.execute("PRAGMA foreign_keys=ON")
+        strategy_identity = conn.execute(
+            """
+            SELECT strategy_version_id,definition_hash
+            FROM strategy_registry_version
+            WHERE strategy_key=?
+            """,
+            (strategy,),
+        ).fetchone()
+        strategy_version_id = (
+            str(strategy_identity[0]) if strategy_identity is not None else None
+        )
+        strategy_definition_hash = (
+            str(strategy_identity[1]) if strategy_identity is not None else None
+        )
         conn.execute(
             """
             INSERT INTO prospective_evaluation_protocol(
@@ -205,6 +221,111 @@ def _seed_prospective_report(
                 NOW,
             ),
         )
+
+        capture_id = f"{report_id}-capture"
+        conn.execute(
+            """
+            INSERT INTO prospective_capture_run(
+                id,capture_version,source_job_id,status,request_json,
+                market_scope,actual_data_date,horizon_intent,candidate_limit,
+                actionable_candidate_count,returned_candidate_count,
+                created_at,started_at,completed_at,updated_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                capture_id,
+                PROSPECTIVE_CAPTURE_VERSION,
+                f"{capture_id}-job",
+                "COMPLETE",
+                "{}",
+                "KOSPI",
+                "2026-06-01",
+                "MEDIUM",
+                12,
+                12,
+                12,
+                NOW,
+                NOW,
+                NOW,
+                NOW,
+            ),
+        )
+        for index in range(12):
+            sample_version_id = strategy_version_id
+            sample_definition_hash = strategy_definition_hash
+            if identity_mode == "MISSING":
+                sample_version_id = None
+                sample_definition_hash = None
+            elif identity_mode == "HASH_MISMATCH":
+                sample_definition_hash = "0" * 64
+            elif identity_mode == "MIXED" and index == 9:
+                sample_version_id = "legacy-other-version"
+                sample_definition_hash = "f" * 64
+            snapshot = {
+                "market": "KOSPI",
+                "code": f"00{index:04d}",
+                "name": f"fixture-{index}",
+                "strategy": strategy,
+                "strategy_version_id": sample_version_id,
+                "strategy_definition_hash": sample_definition_hash,
+                "action": "ENTRY_CANDIDATE",
+                "candidate_state": "READY",
+            }
+            snapshot_json = json.dumps(
+                snapshot,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            conn.execute(
+                """
+                INSERT INTO prospective_recommendation_sample(
+                    capture_run_id,sample_index,market,ticker,name,rank,
+                    strategy,decision_status,candidate_state,action,
+                    signal_date,snapshot_json,snapshot_hash,created_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    capture_id,
+                    index,
+                    "KOSPI",
+                    f"00{index:04d}",
+                    f"fixture-{index}",
+                    index + 1,
+                    strategy,
+                    "READY",
+                    "READY",
+                    "ENTRY_CANDIDATE",
+                    "2026-06-01",
+                    snapshot_json,
+                    digest_json(snapshot),
+                    NOW,
+                ),
+            )
+            split = "DEVELOPMENT" if index < 6 else "HOLDOUT" if index < 10 else "PURGED"
+            maturity = "MATURE" if index < 8 else "IMMATURE" if index < 10 else "EXCLUDED"
+            conn.execute(
+                """
+                INSERT INTO prospective_evaluation_unit(
+                    evaluation_run_id,capture_run_id,sample_index,split,
+                    maturity_status,signal_date,market,ticker,strategy,
+                    execution_status,details_json,computed_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    run_id,
+                    capture_id,
+                    index,
+                    split,
+                    maturity,
+                    "2026-06-01",
+                    "KOSPI",
+                    f"00{index:04d}",
+                    strategy,
+                    "CLOSED" if index < 7 else "CENSORED",
+                    "{}",
+                    NOW,
+                ),
+            )
 
 
 def _feedback_report(
@@ -356,6 +477,12 @@ def test_prospective_report_creates_idempotent_immutable_artifact(tmp_path: Path
             (version_id,),
         ).fetchone()
         assert after == before
+        assert conn.execute(
+            "SELECT COUNT(*) FROM strategy_change_proposal"
+        ).fetchone()[0] == 0
+        assert conn.execute(
+            "SELECT COUNT(*) FROM strategy_approval_artifact"
+        ).fetchone()[0] == 0
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute(
                 """
@@ -370,6 +497,69 @@ def test_prospective_report_creates_idempotent_immutable_artifact(tmp_path: Path
                 "DELETE FROM strategy_evaluation_artifact WHERE id=?",
                 (first["id"],),
             )
+
+
+def test_prospective_eligibility_requires_exact_strategy_identity(tmp_path: Path):
+    path = _db(tmp_path)
+    version_id = _strategy_version(path, "breakout")
+    _seed_prospective_report(path)
+    service = StrategyEvidenceService(path, clock=lambda: NOW)
+
+    before = service.prospective_eligibility("pros-report-1")
+    row = before["strategies"][0]
+    assert row["identity_status"] == "EXACT"
+    assert row["strategy_version_id"] == version_id
+    assert row["creation_allowed"] is True
+    assert row["existing_artifact_id"] is None
+    assert row["observed_sample_count"] == 10
+
+    artifact = service.create_from_prospective(
+        strategy_version_id=version_id,
+        report_id="pros-report-1",
+    )
+    after = service.prospective_eligibility("pros-report-1")
+    assert after["strategies"][0]["existing_artifact_id"] == artifact["id"]
+
+
+@pytest.mark.parametrize(
+    ("identity_mode", "expected_code"),
+    [
+        ("MISSING", "STRATEGY_IDENTITY_UNPROVEN"),
+        ("MIXED", "MIXED_STRATEGY_VERSION"),
+        ("HASH_MISMATCH", "STRATEGY_DEFINITION_MISMATCH"),
+    ],
+)
+def test_prospective_identity_fail_closed(
+    tmp_path: Path,
+    identity_mode: str,
+    expected_code: str,
+):
+    path = _db(tmp_path)
+    version_id = _strategy_version(path, "breakout")
+    _seed_prospective_report(
+        path,
+        report_id=f"identity-{identity_mode.lower()}",
+        identity_mode=identity_mode,
+    )
+    service = StrategyEvidenceService(path)
+
+    eligibility = service.prospective_eligibility(
+        f"identity-{identity_mode.lower()}"
+    )
+    assert eligibility["strategies"][0]["creation_allowed"] is False
+    assert eligibility["strategies"][0]["block_reason"] == expected_code
+
+    with pytest.raises(StrategyEvidenceError) as exc:
+        service.create_from_prospective(
+            strategy_version_id=version_id,
+            report_id=f"identity-{identity_mode.lower()}",
+        )
+    assert exc.value.code == expected_code
+
+    with sqlite3.connect(path) as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM strategy_evaluation_artifact"
+        ).fetchone()[0] == 0
 
 
 def test_prospective_requires_completed_run_and_strategy_breakdown(tmp_path: Path):

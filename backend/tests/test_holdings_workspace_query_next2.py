@@ -151,3 +151,54 @@ def test_workspace_endpoint_uses_read_only_context_without_initializing_schema(
 
     assert _sha(holdings) == before_holdings
     assert _sha(market) == before_market
+
+
+def test_review_conditions_surface_missing_decision_and_plan_for_current_analysis() -> None:
+    conditions = HoldingsWorkspaceQueryService._review_conditions(
+        analysis_contract={"current_use_allowed": True},
+        management={"management_state": "NO_ACTIVE_PLAN", "active_plan": None},
+        decision=None,
+        recovery=None,
+        watch={"migration_required": False, "open_gaps": []},
+        decision_domain_available=True,
+        management_domain_available=True,
+    )
+
+    assert conditions == [
+        "DECISION_NOT_CREATED",
+        "ACTIVE_PLAN_NOT_APPLIED",
+    ]
+
+
+def test_review_conditions_do_not_prompt_new_decision_or_plan_when_analysis_is_stale() -> None:
+    conditions = HoldingsWorkspaceQueryService._review_conditions(
+        analysis_contract={"current_use_allowed": False},
+        management={"management_state": "NO_ACTIVE_PLAN", "active_plan": None},
+        decision=None,
+        recovery=None,
+        watch={"migration_required": False, "open_gaps": []},
+        decision_domain_available=True,
+        management_domain_available=True,
+    )
+
+    assert conditions == ["ANALYSIS_REFRESH_REQUIRED"]
+
+
+def test_review_conditions_keep_active_stop_protection_even_when_analysis_is_stale() -> None:
+    conditions = HoldingsWorkspaceQueryService._review_conditions(
+        analysis_contract={"current_use_allowed": False},
+        management={
+            "management_state": "STOP_BREACHED",
+            "active_plan": {"plan_id": "plan-1"},
+        },
+        decision=None,
+        recovery=None,
+        watch={"migration_required": False, "open_gaps": []},
+        decision_domain_available=True,
+        management_domain_available=True,
+    )
+
+    assert conditions == [
+        "ANALYSIS_REFRESH_REQUIRED",
+        "ACTIVE_PLAN_STOP_BREACHED",
+    ]

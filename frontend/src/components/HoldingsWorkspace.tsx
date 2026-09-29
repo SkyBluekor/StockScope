@@ -2264,7 +2264,9 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                           ? workspaceContext.current_state.review_conditions
                             .map((code) => ({
                               ANALYSIS_REFRESH_REQUIRED: "분석 갱신 필요",
+                              DECISION_NOT_CREATED: "보유 판단 생성 필요",
                               DECISION_REVIEW_REQUIRED: "보유 판단 재검토",
+                              ACTIVE_PLAN_NOT_APPLIED: "관리 계획 미적용",
                               ACTIVE_PLAN_STOP_BREACHED: "손절 기준 확인",
                               ACTIVE_PLAN_TARGET_REACHED: "목표 구간 확인",
                               RECOVERY_REVIEW_OPEN: "Recovery 검토 진행 중",

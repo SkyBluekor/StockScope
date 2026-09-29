@@ -9,7 +9,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.config import PROJECT_ROOT
 from app.simulation.strategy_change import StrategyChangeError, StrategyChangeService
-from app.simulation.strategy_evidence import StrategyEvidenceError
+from app.simulation.strategy_evidence import (
+    SOURCE_PROSPECTIVE_REPORT,
+    StrategyEvidenceError,
+    StrategyEvidenceService,
+)
 from app.simulation.strategy_governance_query import (
     StrategyGovernanceQueryError,
     StrategyGovernanceQueryService,
@@ -56,6 +60,10 @@ def _change_service() -> StrategyChangeService:
     return StrategyChangeService(_simulation_db())
 
 
+def _evidence_service() -> StrategyEvidenceService:
+    return StrategyEvidenceService(_simulation_db())
+
+
 def _selection_registry() -> ProductionStrategySelectionRegistry:
     return ProductionStrategySelectionRegistry(
         simulation_db=_simulation_db(),
@@ -87,6 +95,15 @@ def _http_error(error: Exception) -> None:
         "ACTIVE_POLICY_CORRUPT",
         "ACTIVE_REFERENCE_NOT_AVAILABLE",
         "ROLLBACK_POLICY_NOT_AVAILABLE",
+        "STRATEGY_IDENTITY_UNPROVEN",
+        "SOURCE_SAMPLE_MISMATCH",
+        "MIXED_STRATEGY_VERSION",
+        "STRATEGY_KEY_MISMATCH",
+        "STRATEGY_VERSION_KEY_MISMATCH",
+        "STRATEGY_DEFINITION_MISMATCH",
+        "STRATEGY_VERSION_MISMATCH",
+        "PROSPECTIVE_PROMOTION_GUARD_VIOLATION",
+        "STRATEGY_EVIDENCE_SOURCE_NOT_ENABLED",
     }:
         status = 409
     else:
@@ -99,6 +116,12 @@ def _http_error(error: Exception) -> None:
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+class EvidenceCreateRequest(StrictModel):
+    source_kind: str = Field(min_length=1, max_length=80)
+    source_report_id: str = Field(min_length=1, max_length=200)
+    strategy_version_id: str = Field(min_length=1, max_length=200)
 
 
 class ProposalRequest(StrictModel):
@@ -166,6 +189,37 @@ def governance_evidence(
             verify_source=verify_source,
         )
     except (StrategyGovernanceQueryError, StrategyEvidenceError) as error:
+        _http_error(error)
+
+
+@router.get("/evidence/eligibility")
+def governance_evidence_eligibility(
+    source_kind: str = Query(..., min_length=1, max_length=80),
+    source_report_id: str = Query(..., min_length=1, max_length=200),
+):
+    try:
+        return _query_service().evidence_eligibility(
+            source_kind=source_kind,
+            source_report_id=source_report_id,
+        )
+    except (StrategyGovernanceQueryError, StrategyEvidenceError) as error:
+        _http_error(error)
+
+
+@router.post("/evidence", status_code=201)
+def create_governance_evidence(request: EvidenceCreateRequest):
+    try:
+        source_kind = request.source_kind.strip().upper()
+        if source_kind != SOURCE_PROSPECTIVE_REPORT:
+            raise StrategyEvidenceError(
+                "STRATEGY_EVIDENCE_SOURCE_NOT_ENABLED",
+                "현재 제품 동선에서는 Prospective Report만 P5 근거 등록 대상으로 지원합니다.",
+            )
+        return _evidence_service().create_from_prospective(
+            strategy_version_id=request.strategy_version_id,
+            report_id=request.source_report_id,
+        )
+    except StrategyEvidenceError as error:
         _http_error(error)
 
 

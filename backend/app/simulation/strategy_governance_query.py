@@ -11,7 +11,10 @@ from app.simulation.strategy_change import (
     StrategyChangeService,
     production_blocked_approval_protocol,
 )
-from app.simulation.strategy_evidence import StrategyEvidenceService
+from app.simulation.strategy_evidence import (
+    SOURCE_PROSPECTIVE_REPORT,
+    StrategyEvidenceService,
+)
 from app.simulation.strategy_governance import STRATEGY_GOVERNANCE_SCHEMA_VERSION
 from app.strategy.production_selection_policy import (
     ProductionStrategySelectionRegistry,
@@ -150,6 +153,23 @@ class StrategyGovernanceQueryService:
             strategy_version_id=strategy_version_id,
             verify_source=verify_source,
         )
+
+    def evidence_eligibility(
+        self,
+        *,
+        source_kind: str,
+        source_report_id: str,
+    ) -> dict[str, Any]:
+        self.require_ready()
+        clean_kind = str(source_kind or "").strip().upper()
+        if clean_kind != SOURCE_PROSPECTIVE_REPORT:
+            raise StrategyGovernanceQueryError(
+                "STRATEGY_EVIDENCE_SOURCE_NOT_ENABLED",
+                "현재 제품 동선에서는 Prospective Report만 P5 근거 등록 대상으로 지원합니다.",
+            )
+        return StrategyEvidenceService(
+            self.simulation_db
+        ).prospective_eligibility(source_report_id)
 
     def evidence_item(
         self,

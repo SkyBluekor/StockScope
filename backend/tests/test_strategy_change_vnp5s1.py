@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from app.prospective.models import (
+    PROSPECTIVE_CAPTURE_VERSION,
     PROSPECTIVE_EVALUATION_VERSION,
     PROSPECTIVE_PROTOCOL_VERSION,
     PROSPECTIVE_REPORT_VERSION,
@@ -125,7 +126,7 @@ def _seed_prospective_report(
         "strategy_breakdown": [
             {
                 "strategy": strategy,
-                "sample_count": 12,
+                "sample_count": 10,
                 "mature_count": 8,
                 "return_20d": {
                     "sample_count": 8,
@@ -157,6 +158,17 @@ def _seed_prospective_report(
     }
     with sqlite3.connect(path) as conn:
         conn.execute("PRAGMA foreign_keys=ON")
+        strategy_identity = conn.execute(
+            """
+            SELECT strategy_version_id,definition_hash
+            FROM strategy_registry_version
+            WHERE strategy_key=?
+            """,
+            (strategy,),
+        ).fetchone()
+        assert strategy_identity is not None
+        strategy_version_id = str(strategy_identity[0])
+        strategy_definition_hash = str(strategy_identity[1])
         conn.execute(
             """
             INSERT INTO prospective_evaluation_protocol(
@@ -210,6 +222,101 @@ def _seed_prospective_report(
                 NOW,
             ),
         )
+
+        capture_id = f"{report_id}-capture"
+        conn.execute(
+            """
+            INSERT INTO prospective_capture_run(
+                id,capture_version,source_job_id,status,request_json,
+                market_scope,actual_data_date,horizon_intent,candidate_limit,
+                actionable_candidate_count,returned_candidate_count,
+                created_at,started_at,completed_at,updated_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                capture_id,
+                PROSPECTIVE_CAPTURE_VERSION,
+                f"{capture_id}-job",
+                "COMPLETE",
+                "{}",
+                "KOSPI",
+                "2026-06-01",
+                "MEDIUM",
+                12,
+                12,
+                12,
+                NOW,
+                NOW,
+                NOW,
+                NOW,
+            ),
+        )
+        for index in range(12):
+            snapshot = {
+                "market": "KOSPI",
+                "code": f"00{index:04d}",
+                "name": f"fixture-{index}",
+                "strategy": strategy,
+                "strategy_version_id": strategy_version_id,
+                "strategy_definition_hash": strategy_definition_hash,
+                "action": "ENTRY_CANDIDATE",
+                "candidate_state": "READY",
+            }
+            snapshot_json = json.dumps(
+                snapshot,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            conn.execute(
+                """
+                INSERT INTO prospective_recommendation_sample(
+                    capture_run_id,sample_index,market,ticker,name,rank,
+                    strategy,decision_status,candidate_state,action,
+                    signal_date,snapshot_json,snapshot_hash,created_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    capture_id,
+                    index,
+                    "KOSPI",
+                    f"00{index:04d}",
+                    f"fixture-{index}",
+                    index + 1,
+                    strategy,
+                    "READY",
+                    "READY",
+                    "ENTRY_CANDIDATE",
+                    "2026-06-01",
+                    snapshot_json,
+                    digest_json(snapshot),
+                    NOW,
+                ),
+            )
+            split = "DEVELOPMENT" if index < 6 else "HOLDOUT" if index < 10 else "PURGED"
+            maturity = "MATURE" if index < 8 else "IMMATURE" if index < 10 else "EXCLUDED"
+            conn.execute(
+                """
+                INSERT INTO prospective_evaluation_unit(
+                    evaluation_run_id,capture_run_id,sample_index,split,
+                    maturity_status,signal_date,market,ticker,strategy,
+                    execution_status,details_json,computed_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    run_id,
+                    capture_id,
+                    index,
+                    split,
+                    maturity,
+                    "2026-06-01",
+                    "KOSPI",
+                    f"00{index:04d}",
+                    strategy,
+                    "CLOSED" if index < 7 else "CENSORED",
+                    "{}",
+                    NOW,
+                ),
+            )
 
 
 def _artifact(
