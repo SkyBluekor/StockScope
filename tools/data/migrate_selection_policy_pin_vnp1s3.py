@@ -82,7 +82,13 @@ def inspect_selection_policy_pin_schema(path: Path) -> dict[str, object]:
         status = "CURRENT"
     elif meta_present and version not in (None, SELECTION_PIN_SCHEMA_VERSION):
         status = "INCOMPATIBLE"
-    elif not meta_present and not validation_column and not execution_column:
+    elif (
+        not meta_present
+        and validation_column == execution_column
+    ):
+        # Both columns absent means an old DB; both present means a fresh DB
+        # created by the new catalog before Local Sync. Both cases are safe,
+        # additive MISSING states for the explicit migration.
         status = "MISSING"
     else:
         status = "PARTIAL"
