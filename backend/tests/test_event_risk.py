@@ -1,5 +1,6 @@
 import pytest
 
+from app.api.data_sources import _PointInTimeDartProxy
 from app.market.event_risk import EventRiskAnalyzer
 
 
@@ -58,7 +59,7 @@ def test_title_classification():
 
 
 @pytest.mark.asyncio
-async def test_event_risk_uses_explicit_as_of_boundary():
+async def test_point_in_time_dart_proxy_caps_historical_event_window():
     class CapturingDart(FakeDart):
         def __init__(self):
             self.window = None
@@ -67,16 +68,21 @@ async def test_event_risk_uses_explicit_as_of_boundary():
             self.window = (begin_date, end_date)
             return {"count": 0, "rows": []}
 
+        async def latest_annual_revenue(self, corp_code):
+            raise AssertionError("historical proxy must not use current annual revenue")
+
     dart = CapturingDart()
-    result = await EventRiskAnalyzer(dart).analyze(
-        "005930",
-        as_of="2025-03-10",
-        days=60,
+    proxy = _PointInTimeDartProxy(dart, "2025-03-10")
+    result = await proxy.disclosures(
+        "00126380",
+        "20250101",
+        "20260929",
+        30,
     )
 
-    assert dart.window is not None
-    assert dart.window[1] == "20250310"
-    assert result["risk_gate"] is False
+    assert result == {"count": 0, "rows": []}
+    assert dart.window == ("20250101", "20250310")
+    assert await proxy.latest_annual_revenue("00126380") is None
 
 
 @pytest.mark.asyncio
