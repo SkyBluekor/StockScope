@@ -1,8 +1,27 @@
+from app.macro.calibration_candidate import (
+    MACRO_CANDIDATE_SET_CONTRACT_VERSION,
+    MACRO_CANDIDATE_GENERATION_CONTRACT_VERSION,
+    MACRO_RATE_SPIKE_CANDIDATE_CONTRACT_VERSION,
+    RATE_SPIKE_FEATURE_IDS,
+    RATE_SPIKE_METHODS,
+    build_rate_spike_candidate_set,
+    generate_feature_candidates,
+    summarize_candidate_set,
+)
+from app.macro.candidate_selection import (
+    MACRO_CANDIDATE_DOMINANCE_CONTRACT_VERSION,
+    pareto_prune_candidates,
+)
+from app.macro.shock_episode import (
+    RATE_SPIKE_EPISODE_POLICY_VERSION,
+    build_consecutive_true_episodes,
+)
 from app.macro.calibration_research import (
     MACRO_DISTRIBUTION_RESEARCH_CONTRACT_VERSION,
     build_distribution_research,
     summarize_distribution_research,
     validate_development_artifact,
+    validate_distribution_research_artifact,
     validate_research_protocol,
 )
 from app.macro.distribution import (
@@ -72,6 +91,18 @@ from app.macro.store import (
 )
 
 __all__ = [
+    "MACRO_CANDIDATE_SET_CONTRACT_VERSION",
+    "MACRO_CANDIDATE_GENERATION_CONTRACT_VERSION",
+    "MACRO_RATE_SPIKE_CANDIDATE_CONTRACT_VERSION",
+    "MACRO_CANDIDATE_DOMINANCE_CONTRACT_VERSION",
+    "RATE_SPIKE_EPISODE_POLICY_VERSION",
+    "RATE_SPIKE_FEATURE_IDS",
+    "RATE_SPIKE_METHODS",
+    "build_rate_spike_candidate_set",
+    "generate_feature_candidates",
+    "summarize_candidate_set",
+    "pareto_prune_candidates",
+    "build_consecutive_true_episodes",
     "MACRO_DISTRIBUTION_RESEARCH_CONTRACT_VERSION",
     "MACRO_DISTRIBUTION_CONTRACT_VERSION",
     "RESEARCH_FEATURE_IDS",
@@ -86,6 +117,7 @@ __all__ = [
     "tail_profile",
     "validate_development_artifact",
     "validate_research_protocol",
+    "validate_distribution_research_artifact",
     "MACRO_CALIBRATION_DATASET_CONTRACT_VERSION",
     "MACRO_CALIBRATION_PROTOCOL_CONTRACT_VERSION",
     "CalibrationSplitRole",
