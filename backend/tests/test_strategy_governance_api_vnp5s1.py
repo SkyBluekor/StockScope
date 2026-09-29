@@ -258,3 +258,103 @@ def test_production_status_uses_same_baseline_aware_pin_as_scanner(
     assert status["fallback_reason"] == "ACTIVE_POLICY_BASELINE_MISMATCH"
     assert status["operating_strategy_count"] == 2
     assert status["generation"] == 3
+
+
+def test_evidence_eligibility_endpoint_exposes_exact_source_identity(monkeypatch):
+    payload = {
+        "source_kind": "PROSPECTIVE_REPORT",
+        "source_report_id": "report-1",
+        "source_status": "CURRENT",
+        "report_version": "VN_P2_S2_REPORT_V1",
+        "evidence_state": "SAMPLE_SIZE_POLICY_UNDEFINED",
+        "restrictions": {
+            "minimum_sample_policy_defined": False,
+            "performance_conclusion_allowed": False,
+            "strategy_promotion_allowed": False,
+            "adaptive_rotation_enabled": False,
+        },
+        "strategies": [
+            {
+                "strategy_key": "breakout",
+                "sample_count": 10,
+                "mature_count": 8,
+                "evidence_state": "SAMPLE_SIZE_POLICY_UNDEFINED",
+                "identity_status": "EXACT",
+                "block_reason": None,
+                "creation_allowed": True,
+                "strategy_version_id": "strategy-v1",
+                "definition_hash": "a" * 64,
+                "observed_sample_count": 10,
+                "existing_artifact_id": None,
+            }
+        ],
+    }
+    monkeypatch.setattr(
+        "app.api.strategy_governance._query_service",
+        lambda: SimpleNamespace(
+            evidence_eligibility=lambda **_kwargs: payload
+        ),
+    )
+
+    response = _client().get(
+        "/api/simulation/strategy-governance/evidence/eligibility",
+        params={
+            "source_kind": "PROSPECTIVE_REPORT",
+            "source_report_id": "report-1",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == payload
+
+
+def test_evidence_create_endpoint_is_explicit_and_does_not_accept_feedback(monkeypatch):
+    created = {
+        "id": "artifact-1",
+        "strategy_version_id": "strategy-v1",
+        "strategy_key": "breakout",
+        "evidence_state": "SAMPLE_SIZE_POLICY_UNDEFINED",
+        "artifact_hash": "b" * 64,
+        "created_at": "2026-09-29T00:00:00+00:00",
+    }
+    calls = []
+    monkeypatch.setattr(
+        "app.api.strategy_governance._evidence_service",
+        lambda: SimpleNamespace(
+            create_from_prospective=lambda **kwargs: (
+                calls.append(kwargs) or created
+            )
+        ),
+    )
+
+    response = _client().post(
+        "/api/simulation/strategy-governance/evidence",
+        json={
+            "source_kind": "PROSPECTIVE_REPORT",
+            "source_report_id": "report-1",
+            "strategy_version_id": "strategy-v1",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["id"] == "artifact-1"
+    assert calls == [
+        {
+            "strategy_version_id": "strategy-v1",
+            "report_id": "report-1",
+        }
+    ]
+
+    blocked = _client().post(
+        "/api/simulation/strategy-governance/evidence",
+        json={
+            "source_kind": "FEEDBACK_REPORT",
+            "source_report_id": "feedback-1",
+            "strategy_version_id": "strategy-v1",
+        },
+    )
+    assert blocked.status_code == 409
+    assert (
+        blocked.json()["detail"]["code"]
+        == "STRATEGY_EVIDENCE_SOURCE_NOT_ENABLED"
+    )
