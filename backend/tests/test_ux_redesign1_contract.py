@@ -531,18 +531,20 @@ def test_ux_redesign1j2_preserves_ui_context_and_rejects_stale_async_results() -
     assert "preferredId" in keep_block
     assert "selectedStockId" in keep_block
 
-    # Holdings detail and add-stock search reject stale results.
+    # Holdings detail is now one stable workspace-context read plus the independent timeline.
+    # Stale-response guards remain unchanged around both requests.
     assert "detailRequestIdRef" in holdings
     assert "detailAbortRef" in holdings
     assert "selectedStockIdRef.current !== stockId" in holdings
-    assert "getHoldingStock(stockId, { signal: controller.signal })" in holdings
+    assert "getHoldingWorkspaceContext(stockId, { signal: controller.signal })" in holdings
     assert "getHoldingTimeline(stockId, 100, { signal: controller.signal })" in holdings
-    assert "getHoldingPerformance(stockId, { signal: controller.signal })" in holdings
-    assert "getHoldingManagement(stockId, { signal: controller.signal })" in holdings
+    assert "getHoldingStock(stockId, { signal: controller.signal })" not in holdings
+    assert "getHoldingPerformance(stockId, { signal: controller.signal })" not in holdings
+    assert "getHoldingManagement(stockId, { signal: controller.signal })" not in holdings
     assert "addSearchRequestIdRef" in holdings
     assert "searchStocks(text, { signal: controller.signal })" in holdings
 
-    for read_fn in ("getHoldingStock", "getHoldingTimeline", "getHoldingPerformance", "getHoldingManagement"):
+    for read_fn in ("getHoldingWorkspaceContext", "getHoldingTimeline"):
         read_start = holdings_api.index(f"export function {read_fn}")
         read_end = holdings_api.find("\n}\n", read_start) + 3
         read_block = holdings_api[read_start:read_end]
@@ -726,17 +728,17 @@ def test_ux_redesign1j4_prioritizes_held_management_and_separates_opening_balanc
     assert "&& !decision.evidence.proposal_conflict" in decision_panel
 
     # STALE decisions remain review-only until the user explicitly rebuilds them.
+    # NEXT-2 supplies saved decision state from the parent workspace facade instead
+    # of letting the child issue its own GET.
     assert 'decision?.stale ? "최신 판단 다시 만들기"' in decision_panel
     assert "!decision.stale && decision.status !== \"INSUFFICIENT_DATA\"" in decision_panel
     assert "&& !decision.stale" in decision_panel
-    assert "sourceKey: string" in decision_panel
-    assert "}, [stockId, sourceKey]);" in decision_panel
-    assert "holdingDecisionSourceKey(detail, management)" in holdings
-    assert "analysisRevisionId: detail.current_analysis?.revision_id ?? null" in holdings
-    assert "quantity: position.quantity" in holdings
-    assert "averagePrice: position.average_price" in holdings
-    assert "planId: position.active_plan?.plan_id ?? null" in holdings
-    assert "marketDate: management.valuation.market_date" in holdings
+    assert "data: HoldingDecisionSupportResponse | null" in decision_panel
+    assert "onContextChanged?: () => Promise<void> | void" in decision_panel
+    assert "getHoldingDecisionSupport" not in decision_panel
+    assert "getHoldingWorkspaceContext" in holdings
+    assert "workspaceContext?.source_status.decision" in holdings
+    assert "workspaceContext.positions.map" in holdings
 
     # Stock analysis uses the same opening-balance language and guardrail.
     assert "기존 보유 등록" in tracking
@@ -1177,18 +1179,21 @@ def test_j8_3_frontend_data_contract_integration() -> None:
     assert "const isCurrent = () =>" in stock_chart
     assert "activeIdentityRef.current === identity" in stock_chart
 
-    # Holdings reads a contract only for the selected detail; there is no list-wide N+1 fetch.
-    assert "contract: selectedDataContract" in holdings
-    assert 'code: detail?.ticker ?? ""' in holdings
-    assert "enabled: Boolean(detail && selectedStockId === detail.stock_id)" in holdings
+    # Holdings receives the selected detail's Data Contract inside the NEXT-2
+    # workspace facade; there is no list-wide N+1 contract fetch or second hook.
+    assert "workspaceContext?.data_contract ?? null" in holdings
+    assert "getHoldingWorkspaceContext(stockId, { signal: controller.signal })" in holdings
+    assert "useStockDataContract" not in holdings
     reload_start = holdings.index("async function reloadStocks")
     load_selected_start = holdings.index("async function loadSelected")
+    assert "getHoldingWorkspaceContext" not in holdings[reload_start:load_selected_start]
     assert "fetchStockDataContract" not in holdings[reload_start:load_selected_start]
     assert "저장된 분석" in holdings
     assert "보유 원장" in holdings
 
-    # Analysis refresh/history prepare/KIS sync re-read current contract without hijacking selection.
-    assert "await contractRefreshRef.current()" in holdings
+    # Analysis refresh/history prepare/KIS sync re-read the unified current context
+    # without hijacking selection.
+    assert "await loadSelected(targetStockId)" in holdings
     assert "if (selectedStockIdRef.current === targetStockId)" in holdings
     assert "const currentStockId = selectedStockIdRef.current" in holdings
 
