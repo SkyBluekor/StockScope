@@ -1087,3 +1087,109 @@
     flex-direction:column;
   }
 }
+
+/* NEXT-5-PREP — evidence accumulation health */
+.sim-prospective-readiness {
+  margin: 16px 0 18px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border-default);
+  border-bottom: 1px solid var(--border-default);
+}
+.sim-prospective-readiness-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+.sim-prospective-readiness-head span {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--font-badge);
+  font-weight: 800;
+}
+.sim-prospective-readiness-head strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-primary);
+  font-size: var(--font-body);
+}
+.sim-prospective-readiness-head p {
+  max-width: 620px;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-meta);
+  line-height: 1.55;
+}
+.sim-prospective-readiness-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 12px 0 0;
+  border-top: 1px solid var(--border-subtle);
+}
+.sim-prospective-readiness-facts > div {
+  min-width: 0;
+  padding: 10px 12px;
+  border-right: 1px solid var(--border-subtle);
+}
+.sim-prospective-readiness-facts > div:last-child {
+  border-right: 0;
+}
+.sim-prospective-readiness-facts dt {
+  color: var(--text-muted);
+  font-size: var(--font-badge);
+}
+.sim-prospective-readiness-facts dd {
+  margin: 4px 0 0;
+  color: var(--text-primary);
+  font-size: var(--font-meta);
+  font-weight: 800;
+}
+.sim-prospective-readiness-note {
+  margin: 12px 0 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--status-warning);
+  color: var(--text-secondary);
+  font-size: var(--font-meta);
+  line-height: 1.55;
+}
+.sim-prospective-attention {
+  margin-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+.sim-prospective-attention > span {
+  display: block;
+  padding: 9px 0 4px;
+  color: var(--text-muted);
+  font-size: var(--font-badge);
+  font-weight: 800;
+}
+.sim-prospective-attention > div {
+  display: grid;
+  grid-template-columns: minmax(140px, .65fr) minmax(0, 2fr);
+  gap: 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.sim-prospective-attention strong {
+  color: var(--text-primary);
+  font-size: var(--font-meta);
+}
+.sim-prospective-attention p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-meta);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 760px) {
+  .sim-prospective-readiness-head {
+    flex-direction: column;
+  }
+  .sim-prospective-readiness-facts {
+    grid-template-columns: 1fr 1fr;
+  }
+  .sim-prospective-attention > div {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
