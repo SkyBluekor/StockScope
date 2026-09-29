@@ -145,6 +145,38 @@ Historical Evaluation 예시:
 
 S1에서는 shock threshold/calibration을 실행하지 않습니다. DGS10 feature가 준비돼도 `RATE_SPIKE` 상태는 `UNCALIBRATED`이며 `NORMAL` 또는 `DETECTED`로 자동 분류하지 않습니다. immutable JSON 산출물이 필요할 때만 `--write-artifact`를 사용합니다.
 
+## NEXT-6B-S2 Calibration research dataset / protocol freeze
+
+NEXT-6B-S2는 fixed-vintage DGS10 archive를 **REFERENCE_RESEARCH_ONLY**로 읽어 Development/Holdout feature dataset을 준비합니다. 분석 중 provider network와 Macro DB write는 0입니다.
+
+먼저 로컬 Macro Store에 어떤 DGS10 vintage/range가 준비되어 있는지 확인합니다.
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\inspect_macro_calibration_next6b_s2.py
+```
+
+필요한 vintage/range가 없으면 기존 explicit FRED collector로 먼저 준비합니다. Calibration dataset builder가 FRED를 자동 호출하지 않습니다.
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\collect_macro_next6a_s2.py --provider FRED --series DGS10 --start <START> --end <END> --as-of <VINTAGE>
+```
+
+Development/Holdout은 chronology가 겹치면 거부됩니다. 각 dataset은 정확히 하나의 `vintage_id`에 pin되며 S1 feature contract(`rate_level_pct`, `delta_bp_1obs`, `delta_bp_5obs`, `delta_bp_10obs`)를 재사용합니다. 최대 feature distance에서 파생된 warm-up observation은 feature 계산에만 사용하고 sample count에는 포함하지 않습니다.
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\prepare_macro_calibration_next6b_s2.py `
+  --development-start <DATE> `
+  --development-end <DATE> `
+  --development-vintage <DATE> `
+  --holdout-start <DATE> `
+  --holdout-end <DATE> `
+  --holdout-vintage <DATE>
+```
+
+확인 후 immutable runtime artifact가 필요할 때만 `--write-artifacts`를 추가합니다. 파일은 `backend/runtime/macro/calibration` 아래에 저장되고 Git 대상이 아닙니다.
+
+S2는 threshold, minimum sample, episode policy를 결정하지 않습니다. Holdout은 calibration candidate freeze 전까지 잠긴 상태이며 `RATE_SPIKE`는 계속 `UNCALIBRATED`입니다. DATE_ONLY archive는 연구용 분포 준비에는 사용할 수 있지만 Historical PIT 평가 입력으로 승격하지 않습니다.
+
 ## P2-S2 실제 추천 평가 저장소 준비
 
 P2-S2는 새 Scanner 실행부터 실제 추천 표본을 사후 선택 전에 보존합니다. 과거 Scanner 실행을 prospective 표본으로 소급 생성하지 않습니다.
