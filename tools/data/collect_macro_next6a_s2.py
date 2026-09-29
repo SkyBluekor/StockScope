@@ -11,8 +11,11 @@ for candidate in (ROOT, BACKEND):
     if str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
-from app.core.config import get_settings
-from app.integrations.fred import FredClient, FredConfigurationError
+from app.integrations.fred import (
+    FredClient,
+    FredConfigurationError,
+    get_fred_settings,
+)
 from app.macro.providers import collect_fred_dgs10
 from app.macro.store import MacroStore
 from tools.data.common import macro_db_path
@@ -50,7 +53,7 @@ def main() -> int:
         print("Run: .\.venv\Scripts\python.exe .\tools\data\migrate_macro_next6a_s1.py")
         return 2
 
-    settings = get_settings()
+    settings = get_fred_settings()
     plan = {
         "provider": args.provider,
         "series": args.series,
