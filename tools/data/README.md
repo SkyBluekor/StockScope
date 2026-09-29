@@ -90,6 +90,34 @@ Macro Store가 존재하면 기본 DATA.1 backup에 포함됩니다. 제외가 �
 .\.venv\Scripts\python.exe .\tools\data\restore_runtime.py .\backups\StockScope_... --restore-macro
 ```
 
+## NEXT-6A-S2 Provider capability / bounded live ingestion
+
+S2부터 외부 provider 호출이 허용되지만 **명시적 CLI에서만** 수행합니다. Scanner/API/reader가 FRED/KIS를 자동 호출하지 않습니다.
+
+FRED는 프로젝트 루트 `.env`의 `FRED_API_KEY`를 backend에서만 읽습니다. 키를 로그, report, DB, hash, GitHub에 저장하지 않습니다.
+
+Capability probe:
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\macro_capability_next6a_s2.py --provider FRED
+.\.venv\Scripts\python.exe .\tools\data\macro_capability_next6a_s2.py --provider KIS
+```
+
+KIS 해외지수 기본 probe code `.DJI`는 공식 KIS 예제에서 확인된 값입니다. 환율/국채 코드는 추측하지 않으며 공식 master/example에서 확인한 값을 명시적으로 전달할 때만 probe합니다.
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\macro_capability_next6a_s2.py --provider KIS --kis-fx-code <OFFICIAL_CODE> --kis-treasury-code <OFFICIAL_CODE>
+```
+
+DGS10 bounded collection은 `--start`/`--end`를 반드시 지정합니다. `--check-only`는 network와 DB write 모두 0입니다.
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\collect_macro_next6a_s2.py --provider FRED --series DGS10 --start 2026-09-01 --end 2026-09-28 --check-only
+.\.venv\Scripts\python.exe .\tools\data\collect_macro_next6a_s2.py --provider FRED --series DGS10 --start 2026-09-01 --end 2026-09-28
+```
+
+Historical FRED backfill은 provider의 날짜 단위 vintage를 정확한 장중 availability로 승격하지 않습니다. 저장된 row는 `DATE_ONLY`이며 reference 조회는 가능하지만 엄격한 PIT historical evaluation에는 부적격입니다. 실제 수집 성공은 DGS10을 research owner로만 승인하며 Production decision scope를 활성화하지 않습니다.
+
 ## P2-S2 실제 추천 평가 저장소 준비
 
 P2-S2는 새 Scanner 실행부터 실제 추천 표본을 사후 선택 전에 보존합니다. 과거 Scanner 실행을 prospective 표본으로 소급 생성하지 않습니다.
