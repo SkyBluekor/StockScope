@@ -219,18 +219,38 @@ def test_legacy_fingerprint_revision_fails_closed_without_false_mismatch(
     tmp_path: Path,
 ) -> None:
     market = _market_db(tmp_path / "market.db")
-    holdings, stock_id, revision_id = _holdings_db(tmp_path / "holdings.db")
+    holdings, stock_id, _ = _holdings_db(tmp_path / "holdings.db")
+    catalog = HoldingsCatalog(holdings)
+    day = catalog.get_or_create_analysis_day(
+        monitored_stock_id=stock_id,
+        market_date="2026-09-25",
+    )
+    legacy = catalog.append_analysis_revision(
+        analysis_day_id=day.id,
+        input_fingerprint="legacy-fingerprint",
+        strategy_key="test",
+        action_state="WATCH",
+        risk_state="READY",
+        reference_price="100",
+        stop_price="90",
+        target1_price="110",
+        target2_price="120",
+        scanner_version=StockScannerService.VERSION,
+        analysis_engine_version="HOLD_SINGLE_STOCK_V1",
+        policy_version=production_policy_cache_token(),
+        source_versions={},
+        snapshot={"legacy": True},
+        computed_at="2026-09-25T01:00:00+00:00",
+    )
+    catalog.promote_current_revision(
+        analysis_day_id=day.id,
+        revision_id=legacy.id,
+    )
     migrate_input_identity(holdings_db=holdings, market_db=market)
-
-    with sqlite3.connect(holdings) as conn:
-        conn.execute(
-            "UPDATE stock_analysis_revision SET source_versions_json='{}' WHERE id=?",
-            (revision_id,),
-        )
 
     with pytest.raises(HoldingsInputProofError) as caught:
         verify_current_analysis_input(
-            HoldingsCatalog(holdings),
+            catalog,
             stock_id,
             market_store_db=market,
         )
@@ -239,7 +259,7 @@ def test_legacy_fingerprint_revision_fails_closed_without_false_mismatch(
     with sqlite3.connect(holdings) as conn:
         proof = conn.execute(
             "SELECT verification_result FROM analysis_input_proof WHERE revision_id=?",
-            (revision_id,),
+            (legacy.id,),
         ).fetchone()
     assert proof is None
 
