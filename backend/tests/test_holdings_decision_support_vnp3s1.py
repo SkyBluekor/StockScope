@@ -260,6 +260,44 @@ def test_decision_uses_only_applied_plan_price_states(
     assert after.current_average_price == before.current_average_price
 
 
+def test_stale_analysis_cannot_drive_proposal_but_active_stop_protection_survives(
+    tmp_path: Path,
+):
+    catalog, _, opened, mdb = _env(tmp_path, close="85")
+    revision = _rev(catalog, opened.stock_id, "r1", "90")
+    plan = _apply(catalog, mdb, opened.position.id, revision.id)
+
+    with sqlite3.connect(mdb) as conn:
+        raw = conn.execute(
+            "SELECT row_json FROM stock_daily "
+            "WHERE market='KOSPI' AND bas_dd='20260924' AND stock_code='005930'"
+        ).fetchone()[0]
+        payload = json.loads(raw)
+        payload["volume"] = "1001"
+        conn.execute(
+            "UPDATE stock_daily SET row_json=? "
+            "WHERE market='KOSPI' AND bas_dd='20260924' AND stock_code='005930'",
+            (json.dumps(payload),),
+        )
+
+    service = HoldingDecisionSupportService(
+        catalog,
+        market_store_db=mdb,
+    )
+    decision = service.evaluate(opened.position.id)
+
+    assert decision["status"] == "ACTIONABLE"
+    assert decision["primary_action"] == "STOP"
+    assert decision["source_active_plan_id"] == plan.id
+    assert decision["evidence"]["proposal_ready"] is False
+    assert decision["evidence"]["protection_ready"] is True
+    assert decision["evidence"]["source"]["analysis_current_use_allowed"] is False
+    assert any(
+        item["code"] == "CURRENT_INPUT_CHANGED_SINCE_PROOF"
+        for item in decision["limitations"]
+    )
+
+
 def test_add_is_always_blocked_without_verified_policy(tmp_path: Path):
     catalog, _, opened, mdb = _env(tmp_path)
     revision = _rev(catalog, opened.stock_id, "r1", "90")
