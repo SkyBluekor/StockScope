@@ -295,6 +295,28 @@ class ProspectiveCatalog:
                     return self._capture_from_row(row)
 
             partial = bool(result.get("partial_data"))
+            partial_error_code = "SCANNER_PARTIAL_DATA" if partial else None
+            partial_reason_parts: list[str] = []
+            if partial:
+                if bool(result.get("preparation_required")):
+                    partial_reason_parts.append("preparation_required=true")
+                unavailable = int(
+                    summary.get("three_year_evidence_data_unavailable") or 0
+                )
+                if unavailable > 0:
+                    partial_reason_parts.append(
+                        f"three_year_evidence_data_unavailable={unavailable}"
+                    )
+            partial_error_message = (
+                "Scanner partial_data=true"
+                + (
+                    ": " + ", ".join(partial_reason_parts)
+                    if partial_reason_parts
+                    else "; 상세 원인은 source Scanner 실행 상태를 확인해야 합니다."
+                )
+                if partial
+                else None
+            )
             duplicate = conn.execute(
                 """
                 SELECT id FROM prospective_capture_run
@@ -347,7 +369,7 @@ class ProspectiveCatalog:
                     actual_data_date=?,input_fingerprint=?,
                     actionable_candidate_count=?,returned_candidate_count=?,
                     result_hash=?,source_snapshot_hash=?,
-                    completed_at=?,updated_at=?,error_code=NULL,error_message=NULL
+                    completed_at=?,updated_at=?,error_code=?,error_message=?
                 WHERE id=?
                 """,
                 (
@@ -364,6 +386,8 @@ class ProspectiveCatalog:
                     source_snapshot_hash,
                     now,
                     now,
+                    partial_error_code,
+                    partial_error_message,
                     capture_id,
                 ),
             )
@@ -1111,6 +1135,41 @@ class ProspectiveCatalog:
             evaluation_count = int(
                 conn.execute("SELECT COUNT(*) FROM prospective_evaluation_run").fetchone()[0]
             )
+            report_count = int(
+                conn.execute("SELECT COUNT(*) FROM prospective_evaluation_report").fetchone()[0]
+            )
+            latest_complete_date = conn.execute(
+                """
+                SELECT MAX(actual_data_date) AS d
+                FROM prospective_capture_run
+                WHERE status='COMPLETE'
+                """
+            ).fetchone()["d"]
+            attention_rows = conn.execute(
+                """
+                SELECT source_job_id,status,actual_data_date,error_code,error_message,
+                       completed_at
+                FROM prospective_capture_run
+                WHERE status IN ('PARTIAL','FAILED','CANCELLED','INTERRUPTED')
+                ORDER BY COALESCE(completed_at,updated_at) DESC,id DESC
+                LIMIT 5
+                """
+            ).fetchall()
+
+        attention_count = sum(
+            int(capture_counts.get(key, 0))
+            for key in ("PARTIAL", "FAILED", "CANCELLED", "INTERRUPTED")
+        )
+        complete_count = int(capture_counts.get("COMPLETE", 0))
+        if report_count > 0:
+            accumulation_state = "EVALUATION_AVAILABLE"
+        elif complete_count > 0:
+            accumulation_state = "EVIDENCE_ACCUMULATING"
+        elif attention_count > 0:
+            accumulation_state = "NEEDS_ATTENTION"
+        else:
+            accumulation_state = "NO_VALID_CAPTURE"
+
         return {
             "schema_version": PROSPECTIVE_SCHEMA_VERSION,
             "capture_counts": capture_counts,
@@ -1119,6 +1178,15 @@ class ProspectiveCatalog:
             "latest_signal_date": latest_signal,
             "protocol_count": protocol_count,
             "evaluation_run_count": evaluation_count,
+            "evidence_accumulation": {
+                "state": accumulation_state,
+                "complete_capture_count": complete_count,
+                "attention_capture_count": attention_count,
+                "report_count": report_count,
+                "latest_complete_date": latest_complete_date,
+                "recent_attention": [dict(row) for row in attention_rows],
+                "policy_criteria_defined": False,
+            },
             "minimum_sample_policy_defined": False,
             "strategy_promotion_allowed": False,
             "adaptive_rotation_enabled": False,

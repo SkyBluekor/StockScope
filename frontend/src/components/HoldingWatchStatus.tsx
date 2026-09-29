@@ -33,10 +33,10 @@ function continuityLabel(status: WatchSystemStatus | null) {
   const session = status?.runtime?.session;
   if (!status?.runtime || status.runtime.migration_required) return "준비 필요";
   if (!session) return "기록 없음";
-  if (session.continuity_state === "UNMONITORED") return "감시 연속성 미확인";
-  if (session.status === "RUNNING") return "실행 중";
+  if (session.continuity_state === "UNMONITORED") return "실행 연속성 미확인";
+  if (session.status === "RUNNING") return "서비스 실행 중";
   if (session.status === "INTERRUPTED") return "이전 실행 중단";
-  return "정상 종료";
+  return "서비스 정상 종료";
 }
 
 function notificationText(item: WatchNotification) {
@@ -153,7 +153,7 @@ export default function HoldingWatchStatus({
           <strong>{transportLabel(systemStatus?.transport?.state)}</strong>
         </div>
         <div>
-          <span>실행 연속성</span>
+          <span>Watch 서비스</span>
           <strong>{continuityLabel(systemStatus)}</strong>
         </div>
         <div>
@@ -208,20 +208,22 @@ export default function HoldingWatchStatus({
           const status = statuses[position.position_id];
           return (
             <div className="holding-watch-summary-row" key={position.position_id}>
-              <strong>
-                {error
-                  ? "상태 확인 실패"
-                  : status
-                    ? statusLabel(status)
-                    : loading ? "확인 중" : "상태 없음"}
-              </strong>
-              <span>
-                {error
-                  ? "기존 보유 판단과 관리 계획은 그대로 유지됩니다."
-                  : status
-                    ? statusDetail(status)
-                    : loading ? "Watch 상태를 확인하고 있습니다." : "저장된 Watch 상태가 없습니다."}
-              </span>
+              <div className="holding-watch-summary-copy">
+                <strong>
+                  {error
+                    ? "상태 확인 실패"
+                    : status
+                      ? statusLabel(status)
+                      : loading ? "확인 중" : "상태 없음"}
+                </strong>
+                <span>
+                  {error
+                    ? "기존 보유 판단과 관리 계획은 그대로 유지됩니다."
+                    : status
+                      ? statusDetail(status)
+                      : loading ? "Watch 상태를 확인하고 있습니다." : "저장된 Watch 상태가 없습니다."}
+                </span>
+              </div>
               {openPositions.length > 1 && (
                 <small>{position.account_name || position.provider || "보유 기록"}</small>
               )}
