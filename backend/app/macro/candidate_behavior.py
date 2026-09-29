@@ -98,6 +98,9 @@ def build_candidate_behavior(
         for episode in episode_summary["episodes"]
     ]
     episode_boundary_hash = content_hash(episode_boundaries)
+    episode_start_hash = content_hash(
+        [item["start_date"] for item in episode_boundaries]
+    )
 
     behavior_identity = {
         "contract_version": MACRO_CANDIDATE_BEHAVIOR_CONTRACT_VERSION,
@@ -106,6 +109,7 @@ def build_candidate_behavior(
         "signal_signature_hash": signal_signature_hash,
         "episode_policy_version": RATE_SPIKE_EPISODE_POLICY_VERSION,
         "episode_boundary_hash": episode_boundary_hash,
+        "episode_start_hash": episode_start_hash,
     }
     behavior_signature_hash = content_hash(behavior_identity)
     capture_count = sum(
@@ -130,6 +134,7 @@ def build_candidate_behavior(
         "eligibility_signature_hash": eligibility_signature_hash,
         "signal_signature_hash": signal_signature_hash,
         "episode_boundary_hash": episode_boundary_hash,
+        "episode_start_hash": episode_start_hash,
         "eligible_count": eligible_count,
         "signal_count": signal_count,
         "signal_fraction": candidate["development_signal_fraction"],
@@ -256,6 +261,7 @@ def build_behavior_groups(
             ],
             "signal_signature_hash": behavior["signal_signature_hash"],
             "episode_boundary_hash": behavior["episode_boundary_hash"],
+            "episode_start_hash": behavior["episode_start_hash"],
             "eligible_count": behavior["eligible_count"],
             "signal_count": behavior["signal_count"],
             "signal_fraction": behavior["signal_fraction"],
