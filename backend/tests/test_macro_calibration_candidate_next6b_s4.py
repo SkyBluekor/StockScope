@@ -8,6 +8,7 @@ from app.macro.calibration_candidate import (
     RATE_SPIKE_FEATURE_IDS,
     build_rate_spike_candidate_set,
     generate_feature_candidates,
+    validate_candidate_set_artifact,
 )
 from app.macro.calibration_protocol import build_calibration_research_protocol
 from app.macro.calibration_research import build_distribution_research
@@ -317,3 +318,23 @@ def test_s4_cli_intentionally_has_no_holdout_argument():
     assert "--protocol-artifact" in option_strings
     assert "--research-artifact" in option_strings
     assert "--holdout-artifact" not in option_strings
+
+
+def test_candidate_set_artifact_validator_detects_payload_tampering():
+    development, protocol, research = _inputs()
+    candidate_set = build_rate_spike_candidate_set(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+    )
+
+    state = validate_candidate_set_artifact(candidate_set)
+    assert state["holdout_accessed"] is False
+
+    tampered = deepcopy(candidate_set)
+    if tampered["frozen_candidates"]:
+        tampered["frozen_candidates"][0]["development_signal_count"] += 1
+        with pytest.raises(ValueError, match="candidate_hash"):
+            validate_candidate_set_artifact(tampered)
+    else:
+        pytest.skip("Synthetic fixture produced no frozen candidates.")
