@@ -50,6 +50,10 @@ ReconcileHandler = Callable[
     [tuple[WatchDemand, ...], WatchPolicy],
     object | Awaitable[object],
 ]
+RuntimeHandler = Callable[
+    [str, dict[str, object] | None],
+    object | Awaitable[object],
+]
 
 
 def load_active_plan_watch_demands(
@@ -132,6 +136,7 @@ class WatchCoordinator:
         on_quote: QuoteHandler | None = None,
         on_coverage_issue: CoverageHandler | None = None,
         on_reconcile: ReconcileHandler | None = None,
+        on_runtime_event: RuntimeHandler | None = None,
         reconcile_interval_seconds: float = 10.0,
     ) -> None:
         self.catalog = catalog
@@ -143,6 +148,7 @@ class WatchCoordinator:
         self.on_quote = on_quote
         self.on_coverage_issue = on_coverage_issue
         self.on_reconcile = on_reconcile
+        self.on_runtime_event = on_runtime_event
         self.reconcile_interval_seconds = max(
             1.0,
             float(reconcile_interval_seconds),
@@ -156,6 +162,19 @@ class WatchCoordinator:
     async def _maybe_await(value) -> None:
         if inspect.isawaitable(value):
             await value
+
+    async def _emit_runtime_event(
+        self,
+        event: str,
+        detail: dict[str, object] | None = None,
+    ) -> None:
+        if self.on_runtime_event is None:
+            return
+        try:
+            await self._maybe_await(self.on_runtime_event(event, detail))
+        except Exception:
+            # Observability must never become a new Watch failure source.
+            return
 
     async def _emit_coverage_issue(
         self,
@@ -181,6 +200,18 @@ class WatchCoordinator:
                     await self._maybe_await(handler(demand, snapshot))
         except asyncio.CancelledError:
             raise
+        except Exception as exc:
+            demands = self._demands_by_key.get(key, ())
+            await self._emit_coverage_issue(demands, "CONSUMER_FAILED")
+            await self._emit_runtime_event(
+                "CONSUMER_FAILED",
+                {
+                    "market": key.market,
+                    "ticker": key.ticker,
+                    "venue": key.venue,
+                    "error_code": type(exc).__name__,
+                },
+            )
         finally:
             await self.event_hub.unsubscribe(key, queue)
 
@@ -276,13 +307,24 @@ class WatchCoordinator:
         self._stop_requested = False
         while not self._stop_requested:
             try:
-                await self.reconcile_once()
+                result = await self.reconcile_once()
+                await self._emit_runtime_event(
+                    "RECONCILE_OK",
+                    {
+                        "enabled": result.enabled,
+                        "demand_count": result.demand_count,
+                        "resource_count": result.resource_count,
+                        "leased_count": result.leased_count,
+                        "rejected_count": result.rejected_count,
+                    },
+                )
             except asyncio.CancelledError:
                 raise
-            except Exception:
-                # Coverage persistence/logging is added in P4-S1-C. A coordinator
-                # loop must not crash the API process because one reconcile fails.
-                pass
+            except Exception as exc:
+                await self._emit_runtime_event(
+                    "RECONCILE_FAILED",
+                    {"error_code": type(exc).__name__},
+                )
             await asyncio.sleep(self.reconcile_interval_seconds)
 
     async def start(self) -> None:
