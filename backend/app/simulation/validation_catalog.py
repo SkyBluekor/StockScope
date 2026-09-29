@@ -307,7 +307,11 @@ class HistoricalValidationCatalog:
             id=row["id"], name=row["name"], validation_target=row["validation_target"],
             market_scope=row["market_scope"], scanner_version=row["scanner_version"],
             scanner_baseline=row["scanner_baseline"],
-            selection_policy=_json_value(row["selection_policy_json"]),
+            selection_policy=(
+                _json_value(row["selection_policy_json"])
+                if "selection_policy_json" in row.keys()
+                else None
+            ),
             requested_period_type=row["requested_period_type"],
             requested_start_month=row["requested_start_month"], requested_end_month=row["requested_end_month"],
             resolved_start_date=row["resolved_start_date"], resolved_end_date=row["resolved_end_date"],
