@@ -21,6 +21,7 @@ def test_registry_order_is_explicit_and_stable():
     assert [spec.key for spec in sync_local.MIGRATIONS] == [
         "VN-P1-S1",
         "VN-P1-S2",
+        "VN-P1-S3",
         "VN-P2-S1",
         "VN-P2-S2",
         "VN-P3-S1",
@@ -410,6 +411,89 @@ def test_p1s1_skips_uninitialized_optional_validation_domain(tmp_path: Path):
             ).fetchall()
         }
     assert sync_local.p1s1.VALIDATION_PROOF_TABLE not in tables
+
+def test_p1s3_migrates_selection_pin_columns_without_backfill(tmp_path: Path):
+    simulation = tmp_path / "simulation.db"
+    with sqlite3.connect(simulation) as conn:
+        conn.execute(
+            "CREATE TABLE historical_validation_run("
+            "id TEXT PRIMARY KEY, name TEXT)"
+        )
+        conn.execute(
+            "CREATE TABLE historical_execution_run("
+            "id TEXT PRIMARY KEY, validation_id TEXT)"
+        )
+        conn.execute(
+            "INSERT INTO historical_validation_run(id,name) VALUES('v1','legacy')"
+        )
+        conn.execute(
+            "INSERT INTO historical_execution_run(id,validation_id) VALUES('e1','v1')"
+        )
+
+    paths = sync_local.RuntimePaths(
+        holdings=tmp_path / "unused-holdings.db",
+        market=tmp_path / "unused-market.db",
+        simulation=simulation,
+    )
+
+    before = sync_local._detect_p1s3(paths)
+    assert before.state is sync_local.MigrationState.MISSING
+
+    result = sync_local._run_p1s3(paths)
+
+    assert result["schema_version"] == sync_local.p1s3.SELECTION_PIN_SCHEMA_VERSION
+    assert result["backfilled_rows"] == 0
+    assert sync_local._detect_p1s3(paths).state is sync_local.MigrationState.CURRENT
+
+    with sqlite3.connect(simulation) as conn:
+        validation_columns = {
+            row[1] for row in conn.execute(
+                "PRAGMA table_info(historical_validation_run)"
+            ).fetchall()
+        }
+        execution_columns = {
+            row[1] for row in conn.execute(
+                "PRAGMA table_info(historical_execution_run)"
+            ).fetchall()
+        }
+        validation_pin = conn.execute(
+            "SELECT selection_policy_json FROM historical_validation_run WHERE id='v1'"
+        ).fetchone()[0]
+        execution_pin = conn.execute(
+            "SELECT selection_policy_json FROM historical_execution_run WHERE id='e1'"
+        ).fetchone()[0]
+
+    assert "selection_policy_json" in validation_columns
+    assert "selection_policy_json" in execution_columns
+    assert validation_pin is None
+    assert execution_pin is None
+
+
+def test_p1s3_fresh_schema_columns_without_meta_are_safe_missing(tmp_path: Path):
+    simulation = tmp_path / "simulation.db"
+    with sqlite3.connect(simulation) as conn:
+        conn.execute(
+            "CREATE TABLE historical_validation_run("
+            "id TEXT PRIMARY KEY, selection_policy_json TEXT)"
+        )
+        conn.execute(
+            "CREATE TABLE historical_execution_run("
+            "id TEXT PRIMARY KEY, selection_policy_json TEXT)"
+        )
+
+    paths = sync_local.RuntimePaths(
+        holdings=tmp_path / "unused-holdings.db",
+        market=tmp_path / "unused-market.db",
+        simulation=simulation,
+    )
+    before = sync_local._detect_p1s3(paths)
+    assert before.state is sync_local.MigrationState.MISSING
+
+    result = sync_local._run_p1s3(paths)
+
+    assert result["status"] == "MIGRATED"
+    assert sync_local._detect_p1s3(paths).state is sync_local.MigrationState.CURRENT
+
 
 def test_launcher_contracts_are_safe_and_one_click():
     root = Path(__file__).resolve().parents[2]
