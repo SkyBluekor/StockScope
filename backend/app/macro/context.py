@@ -6,6 +6,7 @@ from enum import Enum
 from typing import Any
 
 from app.macro.calibration import (
+    CalibrationStatus,
     MacroShockCalibration,
     uncalibrated_rate_spike_calibration,
 )
@@ -89,6 +90,10 @@ def build_macro_context(
     observations = list(window.get("observations") or [])
     feature_set = build_dgs10_features(observations)
     calibration = rate_calibration or uncalibrated_rate_spike_calibration()
+    if calibration.status is CalibrationStatus.APPROVED_RESEARCH:
+        raise ValueError(
+            "NEXT-6B-S1 does not execute approved shock calibration."
+        )
     shock = build_uncalibrated_shock_assessment(
         feature_set=feature_set,
         rate_calibration=calibration,
