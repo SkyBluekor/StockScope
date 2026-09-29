@@ -341,8 +341,7 @@ export default function ProspectiveEvaluationPanel() {
         )}
       </section>
 
-      {latestDetail?.report && (
-        <section className="sim-prospective-p5">
+      <section className="sim-prospective-p5">
           <div className="sim-prospective-p5-head">
             <div>
               <span>P5 평가 근거</span>
@@ -408,8 +407,18 @@ export default function ProspectiveEvaluationPanel() {
           <p className="sim-prospective-note">
             최소 표본 기준은 아직 정의되지 않았습니다. Artifact는 평가 근거를 보존할 뿐 전략 우수성을 확정하지 않습니다.
           </p>
-        </section>
-      )}
+        {!latestDetail?.report && (
+          <div className="sim-prospective-empty">
+            <strong>아직 등록할 평가 근거가 없습니다.</strong>
+            <p>
+              현재 상태 · 평가 Report 없음 · 추천 기록 {count(status?.sample_count)}건 · 정상 수집 {count(status?.capture_counts.COMPLETE)}회 · 확인 필요 {count(captureFailures)}회
+            </p>
+            <p>
+              Prospective 평가가 완료되면 Strategy Version을 확인한 뒤 P5 검토 근거로 등록할 수 있습니다.
+            </p>
+          </div>
+        )}
+      </section>
 
       <details className="sim-prospective-protocol">
         <summary>평가 기준 설정 · 상세</summary>
