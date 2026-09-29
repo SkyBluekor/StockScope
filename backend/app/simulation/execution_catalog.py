@@ -295,7 +295,11 @@ class HistoricalExecutionCatalog:
             production_exit_policy_token=row["production_exit_policy_token"],
             market_data_cutoff_date=row["market_data_cutoff_date"],
             scanner_version=row["scanner_version"],
-            selection_policy=_json_value(row["selection_policy_json"]),
+            selection_policy=(
+                _json_value(row["selection_policy_json"])
+                if "selection_policy_json" in row.keys()
+                else None
+            ),
             source_candidate_count=int(row["source_candidate_count"] or 0),
             status=row["status"],
             processed_candidate_count=int(row["processed_candidate_count"] or 0),
