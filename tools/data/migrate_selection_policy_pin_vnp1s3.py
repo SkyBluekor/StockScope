@@ -80,6 +80,8 @@ def inspect_selection_policy_pin_schema(path: Path) -> dict[str, object]:
         and execution_column
     ):
         status = "CURRENT"
+    elif meta_present and version not in (None, SELECTION_PIN_SCHEMA_VERSION):
+        status = "INCOMPATIBLE"
     elif not meta_present and not validation_column and not execution_column:
         status = "MISSING"
     else:
