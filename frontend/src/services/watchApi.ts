@@ -28,6 +28,42 @@ export type WatchNotificationSummary = {
   read_at: string | null;
 };
 
+export type WatchRuntimeSession = {
+  runtime_session_id: string;
+  status: "RUNNING" | "STOPPED" | "INTERRUPTED" | string;
+  started_at: string;
+  last_heartbeat_at: string;
+  stopped_at: string | null;
+  last_reconcile_at: string | null;
+  last_reconcile_status: string | null;
+  last_error_code: string | null;
+  last_error_at: string | null;
+  transport_state: string | null;
+  market_session_phase: string | null;
+  previous_session_id: string | null;
+  previous_last_heartbeat_at: string | null;
+  continuity_state: "NEW" | "CONTINUOUS" | "UNMONITORED" | string;
+};
+
+export type WatchSystemStatus = {
+  available: boolean;
+  migration_required: boolean;
+  policy_enabled: boolean;
+  blocked_reason: string | null;
+  active_settings: number;
+  open_gaps: number;
+  pending_notifications: number;
+  runtime?: {
+    available: boolean;
+    migration_required: boolean;
+    session: WatchRuntimeSession | null;
+  };
+  transport?: { state: string };
+  market_session?: { phase: string };
+  coverage?: { state: string };
+  notifications?: { unread: number };
+};
+
 export type WatchPositionStatus = {
   available: boolean;
   migration_required: boolean;
@@ -76,6 +112,15 @@ async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Pro
     // Keep the stable fallback message.
   }
   throw new Error(message);
+}
+
+export function getWatchStatus(
+  options: { signal?: AbortSignal } = {},
+): Promise<WatchSystemStatus> {
+  return requestJson<WatchSystemStatus>(
+    "/api/watch/status",
+    { signal: options.signal },
+  );
 }
 
 export function getWatchPosition(
