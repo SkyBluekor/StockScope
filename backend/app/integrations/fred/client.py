@@ -1,15 +1,33 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 
 import httpx
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from app.core.config import Settings, get_settings
+from app.core.config import PROJECT_ROOT
 from app.macro.identity import content_hash
 
 
 _FRED_BASE_URL = "https://api.stlouisfed.org/fred"
+
+
+class FredSettings(BaseSettings):
+    fred_api_key: str | None = None
+
+    model_config = SettingsConfigDict(
+        env_file=PROJECT_ROOT / ".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        case_sensitive=False,
+    )
+
+
+@lru_cache
+def get_fred_settings() -> FredSettings:
+    return FredSettings()
 
 
 class FredConfigurationError(RuntimeError):
@@ -48,8 +66,8 @@ class FredObservationBatch:
     observation_end: str
 
 
-def validate_settings(settings: Settings | None = None) -> Settings:
-    settings = settings or get_settings()
+def validate_settings(settings: FredSettings | None = None) -> FredSettings:
+    settings = settings or get_fred_settings()
     if not settings.fred_api_key:
         raise FredConfigurationError(
             "FRED_API_KEY is not configured."
@@ -60,7 +78,7 @@ def validate_settings(settings: Settings | None = None) -> Settings:
 class FredClient:
     def __init__(
         self,
-        settings: Settings | None = None,
+        settings: FredSettings | None = None,
         *,
         timeout_seconds: float = 20.0,
         http_client: httpx.Client | None = None,
