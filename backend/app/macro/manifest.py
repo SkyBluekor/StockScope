@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 from app.macro.errors import MacroContractError
@@ -58,6 +58,33 @@ class MacroPreparedRangeManifest:
                     "MACRO_PREPARED_RANGE_COUNT_INVALID",
                     f"{field}은 음수일 수 없습니다.",
                 )
+        for field in (
+            "series_id",
+            "source_contract_version",
+            "normalizer_version",
+            "source_manifest_hash",
+            "prepared_at",
+        ):
+            if not str(getattr(self, field) or "").strip():
+                raise MacroContractError(
+                    "MACRO_PREPARED_RANGE_FIELD_REQUIRED",
+                    f"{field}은 비어 있을 수 없습니다.",
+                )
+        prepared_text = str(self.prepared_at)
+        if prepared_text.endswith("Z"):
+            prepared_text = prepared_text[:-1] + "+00:00"
+        try:
+            prepared = datetime.fromisoformat(prepared_text)
+        except ValueError as exc:
+            raise MacroContractError(
+                "MACRO_PREPARED_RANGE_TIME_INVALID",
+                "prepared_at은 timezone-aware ISO-8601 시각이어야 합니다.",
+            ) from exc
+        if prepared.tzinfo is None or prepared.utcoffset() is None:
+            raise MacroContractError(
+                "MACRO_PREPARED_RANGE_TIMEZONE_REQUIRED",
+                "prepared_at에는 timezone offset이 필요합니다.",
+            )
         if self.stored_count + self.missing_count < self.expected_count:
             raise MacroContractError(
                 "MACRO_PREPARED_RANGE_COUNT_INCONSISTENT",
