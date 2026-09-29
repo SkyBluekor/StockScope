@@ -233,6 +233,94 @@ def build_distribution_research(
     }
 
 
+def validate_distribution_research_artifact(
+    research: dict[str, Any],
+    *,
+    development_dataset_hash: str,
+    protocol_hash: str,
+) -> dict[str, Any]:
+    if (
+        research.get("contract_version")
+        != MACRO_DISTRIBUTION_RESEARCH_CONTRACT_VERSION
+    ):
+        raise ValueError("Unsupported distribution research contract.")
+    if research.get("development_dataset_hash") != development_dataset_hash:
+        raise ValueError("Research Development dataset hash mismatch.")
+    if research.get("protocol_hash") != protocol_hash:
+        raise ValueError("Research protocol hash mismatch.")
+    if research.get("holdout_accessed") is not False:
+        raise ValueError("S4 requires research with holdout_accessed=false.")
+    if research.get("candidate_selection_status") != "NOT_SELECTED":
+        raise ValueError("S4 requires unselected S3 research.")
+    if research.get("selected_feature") is not None:
+        raise ValueError("S3 research must not select a feature.")
+    if research.get("selected_method") is not None:
+        raise ValueError("S3 research must not select a method.")
+    if research.get("selected_threshold") is not None:
+        raise ValueError("S3 research must not select a threshold.")
+    if research.get("selected_minimum_sample") is not None:
+        raise ValueError("S3 research must not select minimum sample.")
+    if research.get("selected_rolling_lookback") is not None:
+        raise ValueError("S3 research must not select rolling lookback.")
+    if research.get("episode_policy_selected") is not False:
+        raise ValueError("S3 research must not select an episode policy.")
+    if research.get("rate_spike_state") != "UNCALIBRATED":
+        raise ValueError("S3 RATE_SPIKE state must remain UNCALIBRATED.")
+    if int(research.get("normal_labels_created") or 0) != 0:
+        raise ValueError("S3 research must not create NORMAL labels.")
+    if int(research.get("detected_labels_created") or 0) != 0:
+        raise ValueError("S3 research must not create DETECTED labels.")
+    if research.get("production_decision_approved") is not False:
+        raise ValueError("S3 research must not be Production-approved.")
+
+    feature_results = research.get("feature_results") or {}
+    if set(feature_results) != set(RESEARCH_FEATURE_IDS):
+        raise ValueError("Research feature set mismatch.")
+    feature_hashes = {
+        feature_id: content_hash(feature_results[feature_id])
+        for feature_id in RESEARCH_FEATURE_IDS
+    }
+    distribution_versions = {
+        result.get("contract_version") for result in feature_results.values()
+    }
+    if distribution_versions != {MACRO_DISTRIBUTION_CONTRACT_VERSION}:
+        raise ValueError("Research distribution contract mismatch.")
+
+    identity_payload = {
+        "contract_version": research["contract_version"],
+        "distribution_contract_version": MACRO_DISTRIBUTION_CONTRACT_VERSION,
+        "development_dataset_hash": research["development_dataset_hash"],
+        "protocol_hash": research["protocol_hash"],
+        "feature_hashes": feature_hashes,
+        "holdout_accessed": research["holdout_accessed"],
+        "candidate_selection_status": research["candidate_selection_status"],
+        "threshold_selected": research["selected_threshold"] is not None,
+        "minimum_sample_selected": (
+            research["selected_minimum_sample"] is not None
+        ),
+        "rolling_lookback_selected": (
+            research["selected_rolling_lookback"] is not None
+        ),
+        "episode_policy_selected": research["episode_policy_selected"],
+        "rate_spike_state": research["rate_spike_state"],
+        "production_decision_approved": research[
+            "production_decision_approved"
+        ],
+    }
+    expected_hash = content_hash(identity_payload)
+    if research.get("research_hash") != expected_hash:
+        raise ValueError("Distribution research_hash mismatch.")
+
+    return {
+        "research_hash": expected_hash,
+        "development_row_count": int(research["development_row_count"]),
+        "holdout_dataset_hash_reference": research[
+            "holdout_dataset_hash_reference"
+        ],
+        "methods_studied": list(research["methods_studied"]),
+    }
+
+
 def summarize_distribution_research(research: dict[str, Any]) -> dict[str, Any]:
     features: dict[str, Any] = {}
     for feature_id, result in research["feature_results"].items():
