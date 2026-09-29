@@ -219,10 +219,13 @@ class HoldingsWorkspaceQueryService:
         decision: dict[str, Any] | None,
         recovery: dict[str, Any] | None,
         watch: dict[str, Any] | None,
+        decision_domain_available: bool,
+        management_domain_available: bool,
     ) -> list[str]:
         conditions: list[str] = []
 
-        if not bool(analysis_contract.get("current_use_allowed")):
+        analysis_current = bool(analysis_contract.get("current_use_allowed"))
+        if not analysis_current:
             conditions.append("ANALYSIS_REFRESH_REQUIRED")
 
         management_state = (
@@ -234,6 +237,17 @@ class HoldingsWorkspaceQueryService:
             conditions.append("ACTIVE_PLAN_STOP_BREACHED")
         elif management_state in {"TARGET1_REACHED", "TARGET2_REACHED"}:
             conditions.append("ACTIVE_PLAN_TARGET_REACHED")
+
+        if analysis_current and decision_domain_available and decision is None:
+            conditions.append("DECISION_NOT_CREATED")
+
+        if (
+            analysis_current
+            and management_domain_available
+            and isinstance(management, dict)
+            and management.get("active_plan") is None
+        ):
+            conditions.append("ACTIVE_PLAN_NOT_APPLIED")
 
         if isinstance(decision, dict):
             effective = str(decision.get("effective_status") or decision.get("status") or "")
@@ -416,6 +430,8 @@ class HoldingsWorkspaceQueryService:
                 decision=decision,
                 recovery=recovery_context,
                 watch=watch_status,
+                decision_domain_available=decision_status["status"] == "AVAILABLE",
+                management_domain_available=source_status["management"]["status"] == "AVAILABLE",
             )
 
             rows.append(
