@@ -22,7 +22,7 @@ from app.strategy.production_selection_policy import (
 from .selection_policy_pin import serialize_selection_policy_pin
 
 
-PRODUCTION_SCANNER_VERSION = "0.21.3.8"
+PRODUCTION_SCANNER_VERSION = "0.21.3.9"
 
 
 class ValidationCatalogError(RuntimeError):
