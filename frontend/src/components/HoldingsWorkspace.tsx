@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { searchStocks, type StockSearchItem } from "../services/api";
 import { readHoldingsViewContext, writeHoldingsViewContext } from "../services/uiSession";
-import useStockDataContract from "../hooks/useStockDataContract";
 import useStockQuote from "../hooks/useStockQuote";
 import { analysisContractMessage, contractAction, dataContractStatusLabel, dataContractTone } from "../services/dataContract";
 import { quoteReceivedTime } from "../services/quote";
@@ -14,13 +13,11 @@ import StockNewsPanel from "./StockNewsPanel";
 import StockQuoteStrip from "./StockQuoteStrip";
 import {
   addWatchStock,
-  getHoldingStock,
-  getHoldingPerformance,
   getLiveHoldingPerformance,
   getLiveHoldingManagementProximity,
-  getHoldingManagement,
   getHoldingChart,
   getHoldingTimeline,
+  getHoldingWorkspaceContext,
   listHoldingAccounts,
   listHoldingStocks,
   recordManualBuy,
@@ -44,6 +41,7 @@ import {
   type HoldingManagementResponse,
   type HoldingStock,
   type HoldingTimelineItem,
+  type HoldingWorkspaceContext,
 } from "../services/holdingsApi";
 import "../holdings.css";
 
@@ -66,32 +64,6 @@ type HistoryRecoveryState = {
   requiredRows: number | null;
   exhausted: boolean;
 };
-
-function holdingDecisionSourceKey(
-  detail: HoldingStock,
-  management: HoldingManagementResponse | null,
-) {
-  return JSON.stringify({
-    analysisRevisionId: detail.current_analysis?.revision_id ?? null,
-    positions: detail.positions.map((position) => ({
-      id: position.position_id,
-      status: position.status,
-      quantity: position.quantity,
-      averagePrice: position.average_price,
-    })),
-    valuation: management
-      ? {
-          marketDate: management.valuation.market_date,
-          price: management.valuation.price,
-        }
-      : null,
-    activePlans: management?.positions.map((position) => ({
-      positionId: position.position_id,
-      planId: position.active_plan?.plan_id ?? null,
-      version: position.active_plan?.version ?? null,
-    })) ?? [],
-  });
-}
 
 function readHoldingsNavigationTarget(): HoldingsNavigationTarget | null {
   try {
@@ -506,6 +478,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
   const [livePerformanceError, setLivePerformanceError] = useState<string | null>(null);
   const [livePerformanceRefreshKey, setLivePerformanceRefreshKey] = useState(0);
   const [management, setManagement] = useState<HoldingManagementResponse | null>(null);
+  const [workspaceContext, setWorkspaceContext] = useState<HoldingWorkspaceContext | null>(null);
   const [liveManagementProximity, setLiveManagementProximity] = useState<LiveHoldingManagementProximityResponse | null>(null);
   const [liveManagementError, setLiveManagementError] = useState<string | null>(null);
   const [stockFilter, setStockFilter] = useState<StockFilter>(
@@ -575,18 +548,9 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
   const liveManagementAbortRef = useRef<AbortController | null>(null);
   const addSearchRequestIdRef = useRef(0);
 
-  const {
-    contract: selectedDataContract,
-    loading: selectedDataContractBusy,
-    error: selectedDataContractError,
-    refresh: refreshSelectedDataContract,
-  } = useStockDataContract({
-    code: detail?.ticker ?? "",
-    market: detail?.market === "KOSDAQ" ? "KOSDAQ" : "KOSPI",
-    enabled: Boolean(detail && selectedStockId === detail.stock_id),
-  });
-  const contractRefreshRef = useRef(refreshSelectedDataContract);
-  contractRefreshRef.current = refreshSelectedDataContract;
+  const selectedDataContract = workspaceContext?.data_contract ?? null;
+  const selectedDataContractBusy = loadingDetail;
+  const selectedDataContractError = null;
 
   const {
     quote: selectedQuote,
@@ -792,6 +756,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
         setLivePerformance(null);
         setLivePerformanceError(null);
         setManagement(null);
+        setWorkspaceContext(null);
         setLiveManagementProximity(null);
         setLiveManagementError(null);
       }
@@ -821,17 +786,16 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
     }
 
     try {
-      const [stock, rows, pnl, managementResult] = await Promise.all([
-        getHoldingStock(stockId, { signal: controller.signal }),
+      const [context, rows] = await Promise.all([
+        getHoldingWorkspaceContext(stockId, { signal: controller.signal }),
         getHoldingTimeline(stockId, 100, { signal: controller.signal }),
-        getHoldingPerformance(stockId, { signal: controller.signal }),
-        getHoldingManagement(stockId, { signal: controller.signal }),
       ]);
       if (requestId !== detailRequestIdRef.current || selectedStockIdRef.current !== stockId) return;
-      setDetail(stock);
+      setWorkspaceContext(context);
+      setDetail(context.stock);
       setTimeline(rows);
-      setPerformance(pnl);
-      setManagement(managementResult);
+      setPerformance(context.performance);
+      setManagement(context.management);
     } catch (loadError) {
       if (isAbortError(loadError)) return;
       if (requestId !== detailRequestIdRef.current || selectedStockIdRef.current !== stockId) return;
@@ -884,6 +848,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
     setLivePerformance(null);
     setLivePerformanceError(null);
     setManagement(null);
+    setWorkspaceContext(null);
     setLiveManagementProximity(null);
     setLiveManagementError(null);
   }, [selectedStockId]);
