@@ -133,7 +133,9 @@ def build_calibration_dataset(
         and len(warmup) >= max_window
         else "PARTIAL_REFERENCE_RESEARCH"
     )
-    limitations: list[str] = ["HISTORICAL_TIME_NOT_PROVEN"]
+    limitations: list[str] = []
+    if pit_eligible_count < len(dataset_rows):
+        limitations.append("HISTORICAL_TIME_NOT_PROVEN")
     if len(warmup) < max_window:
         limitations.append("WARMUP_INSUFFICIENT")
     if unavailable_feature_count:
