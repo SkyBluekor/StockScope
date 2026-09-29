@@ -67,4 +67,6 @@ def test_watch_layout_responds_to_component_width_not_only_viewport():
     assert "@container holding-watch" in css
     assert "grid-template-columns: repeat(4, minmax(0, 1fr)) auto" not in css
     assert "grid-template-columns: repeat(2, minmax(0, 1fr))" in css
+    assert ".holding-watch-summary > .holding-watch-summary-list" in css
+    assert "grid-column: 2" in css
     assert "overflow-wrap: anywhere" in css
