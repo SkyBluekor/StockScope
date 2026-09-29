@@ -301,23 +301,12 @@ class LocalMacroReader:
                             (series_id,),
                         ).fetchone()[0]
                     )
-                    available_any_count = int(
-                        conn.execute(
-                            """
-                            SELECT COUNT(*)
-                            FROM macro_observation_revision
-                            WHERE series_id=? AND published=1
-                            """,
-                            (series_id,),
-                        ).fetchone()[0]
-                    )
-                    if (
-                        historical_eligible_only
-                        and published_count > 0
-                    ):
-                        reason = "NO_HISTORICALLY_ELIGIBLE_OBSERVATION"
-                    elif available_any_count > 0:
+                    if rows:
+                        # Matching quality rows exist, but none were available
+                        # by the requested cutoff.
                         reason = "DATA_NOT_AVAILABLE_BY_CUTOFF"
+                    elif historical_eligible_only and published_count > 0:
+                        reason = "NO_HISTORICALLY_ELIGIBLE_OBSERVATION"
                     else:
                         reason = "DATA_ABSENT"
                     status = "UNAVAILABLE"
