@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +56,19 @@ class LocalMacroReader:
             return False, "READ_FAILED"
         return True, None
 
+    @staticmethod
+    def _aware_utc(value: str, field: str) -> datetime:
+        text = str(value or "").strip()
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        try:
+            parsed = datetime.fromisoformat(text)
+        except ValueError as exc:
+            raise ValueError(f"{field}은 timezone-aware ISO-8601 시각이어야 합니다.") from exc
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            raise ValueError(f"{field}은 timezone-aware ISO-8601 시각이어야 합니다.")
+        return parsed.astimezone(timezone.utc)
+
     def read_series_as_of(
         self,
         series_id: str,
@@ -62,6 +76,7 @@ class LocalMacroReader:
         cutoff: str,
         historical_eligible_only: bool = True,
     ) -> dict[str, Any]:
+        cutoff_utc = self._aware_utc(cutoff, "cutoff")
         ready, reason = self._schema_state()
         if not ready:
             return {
@@ -77,21 +92,31 @@ class LocalMacroReader:
         )
         try:
             with self._connect() as conn:
-                row = conn.execute(
+                rows = conn.execute(
                     f"""
                     SELECT *
                     FROM macro_observation_revision
                     WHERE series_id=?
                       AND published=1
-                      AND available_at<=?
                       {quality_sql}
-                    ORDER BY observation_date DESC,
-                             available_at DESC,
-                             revision_no DESC
-                    LIMIT 1
                     """,
-                    (series_id, cutoff),
-                ).fetchone()
+                    (series_id,),
+                ).fetchall()
+                eligible_rows = [
+                    row
+                    for row in rows
+                    if self._aware_utc(str(row["available_at"]), "available_at")
+                    <= cutoff_utc
+                ]
+                eligible_rows.sort(
+                    key=lambda row: (
+                        str(row["observation_date"]),
+                        self._aware_utc(str(row["available_at"]), "available_at"),
+                        int(row["revision_no"]),
+                    ),
+                    reverse=True,
+                )
+                row = eligible_rows[0] if eligible_rows else None
                 if row is None:
                     any_row = conn.execute(
                         """
