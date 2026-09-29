@@ -20,6 +20,7 @@ DEFAULT_HOLDINGS_DB = BACKEND_ROOT / "runtime" / "holdings" / "holdings.db"
 DEFAULT_MARKET_DB = BACKEND_ROOT / "runtime" / "market_history" / "market_history.db"
 DEFAULT_SIMULATION_DB = BACKEND_ROOT / "runtime" / "simulation" / "simulation.db"
 DEFAULT_TRACKING_DB = BACKEND_ROOT / "runtime" / "tracking" / "recommendation_tracking.db"
+DEFAULT_MACRO_DB = BACKEND_ROOT / "runtime" / "macro" / "macro.db"
 DEFAULT_BACKUP_ROOT = PROJECT_ROOT / "backups"
 BACKUP_FORMAT_VERSION = 1
 
@@ -145,6 +146,11 @@ def simulation_db_path() -> Path:
 def tracking_db_path() -> Path:
     raw = (os.getenv("STOCKSCOPE_TRACKING_DB") or "").strip()
     return Path(raw).expanduser() if raw else DEFAULT_TRACKING_DB
+
+
+def macro_db_path() -> Path:
+    raw = (os.getenv("STOCKSCOPE_MACRO_DB") or "").strip()
+    return Path(raw).expanduser() if raw else DEFAULT_MACRO_DB
 
 
 def utc_stamp() -> str:

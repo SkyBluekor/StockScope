@@ -39,6 +39,7 @@ from app.strategy.production_selection_policy import (
 )
 
 from tools.data.event_evidence_runtime import inspect_event_evidence_store
+from tools.data.macro_runtime import inspect_macro_store, validate_macro_db
 from tools.data.strategy_selection_runtime import (
     copy_strategy_selection_runtime,
     state_file_paths as strategy_selection_state_file_paths,
@@ -54,6 +55,7 @@ from tools.data.common import (
     iso_now,
     manifest_file_entry,
     market_db_path,
+    macro_db_path,
     simulation_db_path,
     tracking_db_path,
     project_version,
@@ -401,14 +403,17 @@ def create_backup(
     market_db: Path | None = None,
     simulation_db: Path | None = None,
     tracking_db: Path | None = None,
+    macro_db: Path | None = None,
     include_simulation: bool = True,
     include_tracking: bool = True,
+    include_macro: bool = True,
     strategy_selection_runtime: Path | None = None,
 ) -> Path:
     source_holdings = Path(holdings_db or holdings_db_path())
     source_market = Path(market_db or market_db_path())
     source_simulation = Path(simulation_db or simulation_db_path())
     source_tracking = Path(tracking_db or tracking_db_path())
+    source_macro = Path(macro_db or macro_db_path())
     source_strategy_selection = Path(
         strategy_selection_runtime
         or (
@@ -425,6 +430,8 @@ def create_backup(
         validate_simulation_db(source_simulation)
     if include_tracking and source_tracking.is_file():
         validate_tracking_db(source_tracking)
+    if include_macro and source_macro.is_file():
+        validate_macro_db(source_macro)
 
     final_dir = Path(
         destination
@@ -450,6 +457,7 @@ def create_backup(
             "market_history_db": False,
             "simulation_db": False,
             "tracking_db": False,
+            "macro_db": False,
             "strategy_selection_runtime": False,
         }
 
@@ -479,6 +487,15 @@ def create_backup(
             tracking_summary = validate_tracking_db(tracking_copy)
             files["recommendation_tracking.db"] = manifest_file_entry(tracking_copy)
             contents["tracking_db"] = True
+
+        macro_summary = inspect_macro_store(None)
+        macro_copy: Path | None = None
+        if include_macro and source_macro.is_file():
+            macro_copy = temp_dir / "macro.db"
+            sqlite_snapshot(source_macro, macro_copy)
+            macro_summary = validate_macro_db(macro_copy)
+            files["macro.db"] = manifest_file_entry(macro_copy)
+            contents["macro_db"] = True
 
         strategy_governance_extension = _strategy_governance_extension(
             simulation_copy
@@ -538,6 +555,7 @@ def create_backup(
                 "market_history": market_summary,
                 "simulation": simulation_summary,
                 "tracking": tracking_summary,
+                "macro": macro_summary,
             },
             "extensions": {
                 "input_identity_v1": _input_identity_extension(
@@ -569,6 +587,7 @@ def create_backup(
                 "event_evidence_v1": inspect_event_evidence_store(
                     simulation_copy
                 ),
+                "macro_store_v1": macro_summary,
             },
             "secret_files_included": [],
         }
@@ -622,6 +641,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="recommendation_tracking.db가 존재해도 백업에서 제외합니다.",
     )
     parser.add_argument(
+        "--exclude-macro",
+        action="store_true",
+        help="macro.db가 존재해도 백업에서 제외합니다.",
+    )
+    parser.add_argument(
         "--destination",
         type=Path,
         help="생성할 백업 디렉터리. 생략하면 backups/ 아래에 시간별 폴더를 만듭니다.",
@@ -637,6 +661,7 @@ def main() -> int:
             include_market=args.include_market,
             include_simulation=not args.exclude_simulation,
             include_tracking=not args.exclude_tracking,
+            include_macro=not args.exclude_macro,
         )
         manifest_path = path / "backup_manifest.json"
         print("=" * 78)
@@ -649,6 +674,7 @@ def main() -> int:
         print("Market Store     " + ("INCLUDED" if args.include_market else "SKIPPED"))
         print("Simulation DB    " + ("AUTO" if not args.exclude_simulation else "SKIPPED"))
         print("Tracking DB      " + ("AUTO" if not args.exclude_tracking else "SKIPPED"))
+        print("Macro DB         " + ("AUTO" if not args.exclude_macro else "SKIPPED"))
         print("Secrets          EXCLUDED")
         print("Manifest         PASS")
         print("")
