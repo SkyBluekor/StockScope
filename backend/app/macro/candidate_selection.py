@@ -73,6 +73,10 @@ def pareto_prune_candidates(
                     "method": candidate["method"],
                     "threshold_definition": candidate["threshold_definition"],
                     "threshold_value": candidate["threshold_value"],
+                    "threshold_unit": candidate["threshold_unit"],
+                    "threshold_source": candidate["threshold_source"],
+                    "direction": candidate["direction"],
+                    "required_condition": candidate["required_condition"],
                     "development_signal_count": candidate[
                         "development_signal_count"
                     ],
