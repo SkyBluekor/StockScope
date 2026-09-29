@@ -118,6 +118,33 @@ DGS10 bounded collection은 `--start`/`--end`를 반드시 지정합니다. `--c
 
 Historical FRED backfill은 provider의 날짜 단위 vintage를 정확한 장중 availability로 승격하지 않습니다. 저장된 row는 `DATE_ONLY`이며 reference 조회는 가능하지만 엄격한 PIT historical evaluation에는 부적격입니다. 실제 수집 성공은 DGS10을 research owner로만 승인하며 Production decision scope를 활성화하지 않습니다.
 
+## NEXT-6B-S1 Deterministic Macro Context
+
+NEXT-6B-S1은 Local Macro Store만 읽어 versioned Macro Context와 feature를 생성합니다. Provider network, backfill, DB write, Scanner/Strategy/Risk 변경을 수행하지 않습니다.
+
+현재 DGS10 feature:
+
+- `rate_level_pct`
+- `delta_bp_1obs`
+- `delta_bp_5obs`
+- `delta_bp_10obs`
+
+`obs`는 calendar day가 아니라 사용 가능한 observation 거리입니다. DATE_ONLY FRED backfill은 `reference` usage에서 설명용으로 사용할 수 있지만 `historical` usage에서는 엄격한 PIT 평가 입력으로 사용할 수 없습니다.
+
+Reference Shadow 예시:
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\build_macro_context_next6b_s1.py --cutoff 2026-09-29T21:00:00+09:00 --usage reference
+```
+
+Historical Evaluation 예시:
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\build_macro_context_next6b_s1.py --cutoff 2026-09-28T15:30:00+09:00 --usage historical
+```
+
+S1에서는 shock threshold/calibration을 실행하지 않습니다. DGS10 feature가 준비돼도 `RATE_SPIKE` 상태는 `UNCALIBRATED`이며 `NORMAL` 또는 `DETECTED`로 자동 분류하지 않습니다. immutable JSON 산출물이 필요할 때만 `--write-artifact`를 사용합니다.
+
 ## P2-S2 실제 추천 평가 저장소 준비
 
 P2-S2는 새 Scanner 실행부터 실제 추천 표본을 사후 선택 전에 보존합니다. 과거 Scanner 실행을 prospective 표본으로 소급 생성하지 않습니다.
