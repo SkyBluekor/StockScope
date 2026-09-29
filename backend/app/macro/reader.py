@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -335,6 +335,274 @@ class LocalMacroReader:
                 "error": str(exc),
             }
             return {**payload, "window_hash": content_hash(payload)}
+
+    @staticmethod
+    def _date_text(value: str, field: str) -> str:
+        text = str(value or "").strip()
+        try:
+            date.fromisoformat(text)
+        except ValueError as exc:
+            raise ValueError(f"{field} must be YYYY-MM-DD.") from exc
+        return text
+
+    @staticmethod
+    def _observation_projection(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            key: row[key]
+            for key in (
+                "id",
+                "observation_key",
+                "revision_no",
+                "series_id",
+                "native_observation_id",
+                "observation_date",
+                "normalized_value",
+                "source_unit",
+                "realtime_start",
+                "realtime_end",
+                "vintage_id",
+                "available_at",
+                "fetched_at",
+                "time_quality",
+                "first_seen_at",
+                "source_published_at",
+                "provider_available_at",
+                "corrected_at",
+                "source_payload_hash",
+                "normalizer_version",
+                "normalized_hash",
+            )
+        }
+
+    def inspect_reference_archive(
+        self,
+        series_id: str,
+    ) -> dict[str, Any]:
+        ready, reason = self._schema_state()
+        if not ready:
+            return {
+                "status": "UNAVAILABLE",
+                "series_id": series_id,
+                "reason": reason,
+                "usage_scope": "REFERENCE_RESEARCH_ONLY",
+                "vintages": [],
+            }
+        try:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT *
+                    FROM macro_observation_revision
+                    WHERE series_id=? AND published=1
+                    ORDER BY observation_date ASC,revision_no ASC
+                    """,
+                    (series_id,),
+                ).fetchall()
+        except sqlite3.Error as exc:
+            return {
+                "status": "UNAVAILABLE",
+                "series_id": series_id,
+                "reason": "READ_FAILED",
+                "error": str(exc),
+                "usage_scope": "REFERENCE_RESEARCH_ONLY",
+                "vintages": [],
+            }
+
+        by_vintage: dict[str, dict[str, sqlite3.Row]] = {}
+        revision_counts: dict[str, int] = {}
+        for row in rows:
+            vintage = str(row["vintage_id"] or "").strip()
+            if not vintage:
+                continue
+            revision_counts[vintage] = revision_counts.get(vintage, 0) + 1
+            chosen = by_vintage.setdefault(vintage, {})
+            key = str(row["observation_key"])
+            previous = chosen.get(key)
+            if previous is None or int(row["revision_no"]) > int(previous["revision_no"]):
+                chosen[key] = row
+
+        vintages: list[dict[str, Any]] = []
+        for vintage in sorted(by_vintage):
+            selected = list(by_vintage[vintage].values())
+            selected.sort(key=lambda row: str(row["observation_date"]))
+            quality_counts: dict[str, int] = {}
+            pit_eligible = 0
+            for row in selected:
+                quality = str(row["time_quality"])
+                quality_counts[quality] = quality_counts.get(quality, 0) + 1
+                if quality in {"EXACT", "PROVIDER_TIME"}:
+                    pit_eligible += 1
+            vintages.append(
+                {
+                    "vintage_id": vintage,
+                    "observation_start": (
+                        str(selected[0]["observation_date"]) if selected else None
+                    ),
+                    "observation_end": (
+                        str(selected[-1]["observation_date"]) if selected else None
+                    ),
+                    "observation_count": len(selected),
+                    "stored_revision_count": revision_counts[vintage],
+                    "time_quality_counts": dict(sorted(quality_counts.items())),
+                    "historical_pit_eligible_count": pit_eligible,
+                }
+            )
+        return {
+            "status": "COMPLETE" if vintages else "UNAVAILABLE",
+            "series_id": series_id,
+            "reason": None if vintages else "VINTAGE_ARCHIVE_ABSENT",
+            "usage_scope": "REFERENCE_RESEARCH_ONLY",
+            "vintages": vintages,
+        }
+
+    def read_reference_archive_range(
+        self,
+        series_id: str,
+        *,
+        observation_start: str,
+        observation_end: str,
+        vintage_id: str,
+        warmup_observations: int = 0,
+    ) -> dict[str, Any]:
+        start = self._date_text(observation_start, "observation_start")
+        end = self._date_text(observation_end, "observation_end")
+        if start > end:
+            raise ValueError("observation_start must be <= observation_end.")
+        vintage = str(vintage_id or "").strip()
+        if not vintage:
+            raise ValueError("vintage_id is required.")
+        if warmup_observations < 0:
+            raise ValueError("warmup_observations must be >= 0.")
+
+        ready, reason = self._schema_state()
+        if not ready:
+            payload = {
+                "status": "NOT_PREPARED",
+                "series_id": series_id,
+                "reason": reason,
+                "usage_scope": "REFERENCE_RESEARCH_ONLY",
+                "vintage_id": vintage,
+                "observation_start": start,
+                "observation_end": end,
+                "warmup_requested": warmup_observations,
+                "warmup_observations": [],
+                "analysis_observations": [],
+            }
+            return {**payload, "archive_hash": content_hash(payload)}
+
+        try:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT *
+                    FROM macro_observation_revision
+                    WHERE series_id=?
+                      AND published=1
+                      AND vintage_id=?
+                      AND observation_date<=?
+                    ORDER BY observation_date ASC,revision_no ASC
+                    """,
+                    (series_id, vintage, end),
+                ).fetchall()
+        except sqlite3.Error as exc:
+            payload = {
+                "status": "NOT_PREPARED",
+                "series_id": series_id,
+                "reason": "READ_FAILED",
+                "error": str(exc),
+                "usage_scope": "REFERENCE_RESEARCH_ONLY",
+                "vintage_id": vintage,
+                "observation_start": start,
+                "observation_end": end,
+                "warmup_requested": warmup_observations,
+                "warmup_observations": [],
+                "analysis_observations": [],
+            }
+            return {**payload, "archive_hash": content_hash(payload)}
+
+        # One dataset is pinned to one explicit vintage. Within that fixed
+        # vintage, use the newest published revision currently present. A
+        # later revision therefore creates a new dataset identity instead of
+        # mutating an existing immutable artifact.
+        chosen: dict[str, sqlite3.Row] = {}
+        for row in rows:
+            key = str(row["observation_key"])
+            previous = chosen.get(key)
+            if previous is None or int(row["revision_no"]) > int(previous["revision_no"]):
+                chosen[key] = row
+
+        selected = list(chosen.values())
+        selected.sort(key=lambda row: str(row["observation_date"]))
+        analysis_rows = [
+            row
+            for row in selected
+            if start <= str(row["observation_date"]) <= end
+        ]
+        warmup_candidates = [
+            row for row in selected if str(row["observation_date"]) < start
+        ]
+        warmup_rows = (
+            warmup_candidates[-warmup_observations:]
+            if warmup_observations
+            else []
+        )
+
+        warmup = [self._observation_projection(row) for row in warmup_rows]
+        analysis = [self._observation_projection(row) for row in analysis_rows]
+        quality_counts: dict[str, int] = {}
+        pit_eligible_count = 0
+        for row in analysis:
+            quality = str(row["time_quality"])
+            quality_counts[quality] = quality_counts.get(quality, 0) + 1
+            if quality in {"EXACT", "PROVIDER_TIME"}:
+                pit_eligible_count += 1
+
+        status = "READY_REFERENCE_RESEARCH" if analysis else "NOT_PREPARED"
+        reason = None if analysis else "VINTAGE_RANGE_NOT_PREPARED"
+        if analysis and len(warmup) < warmup_observations:
+            status = "PARTIAL_REFERENCE_RESEARCH"
+            reason = "WARMUP_INSUFFICIENT"
+
+        semantic_refs = [
+            {
+                "observation_key": row["observation_key"],
+                "observation_date": row["observation_date"],
+                "normalized_hash": row["normalized_hash"],
+                "vintage_id": row["vintage_id"],
+                "time_quality": row["time_quality"],
+            }
+            for row in (*warmup, *analysis)
+        ]
+        identity_payload = {
+            "series_id": series_id,
+            "usage_scope": "REFERENCE_RESEARCH_ONLY",
+            "vintage_id": vintage,
+            "observation_start": start,
+            "observation_end": end,
+            "warmup_requested": warmup_observations,
+            "semantic_refs": semantic_refs,
+            "revision_policy": "LATEST_PUBLISHED_REVISION_WITHIN_FIXED_VINTAGE",
+        }
+        archive_hash = content_hash(identity_payload)
+        return {
+            "status": status,
+            "series_id": series_id,
+            "reason": reason,
+            "usage_scope": "REFERENCE_RESEARCH_ONLY",
+            "historical_evaluation_eligible": False,
+            "vintage_id": vintage,
+            "observation_start": start,
+            "observation_end": end,
+            "warmup_requested": warmup_observations,
+            "warmup_count": len(warmup),
+            "analysis_count": len(analysis),
+            "time_quality_counts": dict(sorted(quality_counts.items())),
+            "historical_pit_eligible_analysis_count": pit_eligible_count,
+            "revision_policy": "LATEST_PUBLISHED_REVISION_WITHIN_FIXED_VINTAGE",
+            "warmup_observations": warmup,
+            "analysis_observations": analysis,
+            "archive_hash": archive_hash,
+        }
 
     def read_snapshot(
         self,
