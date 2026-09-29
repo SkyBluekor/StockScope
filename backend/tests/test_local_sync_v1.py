@@ -27,6 +27,7 @@ def test_registry_order_is_explicit_and_stable():
         "VN-P3-S1",
         "VN-P3-S2",
         "VN-P4-S1",
+        "VN-P4-S2",
         "VN-P5-S1",
         "VN-P6-S1",
     ]
@@ -493,6 +494,44 @@ def test_p1s3_fresh_schema_columns_without_meta_are_safe_missing(tmp_path: Path)
 
     assert result["status"] == "MIGRATED"
     assert sync_local._detect_p1s3(paths).state is sync_local.MigrationState.CURRENT
+
+
+def test_p4s2_runs_after_missing_p4s1_in_one_sync_sequence(tmp_path: Path):
+    holdings = tmp_path / "holdings.db"
+    simulation = tmp_path / "simulation.db"
+    market = tmp_path / "market.db"
+    sqlite3.connect(simulation).close()
+    sqlite3.connect(market).close()
+
+    with sqlite3.connect(holdings) as conn:
+        conn.execute("CREATE TABLE holding_position(id TEXT PRIMARY KEY, status TEXT)")
+        conn.execute("CREATE TABLE holding_management_plan(id TEXT PRIMARY KEY, status TEXT)")
+        conn.execute(
+            "CREATE TABLE holding_decision_schema_meta("
+            "key TEXT PRIMARY KEY,value TEXT NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO holding_decision_schema_meta VALUES('schema_version',?)",
+            (sync_local.p4s1.HOLDING_DECISION_SCHEMA_VERSION,),
+        )
+
+    paths = sync_local.RuntimePaths(
+        holdings=holdings,
+        market=market,
+        simulation=simulation,
+    )
+    p4s1 = next(item for item in sync_local.MIGRATIONS if item.key == "VN-P4-S1")
+    p4s2 = next(item for item in sync_local.MIGRATIONS if item.key == "VN-P4-S2")
+
+    assert p4s1.detect(paths).state is sync_local.MigrationState.MISSING
+    assert p4s2.detect(paths).state is sync_local.MigrationState.MISSING
+
+    p4s1.run(paths)
+    result = p4s2.run(paths)
+
+    assert result["backfilled_rows"] == 0
+    assert p4s1.detect(paths).state is sync_local.MigrationState.CURRENT
+    assert p4s2.detect(paths).state is sync_local.MigrationState.CURRENT
 
 
 def test_launcher_contracts_are_safe_and_one_click():
