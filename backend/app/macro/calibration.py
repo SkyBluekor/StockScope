@@ -33,7 +33,13 @@ class MacroShockCalibration:
     contract_version: str = MACRO_CALIBRATION_CONTRACT_VERSION
 
     def __post_init__(self) -> None:
-        if self.status is CalibrationStatus.APPROVED_RESEARCH:
+        status = (
+            self.status
+            if isinstance(self.status, CalibrationStatus)
+            else CalibrationStatus(str(self.status))
+        )
+        object.__setattr__(self, "status", status)
+        if status is CalibrationStatus.APPROVED_RESEARCH:
             required = (
                 self.training_scope,
                 self.holdout_scope,
