@@ -45,7 +45,7 @@ class StockScannerService:
     presented to the user as probabilities.
     """
 
-    VERSION = "0.21.3.8"
+    VERSION = "0.21.3.9"
     HISTORY_CALENDAR_DAYS = 485  # local-only historical evidence window
     FAST_HISTORY_CALENDAR_DAYS = 220  # current-condition scan only; ~150 weekdays
     EVIDENCE_CALENDAR_DAYS = 365
@@ -331,6 +331,24 @@ class StockScannerService:
             return max(1, int(raw))
         except (TypeError, ValueError):
             return cls.DEFAULT_FAST_REQUEST_LIMIT
+
+    @staticmethod
+    def _completion_state(
+        *,
+        preparation_required: list[dict[str, Any]],
+        evidence_stats: dict[str, int],
+    ) -> tuple[bool, bool]:
+        """Return (partial_data, cache_allowed) for one Scanner result.
+
+        Current-analysis data completeness controls Prospective capture status.
+        Recoverable historical-evidence gaps do not make the recommendation
+        partial, but they keep same-day Scanner caching disabled so a later
+        evidence preparation can improve the result immediately.
+        """
+        partial_data = bool(preparation_required)
+        recoverable_evidence = int(evidence_stats.get("recoverable_unavailable") or 0) > 0
+        cache_allowed = not partial_data and not recoverable_evidence
+        return partial_data, cache_allowed
 
     @staticmethod
     def _common_available_date(values: dict[str, str | None]) -> str | None:
@@ -2032,7 +2050,14 @@ class StockScannerService:
         candidate and rank are determined. Local history never changes production
         strategy selection, tier, or rank.
         """
-        stats = {"verified": 0, "data_unavailable": 0, "sample_insufficient": 0, "cache_hits": 0}
+        stats = {
+            "verified": 0,
+            "data_unavailable": 0,
+            "recoverable_unavailable": 0,
+            "structural_unavailable": 0,
+            "sample_insufficient": 0,
+            "cache_hits": 0,
+        }
         if not candidates:
             return stats
 
@@ -2084,6 +2109,14 @@ class StockScannerService:
                 else:
                     series = stock_map.get(code)
                     stock_rows = list(series.rows.values()) if series is not None else []
+                    candidate_warmup_start = validation_start - timedelta(days=self.THREE_YEAR_WARMUP_DAYS)
+                    history_scope_complete = not bool(
+                        self._history_plan(
+                            market=market,
+                            start=candidate_warmup_start,
+                            end=data_end,
+                        )["work"]
+                    )
                     evidence = await asyncio.to_thread(
                         build_historical_evidence,
                         engine=self.multi,
@@ -2095,6 +2128,7 @@ class StockScannerService:
                         validation_start=validation_start,
                         validation_end=data_end,
                         round_trip_cost_pct=0.0,
+                        history_scope_complete=history_scope_complete,
                     )
                     # Missing local history can be filled later on the same day.
                     # Cache only completed historical calculations so an unavailable
@@ -2124,6 +2158,10 @@ class StockScannerService:
                     candidate["verification_level"] = "CURRENT_AND_3Y_EVIDENCE"
                 else:
                     stats["data_unavailable"] += 1
+                    if evidence.get("unavailable_reason") == "INSUFFICIENT_AVAILABLE_HISTORY":
+                        stats["structural_unavailable"] += 1
+                    elif bool(evidence.get("preparation_available")):
+                        stats["recoverable_unavailable"] += 1
                 if evidence.get("status") in {"INSUFFICIENT", "NO_CASES"}:
                     stats["sample_insufficient"] += 1
 
@@ -2139,6 +2177,8 @@ class StockScannerService:
                         current_item=f"{candidate.get('name') or code} ({code})",
                         evidence_verified=stats["verified"],
                         evidence_data_unavailable=stats["data_unavailable"],
+                        evidence_recoverable_unavailable=stats["recoverable_unavailable"],
+                        evidence_structural_unavailable=stats["structural_unavailable"],
                         evidence_cache_hits=stats["cache_hits"],
                         items_done=position,
                         items_total=total,
@@ -2584,10 +2624,14 @@ class StockScannerService:
                 item.pop("_sector_input_audit", None)
 
             timings["total_seconds"] = time.perf_counter() - started_at
-            # Do not freeze the same-day Scanner result while a ranked candidate's
-            # three-year evidence is still unavailable. If Market Store history is
-            # populated later, the next scan can validate it immediately.
-            partial_data = bool(preparation_required) or evidence_stats["data_unavailable"] > 0
+            # Prospective completeness follows the data required for today's
+            # recommendation. Historical evidence is explanatory and never changes
+            # current strategy/Risk/rank. Recoverable evidence gaps still block the
+            # same-day cache so data preparation can improve the next scan.
+            partial_data, scanner_cache_allowed = self._completion_state(
+                preparation_required=preparation_required,
+                evidence_stats=evidence_stats,
+            )
             result = {
                 "version": self.VERSION,
                 "scanner_cache_hit": False,
@@ -2614,6 +2658,8 @@ class StockScannerService:
                     "current_only": current_only_count,
                     "three_year_evidence_verified": evidence_stats["verified"],
                     "three_year_evidence_data_unavailable": evidence_stats["data_unavailable"],
+                    "three_year_evidence_recoverable_unavailable": evidence_stats["recoverable_unavailable"],
+                    "three_year_evidence_structural_unavailable": evidence_stats["structural_unavailable"],
                     "three_year_evidence_sample_insufficient": evidence_stats["sample_insufficient"],
                     "three_year_evidence_cache_hits": evidence_stats["cache_hits"],
                     "candidate_count": len(actionable),
@@ -2669,9 +2715,10 @@ class StockScannerService:
                     **{key: round(value, 3) for key, value in timings.items()},
                 },
             }
-            # A partial result should not be frozen for the whole day; once the user
-            # prepares missing recent data, a subsequent scan must recompute it.
-            if not partial_data:
+            # Do not freeze a result while current data or recoverable historical
+            # evidence can still be prepared. Structural history limits are stable
+            # for the same analysis date and therefore do not block caching.
+            if scanner_cache_allowed:
                 self._save_cache(
                     scope,
                     stable_end,

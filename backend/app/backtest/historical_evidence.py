@@ -15,6 +15,15 @@ MIN_SAMPLE_FOR_EVALUATION = 10
 WARMUP_TRADING_ROWS = 120
 MAX_END_LAG_DAYS = 10
 
+# Reasons that can remain after the entire requested market history window has
+# already been checked. In that case there is no additional market data to
+# download for the candidate; the available stock history itself is shorter
+# than the requested validation window.
+STRUCTURAL_STOCK_HISTORY_REASONS = frozenset({
+    "종목 기술지표 워밍업 데이터 부족",
+    "종목 3년 시작구간 데이터 부족",
+})
+
 
 def validation_start_for_years(validation_end: date, years: int = EVIDENCE_YEARS) -> date:
     """Return the same calendar date N years earlier, handling Feb 29 safely."""
@@ -261,10 +270,18 @@ def unavailable_historical_evidence(
     unavailable_reason: str = "MISSING_HISTORY",
     preparation_available: bool = True,
 ) -> dict[str, Any]:
+    structural_history_limit = unavailable_reason == "INSUFFICIENT_AVAILABLE_HISTORY"
+    label = "3년 검증 이력 부족" if structural_history_limit else "3년 검증 데이터 부족"
+    summary = (
+        "현재 확보 가능한 종목 이력이 요청한 3년 검증 구간을 충족하지 못합니다. "
+        "추가 데이터 준비로 늘릴 수 없는 구간이므로 현재 후보 판단과 분리해 표시합니다."
+        if structural_history_limit
+        else "저장된 Market Store만으로 3년 검증을 완료할 수 없습니다. Scanner가 대량 KRX 다운로드를 자동으로 시작하지는 않습니다."
+    )
     return {
         "status": "DATA_UNAVAILABLE",
-        "label": "3년 검증 데이터 부족",
-        "summary": "저장된 Market Store만으로 3년 검증을 완료할 수 없습니다. Scanner가 대량 KRX 다운로드를 자동으로 시작하지는 않습니다.",
+        "label": label,
+        "summary": summary,
         "verified": False,
         "unavailable_reason": unavailable_reason,
         "preparation_available": preparation_available,
@@ -306,6 +323,7 @@ def build_historical_evidence(
     validation_start: date,
     validation_end: date,
     round_trip_cost_pct: float = 0.0,
+    history_scope_complete: bool = False,
 ) -> dict[str, Any]:
     readiness = data_readiness(
         stock_rows=stock_rows,
@@ -314,10 +332,22 @@ def build_historical_evidence(
         validation_end=validation_end,
     )
     if not readiness["ready"]:
+        reasons = list(readiness["reasons"])
+        structural_history_limit = (
+            history_scope_complete
+            and bool(reasons)
+            and all(reason in STRUCTURAL_STOCK_HISTORY_REASONS for reason in reasons)
+        )
         return unavailable_historical_evidence(
             validation_start=validation_start,
             validation_end=validation_end,
-            reasons=list(readiness["reasons"]),
+            reasons=reasons,
+            unavailable_reason=(
+                "INSUFFICIENT_AVAILABLE_HISTORY"
+                if structural_history_limit
+                else "MISSING_HISTORY"
+            ),
+            preparation_available=not structural_history_limit,
         )
 
     try:

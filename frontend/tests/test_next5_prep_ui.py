@@ -38,3 +38,18 @@ def test_prospective_readiness_uses_editorial_status_layout():
     assert ".sim-prospective-readiness" in css
     assert ".sim-prospective-attention" in css
     assert "overflow-wrap: anywhere" in css
+
+
+def test_scanner_structural_history_limit_is_explained_without_prepare_cta():
+    panel = (
+        ROOT / "src/components/ScannerPanel.tsx"
+    ).read_text(encoding="utf-8")
+    client = (ROOT / "src/services/api.ts").read_text(encoding="utf-8")
+
+    assert "INSUFFICIENT_AVAILABLE_HISTORY" in panel
+    assert "최근 3년 검증 제한" in panel
+    assert "사용 가능한 종목 이력 부족" in panel
+    assert "현재 후보 판단·Risk·순위에는 영향을 주지 않습니다." in panel
+    assert "if (evidence.preparation_available != null) return evidence.preparation_available;" in panel
+
+    assert "INSUFFICIENT_AVAILABLE_HISTORY" in client

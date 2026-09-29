@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 BASELINE_SCHEMA_VERSION = "stockscope.sim0.v1"
-EXPECTED_SCANNER_VERSION = "0.21.3.8"
+EXPECTED_SCANNER_VERSION = "0.21.3.9"
 BASELINE_FILENAME = f"scanner-production-baseline_{EXPECTED_SCANNER_VERSION}.json"
 
 # These are the smallest stable production entry points we already know drive the
