@@ -50,7 +50,7 @@ def main() -> int:
 
     if not state.get("present"):
         print("ERROR: Macro Store가 준비되지 않았습니다.")
-        print("Run: .\.venv\Scripts\python.exe .\tools\data\migrate_macro_next6a_s1.py")
+        print(r"Run: .\.venv\Scripts\python.exe .\tools\data\migrate_macro_next6a_s1.py")
         return 2
 
     settings = get_fred_settings()
