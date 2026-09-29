@@ -3095,6 +3095,15 @@ button.holdings-direct-value:hover { border-bottom-color: var(--accent-primary);
   container-name: holding-watch;
 }
 
+.holding-watch-summary > .holding-watch-health,
+.holding-watch-summary > .holding-watch-error,
+.holding-watch-summary > .holding-watch-continuity,
+.holding-watch-summary > .holding-watch-inbox,
+.holding-watch-summary > .holding-watch-summary-list {
+  grid-column: 2;
+  min-width: 0;
+}
+
 .holding-watch-summary-label {
   color: var(--text-muted);
   font-size: var(--font-meta);
@@ -3147,6 +3156,14 @@ button.holdings-direct-value:hover { border-bottom-color: var(--accent-primary);
   .holding-watch-summary {
     grid-template-columns: 1fr;
     gap: 5px;
+  }
+
+  .holding-watch-summary > .holding-watch-health,
+  .holding-watch-summary > .holding-watch-error,
+  .holding-watch-summary > .holding-watch-continuity,
+  .holding-watch-summary > .holding-watch-inbox,
+  .holding-watch-summary > .holding-watch-summary-list {
+    grid-column: 1;
   }
 
   .holding-watch-summary-row {
