@@ -177,6 +177,176 @@ class LocalMacroReader:
                 "observation": None,
             }
 
+    def read_series_window(
+        self,
+        series_id: str,
+        *,
+        cutoff: str,
+        observation_limit: int,
+        historical_eligible_only: bool = True,
+    ) -> dict[str, Any]:
+        if observation_limit < 1:
+            raise ValueError("observation_limit must be >= 1.")
+        cutoff_utc = self._aware_utc(cutoff, "cutoff")
+        ready, reason = self._schema_state()
+        if not ready:
+            payload = {
+                "status": "UNAVAILABLE",
+                "series_id": series_id,
+                "reason": reason,
+                "cutoff": cutoff,
+                "historical_eligible_only": historical_eligible_only,
+                "observations": [],
+            }
+            return {**payload, "window_hash": content_hash(payload)}
+
+        quality_sql = (
+            "AND time_quality IN ('EXACT','PROVIDER_TIME')"
+            if historical_eligible_only
+            else ""
+        )
+        try:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    f"""
+                    SELECT *
+                    FROM macro_observation_revision
+                    WHERE series_id=?
+                      AND published=1
+                      {quality_sql}
+                    """,
+                    (series_id,),
+                ).fetchall()
+
+                available_rows = [
+                    row
+                    for row in rows
+                    if self._aware_utc(str(row["available_at"]), "available_at")
+                    <= cutoff_utc
+                ]
+
+                # Select the newest revision that was actually available by the
+                # requested cutoff for each immutable observation identity.
+                chosen: dict[str, sqlite3.Row] = {}
+                for row in available_rows:
+                    key = str(row["observation_key"])
+                    previous = chosen.get(key)
+                    if previous is None:
+                        chosen[key] = row
+                        continue
+                    current_rank = (
+                        self._aware_utc(str(row["available_at"]), "available_at"),
+                        int(row["revision_no"]),
+                    )
+                    previous_rank = (
+                        self._aware_utc(
+                            str(previous["available_at"]),
+                            "available_at",
+                        ),
+                        int(previous["revision_no"]),
+                    )
+                    if current_rank > previous_rank:
+                        chosen[key] = row
+
+                ordered = sorted(
+                    chosen.values(),
+                    key=lambda row: (
+                        str(row["observation_date"]),
+                        self._aware_utc(str(row["available_at"]), "available_at"),
+                        int(row["revision_no"]),
+                    ),
+                    reverse=True,
+                )
+                selected = ordered[:observation_limit]
+
+                observation_fields = (
+                    "id",
+                    "observation_key",
+                    "revision_no",
+                    "series_id",
+                    "native_observation_id",
+                    "observation_date",
+                    "normalized_value",
+                    "source_unit",
+                    "realtime_start",
+                    "realtime_end",
+                    "vintage_id",
+                    "available_at",
+                    "fetched_at",
+                    "time_quality",
+                    "first_seen_at",
+                    "source_published_at",
+                    "provider_available_at",
+                    "corrected_at",
+                    "source_payload_hash",
+                    "normalizer_version",
+                    "normalized_hash",
+                )
+                observations = [
+                    {key: row[key] for key in observation_fields}
+                    for row in selected
+                ]
+
+                if observations:
+                    status = "COMPLETE"
+                    reason = None
+                else:
+                    published_count = int(
+                        conn.execute(
+                            """
+                            SELECT COUNT(*)
+                            FROM macro_observation_revision
+                            WHERE series_id=? AND published=1
+                            """,
+                            (series_id,),
+                        ).fetchone()[0]
+                    )
+                    available_any_count = int(
+                        conn.execute(
+                            """
+                            SELECT COUNT(*)
+                            FROM macro_observation_revision
+                            WHERE series_id=? AND published=1
+                            """,
+                            (series_id,),
+                        ).fetchone()[0]
+                    )
+                    if (
+                        historical_eligible_only
+                        and published_count > 0
+                    ):
+                        reason = "NO_HISTORICALLY_ELIGIBLE_OBSERVATION"
+                    elif available_any_count > 0:
+                        reason = "DATA_NOT_AVAILABLE_BY_CUTOFF"
+                    else:
+                        reason = "DATA_ABSENT"
+                    status = "UNAVAILABLE"
+
+                payload = {
+                    "status": status,
+                    "series_id": series_id,
+                    "reason": reason,
+                    "cutoff": cutoff,
+                    "historical_eligible_only": historical_eligible_only,
+                    "requested_limit": observation_limit,
+                    "returned_count": len(observations),
+                    "observations": observations,
+                }
+                return {**payload, "window_hash": content_hash(payload)}
+        except sqlite3.Error as exc:
+            payload = {
+                "status": "UNAVAILABLE",
+                "series_id": series_id,
+                "reason": "READ_FAILED",
+                "cutoff": cutoff,
+                "historical_eligible_only": historical_eligible_only,
+                "requested_limit": observation_limit,
+                "returned_count": 0,
+                "observations": [],
+                "error": str(exc),
+            }
+            return {**payload, "window_hash": content_hash(payload)}
+
     def read_snapshot(
         self,
         series_ids: list[str] | tuple[str, ...],
