@@ -35,6 +35,7 @@ from tools.data import migrate_prospective_vnp2s2 as p2s2
 from tools.data import migrate_holdings_decision_vnp3s1 as p3s1
 from tools.data import migrate_holdings_recovery_vnp3s2 as p3s2
 from tools.data import migrate_watch_vnp4s1 as p4s1
+from tools.data import migrate_watch_observability_vnp4s2 as p4s2
 from tools.data import migrate_strategy_governance_vnp5s1 as p5s1
 from tools.data import migrate_event_evidence_vnp6s1 as p6s1
 
@@ -458,6 +459,37 @@ def _run_p4s1(paths: RuntimePaths) -> dict[str, Any]:
     return p4s1.migrate_watch(holdings_db=paths.holdings)
 
 
+def _detect_p4s2(paths: RuntimePaths) -> MigrationStatus:
+    state = p4s2.inspect_watch_observability(paths.holdings)
+    raw = str(state.get("status") or "")
+    mapping = {
+        "CURRENT": MigrationState.CURRENT,
+        "MISSING": MigrationState.MISSING,
+        "PARTIAL": MigrationState.PARTIAL,
+        "INCOMPATIBLE": MigrationState.INCOMPATIBLE,
+    }
+    migration_state = mapping.get(raw, MigrationState.INCOMPATIBLE)
+    detail = ""
+    missing_base = state.get("missing_base_tables") or []
+    if missing_base and migration_state is MigrationState.MISSING:
+        detail = (
+            "VN-P4-S1 will be applied first; missing base tables: "
+            + ", ".join(str(item) for item in missing_base)
+        )
+    elif migration_state is MigrationState.INCOMPATIBLE:
+        detail = f"schema_version={state.get('schema_version')!r}"
+    return MigrationStatus(
+        "VN-P4-S2",
+        "Watch Observability",
+        migration_state,
+        detail,
+    )
+
+
+def _run_p4s2(paths: RuntimePaths) -> dict[str, Any]:
+    return p4s2.migrate_watch_observability(paths.holdings)
+
+
 def _run_p5s1(paths: RuntimePaths) -> dict[str, Any]:
     result = p5s1.migrate_strategy_governance(simulation_db=paths.simulation)
     if result.get("production_selection_policy_changed") is not False:
@@ -569,6 +601,12 @@ MIGRATIONS: tuple[MigrationSpec, ...] = (
             expected_version=p4s1.WATCH_SCHEMA_VERSION,
         ),
         _run_p4s1,
+    ),
+    MigrationSpec(
+        "VN-P4-S2",
+        "Watch Observability",
+        _detect_p4s2,
+        _run_p4s2,
     ),
     MigrationSpec(
         "VN-P5-S1",
