@@ -54,13 +54,17 @@ def pareto_prune_candidates(
     dominated: list[dict[str, Any]] = []
 
     for index, candidate in enumerate(candidates):
-        dominators: list[str] = []
+        dominator_hash: str | None = None
         for other_index, other in enumerate(candidates):
             if index == other_index:
                 continue
             if _dominates(other, candidate):
-                dominators.append(str(other["candidate_hash"]))
-        if dominators:
+                # One deterministic witness is sufficient to prove that this
+                # candidate is not on the Pareto frontier. Avoid retaining all
+                # pairwise relationships in the immutable artifact.
+                dominator_hash = str(other["candidate_hash"])
+                break
+        if dominator_hash is not None:
             dominated.append(
                 {
                     "candidate_hash": candidate["candidate_hash"],
@@ -82,7 +86,7 @@ def pareto_prune_candidates(
                     "max_year_signal_share": candidate[
                         "max_year_signal_share"
                     ],
-                    "dominated_by": sorted(dominators),
+                    "dominated_by": dominator_hash,
                 }
             )
         else:
