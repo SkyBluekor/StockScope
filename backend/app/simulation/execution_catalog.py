@@ -278,7 +278,6 @@ class HistoricalExecutionCatalog:
                 conn,
                 "historical_execution_run",
                 {
-                    "selection_policy_json": "TEXT",
                     "started_at": "TEXT",
                     "completed_at": "TEXT",
                     "error_code": "TEXT",
