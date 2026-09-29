@@ -3091,6 +3091,8 @@ button.holdings-direct-value:hover { border-bottom-color: var(--accent-primary);
   padding: 11px 0;
   border-top: 1px solid var(--border-subtle);
   border-bottom: 1px solid var(--border-subtle);
+  container-type: inline-size;
+  container-name: holding-watch;
 }
 
 .holding-watch-summary-label {
@@ -3106,9 +3108,23 @@ button.holdings-direct-value:hover { border-bottom-color: var(--accent-primary);
 
 .holding-watch-summary-row {
   display: grid;
-  grid-template-columns: minmax(90px, auto) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px 14px;
-  align-items: baseline;
+  align-items: start;
+}
+
+.holding-watch-summary-copy {
+  min-width: 0;
+}
+
+.holding-watch-summary-copy strong,
+.holding-watch-summary-copy span {
+  display: block;
+}
+
+.holding-watch-summary-copy span {
+  margin-top: 3px;
+  overflow-wrap: anywhere;
 }
 
 .holding-watch-summary-row strong {
@@ -3196,7 +3212,7 @@ button.holdings-direct-value:hover { border-bottom-color: var(--accent-primary);
 /* NEXT-4 — Watch runtime health + durable notification inbox */
 .holding-watch-health {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0;
   margin: 8px 0 10px;
   border-top: 1px solid var(--border-subtle);
@@ -3221,8 +3237,10 @@ button.holdings-direct-value:hover { border-bottom-color: var(--accent-primary);
   font-size: var(--font-meta);
 }
 .holding-watch-health > button {
+  grid-column: 1 / -1;
+  justify-self: start;
   align-self: center;
-  margin: 0 12px;
+  margin: 10px 12px;
 }
 .holding-watch-error,
 .holding-watch-continuity {
@@ -3270,6 +3288,20 @@ button.holdings-direct-value:hover { border-bottom-color: var(--accent-primary);
   color: var(--text-muted);
   font-size: var(--font-badge);
 }
+@container holding-watch (max-width: 430px) {
+  .holding-watch-health {
+    grid-template-columns: 1fr;
+  }
+  .holding-watch-health > div {
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .holding-watch-summary-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
+
 @media (max-width: 760px) {
   .holding-watch-health {
     grid-template-columns: 1fr 1fr;
