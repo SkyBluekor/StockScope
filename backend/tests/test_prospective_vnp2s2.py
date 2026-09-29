@@ -267,6 +267,13 @@ def test_capture_is_independent_from_tracking_and_deduplicates_same_result(
     assert samples[0]["ticker"] == "005930"
     assert samples[0]["signal_date"] == "2026-09-23"
 
+    status = service.catalog.status_summary()
+    assert status["capture_counts"]["COMPLETE"] == 1
+    assert status["capture_counts"]["DUPLICATE"] == 1
+    assert status["sample_count"] == 1
+    assert status["evidence_accumulation"]["state"] == "EVIDENCE_ACCUMULATING"
+    assert status["evidence_accumulation"]["complete_capture_count"] == 1
+
 
 def test_partial_capture_is_preserved_but_not_evaluation_sample(
     tmp_path: Path,
