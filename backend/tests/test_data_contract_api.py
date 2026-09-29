@@ -192,7 +192,15 @@ def _create_holdings_db(
                     StockScannerService.VERSION,
                     ANALYSIS_ENGINE_VERSION,
                     f"{PRODUCTION_EXIT_POLICY_VERSION}-fixture",
-                    '{"market_store":"market_history.db","price_basis":"CONFIRMED_EOD"}',
+                    '{"market_store":"market_history.db","price_basis":"CONFIRMED_EOD",'
+                    '"fingerprint_contract_version":"HOLD_INPUT_FINGERPRINT_V2",'
+                    '"selection_policy":{"policy_id":"SS-SELECT-V1-fixture",'
+                    '"policy_hash":"fixture-policy-hash",'
+                    '"policy_contract_version":"SELECTION_POLICY_V1",'
+                    '"policy_source":"TEST_FIXTURE"},'
+                    '"selected_strategy":{"strategy_key":"PULLBACK",'
+                    '"strategy_version_id":"strategy-v1",'
+                    '"strategy_definition_hash":"definition-hash-v1"}}',
                     '{"stored":true}',
                     "test",
                     "2026-09-25T07:10:00+00:00",
@@ -287,6 +295,13 @@ def test_data_contract_returns_versioned_read_only_resource_states(
     assert analysis["displayable"] is True
     assert analysis["current_use_allowed"] is False
     assert analysis["reason_code"] == "CURRENT_INPUT_IDENTITY_NOT_PROVEN"
+    assert analysis["identity"]["fingerprint_contract_version"] == "HOLD_INPUT_FINGERPRINT_V2"
+    assert analysis["identity"]["selection_policy_id"] == "SS-SELECT-V1-fixture"
+    assert analysis["identity"]["selection_policy_hash"] == "fixture-policy-hash"
+    assert analysis["identity"]["selection_policy_contract_version"] == "SELECTION_POLICY_V1"
+    assert analysis["identity"]["selection_policy_source"] == "TEST_FIXTURE"
+    assert analysis["identity"]["strategy_version_id"] == "strategy-v1"
+    assert analysis["identity"]["strategy_definition_hash"] == "definition-hash-v1"
 
     realtime = body["resources"]["realtime"]
     assert realtime["status"] == "ABSENT"
