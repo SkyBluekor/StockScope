@@ -583,7 +583,7 @@ export type HoldingWorkspacePositionContext = {
   performance: HoldingPositionPerformance | null;
   management: HoldingManagementResponse["positions"][number] | null;
   decision: HoldingDecisionRecord | null;
-  user_choice: HoldingDecisionRecord["resolutions"] extends Array<infer T> ? T | null : Record<string, unknown> | null;
+  user_choice: NonNullable<HoldingDecisionRecord["resolutions"]>[number] | null;
   recovery: HoldingRecoveryContext | null;
   recovery_status: HoldingWorkspaceSourceStatus;
   watch: WatchPositionStatus;
