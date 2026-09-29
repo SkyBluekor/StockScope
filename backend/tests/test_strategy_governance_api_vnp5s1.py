@@ -83,9 +83,9 @@ def test_overview_exposes_current_ten_and_legacy_fallback_without_writes(
     )
     assert payload["production_policy"]["operating_strategy_count"] == 10
     assert payload["production_policy"]["rollback_available"] is False
-    assert payload["scanner_baseline"]["scanner_version"] == "0.21.3.8"
+    assert payload["scanner_baseline"]["scanner_version"] == "0.21.3.9"
     assert payload["scanner_baseline"]["baseline_id"].startswith(
-        "SS-SCANNER-0.21.3.8-"
+        "SS-SCANNER-0.21.3.9-"
     )
     assert not (runtime / "active.json").exists()
 
