@@ -7,6 +7,7 @@ from app.macro.calibration_candidate import (
     build_rate_spike_candidate_set,
     generate_feature_candidates,
     summarize_candidate_set,
+    validate_candidate_set_artifact,
 )
 from app.macro.candidate_selection import (
     MACRO_CANDIDATE_DOMINANCE_CONTRACT_VERSION,
@@ -101,6 +102,7 @@ __all__ = [
     "build_rate_spike_candidate_set",
     "generate_feature_candidates",
     "summarize_candidate_set",
+    "validate_candidate_set_artifact",
     "pareto_prune_candidates",
     "build_consecutive_true_episodes",
     "MACRO_DISTRIBUTION_RESEARCH_CONTRACT_VERSION",
