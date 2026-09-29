@@ -477,6 +477,12 @@ def test_prospective_report_creates_idempotent_immutable_artifact(tmp_path: Path
             (version_id,),
         ).fetchone()
         assert after == before
+        assert conn.execute(
+            "SELECT COUNT(*) FROM strategy_change_proposal"
+        ).fetchone()[0] == 0
+        assert conn.execute(
+            "SELECT COUNT(*) FROM strategy_approval_artifact"
+        ).fetchone()[0] == 0
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute(
                 """
