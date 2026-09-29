@@ -3,9 +3,13 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from app.core.config import Settings
 from app.event_evidence.time import EvidenceTimeQuality, TemporalEvidence
-from app.integrations.fred import FredApiError, FredClient, FredConfigurationError
+from app.integrations.fred import (
+    FredApiError,
+    FredClient,
+    FredConfigurationError,
+    FredSettings,
+)
 from app.macro.capability import CapabilityStatus, ProviderCapability
 from app.macro.identity import content_hash
 from app.macro.manifest import MacroPreparedRangeManifest
@@ -61,7 +65,7 @@ def _dgs10_semantics_ok(metadata: dict[str, Any]) -> tuple[bool, list[str]]:
 
 def probe_fred_dgs10(
     *,
-    settings: Settings | None = None,
+    settings: FredSettings | None = None,
     client: FredClient | None = None,
     observation_start: str,
     observation_end: str,
