@@ -1,3 +1,19 @@
+from app.macro.candidate_behavior import (
+    MACRO_CANDIDATE_BEHAVIOR_CONTRACT_VERSION,
+    MACRO_CANDIDATE_BEHAVIOR_GROUP_CONTRACT_VERSION,
+    build_candidate_behavior,
+    build_behavior_groups,
+    build_method_overlap_matrix,
+)
+from app.macro.candidate_compression import (
+    MACRO_COMPRESSED_CANDIDATE_SET_CONTRACT_VERSION,
+    MACRO_COMPRESSION_CONTRACT_VERSION,
+    MACRO_CROSS_METHOD_DOMINANCE_CONTRACT_VERSION,
+    build_compressed_candidate_frontier,
+    pareto_prune_behavior_groups,
+    summarize_compressed_frontier,
+    validate_compressed_frontier_artifact,
+)
 from app.macro.calibration_candidate import (
     MACRO_CANDIDATE_SET_CONTRACT_VERSION,
     MACRO_CANDIDATE_GENERATION_CONTRACT_VERSION,
@@ -5,7 +21,9 @@ from app.macro.calibration_candidate import (
     RATE_SPIKE_FEATURE_IDS,
     RATE_SPIKE_METHODS,
     build_rate_spike_candidate_set,
+    evaluate_candidate_behavior,
     generate_feature_candidates,
+    generate_raw_feature_candidates,
     summarize_candidate_set,
     validate_candidate_set_artifact,
 )
@@ -92,6 +110,18 @@ from app.macro.store import (
 )
 
 __all__ = [
+    "MACRO_CANDIDATE_BEHAVIOR_CONTRACT_VERSION",
+    "MACRO_CANDIDATE_BEHAVIOR_GROUP_CONTRACT_VERSION",
+    "MACRO_COMPRESSED_CANDIDATE_SET_CONTRACT_VERSION",
+    "MACRO_COMPRESSION_CONTRACT_VERSION",
+    "MACRO_CROSS_METHOD_DOMINANCE_CONTRACT_VERSION",
+    "build_candidate_behavior",
+    "build_behavior_groups",
+    "build_method_overlap_matrix",
+    "build_compressed_candidate_frontier",
+    "pareto_prune_behavior_groups",
+    "summarize_compressed_frontier",
+    "validate_compressed_frontier_artifact",
     "MACRO_CANDIDATE_SET_CONTRACT_VERSION",
     "MACRO_CANDIDATE_GENERATION_CONTRACT_VERSION",
     "MACRO_RATE_SPIKE_CANDIDATE_CONTRACT_VERSION",
@@ -100,7 +130,9 @@ __all__ = [
     "RATE_SPIKE_FEATURE_IDS",
     "RATE_SPIKE_METHODS",
     "build_rate_spike_candidate_set",
+    "evaluate_candidate_behavior",
     "generate_feature_candidates",
+    "generate_raw_feature_candidates",
     "summarize_candidate_set",
     "validate_candidate_set_artifact",
     "pareto_prune_candidates",
