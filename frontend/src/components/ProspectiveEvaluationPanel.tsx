@@ -350,9 +350,9 @@ export default function ProspectiveEvaluationPanel() {
             <p>근거 등록은 승격·강등·Proposal·Production Policy를 자동 실행하지 않습니다.</p>
           </div>
 
-          {evidenceMessage && <p className="sim-prospective-message">{evidenceMessage}</p>}
+          {latestDetail?.report && evidenceMessage && <p className="sim-prospective-message">{evidenceMessage}</p>}
 
-          {evidenceEligibility ? (
+          {latestDetail?.report && evidenceEligibility ? (
             <div className="sim-prospective-p5-table-wrap">
               <table className="sim-prospective-p5-table">
                 <thead>
@@ -402,11 +402,15 @@ export default function ProspectiveEvaluationPanel() {
               </table>
             </div>
           ) : (
-            !evidenceMessage && <p className="sim-prospective-note">P5 근거 등록 가능 여부를 확인하고 있습니다.</p>
+            latestDetail?.report && !evidenceMessage
+              ? <p className="sim-prospective-note">P5 근거 등록 가능 여부를 확인하고 있습니다.</p>
+              : null
           )}
-          <p className="sim-prospective-note">
-            최소 표본 기준은 아직 정의되지 않았습니다. Artifact는 평가 근거를 보존할 뿐 전략 우수성을 확정하지 않습니다.
-          </p>
+          {latestDetail?.report && (
+            <p className="sim-prospective-note">
+              최소 표본 기준은 아직 정의되지 않았습니다. Artifact는 평가 근거를 보존할 뿐 전략 우수성을 확정하지 않습니다.
+            </p>
+          )}
         {!latestDetail?.report && (
           <div className="sim-prospective-empty">
             <strong>아직 등록할 평가 근거가 없습니다.</strong>
