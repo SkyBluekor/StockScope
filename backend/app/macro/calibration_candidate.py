@@ -417,6 +417,10 @@ def build_rate_spike_candidate_set(
         "dominated_candidate_hashes": sorted(
             str(item["candidate_hash"]) for item in dominated_candidates
         ),
+        "frozen_candidate_payload_hash": content_hash(frozen_candidates),
+        "dominated_candidate_summary_hash": content_hash(
+            dominated_candidates
+        ),
     }
 
     identity_payload = {
@@ -538,6 +542,14 @@ def validate_candidate_set_artifact(
         generated_hashes
     ):
         raise ValueError("Generated candidate count mismatch.")
+    if manifest.get("frozen_candidate_payload_hash") != content_hash(
+        frozen_candidates
+    ):
+        raise ValueError("Frozen candidate payload hash mismatch.")
+    if manifest.get("dominated_candidate_summary_hash") != content_hash(
+        dominated_candidates
+    ):
+        raise ValueError("Dominated candidate summary hash mismatch.")
 
     identity_payload = {
         "contract_version": candidate_set["contract_version"],
