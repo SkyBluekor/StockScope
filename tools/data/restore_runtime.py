@@ -19,6 +19,11 @@ from tools.data.event_evidence_runtime import (
     inspect_event_evidence_store,
     validate_event_evidence_state,
 )
+from tools.data.macro_runtime import (
+    inspect_macro_store,
+    validate_macro_db,
+    validate_macro_state,
+)
 from tools.data.strategy_selection_runtime import (
     copy_strategy_selection_runtime,
     replace_strategy_selection_state,
@@ -32,6 +37,7 @@ from tools.data.common import (
     assert_replaceable,
     holdings_db_path,
     market_db_path,
+    macro_db_path,
     simulation_db_path,
     tracking_db_path,
     secret_like_paths,
@@ -79,10 +85,12 @@ def restore_backup(
     restore_market: bool = False,
     restore_simulation: bool = False,
     restore_tracking: bool = False,
+    restore_macro: bool = False,
     target_holdings: Path | None = None,
     target_market: Path | None = None,
     target_simulation: Path | None = None,
     target_tracking: Path | None = None,
+    target_macro: Path | None = None,
     target_strategy_selection_runtime: Path | None = None,
 ) -> dict[str, object]:
     backup_dir = Path(backup_dir)
@@ -107,6 +115,8 @@ def restore_backup(
         extensions.get("event_evidence_v1") or {}
     )
     event_evidence_manifest_present = bool(event_evidence_manifest)
+    macro_manifest = dict(extensions.get("macro_store_v1") or {})
+    macro_manifest_present = bool(macro_manifest)
 
     if not contents.get("holdings_db"):
         raise DataToolError("백업에 holdings.db가 없습니다.")
@@ -271,10 +281,34 @@ def restore_backup(
         )
         validate_tracking_db(source_tracking)
 
+    source_macro: Path | None = None
+    source_macro_state = inspect_macro_store(None)
+    if restore_macro:
+        if not contents.get("macro_db"):
+            raise DataToolError(
+                "이 백업에는 Macro Store가 없습니다. --restore-macro를 제거하세요."
+            )
+        source_macro = backup_dir / "macro.db"
+        if not source_macro.is_file():
+            raise DataToolError("백업 macro.db 파일이 없습니다.")
+        validate_manifest_hash(
+            source_macro,
+            dict(files.get("macro.db") or {}),
+            "macro.db",
+        )
+        source_macro_state = validate_macro_db(source_macro)
+        if macro_manifest_present:
+            validate_macro_state(
+                macro_manifest,
+                source_macro_state,
+                label="backup manifest",
+            )
+
     holdings_target = Path(target_holdings or holdings_db_path())
     market_target = Path(target_market or market_db_path())
     simulation_target = Path(target_simulation or simulation_db_path())
     tracking_target = Path(target_tracking or tracking_db_path())
+    macro_target = Path(target_macro or macro_db_path())
     strategy_selection_target = Path(
         target_strategy_selection_runtime
         or (
@@ -308,6 +342,10 @@ def restore_backup(
         targets.append(
             ("tracking", source_tracking, tracking_target, validate_tracking_db)
         )
+    if restore_macro and source_macro is not None:
+        targets.append(
+            ("macro", source_macro, macro_target, validate_macro_db)
+        )
 
     for _, _, target, _ in targets:
         assert_replaceable(target)
@@ -320,6 +358,7 @@ def restore_backup(
     strategy_selection_touched = False
     strategy_selection_result: dict[str, object] | None = None
     restored_event_evidence_state = inspect_event_evidence_store(None)
+    restored_macro_state = inspect_macro_store(None)
 
     try:
         for label, _, target, validator in targets:
@@ -402,6 +441,13 @@ def restore_backup(
                     restored_event_evidence_state,
                     label="restore",
                 )
+            if restore_macro:
+                restored_macro_state = validate_macro_db(macro_target)
+                validate_macro_state(
+                    source_macro_state,
+                    restored_macro_state,
+                    label="restore",
+                )
         except Exception as restore_error:
             selection_rollback_error: Exception | None = None
             if restore_strategy_selection and strategy_selection_touched:
@@ -461,6 +507,11 @@ def restore_backup(
             if restore_simulation
             else event_evidence_manifest
         )
+        macro_result_source = (
+            source_macro_state
+            if restore_macro
+            else macro_manifest
+        )
         revision_identity_restored = bool(
             identity_manifest.get("revision_identity_metadata")
         )
@@ -485,6 +536,9 @@ def restore_backup(
             ),
             "tracking_db": (
                 str(tracking_target) if restore_tracking else None
+            ),
+            "macro_db": (
+                str(macro_target) if restore_macro else None
             ),
             "strategy_selection_runtime": (
                 str(strategy_selection_target)
@@ -642,6 +696,19 @@ def restore_backup(
                     )
                 ),
             },
+            "macro_store": {
+                "manifest_present": macro_manifest_present,
+                "schema_version": macro_result_source.get("schema_version"),
+                "store_present_in_backup": bool(
+                    macro_result_source.get("present")
+                ),
+                "store_restored": bool(
+                    restore_macro
+                    and restored_macro_state.get("restorable")
+                ),
+                "tables": list(macro_result_source.get("tables") or []),
+                "counts": dict(macro_result_source.get("counts") or {}),
+            },
         }
     finally:
         for temp in temps.values():
@@ -672,6 +739,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="백업에 포함된 recommendation_tracking.db도 복원합니다.",
     )
+    parser.add_argument(
+        "--restore-macro",
+        action="store_true",
+        help="백업에 포함된 macro.db도 복원합니다.",
+    )
     return parser
 
 
@@ -683,6 +755,7 @@ def main() -> int:
             restore_market=args.restore_market,
             restore_simulation=args.restore_simulation,
             restore_tracking=args.restore_tracking,
+            restore_macro=args.restore_macro,
         )
         print("=" * 78)
         print("STOCKSCOPE RESTORE")
@@ -696,6 +769,7 @@ def main() -> int:
         print("Market Restore    " + ("PASS" if args.restore_market else "SKIPPED"))
         print("Simulation Restore " + ("PASS" if args.restore_simulation else "SKIPPED"))
         print("Tracking Restore   " + ("PASS" if args.restore_tracking else "SKIPPED"))
+        print("Macro Restore      " + ("PASS" if args.restore_macro else "SKIPPED"))
         print("")
         for label, path in result["pre_restore_backups"].items():
             if path:
