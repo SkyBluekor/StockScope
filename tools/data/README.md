@@ -239,6 +239,35 @@ Preview:
 
 S4 완료 후에도 최종 candidate는 선택하지 않으며 `RATE_SPIKE`는 `UNCALIBRATED`입니다. `NORMAL`/`DETECTED` label, Scanner/Strategy/Risk/Holdings/Watch 변경, network request, Macro DB write는 모두 0입니다.
 
+## NEXT-6B-S4.1 Candidate Frontier Compression
+### 금리 충격 후보 행동 중복 제거 및 교차 방식 후보 압축
+
+NEXT-6B-S4.1은 S4 후보 생성 규칙을 그대로 재생한 뒤 **Development에서 실제로 같은 판단을 만드는 후보를 한 그룹으로 묶고**, 같은 feature 안에서 method를 가리지 않는 Pareto 압축을 수행합니다. Holdout artifact는 입력 옵션 자체가 없습니다.
+
+압축 순서:
+
+1. S4 raw candidate와 method-local Pareto를 그대로 재현
+2. eligible한 모든 양(+)의 금리 움직임을 그대로 잡는 `TRIVIAL_DIRECTION_RULE` 제거
+3. Development row별 `eligible/signal` sequence와 episode boundary로 behavior signature 생성
+4. 서로 다른 threshold/method라도 behavior가 같으면 하나의 behavior group으로 병합
+5. `delta_bp_1obs`, `delta_bp_5obs`, `delta_bp_10obs`를 각각 독립적으로 cross-method Pareto
+6. weighted score나 목표 후보 수 없이 compressed frontier 생성
+
+Behavior group은 source candidate hash/method/threshold provenance를 모두 보존합니다. signal 날짜가 같더라도 eligibility가 다르면 다른 behavior로 취급하므로 표본 부족/UNKNOWN을 NORMAL처럼 합치지 않습니다.
+
+Preview:
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\compress_macro_calibration_candidates_next6b_s4_1.py `
+  --development-artifact .\backend\runtime\macro\calibration\DEV-7c3f6660b3aae03f.json `
+  --protocol-artifact .\backend\runtime\macro\calibration\PROTOCOL-e1de868dc8f16670.json `
+  --research-artifact .\backend\runtime\macro\calibration\RESEARCH-cdd96e164e12017d.json
+```
+
+Preview 검수 후 `--write-artifact`를 추가하면 `backend/runtime/macro/calibration/CANDIDATES-V2-<hash>.json`을 immutable artifact로 저장합니다.
+
+완료 후에도 최종 candidate는 선택하지 않고 minimum sample도 고정하지 않습니다. `RATE_SPIKE`는 `UNCALIBRATED`, Holdout은 locked/unread, NORMAL/DETECTED label과 Network/Macro DB write/Production 영향은 모두 0입니다.
+
 ## P2-S2 실제 추천 평가 저장소 준비
 
 P2-S2는 새 Scanner 실행부터 실제 추천 표본을 사후 선택 전에 보존합니다. 과거 Scanner 실행을 prospective 표본으로 소급 생성하지 않습니다.
