@@ -188,6 +188,10 @@ class MacroObservation:
         }
 
     def normalized_payload(self) -> dict[str, Any]:
+        # Operational fetch/first-seen timestamps are intentionally excluded
+        # from normalization identity. Re-fetching the same provider row later
+        # must remain a no-op, while a provider revision or normalizer change
+        # still creates a new immutable observation revision.
         return {
             **self.identity_payload(),
             "normalized_value": self.normalized_value,
@@ -195,7 +199,11 @@ class MacroObservation:
             "realtime_start": self.realtime_start,
             "realtime_end": self.realtime_end,
             "vintage_id": self.vintage_id,
-            "temporal": self.temporal.to_dict(),
+            "time_quality": self.temporal.time_quality.value,
+            "event_time": self.temporal.event_time,
+            "source_published_at": self.temporal.source_published_at,
+            "provider_published_at": self.temporal.provider_published_at,
+            "corrected_at": self.temporal.corrected_at,
             "normalizer_version": self.normalizer_version,
         }
 
@@ -274,4 +282,22 @@ def fred_dgs10_candidate_contract() -> MacroSeriesContract:
         observation_frequency="DAILY",
         owner_status=MacroOwnerStatus.CANDIDATE,
         active_owner=False,
+    )
+
+
+def fred_dgs10_research_contract() -> MacroSeriesContract:
+    return MacroSeriesContract(
+        series_id="US_10Y_CONSTANT_MATURITY_YIELD",
+        semantic_id="US_10Y_CONSTANT_MATURITY_YIELD",
+        provider="FRED",
+        provider_series_id="DGS10",
+        instrument_type="INTEREST_RATE",
+        measurement_definition="US 10-Year Treasury Constant Maturity Rate",
+        unit="PERCENT",
+        currency=None,
+        session_definition="SOURCE_DAILY_OBSERVATION",
+        observation_frequency="DAILY",
+        owner_status=MacroOwnerStatus.APPROVED_RESEARCH,
+        active_owner=True,
+        allowed_usage_scope=("REFERENCE_ONLY", "SHADOW_RESEARCH"),
     )

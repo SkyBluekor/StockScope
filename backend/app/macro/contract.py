@@ -13,6 +13,7 @@ from app.macro.models import (
     MacroResearchProtocol,
     MacroSeriesContract,
     fred_dgs10_candidate_contract,
+    fred_dgs10_research_contract,
 )
 
 
@@ -31,4 +32,5 @@ __all__ = [
     "MacroResearchProtocol",
     "MacroSeriesContract",
     "fred_dgs10_candidate_contract",
+    "fred_dgs10_research_contract",
 ]
