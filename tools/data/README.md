@@ -8,7 +8,8 @@
 - `backend/runtime/market_history/market_history.db`: 재수집 가능한 시장 데이터. `--include-market`일 때만 백업.
 - `backend/runtime/simulation/simulation.db`: 존재하면 기본 백업에 자동 포함. Validation/Feedback/Prospective 평가 상태를 보존.
 - `backend/runtime/tracking/recommendation_tracking.db`: 존재하면 기본 백업에 자동 포함. Tracking 원본 owner는 그대로 유지.
-- `.env`, KRX/KIS/DART 키, 인증 정보: 백업 대상 아님.
+- `backend/runtime/macro/macro.db`: NEXT-6A Local Macro Store. 존재하면 기본 백업에 자동 포함하며 Market Store와 분리 유지.
+- `.env`, KRX/KIS/DART/FRED 키, 인증 정보: 백업 대상 아님.
 - `market_history.db`와 `holdings.db`는 cleanup 과정에서 자동 삭제하지 않습니다.
 
 ## 새 PC
@@ -55,7 +56,7 @@ Doctor는 SQLite를 read-only mode로 열며 네트워크 요청, 다운로드, 
 .\.venv\Scripts\python.exe .\tools\data\backup_runtime.py
 ```
 
-기본 백업은 `holdings.db`를 필수로 포함하고, 존재하는 `simulation.db`와 `recommendation_tracking.db`를 자동 포함합니다. Market Store는 재수집 가능 데이터이므로 기본 제외입니다.
+기본 백업은 `holdings.db`를 필수로 포함하고, 존재하는 `simulation.db`, `recommendation_tracking.db`, `macro.db`를 자동 포함합니다. Market Store는 재수집 가능 데이터이므로 기본 제외입니다. Macro Store에는 revision/vintage/PIT 재현 정보가 있으므로 단순 재수집 가능 캐시로 취급하지 않습니다.
 
 ## 전체 데이터 백업
 
@@ -64,6 +65,30 @@ Doctor는 SQLite를 read-only mode로 열며 네트워크 요청, 다운로드, 
 ```
 
 Market Store까지 SQLite backup API로 snapshot합니다.
+
+## NEXT-6A-S1 Macro Store 준비
+
+NEXT-6A-S1은 실 FRED/KIS 호출 없이 Macro series/time/vintage/identity와 별도 Local Macro Store의 저장 계약만 준비합니다. 조회 경로는 schema 생성, migration, backfill, provider 호출을 수행하지 않습니다.
+
+명시적으로 한 번 실행합니다.
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\migrate_macro_next6a_s1.py
+```
+
+기본 경로는 `backend/runtime/macro/macro.db`이며 `STOCKSCOPE_MACRO_DB`로 별도 경로를 지정할 수 있습니다. Migration은 schema만 준비하고 historical backfill과 외부 network request를 수행하지 않습니다.
+
+Macro Store가 존재하면 기본 DATA.1 backup에 포함됩니다. 제외가 필요한 경우에만:
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\backup_runtime.py --exclude-macro
+```
+
+복원은 명시적으로 요청합니다.
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\restore_runtime.py .\backups\StockScope_... --restore-macro
+```
 
 ## P2-S2 실제 추천 평가 저장소 준비
 
@@ -141,7 +166,7 @@ Watch 상태는 `holdings.db`에 저장되어 기본 Holdings backup에 포함�
 
 ## 복원
 
-기본 복원은 Holdings DB만 복원합니다. Simulation/Tracking은 백업에 포함되어 있어도 명시적으로 복원합니다.
+기본 복원은 Holdings DB만 복원합니다. Simulation/Tracking/Macro는 백업에 포함되어 있어도 명시적으로 복원합니다.
 
 ```powershell
 .\.venv\Scripts\python.exe .\tools\data\restore_runtime.py .\backups\StockScope_...
@@ -153,10 +178,10 @@ Market Store까지 포함된 백업이라면 명시적으로:
 .\.venv\Scripts\python.exe .\tools\data\restore_runtime.py .\backups\StockScope_... --restore-market
 ```
 
-Simulation/Tracking 상태까지 복원할 때는 필요한 owner를 명시합니다.
+Simulation/Tracking/Macro 상태까지 복원할 때는 필요한 owner를 명시합니다.
 
 ```powershell
-.\.venv\Scripts\python.exe .\tools\data\restore_runtime.py .\backups\StockScope_... --restore-simulation --restore-tracking
+.\.venv\Scripts\python.exe .\tools\data\restore_runtime.py .\backups\StockScope_... --restore-simulation --restore-tracking --restore-macro
 ```
 
 복원은 manifest/hash/integrity/FK/domain 검사를 먼저 수행합니다. 기존 DB가 있으면 `*.pre_restore_*.bak` snapshot을 만든 뒤 교체합니다. StockScope 서버가 DB를 사용 중이면 복원을 거부합니다.
