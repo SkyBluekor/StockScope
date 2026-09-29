@@ -3138,3 +3138,56 @@ button.holdings-direct-value:hover { border-bottom-color: var(--accent-primary);
     gap: 2px;
   }
 }
+
+
+/* NEXT-2 — state-first Holdings context strip */
+.holdings-context-overview {
+  display: grid;
+  grid-template-columns: minmax(120px, .7fr) minmax(150px, .9fr) minmax(0, 2.4fr);
+  border-top: 1px solid var(--border-default);
+  border-bottom: 1px solid var(--border-default);
+  margin: 18px 0 4px;
+}
+
+.holdings-context-overview > div {
+  min-width: 0;
+  padding: 12px 14px;
+  border-right: 1px solid var(--border-subtle);
+}
+
+.holdings-context-overview > div:last-child {
+  border-right: 0;
+}
+
+.holdings-context-overview span,
+.holdings-context-overview strong {
+  display: block;
+}
+
+.holdings-context-overview span {
+  color: var(--text-muted);
+  font-size: var(--font-meta);
+  font-weight: 750;
+}
+
+.holdings-context-overview strong {
+  margin-top: 4px;
+  color: var(--text-primary);
+  font-size: var(--font-body-small);
+  line-height: 1.45;
+}
+
+@media (max-width: 760px) {
+  .holdings-context-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .holdings-context-overview > div {
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .holdings-context-overview > div:last-child {
+    border-bottom: 0;
+  }
+}
