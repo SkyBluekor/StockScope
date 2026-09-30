@@ -1098,6 +1098,7 @@ def test_s4_2b1_support_counterfactual_uses_observed_prior_counts_only():
     for family in reconstruction["families"]:
         curve = family["observed_support_counterfactual"]
         assert curve["source"] == "OBSERVED_PRIOR_COUNTS_ONLY"
+        assert curve["algorithm"] == "BISECT_SUFFIX_COUNTS_V1"
         assert curve["invented_grid_points"] == 0
         assert curve["recommended_support"] is None
         if family["method"] == "EMPIRICAL_POSITIVE_TAIL":
@@ -1124,6 +1125,7 @@ def test_s4_2b1_support_counterfactual_uses_observed_prior_counts_only():
                 if int(row["prior_count"]) > 0
             }
             assert set(supports) <= observed
+            assert curve["point_count"] <= len(observed)
 
 
 def test_s4_2b1_preserves_episode_and_left_boundary_semantics():
