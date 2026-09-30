@@ -10,6 +10,11 @@ from app.macro.calibration_candidate import (
     generate_feature_candidates,
     validate_candidate_set_artifact,
 )
+from app.macro.admissibility_review import (
+    build_admissibility_review,
+    render_admissibility_review_text,
+    validate_admissibility_review,
+)
 from app.macro.candidate_compression import (
     build_compressed_candidate_frontier,
     validate_compressed_frontier_artifact,
@@ -29,6 +34,9 @@ from tools.data.freeze_macro_calibration_candidates_next6b_s4 import (
 )
 from tools.data.diagnose_macro_calibration_frontier_next6b_s4_1r import (
     build_parser as build_s4_1r_parser,
+)
+from tools.data.review_macro_admissibility_next6b_s4_2a import (
+    build_parser as build_s4_2a_parser,
 )
 
 
@@ -535,3 +543,119 @@ def test_s4_1r_cli_has_no_holdout_or_admissibility_cutoff_arguments():
     assert "--maximum-positive-capture" not in option_strings
     assert "--minimum-sample" not in option_strings
     assert "--event-unit" not in option_strings
+
+
+def test_s4_2a_review_preserves_nine_families_and_guardrails():
+    development, protocol, research = _inputs()
+    diagnostic = build_frontier_admissibility_diagnostic(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+    )
+    review = build_admissibility_review(diagnostic)
+    state = validate_admissibility_review(review)
+
+    assert review["source"]["diagnostic_hash"] == diagnostic[
+        "diagnostic_hash"
+    ]
+    assert review["counts"]["family_count"] == 9
+    assert state["family_count"] == 9
+    assert sorted(item["family_hash"] for item in review["families"]) == sorted(
+        item["family_hash"] for item in diagnostic["families"]
+    )
+    assert review["holdout_locked"] is True
+    assert review["holdout_accessed"] is False
+    assert review["network_requests"] == 0
+    assert review["macro_db_writes"] == 0
+    assert review["production_impact"] == "NONE"
+    assert review["policy_state"]["admissibility_policy"] == "UNDEFINED"
+    assert review["policy_state"]["event_unit"] == "UNSET"
+    assert review["policy_state"]["evaluation_rule"] == "UNSET"
+    assert review["policy_state"]["final_threshold_selected"] is False
+    assert review["policy_state"]["minimum_sample_selected"] is False
+    assert review["policy_state"]["event_unit_selected"] is False
+    assert review["policy_state"]["ready_for_holdout"] is False
+    assert review["policy_state"]["rate_spike_state"] == "UNCALIBRATED"
+    assert all(
+        family["observation_status"] == "OBSERVED"
+        and family["admissibility_decision"] == "NOT_DEFINED"
+        and family["automatic_rejection_count"] == 0
+        for family in review["families"]
+    )
+
+
+def test_s4_2a_review_renders_compact_family_comparison():
+    development, protocol, research = _inputs()
+    diagnostic = build_frontier_admissibility_diagnostic(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+    )
+    review = build_admissibility_review(diagnostic)
+    rendered = render_admissibility_review_text(review)
+
+    assert "NEXT-6B-S4.2-A ADMISSIBILITY REVIEW" in rendered
+    assert rendered.count("\n1obs") == 3
+    assert rendered.count("\n5obs") == 3
+    assert rendered.count("\n10obs") == 3
+    assert "EPT=EMPIRICAL_POSITIVE_TAIL" in rendered
+    assert "TAIL=EXPANDING_POSITIVE_TAIL_FRACTION" in rendered
+    assert "MAD=EXPANDING_ROBUST_MAD" in rendered
+    assert "Policy / Event unit / Evaluation rule : UNDEFINED / UNSET / UNSET" in rendered
+    assert "Review status: REVIEW_REQUIRED" in rendered
+    assert all(
+        family["signal_fraction_display"].endswith("%")
+        and family["positive_capture_display"].endswith("%")
+        for family in review["families"]
+    )
+
+
+def test_s4_2a_rejects_tampered_source_diagnostic():
+    development, protocol, research = _inputs()
+    diagnostic = build_frontier_admissibility_diagnostic(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+    )
+    tampered = deepcopy(diagnostic)
+    tampered["families"][0]["candidate_count"] += 1
+
+    with pytest.raises(ValueError, match="Family diagnostic hash mismatch"):
+        build_admissibility_review(tampered)
+
+
+def test_s4_2a_review_hash_is_deterministic():
+    development, protocol, research = _inputs()
+    diagnostic = build_frontier_admissibility_diagnostic(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+    )
+
+    first = build_admissibility_review(diagnostic)
+    second = build_admissibility_review(diagnostic)
+
+    assert first["review_hash"] == second["review_hash"]
+    assert first["review_id"] == second["review_id"]
+    assert first["family_review_payload_hash"] == second[
+        "family_review_payload_hash"
+    ]
+
+
+def test_s4_2a_cli_is_review_only_and_has_no_policy_or_holdout_inputs():
+    parser = build_s4_2a_parser()
+    option_strings = {
+        option
+        for action in parser._actions
+        for option in action.option_strings
+    }
+
+    assert "--diagnostic-artifact" in option_strings
+    assert "--holdout-artifact" not in option_strings
+    assert "--select" not in option_strings
+    assert "--approve" not in option_strings
+    assert "--threshold" not in option_strings
+    assert "--max-signal-fraction" not in option_strings
+    assert "--minimum-sample" not in option_strings
+    assert "--event-unit" not in option_strings
+    assert "--write-artifact" not in option_strings
