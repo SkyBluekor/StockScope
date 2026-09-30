@@ -20,6 +20,20 @@
 
 `setup.ps1`은 Python/Node 의존성을 설치하고 Holdings DB schema를 초기화한 뒤 Data Doctor를 실행합니다. 시장 데이터는 자동 대량 다운로드하지 않습니다.
 
+기존 작업 PC를 바꿔서 이어갈 때는 개별 migration/artifact 명령을 다시 치지 않고 루트 원클릭 동기화를 사용합니다.
+
+```powershell
+.\sync_local.ps1
+```
+
+이 명령은 `main` fast-forward 동기화 → Runtime migration → NEXT-6 Macro Development-only artifact chain 복구/검증까지 순서대로 수행합니다. 현재 Macro chain은 `RESEARCH → FRONTIER-DIAGNOSTIC → ADMISSIBILITY-EVIDENCE → ELIGIBILITY-RECONSTRUCTION → REFERENCE-STABILITY → REFERENCE-ADEQUACY-PROTOCOL`을 자동 확인하며 누락된 derived artifact만 immutable하게 재생성합니다. Holdout은 읽지 않고 외부 network request도 수행하지 않습니다. `DEV-7c3f6660b3aae03f.json`과 `PROTOCOL-e1de868dc8f16670.json`은 고정 seed artifact라서 둘 중 하나가 없으면 자동으로 추측/재생성하지 않고 안전하게 중단합니다.
+
+쓰기 없이 상태만 확인하려면:
+
+```powershell
+.\sync_local.ps1 -CheckOnly
+```
+
 기존 사용자 데이터를 옮기는 경우:
 
 ```powershell
