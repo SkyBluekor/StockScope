@@ -407,7 +407,7 @@ S4.2-B.1.6은 B.1.5에서 생성한 reference stability evidence를 보고 임�
 
 검증 계약은 reference adequacy를 `COMPUTABILITY → SENSITIVITY → EVIDENCE_SUFFICIENCY`의 세 층으로 분리합니다.
 
-- TAIL: local append ECDF sup drift, cumulative ECDF drift, time-order-preserving contiguous reference perturbation
+- TAIL: local append ECDF sup drift는 `DIAGNOSTIC_ONLY`로 유지하며 adequacy gate/tolerance 대상에서 제외, cumulative ECDF drift와 time-order-preserving contiguous reference perturbation만 향후 adequacy criterion 대상으로 검토
 - MAD: local/cumulative/perturbation의 absolute median change, absolute MAD change, relative MAD change
 - MAD의 이전 MAD가 0이면 relative change를 0으로 만들지 않고 `NON_COMPUTABLE_ZERO_SCALE` semantics를 유지
 - 단일 zero transition이나 전체 median change=0만으로 adequacy를 승인하지 않음
@@ -416,7 +416,7 @@ S4.2-B.1.6은 B.1.5에서 생성한 reference stability evidence를 보고 임�
 - candidate/signal/episode/covered-year survival은 N이나 tolerance 선택 입력으로 사용하지 않음
 - 조건을 만족하는 boundary가 없으면 `NO_SUPPORTED_BOUNDARY`
 
-현재 Development evidence만으로 absolute tolerance, cumulative comparison interval, perturbation segment length, validation suffix 길이, violation policy를 독립적으로 정당화할 수 없으므로 이 protocol은 이 값들을 임의로 만들지 않습니다. 해당 필드는 `null / UNJUSTIFIED / UNRESOLVED_PARAMETER`로 보존되고 protocol 상태는 `BLOCKED_UNJUSTIFIED_TOLERANCE`입니다. 따라서 `minimum_prior_observations=null`, `recommended_support=null`, `ready_for_b17=false`, `ready_for_b2=false`, `ready_for_holdout=false`를 유지합니다.
+B.1.6-R review에서 TAIL local append drift는 expanding reference 크기 증가 자체로 한 관측의 영향이 작아지는 구조를 포함하므로 adequacy cutoff로 사용하지 않고 descriptive diagnostic으로만 유지하도록 정리했습니다. 이에 따라 `TAIL_LOCAL_TOLERANCE_UNJUSTIFIED` blocker는 제거되고 unresolved blocker는 11개입니다. 나머지 cumulative comparison interval, perturbation segment length, MAD tolerance, validation suffix 길이, violation policy 등은 독립적으로 정당화되지 않았으므로 임의 값을 만들지 않습니다. protocol 상태는 계속 `BLOCKED_UNJUSTIFIED_TOLERANCE`이며 `minimum_prior_observations=null`, `recommended_support=null`, `ready_for_b17=false`, `ready_for_b2=false`, `ready_for_holdout=false`를 유지합니다.
 
 Preview:
 
@@ -429,7 +429,7 @@ Preview:
   --reference-stability-artifact .\backend\runtime\macro\calibration\REFERENCE-STABILITY-abb0799ddbf8ccfe.json
 ```
 
-검수 후 현재 blocked protocol 자체를 immutable하게 보존할 때만 `--write-artifact`를 추가합니다. 파일명은 `REFERENCE-ADEQUACY-PROTOCOL-<hash>.json`입니다. 이 artifact는 reference-support approval이나 B.1.7 evidence가 아니며, unresolved tolerance를 채우기 전에는 B.1.7을 실행할 수 없습니다.
+검수 후 현재 blocked protocol 자체를 immutable하게 보존할 때만 `--write-artifact`를 추가합니다. 파일명은 `REFERENCE-ADEQUACY-PROTOCOL-<hash>.json`입니다. 이 artifact는 reference-support approval이나 B.1.7 evidence가 아니며, 남은 11개 unresolved protocol blocker를 해소하기 전에는 B.1.7을 실행할 수 없습니다.
 
 Holdout 입력 옵션은 없고 Holdout은 locked/unread입니다. Network request, Macro DB write, Production 영향은 모두 0이며 Scanner/Strategy/Risk/Holdings/Capital Aware 동작은 변경하지 않습니다.
 
