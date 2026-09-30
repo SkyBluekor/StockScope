@@ -364,6 +364,11 @@ def build_frontier_admissibility_diagnostic(
 
     identity_payload = {
         "contract_version": RATE_SPIKE_FRONTIER_DIAGNOSTIC_CONTRACT_VERSION,
+        "candidate_generation_status": "COMPLETE",
+        "compression_status": "COMPRESSION_COMPLETE",
+        "diagnostics_status": "COMPLETE",
+        "admissibility_status": "ADMISSIBILITY_POLICY_UNDEFINED",
+        "ready_for_holdout": False,
         "development_dataset_hash": frontier["development_dataset_hash"],
         "protocol_hash": frontier["protocol_hash"],
         "research_hash": frontier["research_hash"],
@@ -413,6 +418,16 @@ def validate_frontier_admissibility_diagnostic(
         raise ValueError("S4.1R must keep Holdout locked.")
     if diagnostic.get("holdout_accessed") is not False:
         raise ValueError("S4.1R must not access Holdout.")
+    if diagnostic.get("candidate_generation_status") != "COMPLETE":
+        raise ValueError("S4.1R candidate generation must be complete.")
+    if diagnostic.get("compression_status") != "COMPRESSION_COMPLETE":
+        raise ValueError("S4.1R structural compression must be complete.")
+    if diagnostic.get("diagnostics_status") != "COMPLETE":
+        raise ValueError("S4.1R diagnostics must be complete.")
+    if diagnostic.get("admissibility_status") != "ADMISSIBILITY_POLICY_UNDEFINED":
+        raise ValueError("S4.1R admissibility status mismatch.")
+    if diagnostic.get("ready_for_holdout") is not False:
+        raise ValueError("S4.1R must not be ready for Holdout.")
     if diagnostic.get("diagnostic_status") != "ADMISSIBILITY_POLICY_UNDEFINED":
         raise ValueError("S4.1R must leave admissibility policy undefined.")
     if diagnostic.get("final_candidate_selected") is not False:
@@ -492,6 +507,11 @@ def validate_frontier_admissibility_diagnostic(
         key: diagnostic[key]
         for key in (
             "contract_version",
+            "candidate_generation_status",
+            "compression_status",
+            "diagnostics_status",
+            "admissibility_status",
+            "ready_for_holdout",
             "development_dataset_hash",
             "protocol_hash",
             "research_hash",
@@ -534,6 +554,13 @@ def summarize_frontier_admissibility_diagnostic(
         "diagnostic_id": diagnostic["diagnostic_id"],
         "diagnostic_hash": diagnostic["diagnostic_hash"],
         "diagnostic_status": diagnostic["diagnostic_status"],
+        "candidate_generation_status": diagnostic[
+            "candidate_generation_status"
+        ],
+        "compression_status": diagnostic["compression_status"],
+        "diagnostics_status": diagnostic["diagnostics_status"],
+        "admissibility_status": diagnostic["admissibility_status"],
+        "ready_for_holdout": diagnostic["ready_for_holdout"],
         "source_frontier_id": diagnostic["source_frontier_id"],
         "source_frontier_hash": diagnostic["source_frontier_hash"],
         "development_dataset_hash": diagnostic["development_dataset_hash"],
