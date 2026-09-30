@@ -26,7 +26,7 @@
 .\sync_local.ps1
 ```
 
-이 명령은 `main` fast-forward 동기화 → Runtime migration → NEXT-6 Macro Development-only artifact chain 복구/검증까지 순서대로 수행합니다. 현재 Macro chain은 `RESEARCH → FRONTIER-DIAGNOSTIC → ADMISSIBILITY-EVIDENCE → ELIGIBILITY-RECONSTRUCTION → REFERENCE-STABILITY → REFERENCE-ADEQUACY-PROTOCOL`을 자동 확인하며 누락된 derived artifact만 immutable하게 재생성합니다. Holdout은 읽지 않고 외부 network request도 수행하지 않습니다. `DEV-7c3f6660b3aae03f.json`과 `PROTOCOL-e1de868dc8f16670.json`은 고정 seed artifact라서 둘 중 하나가 없으면 자동으로 추측/재생성하지 않고 안전하게 중단합니다.
+이 명령은 `main` fast-forward 동기화 → Runtime migration → NEXT-6 Macro Development-only artifact chain 복구/검증까지 순서대로 수행합니다. 현재 Macro chain은 `RESEARCH → FRONTIER-DIAGNOSTIC → ADMISSIBILITY-EVIDENCE → ELIGIBILITY-RECONSTRUCTION → REFERENCE-STABILITY → REFERENCE-ADEQUACY-PROTOCOL V3 → REFERENCE-ADEQUACY-EVIDENCE`을 자동 확인하며 누락된 derived artifact만 immutable하게 재생성합니다. Holdout은 읽지 않고 외부 network request도 수행하지 않습니다. `DEV-7c3f6660b3aae03f.json`과 `PROTOCOL-e1de868dc8f16670.json`은 고정 seed artifact라서 둘 중 하나가 없으면 자동으로 추측/재생성하지 않고 안전하게 중단합니다.
 
 쓰기 없이 상태만 확인하려면:
 
@@ -542,3 +542,25 @@ Simulation/Tracking/Macro 상태까지 복원할 때는 필요한 owner를 명�
 ```
 
 복원은 manifest/hash/integrity/FK/domain 검사를 먼저 수행합니다. 기존 DB가 있으면 `*.pre_restore_*.bak` snapshot을 만든 뒤 교체합니다. StockScope 서버가 DB를 사용 중이면 복원을 거부합니다.
+
+
+### NEXT-6B-S4.2-B.1.6-R2.1 — Boundary-Anchored Reference Adequacy Evidence
+
+R2.1은 Development-only reference adequacy 원자료를 생성합니다. 기존 B.1.5 common review point를 anchor N으로 사용하고, 각 anchor에서 이후 모든 strictly-prior reference state까지의 forward envelope 경로를 보존합니다.
+
+- TAIL: exact ECDF sup distance, observed support only, invented x-grid 0
+- MAD: absolute median shift / absolute MAD shift / relative MAD shift
+- MAD anchor scale 0: relative shift는 `null`, `NON_COMPUTABLE_ZERO_SCALE`
+- tolerance 선택 없음
+- validation suffix minimum 선택 없음
+- minimum N 선택 없음
+- Holdout 접근 없음
+- Production 영향 없음
+
+개별 명령 대신 새 PC/다른 PC에서는 계속 루트 원클릭 동기화를 사용합니다.
+
+```powershell
+.\sync_local.ps1
+```
+
+새 `REFERENCE-ADEQUACY-EVIDENCE-<hash>.json`이 없으면 dependency chain을 검증한 뒤 자동으로 immutable artifact를 생성합니다. 상태만 확인하려면 `.\sync_local.ps1 -CheckOnly`를 사용하며 이 모드에서는 artifact를 생성하지 않습니다.

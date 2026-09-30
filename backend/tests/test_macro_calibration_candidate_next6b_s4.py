@@ -35,6 +35,11 @@ from app.macro.reference_adequacy_protocol import (
     render_reference_adequacy_protocol_text,
     validate_reference_adequacy_protocol,
 )
+from app.macro.reference_adequacy_evidence import (
+    build_reference_adequacy_evidence,
+    render_reference_adequacy_evidence_text,
+    validate_reference_adequacy_evidence,
+)
 from app.macro.admissibility_review import (
     build_admissibility_review,
     render_admissibility_review_text,
@@ -74,6 +79,9 @@ from tools.data.analyze_macro_reference_stability_next6b_s4_2b15 import (
 )
 from tools.data.preregister_macro_reference_adequacy_next6b_s4_2b16 import (
     build_parser as build_s4_2b16_parser,
+)
+from tools.data.build_macro_reference_adequacy_evidence_next6b_s4_2b16_r21 import (
+    build_parser as build_s4_2b16_r21_parser,
 )
 
 
@@ -1503,10 +1511,8 @@ def _s4_2b16_inputs():
     return development, protocol, research, reconstruction, stability
 
 
-def test_s4_2b16_builds_blocked_development_informed_protocol():
-    development, protocol, research, reconstruction, stability = (
-        _s4_2b16_inputs()
-    )
+def _s4_2b16_protocol():
+    development, protocol, research, reconstruction, stability = _s4_2b16_inputs()
     artifact = build_reference_adequacy_protocol(
         development_dataset=development,
         protocol=protocol,
@@ -1515,60 +1521,84 @@ def test_s4_2b16_builds_blocked_development_informed_protocol():
         stability=stability,
         source_main_sha="test-main-sha",
     )
+    return development, protocol, research, reconstruction, stability, artifact
+
+
+def test_s4_2b16_v3_reduces_to_three_policy_classes():
+    development, protocol, research, reconstruction, stability, artifact = (
+        _s4_2b16_protocol()
+    )
     state = validate_reference_adequacy_protocol(artifact)
 
+    assert artifact["contract_version"].endswith("_V3")
     assert artifact["policy_origin"] == "DEVELOPMENT_INFORMED"
-    assert artifact["research_history"][
-        "development_evidence_already_observed"
-    ] is True
+    assert artifact["research_history"]["development_evidence_already_observed"] is True
     assert artifact["research_history"]["claim_data_blind_forbidden"] is True
-    assert artifact["research_history"][
-        "holdout_used_for_protocol_design"
-    ] is False
+    assert artifact["research_history"]["holdout_used_for_protocol_design"] is False
+    assert artifact["research_history"]["r2_review"] == "PARTIAL_STRUCTURAL_REDUCTION"
+
+    assert artifact["blockers"] == [
+        "TAIL_FORWARD_ENVELOPE_TOLERANCE_UNJUSTIFIED",
+        "MAD_FORWARD_ENVELOPE_TOLERANCES_UNJUSTIFIED",
+        "VALIDATION_SUFFIX_SUFFICIENCY_UNRESOLVED",
+    ]
+    assert state["blocker_count"] == 3
+    assert state["ready_for_evidence_generation"] is True
+    assert state["ready_for_holdout"] is False
 
     policy = artifact["policy_state"]
-    assert policy["protocol_status"] == ADEQUACY_PROTOCOL_STATUS
     assert policy["reference_adequacy"] == "UNRESOLVED"
-    assert policy["reference_adequacy_criterion"] == "UNRESOLVED"
     assert policy["minimum_prior_observations"] is None
     assert policy["recommended_support"] is None
-    assert policy["ready_for_evidence_generation"] is False
-    assert policy["ready_for_b17"] is False
+    assert policy["ready_for_evidence_generation"] is True
+    assert policy["ready_for_b17"] is True
     assert policy["ready_for_b2"] is False
     assert policy["ready_for_holdout"] is False
     assert policy["rate_spike_state"] == "UNCALIBRATED"
 
-    assert state["protocol_status"] == ADEQUACY_PROTOCOL_STATUS
-    assert state["blocker_count"] == len(artifact["blockers"])
-    assert state["blocker_count"] == 11
-    assert "TAIL_LOCAL_TOLERANCE_UNJUSTIFIED" not in artifact["blockers"]
 
+def test_s4_2b16_v3_freezes_boundary_anchored_structure():
+    *_, artifact = _s4_2b16_protocol()
+    contract = artifact["validation_contract"]
 
-def test_s4_2b16_preserves_lineage_and_holdout_guardrails():
-    development, protocol, research, reconstruction, stability = (
-        _s4_2b16_inputs()
+    tail = contract["tail"]
+    assert tail["local_append"]["role"] == "DIAGNOSTIC_ONLY"
+    assert tail["local_append"]["adequacy_gate"] is False
+    assert tail["local_append"]["tolerance"] is None
+    assert tail["forward_envelope"]["rule"] == "BOUNDARY_ANCHORED_FORWARD_ENVELOPE"
+    assert tail["forward_envelope"]["invented_x_grid_points"] == 0
+    assert tail["forward_envelope"]["tolerance"]["value"] is None
+    assert tail["temporal_perturbation"]["role"] == "OPTIONAL_DIAGNOSTIC_ONLY"
+    assert tail["temporal_perturbation"]["adequacy_gate"] is False
+    assert tail["temporal_perturbation"]["segment_length"] is None
+    assert tail["temporal_perturbation"]["tolerance"] is None
+
+    mad = contract["mad"]
+    assert mad["local"]["role"] == "DIAGNOSTIC_ONLY"
+    assert mad["local"]["adequacy_gate"] is False
+    assert mad["local"]["tolerances"] is None
+    assert mad["forward_envelope"]["rule"] == "BOUNDARY_ANCHORED_FORWARD_ENVELOPE"
+    assert mad["forward_envelope"]["combination_rule"] == "ALL_AND"
+    assert all(
+        item["value"] is None and item["status"] == "UNJUSTIFIED"
+        for item in mad["forward_envelope"]["tolerances"].values()
     )
-    artifact = build_reference_adequacy_protocol(
-        development_dataset=development,
-        protocol=protocol,
-        research=research,
-        reconstruction=reconstruction,
-        stability=stability,
-        source_main_sha="test-main-sha",
-    )
+    assert mad["temporal_perturbation"]["role"] == "OPTIONAL_DIAGNOSTIC_ONLY"
+    assert mad["temporal_perturbation"]["adequacy_gate"] is False
+    assert mad["weighted_stability_score"] is None
 
-    assert artifact["source"]["reconstruction_id"] == reconstruction[
-        "reconstruction_id"
-    ]
-    assert artifact["source"]["reconstruction_hash"] == reconstruction[
-        "reconstruction_hash"
-    ]
-    assert artifact["source"]["reference_stability_id"] == stability[
-        "stability_id"
-    ]
-    assert artifact["source"]["reference_stability_hash"] == stability[
-        "stability_hash"
-    ]
+    sufficiency = contract["evidence_sufficiency"]
+    assert sufficiency["violation_policy"] is None
+    assert sufficiency["minimum_validation_suffix_transitions"] is None
+    assert sufficiency["acceptance_form"] == "MAX_ENVELOPE_WITHIN_APPROVED_TOLERANCE"
+
+
+def test_s4_2b16_v3_preserves_lineage_and_guardrails():
+    development, protocol, research, reconstruction, stability, artifact = (
+        _s4_2b16_protocol()
+    )
+    assert artifact["source"]["reconstruction_hash"] == reconstruction["reconstruction_hash"]
+    assert artifact["source"]["reference_stability_hash"] == stability["stability_hash"]
     assert artifact["holdout_locked"] is True
     assert artifact["holdout_accessed"] is False
     assert artifact["network_requests"] == 0
@@ -1576,125 +1606,34 @@ def test_s4_2b16_preserves_lineage_and_holdout_guardrails():
     assert artifact["production_impact"] == "NONE"
 
 
-def test_s4_2b16_keeps_tolerances_unjustified_and_selection_inputs_out():
-    development, protocol, research, reconstruction, stability = (
-        _s4_2b16_inputs()
-    )
-    artifact = build_reference_adequacy_protocol(
-        development_dataset=development,
-        protocol=protocol,
-        research=research,
-        reconstruction=reconstruction,
-        stability=stability,
-        source_main_sha="test-main-sha",
-    )
-    contract = artifact["validation_contract"]
-
-    assert contract["tail"]["weighted_stability_score"] is None
-    assert contract["mad"]["weighted_stability_score"] is None
-
-    local_append = contract["tail"]["local_append"]
-    assert local_append["role"] == "DIAGNOSTIC_ONLY"
-    assert local_append["adequacy_gate"] is False
-    assert local_append["tolerance_required"] is False
-    assert local_append["tolerance"] is None
-    assert local_append["status"] == "DEFINED_DIAGNOSTIC_ONLY"
-    assert "TAIL_LOCAL_TOLERANCE_UNJUSTIFIED" not in artifact["blockers"]
-    assert len(artifact["blockers"]) == 11
-
-    for section_name in ("local", "cumulative", "temporal_perturbation"):
-        for tolerance in contract["mad"][section_name]["tolerances"].values():
-            assert tolerance["value"] is None
-            assert tolerance["status"] == "UNJUSTIFIED"
-
-    selection = contract["selection_rule"]
-    assert selection["ept_reference_support_applicable"] is False
-    assert selection["method_policy"] == "COMMON_N_FIRST"
-    assert selection["horizon_policy"] == "COMMON_N_FIRST"
-    assert selection["family_combination_rule"] == "ALL_FAMILIES_AND"
-    assert selection["no_match_result"] == "NO_SUPPORTED_BOUNDARY"
-    assert selection["candidate_survival_is_selection_input"] is False
-    assert selection["signal_survival_is_selection_input"] is False
-    assert selection["episode_survival_is_selection_input"] is False
-    assert selection["covered_years_is_selection_input"] is False
-    assert selection["automatic_tolerance_relaxation"] is False
-
-
-def test_s4_2b16_identity_is_deterministic():
-    development, protocol, research, reconstruction, stability = (
-        _s4_2b16_inputs()
-    )
-    kwargs = {
-        "development_dataset": development,
-        "protocol": protocol,
-        "research": research,
-        "reconstruction": reconstruction,
-        "stability": stability,
-        "source_main_sha": "test-main-sha",
-    }
-    first = build_reference_adequacy_protocol(**kwargs)
-    second = build_reference_adequacy_protocol(**kwargs)
-
-    assert first["adequacy_protocol_hash"] == second["adequacy_protocol_hash"]
-    assert first["adequacy_protocol_id"] == second["adequacy_protocol_id"]
-
-
-def test_s4_2b16_rejects_invented_tolerance_or_readiness():
-    development, protocol, research, reconstruction, stability = (
-        _s4_2b16_inputs()
-    )
-    artifact = build_reference_adequacy_protocol(
-        development_dataset=development,
-        protocol=protocol,
-        research=research,
-        reconstruction=reconstruction,
-        stability=stability,
-        source_main_sha="test-main-sha",
-    )
+def test_s4_2b16_v3_rejects_invented_values_or_readiness():
+    *_, artifact = _s4_2b16_protocol()
 
     invented = deepcopy(artifact)
-    invented["validation_contract"]["tail"]["local_append"][
-        "tolerance"
-    ] = {"value": "0.01"}
-    with pytest.raises(ValueError, match="cannot carry"):
+    invented["validation_contract"]["tail"]["forward_envelope"]["tolerance"]["value"] = "0.01"
+    with pytest.raises(ValueError, match="tolerance"):
         validate_reference_adequacy_protocol(invented)
 
     promoted = deepcopy(artifact)
-    promoted["validation_contract"]["tail"]["local_append"][
-        "adequacy_gate"
-    ] = True
-    with pytest.raises(ValueError, match="cannot become"):
+    promoted["validation_contract"]["tail"]["temporal_perturbation"]["adequacy_gate"] = True
+    with pytest.raises(ValueError, match="perturbation"):
         validate_reference_adequacy_protocol(promoted)
 
     premature = deepcopy(artifact)
-    premature["policy_state"]["ready_for_b17"] = True
-    with pytest.raises(ValueError, match="policy state changed"):
+    premature["policy_state"]["ready_for_b2"] = True
+    with pytest.raises(ValueError, match="policy state"):
         validate_reference_adequacy_protocol(premature)
 
 
-def test_s4_2b16_render_reports_blocked_state_without_selecting_n():
-    development, protocol, research, reconstruction, stability = (
-        _s4_2b16_inputs()
-    )
-    artifact = build_reference_adequacy_protocol(
-        development_dataset=development,
-        protocol=protocol,
-        research=research,
-        reconstruction=reconstruction,
-        stability=stability,
-        source_main_sha="test-main-sha",
-    )
+def test_s4_2b16_v3_render_reports_evidence_ready_but_b2_blocked():
+    *_, artifact = _s4_2b16_protocol()
     rendered = render_reference_adequacy_protocol_text(artifact)
 
-    assert "NEXT-6B-S4.2-B.1.6 REFERENCE ADEQUACY VALIDATION PROTOCOL" in rendered
-    assert "DEVELOPMENT_INFORMED" in rendered
-    assert "Common Method N       : REQUIRED" in rendered
-    assert "Common Horizon N      : REQUIRED" in rendered
-    assert "EPT Reference Gate    : EXCLUDED" in rendered
+    assert "REFERENCE ADEQUACY VALIDATION PROTOCOL V3" in rendered
+    assert "BOUNDARY_ANCHORED_FORWARD_ENVELOPE" in rendered
+    assert "Evidence generation readiness: READY (3 unresolved policy classes)" in rendered
+    assert "B.2 readiness: BLOCKED" in rendered
     assert "UNRESOLVED / None / None" in rendered
-    assert "BLOCKED_UNJUSTIFIED_TOLERANCE" in rendered
-    assert "DEFINED_DIAGNOSTIC_ONLY" in rendered
-    assert "B.1.7 readiness: BLOCKED (11 unresolved protocol blockers)" in rendered
 
 
 def test_s4_2b16_cli_has_no_holdout_tolerance_or_selection_arguments():
@@ -1711,11 +1650,179 @@ def test_s4_2b16_cli_has_no_holdout_tolerance_or_selection_arguments():
     assert "--reconstruction-artifact" in option_strings
     assert "--reference-stability-artifact" in option_strings
     assert "--write-artifact" in option_strings
+    for forbidden in (
+        "--holdout-artifact",
+        "--minimum-prior-observations",
+        "--tail-tolerance",
+        "--mad-tolerance",
+        "--validation-suffix",
+        "--select",
+        "--approve",
+    ):
+        assert forbidden not in option_strings
 
-    assert "--holdout-artifact" not in option_strings
-    assert "--minimum-prior-observations" not in option_strings
-    assert "--tail-tolerance" not in option_strings
-    assert "--mad-tolerance" not in option_strings
-    assert "--validation-suffix" not in option_strings
-    assert "--select" not in option_strings
-    assert "--approve" not in option_strings
+
+def _s4_2b16_r21_inputs():
+    development, protocol, research, reconstruction, stability, adequacy = (
+        _s4_2b16_protocol()
+    )
+    return development, protocol, research, reconstruction, stability, adequacy
+
+
+def test_s4_2b16_r21_builds_complete_unselected_forward_evidence():
+    development, protocol, research, reconstruction, stability, adequacy = (
+        _s4_2b16_r21_inputs()
+    )
+    artifact = build_reference_adequacy_evidence(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+        reconstruction=reconstruction,
+        stability=stability,
+        adequacy_protocol=adequacy,
+        source_main_sha="test-main-sha",
+    )
+    state = validate_reference_adequacy_evidence(artifact)
+
+    expected_points = [
+        int(point["minimum_prior_observations"])
+        for point in stability["common_support_review_points"]
+    ]
+    assert artifact["support_points"] == expected_points
+    assert state["common_support_point_count"] == len(expected_points)
+    assert artifact["analysis_status"] == "COMPLETE"
+    assert artifact["evidence_contract"]["tolerance_selection_performed"] is False
+    assert artifact["evidence_contract"]["minimum_n_selection_performed"] is False
+    assert artifact["evidence_contract"]["validation_suffix_selection_performed"] is False
+    assert artifact["policy_state"]["minimum_prior_observations"] is None
+    assert artifact["policy_state"]["ready_for_b2"] is False
+    assert artifact["policy_state"]["ready_for_holdout"] is False
+    assert artifact["holdout_accessed"] is False
+    assert artifact["network_requests"] == 0
+    assert artifact["macro_db_writes"] == 0
+    assert artifact["production_impact"] == "NONE"
+
+
+def test_s4_2b16_r21_paths_cover_every_later_reference_state():
+    development, protocol, research, reconstruction, stability, adequacy = (
+        _s4_2b16_r21_inputs()
+    )
+    artifact = build_reference_adequacy_evidence(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+        reconstruction=reconstruction,
+        stability=stability,
+        adequacy_protocol=adequacy,
+        source_main_sha="test-main-sha",
+    )
+
+    for family in artifact["families"]:
+        assert family["forward_rule"] == "BOUNDARY_ANCHORED_FORWARD_ENVELOPE"
+        assert family["adequacy_pass"] == "UNRESOLVED"
+        assert family["selection_status"] == "NOT_SELECTED"
+        for anchor in family["anchors"]:
+            expected = family["max_prior_count"] - anchor["anchor_n"]
+            assert anchor["suffix_transition_count"] == expected
+            if family["method"] == TAIL_METHOD:
+                assert len(anchor["ecdf_sup_distances"]) == expected
+                assert family["invented_x_grid_points"] == 0
+            else:
+                assert len(anchor["absolute_median_shifts"]) == expected
+                assert len(anchor["absolute_mad_shifts"]) == expected
+                assert len(anchor["relative_mad_shifts"]) == expected
+
+
+def test_s4_2b16_r21_identity_is_deterministic():
+    inputs = _s4_2b16_r21_inputs()
+    kwargs = {
+        "development_dataset": inputs[0],
+        "protocol": inputs[1],
+        "research": inputs[2],
+        "reconstruction": inputs[3],
+        "stability": inputs[4],
+        "adequacy_protocol": inputs[5],
+        "source_main_sha": "test-main-sha",
+    }
+    first = build_reference_adequacy_evidence(**kwargs)
+    second = build_reference_adequacy_evidence(**kwargs)
+    assert first["evidence_hash"] == second["evidence_hash"]
+    assert first["evidence_id"] == second["evidence_id"]
+
+
+def test_s4_2b16_r21_render_stays_policy_free():
+    inputs = _s4_2b16_r21_inputs()
+    artifact = build_reference_adequacy_evidence(
+        development_dataset=inputs[0],
+        protocol=inputs[1],
+        research=inputs[2],
+        reconstruction=inputs[3],
+        stability=inputs[4],
+        adequacy_protocol=inputs[5],
+        source_main_sha="test-main-sha",
+    )
+    rendered = render_reference_adequacy_evidence_text(artifact)
+    assert "BOUNDARY-ANCHORED REFERENCE ADEQUACY EVIDENCE" in rendered
+    assert "Tolerance selection   : NOT PERFORMED" in rendered
+    assert "Minimum N selection   : NOT PERFORMED" in rendered
+    assert "B.2 readiness         : BLOCKED" in rendered
+    assert "Holdout readiness     : BLOCKED" in rendered
+
+
+def test_s4_2b16_r21_cli_has_no_selection_or_holdout_arguments():
+    parser = build_s4_2b16_r21_parser()
+    option_strings = {
+        option
+        for action in parser._actions
+        for option in action.option_strings
+    }
+    assert "--reference-adequacy-protocol-artifact" in option_strings
+    assert "--write-artifact" in option_strings
+    for forbidden in (
+        "--holdout-artifact",
+        "--minimum-prior-observations",
+        "--tail-tolerance",
+        "--mad-tolerance",
+        "--validation-suffix",
+        "--select",
+        "--approve",
+    ):
+        assert forbidden not in option_strings
+
+
+def test_s4_2b16_r21_tail_distance_matches_direct_ecdf():
+    inputs = _s4_2b16_r21_inputs()
+    artifact = build_reference_adequacy_evidence(
+        development_dataset=inputs[0],
+        protocol=inputs[1],
+        research=inputs[2],
+        reconstruction=inputs[3],
+        stability=inputs[4],
+        adequacy_protocol=inputs[5],
+        source_main_sha="test-main-sha",
+    )
+    tail_family = next(
+        family for family in artifact["families"]
+        if family["method"] == TAIL_METHOD
+    )
+    anchor = tail_family["anchors"][0]
+    feature_id = tail_family["feature_id"]
+    rows = sorted(
+        inputs[2]["feature_results"][feature_id]["expanding"]["rows"],
+        key=lambda row: int(row["prior_count"]),
+    )
+    anchor_n = int(anchor["anchor_n"])
+    later_n = anchor_n + 1
+    anchor_values = [float(row["value"]) for row in rows[:anchor_n]]
+    later_values = [float(row["value"]) for row in rows[:later_n]]
+    support = sorted(set(anchor_values + later_values))
+
+    direct = max(
+        abs(
+            sum(value <= x for value in anchor_values) / anchor_n
+            - sum(value <= x for value in later_values) / later_n
+        )
+        for x in support
+    )
+    stored = float(anchor["ecdf_sup_distances"][0])
+    assert stored == pytest.approx(direct, abs=1e-15)

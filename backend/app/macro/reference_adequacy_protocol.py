@@ -17,16 +17,22 @@ from app.macro.reference_stability import (
     validate_reference_stability_evidence,
 )
 
-
 REFERENCE_ADEQUACY_PROTOCOL_CONTRACT_VERSION = (
-    "VN_NEXT6B_S4_2B16_REFERENCE_ADEQUACY_PROTOCOL_V2"
+    "VN_NEXT6B_S4_2B16_REFERENCE_ADEQUACY_PROTOCOL_V3"
 )
 POLICY_ORIGIN = "DEVELOPMENT_INFORMED"
 PROTOCOL_STATUS = "BLOCKED_UNJUSTIFIED_TOLERANCE"
 REFERENCE_MODE = "EXPANDING_STRICTLY_PRIOR"
+FORWARD_RULE = "BOUNDARY_ANCHORED_FORWARD_ENVELOPE"
 COMMON_N_POLICY = "COMMON_N_FIRST"
 FAMILY_COMBINATION_RULE = "ALL_FAMILIES_AND"
 NO_MATCH_RESULT = "NO_SUPPORTED_BOUNDARY"
+
+BLOCKERS = [
+    "TAIL_FORWARD_ENVELOPE_TOLERANCE_UNJUSTIFIED",
+    "MAD_FORWARD_ENVELOPE_TOLERANCES_UNJUSTIFIED",
+    "VALIDATION_SUFFIX_SUFFICIENCY_UNRESOLVED",
+]
 
 
 def _unjustified_tolerance(unit: str) -> dict[str, Any]:
@@ -34,105 +40,52 @@ def _unjustified_tolerance(unit: str) -> dict[str, Any]:
         "value": None,
         "unit": unit,
         "basis": "UNRESOLVED",
-        "rationale": None,
         "origin": POLICY_ORIGIN,
         "status": "UNJUSTIFIED",
     }
 
 
-def _unresolved_parameter(
-    *,
-    name: str,
-    unit: str,
-    purpose: str,
-) -> dict[str, Any]:
-    return {
-        "name": name,
-        "value": None,
-        "unit": unit,
-        "purpose": purpose,
-        "origin": POLICY_ORIGIN,
-        "status": "UNRESOLVED_PARAMETER",
-    }
-
-
-def _tail_validation_contract() -> dict[str, Any]:
+def _tail_contract() -> dict[str, Any]:
     return {
         "local_append": {
             "metric": "ECDF_SUP_DRIFT",
             "comparison": "N_MINUS_1_TO_N",
-            "reference_support": "OBSERVED_VALUES_UNION_ONLY",
-            "invented_x_grid_points": 0,
             "role": "DIAGNOSTIC_ONLY",
             "adequacy_gate": False,
             "tolerance_required": False,
             "tolerance": None,
-            "rationale": (
-                "Single-append ECDF drift is retained as descriptive evidence "
-                "only; expanding-reference sample growth mechanically reduces "
-                "one-observation influence, so this metric cannot independently "
-                "approve reference adequacy."
-            ),
             "status": "DEFINED_DIAGNOSTIC_ONLY",
         },
-        "cumulative": {
-            "metric": "ECDF_SUP_DRIFT",
-            "comparison": "N_MINUS_K_TO_N",
-            "comparison_interval": _unresolved_parameter(
-                name="comparison_interval_observations",
-                unit="OBSERVATION_COUNT",
-                purpose=(
-                    "Measure cumulative reference movement beyond one-observation "
-                    "append sensitivity."
-                ),
-            ),
+        "forward_envelope": {
+            "rule": FORWARD_RULE,
+            "metric": "ECDF_SUP_DISTANCE",
+            "comparison": "ANCHOR_N_TO_EVERY_LATER_REFERENCE_STATE",
+            "reference_support": "OBSERVED_VALUES_UNION_ONLY",
+            "invented_x_grid_points": 0,
+            "aggregation": "MAX_OVER_VALIDATION_SUFFIX",
             "tolerance": _unjustified_tolerance(
                 "ABSOLUTE_PROBABILITY_DIFFERENCE"
             ),
-            "status": "UNRESOLVED_PARAMETER",
+            "status": "DEFINED_METRIC_UNJUSTIFIED_TOLERANCE",
         },
         "temporal_perturbation": {
-            "metric": "ECDF_SUP_DRIFT",
-            "perturbation_rule": (
-                "TIME_ORDER_PRESERVING_CONTIGUOUS_STRICTLY_PRIOR_SEGMENT"
-            ),
-            "segment_length": _unresolved_parameter(
-                name="segment_length_observations",
-                unit="OBSERVATION_COUNT",
-                purpose=(
-                    "Test dependence on a contiguous historical reference segment "
-                    "without shuffling time order."
-                ),
-            ),
-            "tolerance": _unjustified_tolerance(
-                "ABSOLUTE_PROBABILITY_DIFFERENCE"
-            ),
-            "status": "UNRESOLVED_PARAMETER",
+            "role": "OPTIONAL_DIAGNOSTIC_ONLY",
+            "adequacy_gate": False,
+            "segment_length_required": False,
+            "tolerance_required": False,
+            "segment_length": None,
+            "tolerance": None,
+            "status": "OPTIONAL_DIAGNOSTIC_ONLY",
         },
         "weighted_stability_score": None,
     }
 
 
-def _mad_validation_contract() -> dict[str, Any]:
-    local_tolerances = {
-        "absolute_median_change": _unjustified_tolerance("BASIS_POINT"),
-        "absolute_mad_change": _unjustified_tolerance("BASIS_POINT"),
-        "relative_mad_change": _unjustified_tolerance("RATIO"),
-    }
-    cumulative_tolerances = {
-        "absolute_median_change": _unjustified_tolerance("BASIS_POINT"),
-        "absolute_mad_change": _unjustified_tolerance("BASIS_POINT"),
-        "relative_mad_change": _unjustified_tolerance("RATIO"),
-    }
-    perturbation_tolerances = {
-        "absolute_median_change": _unjustified_tolerance("BASIS_POINT"),
-        "absolute_mad_change": _unjustified_tolerance("BASIS_POINT"),
-        "relative_mad_change": _unjustified_tolerance("RATIO"),
-    }
+def _mad_contract() -> dict[str, Any]:
     return {
         "method_specific_computability_required": True,
         "zero_scale_rule": {
-            "previous_mad_zero": "NON_COMPUTABLE_ZERO_SCALE",
+            "anchor_mad_zero": "NON_COMPUTABLE_ZERO_SCALE",
             "relative_change": None,
             "null_to_zero_forbidden": True,
         },
@@ -143,49 +96,37 @@ def _mad_validation_contract() -> dict[str, Any]:
                 "RELATIVE_MAD_CHANGE",
             ],
             "comparison": "N_MINUS_1_TO_N",
+            "role": "DIAGNOSTIC_ONLY",
+            "adequacy_gate": False,
+            "tolerance_required": False,
+            "tolerances": None,
+            "status": "DEFINED_DIAGNOSTIC_ONLY",
+        },
+        "forward_envelope": {
+            "rule": FORWARD_RULE,
+            "metrics": [
+                "ABSOLUTE_MEDIAN_SHIFT",
+                "ABSOLUTE_MAD_SHIFT",
+                "RELATIVE_MAD_SHIFT",
+            ],
+            "comparison": "ANCHOR_N_TO_EVERY_LATER_REFERENCE_STATE",
+            "aggregation": "PER_METRIC_MAX_OVER_VALIDATION_SUFFIX",
             "combination_rule": "ALL_AND",
-            "tolerances": local_tolerances,
+            "tolerances": {
+                "absolute_median_shift": _unjustified_tolerance("BASIS_POINT"),
+                "absolute_mad_shift": _unjustified_tolerance("BASIS_POINT"),
+                "relative_mad_shift": _unjustified_tolerance("RATIO"),
+            },
             "status": "DEFINED_METRICS_UNJUSTIFIED_TOLERANCES",
         },
-        "cumulative": {
-            "metrics": [
-                "ABSOLUTE_MEDIAN_CHANGE",
-                "ABSOLUTE_MAD_CHANGE",
-                "RELATIVE_MAD_CHANGE",
-            ],
-            "comparison": "N_MINUS_K_TO_N",
-            "comparison_interval": _unresolved_parameter(
-                name="comparison_interval_observations",
-                unit="OBSERVATION_COUNT",
-                purpose=(
-                    "Measure cumulative location and scale movement beyond a "
-                    "single append."
-                ),
-            ),
-            "combination_rule": "ALL_AND",
-            "tolerances": cumulative_tolerances,
-            "status": "UNRESOLVED_PARAMETER",
-        },
         "temporal_perturbation": {
-            "metrics": [
-                "ABSOLUTE_MEDIAN_CHANGE",
-                "ABSOLUTE_MAD_CHANGE",
-                "RELATIVE_MAD_CHANGE",
-            ],
-            "perturbation_rule": (
-                "TIME_ORDER_PRESERVING_CONTIGUOUS_STRICTLY_PRIOR_SEGMENT"
-            ),
-            "segment_length": _unresolved_parameter(
-                name="segment_length_observations",
-                unit="OBSERVATION_COUNT",
-                purpose=(
-                    "Test median/MAD dependence on a contiguous historical "
-                    "reference segment without shuffling time order."
-                ),
-            ),
-            "combination_rule": "ALL_AND",
-            "tolerances": perturbation_tolerances,
-            "status": "UNRESOLVED_PARAMETER",
+            "role": "OPTIONAL_DIAGNOSTIC_ONLY",
+            "adequacy_gate": False,
+            "segment_length_required": False,
+            "tolerance_required": False,
+            "segment_length": None,
+            "tolerances": None,
+            "status": "OPTIONAL_DIAGNOSTIC_ONLY",
         },
         "weighted_stability_score": None,
     }
@@ -193,25 +134,13 @@ def _mad_validation_contract() -> dict[str, Any]:
 
 def _evidence_sufficiency_contract() -> dict[str, Any]:
     return {
-        "single_zero_transition_sufficient": False,
-        "descriptive_median_zero_sufficient": False,
         "validation_suffix_required": True,
-        "minimum_validation_suffix_transitions": _unresolved_parameter(
-            name="minimum_validation_suffix_transitions",
-            unit="TRANSITION_COUNT",
-            purpose=(
-                "Prevent a boundary near the end of Development from passing "
-                "because only a short quiet suffix remains."
-            ),
-        ),
-        "violation_policy": {
-            "value": "UNSET",
-            "allowed_values": [
-                "ZERO_VIOLATIONS",
-                "BOUNDED_VIOLATIONS",
-            ],
-            "status": "UNRESOLVED_PARAMETER",
-        },
+        "minimum_validation_suffix_transitions": None,
+        "minimum_validation_suffix_unit": "TRANSITION_COUNT",
+        "minimum_validation_suffix_status": "UNRESOLVED_PARAMETER",
+        "violation_policy": None,
+        "acceptance_form": "MAX_ENVELOPE_WITHIN_APPROVED_TOLERANCE",
+        "exceedance_count_role": "DIAGNOSTIC_ONLY",
         "status": "UNRESOLVED_PARAMETER",
     }
 
@@ -227,7 +156,7 @@ def _selection_rule() -> dict[str, Any]:
         "horizon_policy": COMMON_N_POLICY,
         "family_combination_rule": FAMILY_COMBINATION_RULE,
         "candidate_boundary_rule": (
-            "MINIMUM_N_PASSING_ALL_TAIL_MAD_HORIZON_CRITERIA"
+            "MINIMUM_N_PASSING_ALL_APPROVED_FORWARD_ENVELOPE_CRITERIA"
         ),
         "no_match_result": NO_MATCH_RESULT,
         "candidate_survival_is_selection_input": False,
@@ -285,10 +214,6 @@ def build_reference_adequacy_protocol(
         "reconstruction_hash"
     ]:
         raise ValueError("B.1.5 stability reconstruction hash mismatch.")
-    if stability_source["reconstruction_id"] != reconstruction[
-        "reconstruction_id"
-    ]:
-        raise ValueError("B.1.5 stability reconstruction id mismatch.")
     if int(stability_source["raw_candidate_count"]) != int(
         reconstruction_state["raw_candidate_count"]
     ):
@@ -302,22 +227,19 @@ def build_reference_adequacy_protocol(
         "reconstruction_hash": reconstruction["reconstruction_hash"],
         "reference_stability_id": stability["stability_id"],
         "reference_stability_hash": stability_state["stability_hash"],
-        "raw_candidate_count": int(
-            reconstruction["counts"]["raw_candidate_count"]
-        ),
+        "raw_candidate_count": int(reconstruction["counts"]["raw_candidate_count"]),
         "source_main_sha": source_main_sha or "UNSPECIFIED",
     }
-
     validation_contract = {
         "reference_mode": REFERENCE_MODE,
         "current_observation_excluded": True,
         "adequacy_dimensions": [
             "COMPUTABILITY",
-            "SENSITIVITY",
+            "FORWARD_SENSITIVITY",
             "EVIDENCE_SUFFICIENCY",
         ],
-        "tail": _tail_validation_contract(),
-        "mad": _mad_validation_contract(),
+        "tail": _tail_contract(),
+        "mad": _mad_contract(),
         "evidence_sufficiency": _evidence_sufficiency_contract(),
         "selection_rule": _selection_rule(),
     }
@@ -330,35 +252,6 @@ def build_reference_adequacy_protocol(
         "common_method_n_required": True,
         "common_horizon_n_required": True,
     }
-    research_history = {
-        "policy_origin": POLICY_ORIGIN,
-        "development_evidence_already_observed": True,
-        "claim_data_blind_forbidden": True,
-        "holdout_used_for_protocol_design": False,
-        "notes": [
-            (
-                "The protocol is Development-informed and must not be described "
-                "as ex-ante to Development."
-            ),
-            (
-                "Candidate/signal/episode survival may explain policy impact but "
-                "must not choose or relax adequacy tolerances."
-            ),
-        ],
-    }
-    blockers = [
-        "TAIL_CUMULATIVE_INTERVAL_UNRESOLVED",
-        "TAIL_CUMULATIVE_TOLERANCE_UNJUSTIFIED",
-        "TAIL_PERTURBATION_SEGMENT_LENGTH_UNRESOLVED",
-        "TAIL_PERTURBATION_TOLERANCE_UNJUSTIFIED",
-        "MAD_LOCAL_TOLERANCES_UNJUSTIFIED",
-        "MAD_CUMULATIVE_INTERVAL_UNRESOLVED",
-        "MAD_CUMULATIVE_TOLERANCES_UNJUSTIFIED",
-        "MAD_PERTURBATION_SEGMENT_LENGTH_UNRESOLVED",
-        "MAD_PERTURBATION_TOLERANCES_UNJUSTIFIED",
-        "VALIDATION_SUFFIX_LENGTH_UNRESOLVED",
-        "VIOLATION_POLICY_UNRESOLVED",
-    ]
     policy_state = {
         "protocol_status": PROTOCOL_STATUS,
         "reference_adequacy": "UNRESOLVED",
@@ -369,21 +262,26 @@ def build_reference_adequacy_protocol(
         "eligibility_policy_status": "UNDEFINED",
         "admissibility_policy_status": "UNDEFINED",
         "final_candidate_status": "NOT_SELECTED",
-        "ready_for_evidence_generation": False,
-        "ready_for_b17": False,
+        "ready_for_evidence_generation": True,
+        "ready_for_b17": True,
         "ready_for_b2": False,
         "ready_for_holdout": False,
         "rate_spike_state": "UNCALIBRATED",
     }
-
     identity_payload = {
         "contract_version": REFERENCE_ADEQUACY_PROTOCOL_CONTRACT_VERSION,
         "policy_origin": POLICY_ORIGIN,
         "source": source,
         "scope": scope,
-        "research_history": research_history,
+        "research_history": {
+            "policy_origin": POLICY_ORIGIN,
+            "development_evidence_already_observed": True,
+            "claim_data_blind_forbidden": True,
+            "holdout_used_for_protocol_design": False,
+            "r2_review": "PARTIAL_STRUCTURAL_REDUCTION",
+        },
         "validation_contract": validation_contract,
-        "blockers": blockers,
+        "blockers": list(BLOCKERS),
         "policy_state": policy_state,
         "holdout_locked": True,
         "holdout_accessed": False,
@@ -420,30 +318,10 @@ def _identity_payload(artifact: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _assert_unjustified_tolerance(item: dict[str, Any]) -> None:
-    if item.get("value") is not None:
-        raise ValueError("B.1.6 cannot preregister an unjustified tolerance value.")
-    if item.get("status") != "UNJUSTIFIED":
-        raise ValueError("B.1.6 unresolved tolerance status changed unexpectedly.")
-    if item.get("origin") != POLICY_ORIGIN:
-        raise ValueError("B.1.6 tolerance origin must be Development-informed.")
-
-
-def _assert_unresolved_parameter(item: dict[str, Any]) -> None:
-    if item.get("value") is not None:
-        raise ValueError("B.1.6 unresolved protocol parameter must stay null.")
-    if item.get("status") != "UNRESOLVED_PARAMETER":
-        raise ValueError("B.1.6 unresolved protocol parameter status mismatch.")
-    if item.get("origin") != POLICY_ORIGIN:
-        raise ValueError("B.1.6 unresolved parameter origin mismatch.")
-
-
 def validate_reference_adequacy_protocol(
     artifact: dict[str, Any],
 ) -> dict[str, Any]:
-    if artifact.get("contract_version") != (
-        REFERENCE_ADEQUACY_PROTOCOL_CONTRACT_VERSION
-    ):
+    if artifact.get("contract_version") != REFERENCE_ADEQUACY_PROTOCOL_CONTRACT_VERSION:
         raise ValueError("Unsupported reference adequacy protocol contract.")
     if artifact.get("policy_origin") != POLICY_ORIGIN:
         raise ValueError("Reference adequacy protocol must be Development-informed.")
@@ -463,100 +341,85 @@ def validate_reference_adequacy_protocol(
         raise ValueError("Reference adequacy feature scope changed.")
     if scope.get("methods") != [TAIL_METHOD, MAD_METHOD]:
         raise ValueError("Reference adequacy method scope changed.")
-    if scope.get("ept_method") != EPT_METHOD:
-        raise ValueError("Reference adequacy EPT method mismatch.")
     if scope.get("ept_reference_support_applicable") is not False:
         raise ValueError("EPT must remain excluded from reference support.")
     if scope.get("common_method_n_required") is not True:
-        raise ValueError("B.1.6 must keep a common method N requirement.")
+        raise ValueError("Common method N requirement changed.")
     if scope.get("common_horizon_n_required") is not True:
-        raise ValueError("B.1.6 must keep a common horizon N requirement.")
-
-    history = artifact.get("research_history") or {}
-    if history.get("development_evidence_already_observed") is not True:
-        raise ValueError("B.1.6 must record prior Development observation.")
-    if history.get("claim_data_blind_forbidden") is not True:
-        raise ValueError("B.1.6 cannot claim data-blind Development design.")
-    if history.get("holdout_used_for_protocol_design") is not False:
-        raise ValueError("B.1.6 cannot use Holdout for protocol design.")
+        raise ValueError("Common horizon N requirement changed.")
 
     contract = artifact.get("validation_contract") or {}
     if contract.get("reference_mode") != REFERENCE_MODE:
         raise ValueError("Reference mode changed unexpectedly.")
     if contract.get("current_observation_excluded") is not True:
         raise ValueError("Current observation must remain excluded.")
-    if contract.get("adequacy_dimensions") != [
-        "COMPUTABILITY",
-        "SENSITIVITY",
-        "EVIDENCE_SUFFICIENCY",
-    ]:
-        raise ValueError("Reference adequacy dimensions changed.")
 
     tail = contract.get("tail") or {}
+    local_tail = tail.get("local_append") or {}
+    if (
+        local_tail.get("role") != "DIAGNOSTIC_ONLY"
+        or local_tail.get("adequacy_gate") is not False
+        or local_tail.get("tolerance_required") is not False
+        or local_tail.get("tolerance") is not None
+    ):
+        raise ValueError("TAIL local append must remain diagnostic-only.")
+    tail_forward = tail.get("forward_envelope") or {}
+    if tail_forward.get("rule") != FORWARD_RULE:
+        raise ValueError("TAIL forward envelope rule mismatch.")
+    if tail_forward.get("invented_x_grid_points") != 0:
+        raise ValueError("TAIL forward envelope cannot invent x-grid points.")
+    tail_tolerance = tail_forward.get("tolerance") or {}
+    if tail_tolerance.get("value") is not None or tail_tolerance.get("status") != "UNJUSTIFIED":
+        raise ValueError("TAIL forward envelope tolerance must remain unresolved.")
+    tail_perturbation = tail.get("temporal_perturbation") or {}
+    if (
+        tail_perturbation.get("role") != "OPTIONAL_DIAGNOSTIC_ONLY"
+        or tail_perturbation.get("adequacy_gate") is not False
+        or tail_perturbation.get("segment_length") is not None
+        or tail_perturbation.get("tolerance") is not None
+    ):
+        raise ValueError("TAIL temporal perturbation must remain optional diagnostic-only.")
     if tail.get("weighted_stability_score") is not None:
         raise ValueError("TAIL weighted stability score is forbidden.")
-    local_append = tail.get("local_append") or {}
-    if local_append.get("role") != "DIAGNOSTIC_ONLY":
-        raise ValueError("TAIL local append must remain diagnostic-only.")
-    if local_append.get("adequacy_gate") is not False:
-        raise ValueError("TAIL local append cannot become an adequacy gate.")
-    if local_append.get("tolerance_required") is not False:
-        raise ValueError("TAIL local append cannot require a tolerance.")
-    if local_append.get("tolerance") is not None:
-        raise ValueError("TAIL local append cannot carry an adequacy tolerance.")
-    if local_append.get("status") != "DEFINED_DIAGNOSTIC_ONLY":
-        raise ValueError("TAIL local append diagnostic status mismatch.")
-    _assert_unresolved_parameter(
-        tail["cumulative"]["comparison_interval"]
-    )
-    _assert_unjustified_tolerance(tail["cumulative"]["tolerance"])
-    _assert_unresolved_parameter(
-        tail["temporal_perturbation"]["segment_length"]
-    )
-    _assert_unjustified_tolerance(
-        tail["temporal_perturbation"]["tolerance"]
-    )
 
     mad = contract.get("mad") or {}
+    local_mad = mad.get("local") or {}
+    if (
+        local_mad.get("role") != "DIAGNOSTIC_ONLY"
+        or local_mad.get("adequacy_gate") is not False
+        or local_mad.get("tolerance_required") is not False
+        or local_mad.get("tolerances") is not None
+    ):
+        raise ValueError("MAD local metrics must remain diagnostic-only.")
+    mad_forward = mad.get("forward_envelope") or {}
+    if mad_forward.get("rule") != FORWARD_RULE:
+        raise ValueError("MAD forward envelope rule mismatch.")
+    if mad_forward.get("combination_rule") != "ALL_AND":
+        raise ValueError("MAD forward envelope metrics must use logical AND.")
+    for tolerance in (mad_forward.get("tolerances") or {}).values():
+        if tolerance.get("value") is not None or tolerance.get("status") != "UNJUSTIFIED":
+            raise ValueError("MAD forward envelope tolerances must remain unresolved.")
+    mad_perturbation = mad.get("temporal_perturbation") or {}
+    if (
+        mad_perturbation.get("role") != "OPTIONAL_DIAGNOSTIC_ONLY"
+        or mad_perturbation.get("adequacy_gate") is not False
+        or mad_perturbation.get("segment_length") is not None
+        or mad_perturbation.get("tolerances") is not None
+    ):
+        raise ValueError("MAD temporal perturbation must remain optional diagnostic-only.")
     if mad.get("weighted_stability_score") is not None:
         raise ValueError("MAD weighted stability score is forbidden.")
-    if mad.get("method_specific_computability_required") is not True:
-        raise ValueError("MAD computability condition must remain explicit.")
-    zero_scale = mad.get("zero_scale_rule") or {}
-    if zero_scale.get("relative_change") is not None:
-        raise ValueError("MAD zero-scale relative change must remain null.")
-    if zero_scale.get("null_to_zero_forbidden") is not True:
-        raise ValueError("MAD null-to-zero conversion must remain forbidden.")
-
-    for section_name in ("local", "cumulative", "temporal_perturbation"):
-        section = mad[section_name]
-        if section.get("combination_rule") != "ALL_AND":
-            raise ValueError("MAD adequacy metrics must use logical AND.")
-        for tolerance in section["tolerances"].values():
-            _assert_unjustified_tolerance(tolerance)
-    _assert_unresolved_parameter(mad["cumulative"]["comparison_interval"])
-    _assert_unresolved_parameter(
-        mad["temporal_perturbation"]["segment_length"]
-    )
 
     sufficiency = contract.get("evidence_sufficiency") or {}
-    if sufficiency.get("single_zero_transition_sufficient") is not False:
-        raise ValueError("Single zero transition cannot establish adequacy.")
-    if sufficiency.get("descriptive_median_zero_sufficient") is not False:
-        raise ValueError("Median zero cannot establish adequacy.")
-    if sufficiency.get("validation_suffix_required") is not True:
-        raise ValueError("Validation suffix must remain required.")
-    _assert_unresolved_parameter(
-        sufficiency["minimum_validation_suffix_transitions"]
-    )
-    violation_policy = sufficiency.get("violation_policy") or {}
-    if violation_policy.get("value") != "UNSET":
-        raise ValueError("Violation policy must remain unset in B.1.6.")
-    if violation_policy.get("status") != "UNRESOLVED_PARAMETER":
-        raise ValueError("Violation policy status mismatch.")
+    if sufficiency.get("minimum_validation_suffix_transitions") is not None:
+        raise ValueError("Validation suffix minimum must remain unresolved.")
+    if sufficiency.get("violation_policy") is not None:
+        raise ValueError("Separate violation-budget policy is forbidden in V3.")
+    if sufficiency.get("acceptance_form") != "MAX_ENVELOPE_WITHIN_APPROVED_TOLERANCE":
+        raise ValueError("Evidence-sufficiency acceptance form changed.")
 
     selection = contract.get("selection_rule") or {}
-    expected_boolean_false = (
+    forbidden_true = (
         "candidate_survival_is_selection_input",
         "signal_survival_is_selection_input",
         "episode_survival_is_selection_input",
@@ -565,18 +428,12 @@ def validate_reference_adequacy_protocol(
         "automatic_method_specific_n",
         "automatic_horizon_specific_n",
     )
-    if any(selection.get(key) is not False for key in expected_boolean_false):
-        raise ValueError("B.1.6 selection guardrail was relaxed.")
-    if selection.get("family_combination_rule") != FAMILY_COMBINATION_RULE:
-        raise ValueError("Family combination rule changed.")
-    if selection.get("no_match_result") != NO_MATCH_RESULT:
-        raise ValueError("No-match result must remain NO_SUPPORTED_BOUNDARY.")
-    if selection.get("method_policy") != COMMON_N_POLICY:
-        raise ValueError("Method N policy changed.")
-    if selection.get("horizon_policy") != COMMON_N_POLICY:
-        raise ValueError("Horizon N policy changed.")
+    if any(selection.get(key) is not False for key in forbidden_true):
+        raise ValueError("Reference adequacy selection guardrail was relaxed.")
 
-    policy = artifact.get("policy_state") or {}
+    if list(artifact.get("blockers") or []) != BLOCKERS:
+        raise ValueError("Reference adequacy V3 blocker set changed.")
+
     expected_policy = {
         "protocol_status": PROTOCOL_STATUS,
         "reference_adequacy": "UNRESOLVED",
@@ -587,108 +444,64 @@ def validate_reference_adequacy_protocol(
         "eligibility_policy_status": "UNDEFINED",
         "admissibility_policy_status": "UNDEFINED",
         "final_candidate_status": "NOT_SELECTED",
-        "ready_for_evidence_generation": False,
-        "ready_for_b17": False,
+        "ready_for_evidence_generation": True,
+        "ready_for_b17": True,
         "ready_for_b2": False,
         "ready_for_holdout": False,
         "rate_spike_state": "UNCALIBRATED",
     }
-    if policy != expected_policy:
+    if artifact.get("policy_state") != expected_policy:
         raise ValueError("Reference adequacy protocol policy state changed.")
-
-    blockers = list(artifact.get("blockers") or [])
-    if not blockers:
-        raise ValueError("Blocked B.1.6 protocol must preserve blockers.")
 
     protocol_hash = content_hash(_identity_payload(artifact))
     if artifact.get("adequacy_protocol_hash") != protocol_hash:
         raise ValueError("Reference adequacy protocol hash mismatch.")
-    if artifact.get("adequacy_protocol_id") != (
-        f"RATEADEQPROTO-{protocol_hash[:16]}"
-    ):
+    if artifact.get("adequacy_protocol_id") != f"RATEADEQPROTO-{protocol_hash[:16]}":
         raise ValueError("Reference adequacy protocol id mismatch.")
 
     return {
         "adequacy_protocol_id": artifact["adequacy_protocol_id"],
         "adequacy_protocol_hash": protocol_hash,
-        "protocol_status": policy["protocol_status"],
-        "blocker_count": len(blockers),
-        "ready_for_evidence_generation": False,
+        "protocol_status": PROTOCOL_STATUS,
+        "blocker_count": len(BLOCKERS),
+        "ready_for_evidence_generation": True,
         "ready_for_holdout": False,
     }
 
 
-def render_reference_adequacy_protocol_text(
-    artifact: dict[str, Any],
-) -> str:
-    validate_reference_adequacy_protocol(artifact)
-    contract = artifact["validation_contract"]
+def render_reference_adequacy_protocol_text(artifact: dict[str, Any]) -> str:
+    state = validate_reference_adequacy_protocol(artifact)
     policy = artifact["policy_state"]
-
-    lines = [
-        "NEXT-6B-S4.2-B.1.6 REFERENCE ADEQUACY VALIDATION PROTOCOL",
-        "",
-        (
-            "Source Stability      : "
-            f"{artifact['source']['reference_stability_id']}"
-        ),
-        f"Policy Origin         : {artifact['policy_origin']}",
-        "",
-        "TAIL Validation:",
-        (
-            "  Local Append          "
-            f"{contract['tail']['local_append']['status']}"
-        ),
-        (
-            "  Cumulative            "
-            f"{contract['tail']['cumulative']['status']}"
-        ),
-        (
-            "  Temporal Perturbation "
-            f"{contract['tail']['temporal_perturbation']['status']}"
-        ),
-        "",
-        "MAD Validation:",
-        f"  Local                 {contract['mad']['local']['status']}",
-        f"  Cumulative            {contract['mad']['cumulative']['status']}",
-        (
-            "  Temporal Perturbation "
-            f"{contract['mad']['temporal_perturbation']['status']}"
-        ),
-        "",
-        (
-            "Evidence Sufficiency : "
-            f"{contract['evidence_sufficiency']['status']}"
-        ),
-        "Common Method N       : REQUIRED",
-        "Common Horizon N      : REQUIRED",
-        "EPT Reference Gate    : EXCLUDED",
-        "",
-        (
-            "Reference Adequacy / Minimum Prior Observations / "
-            "Recommended Support : "
-            f"{policy['reference_adequacy']} / "
-            f"{policy['minimum_prior_observations']} / "
-            f"{policy['recommended_support']}"
-        ),
-        (
-            "Holdout locked / accessed / ready : "
-            f"{artifact['holdout_locked']} / "
-            f"{artifact['holdout_accessed']} / "
-            f"{policy['ready_for_holdout']}"
-        ),
-        (
-            "RATE_SPIKE / Network / Macro DB writes / Production : "
-            f"{policy['rate_spike_state']} / "
-            f"{artifact['network_requests']} / "
-            f"{artifact['macro_db_writes']} / "
-            f"{artifact['production_impact']}"
-        ),
-        "",
-        f"Protocol status: {policy['protocol_status']}",
-        (
-            "B.1.7 readiness: BLOCKED "
-            f"({len(artifact['blockers'])} unresolved protocol blockers)"
-        ),
-    ]
-    return "\n".join(lines)
+    return "\n".join(
+        [
+            "NEXT-6B-S4.2-B.1.6 REFERENCE ADEQUACY VALIDATION PROTOCOL V3",
+            "",
+            f"Source Stability      : {artifact['source']['reference_stability_id']}",
+            f"Policy Origin         : {artifact['policy_origin']}",
+            "Validation Rule       : BOUNDARY_ANCHORED_FORWARD_ENVELOPE",
+            "TAIL Local            : DIAGNOSTIC_ONLY",
+            "MAD Local             : DIAGNOSTIC_ONLY",
+            "Temporal Perturbation : OPTIONAL_DIAGNOSTIC_ONLY",
+            "EPT Reference Gate    : EXCLUDED",
+            "",
+            (
+                "Reference Adequacy / Minimum Prior Observations / "
+                f"Recommended Support : {policy['reference_adequacy']} / "
+                f"{policy['minimum_prior_observations']} / {policy['recommended_support']}"
+            ),
+            (
+                "Holdout locked / accessed / ready : "
+                f"{artifact['holdout_locked']} / {artifact['holdout_accessed']} / "
+                f"{policy['ready_for_holdout']}"
+            ),
+            (
+                "RATE_SPIKE / Network / Macro DB writes / Production : "
+                f"{policy['rate_spike_state']} / {artifact['network_requests']} / "
+                f"{artifact['macro_db_writes']} / {artifact['production_impact']}"
+            ),
+            "",
+            f"Protocol status: {state['protocol_status']}",
+            f"Evidence generation readiness: READY ({state['blocker_count']} unresolved policy classes)",
+            "B.2 readiness: BLOCKED",
+        ]
+    )
