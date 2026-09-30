@@ -507,6 +507,8 @@ def _support_curve(
             "reference_support_applicable": None,
             "point_count": 0,
             "points": [],
+            "selection_status": "NOT_SELECTED",
+            "recommended_support": None,
         }
 
     method = str(candidate_audits[0]["method"])
@@ -519,6 +521,8 @@ def _support_curve(
             "reference_support_applicable": False,
             "point_count": 0,
             "points": [],
+            "selection_status": "NOT_SELECTED",
+            "recommended_support": None,
         }
 
     research_rows = list(feature_result["expanding"]["rows"])
@@ -538,6 +542,8 @@ def _support_curve(
             "reference_support_applicable": True,
             "point_count": 0,
             "points": [],
+            "selection_status": "NOT_SELECTED",
+            "recommended_support": None,
         }
 
     # Precompute each candidate's baseline state once. A hypothetical support
