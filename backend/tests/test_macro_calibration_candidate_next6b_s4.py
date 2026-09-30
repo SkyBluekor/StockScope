@@ -14,12 +14,21 @@ from app.macro.candidate_compression import (
     build_compressed_candidate_frontier,
     validate_compressed_frontier_artifact,
 )
+from app.macro.frontier_admissibility import (
+    build_frontier_admissibility_diagnostic,
+    build_unset_rate_spike_admissibility_policy,
+    classify_positive_capture_for_admissibility,
+    validate_frontier_admissibility_diagnostic,
+)
 from app.macro.calibration_protocol import build_calibration_research_protocol
 from app.macro.calibration_research import build_distribution_research
 from app.macro.features import MACRO_FEATURE_CONTRACT_VERSION
 from app.macro.identity import content_hash
 from tools.data.freeze_macro_calibration_candidates_next6b_s4 import (
     build_parser,
+)
+from tools.data.diagnose_macro_calibration_frontier_next6b_s4_1r import (
+    build_parser as build_s4_1r_parser,
 )
 
 
@@ -385,3 +394,144 @@ def test_s4_1_compression_replays_v1_and_preserves_holdout_guardrails():
         for group in frontier["behavior_groups"]
     ]
     assert len(behavior_hashes) == len(set(behavior_hashes))
+
+
+def test_s4_1r_capture_diagnostics_have_no_sub_100_percent_cutoff():
+    assert classify_positive_capture_for_admissibility("1") == (
+        "TRIVIAL_DIRECTION_RULE"
+    )
+    assert classify_positive_capture_for_admissibility("0.999") == (
+        "DIAGNOSTIC_ONLY"
+    )
+    assert classify_positive_capture_for_admissibility("0.98") == (
+        "DIAGNOSTIC_ONLY"
+    )
+    assert classify_positive_capture_for_admissibility("0.95") == (
+        "DIAGNOSTIC_ONLY"
+    )
+
+
+def test_s4_1r_frontier_diagnostic_replays_structure_and_blocks_holdout():
+    development, protocol, research = _inputs()
+    candidate_set = build_rate_spike_candidate_set(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+    )
+    frontier = build_compressed_candidate_frontier(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+    )
+    diagnostic = build_frontier_admissibility_diagnostic(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+    )
+    state = validate_frontier_admissibility_diagnostic(diagnostic)
+
+    assert diagnostic["source_candidate_set_hash"] == candidate_set[
+        "candidate_set_hash"
+    ]
+    assert diagnostic["source_frontier_hash"] == frontier["frontier_hash"]
+    assert diagnostic["compression_manifest"]["raw_candidate_count"] == (
+        candidate_set["exploration_manifest"]["generated_candidate_count"]
+    )
+    assert diagnostic["compression_manifest"][
+        "method_local_pareto_count"
+    ] == candidate_set["exploration_manifest"]["frozen_candidate_count"]
+    assert diagnostic["compression_manifest"][
+        "compressed_frontier_count"
+    ] == frontier["stage_manifest"]["compressed_frontier_count"]
+
+    assert len(diagnostic["families"]) == 9
+    assert state["family_count"] == 9
+    assert diagnostic["candidate_generation_status"] == "COMPLETE"
+    assert diagnostic["compression_status"] == "COMPRESSION_COMPLETE"
+    assert diagnostic["diagnostics_status"] == "COMPLETE"
+    assert diagnostic["admissibility_status"] == (
+        "ADMISSIBILITY_POLICY_UNDEFINED"
+    )
+    assert diagnostic["ready_for_holdout"] is False
+    assert diagnostic["holdout_locked"] is True
+    assert diagnostic["holdout_accessed"] is False
+    assert diagnostic["readiness"]["candidate_generation"] == "COMPLETE"
+    assert diagnostic["readiness"]["structural_compression"] == "COMPLETE"
+    assert diagnostic["readiness"]["behavior_rarity_diagnostics"] == "COMPLETE"
+    assert diagnostic["readiness"]["admissibility_policy"] == "UNDEFINED"
+    assert diagnostic["readiness"]["ready_for_holdout"] is False
+    assert diagnostic["event_unit_diagnostics"]["event_unit"] == "UNSET"
+    assert diagnostic["final_candidate_selected"] is False
+    assert diagnostic["final_threshold_selected"] is False
+    assert diagnostic["minimum_sample_selected"] is False
+    assert diagnostic["event_unit_selected"] is False
+    assert diagnostic["rate_spike_state"] == "UNCALIBRATED"
+    assert diagnostic["normal_labels_created"] == 0
+    assert diagnostic["detected_labels_created"] == 0
+    assert diagnostic["network_requests"] == 0
+    assert diagnostic["macro_db_writes"] == 0
+    assert diagnostic["production_decision_approved"] is False
+
+
+def test_s4_1r_unset_policy_contract_is_explicit():
+    policy = build_unset_rate_spike_admissibility_policy()
+
+    assert policy == {
+        "contract_version": (
+            "VN_NEXT6B_S4_1_RATE_SPIKE_ADMISSIBILITY_POLICY_V1"
+        ),
+        "policy_id": "RATE_SPIKE_ADMISSIBILITY_UNSET",
+        "policy_version": "UNSET",
+        "shock_type": "RATE_SPIKE",
+        "direction": "UP",
+        "event_unit": "UNSET",
+        "maximum_signal_fraction": None,
+        "maximum_positive_capture": None,
+        "maximum_episode_rate": None,
+        "minimum_year_coverage": None,
+        "minimum_sample": None,
+        "evaluation_rule": "UNSET",
+        "status": "UNDEFINED",
+        "approved": False,
+        "production_decision_approved": False,
+    }
+
+
+def test_s4_1r_diagnostic_hash_and_family_hashes_are_deterministic():
+    development, protocol, research = _inputs()
+
+    first = build_frontier_admissibility_diagnostic(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+    )
+    second = build_frontier_admissibility_diagnostic(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+    )
+
+    assert first["diagnostic_hash"] == second["diagnostic_hash"]
+    assert first["diagnostic_id"] == second["diagnostic_id"]
+    assert [item["family_hash"] for item in first["families"]] == [
+        item["family_hash"] for item in second["families"]
+    ]
+
+
+def test_s4_1r_cli_has_no_holdout_or_admissibility_cutoff_arguments():
+    parser = build_s4_1r_parser()
+    option_strings = {
+        option
+        for action in parser._actions
+        for option in action.option_strings
+    }
+
+    assert "--development-artifact" in option_strings
+    assert "--protocol-artifact" in option_strings
+    assert "--research-artifact" in option_strings
+    assert "--write-artifact" in option_strings
+    assert "--holdout-artifact" not in option_strings
+    assert "--maximum-signal-fraction" not in option_strings
+    assert "--maximum-positive-capture" not in option_strings
+    assert "--minimum-sample" not in option_strings
+    assert "--event-unit" not in option_strings
