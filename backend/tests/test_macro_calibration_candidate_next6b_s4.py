@@ -446,6 +446,13 @@ def test_s4_1r_frontier_diagnostic_replays_structure_and_blocks_holdout():
 
     assert len(diagnostic["families"]) == 9
     assert state["family_count"] == 9
+    assert diagnostic["candidate_generation_status"] == "COMPLETE"
+    assert diagnostic["compression_status"] == "COMPRESSION_COMPLETE"
+    assert diagnostic["diagnostics_status"] == "COMPLETE"
+    assert diagnostic["admissibility_status"] == (
+        "ADMISSIBILITY_POLICY_UNDEFINED"
+    )
+    assert diagnostic["ready_for_holdout"] is False
     assert diagnostic["holdout_locked"] is True
     assert diagnostic["holdout_accessed"] is False
     assert diagnostic["readiness"]["candidate_generation"] == "COMPLETE"
