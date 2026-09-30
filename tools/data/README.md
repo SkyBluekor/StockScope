@@ -563,4 +563,10 @@ R2.1은 Development-only reference adequacy 원자료를 생성합니다. 기존
 .\sync_local.ps1
 ```
 
-새 `REFERENCE-ADEQUACY-EVIDENCE-<hash>.json`이 없으면 dependency chain을 검증한 뒤 자동으로 immutable artifact를 생성합니다. 상태만 확인하려면 `.\sync_local.ps1 -CheckOnly`를 사용하며 이 모드에서는 artifact를 생성하지 않습니다.
+R2.1-PERF 이후 current evidence는 `REFERENCE-ADEQUACY-EVIDENCE-<hash>.json.gz` V2 compact 형식입니다. 기존 459.24 MB V1 JSON은 historical immutable evidence로 남기고 삭제하거나 덮어쓰지 않습니다.
+
+V2는 TAIL ECDF distance를 exact numerator varint로, MAD absolute shift를 lossless scaled integer varint로 저장합니다. MAD relative shift는 absolute MAD shift와 anchor MAD에서 정확히 재구성하며 zero-scale은 계속 `null / NON_COMPUTABLE_ZERO_SCALE`을 유지합니다. 전체 logical evidence hash는 저장 표현과 분리되어 V1/V2 전체 comparison 동등성을 검증합니다.
+
+`.\sync_local.ps1`은 compact V2가 없으면 자동 생성하며, historical V1이 있으면 최초 migration에서 전체 logical-equivalence를 검증합니다. V2 compressed size가 V1의 25%를 넘으면 artifact 쓰기 전에 fail closed 합니다. `-CheckOnly`에서는 생성하지 않습니다.
+
+원클릭 출력에는 current V2 artifact 이름, compressed size, support point 수, family 수, forward comparison 수, encoding, DB write/Production 상태가 함께 표시됩니다.
