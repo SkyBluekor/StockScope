@@ -1788,3 +1788,41 @@ def test_s4_2b16_r21_cli_has_no_selection_or_holdout_arguments():
         "--approve",
     ):
         assert forbidden not in option_strings
+
+
+def test_s4_2b16_r21_tail_distance_matches_direct_ecdf():
+    inputs = _s4_2b16_r21_inputs()
+    artifact = build_reference_adequacy_evidence(
+        development_dataset=inputs[0],
+        protocol=inputs[1],
+        research=inputs[2],
+        reconstruction=inputs[3],
+        stability=inputs[4],
+        adequacy_protocol=inputs[5],
+        source_main_sha="test-main-sha",
+    )
+    tail_family = next(
+        family for family in artifact["families"]
+        if family["method"] == TAIL_METHOD
+    )
+    anchor = tail_family["anchors"][0]
+    feature_id = tail_family["feature_id"]
+    rows = sorted(
+        inputs[2]["feature_results"][feature_id]["expanding"]["rows"],
+        key=lambda row: int(row["prior_count"]),
+    )
+    anchor_n = int(anchor["anchor_n"])
+    later_n = anchor_n + 1
+    anchor_values = [float(row["value"]) for row in rows[:anchor_n]]
+    later_values = [float(row["value"]) for row in rows[:later_n]]
+    support = sorted(set(anchor_values + later_values))
+
+    direct = max(
+        abs(
+            sum(value <= x for value in anchor_values) / anchor_n
+            - sum(value <= x for value in later_values) / later_n
+        )
+        for x in support
+    )
+    stored = float(anchor["ecdf_sup_distances"][0])
+    assert stored == pytest.approx(direct, abs=1e-15)
