@@ -298,6 +298,24 @@ Preview:
 
 S4.1R 완료 상태는 `candidate generation=COMPLETE`, `compression=COMPRESSION_COMPLETE`, `diagnostics=COMPLETE`, `admissibility=ADMISSIBILITY_POLICY_UNDEFINED`, `ready_for_holdout=false`입니다. Holdout 입력 옵션은 없고 Holdout은 계속 locked/unread입니다. 최종 threshold/minimum sample/event unit/evaluation rule은 선택하지 않으며 `RATE_SPIKE`는 계속 `UNCALIBRATED`입니다. 다음 단계에서 별도 사전등록 작업으로 admissibility policy를 정의해야 합니다.
 
+## NEXT-6B-S4.2-A Admissibility Review Report
+### 금리 충격 후보 자격 기준 결정을 위한 개발 데이터 검토 보고서
+
+S4.2-A는 S4.1R에서 이미 고정한 `FRONTIER-DIAGNOSTIC-*.json` 하나만 읽는 **review-only layer**입니다. DEV/PROTOCOL/RESEARCH를 다시 계산하지 않고 Holdout 입력도 받지 않습니다. 9개 feature × method family를 한 화면에서 비교할 수 있도록 candidate/behavior 수, threshold 범위, signal 빈도, positive capture, signal row/episode/연도별 episode 범위, nested behavior를 compact table로 보여줍니다.
+
+실행:
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\review_macro_admissibility_next6b_s4_2a.py `
+  --diagnostic-artifact .\backend\runtime\macro\calibration\FRONTIER-DIAGNOSTIC-74458592d2e610da.json
+```
+
+표의 `Signal%`과 `Capture%`는 사람이 읽기 위한 표시값이며 source hash나 향후 정책 계산에는 사용하지 않습니다. 원본 Decimal 범위와 family hash는 review model에 그대로 보존됩니다.
+
+S4.2-A는 policy를 결정하지 않습니다. `event_unit=UNSET`, `evaluation_rule=UNSET`, threshold/minimum sample/event unit 미선택, `ready_for_holdout=false`, `RATE_SPIKE=UNCALIBRATED`를 유지합니다. exact 100% positive capture에 대한 기존 `TRIVIAL_DIRECTION_RULE` 외에 99.9%·98%·95% 같은 sub-100% 후보를 자동 탈락시키지 않습니다. Network request와 Macro DB write, Production 영향은 모두 0입니다.
+
+이 단계에서는 새 immutable policy artifact를 만들지 않습니다. 실제 9개 family review 결과를 검수한 뒤 다음 단계에서 admissibility policy 사전등록 여부를 결정합니다.
+
 ## P2-S2 실제 추천 평가 저장소 준비
 
 P2-S2는 새 Scanner 실행부터 실제 추천 표본을 사후 선택 전에 보존합니다. 과거 Scanner 실행을 prospective 표본으로 소급 생성하지 않습니다.
