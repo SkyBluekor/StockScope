@@ -94,6 +94,18 @@ try {
     }
 
     Write-Host ""
+    $MacroArguments = @((Join-Path $Root "tools\dev\sync_macro_artifacts.py"))
+    if ($CheckOnly) {
+        $MacroArguments += "--check-only"
+    }
+
+    & $Python @MacroArguments
+    $MacroExit = $LASTEXITCODE
+    if ($MacroExit -ne 0) {
+        Fail "Macro artifact synchronization failed with exit code $MacroExit."
+    }
+
+    Write-Host ""
     Write-Host "Git/Secrets"
     Write-Host "Secrets                 UNCHANGED"
     Write-Host "Git destructive ops     NONE"
