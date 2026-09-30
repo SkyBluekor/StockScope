@@ -268,6 +268,36 @@ Preview 검수 후 `--write-artifact`를 추가하면 `backend/runtime/macro/cal
 
 완료 후에도 최종 candidate는 선택하지 않고 minimum sample도 고정하지 않습니다. `RATE_SPIKE`는 `UNCALIBRATED`, Holdout은 locked/unread, NORMAL/DETECTED label과 Network/Macro DB write/Production 영향은 모두 0입니다.
 
+## NEXT-6B-S4.1R Frontier Admissibility Gate
+### 과도한 금리 충격 후보 프런티어를 확정하지 않고 충격 후보 자격 기준을 분리
+
+S4.1R은 S4/S4.1의 후보 생성·행동 중복 제거·교차 방식 Pareto 압축을 그대로 재생한 뒤, **어느 정도부터 RATE_SPIKE로 인정할지 아직 정책이 정의되지 않았다는 사실을 명시적으로 고정**합니다. Development 데이터가 희소성·포착률·episode 분포를 보여줄 수는 있지만, 5%·1%·95%·99%·MAD 3 같은 숫자를 자동으로 충격 기준으로 승격하지 않습니다.
+
+현재 admissibility policy는 다음 상태로만 생성됩니다.
+
+- policy id: `RATE_SPIKE_ADMISSIBILITY_UNSET`
+- policy version: `UNSET`
+- event unit: `UNSET`
+- maximum signal fraction / positive capture / episode rate: `null`
+- minimum year coverage / minimum sample: `null`
+- status: `UNDEFINED`
+- approved: `false`
+
+진단은 `delta_bp_1obs`, `delta_bp_5obs`, `delta_bp_10obs` × 3개 방법의 **9개 family**를 모두 보고합니다. 각 family에는 후보 수, 고유 behavior 수, threshold 범위, signal fraction 범위, positive-move capture 범위, signal row/episode/episode-start 범위, 연도별 episode 범위, nested behavior, behavior/candidate hash가 포함됩니다. exact 100% positive capture는 기존 S4.1의 `TRIVIAL_DIRECTION_RULE`만 적용하며, 99.9%·98%·95% 같은 sub-100% capture에는 추가 cutoff를 두지 않습니다.
+
+Preview:
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\diagnose_macro_calibration_frontier_next6b_s4_1r.py `
+  --development-artifact .\backend\runtime\macro\calibration\DEV-7c3f6660b3aae03f.json `
+  --protocol-artifact .\backend\runtime\macro\calibration\PROTOCOL-e1de868dc8f16670.json `
+  --research-artifact .\backend\runtime\macro\calibration\RESEARCH-cdd96e164e12017d.json
+```
+
+검수 후 immutable diagnostic artifact가 필요할 때만 `--write-artifact`를 추가합니다. 결과는 `backend/runtime/macro/calibration/FRONTIER-DIAGNOSTIC-<hash>.json`에 저장되며 Git 대상이 아닙니다.
+
+S4.1R 완료 상태는 `candidate generation=COMPLETE`, `compression=COMPRESSION_COMPLETE`, `diagnostics=COMPLETE`, `admissibility=ADMISSIBILITY_POLICY_UNDEFINED`, `ready_for_holdout=false`입니다. Holdout 입력 옵션은 없고 Holdout은 계속 locked/unread입니다. 최종 threshold/minimum sample/event unit/evaluation rule은 선택하지 않으며 `RATE_SPIKE`는 계속 `UNCALIBRATED`입니다. 다음 단계에서 별도 사전등록 작업으로 admissibility policy를 정의해야 합니다.
+
 ## P2-S2 실제 추천 평가 저장소 준비
 
 P2-S2는 새 Scanner 실행부터 실제 추천 표본을 사후 선택 전에 보존합니다. 과거 Scanner 실행을 prospective 표본으로 소급 생성하지 않습니다.
