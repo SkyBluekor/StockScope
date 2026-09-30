@@ -15,11 +15,16 @@ for candidate in (ROOT, BACKEND):
     if str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
-from app.macro.reference_adequacy_evidence import validate_reference_adequacy_evidence
+from app.macro.reference_adequacy_evidence import (
+    COMPACT_ENCODING,
+    REFERENCE_ADEQUACY_EVIDENCE_CONTRACT_VERSION,
+    load_reference_adequacy_evidence_file,
+    validate_reference_adequacy_evidence,
+)
 from app.macro.reference_adequacy_protocol import validate_reference_adequacy_protocol
 from app.macro.reference_stability import validate_reference_stability_evidence
 
-SYNC_VERSION = "MACRO_ARTIFACT_SYNC_V2"
+SYNC_VERSION = "MACRO_ARTIFACT_SYNC_V3"
 
 DEV_NAME = "DEV-7c3f6660b3aae03f.json"
 PROTOCOL_NAME = "PROTOCOL-e1de868dc8f16670.json"
@@ -27,6 +32,7 @@ RESEARCH_NAME = "RESEARCH-cdd96e164e12017d.json"
 DIAGNOSTIC_NAME = "FRONTIER-DIAGNOSTIC-74458592d2e610da.json"
 EVIDENCE_NAME = "ADMISSIBILITY-EVIDENCE-da7b94a2a51e3ff6.json"
 RECONSTRUCTION_NAME = "ELIGIBILITY-RECONSTRUCTION-c6db8f9dd260fdd4.json"
+LEGACY_R21_V1_NAME = "REFERENCE-ADEQUACY-EVIDENCE-3888bb11cb1fc0de.json"
 
 DEV_HASH = "7c3f6660b3aae03f46c4a3cd66e6652b56c01fc9ab9a00aea67de8a451cddfc1"
 PROTOCOL_HASH = "e1de868dc8f1667040e1825f459a8b92516d094a14cfb3a010fc37137850c3bc"
@@ -209,27 +215,58 @@ def _valid_adequacy_pairs(
 def _valid_evidence(
     directory: Path,
     adequacy_pairs: list[tuple[Path, dict[str, Any], Path, dict[str, Any]]],
-) -> list[tuple[Path, Path, Path]]:
+) -> list[tuple[Path, dict[str, Any], Path, Path]]:
     adequacy_by_hash = {
         str(payload["adequacy_protocol_hash"]): (protocol_path, stability_path)
         for protocol_path, payload, stability_path, _ in adequacy_pairs
     }
-    found: list[tuple[Path, Path, Path]] = []
-    for path in sorted(directory.glob("REFERENCE-ADEQUACY-EVIDENCE-*.json")):
+    found: list[tuple[Path, dict[str, Any], Path, Path]] = []
+    for path in sorted(directory.glob("REFERENCE-ADEQUACY-EVIDENCE-*.json.gz")):
         try:
-            payload = _load_json(path)
+            payload = load_reference_adequacy_evidence_file(path)
+            if payload.get("contract_version") != (
+                REFERENCE_ADEQUACY_EVIDENCE_CONTRACT_VERSION
+            ):
+                continue
             state = validate_reference_adequacy_evidence(payload)
         except (OSError, ValueError, KeyError, json.JSONDecodeError):
             continue
-        protocol_hash = str((payload.get("source") or {}).get("adequacy_protocol_hash") or "")
+        protocol_hash = str(
+            (payload.get("source") or {}).get("adequacy_protocol_hash") or ""
+        )
         pair = adequacy_by_hash.get(protocol_hash)
         if pair is None:
             continue
         evidence_hash = str(state["evidence_hash"])
-        if path.name != f"REFERENCE-ADEQUACY-EVIDENCE-{evidence_hash[:16]}.json":
+        if path.name != (
+            f"REFERENCE-ADEQUACY-EVIDENCE-{evidence_hash[:16]}.json.gz"
+        ):
             continue
-        found.append((path, pair[0], pair[1]))
+        found.append((path, payload, pair[0], pair[1]))
     return found
+
+
+def _legacy_v1_path(directory: Path) -> Path | None:
+    path = directory / LEGACY_R21_V1_NAME
+    return path if path.is_file() else None
+
+
+def _evidence_summary(path: Path, payload: dict[str, Any]) -> dict[str, Any]:
+    counts = payload["counts"]
+    return {
+        "contract": "V2_COMPACT",
+        "artifact": path.name,
+        "size_mb": round(path.stat().st_size / 1024 / 1024, 2),
+        "support_points": int(counts["common_support_point_count"]),
+        "families": int(counts["reference_family_count"]),
+        "forward_comparisons": int(counts["forward_comparison_count"]),
+        "encoding": (payload.get("encoding") or {}).get(
+            "representation", COMPACT_ENCODING
+        ),
+        "logical_evidence_hash": payload.get("logical_evidence_hash"),
+        "macro_db_writes": int(payload.get("macro_db_writes") or 0),
+        "production_impact": payload.get("production_impact"),
+    }
 
 
 def _base_result(check_only: bool, statuses: list[dict[str, str]]) -> dict[str, Any]:
@@ -297,7 +334,7 @@ def sync_macro_artifacts(
     evidence = _valid_evidence(calibration_dir, adequacy_pairs)
 
     if evidence:
-        evidence_path, adequacy_path, stability_path = evidence[-1]
+        evidence_path, evidence_payload, adequacy_path, stability_path = evidence[-1]
         statuses.extend(
             [
                 {"key": "stability", "label": stability_path.name, "state": "CURRENT"},
@@ -316,6 +353,7 @@ def sync_macro_artifacts(
             "reference_stability": str(stability_path),
             "reference_adequacy_protocol": str(adequacy_path),
             "reference_adequacy_evidence": str(evidence_path),
+            "evidence_summary": _evidence_summary(evidence_path, evidence_payload),
             "holdout_accessed": False,
             "network_requests": 0,
         }
@@ -341,8 +379,21 @@ def sync_macro_artifacts(
             statuses.append(
                 {"key": "adequacy", "label": "Reference Adequacy Protocol V3", "state": "MISSING"}
             )
+        legacy = _legacy_v1_path(calibration_dir)
+        if legacy is not None:
+            statuses.append(
+                {
+                    "key": "adequacy_evidence_v1",
+                    "label": legacy.name,
+                    "state": "HISTORICAL",
+                }
+            )
         statuses.append(
-            {"key": "adequacy_evidence", "label": "Reference Adequacy Evidence", "state": "MISSING"}
+            {
+                "key": "adequacy_evidence",
+                "label": "Reference Adequacy Evidence V2 Compact",
+                "state": "MISSING",
+            }
         )
         return _base_result(True, statuses)
 
@@ -399,23 +450,27 @@ def sync_macro_artifacts(
         ]
     )
 
+    evidence_arguments = [
+        "--development-artifact", str(_artifact_path(calibration_dir, DEV_NAME)),
+        "--protocol-artifact", str(_artifact_path(calibration_dir, PROTOCOL_NAME)),
+        "--research-artifact", str(_artifact_path(calibration_dir, RESEARCH_NAME)),
+        "--reconstruction-artifact", str(_artifact_path(calibration_dir, RECONSTRUCTION_NAME)),
+        "--reference-stability-artifact", str(stability_path),
+        "--reference-adequacy-protocol-artifact", str(adequacy_path),
+    ]
+    legacy = _legacy_v1_path(calibration_dir)
+    if legacy is not None:
+        evidence_arguments.extend(["--legacy-v1-artifact", str(legacy)])
+    evidence_arguments.append("--write-artifact")
     runner(
         "tools/data/build_macro_reference_adequacy_evidence_next6b_s4_2b16_r21.py",
-        (
-            "--development-artifact", str(_artifact_path(calibration_dir, DEV_NAME)),
-            "--protocol-artifact", str(_artifact_path(calibration_dir, PROTOCOL_NAME)),
-            "--research-artifact", str(_artifact_path(calibration_dir, RESEARCH_NAME)),
-            "--reconstruction-artifact", str(_artifact_path(calibration_dir, RECONSTRUCTION_NAME)),
-            "--reference-stability-artifact", str(stability_path),
-            "--reference-adequacy-protocol-artifact", str(adequacy_path),
-            "--write-artifact",
-        ),
+        tuple(evidence_arguments),
     )
     evidence = _valid_evidence(calibration_dir, adequacy_pairs)
     if not evidence:
         raise MacroArtifactSyncError("Reference Adequacy Evidence did not validate.")
-    evidence_path, adequacy_path, stability_path = evidence[-1]
-    generated.append("REFERENCE-ADEQUACY-EVIDENCE-*.json")
+    evidence_path, evidence_payload, adequacy_path, stability_path = evidence[-1]
+    generated.append("REFERENCE-ADEQUACY-EVIDENCE-*.json.gz")
     statuses.append(
         {"key": "adequacy_evidence", "label": evidence_path.name, "state": "GENERATED"}
     )
@@ -430,6 +485,7 @@ def sync_macro_artifacts(
         "reference_stability": str(stability_path),
         "reference_adequacy_protocol": str(adequacy_path),
         "reference_adequacy_evidence": str(evidence_path),
+        "evidence_summary": _evidence_summary(evidence_path, evidence_payload),
         "holdout_accessed": False,
         "network_requests": 0,
     }
@@ -445,8 +501,27 @@ def _print_result(result: dict[str, Any]) -> None:
     print("")
     if result.get("missing_seeds"):
         print("Required seeds missing  " + ", ".join(result["missing_seeds"]))
+    summary = result.get("evidence_summary")
+    if summary:
+        print("Reference Adequacy Evidence")
+        print(f"  Contract             {summary['contract']}")
+        print(f"  Artifact             {summary['artifact']}")
+        print(f"  Size                 {summary['size_mb']:.2f} MB")
+        print(f"  Support points       {summary['support_points']}")
+        print(f"  Families             {summary['families']}")
+        print(f"  Forward comparisons  {summary['forward_comparisons']}")
+        print(f"  Encoding             {summary['encoding']}")
+        print("")
     print("Holdout accessed        NO")
     print("External network        0")
+    print(
+        "Macro DB writes        "
+        f"{summary['macro_db_writes'] if summary else 0}"
+    )
+    print(
+        "Production             "
+        f"{summary['production_impact'] if summary else 'NONE'}"
+    )
     print(f"Action required         {'NO' if result.get('ready') else 'YES'}")
     if result.get("ready"):
         print("MACRO ARTIFACTS READY")
