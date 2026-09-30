@@ -166,6 +166,12 @@ def main() -> int:
         )
 
     if args.write_artifact:
+        predicted_size = len(deterministic_gzip_bytes(artifact))
+        if legacy_size is not None and predicted_size > legacy_size * 0.25:
+            raise RuntimeError(
+                "Compact evidence exceeds the PERF hard gate: "
+                f"{predicted_size} bytes > 25% of legacy V1 ({legacy_size} bytes)."
+            )
         target = _write_immutable_gzip_json(
             directory=BACKEND / "runtime" / "macro" / "calibration",
             identity=artifact["evidence_hash"][:16],
