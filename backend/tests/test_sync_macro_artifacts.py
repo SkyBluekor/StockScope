@@ -94,3 +94,13 @@ def test_root_one_click_sync_invokes_macro_artifact_sync():
 
     assert "tools\\dev\\sync_macro_artifacts.py" in script
     assert "--check-only" in script
+
+
+def test_root_one_click_sync_restarts_after_self_update():
+    root = Path(__file__).resolve().parents[2]
+    script = (root / "sync_local.ps1").read_text(encoding="utf-8")
+
+    assert "AfterSelfUpdate" in script
+    assert 'git diff --name-only "$BeforeHead..$AfterHead" -- "sync_local.ps1"' in script
+    assert "UPDATED - restarting once" in script
+    assert "-AfterSelfUpdate" in script

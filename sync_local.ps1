@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
-    [switch]$CheckOnly
+    [switch]$CheckOnly,
+    [Parameter(DontShow = $true)]
+    [switch]$AfterSelfUpdate
 )
 
 $ErrorActionPreference = "Stop"
@@ -61,6 +63,12 @@ try {
     if (-not $CheckOnly) {
         Write-Host ""
         Write-Host "Git update"
+
+        $BeforeHead = (& git rev-parse HEAD).Trim()
+        if ($LASTEXITCODE -ne 0 -or -not $BeforeHead) {
+            Fail "Unable to resolve pre-update Git HEAD."
+        }
+
         & git fetch origin main
         if ($LASTEXITCODE -ne 0) {
             Fail "git fetch origin main failed. Runtime migration was not started."
@@ -70,7 +78,39 @@ try {
         if ($LASTEXITCODE -ne 0) {
             Fail "git pull --ff-only origin main failed. Local main may have diverged."
         }
+
+        $AfterHead = (& git rev-parse HEAD).Trim()
+        if ($LASTEXITCODE -ne 0 -or -not $AfterHead) {
+            Fail "Unable to resolve post-update Git HEAD."
+        }
+
         Write-Host "Git update              PASS  origin/main"
+
+        if (-not $AfterSelfUpdate -and $BeforeHead -ne $AfterHead) {
+            $SelfChanges = @(
+                & git diff --name-only "$BeforeHead..$AfterHead" -- "sync_local.ps1"
+            )
+            if ($LASTEXITCODE -ne 0) {
+                Fail "Unable to inspect whether sync_local.ps1 changed during update."
+            }
+
+            if ($SelfChanges.Count -gt 0) {
+                Write-Host "Local Sync script       UPDATED - restarting once"
+
+                $Pwsh = Join-Path $PSHOME "pwsh.exe"
+                $WindowsPowerShell = Join-Path $PSHOME "powershell.exe"
+                if (Test-Path $Pwsh -PathType Leaf) {
+                    $PowerShellExe = $Pwsh
+                } elseif (Test-Path $WindowsPowerShell -PathType Leaf) {
+                    $PowerShellExe = $WindowsPowerShell
+                } else {
+                    Fail "Unable to locate the current PowerShell executable for self-restart."
+                }
+
+                & $PowerShellExe -NoProfile -File $PSCommandPath -AfterSelfUpdate
+                exit $LASTEXITCODE
+            }
+        }
     } else {
         Write-Host "Git update              SKIPPED (CheckOnly)"
     }
