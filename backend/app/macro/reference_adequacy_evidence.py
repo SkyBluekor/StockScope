@@ -579,6 +579,70 @@ def _mad_family_evidence(
     }
 
 
+def decode_tail_anchor_distances(anchor: dict[str, Any]) -> list[str]:
+    anchor_n = int(anchor["anchor_n"])
+    first_later_n = int(anchor["first_later_n"])
+    return [
+        _decimal_text(
+            Decimal(numerator)
+            / Decimal(anchor_n * (first_later_n + offset))
+        )
+        or "0"
+        for offset, numerator in enumerate(
+            _decode_unsigned_varints(anchor["numerator_varints_b64"])
+        )
+    ]
+
+
+def decode_mad_anchor_shifts(
+    family: dict[str, Any],
+    anchor: dict[str, Any],
+) -> dict[str, list[str | None]]:
+    scale = 10 ** int(family.get("scale_exponent") or 0)
+    anchor_mad_units = anchor.get("anchor_mad_units")
+    median_values = list(
+        _decode_nullable_nonnegative(
+            anchor["absolute_median_shift_varints_b64"]
+        )
+    )
+    mad_values = list(
+        _decode_nullable_nonnegative(
+            anchor["absolute_mad_shift_varints_b64"]
+        )
+    )
+    if len(median_values) != len(mad_values):
+        raise ValueError("MAD compact path lengths diverged.")
+    medians: list[str | None] = []
+    mads: list[str | None] = []
+    relatives: list[str | None] = []
+    for median_units, mad_units in zip(median_values, mad_values, strict=True):
+        medians.append(
+            _decimal_text(Decimal(median_units) / Decimal(scale))
+            if median_units is not None
+            else None
+        )
+        mads.append(
+            _decimal_text(Decimal(mad_units) / Decimal(scale))
+            if mad_units is not None
+            else None
+        )
+        relatives.append(
+            _decimal_text(
+                Decimal(mad_units) / Decimal(abs(int(anchor_mad_units)))
+            )
+            if (
+                mad_units is not None
+                and anchor_mad_units not in {None, 0}
+            )
+            else None
+        )
+    return {
+        "absolute_median_shifts": medians,
+        "absolute_mad_shifts": mads,
+        "relative_mad_shifts": relatives,
+    }
+
+
 def _logical_digest_token(digest: Any, value: Any) -> None:
     if value is None:
         encoded = b"<NULL>"
