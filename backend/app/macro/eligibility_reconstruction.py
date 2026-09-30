@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from bisect import bisect_left
 from collections import Counter
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
@@ -503,6 +504,7 @@ def _support_curve(
             "contract_version": RATE_SPIKE_SUPPORT_CURVE_CONTRACT_VERSION,
             "status": "NO_CANDIDATES",
             "source": "OBSERVED_PRIOR_COUNTS_ONLY",
+            "algorithm": "BISECT_SUFFIX_COUNTS_V1",
             "invented_grid_points": 0,
             "reference_support_applicable": None,
             "point_count": 0,
@@ -517,6 +519,7 @@ def _support_curve(
             "contract_version": RATE_SPIKE_SUPPORT_CURVE_CONTRACT_VERSION,
             "status": "NOT_APPLICABLE",
             "source": "OBSERVED_PRIOR_COUNTS_ONLY",
+            "algorithm": "BISECT_SUFFIX_COUNTS_V1",
             "invented_grid_points": 0,
             "reference_support_applicable": False,
             "point_count": 0,
@@ -538,6 +541,7 @@ def _support_curve(
             "contract_version": RATE_SPIKE_SUPPORT_CURVE_CONTRACT_VERSION,
             "status": "NO_OBSERVED_PRIOR_COUNTS",
             "source": "OBSERVED_PRIOR_COUNTS_ONLY",
+            "algorithm": "BISECT_SUFFIX_COUNTS_V1",
             "invented_grid_points": 0,
             "reference_support_applicable": True,
             "point_count": 0,
@@ -546,123 +550,139 @@ def _support_curve(
             "recommended_support": None,
         }
 
-    # Precompute each candidate's baseline state once. A hypothetical support
-    # rule only masks rows with prior_count below the observed support point.
+    # The previous implementation filtered every research row again for every
+    # candidate/support pair. With the real 1,999-row Development set that
+    # becomes cubic-like work. Keep only sorted prior-count indexes and derive
+    # suffix counts with bisect. This preserves identical semantics while
+    # making the real 3,241-candidate UAT practical.
     per_candidate: list[dict[str, Any]] = []
+    observed_support_set = set(observed_supports)
+    behavior_change_supports = {observed_supports[0]}
+
     for audit in candidate_audits:
         candidate = raw_candidates_by_hash[str(audit["candidate_hash"])]
         behavior_rows = evaluate_candidate_behavior(
             feature_result=feature_result,
             candidate=candidate,
         )
-        rows: list[dict[str, Any]] = []
-        previous_signal = False
-        for behavior, research_row in zip(behavior_rows, research_rows):
-            signal = bool(behavior["signal"])
-            episode_start = bool(signal and not previous_signal)
-            rows.append(
-                {
-                    "prior_count": int(research_row["prior_count"]),
-                    "eligible": bool(behavior["eligible"]),
-                    "signal": signal,
-                    "episode_start": episode_start,
-                    "year": str(behavior["observation_date"])[:4],
-                }
+        if len(behavior_rows) != len(research_rows):
+            raise ValueError(
+                "Support counterfactual candidate/research row count mismatch."
             )
+
+        eligible_priors: list[int] = []
+        signal_priors: list[int] = []
+        episode_start_priors: list[int] = []
+        max_episode_start_prior_by_year: dict[str, int] = {}
+        previous_signal = False
+
+        for behavior, research_row in zip(behavior_rows, research_rows):
+            if str(behavior["row_hash"]) != str(research_row["row_hash"]):
+                raise ValueError(
+                    "Support counterfactual candidate/research row ordering mismatch."
+                )
+            prior_count = int(research_row["prior_count"])
+            signal = bool(behavior["signal"])
+            if bool(behavior["eligible"]):
+                eligible_priors.append(prior_count)
+            if signal:
+                signal_priors.append(prior_count)
+                if not previous_signal:
+                    episode_start_priors.append(prior_count)
+                    year = str(behavior["observation_date"])[:4]
+                    existing = max_episode_start_prior_by_year.get(year)
+                    if existing is None or prior_count > existing:
+                        max_episode_start_prior_by_year[year] = prior_count
             previous_signal = signal
+
+        eligible_priors.sort()
+        signal_priors.sort()
+        episode_start_priors.sort()
+        year_maxima = sorted(max_episode_start_prior_by_year.values())
+
+        # Raising minimum support from p to p+1 masks signal rows at prior=p.
+        # Only those transitions can change signal/event behavior. We still
+        # report eligible counts at each retained point, but eligible-only
+        # denominator changes intentionally do not create extra points.
+        for prior_count in set(signal_priors):
+            next_support = prior_count + 1
+            if next_support in observed_support_set:
+                behavior_change_supports.add(next_support)
+
         per_candidate.append(
             {
-                "candidate_hash": candidate["candidate_hash"],
-                "rows": rows,
+                "candidate_hash": str(candidate["candidate_hash"]),
+                "eligible_priors": eligible_priors,
+                "signal_priors": signal_priors,
+                "episode_start_priors": episode_start_priors,
+                "episode_start_year_maxima": year_maxima,
             }
         )
 
     points: list[dict[str, Any]] = []
-    previous_signature: str | None = None
+    for support in sorted(behavior_change_supports):
+        eligible_values: list[int] = []
+        signal_values: list[int] = []
+        episode_values: list[int] = []
+        coverage_values: list[int] = []
+        active_candidate_count = 0
 
-    for support in observed_supports:
-        candidate_metrics: list[dict[str, Any]] = []
         for item in per_candidate:
-            rows = [
-                row for row in item["rows"]
-                if row["prior_count"] >= support
-            ]
-            eligible_count = sum(row["eligible"] for row in rows)
-            signal_count = sum(row["signal"] for row in rows)
-            episode_start_rows = [
-                row for row in rows if row["episode_start"]
-            ]
-            episode_start_count = len(episode_start_rows)
-            covered_years = len(
-                {row["year"] for row in episode_start_rows}
+            eligible_priors = item["eligible_priors"]
+            signal_priors = item["signal_priors"]
+            episode_start_priors = item["episode_start_priors"]
+            year_maxima = item["episode_start_year_maxima"]
+
+            eligible_count = len(eligible_priors) - bisect_left(
+                eligible_priors,
+                support,
             )
-            candidate_metrics.append(
-                {
-                    "candidate_hash": item["candidate_hash"],
-                    "eligible_count": eligible_count,
-                    "signal_count": signal_count,
-                    "episode_start_count": episode_start_count,
-                    "covered_year_count": covered_years,
-                }
+            signal_count = len(signal_priors) - bisect_left(
+                signal_priors,
+                support,
+            )
+            episode_start_count = len(episode_start_priors) - bisect_left(
+                episode_start_priors,
+                support,
+            )
+            covered_year_count = sum(
+                int(value) >= support for value in year_maxima
             )
 
-        active = [
-            metric for metric in candidate_metrics
-            if metric["signal_count"] > 0
-        ]
-        signature_payload = [
-            (
-                metric["candidate_hash"],
-                metric["signal_count"],
-                metric["episode_start_count"],
-                metric["covered_year_count"],
-            )
-            for metric in candidate_metrics
-        ]
-        signature = content_hash(signature_payload)
+            eligible_values.append(eligible_count)
+            if signal_count > 0:
+                active_candidate_count += 1
+                signal_values.append(signal_count)
+                episode_values.append(episode_start_count)
+                coverage_values.append(covered_year_count)
 
-        # Keep only signal/event behavior change points. Eligible counts are
-        # reported at those points but do not create a point by themselves.
-        if signature == previous_signature:
-            continue
-        previous_signature = signature
-
-        eligible_values = [
-            metric["eligible_count"] for metric in candidate_metrics
-        ]
-        signal_values = [
-            metric["signal_count"] for metric in active
-        ]
-        episode_values = [
-            metric["episode_start_count"] for metric in active
-        ]
-        coverage_values = [
-            metric["covered_year_count"] for metric in active
-        ]
+        point_payload = {
+            "minimum_prior_observations": support,
+            "active_candidate_count": active_candidate_count,
+            "inactive_candidate_count": (
+                len(per_candidate) - active_candidate_count
+            ),
+            "eligible_count_range": {
+                "min": min(eligible_values) if eligible_values else None,
+                "max": max(eligible_values) if eligible_values else None,
+            },
+            "signal_count_range": {
+                "min": min(signal_values) if signal_values else None,
+                "max": max(signal_values) if signal_values else None,
+            },
+            "episode_start_count_range": {
+                "min": min(episode_values) if episode_values else None,
+                "max": max(episode_values) if episode_values else None,
+            },
+            "covered_year_count_range": {
+                "min": min(coverage_values) if coverage_values else None,
+                "max": max(coverage_values) if coverage_values else None,
+            },
+        }
         points.append(
             {
-                "minimum_prior_observations": support,
-                "active_candidate_count": len(active),
-                "inactive_candidate_count": (
-                    len(candidate_metrics) - len(active)
-                ),
-                "eligible_count_range": {
-                    "min": min(eligible_values) if eligible_values else None,
-                    "max": max(eligible_values) if eligible_values else None,
-                },
-                "signal_count_range": {
-                    "min": min(signal_values) if signal_values else None,
-                    "max": max(signal_values) if signal_values else None,
-                },
-                "episode_start_count_range": {
-                    "min": min(episode_values) if episode_values else None,
-                    "max": max(episode_values) if episode_values else None,
-                },
-                "covered_year_count_range": {
-                    "min": min(coverage_values) if coverage_values else None,
-                    "max": max(coverage_values) if coverage_values else None,
-                },
-                "candidate_behavior_signature_hash": signature,
+                **point_payload,
+                "aggregate_state_hash": content_hash(point_payload),
             }
         )
 
@@ -670,16 +690,17 @@ def _support_curve(
         "contract_version": RATE_SPIKE_SUPPORT_CURVE_CONTRACT_VERSION,
         "status": "DIAGNOSTIC_ONLY",
         "source": "OBSERVED_PRIOR_COUNTS_ONLY",
+        "algorithm": "BISECT_SUFFIX_COUNTS_V1",
         "compression_rule": "SIGNAL_EVENT_BEHAVIOR_CHANGE_POINTS_ONLY",
         "eligible_only_changes_create_points": False,
         "invented_grid_points": 0,
         "reference_support_applicable": True,
+        "observed_support_count": len(observed_supports),
         "point_count": len(points),
         "points": points,
         "selection_status": "NOT_SELECTED",
         "recommended_support": None,
     }
-
 
 def _family_summary(
     *,
