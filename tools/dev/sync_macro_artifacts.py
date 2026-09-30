@@ -15,10 +15,15 @@ for candidate in (ROOT, BACKEND):
     if str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
-from app.macro.reference_adequacy_protocol import validate_reference_adequacy_protocol
+from app.macro.reference_adequacy_evidence import (
+    validate_reference_adequacy_evidence,
+)
+from app.macro.reference_adequacy_protocol import (
+    validate_reference_adequacy_protocol,
+)
 from app.macro.reference_stability import validate_reference_stability_evidence
 
-SYNC_VERSION = "MACRO_ARTIFACT_SYNC_V1"
+SYNC_VERSION = "MACRO_ARTIFACT_SYNC_V2"
 
 DEV_NAME = "DEV-7c3f6660b3aae03f.json"
 PROTOCOL_NAME = "PROTOCOL-e1de868dc8f16670.json"
@@ -149,8 +154,8 @@ def _default_runner(script: str, arguments: tuple[str, ...]) -> None:
     )
     if completed.returncode != 0:
         detail = (completed.stderr or completed.stdout).strip()
-        if len(detail) > 3000:
-            detail = detail[-3000:]
+        if len(detail) > 5000:
+            detail = detail[-5000:]
         raise MacroArtifactSyncError(
             f"{script} failed with exit code {completed.returncode}: {detail}"
         )
@@ -183,8 +188,8 @@ def _valid_stabilities(directory: Path) -> dict[str, tuple[Path, dict[str, Any]]
 def _valid_adequacy_pairs(
     directory: Path,
     stabilities: dict[str, tuple[Path, dict[str, Any]]],
-) -> list[tuple[Path, Path]]:
-    found: list[tuple[Path, Path]] = []
+) -> list[tuple[Path, dict[str, Any], Path, dict[str, Any]]]:
+    found: list[tuple[Path, dict[str, Any], Path, dict[str, Any]]] = []
     for path in sorted(directory.glob("REFERENCE-ADEQUACY-PROTOCOL-*.json")):
         try:
             payload = _load_json(path)
@@ -207,7 +212,42 @@ def _valid_adequacy_pairs(
         adequacy_hash = str(state["adequacy_protocol_hash"])
         if path.name != f"REFERENCE-ADEQUACY-PROTOCOL-{adequacy_hash[:16]}.json":
             continue
-        found.append((path, stability[0]))
+        found.append((path, payload, stability[0], stability[1]))
+    return found
+
+
+def _valid_adequacy_evidence(
+    directory: Path,
+    pairs: list[tuple[Path, dict[str, Any], Path, dict[str, Any]]],
+) -> list[tuple[Path, dict[str, Any], Path, Path]]:
+    protocol_paths = {
+        str(payload["adequacy_protocol_hash"]): (protocol_path, stability_path)
+        for protocol_path, payload, stability_path, _ in pairs
+    }
+    found: list[tuple[Path, dict[str, Any], Path, Path]] = []
+    for path in sorted(directory.glob("REFERENCE-ADEQUACY-EVIDENCE-*.json")):
+        try:
+            payload = _load_json(path)
+            state = validate_reference_adequacy_evidence(payload)
+        except (OSError, ValueError, KeyError, json.JSONDecodeError):
+            continue
+        source = payload.get("source") or {}
+        if source.get("development_dataset_hash") != DEV_HASH:
+            continue
+        if source.get("protocol_hash") != PROTOCOL_HASH:
+            continue
+        if source.get("research_hash") != RESEARCH_HASH:
+            continue
+        if source.get("reconstruction_hash") != RECONSTRUCTION_HASH:
+            continue
+        protocol_hash = str(source.get("reference_adequacy_protocol_hash") or "")
+        current = protocol_paths.get(protocol_hash)
+        if current is None:
+            continue
+        evidence_hash = str(state["evidence_hash"])
+        if path.name != f"REFERENCE-ADEQUACY-EVIDENCE-{evidence_hash[:16]}.json":
+            continue
+        found.append((path, payload, current[0], current[1]))
     return found
 
 
@@ -223,6 +263,14 @@ def _base_result(check_only: bool, statuses: list[dict[str, str]]) -> dict[str, 
         "holdout_accessed": False,
         "network_requests": 0,
     }
+
+
+def _select_pair(
+    pairs: list[tuple[Path, dict[str, Any], Path, dict[str, Any]]],
+) -> tuple[Path, dict[str, Any], Path, dict[str, Any]]:
+    if not pairs:
+        raise MacroArtifactSyncError("No current Reference Adequacy Protocol pair.")
+    return sorted(pairs, key=lambda item: item[0].name)[-1]
 
 
 def sync_macro_artifacts(
@@ -278,30 +326,6 @@ def sync_macro_artifacts(
         return _base_result(True, statuses)
 
     stabilities = _valid_stabilities(calibration_dir)
-    pairs = _valid_adequacy_pairs(calibration_dir, stabilities)
-
-    if pairs:
-        adequacy_path, stability_path = pairs[-1]
-        statuses.append(
-            {"key": "stability", "label": stability_path.name, "state": "CURRENT"}
-        )
-        statuses.append(
-            {"key": "adequacy", "label": adequacy_path.name, "state": "CURRENT"}
-        )
-        return {
-            "sync_version": SYNC_VERSION,
-            "check_only": check_only,
-            "ready": True,
-            "blocked": False,
-            "missing_seeds": [],
-            "generated": generated,
-            "statuses": statuses,
-            "reference_stability": str(stability_path),
-            "reference_adequacy_protocol": str(adequacy_path),
-            "holdout_accessed": False,
-            "network_requests": 0,
-        }
-
     if not stabilities:
         if check_only:
             statuses.extend(
@@ -309,7 +333,12 @@ def sync_macro_artifacts(
                     {"key": "stability", "label": "Reference Stability", "state": "MISSING"},
                     {
                         "key": "adequacy",
-                        "label": "Reference Adequacy Protocol",
+                        "label": "Reference Adequacy Protocol V3",
+                        "state": "MISSING",
+                    },
+                    {
+                        "key": "adequacy_evidence",
+                        "label": "Reference Adequacy Evidence",
                         "state": "MISSING",
                     },
                 ]
@@ -339,69 +368,154 @@ def sync_macro_artifacts(
 
     stability_hash = sorted(stabilities)[-1]
     stability_path, _ = stabilities[stability_hash]
+    stability_generated = "REFERENCE-STABILITY-*.json" in generated
     statuses.append(
         {
             "key": "stability",
             "label": stability_path.name,
+            "state": "GENERATED" if stability_generated else "CURRENT",
+        }
+    )
+
+    pairs = _valid_adequacy_pairs(calibration_dir, stabilities)
+    if not pairs:
+        if check_only:
+            statuses.extend(
+                [
+                    {
+                        "key": "adequacy",
+                        "label": "Reference Adequacy Protocol V3",
+                        "state": "MISSING",
+                    },
+                    {
+                        "key": "adequacy_evidence",
+                        "label": "Reference Adequacy Evidence",
+                        "state": "MISSING",
+                    },
+                ]
+            )
+            result = _base_result(True, statuses)
+            result["reference_stability"] = str(stability_path)
+            return result
+
+        runner(
+            "tools/data/preregister_macro_reference_adequacy_next6b_s4_2b16.py",
+            (
+                "--development-artifact",
+                str(_artifact_path(calibration_dir, DEV_NAME)),
+                "--protocol-artifact",
+                str(_artifact_path(calibration_dir, PROTOCOL_NAME)),
+                "--research-artifact",
+                str(_artifact_path(calibration_dir, RESEARCH_NAME)),
+                "--reconstruction-artifact",
+                str(_artifact_path(calibration_dir, RECONSTRUCTION_NAME)),
+                "--reference-stability-artifact",
+                str(stability_path),
+                "--write-artifact",
+            ),
+        )
+        stabilities = _valid_stabilities(calibration_dir)
+        pairs = _valid_adequacy_pairs(calibration_dir, stabilities)
+        if not pairs:
+            raise MacroArtifactSyncError(
+                "Reference Adequacy Protocol V3 was not generated or did not validate."
+            )
+        generated.append("REFERENCE-ADEQUACY-PROTOCOL-*.json")
+
+    adequacy_path, _, paired_stability_path, _ = _select_pair(pairs)
+    statuses[-1] = {
+        "key": "stability",
+        "label": paired_stability_path.name,
+        "state": statuses[-1]["state"],
+    }
+    statuses.append(
+        {
+            "key": "adequacy",
+            "label": adequacy_path.name,
             "state": (
                 "GENERATED"
-                if "REFERENCE-STABILITY-*.json" in generated
+                if "REFERENCE-ADEQUACY-PROTOCOL-*.json" in generated
                 else "CURRENT"
             ),
         }
     )
 
-    if check_only:
-        statuses.append(
-            {
-                "key": "adequacy",
-                "label": "Reference Adequacy Protocol",
-                "state": "MISSING",
-            }
+    evidence_items = _valid_adequacy_evidence(calibration_dir, pairs)
+    matching = [
+        item
+        for item in evidence_items
+        if item[2] == adequacy_path and item[3] == paired_stability_path
+    ]
+    if not matching:
+        if check_only:
+            statuses.append(
+                {
+                    "key": "adequacy_evidence",
+                    "label": "Reference Adequacy Evidence",
+                    "state": "MISSING",
+                }
+            )
+            result = _base_result(True, statuses)
+            result["reference_stability"] = str(paired_stability_path)
+            result["reference_adequacy_protocol"] = str(adequacy_path)
+            return result
+
+        runner(
+            "tools/data/build_macro_reference_adequacy_evidence_next6b_s4_2b16_r21.py",
+            (
+                "--development-artifact",
+                str(_artifact_path(calibration_dir, DEV_NAME)),
+                "--protocol-artifact",
+                str(_artifact_path(calibration_dir, PROTOCOL_NAME)),
+                "--research-artifact",
+                str(_artifact_path(calibration_dir, RESEARCH_NAME)),
+                "--reconstruction-artifact",
+                str(_artifact_path(calibration_dir, RECONSTRUCTION_NAME)),
+                "--reference-stability-artifact",
+                str(paired_stability_path),
+                "--reference-adequacy-protocol-artifact",
+                str(adequacy_path),
+                "--write-artifact",
+            ),
         )
-        result = _base_result(True, statuses)
-        result["reference_stability"] = str(stability_path)
-        return result
+        pairs = _valid_adequacy_pairs(calibration_dir, _valid_stabilities(calibration_dir))
+        evidence_items = _valid_adequacy_evidence(calibration_dir, pairs)
+        matching = [
+            item
+            for item in evidence_items
+            if item[2].name == adequacy_path.name
+            and item[3].name == paired_stability_path.name
+        ]
+        if not matching:
+            raise MacroArtifactSyncError(
+                "Reference Adequacy Evidence artifact was not generated or did not validate."
+            )
+        generated.append("REFERENCE-ADEQUACY-EVIDENCE-*.json")
 
-    runner(
-        "tools/data/preregister_macro_reference_adequacy_next6b_s4_2b16.py",
-        (
-            "--development-artifact",
-            str(_artifact_path(calibration_dir, DEV_NAME)),
-            "--protocol-artifact",
-            str(_artifact_path(calibration_dir, PROTOCOL_NAME)),
-            "--research-artifact",
-            str(_artifact_path(calibration_dir, RESEARCH_NAME)),
-            "--reconstruction-artifact",
-            str(_artifact_path(calibration_dir, RECONSTRUCTION_NAME)),
-            "--reference-stability-artifact",
-            str(stability_path),
-            "--write-artifact",
-        ),
-    )
-
-    stabilities = _valid_stabilities(calibration_dir)
-    pairs = _valid_adequacy_pairs(calibration_dir, stabilities)
-    if not pairs:
-        raise MacroArtifactSyncError(
-            "Reference Adequacy Protocol artifact was not generated or did not validate."
-        )
-
-    adequacy_path, stability_path = pairs[-1]
-    generated.append("REFERENCE-ADEQUACY-PROTOCOL-*.json")
+    evidence_path = sorted((item[0] for item in matching), key=lambda p: p.name)[-1]
     statuses.append(
-        {"key": "adequacy", "label": adequacy_path.name, "state": "GENERATED"}
+        {
+            "key": "adequacy_evidence",
+            "label": evidence_path.name,
+            "state": (
+                "GENERATED"
+                if "REFERENCE-ADEQUACY-EVIDENCE-*.json" in generated
+                else "CURRENT"
+            ),
+        }
     )
+
     return {
         "sync_version": SYNC_VERSION,
-        "check_only": False,
+        "check_only": check_only,
         "ready": True,
         "blocked": False,
         "missing_seeds": [],
         "generated": generated,
         "statuses": statuses,
-        "reference_stability": str(stability_path),
+        "reference_stability": str(paired_stability_path),
         "reference_adequacy_protocol": str(adequacy_path),
+        "reference_adequacy_evidence": str(evidence_path),
         "holdout_accessed": False,
         "network_requests": 0,
     }
@@ -413,7 +527,7 @@ def _print_result(result: dict[str, Any]) -> None:
     print("=" * 78)
     print(f"Mode                    {'CHECK ONLY' if result['check_only'] else 'SYNC'}")
     for item in result["statuses"]:
-        print(f"  {item['key']:<16} {item['state']:<10} {item['label']}")
+        print(f"  {item['key']:<18} {item['state']:<10} {item['label']}")
     print("")
     if result.get("missing_seeds"):
         print("Required seeds missing  " + ", ".join(result["missing_seeds"]))
