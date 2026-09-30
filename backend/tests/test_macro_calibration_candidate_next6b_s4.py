@@ -1540,7 +1540,8 @@ def test_s4_2b16_builds_blocked_development_informed_protocol():
 
     assert state["protocol_status"] == ADEQUACY_PROTOCOL_STATUS
     assert state["blocker_count"] == len(artifact["blockers"])
-    assert state["blocker_count"] > 0
+    assert state["blocker_count"] == 11
+    assert "TAIL_LOCAL_TOLERANCE_UNJUSTIFIED" not in artifact["blockers"]
 
 
 def test_s4_2b16_preserves_lineage_and_holdout_guardrails():
@@ -1591,10 +1592,15 @@ def test_s4_2b16_keeps_tolerances_unjustified_and_selection_inputs_out():
 
     assert contract["tail"]["weighted_stability_score"] is None
     assert contract["mad"]["weighted_stability_score"] is None
-    assert contract["tail"]["local_append"]["tolerance"]["value"] is None
-    assert contract["tail"]["local_append"]["tolerance"][
-        "status"
-    ] == "UNJUSTIFIED"
+
+    local_append = contract["tail"]["local_append"]
+    assert local_append["role"] == "DIAGNOSTIC_ONLY"
+    assert local_append["adequacy_gate"] is False
+    assert local_append["tolerance_required"] is False
+    assert local_append["tolerance"] is None
+    assert local_append["status"] == "DEFINED_DIAGNOSTIC_ONLY"
+    assert "TAIL_LOCAL_TOLERANCE_UNJUSTIFIED" not in artifact["blockers"]
+    assert len(artifact["blockers"]) == 11
 
     for section_name in ("local", "cumulative", "temporal_perturbation"):
         for tolerance in contract["mad"][section_name]["tolerances"].values():
@@ -1647,11 +1653,18 @@ def test_s4_2b16_rejects_invented_tolerance_or_readiness():
     )
 
     invented = deepcopy(artifact)
-    invented["validation_contract"]["tail"]["local_append"]["tolerance"][
-        "value"
-    ] = "0.01"
-    with pytest.raises(ValueError, match="cannot preregister"):
+    invented["validation_contract"]["tail"]["local_append"][
+        "tolerance"
+    ] = {"value": "0.01"}
+    with pytest.raises(ValueError, match="cannot carry"):
         validate_reference_adequacy_protocol(invented)
+
+    promoted = deepcopy(artifact)
+    promoted["validation_contract"]["tail"]["local_append"][
+        "adequacy_gate"
+    ] = True
+    with pytest.raises(ValueError, match="cannot become"):
+        validate_reference_adequacy_protocol(promoted)
 
     premature = deepcopy(artifact)
     premature["policy_state"]["ready_for_b17"] = True
@@ -1680,7 +1693,8 @@ def test_s4_2b16_render_reports_blocked_state_without_selecting_n():
     assert "EPT Reference Gate    : EXCLUDED" in rendered
     assert "UNRESOLVED / None / None" in rendered
     assert "BLOCKED_UNJUSTIFIED_TOLERANCE" in rendered
-    assert "B.1.7 readiness: BLOCKED" in rendered
+    assert "DEFINED_DIAGNOSTIC_ONLY" in rendered
+    assert "B.1.7 readiness: BLOCKED (11 unresolved protocol blockers)" in rendered
 
 
 def test_s4_2b16_cli_has_no_holdout_tolerance_or_selection_arguments():

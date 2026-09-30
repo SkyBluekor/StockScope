@@ -19,7 +19,7 @@ from app.macro.reference_stability import (
 
 
 REFERENCE_ADEQUACY_PROTOCOL_CONTRACT_VERSION = (
-    "VN_NEXT6B_S4_2B16_REFERENCE_ADEQUACY_PROTOCOL_V1"
+    "VN_NEXT6B_S4_2B16_REFERENCE_ADEQUACY_PROTOCOL_V2"
 )
 POLICY_ORIGIN = "DEVELOPMENT_INFORMED"
 PROTOCOL_STATUS = "BLOCKED_UNJUSTIFIED_TOLERANCE"
@@ -64,10 +64,16 @@ def _tail_validation_contract() -> dict[str, Any]:
             "reference_support": "OBSERVED_VALUES_UNION_ONLY",
             "invented_x_grid_points": 0,
             "role": "DIAGNOSTIC_ONLY",
-            "tolerance": _unjustified_tolerance(
-                "ABSOLUTE_PROBABILITY_DIFFERENCE"
+            "adequacy_gate": False,
+            "tolerance_required": False,
+            "tolerance": None,
+            "rationale": (
+                "Single-append ECDF drift is retained as descriptive evidence "
+                "only; expanding-reference sample growth mechanically reduces "
+                "one-observation influence, so this metric cannot independently "
+                "approve reference adequacy."
             ),
-            "status": "DEFINED_METRIC_UNJUSTIFIED_TOLERANCE",
+            "status": "DEFINED_DIAGNOSTIC_ONLY",
         },
         "cumulative": {
             "metric": "ECDF_SUP_DRIFT",
@@ -341,7 +347,6 @@ def build_reference_adequacy_protocol(
         ],
     }
     blockers = [
-        "TAIL_LOCAL_TOLERANCE_UNJUSTIFIED",
         "TAIL_CUMULATIVE_INTERVAL_UNRESOLVED",
         "TAIL_CUMULATIVE_TOLERANCE_UNJUSTIFIED",
         "TAIL_PERTURBATION_SEGMENT_LENGTH_UNRESOLVED",
@@ -490,7 +495,17 @@ def validate_reference_adequacy_protocol(
     tail = contract.get("tail") or {}
     if tail.get("weighted_stability_score") is not None:
         raise ValueError("TAIL weighted stability score is forbidden.")
-    _assert_unjustified_tolerance(tail["local_append"]["tolerance"])
+    local_append = tail.get("local_append") or {}
+    if local_append.get("role") != "DIAGNOSTIC_ONLY":
+        raise ValueError("TAIL local append must remain diagnostic-only.")
+    if local_append.get("adequacy_gate") is not False:
+        raise ValueError("TAIL local append cannot become an adequacy gate.")
+    if local_append.get("tolerance_required") is not False:
+        raise ValueError("TAIL local append cannot require a tolerance.")
+    if local_append.get("tolerance") is not None:
+        raise ValueError("TAIL local append cannot carry an adequacy tolerance.")
+    if local_append.get("status") != "DEFINED_DIAGNOSTIC_ONLY":
+        raise ValueError("TAIL local append diagnostic status mismatch.")
     _assert_unresolved_parameter(
         tail["cumulative"]["comparison_interval"]
     )
