@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_FLOOR, ROUND_HALF_UP
 from typing import Any
 
 from app.macro.calibration_candidate import (
@@ -256,7 +256,7 @@ def _observed_summary(
     last = len(values) - 1
 
     def observed(percentile: Decimal) -> Decimal | int:
-        index = int((Decimal(last) * percentile).to_integral_value(rounding="ROUND_FLOOR"))
+        index = int((Decimal(last) * percentile).to_integral_value(rounding=ROUND_FLOOR))
         return values[index]
 
     return {
