@@ -104,3 +104,15 @@ def test_root_one_click_sync_restarts_after_self_update():
     assert 'git diff --name-only "$BeforeHead..$AfterHead" -- "sync_local.ps1"' in script
     assert "UPDATED - restarting once" in script
     assert "-AfterSelfUpdate" in script
+
+
+def test_macro_sync_source_includes_r21_evidence_stage():
+    root = Path(__file__).resolve().parents[2]
+    source = (root / "tools" / "dev" / "sync_macro_artifacts.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "REFERENCE-ADEQUACY-EVIDENCE-" in source
+    assert "build_macro_reference_adequacy_evidence_next6b_s4_2b16_r21.py" in source
+    assert "adequacy_evidence" in source
+    assert "--holdout-artifact" not in source
