@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import json
 
 import pytest
 
@@ -36,7 +37,13 @@ from app.macro.reference_adequacy_protocol import (
     validate_reference_adequacy_protocol,
 )
 from app.macro.reference_adequacy_evidence import (
+    REFERENCE_ADEQUACY_EVIDENCE_CONTRACT_V1,
     build_reference_adequacy_evidence,
+    compare_legacy_v1_to_compact_v2,
+    decode_mad_anchor_shifts,
+    decode_tail_anchor_distances,
+    deterministic_gzip_bytes,
+    logical_evidence_hash,
     render_reference_adequacy_evidence_text,
     validate_reference_adequacy_evidence,
 )
@@ -1669,19 +1676,73 @@ def _s4_2b16_r21_inputs():
     return development, protocol, research, reconstruction, stability, adequacy
 
 
-def test_s4_2b16_r21_builds_complete_unselected_forward_evidence():
-    development, protocol, research, reconstruction, stability, adequacy = (
-        _s4_2b16_r21_inputs()
-    )
+def _build_r21_artifact():
+    inputs = _s4_2b16_r21_inputs()
     artifact = build_reference_adequacy_evidence(
-        development_dataset=development,
-        protocol=protocol,
-        research=research,
-        reconstruction=reconstruction,
-        stability=stability,
-        adequacy_protocol=adequacy,
+        development_dataset=inputs[0],
+        protocol=inputs[1],
+        research=inputs[2],
+        reconstruction=inputs[3],
+        stability=inputs[4],
+        adequacy_protocol=inputs[5],
         source_main_sha="test-main-sha",
     )
+    return inputs, artifact
+
+
+def _legacy_v1_from_compact(compact):
+    families = []
+    for family in compact["families"]:
+        anchors = []
+        for anchor in family["anchors"]:
+            base = {
+                "anchor_n": anchor["anchor_n"],
+                "anchor_reference_hash": anchor["anchor_reference_hash"],
+                "first_later_n": anchor["first_later_n"],
+                "suffix_transition_count": anchor["suffix_transition_count"],
+                "selection_status": "NOT_SELECTED",
+            }
+            if family["method"] == TAIL_METHOD:
+                base["ecdf_sup_distances"] = decode_tail_anchor_distances(anchor)
+            else:
+                base.update(decode_mad_anchor_shifts(family, anchor))
+            anchors.append(base)
+        families.append(
+            {
+                "feature_id": family["feature_id"],
+                "method": family["method"],
+                "anchors": anchors,
+            }
+        )
+
+    identity = {
+        "contract_version": REFERENCE_ADEQUACY_EVIDENCE_CONTRACT_V1,
+        "source": compact["source"],
+        "evidence_contract": compact["evidence_contract"],
+        "unresolved_policy_classes": compact["unresolved_policy_classes"],
+        "counts": compact["counts"],
+        "support_points": compact["support_points"],
+        "family_payload_hash": content_hash(families),
+        "policy_state": compact["policy_state"],
+        "holdout_locked": True,
+        "holdout_accessed": False,
+        "network_requests": 0,
+        "macro_db_writes": 0,
+        "production_impact": "NONE",
+    }
+    evidence_hash = content_hash(identity)
+    return {
+        **identity,
+        "evidence_id": f"RATEADEQEVID-{evidence_hash[:16]}",
+        "evidence_hash": evidence_hash,
+        "analysis_status": "COMPLETE",
+        "families": families,
+    }
+
+
+def test_s4_2b16_r21_builds_compact_complete_unselected_evidence():
+    inputs, artifact = _build_r21_artifact()
+    stability = inputs[4]
     state = validate_reference_adequacy_evidence(artifact)
 
     expected_points = [
@@ -1690,6 +1751,10 @@ def test_s4_2b16_r21_builds_complete_unselected_forward_evidence():
     ]
     assert artifact["support_points"] == expected_points
     assert state["common_support_point_count"] == len(expected_points)
+    assert state["reference_family_count"] == 6
+    assert artifact["contract_version"].endswith("_V2")
+    assert artifact["encoding"]["container"] == "GZIP_JSON"
+    assert artifact["encoding"]["gzip_mtime"] == 0
     assert artifact["analysis_status"] == "COMPLETE"
     assert artifact["evidence_contract"]["tolerance_selection_performed"] is False
     assert artifact["evidence_contract"]["minimum_n_selection_performed"] is False
@@ -1703,19 +1768,8 @@ def test_s4_2b16_r21_builds_complete_unselected_forward_evidence():
     assert artifact["production_impact"] == "NONE"
 
 
-def test_s4_2b16_r21_paths_cover_every_later_reference_state():
-    development, protocol, research, reconstruction, stability, adequacy = (
-        _s4_2b16_r21_inputs()
-    )
-    artifact = build_reference_adequacy_evidence(
-        development_dataset=development,
-        protocol=protocol,
-        research=research,
-        reconstruction=reconstruction,
-        stability=stability,
-        adequacy_protocol=adequacy,
-        source_main_sha="test-main-sha",
-    )
+def test_s4_2b16_r21_compact_paths_cover_every_later_reference_state():
+    _, artifact = _build_r21_artifact()
 
     for family in artifact["families"]:
         assert family["forward_rule"] == "BOUNDARY_ANCHORED_FORWARD_ENVELOPE"
@@ -1725,15 +1779,39 @@ def test_s4_2b16_r21_paths_cover_every_later_reference_state():
             expected = family["max_prior_count"] - anchor["anchor_n"]
             assert anchor["suffix_transition_count"] == expected
             if family["method"] == TAIL_METHOD:
-                assert len(anchor["ecdf_sup_distances"]) == expected
+                assert len(decode_tail_anchor_distances(anchor)) == expected
                 assert family["invented_x_grid_points"] == 0
+                assert "ecdf_sup_distances" not in anchor
             else:
-                assert len(anchor["absolute_median_shifts"]) == expected
-                assert len(anchor["absolute_mad_shifts"]) == expected
-                assert len(anchor["relative_mad_shifts"]) == expected
+                decoded = decode_mad_anchor_shifts(family, anchor)
+                assert len(decoded["absolute_median_shifts"]) == expected
+                assert len(decoded["absolute_mad_shifts"]) == expected
+                assert len(decoded["relative_mad_shifts"]) == expected
+                assert "relative_mad_shifts" not in anchor
+                if anchor["anchor_mad_units"] == 0:
+                    assert anchor["relative_mad_shift_status"] == (
+                        "NON_COMPUTABLE_ZERO_SCALE"
+                    )
+                    assert all(
+                        value is None
+                        for value in decoded["relative_mad_shifts"]
+                    )
 
 
-def test_s4_2b16_r21_identity_is_deterministic():
+def test_s4_2b16_r21_compact_logical_equivalence_is_full_and_deterministic():
+    _, compact = _build_r21_artifact()
+    legacy = _legacy_v1_from_compact(compact)
+
+    equivalence = compare_legacy_v1_to_compact_v2(legacy, compact)
+    assert equivalence["status"] == "PASS"
+    assert equivalence["forward_comparison_count"] == compact["counts"][
+        "forward_comparison_count"
+    ]
+    assert logical_evidence_hash(legacy) == compact["logical_evidence_hash"]
+    assert logical_evidence_hash(compact) == compact["logical_evidence_hash"]
+
+
+def test_s4_2b16_r21_identity_and_gzip_are_deterministic():
     inputs = _s4_2b16_r21_inputs()
     kwargs = {
         "development_dataset": inputs[0],
@@ -1748,21 +1826,26 @@ def test_s4_2b16_r21_identity_is_deterministic():
     second = build_reference_adequacy_evidence(**kwargs)
     assert first["evidence_hash"] == second["evidence_hash"]
     assert first["evidence_id"] == second["evidence_id"]
+    assert first["logical_evidence_hash"] == second["logical_evidence_hash"]
+    assert deterministic_gzip_bytes(first) == deterministic_gzip_bytes(second)
+
+
+def test_s4_2b16_r21_compact_fixture_is_at_least_75_percent_smaller_than_expanded():
+    _, compact = _build_r21_artifact()
+    legacy = _legacy_v1_from_compact(compact)
+    compact_size = len(deterministic_gzip_bytes(compact))
+    expanded_pretty_size = len(
+        json.dumps(legacy, ensure_ascii=False, indent=2, sort_keys=True).encode(
+            "utf-8"
+        )
+    )
+    assert compact_size <= expanded_pretty_size * 0.25
 
 
 def test_s4_2b16_r21_render_stays_policy_free():
-    inputs = _s4_2b16_r21_inputs()
-    artifact = build_reference_adequacy_evidence(
-        development_dataset=inputs[0],
-        protocol=inputs[1],
-        research=inputs[2],
-        reconstruction=inputs[3],
-        stability=inputs[4],
-        adequacy_protocol=inputs[5],
-        source_main_sha="test-main-sha",
-    )
+    _, artifact = _build_r21_artifact()
     rendered = render_reference_adequacy_evidence_text(artifact)
-    assert "BOUNDARY-ANCHORED REFERENCE ADEQUACY EVIDENCE" in rendered
+    assert "BOUNDARY-ANCHORED REFERENCE ADEQUACY EVIDENCE V2" in rendered
     assert "Tolerance selection   : NOT PERFORMED" in rendered
     assert "Minimum N selection   : NOT PERFORMED" in rendered
     assert "B.2 readiness         : BLOCKED" in rendered
@@ -1777,6 +1860,7 @@ def test_s4_2b16_r21_cli_has_no_selection_or_holdout_arguments():
         for option in action.option_strings
     }
     assert "--reference-adequacy-protocol-artifact" in option_strings
+    assert "--legacy-v1-artifact" in option_strings
     assert "--write-artifact" in option_strings
     for forbidden in (
         "--holdout-artifact",
@@ -1791,16 +1875,7 @@ def test_s4_2b16_r21_cli_has_no_selection_or_holdout_arguments():
 
 
 def test_s4_2b16_r21_tail_distance_matches_direct_ecdf():
-    inputs = _s4_2b16_r21_inputs()
-    artifact = build_reference_adequacy_evidence(
-        development_dataset=inputs[0],
-        protocol=inputs[1],
-        research=inputs[2],
-        reconstruction=inputs[3],
-        stability=inputs[4],
-        adequacy_protocol=inputs[5],
-        source_main_sha="test-main-sha",
-    )
+    inputs, artifact = _build_r21_artifact()
     tail_family = next(
         family for family in artifact["families"]
         if family["method"] == TAIL_METHOD
@@ -1824,5 +1899,6 @@ def test_s4_2b16_r21_tail_distance_matches_direct_ecdf():
         )
         for x in support
     )
-    stored = float(anchor["ecdf_sup_distances"][0])
+    stored = float(decode_tail_anchor_distances(anchor)[0])
     assert stored == pytest.approx(direct, abs=1e-15)
+
