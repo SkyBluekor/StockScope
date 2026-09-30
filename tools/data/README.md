@@ -375,6 +375,31 @@ Episode 의미는 기존 `VN_NEXT6B_S4_CONSECUTIVE_TRUE_RUN_V1`을 유지하고 
 
 Preview 검수 후에만 `--write-artifact`를 추가해 `ELIGIBILITY-RECONSTRUCTION-<hash>.json`을 저장합니다. 이 artifact는 policy preregistration이 아니므로 eligibility/admissibility는 계속 UNDEFINED, minimum prior observations는 UNSET, `ready_for_holdout=false`, `RATE_SPIKE=UNCALIBRATED`, Network/Macro DB/Production 영향은 0입니다.
 
+## NEXT-6B-S4.2-B.1.5 Reference Stability Evidence
+### TAIL/MAD 최소 참조 표본 수 결정을 위한 기준 분포 안정성 근거
+
+S4.2-B.1.5는 B.1에서 확인한 candidate/event 손실과 별도로, expanding strictly-prior reference 자체가 관측 추가에 따라 얼마나 변하는지 Development에서 측정합니다. 이 단계는 minimum prior observations나 reference adequacy criterion을 선택하지 않습니다.
+
+분석 대상은 `delta_bp_1obs`, `delta_bp_5obs`, `delta_bp_10obs`의 TAIL/MAD 여섯 family입니다. EPT는 expanding reference distribution을 사용하지 않으므로 세 family 모두 reference-support stability 분석에서 명시적으로 제외합니다.
+
+TAIL은 prior N에서 N+1로 한 관측을 추가했을 때 empirical CDF의 exact sup drift를 실제 observed support만으로 계산합니다. synthetic x-grid는 만들지 않으며 `1/N` probability resolution은 설명용 metric일 뿐 안정성 판정 점수로 사용하지 않습니다.
+
+MAD는 동일 transition에서 prior median과 prior MAD의 절대 변화, 그리고 이전 MAD가 양수일 때만 relative MAD change를 기록합니다. 이전 MAD가 0이면 relative change는 `null`과 `NON_COMPUTABLE_ZERO_SCALE`로 남기며 weighted stability score는 만들지 않습니다.
+
+B.1의 실제 support-change point와 stability evidence를 join하고, 여섯 TAIL/MAD curve의 support point 합집합을 `common_support_review_points`로 생성합니다. 특정 family에 해당 support point가 없더라도 이전 값을 복사하지 않고 그 prior count의 reference state를 직접 계산합니다.
+
+Preview:
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\analyze_macro_reference_stability_next6b_s4_2b15.py `
+  --development-artifact .\backend\runtime\macro\calibration\DEV-7c3f6660b3aae03f.json `
+  --protocol-artifact .\backend\runtime\macro\calibration\PROTOCOL-e1de868dc8f16670.json `
+  --research-artifact .\backend\runtime\macro\calibration\RESEARCH-cdd96e164e12017d.json `
+  --reconstruction-artifact .\backend\runtime\macro\calibration\ELIGIBILITY-RECONSTRUCTION-c6db8f9dd260fdd4.json
+```
+
+Preview 검수 후에만 `--write-artifact`를 추가해 `REFERENCE-STABILITY-<hash>.json`을 저장합니다. 완료 후에도 `reference_adequacy_criterion=UNSET`, `minimum_prior_observations=null`, `recommended_support=null`, admissibility UNDEFINED, Holdout locked/unread, `RATE_SPIKE=UNCALIBRATED`, Network/Macro DB/Production 영향은 모두 0입니다.
+
 ## P2-S2 실제 추천 평가 저장소 준비
 
 P2-S2는 새 Scanner 실행부터 실제 추천 표본을 사후 선택 전에 보존합니다. 과거 Scanner 실행을 prospective 표본으로 소급 생성하지 않습니다.
