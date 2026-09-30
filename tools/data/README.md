@@ -400,6 +400,39 @@ Preview:
 
 Preview 검수 후에만 `--write-artifact`를 추가해 `REFERENCE-STABILITY-<hash>.json`을 저장합니다. 완료 후에도 `reference_adequacy_criterion=UNSET`, `minimum_prior_observations=null`, `recommended_support=null`, admissibility UNDEFINED, Holdout locked/unread, `RATE_SPIKE=UNCALIBRATED`, Network/Macro DB/Production 영향은 모두 0입니다.
 
+## NEXT-6B-S4.2-B.1.6 Reference Adequacy Validation Protocol
+### Development-informed reference adequacy 검증 계약과 미정 tolerance의 명시적 차단
+
+S4.2-B.1.6은 B.1.5에서 생성한 reference stability evidence를 보고 임의의 N을 선택하지 않습니다. 이미 Development curve를 관찰한 상태이므로 `policy_origin=DEVELOPMENT_INFORMED`을 명시하고, Development-blind/ex-ante였다고 주장하지 않습니다.
+
+검증 계약은 reference adequacy를 `COMPUTABILITY → SENSITIVITY → EVIDENCE_SUFFICIENCY`의 세 층으로 분리합니다.
+
+- TAIL: local append ECDF sup drift, cumulative ECDF drift, time-order-preserving contiguous reference perturbation
+- MAD: local/cumulative/perturbation의 absolute median change, absolute MAD change, relative MAD change
+- MAD의 이전 MAD가 0이면 relative change를 0으로 만들지 않고 `NON_COMPUTABLE_ZERO_SCALE` semantics를 유지
+- 단일 zero transition이나 전체 median change=0만으로 adequacy를 승인하지 않음
+- TAIL/MAD와 1obs/5obs/10obs에는 common N을 우선하며 모든 family 조건을 AND로 결합
+- EPT는 expanding reference distribution을 사용하지 않으므로 reference-support gate에서 계속 제외
+- candidate/signal/episode/covered-year survival은 N이나 tolerance 선택 입력으로 사용하지 않음
+- 조건을 만족하는 boundary가 없으면 `NO_SUPPORTED_BOUNDARY`
+
+현재 Development evidence만으로 absolute tolerance, cumulative comparison interval, perturbation segment length, validation suffix 길이, violation policy를 독립적으로 정당화할 수 없으므로 이 protocol은 이 값들을 임의로 만들지 않습니다. 해당 필드는 `null / UNJUSTIFIED / UNRESOLVED_PARAMETER`로 보존되고 protocol 상태는 `BLOCKED_UNJUSTIFIED_TOLERANCE`입니다. 따라서 `minimum_prior_observations=null`, `recommended_support=null`, `ready_for_b17=false`, `ready_for_b2=false`, `ready_for_holdout=false`를 유지합니다.
+
+Preview:
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\preregister_macro_reference_adequacy_next6b_s4_2b16.py `
+  --development-artifact .\backend\runtime\macro\calibration\DEV-7c3f6660b3aae03f.json `
+  --protocol-artifact .\backend\runtime\macro\calibration\PROTOCOL-e1de868dc8f16670.json `
+  --research-artifact .\backend\runtime\macro\calibration\RESEARCH-cdd96e164e12017d.json `
+  --reconstruction-artifact .\backend\runtime\macro\calibration\ELIGIBILITY-RECONSTRUCTION-c6db8f9dd260fdd4.json `
+  --reference-stability-artifact .\backend\runtime\macro\calibration\REFERENCE-STABILITY-abb0799ddbf8ccfe.json
+```
+
+검수 후 현재 blocked protocol 자체를 immutable하게 보존할 때만 `--write-artifact`를 추가합니다. 파일명은 `REFERENCE-ADEQUACY-PROTOCOL-<hash>.json`입니다. 이 artifact는 reference-support approval이나 B.1.7 evidence가 아니며, unresolved tolerance를 채우기 전에는 B.1.7을 실행할 수 없습니다.
+
+Holdout 입력 옵션은 없고 Holdout은 locked/unread입니다. Network request, Macro DB write, Production 영향은 모두 0이며 Scanner/Strategy/Risk/Holdings/Capital Aware 동작은 변경하지 않습니다.
+
 ## P2-S2 실제 추천 평가 저장소 준비
 
 P2-S2는 새 Scanner 실행부터 실제 추천 표본을 사후 선택 전에 보존합니다. 과거 Scanner 실행을 prospective 표본으로 소급 생성하지 않습니다.
