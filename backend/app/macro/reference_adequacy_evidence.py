@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import base64
+import gzip
+import hashlib
+import json
 from decimal import Decimal
-from typing import Any
+from pathlib import Path
+from typing import Any, Iterable, Iterator
 
 from app.macro.calibration_candidate import RATE_SPIKE_FEATURE_IDS
 from app.macro.calibration_research import (
@@ -23,13 +28,25 @@ from app.macro.reference_stability import (
     validate_reference_stability_evidence,
 )
 
-REFERENCE_ADEQUACY_EVIDENCE_CONTRACT_VERSION = (
+REFERENCE_ADEQUACY_EVIDENCE_CONTRACT_V1 = (
     "VN_NEXT6B_S4_2B16_R21_REFERENCE_ADEQUACY_EVIDENCE_V1"
 )
+REFERENCE_ADEQUACY_EVIDENCE_CONTRACT_VERSION = (
+    "VN_NEXT6B_S4_2B16_R21_REFERENCE_ADEQUACY_EVIDENCE_V2"
+)
 REFERENCE_ADEQUACY_FAMILY_CONTRACT_VERSION = (
-    "VN_NEXT6B_S4_2B16_R21_REFERENCE_ADEQUACY_FAMILY_V1"
+    "VN_NEXT6B_S4_2B16_R21_REFERENCE_ADEQUACY_FAMILY_V2"
 )
 REFERENCE_MODE = "EXPANDING_STRICTLY_PRIOR"
+COMPACT_ENCODING = "VARINT_BASE64_GZIP_JSON_V2"
+TAIL_PATH_ENCODING = "EXACT_KS_NUMERATOR_UNSIGNED_VARINT_V1"
+MAD_PATH_ENCODING = "SCALED_NONNEGATIVE_NULLABLE_VARINT_V1"
+LOGICAL_HASH_CONTRACT = "R21_LOGICAL_EVIDENCE_V1"
+
+_FEATURE_ORDER = {
+    feature_id: index for index, feature_id in enumerate(RATE_SPIKE_FEATURE_IDS)
+}
+_METHOD_ORDER = {TAIL_METHOD: 0, MAD_METHOD: 1}
 
 
 def _decimal(value: Any) -> Decimal:
@@ -103,6 +120,58 @@ def _common_support_points(stability: dict[str, Any]) -> list[int]:
     return values
 
 
+def _encode_unsigned_varints(values: Iterable[int]) -> tuple[str, str, int]:
+    payload = bytearray()
+    count = 0
+    for original in values:
+        value = int(original)
+        if value < 0:
+            raise ValueError("Unsigned varint cannot encode a negative value.")
+        count += 1
+        while value >= 0x80:
+            payload.append((value & 0x7F) | 0x80)
+            value >>= 7
+        payload.append(value)
+    raw = bytes(payload)
+    return (
+        base64.b64encode(raw).decode("ascii"),
+        hashlib.sha256(raw).hexdigest(),
+        count,
+    )
+
+
+def _decode_unsigned_varints(encoded: str) -> Iterator[int]:
+    raw = base64.b64decode(encoded.encode("ascii"), validate=True)
+    value = 0
+    shift = 0
+    for byte in raw:
+        value |= (byte & 0x7F) << shift
+        if byte & 0x80:
+            shift += 7
+            if shift > 70:
+                raise ValueError("Invalid oversized varint.")
+            continue
+        yield value
+        value = 0
+        shift = 0
+    if shift:
+        raise ValueError("Truncated varint payload.")
+
+
+def _encode_nullable_nonnegative(
+    values: Iterable[int | None],
+) -> tuple[str, str, int]:
+    return _encode_unsigned_varints(
+        0 if value is None else int(value) + 1
+        for value in values
+    )
+
+
+def _decode_nullable_nonnegative(encoded: str) -> Iterator[int | None]:
+    for value in _decode_unsigned_varints(encoded):
+        yield None if value == 0 else value - 1
+
+
 def _build_max_hull(lines: list[tuple[int, int]]) -> list[tuple[int, int]]:
     compact: list[tuple[int, int]] = []
     for slope, intercept in lines:
@@ -146,17 +215,6 @@ def _query_max_hull(hull: list[tuple[int, int]], x: int) -> int:
 
 
 class _SuffixEnvelope:
-    """Exact suffix-range additions plus global max/min line queries.
-
-    Each support point j represents:
-        g_m(j) = N * B_m(j) - m * A_N(j)
-
-    A_N(j) is fixed for one anchor and becomes the line slope. Each appended
-    observation adds N to B_m(j) for the suffix at/above its support rank.
-    Querying at x=-m therefore yields the exact KS numerator without scanning
-    every support point for every later t.
-    """
-
     def __init__(self, slopes: list[int], block_size: int | None = None) -> None:
         self.slopes = slopes
         self.size = len(slopes)
@@ -164,8 +222,12 @@ class _SuffixEnvelope:
         self.block_count = (self.size + self.block_size - 1) // self.block_size
         self.base = [0] * self.size
         self.lazy = [0] * self.block_count
-        self.max_hulls: list[list[tuple[int, int]]] = [[] for _ in range(self.block_count)]
-        self.min_hulls: list[list[tuple[int, int]]] = [[] for _ in range(self.block_count)]
+        self.max_hulls: list[list[tuple[int, int]]] = [
+            [] for _ in range(self.block_count)
+        ]
+        self.min_hulls: list[list[tuple[int, int]]] = [
+            [] for _ in range(self.block_count)
+        ]
         for block in range(self.block_count):
             self._rebuild(block)
 
@@ -186,8 +248,8 @@ class _SuffixEnvelope:
             raise ValueError("Suffix update support rank is out of range.")
         first_block = start // self.block_size
         _, right = self._bounds(first_block)
-        for i in range(start, right):
-            self.base[i] += amount
+        for index in range(start, right):
+            self.base[index] += amount
         self._rebuild(first_block)
         for block in range(first_block + 1, self.block_count):
             self.lazy[block] += amount
@@ -224,21 +286,40 @@ def _anchor_cumulative_counts(
     return cumulative
 
 
-def _max_with_arg(
-    values: list[str | None],
-    *,
-    first_later_n: int,
-) -> tuple[str | None, int | None]:
-    best_value: Decimal | None = None
-    best_n: int | None = None
-    for offset, value in enumerate(values):
+def _decimal_scale_exponent(values: Iterable[Decimal | None]) -> int:
+    exponent = 0
+    for value in values:
         if value is None:
             continue
-        parsed = _decimal(value)
-        if best_value is None or parsed > best_value:
-            best_value = parsed
-            best_n = first_later_n + offset
-    return _decimal_text(best_value), best_n
+        current = -value.as_tuple().exponent
+        if current > exponent:
+            exponent = current
+    return exponent
+
+
+def _scaled_int(value: Decimal | None, scale: int) -> int | None:
+    if value is None:
+        return None
+    scaled = value * scale
+    if scaled != scaled.to_integral_value():
+        raise ValueError("Decimal scale does not preserve an exact integer.")
+    return int(scaled)
+
+
+def _mad_states(
+    rows: list[dict[str, Any]],
+    max_prior: int,
+) -> dict[int, dict[str, Decimal | None]]:
+    result: dict[int, dict[str, Decimal | None]] = {}
+    for row in rows:
+        prior_count = int(row["prior_count"])
+        if prior_count <= 0 or prior_count > max_prior:
+            continue
+        result[prior_count] = {
+            "median": _decimal_or_none(row.get("prior_median")),
+            "mad": _decimal_or_none(row.get("prior_mad")),
+        }
+    return result
 
 
 def _tail_family_evidence(
@@ -267,27 +348,44 @@ def _tail_family_evidence(
             anchor_n=anchor_n,
         )
         envelope = _SuffixEnvelope(anchor_counts)
-        path: list[str] = []
+        numerators: list[int] = []
+        best_num: int | None = None
+        best_later: int | None = None
+
         for later_n in range(first_later_n, max_prior + 1):
             appended_value = values[later_n - 1]
             envelope.add_suffix(positions[appended_value], anchor_n)
             added_count = later_n - anchor_n
             numerator = envelope.max_abs_at(-added_count)
-            distance = Decimal(numerator) / Decimal(anchor_n * later_n)
-            path.append(_decimal_text(distance) or "0")
+            numerators.append(numerator)
+            if best_num is None or (
+                numerator * best_later > best_num * later_n
+                if best_later is not None
+                else True
+            ):
+                best_num = numerator
+                best_later = later_n
 
-        maximum, argmax = _max_with_arg(path, first_later_n=first_later_n)
-        comparison_count += len(path)
+        encoded, encoded_sha, count = _encode_unsigned_varints(numerators)
+        comparison_count += count
+        maximum = (
+            _decimal_text(
+                Decimal(best_num) / Decimal(anchor_n * best_later)
+            )
+            if best_num is not None and best_later is not None
+            else None
+        )
         anchors.append(
             {
                 "anchor_n": anchor_n,
                 "anchor_reference_hash": reference_hashes.get(anchor_n),
                 "first_later_n": first_later_n,
-                "suffix_transition_count": len(path),
-                "ecdf_sup_distances": path,
+                "suffix_transition_count": count,
+                "distance_encoding": TAIL_PATH_ENCODING,
+                "numerator_varints_b64": encoded,
+                "encoded_path_sha256": encoded_sha,
                 "max_ecdf_sup_distance": maximum,
-                "argmax_prior_count": argmax,
-                "path_hash": content_hash(path),
+                "argmax_prior_count": best_later,
                 "selection_status": "NOT_SELECTED",
             }
         )
@@ -302,12 +400,9 @@ def _tail_family_evidence(
         "evaluation_support": "OBSERVED_VALUES_UNION_ONLY",
         "invented_x_grid_points": 0,
         "algorithm": "EXACT_SUFFIX_ENVELOPE_SQRT_DECOMPOSITION_V1",
+        "path_encoding": TAIL_PATH_ENCODING,
         "observed_support_value_count": len(observed_support),
         "max_prior_count": max_prior,
-        "reference_state_index": [
-            [prior_count, reference_hashes.get(prior_count)]
-            for prior_count in range(1, max_prior + 1)
-        ],
         "anchor_count": len(anchors),
         "forward_comparison_count": comparison_count,
         "anchors": anchors,
@@ -323,21 +418,6 @@ def _tail_family_evidence(
     }
 
 
-def _mad_states(rows: list[dict[str, Any]], max_prior: int) -> dict[int, dict[str, Any]]:
-    result: dict[int, dict[str, Any]] = {}
-    for row in rows:
-        prior_count = int(row["prior_count"])
-        if prior_count <= 0 or prior_count > max_prior:
-            continue
-        median = _decimal_or_none(row.get("prior_median"))
-        mad = _decimal_or_none(row.get("prior_mad"))
-        result[prior_count] = {
-            "median": median,
-            "mad": mad,
-        }
-    return result
-
-
 def _mad_family_evidence(
     *,
     feature_id: str,
@@ -348,6 +428,12 @@ def _mad_family_evidence(
     max_prior = len(rows) - 1
     states = _mad_states(rows, max_prior)
     reference_hashes = _reference_hash_index(stability_family)
+    scale_exponent = _decimal_scale_exponent(
+        value
+        for state in states.values()
+        for value in (state["median"], state["mad"])
+    )
+    scale = 10 ** scale_exponent
 
     anchors: list[dict[str, Any]] = []
     comparison_count = 0
@@ -357,24 +443,16 @@ def _mad_family_evidence(
         anchor = states.get(anchor_n) or {"median": None, "mad": None}
         anchor_median = anchor["median"]
         anchor_mad = anchor["mad"]
+        anchor_median_units = _scaled_int(anchor_median, scale)
+        anchor_mad_units = _scaled_int(anchor_mad, scale)
         first_later_n = anchor_n + 1
 
-        median_path: list[str | None] = []
-        mad_path: list[str | None] = []
-        relative_path: list[str | None] = []
-        relative_status = (
-            "NON_COMPUTABLE_ZERO_SCALE"
-            if anchor_mad == 0
-            else "AVAILABLE"
-            if anchor_mad is not None
-            else "UNAVAILABLE"
-        )
-
+        median_units: list[int | None] = []
+        mad_units: list[int | None] = []
         for later_n in range(first_later_n, max_prior + 1):
             later = states.get(later_n) or {"median": None, "mad": None}
             later_median = later["median"]
             later_mad = later["mad"]
-
             median_shift = (
                 abs(later_median - anchor_median)
                 if anchor_median is not None and later_median is not None
@@ -385,47 +463,82 @@ def _mad_family_evidence(
                 if anchor_mad is not None and later_mad is not None
                 else None
             )
-            relative_shift = (
-                mad_shift / abs(anchor_mad)
-                if mad_shift is not None and anchor_mad not in {None, Decimal(0)}
-                else None
-            )
-            median_path.append(_decimal_text(median_shift))
-            mad_path.append(_decimal_text(mad_shift))
-            relative_path.append(_decimal_text(relative_shift))
+            median_units.append(_scaled_int(median_shift, scale))
+            mad_units.append(_scaled_int(mad_shift, scale))
 
-        median_max, median_argmax = _max_with_arg(
-            median_path, first_later_n=first_later_n
+        median_encoded, median_sha, median_count = _encode_nullable_nonnegative(
+            median_units
         )
-        mad_max, mad_argmax = _max_with_arg(
-            mad_path, first_later_n=first_later_n
+        mad_encoded, mad_sha, mad_count = _encode_nullable_nonnegative(mad_units)
+        if median_count != mad_count:
+            raise ValueError("MAD compact path lengths diverged.")
+        comparison_count += median_count
+
+        def max_units(values: list[int | None]) -> tuple[int | None, int | None]:
+            best_value: int | None = None
+            best_n: int | None = None
+            for offset, value in enumerate(values):
+                if value is None:
+                    continue
+                if best_value is None or value > best_value:
+                    best_value = value
+                    best_n = first_later_n + offset
+            return best_value, best_n
+
+        median_max_units, median_argmax = max_units(median_units)
+        mad_max_units, mad_argmax = max_units(mad_units)
+        relative_status = (
+            "NON_COMPUTABLE_ZERO_SCALE"
+            if anchor_mad_units == 0
+            else "AVAILABLE"
+            if anchor_mad_units is not None
+            else "UNAVAILABLE"
         )
-        relative_max, relative_argmax = _max_with_arg(
-            relative_path, first_later_n=first_later_n
+        relative_max = (
+            _decimal_text(
+                Decimal(mad_max_units) / Decimal(abs(anchor_mad_units))
+            )
+            if (
+                mad_max_units is not None
+                and anchor_mad_units not in {None, 0}
+            )
+            else None
         )
-        comparison_count += len(median_path)
-        path_payload = {
-            "absolute_median_shifts": median_path,
-            "absolute_mad_shifts": mad_path,
-            "relative_mad_shifts": relative_path,
-        }
+        relative_argmax = (
+            mad_argmax if relative_status == "AVAILABLE" else None
+        )
+
         anchors.append(
             {
                 "anchor_n": anchor_n,
                 "anchor_reference_hash": reference_hashes.get(anchor_n),
-                "anchor_median": _decimal_text(anchor_median),
-                "anchor_mad": _decimal_text(anchor_mad),
+                "anchor_median_units": anchor_median_units,
+                "anchor_mad_units": anchor_mad_units,
                 "first_later_n": first_later_n,
-                "suffix_transition_count": len(median_path),
-                **path_payload,
+                "suffix_transition_count": median_count,
+                "path_encoding": MAD_PATH_ENCODING,
+                "absolute_median_shift_varints_b64": median_encoded,
+                "absolute_median_shift_encoded_sha256": median_sha,
+                "absolute_mad_shift_varints_b64": mad_encoded,
+                "absolute_mad_shift_encoded_sha256": mad_sha,
+                "relative_mad_shift_derivation": (
+                    "ABSOLUTE_MAD_SHIFT_DIVIDED_BY_ABS_ANCHOR_MAD"
+                ),
                 "relative_mad_shift_status": relative_status,
-                "max_absolute_median_shift": median_max,
+                "max_absolute_median_shift": (
+                    _decimal_text(Decimal(median_max_units) / Decimal(scale))
+                    if median_max_units is not None
+                    else None
+                ),
                 "argmax_absolute_median_shift_prior_count": median_argmax,
-                "max_absolute_mad_shift": mad_max,
+                "max_absolute_mad_shift": (
+                    _decimal_text(Decimal(mad_max_units) / Decimal(scale))
+                    if mad_max_units is not None
+                    else None
+                ),
                 "argmax_absolute_mad_shift_prior_count": mad_argmax,
                 "max_relative_mad_shift": relative_max,
                 "argmax_relative_mad_shift_prior_count": relative_argmax,
-                "path_hash": content_hash(path_payload),
                 "selection_status": "NOT_SELECTED",
             }
         )
@@ -442,13 +555,11 @@ def _mad_family_evidence(
             "RELATIVE_MAD_SHIFT",
         ],
         "combination_rule": "ALL_AND",
+        "path_encoding": MAD_PATH_ENCODING,
+        "scale_exponent": scale_exponent,
         "zero_scale_rule": "NON_COMPUTABLE_ZERO_SCALE",
         "null_to_zero_forbidden": True,
         "max_prior_count": max_prior,
-        "reference_state_index": [
-            [prior_count, reference_hashes.get(prior_count)]
-            for prior_count in range(1, max_prior + 1)
-        ],
         "anchor_count": len(anchors),
         "forward_comparison_count": comparison_count,
         "anchors": anchors,
@@ -466,6 +577,154 @@ def _mad_family_evidence(
         "family_id": f"RATEADEQEVFAM-{family_hash[:16]}",
         "family_hash": family_hash,
     }
+
+
+def _logical_digest_token(digest: Any, value: Any) -> None:
+    if value is None:
+        encoded = b"<NULL>"
+    else:
+        encoded = str(value).encode("utf-8")
+    digest.update(len(encoded).to_bytes(8, "big"))
+    digest.update(encoded)
+
+
+def _sorted_families(families: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(
+        families,
+        key=lambda family: (
+            _FEATURE_ORDER[str(family["feature_id"])],
+            _METHOD_ORDER[str(family["method"])],
+        ),
+    )
+
+
+def _logical_hash_v2(artifact: dict[str, Any]) -> str:
+    digest = hashlib.sha256()
+    _logical_digest_token(digest, LOGICAL_HASH_CONTRACT)
+    for support in artifact["support_points"]:
+        _logical_digest_token(digest, int(support))
+
+    for family in _sorted_families(list(artifact["families"])):
+        method = str(family["method"])
+        _logical_digest_token(digest, family["feature_id"])
+        _logical_digest_token(digest, method)
+        scale = 10 ** int(family.get("scale_exponent") or 0)
+
+        for anchor in family["anchors"]:
+            anchor_n = int(anchor["anchor_n"])
+            first_later_n = int(anchor["first_later_n"])
+            count = int(anchor["suffix_transition_count"])
+            _logical_digest_token(digest, anchor_n)
+            _logical_digest_token(digest, anchor.get("anchor_reference_hash"))
+            _logical_digest_token(digest, count)
+
+            if method == TAIL_METHOD:
+                numerators = _decode_unsigned_varints(
+                    anchor["numerator_varints_b64"]
+                )
+                actual = 0
+                for offset, numerator in enumerate(numerators):
+                    later_n = first_later_n + offset
+                    value = _decimal_text(
+                        Decimal(numerator) / Decimal(anchor_n * later_n)
+                    )
+                    _logical_digest_token(digest, value)
+                    actual += 1
+                if actual != count:
+                    raise ValueError("TAIL decoded path length mismatch.")
+            else:
+                medians = _decode_nullable_nonnegative(
+                    anchor["absolute_median_shift_varints_b64"]
+                )
+                mads = _decode_nullable_nonnegative(
+                    anchor["absolute_mad_shift_varints_b64"]
+                )
+                anchor_mad_units = anchor.get("anchor_mad_units")
+                actual = 0
+                for median_units, mad_units in zip(medians, mads, strict=True):
+                    median_value = (
+                        _decimal_text(Decimal(median_units) / Decimal(scale))
+                        if median_units is not None
+                        else None
+                    )
+                    mad_value = (
+                        _decimal_text(Decimal(mad_units) / Decimal(scale))
+                        if mad_units is not None
+                        else None
+                    )
+                    relative_value = (
+                        _decimal_text(
+                            Decimal(mad_units)
+                            / Decimal(abs(int(anchor_mad_units)))
+                        )
+                        if (
+                            mad_units is not None
+                            and anchor_mad_units not in {None, 0}
+                        )
+                        else None
+                    )
+                    _logical_digest_token(digest, median_value)
+                    _logical_digest_token(digest, mad_value)
+                    _logical_digest_token(digest, relative_value)
+                    actual += 1
+                if actual != count:
+                    raise ValueError("MAD decoded path length mismatch.")
+    return digest.hexdigest()
+
+
+def _logical_hash_v1(artifact: dict[str, Any]) -> str:
+    digest = hashlib.sha256()
+    _logical_digest_token(digest, LOGICAL_HASH_CONTRACT)
+    for support in artifact["support_points"]:
+        _logical_digest_token(digest, int(support))
+
+    for family in _sorted_families(list(artifact["families"])):
+        method = str(family["method"])
+        _logical_digest_token(digest, family["feature_id"])
+        _logical_digest_token(digest, method)
+        for anchor in family["anchors"]:
+            _logical_digest_token(digest, int(anchor["anchor_n"]))
+            _logical_digest_token(digest, anchor.get("anchor_reference_hash"))
+            _logical_digest_token(
+                digest, int(anchor["suffix_transition_count"])
+            )
+            if method == TAIL_METHOD:
+                for value in anchor["ecdf_sup_distances"]:
+                    _logical_digest_token(
+                        digest,
+                        _decimal_text(_decimal(value)),
+                    )
+            else:
+                medians = anchor["absolute_median_shifts"]
+                mads = anchor["absolute_mad_shifts"]
+                relatives = anchor["relative_mad_shifts"]
+                if not (len(medians) == len(mads) == len(relatives)):
+                    raise ValueError("Legacy MAD path lengths diverged.")
+                for median_value, mad_value, relative_value in zip(
+                    medians, mads, relatives, strict=True
+                ):
+                    _logical_digest_token(
+                        digest,
+                        _decimal_text(_decimal_or_none(median_value)),
+                    )
+                    _logical_digest_token(
+                        digest,
+                        _decimal_text(_decimal_or_none(mad_value)),
+                    )
+                    _logical_digest_token(
+                        digest,
+                        _decimal_text(_decimal_or_none(relative_value)),
+                    )
+    return digest.hexdigest()
+
+
+def logical_evidence_hash(artifact: dict[str, Any]) -> str:
+    version = artifact.get("contract_version")
+    if version == REFERENCE_ADEQUACY_EVIDENCE_CONTRACT_VERSION:
+        return _logical_hash_v2(artifact)
+    if version == REFERENCE_ADEQUACY_EVIDENCE_CONTRACT_V1:
+        return _logical_hash_v1(artifact)
+    raise ValueError("Unsupported reference adequacy evidence contract.")
 
 
 def build_reference_adequacy_evidence(
@@ -492,10 +751,15 @@ def build_reference_adequacy_evidence(
     stability_state = validate_reference_stability_evidence(stability)
     adequacy_state = validate_reference_adequacy_protocol(adequacy_protocol)
 
-    if adequacy_protocol["contract_version"] != REFERENCE_ADEQUACY_PROTOCOL_CONTRACT_VERSION:
+    if (
+        adequacy_protocol["contract_version"]
+        != REFERENCE_ADEQUACY_PROTOCOL_CONTRACT_VERSION
+    ):
         raise ValueError("R2.1 requires the current reference adequacy protocol.")
     if adequacy_state["ready_for_evidence_generation"] is not True:
-        raise ValueError("Reference adequacy protocol is not ready for evidence generation.")
+        raise ValueError(
+            "Reference adequacy protocol is not ready for evidence generation."
+        )
 
     expected_lineage = {
         "development_dataset_hash": development_state["dataset_hash"],
@@ -507,7 +771,9 @@ def build_reference_adequacy_evidence(
     source = adequacy_protocol["source"]
     for key, expected in expected_lineage.items():
         if source.get(key) != expected:
-            raise ValueError(f"Reference adequacy protocol lineage mismatch: {key}")
+            raise ValueError(
+                f"Reference adequacy protocol lineage mismatch: {key}"
+            )
 
     if int(reconstruction["counts"]["raw_candidate_count"]) != int(
         reconstruction_state["raw_candidate_count"]
@@ -524,7 +790,9 @@ def build_reference_adequacy_evidence(
                 rows=rows,
                 support_points=support_points,
                 stability_family=_family(
-                    stability, feature_id=feature_id, method=TAIL_METHOD
+                    stability,
+                    feature_id=feature_id,
+                    method=TAIL_METHOD,
                 ),
             )
         )
@@ -534,7 +802,9 @@ def build_reference_adequacy_evidence(
                 rows=rows,
                 support_points=support_points,
                 stability_family=_family(
-                    stability, feature_id=feature_id, method=MAD_METHOD
+                    stability,
+                    feature_id=feature_id,
+                    method=MAD_METHOD,
                 ),
             )
         )
@@ -569,13 +839,32 @@ def build_reference_adequacy_evidence(
             int(family["forward_comparison_count"]) for family in families
         ),
     }
+
+    logical_shell = {
+        "support_points": support_points,
+        "families": families,
+        "contract_version": REFERENCE_ADEQUACY_EVIDENCE_CONTRACT_VERSION,
+    }
+    logical_hash = _logical_hash_v2(logical_shell)
+
     identity_payload = {
         "contract_version": REFERENCE_ADEQUACY_EVIDENCE_CONTRACT_VERSION,
         "source": source_payload,
+        "encoding": {
+            "representation": COMPACT_ENCODING,
+            "container": "GZIP_JSON",
+            "canonical_json": True,
+            "gzip_mtime": 0,
+            "tail_path_encoding": TAIL_PATH_ENCODING,
+            "mad_path_encoding": MAD_PATH_ENCODING,
+            "logical_hash_contract": LOGICAL_HASH_CONTRACT,
+        },
         "evidence_contract": {
             "reference_mode": REFERENCE_MODE,
             "forward_rule": FORWARD_RULE,
-            "candidate_support_universe": "REFERENCE_STABILITY_COMMON_REVIEW_POINTS",
+            "candidate_support_universe": (
+                "REFERENCE_STABILITY_COMMON_REVIEW_POINTS"
+            ),
             "candidate_support_points_hash": content_hash(support_points),
             "tail_metric": "ECDF_SUP_DISTANCE",
             "tail_evaluation_support": "OBSERVED_VALUES_UNION_ONLY",
@@ -596,6 +885,7 @@ def build_reference_adequacy_evidence(
         "counts": counts,
         "support_points": support_points,
         "family_payload_hash": content_hash(families),
+        "logical_evidence_hash": logical_hash,
         "policy_state": policy_state,
         "holdout_locked": True,
         "holdout_accessed": False,
@@ -613,7 +903,7 @@ def build_reference_adequacy_evidence(
     }
 
 
-def _identity_payload(artifact: dict[str, Any]) -> dict[str, Any]:
+def _identity_payload_v1(artifact: dict[str, Any]) -> dict[str, Any]:
     return {
         key: artifact[key]
         for key in (
@@ -634,19 +924,102 @@ def _identity_payload(artifact: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def validate_reference_adequacy_evidence(artifact: dict[str, Any]) -> dict[str, Any]:
-    if artifact.get("contract_version") != REFERENCE_ADEQUACY_EVIDENCE_CONTRACT_VERSION:
+def _identity_payload_v2(artifact: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: artifact[key]
+        for key in (
+            "contract_version",
+            "source",
+            "encoding",
+            "evidence_contract",
+            "unresolved_policy_classes",
+            "counts",
+            "support_points",
+            "family_payload_hash",
+            "logical_evidence_hash",
+            "policy_state",
+            "holdout_locked",
+            "holdout_accessed",
+            "network_requests",
+            "macro_db_writes",
+            "production_impact",
+        )
+    }
+
+
+def validate_reference_adequacy_evidence_v1(
+    artifact: dict[str, Any],
+) -> dict[str, Any]:
+    if artifact.get("contract_version") != REFERENCE_ADEQUACY_EVIDENCE_CONTRACT_V1:
+        raise ValueError("Unsupported legacy reference adequacy evidence contract.")
+    if artifact.get("analysis_status") != "COMPLETE":
+        raise ValueError("Legacy reference adequacy evidence must be COMPLETE.")
+    if artifact.get("holdout_locked") is not True:
+        raise ValueError("Legacy evidence must keep Holdout locked.")
+    if artifact.get("holdout_accessed") is not False:
+        raise ValueError("Legacy evidence must not access Holdout.")
+    if int(artifact.get("network_requests") or 0) != 0:
+        raise ValueError("Legacy evidence must not use network.")
+    if int(artifact.get("macro_db_writes") or 0) != 0:
+        raise ValueError("Legacy evidence must not write Macro DB.")
+    if artifact.get("production_impact") != "NONE":
+        raise ValueError("Legacy evidence must have no Production impact.")
+    if artifact.get("family_payload_hash") != content_hash(artifact["families"]):
+        raise ValueError("Legacy evidence family payload hash mismatch.")
+    evidence_hash = content_hash(_identity_payload_v1(artifact))
+    if artifact.get("evidence_hash") != evidence_hash:
+        raise ValueError("Legacy evidence hash mismatch.")
+    if artifact.get("evidence_id") != f"RATEADEQEVID-{evidence_hash[:16]}":
+        raise ValueError("Legacy evidence id mismatch.")
+    return {
+        "evidence_id": artifact["evidence_id"],
+        "evidence_hash": evidence_hash,
+        "common_support_point_count": int(
+            artifact["counts"]["common_support_point_count"]
+        ),
+        "forward_comparison_count": int(
+            artifact["counts"]["forward_comparison_count"]
+        ),
+        "ready_for_b2": False,
+        "ready_for_holdout": False,
+    }
+
+
+def validate_reference_adequacy_evidence(
+    artifact: dict[str, Any],
+) -> dict[str, Any]:
+    if artifact.get("contract_version") == REFERENCE_ADEQUACY_EVIDENCE_CONTRACT_V1:
+        return validate_reference_adequacy_evidence_v1(artifact)
+    if (
+        artifact.get("contract_version")
+        != REFERENCE_ADEQUACY_EVIDENCE_CONTRACT_VERSION
+    ):
         raise ValueError("Unsupported reference adequacy evidence contract.")
     if artifact.get("analysis_status") != "COMPLETE":
         raise ValueError("Reference adequacy evidence must be COMPLETE.")
-    if artifact.get("holdout_locked") is not True or artifact.get("holdout_accessed") is not False:
-        raise ValueError("Reference adequacy evidence must keep Holdout locked and unread.")
+    if (
+        artifact.get("holdout_locked") is not True
+        or artifact.get("holdout_accessed") is not False
+    ):
+        raise ValueError(
+            "Reference adequacy evidence must keep Holdout locked and unread."
+        )
     if int(artifact.get("network_requests") or 0) != 0:
         raise ValueError("Reference adequacy evidence must not use network.")
     if int(artifact.get("macro_db_writes") or 0) != 0:
         raise ValueError("Reference adequacy evidence must not write Macro DB.")
     if artifact.get("production_impact") != "NONE":
-        raise ValueError("Reference adequacy evidence must have no Production impact.")
+        raise ValueError(
+            "Reference adequacy evidence must have no Production impact."
+        )
+
+    encoding = artifact.get("encoding") or {}
+    if encoding.get("representation") != COMPACT_ENCODING:
+        raise ValueError("Reference adequacy compact encoding mismatch.")
+    if encoding.get("container") != "GZIP_JSON":
+        raise ValueError("Reference adequacy container must be gzip JSON.")
+    if encoding.get("gzip_mtime") != 0:
+        raise ValueError("Reference adequacy gzip mtime must be deterministic.")
 
     contract = artifact.get("evidence_contract") or {}
     if contract.get("forward_rule") != FORWARD_RULE:
@@ -663,13 +1036,14 @@ def validate_reference_adequacy_evidence(artifact: dict[str, Any]) -> dict[str, 
         if contract.get(key) is not False:
             raise ValueError(f"R2.1 selection flag must remain false: {key}")
 
-    support_points = list(artifact.get("support_points") or [])
-    if support_points != sorted(set(int(value) for value in support_points)):
+    support_points = [int(value) for value in artifact.get("support_points") or []]
+    if support_points != sorted(set(support_points)):
         raise ValueError("R2.1 support points must be sorted and unique.")
 
     families = list(artifact.get("families") or [])
     if len(families) != 6:
         raise ValueError("R2.1 requires six TAIL/MAD families.")
+
     forward_count = 0
     for family in families:
         if family.get("forward_rule") != FORWARD_RULE:
@@ -678,39 +1052,184 @@ def validate_reference_adequacy_evidence(artifact: dict[str, Any]) -> dict[str, 
             raise ValueError("R2.1 family cannot select support.")
         if family.get("adequacy_pass") != "UNRESOLVED":
             raise ValueError("R2.1 family cannot approve adequacy.")
+
+        method = family["method"]
+        max_prior = int(family["max_prior_count"])
+        expected_anchors = [
+            n for n in support_points if 0 < n < max_prior
+        ]
         anchors = list(family.get("anchors") or [])
-        if [int(item["anchor_n"]) for item in anchors] != [
-            n for n in support_points if 0 < n < int(family["max_prior_count"])
-        ]:
+        if [int(item["anchor_n"]) for item in anchors] != expected_anchors:
             raise ValueError("R2.1 family anchor universe mismatch.")
+
+        scale = 10 ** int(family.get("scale_exponent") or 0)
         for anchor in anchors:
-            expected_count = int(family["max_prior_count"]) - int(anchor["anchor_n"])
+            anchor_n = int(anchor["anchor_n"])
+            first_later_n = int(anchor["first_later_n"])
+            expected_count = max_prior - anchor_n
+            if first_later_n != anchor_n + 1:
+                raise ValueError("R2.1 first later support mismatch.")
             if int(anchor["suffix_transition_count"]) != expected_count:
                 raise ValueError("R2.1 suffix transition count mismatch.")
+
+            if method == TAIL_METHOD:
+                if family.get("path_encoding") != TAIL_PATH_ENCODING:
+                    raise ValueError("TAIL path encoding mismatch.")
+                raw = base64.b64decode(
+                    anchor["numerator_varints_b64"].encode("ascii"),
+                    validate=True,
+                )
+                if hashlib.sha256(raw).hexdigest() != anchor[
+                    "encoded_path_sha256"
+                ]:
+                    raise ValueError("TAIL encoded path hash mismatch.")
+                values = list(
+                    _decode_unsigned_varints(anchor["numerator_varints_b64"])
+                )
+                if len(values) != expected_count:
+                    raise ValueError("TAIL decoded path length mismatch.")
+                best_num: int | None = None
+                best_later: int | None = None
+                for offset, numerator in enumerate(values):
+                    later_n = first_later_n + offset
+                    if best_num is None or (
+                        numerator * best_later > best_num * later_n
+                        if best_later is not None
+                        else True
+                    ):
+                        best_num = numerator
+                        best_later = later_n
+                expected_max = (
+                    _decimal_text(
+                        Decimal(best_num) / Decimal(anchor_n * best_later)
+                    )
+                    if best_num is not None and best_later is not None
+                    else None
+                )
+                if anchor.get("max_ecdf_sup_distance") != expected_max:
+                    raise ValueError("TAIL max envelope summary mismatch.")
+                if anchor.get("argmax_prior_count") != best_later:
+                    raise ValueError("TAIL argmax summary mismatch.")
+            else:
+                if family.get("path_encoding") != MAD_PATH_ENCODING:
+                    raise ValueError("MAD path encoding mismatch.")
+                median_raw = base64.b64decode(
+                    anchor["absolute_median_shift_varints_b64"].encode("ascii"),
+                    validate=True,
+                )
+                mad_raw = base64.b64decode(
+                    anchor["absolute_mad_shift_varints_b64"].encode("ascii"),
+                    validate=True,
+                )
+                if hashlib.sha256(median_raw).hexdigest() != anchor[
+                    "absolute_median_shift_encoded_sha256"
+                ]:
+                    raise ValueError("MAD median encoded path hash mismatch.")
+                if hashlib.sha256(mad_raw).hexdigest() != anchor[
+                    "absolute_mad_shift_encoded_sha256"
+                ]:
+                    raise ValueError("MAD scale encoded path hash mismatch.")
+
+                median_values = list(
+                    _decode_nullable_nonnegative(
+                        anchor["absolute_median_shift_varints_b64"]
+                    )
+                )
+                mad_values = list(
+                    _decode_nullable_nonnegative(
+                        anchor["absolute_mad_shift_varints_b64"]
+                    )
+                )
+                if (
+                    len(median_values) != expected_count
+                    or len(mad_values) != expected_count
+                ):
+                    raise ValueError("MAD decoded path length mismatch.")
+
+                def max_units(
+                    values: list[int | None],
+                ) -> tuple[int | None, int | None]:
+                    best_value: int | None = None
+                    best_n: int | None = None
+                    for offset, value in enumerate(values):
+                        if value is None:
+                            continue
+                        if best_value is None or value > best_value:
+                            best_value = value
+                            best_n = first_later_n + offset
+                    return best_value, best_n
+
+                median_max, median_argmax = max_units(median_values)
+                mad_max, mad_argmax = max_units(mad_values)
+                expected_median_max = (
+                    _decimal_text(Decimal(median_max) / Decimal(scale))
+                    if median_max is not None
+                    else None
+                )
+                expected_mad_max = (
+                    _decimal_text(Decimal(mad_max) / Decimal(scale))
+                    if mad_max is not None
+                    else None
+                )
+                if anchor.get("max_absolute_median_shift") != expected_median_max:
+                    raise ValueError("MAD median max summary mismatch.")
+                if anchor.get("max_absolute_mad_shift") != expected_mad_max:
+                    raise ValueError("MAD scale max summary mismatch.")
+                if (
+                    anchor.get("argmax_absolute_median_shift_prior_count")
+                    != median_argmax
+                ):
+                    raise ValueError("MAD median argmax mismatch.")
+                if (
+                    anchor.get("argmax_absolute_mad_shift_prior_count")
+                    != mad_argmax
+                ):
+                    raise ValueError("MAD scale argmax mismatch.")
+
+                anchor_mad_units = anchor.get("anchor_mad_units")
+                status = anchor.get("relative_mad_shift_status")
+                if anchor_mad_units == 0:
+                    if status != "NON_COMPUTABLE_ZERO_SCALE":
+                        raise ValueError("MAD zero-scale status mismatch.")
+                    expected_relative_max = None
+                    expected_relative_argmax = None
+                elif anchor_mad_units is None:
+                    if status != "UNAVAILABLE":
+                        raise ValueError("MAD unavailable scale status mismatch.")
+                    expected_relative_max = None
+                    expected_relative_argmax = None
+                else:
+                    if status != "AVAILABLE":
+                        raise ValueError("MAD relative status mismatch.")
+                    expected_relative_max = (
+                        _decimal_text(
+                            Decimal(mad_max)
+                            / Decimal(abs(int(anchor_mad_units)))
+                        )
+                        if mad_max is not None
+                        else None
+                    )
+                    expected_relative_argmax = mad_argmax
+                if anchor.get("max_relative_mad_shift") != expected_relative_max:
+                    raise ValueError("MAD relative max summary mismatch.")
+                if (
+                    anchor.get("argmax_relative_mad_shift_prior_count")
+                    != expected_relative_argmax
+                ):
+                    raise ValueError("MAD relative argmax mismatch.")
+
             if anchor.get("selection_status") != "NOT_SELECTED":
                 raise ValueError("R2.1 anchor cannot select support.")
-            if family["method"] == TAIL_METHOD:
-                if len(anchor["ecdf_sup_distances"]) != expected_count:
-                    raise ValueError("TAIL forward path length mismatch.")
-            else:
-                for key in (
-                    "absolute_median_shifts",
-                    "absolute_mad_shifts",
-                    "relative_mad_shifts",
-                ):
-                    if len(anchor[key]) != expected_count:
-                        raise ValueError("MAD forward path length mismatch.")
-                if anchor.get("anchor_mad") == "0":
-                    if anchor.get("relative_mad_shift_status") != "NON_COMPUTABLE_ZERO_SCALE":
-                        raise ValueError("MAD zero-scale status mismatch.")
-                    if any(value is not None for value in anchor["relative_mad_shifts"]):
-                        raise ValueError("MAD zero-scale relative shifts must remain null.")
             forward_count += expected_count
 
     if int(artifact["counts"]["forward_comparison_count"]) != forward_count:
         raise ValueError("R2.1 forward comparison count mismatch.")
     if artifact.get("family_payload_hash") != content_hash(families):
         raise ValueError("R2.1 family payload hash mismatch.")
+
+    actual_logical_hash = _logical_hash_v2(artifact)
+    if artifact.get("logical_evidence_hash") != actual_logical_hash:
+        raise ValueError("R2.1 logical evidence hash mismatch.")
 
     expected_policy = {
         "reference_adequacy": "UNRESOLVED",
@@ -728,7 +1247,7 @@ def validate_reference_adequacy_evidence(artifact: dict[str, Any]) -> dict[str, 
     if artifact.get("policy_state") != expected_policy:
         raise ValueError("R2.1 policy state changed.")
 
-    evidence_hash = content_hash(_identity_payload(artifact))
+    evidence_hash = content_hash(_identity_payload_v2(artifact))
     if artifact.get("evidence_hash") != evidence_hash:
         raise ValueError("R2.1 evidence hash mismatch.")
     if artifact.get("evidence_id") != f"RATEADEQEVID-{evidence_hash[:16]}":
@@ -737,11 +1256,71 @@ def validate_reference_adequacy_evidence(artifact: dict[str, Any]) -> dict[str, 
     return {
         "evidence_id": artifact["evidence_id"],
         "evidence_hash": evidence_hash,
+        "logical_evidence_hash": actual_logical_hash,
         "common_support_point_count": len(support_points),
+        "reference_family_count": len(families),
         "forward_comparison_count": forward_count,
+        "encoding": COMPACT_ENCODING,
         "ready_for_b2": False,
         "ready_for_holdout": False,
     }
+
+
+def compare_legacy_v1_to_compact_v2(
+    legacy: dict[str, Any],
+    compact: dict[str, Any],
+) -> dict[str, Any]:
+    legacy_state = validate_reference_adequacy_evidence_v1(legacy)
+    compact_state = validate_reference_adequacy_evidence(compact)
+    if legacy["source"]["adequacy_protocol_hash"] != compact["source"][
+        "adequacy_protocol_hash"
+    ]:
+        raise ValueError("V1/V2 adequacy protocol lineage mismatch.")
+    if legacy["support_points"] != compact["support_points"]:
+        raise ValueError("V1/V2 support-point universe mismatch.")
+    if int(legacy_state["forward_comparison_count"]) != int(
+        compact_state["forward_comparison_count"]
+    ):
+        raise ValueError("V1/V2 forward comparison count mismatch.")
+
+    legacy_logical = _logical_hash_v1(legacy)
+    compact_logical = compact_state["logical_evidence_hash"]
+    if legacy_logical != compact_logical:
+        raise ValueError("V1/V2 logical evidence mismatch.")
+    return {
+        "status": "PASS",
+        "logical_evidence_hash": compact_logical,
+        "forward_comparison_count": compact_state["forward_comparison_count"],
+    }
+
+
+def load_reference_adequacy_evidence_file(path: Path) -> dict[str, Any]:
+    if path.suffix == ".gz":
+        with gzip.open(path, "rt", encoding="utf-8") as fp:
+            payload = json.load(fp)
+    else:
+        with path.open("r", encoding="utf-8") as fp:
+            payload = json.load(fp)
+    if not isinstance(payload, dict):
+        raise ValueError(f"JSON root must be an object: {path}")
+    return payload
+
+
+def canonical_compact_json_bytes(payload: dict[str, Any]) -> bytes:
+    return (
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n"
+    ).encode("utf-8")
+
+
+def deterministic_gzip_bytes(payload: dict[str, Any]) -> bytes:
+    raw = canonical_compact_json_bytes(payload)
+    return gzip.compress(raw, compresslevel=9, mtime=0)
 
 
 def render_reference_adequacy_evidence_text(artifact: dict[str, Any]) -> str:
@@ -749,13 +1328,16 @@ def render_reference_adequacy_evidence_text(artifact: dict[str, Any]) -> str:
     policy = artifact["policy_state"]
     return "\n".join(
         [
-            "NEXT-6B-S4.2-B.1.6-R2.1 BOUNDARY-ANCHORED REFERENCE ADEQUACY EVIDENCE",
+            (
+                "NEXT-6B-S4.2-B.1.6-R2.1 "
+                "BOUNDARY-ANCHORED REFERENCE ADEQUACY EVIDENCE V2"
+            ),
             "",
             f"Common support points : {state['common_support_point_count']}",
-            "TAIL families         : 3",
-            "MAD families          : 3",
-            "EPT reference gate    : EXCLUDED",
+            f"Families              : {state['reference_family_count']}",
             f"Forward comparisons   : {state['forward_comparison_count']}",
+            f"Encoding              : {state['encoding']}",
+            f"Logical evidence hash : {state['logical_evidence_hash']}",
             "Forward paths         : COMPLETE",
             "Tolerance selection   : NOT PERFORMED",
             "Minimum N selection   : NOT PERFORMED",
