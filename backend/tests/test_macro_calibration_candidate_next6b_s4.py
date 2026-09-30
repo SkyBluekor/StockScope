@@ -10,6 +10,11 @@ from app.macro.calibration_candidate import (
     generate_feature_candidates,
     validate_candidate_set_artifact,
 )
+from app.macro.admissibility_evidence import (
+    build_admissibility_evidence,
+    render_admissibility_evidence_text,
+    validate_admissibility_evidence,
+)
 from app.macro.admissibility_review import (
     build_admissibility_review,
     render_admissibility_review_text,
@@ -37,6 +42,9 @@ from tools.data.diagnose_macro_calibration_frontier_next6b_s4_1r import (
 )
 from tools.data.review_macro_admissibility_next6b_s4_2a import (
     build_parser as build_s4_2a_parser,
+)
+from tools.data.build_macro_admissibility_evidence_next6b_s4_2b import (
+    build_parser as build_s4_2b_parser,
 )
 
 
@@ -668,3 +676,272 @@ def test_s4_2a_cli_is_review_only_and_has_no_policy_or_holdout_inputs():
     assert "--minimum-sample" not in option_strings
     assert "--event-unit" not in option_strings
     assert "--write-artifact" not in option_strings
+
+
+def _s4_2b_inputs():
+    development, protocol, research = _inputs()
+    diagnostic = build_frontier_admissibility_diagnostic(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+    )
+    return development, protocol, research, diagnostic
+
+
+def test_s4_2b_evidence_replays_frontier_and_preserves_guardrails():
+    development, protocol, research, diagnostic = _s4_2b_inputs()
+
+    evidence = build_admissibility_evidence(
+        diagnostic=diagnostic,
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+    )
+    state = validate_admissibility_evidence(evidence)
+
+    assert evidence["source"]["diagnostic_hash"] == diagnostic[
+        "diagnostic_hash"
+    ]
+    assert evidence["source"]["source_frontier_hash"] == diagnostic[
+        "source_frontier_hash"
+    ]
+    assert evidence["source"]["replayed_frontier_hash"] == diagnostic[
+        "source_frontier_hash"
+    ]
+    assert evidence["source"]["frontier_replay_verified"] is True
+    assert evidence["counts"]["family_count"] == 9
+    assert state["family_count"] == 9
+    assert len(evidence["evidence_rows"]) == evidence["counts"][
+        "compressed_frontier_count"
+    ]
+    assert state["frontier_group_count"] == len(evidence["evidence_rows"])
+    assert all(
+        row["episode_start_count"] == row["episode_count"]
+        and row["holdout_accessed"] is False
+        for row in evidence["evidence_rows"]
+    )
+    assert evidence["policy_state"] == {
+        "admissibility_policy": "UNDEFINED",
+        "policy_defined": False,
+        "policy_approved": False,
+        "event_unit": "UNSET",
+        "episode_rate_unit": "UNSET",
+        "minimum_sample_unit": "UNSET",
+        "evaluation_rule": "UNSET",
+        "final_threshold_selected": False,
+        "minimum_sample_selected": False,
+        "event_unit_selected": False,
+        "ready_for_holdout": False,
+        "rate_spike_state": "UNCALIBRATED",
+    }
+    assert evidence["holdout_locked"] is True
+    assert evidence["holdout_accessed"] is False
+    assert evidence["network_requests"] == 0
+    assert evidence["macro_db_writes"] == 0
+    assert evidence["production_impact"] == "NONE"
+
+
+def test_s4_2b_breakpoints_are_observed_frontier_values_only():
+    development, protocol, research, diagnostic = _s4_2b_inputs()
+    evidence = build_admissibility_evidence(
+        diagnostic=diagnostic,
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+    )
+    rows_by_hash = {
+        row["behavior_group_hash"]: row
+        for row in evidence["evidence_rows"]
+    }
+
+    for family in evidence["families"]:
+        members = [
+            rows_by_hash[item]
+            for item in family["behavior_group_hashes"]
+        ]
+        for axis, curve in family["observed_breakpoint_curves"].items():
+            observed = sorted(
+                {
+                    str(row[axis])
+                    for row in members
+                }
+            )
+            curve_values = sorted(
+                {
+                    str(point["value"])
+                    for point in curve["points"]
+                }
+            )
+            assert curve_values == observed
+            assert curve["source"] == "OBSERVED_FRONTIER_VALUES_ONLY"
+            assert curve["invented_grid_points"] == 0
+
+
+def test_s4_2b_descriptive_quantiles_are_observed_values_not_interpolated():
+    development, protocol, research, diagnostic = _s4_2b_inputs()
+    evidence = build_admissibility_evidence(
+        diagnostic=diagnostic,
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+    )
+    rows_by_hash = {
+        row["behavior_group_hash"]: row
+        for row in evidence["evidence_rows"]
+    }
+
+    for family in evidence["families"]:
+        members = [
+            rows_by_hash[item]
+            for item in family["behavior_group_hashes"]
+        ]
+        for axis, summary in family["descriptive_summaries"].items():
+            if not members:
+                assert summary["status"] == "NO_VALUES"
+                continue
+            observed = {str(row[axis]) for row in members}
+            assert summary["status"] == "DESCRIPTIVE_ONLY"
+            assert summary["quantile_method"] == (
+                "OBSERVED_ORDER_STATISTIC_FLOOR_V1"
+            )
+            assert str(summary["q1"]) in observed
+            assert str(summary["median"]) in observed
+            assert str(summary["q3"]) in observed
+
+
+def test_s4_2b_joint_profiles_are_deterministic_and_unranked():
+    development, protocol, research, diagnostic = _s4_2b_inputs()
+
+    first = build_admissibility_evidence(
+        diagnostic=diagnostic,
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+    )
+    second = build_admissibility_evidence(
+        diagnostic=diagnostic,
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+    )
+
+    assert first["evidence_hash"] == second["evidence_hash"]
+    assert first["evidence_id"] == second["evidence_id"]
+    assert [
+        item["evidence_family_hash"] for item in first["families"]
+    ] == [
+        item["evidence_family_hash"] for item in second["families"]
+    ]
+    assert all(
+        profile["rank"] is None
+        and profile["score"] is None
+        and profile["recommended"] is False
+        for family in first["families"]
+        for profile in family["exact_joint_profiles"]
+    )
+
+
+def test_s4_2b_rejects_tampered_diagnostic_before_evidence_build():
+    development, protocol, research, diagnostic = _s4_2b_inputs()
+    tampered = deepcopy(diagnostic)
+    tampered["families"][0]["candidate_count"] += 1
+
+    with pytest.raises(ValueError, match="Family diagnostic hash mismatch"):
+        build_admissibility_evidence(
+            diagnostic=tampered,
+            development_dataset=development,
+            protocol=protocol,
+            research=research,
+        )
+
+
+def test_s4_2b_rejects_valid_but_wrong_frontier_identity():
+    development, protocol, research, diagnostic = _s4_2b_inputs()
+    mismatched = deepcopy(diagnostic)
+    mismatched["source_frontier_hash"] = "f" * 64
+
+    identity_keys = (
+        "contract_version",
+        "candidate_generation_status",
+        "compression_status",
+        "diagnostics_status",
+        "admissibility_status",
+        "ready_for_holdout",
+        "development_dataset_hash",
+        "protocol_hash",
+        "research_hash",
+        "holdout_dataset_hash_reference",
+        "source_candidate_set_hash",
+        "source_frontier_hash",
+        "family_payload_hash",
+        "feature_payload_hash",
+        "admissibility_policy",
+        "readiness",
+        "event_unit_diagnostics",
+        "diagnostic_status",
+        "holdout_locked",
+        "holdout_accessed",
+        "final_candidate_selected",
+        "rate_spike_state",
+        "production_decision_approved",
+    )
+    new_hash = content_hash(
+        {key: mismatched[key] for key in identity_keys}
+    )
+    mismatched["diagnostic_hash"] = new_hash
+    mismatched["diagnostic_id"] = f"RATEFRONTDIAG-{new_hash[:16]}"
+
+    with pytest.raises(
+        ValueError,
+        match="Replayed frontier hash differs",
+    ):
+        build_admissibility_evidence(
+            diagnostic=mismatched,
+            development_dataset=development,
+            protocol=protocol,
+            research=research,
+        )
+
+
+def test_s4_2b_render_is_compact_and_review_only():
+    development, protocol, research, diagnostic = _s4_2b_inputs()
+    evidence = build_admissibility_evidence(
+        diagnostic=diagnostic,
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+    )
+    rendered = render_admissibility_evidence_text(evidence)
+
+    assert "NEXT-6B-S4.2-B ADMISSIBILITY EVIDENCE MATRIX" in rendered
+    assert "Replay Frontier" in rendered
+    assert "PASS" in rendered
+    assert "Observed breakpoint curves / Exact joint profiles : COMPLETE / COMPLETE" in rendered
+    assert "Policy / Event unit / Episode rate unit / Minimum sample unit : UNDEFINED / UNSET / UNSET / UNSET" in rendered
+    assert "Evidence status: COMPLETE (no admissibility policy selected)" in rendered
+
+
+def test_s4_2b_cli_has_no_holdout_or_policy_selection_arguments():
+    parser = build_s4_2b_parser()
+    option_strings = {
+        option
+        for action in parser._actions
+        for option in action.option_strings
+    }
+
+    assert "--diagnostic-artifact" in option_strings
+    assert "--development-artifact" in option_strings
+    assert "--protocol-artifact" in option_strings
+    assert "--research-artifact" in option_strings
+    assert "--write-artifact" in option_strings
+    assert "--holdout-artifact" not in option_strings
+    assert "--select" not in option_strings
+    assert "--approve" not in option_strings
+    assert "--threshold" not in option_strings
+    assert "--maximum-signal-fraction" not in option_strings
+    assert "--maximum-positive-capture" not in option_strings
+    assert "--maximum-episode-rate" not in option_strings
+    assert "--minimum-year-coverage" not in option_strings
+    assert "--minimum-sample" not in option_strings
+    assert "--event-unit" not in option_strings
+    assert "--episode-rate-unit" not in option_strings
