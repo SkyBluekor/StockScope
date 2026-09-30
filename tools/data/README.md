@@ -316,6 +316,39 @@ S4.2-A는 policy를 결정하지 않습니다. `event_unit=UNSET`, `evaluation_r
 
 이 단계에서는 새 immutable policy artifact를 만들지 않습니다. 실제 9개 family review 결과를 검수한 뒤 다음 단계에서 admissibility policy 사전등록 여부를 결정합니다.
 
+## NEXT-6B-S4.2-B Admissibility Evidence Matrix
+### 금리 충격 자격 기준 사전등록을 위한 개발 데이터 근거 행렬
+
+S4.2-B는 S4.1R diagnostic과 S2/S3의 Development·Protocol·Research artifact를 입력으로 받아 S4/S4.1 frontier를 **Development에서 deterministic replay**합니다. 재생된 `frontier_hash`가 diagnostic의 `source_frontier_hash`와 다르면 즉시 중단합니다. Holdout artifact는 입력하지 않습니다.
+
+각 compressed frontier behavior group을 evidence row로 펼쳐 다음 관측값을 보존합니다.
+
+- eligible / signal count와 signal fraction
+- positive move count / capture count / capture fraction
+- episode count와 별도 의미의 episode-start count
+- Development 실제 연도 수와 episode starts per year
+- eligible 대비 episode-start fraction
+- year coverage / max-year concentration / episode separation
+- source method / candidate / threshold provenance
+
+9개 feature × method family마다 policy 축의 **실제 observed breakpoint만** 사용한 curve를 만듭니다. 사람이 만든 1%·5%·10% 같은 고정 grid는 추가하지 않습니다. maximum 성격의 축은 `AT_OR_BELOW`, minimum 성격의 축은 `AT_OR_ABOVE` 누적 개수를 보고합니다.
+
+Descriptive summary의 Q1/median/Q3는 보간값을 새로 만들지 않고 `OBSERVED_ORDER_STATISTIC_FLOOR_V1` 방식으로 실제 관측 breakpoint에 snap합니다. 이 값들은 모두 `DESCRIPTIVE_ONLY`이며 policy threshold가 아닙니다.
+
+Preview:
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\build_macro_admissibility_evidence_next6b_s4_2b.py `
+  --diagnostic-artifact .\backend\runtime\macro\calibration\FRONTIER-DIAGNOSTIC-74458592d2e610da.json `
+  --development-artifact .\backend\runtime\macro\calibration\DEV-7c3f6660b3aae03f.json `
+  --protocol-artifact .\backend\runtime\macro\calibration\PROTOCOL-e1de868dc8f16670.json `
+  --research-artifact .\backend\runtime\macro\calibration\RESEARCH-cdd96e164e12017d.json
+```
+
+Preview 검수 후 재현 가능한 full evidence를 저장할 때만 `--write-artifact`를 추가합니다. 파일명은 `ADMISSIBILITY-EVIDENCE-<hash>.json`이고 Git 대상이 아닙니다. 이 artifact는 policy approval artifact가 아니므로 `policy_defined=false`, `policy_approved=false`, `ready_for_holdout=false`를 유지합니다.
+
+S4.2-B 완료 후에도 `event_unit=UNSET`, `episode_rate_unit=UNSET`, `minimum_sample_unit=UNSET`, `evaluation_rule=UNSET`, threshold/minimum sample/event unit 미선택, Holdout locked/unread, `RATE_SPIKE=UNCALIBRATED` 상태를 유지합니다. Network request, Macro DB write, Production 영향은 모두 0입니다.
+
 ## P2-S2 실제 추천 평가 저장소 준비
 
 P2-S2는 새 Scanner 실행부터 실제 추천 표본을 사후 선택 전에 보존합니다. 과거 Scanner 실행을 prospective 표본으로 소급 생성하지 않습니다.
