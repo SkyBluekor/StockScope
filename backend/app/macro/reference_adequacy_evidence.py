@@ -178,7 +178,7 @@ class _SuffixEnvelope:
         lines = [(self.slopes[i], self.base[i]) for i in range(left, right)]
         self.max_hulls[block] = _build_max_hull(lines)
         self.min_hulls[block] = _build_max_hull(
-            [(-slope, -intercept) for slope, intercept in lines]
+            sorted((-slope, -intercept) for slope, intercept in lines)
         )
 
     def add_suffix(self, start: int, amount: int) -> None:
