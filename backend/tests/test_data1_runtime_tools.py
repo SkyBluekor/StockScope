@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+from contextlib import closing
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -1443,7 +1444,7 @@ def test_p5_restore_rolls_back_db_and_selection_when_active_publish_fails(
 
     target_holdings = _holdings_db(tmp_path / "target-holdings.db")
     target_simulation = _p5_simulation_db(tmp_path / "target-simulation.db")
-    with sqlite3.connect(target_simulation) as conn:
+    with closing(sqlite3.connect(target_simulation)) as conn, conn:
         conn.execute(
             "CREATE TABLE restore_identity_fixture(value TEXT NOT NULL)"
         )

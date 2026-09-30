@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import sqlite3
 import shutil
 import sys
 from pathlib import Path
@@ -60,6 +59,7 @@ from tools.data.common import (
     tracking_db_path,
     project_version,
     secret_like_paths,
+    sqlite_readonly,
     sqlite_snapshot,
     utc_stamp,
     validate_holdings_db,
@@ -71,8 +71,7 @@ from tools.data.common import (
 
 
 def _table_exists(path: Path, table: str) -> bool:
-    uri = f"file:{path.resolve().as_posix()}?mode=ro"
-    with sqlite3.connect(uri, uri=True) as conn:
+    with sqlite_readonly(path) as conn:
         row = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
             (table,),
@@ -83,8 +82,7 @@ def _table_exists(path: Path, table: str) -> bool:
 def _market_generation_ready(path: Path | None) -> bool:
     if path is None or not path.is_file():
         return False
-    uri = f"file:{path.resolve().as_posix()}?mode=ro"
-    with sqlite3.connect(uri, uri=True) as conn:
+    with sqlite_readonly(path) as conn:
         tables = {
             str(row[0])
             for row in conn.execute(
@@ -327,8 +325,7 @@ def _strategy_governance_extension(
         )
 
     if present:
-        uri = f"file:{simulation_copy.resolve().as_posix()}?mode=ro"
-        with sqlite3.connect(uri, uri=True) as conn:
+        with sqlite_readonly(simulation_copy) as conn:
             row = conn.execute(
                 """
                 SELECT value FROM strategy_governance_schema_meta
