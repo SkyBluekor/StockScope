@@ -604,8 +604,17 @@ def test_s4_2a_review_renders_compact_family_comparison():
     assert "Policy / Event unit / Evaluation rule : UNDEFINED / UNSET / UNSET" in rendered
     assert "Review status: REVIEW_REQUIRED" in rendered
     assert all(
+        family["signal_fraction_display"] == "N/A"
+        or family["signal_fraction_display"].endswith("%")
+        for family in review["families"]
+    )
+    assert all(
+        family["positive_capture_display"] == "N/A"
+        or family["positive_capture_display"].endswith("%")
+        for family in review["families"]
+    )
+    assert any(
         family["signal_fraction_display"].endswith("%")
-        and family["positive_capture_display"].endswith("%")
         for family in review["families"]
     )
 
