@@ -154,8 +154,8 @@ Block-bootstrap results for sample quantiles under dependence also require mixin
 
 Source:
 
-- Peter Hall / related modern quantile bootstrap literature: *Block bootstrap optimality and empirical block selection for sample quantiles with dependent data*, Biometrika 108(3), 2021.
-- https://doi.org/10.1093/biomet/asaa070
+- T. A. Kuffner, S. M. S. Lee, and G. A. Young, *Block bootstrap optimality and empirical block selection for sample quantiles with dependent data*, Biometrika 108(3), 2021.
+- https://doi.org/10.1093/biomet/asaa075
 
 **R2.2 decision:** bootstrap/subsampling may be preregistered later, but R2.2 must not introduce an arbitrary block length, confidence level, repetition count, or candidate-specific tuning step.
 
