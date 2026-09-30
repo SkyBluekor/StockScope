@@ -144,6 +144,7 @@ try {
     if ($MacroExit -ne 0) {
         Fail "Macro artifact synchronization failed with exit code $MacroExit."
     }
+    Write-Host "Macro artifact chain    PASS  through Reference Adequacy Evidence"
 
     Write-Host ""
     Write-Host "Git/Secrets"
