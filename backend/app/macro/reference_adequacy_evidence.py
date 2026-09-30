@@ -103,36 +103,125 @@ def _common_support_points(stability: dict[str, Any]) -> list[int]:
     return values
 
 
-def _prefix_counts(values: list[Decimal], max_prior: int) -> tuple[list[Decimal], list[list[int]]]:
-    support = sorted(set(values[:max_prior]))
-    positions = {value: index for index, value in enumerate(support)}
-    exact = [0] * len(support)
-    prefixes: list[list[int]] = [[0] * len(support)]
-    for value in values[:max_prior]:
-        exact[positions[value]] += 1
-        running = 0
-        cumulative: list[int] = []
-        for count in exact:
-            running += count
-            cumulative.append(running)
-        prefixes.append(cumulative)
-    return support, prefixes
+def _build_max_hull(lines: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    compact: list[tuple[int, int]] = []
+    for slope, intercept in lines:
+        if compact and compact[-1][0] == slope:
+            if intercept > compact[-1][1]:
+                compact[-1] = (slope, intercept)
+            continue
+        compact.append((slope, intercept))
+
+    hull: list[tuple[int, int]] = []
+    for line in compact:
+        while len(hull) >= 2:
+            m1, b1 = hull[-2]
+            m2, b2 = hull[-1]
+            m3, b3 = line
+            if (b1 - b2) * (m3 - m2) >= (b2 - b3) * (m2 - m1):
+                hull.pop()
+            else:
+                break
+        hull.append(line)
+    return hull
 
 
-def _ecdf_sup_distance(
-    prefix_counts: list[list[int]],
+def _query_max_hull(hull: list[tuple[int, int]], x: int) -> int:
+    if not hull:
+        return 0
+
+    def value(index: int) -> int:
+        slope, intercept = hull[index]
+        return slope * x + intercept
+
+    lo = 0
+    hi = len(hull) - 1
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if value(mid) <= value(mid + 1):
+            lo = mid + 1
+        else:
+            hi = mid
+    return value(lo)
+
+
+class _SuffixEnvelope:
+    """Exact suffix-range additions plus global max/min line queries.
+
+    Each support point j represents:
+        g_m(j) = N * B_m(j) - m * A_N(j)
+
+    A_N(j) is fixed for one anchor and becomes the line slope. Each appended
+    observation adds N to B_m(j) for the suffix at/above its support rank.
+    Querying at x=-m therefore yields the exact KS numerator without scanning
+    every support point for every later t.
+    """
+
+    def __init__(self, slopes: list[int], block_size: int | None = None) -> None:
+        self.slopes = slopes
+        self.size = len(slopes)
+        self.block_size = block_size or max(1, int(self.size ** 0.5) + 1)
+        self.block_count = (self.size + self.block_size - 1) // self.block_size
+        self.base = [0] * self.size
+        self.lazy = [0] * self.block_count
+        self.max_hulls: list[list[tuple[int, int]]] = [[] for _ in range(self.block_count)]
+        self.min_hulls: list[list[tuple[int, int]]] = [[] for _ in range(self.block_count)]
+        for block in range(self.block_count):
+            self._rebuild(block)
+
+    def _bounds(self, block: int) -> tuple[int, int]:
+        left = block * self.block_size
+        return left, min(self.size, left + self.block_size)
+
+    def _rebuild(self, block: int) -> None:
+        left, right = self._bounds(block)
+        lines = [(self.slopes[i], self.base[i]) for i in range(left, right)]
+        self.max_hulls[block] = _build_max_hull(lines)
+        self.min_hulls[block] = _build_max_hull(
+            [(-slope, -intercept) for slope, intercept in lines]
+        )
+
+    def add_suffix(self, start: int, amount: int) -> None:
+        if start < 0 or start >= self.size:
+            raise ValueError("Suffix update support rank is out of range.")
+        first_block = start // self.block_size
+        _, right = self._bounds(first_block)
+        for i in range(start, right):
+            self.base[i] += amount
+        self._rebuild(first_block)
+        for block in range(first_block + 1, self.block_count):
+            self.lazy[block] += amount
+
+    def max_abs_at(self, x: int) -> int:
+        maximum: int | None = None
+        minimum: int | None = None
+        for block in range(self.block_count):
+            lazy = self.lazy[block]
+            block_max = _query_max_hull(self.max_hulls[block], x) + lazy
+            block_min = -_query_max_hull(self.min_hulls[block], x) + lazy
+            maximum = block_max if maximum is None else max(maximum, block_max)
+            minimum = block_min if minimum is None else min(minimum, block_min)
+        if maximum is None or minimum is None:
+            return 0
+        return max(abs(maximum), abs(minimum))
+
+
+def _anchor_cumulative_counts(
+    values: list[Decimal],
+    *,
+    support: list[Decimal],
+    positions: dict[Decimal, int],
     anchor_n: int,
-    later_n: int,
-) -> Decimal:
-    anchor = prefix_counts[anchor_n]
-    later = prefix_counts[later_n]
-    denominator = Decimal(anchor_n * later_n)
-    max_numerator = 0
-    for anchor_count, later_count in zip(anchor, later):
-        numerator = abs(anchor_count * later_n - later_count * anchor_n)
-        if numerator > max_numerator:
-            max_numerator = numerator
-    return Decimal(max_numerator) / denominator
+) -> list[int]:
+    exact = [0] * len(support)
+    for value in values[:anchor_n]:
+        exact[positions[value]] += 1
+    running = 0
+    cumulative: list[int] = []
+    for count in exact:
+        running += count
+        cumulative.append(running)
+    return cumulative
 
 
 def _max_with_arg(
@@ -161,7 +250,8 @@ def _tail_family_evidence(
 ) -> dict[str, Any]:
     max_prior = len(rows) - 1
     values = [_decimal(row["value"]) for row in rows]
-    observed_support, prefixes = _prefix_counts(values, max_prior)
+    observed_support = sorted(set(values[:max_prior]))
+    positions = {value: index for index, value in enumerate(observed_support)}
     reference_hashes = _reference_hash_index(stability_family)
 
     anchors: list[dict[str, Any]] = []
@@ -170,10 +260,22 @@ def _tail_family_evidence(
         if anchor_n <= 0 or anchor_n >= max_prior:
             continue
         first_later_n = anchor_n + 1
-        path = [
-            _decimal_text(_ecdf_sup_distance(prefixes, anchor_n, later_n))
-            for later_n in range(first_later_n, max_prior + 1)
-        ]
+        anchor_counts = _anchor_cumulative_counts(
+            values,
+            support=observed_support,
+            positions=positions,
+            anchor_n=anchor_n,
+        )
+        envelope = _SuffixEnvelope(anchor_counts)
+        path: list[str] = []
+        for later_n in range(first_later_n, max_prior + 1):
+            appended_value = values[later_n - 1]
+            envelope.add_suffix(positions[appended_value], anchor_n)
+            added_count = later_n - anchor_n
+            numerator = envelope.max_abs_at(-added_count)
+            distance = Decimal(numerator) / Decimal(anchor_n * later_n)
+            path.append(_decimal_text(distance) or "0")
+
         maximum, argmax = _max_with_arg(path, first_later_n=first_later_n)
         comparison_count += len(path)
         anchors.append(
@@ -199,6 +301,7 @@ def _tail_family_evidence(
         "metric": "ECDF_SUP_DISTANCE",
         "evaluation_support": "OBSERVED_VALUES_UNION_ONLY",
         "invented_x_grid_points": 0,
+        "algorithm": "EXACT_SUFFIX_ENVELOPE_SQRT_DECOMPOSITION_V1",
         "observed_support_value_count": len(observed_support),
         "max_prior_count": max_prior,
         "reference_state_index": [
