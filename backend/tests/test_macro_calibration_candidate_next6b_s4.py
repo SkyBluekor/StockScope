@@ -21,6 +21,14 @@ from app.macro.eligibility_reconstruction import (
     render_eligibility_reconstruction_text,
     validate_eligibility_reconstruction,
 )
+from app.macro.reference_stability import (
+    MAD_METHOD,
+    TAIL_METHOD,
+    build_reference_stability_evidence,
+    ecdf_sup_drift_for_append,
+    render_reference_stability_text,
+    validate_reference_stability_evidence,
+)
 from app.macro.admissibility_review import (
     build_admissibility_review,
     render_admissibility_review_text,
@@ -54,6 +62,9 @@ from tools.data.build_macro_admissibility_evidence_next6b_s4_2b import (
 )
 from tools.data.reconstruct_macro_eligibility_next6b_s4_2b1 import (
     build_parser as build_s4_2b1_parser,
+)
+from tools.data.analyze_macro_reference_stability_next6b_s4_2b15 import (
+    build_parser as build_s4_2b15_parser,
 )
 
 
@@ -1233,5 +1244,238 @@ def test_s4_2b1_cli_has_no_holdout_or_policy_selection_arguments():
     assert "--maximum-signal-fraction" not in option_strings
     assert "--maximum-episode-rate" not in option_strings
     assert "--minimum-year-coverage" not in option_strings
+    assert "--select" not in option_strings
+    assert "--approve" not in option_strings
+
+
+def _s4_2b15_inputs():
+    development, protocol, research, diagnostic, evidence = _s4_2b1_inputs()
+    reconstruction = build_eligibility_reconstruction(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+        diagnostic=diagnostic,
+        evidence=evidence,
+    )
+    return development, protocol, research, reconstruction
+
+
+def test_s4_2b15_ecdf_sup_drift_matches_bruteforce_observed_support():
+    from decimal import Decimal
+
+    prior = [Decimal("-2"), Decimal("0"), Decimal("3"), Decimal("3")]
+    added = Decimal("1")
+    exact = ecdf_sup_drift_for_append(prior, added)
+
+    old = sorted(prior)
+    new = sorted(prior + [added])
+    support = sorted(set(old + new))
+
+    def cdf(values, x):
+        return Decimal(sum(value <= x for value in values)) / Decimal(len(values))
+
+    brute = max(abs(cdf(old, x) - cdf(new, x)) for x in support)
+    assert exact == brute
+
+
+def test_s4_2b15_builds_six_reference_families_and_three_ept_exclusions():
+    development, protocol, research, reconstruction = _s4_2b15_inputs()
+    artifact = build_reference_stability_evidence(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+        reconstruction=reconstruction,
+        source_main_sha="test-main-sha",
+    )
+    state = validate_reference_stability_evidence(artifact)
+
+    assert state["tail_family_count"] == 3
+    assert state["mad_family_count"] == 3
+    assert state["ept_excluded_family_count"] == 3
+    assert len(artifact["families"]) == 6
+    assert len(artifact["ept_exclusions"]) == 3
+    assert {
+        family["method"] for family in artifact["families"]
+    } == {TAIL_METHOD, MAD_METHOD}
+    assert all(
+        item["reference_support_applicable"] is False
+        and item["exclusion_reason"]
+        == "METHOD_DOES_NOT_USE_EXPANDING_REFERENCE_DISTRIBUTION"
+        for item in artifact["ept_exclusions"]
+    )
+
+
+def test_s4_2b15_keeps_selection_and_holdout_guardrails_closed():
+    development, protocol, research, reconstruction = _s4_2b15_inputs()
+    artifact = build_reference_stability_evidence(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+        reconstruction=reconstruction,
+        source_main_sha="test-main-sha",
+    )
+
+    assert artifact["policy_state"] == {
+        "reference_adequacy": "UNDEFINED",
+        "reference_adequacy_criterion": "UNSET",
+        "minimum_prior_observations": None,
+        "recommended_support": None,
+        "selection_status": "NOT_SELECTED",
+        "eligibility_policy_status": "UNDEFINED",
+        "admissibility_policy_status": "UNDEFINED",
+        "final_candidate_status": "NOT_SELECTED",
+        "ready_for_holdout": False,
+        "rate_spike_state": "UNCALIBRATED",
+    }
+    assert artifact["holdout_locked"] is True
+    assert artifact["holdout_accessed"] is False
+    assert artifact["network_requests"] == 0
+    assert artifact["macro_db_writes"] == 0
+    assert artifact["production_impact"] == "NONE"
+    assert artifact["reference_contract"]["weighted_stability_score"] is None
+    assert artifact["reference_contract"]["tail_invented_x_grid_points"] == 0
+
+
+def test_s4_2b15_transitions_are_strictly_prior_and_deterministic():
+    development, protocol, research, reconstruction = _s4_2b15_inputs()
+    first = build_reference_stability_evidence(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+        reconstruction=reconstruction,
+        source_main_sha="test-main-sha",
+    )
+    second = build_reference_stability_evidence(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+        reconstruction=reconstruction,
+        source_main_sha="test-main-sha",
+    )
+
+    assert first["stability_hash"] == second["stability_hash"]
+    assert first["stability_id"] == second["stability_id"]
+    assert first["family_payload_hash"] == second["family_payload_hash"]
+
+    for family in first["families"]:
+        assert family["reference_mode"] == "EXPANDING_STRICTLY_PRIOR"
+        assert family["recommended_support"] is None
+        assert family["minimum_prior_observations"] is None
+        for transition in family["transitions"]:
+            assert transition["current_observation_excluded"] is True
+            assert transition["prior_count_after"] == (
+                transition["prior_count_before"] + 1
+            )
+            assert transition["selection_status"] == "NOT_SELECTED"
+            if family["method"] == TAIL_METHOD:
+                assert transition["invented_x_grid_points"] == 0
+
+
+def test_s4_2b15_mad_zero_scale_never_invents_relative_change():
+    development, protocol, research, reconstruction = _s4_2b15_inputs()
+    artifact = build_reference_stability_evidence(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+        reconstruction=reconstruction,
+        source_main_sha="test-main-sha",
+    )
+
+    zero_scale = [
+        transition
+        for family in artifact["families"]
+        if family["method"] == MAD_METHOD
+        for transition in family["transitions"]
+        if transition["mad_before"] == "0"
+    ]
+    assert zero_scale
+    assert all(
+        transition["relative_mad_change"] is None
+        and transition["relative_mad_change_status"]
+        == "NON_COMPUTABLE_ZERO_SCALE"
+        for transition in zero_scale
+    )
+
+
+def test_s4_2b15_common_review_points_are_union_and_direct_states():
+    development, protocol, research, reconstruction = _s4_2b15_inputs()
+    artifact = build_reference_stability_evidence(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+        reconstruction=reconstruction,
+        source_main_sha="test-main-sha",
+    )
+
+    expected = sorted(
+        {
+            int(point["minimum_prior_observations"])
+            for family in reconstruction["families"]
+            if family["method"] in {TAIL_METHOD, MAD_METHOD}
+            for point in family["observed_support_counterfactual"]["points"]
+        }
+    )
+    actual = [
+        int(point["minimum_prior_observations"])
+        for point in artifact["common_support_review_points"]
+    ]
+    assert actual == expected
+    assert all(
+        len(point["family_states"]) == 6
+        and point["selection_status"] == "NOT_SELECTED"
+        for point in artifact["common_support_review_points"]
+    )
+
+
+def test_s4_2b15_rejects_tampered_reconstruction():
+    development, protocol, research, reconstruction = _s4_2b15_inputs()
+    tampered = deepcopy(reconstruction)
+    tampered["counts"]["raw_candidate_count"] += 1
+
+    with pytest.raises(ValueError):
+        build_reference_stability_evidence(
+            development_dataset=development,
+            protocol=protocol,
+            research=research,
+            reconstruction=tampered,
+            source_main_sha="test-main-sha",
+        )
+
+
+def test_s4_2b15_render_is_compact_and_policy_free():
+    development, protocol, research, reconstruction = _s4_2b15_inputs()
+    artifact = build_reference_stability_evidence(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+        reconstruction=reconstruction,
+        source_main_sha="test-main-sha",
+    )
+    rendered = render_reference_stability_text(artifact)
+
+    assert "NEXT-6B-S4.2-B.1.5 REFERENCE STABILITY EVIDENCE" in rendered
+    assert "TAIL 3 / MAD 3 / EPT Excluded 3" in rendered
+    assert "UNDEFINED / None / None" in rendered
+    assert "no adequacy criterion or support selected" in rendered
+
+
+def test_s4_2b15_cli_has_no_holdout_or_selection_arguments():
+    parser = build_s4_2b15_parser()
+    option_strings = {
+        option
+        for action in parser._actions
+        for option in action.option_strings
+    }
+
+    assert "--development-artifact" in option_strings
+    assert "--protocol-artifact" in option_strings
+    assert "--research-artifact" in option_strings
+    assert "--reconstruction-artifact" in option_strings
+    assert "--write-artifact" in option_strings
+
+    assert "--holdout-artifact" not in option_strings
+    assert "--minimum-prior-observations" not in option_strings
+    assert "--reference-adequacy-criterion" not in option_strings
+    assert "--stability-tolerance" not in option_strings
     assert "--select" not in option_strings
     assert "--approve" not in option_strings
