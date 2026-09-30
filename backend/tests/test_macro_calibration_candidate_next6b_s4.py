@@ -15,6 +15,12 @@ from app.macro.admissibility_evidence import (
     render_admissibility_evidence_text,
     validate_admissibility_evidence,
 )
+from app.macro.eligibility_reconstruction import (
+    build_eligibility_reconstruction,
+    build_unset_eligibility_policy,
+    render_eligibility_reconstruction_text,
+    validate_eligibility_reconstruction,
+)
 from app.macro.admissibility_review import (
     build_admissibility_review,
     render_admissibility_review_text,
@@ -45,6 +51,9 @@ from tools.data.review_macro_admissibility_next6b_s4_2a import (
 )
 from tools.data.build_macro_admissibility_evidence_next6b_s4_2b import (
     build_parser as build_s4_2b_parser,
+)
+from tools.data.reconstruct_macro_eligibility_next6b_s4_2b1 import (
+    build_parser as build_s4_2b1_parser,
 )
 
 
@@ -945,3 +954,282 @@ def test_s4_2b_cli_has_no_holdout_or_policy_selection_arguments():
     assert "--minimum-sample" not in option_strings
     assert "--event-unit" not in option_strings
     assert "--episode-rate-unit" not in option_strings
+
+
+def _s4_2b1_inputs():
+    development, protocol, research, diagnostic = _s4_2b_inputs()
+    evidence = build_admissibility_evidence(
+        diagnostic=diagnostic,
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+    )
+    return development, protocol, research, diagnostic, evidence
+
+
+def test_s4_2b1_reconstructs_full_raw_universe_and_legacy_lineage():
+    development, protocol, research, diagnostic, evidence = _s4_2b1_inputs()
+
+    reconstruction = build_eligibility_reconstruction(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+        diagnostic=diagnostic,
+        evidence=evidence,
+    )
+    state = validate_eligibility_reconstruction(reconstruction)
+
+    raw_count = reconstruction["counts"]["raw_candidate_count"]
+    assert raw_count == reconstruction["raw_replay"]["raw_candidate_count"]
+    assert raw_count == len(reconstruction["legacy_lineage"])
+    assert raw_count == len(reconstruction["prior_support_audits"])
+    assert state["raw_candidate_count"] == raw_count
+    assert reconstruction["raw_replay"]["raw_replay_status"] == "PASS"
+    assert reconstruction["counts"]["family_count"] == 9
+    assert state["family_count"] == 9
+
+    lineage_hashes = {
+        item["candidate_hash"]
+        for item in reconstruction["legacy_lineage"]
+    }
+    audit_hashes = {
+        item["candidate_hash"]
+        for item in reconstruction["prior_support_audits"]
+    }
+    assert lineage_hashes == audit_hashes
+    assert len(lineage_hashes) == raw_count
+
+    statuses = {
+        item["legacy_pipeline_status"]
+        for item in reconstruction["legacy_lineage"]
+    }
+    assert "FINAL_FRONTIER" in statuses
+    assert statuses <= {
+        "METHOD_LOCAL_DOMINATED",
+        "TRIVIAL_DIRECTION_REMOVED",
+        "BEHAVIOR_DUPLICATE_GROUPED",
+        "CROSS_METHOD_DOMINATED",
+        "FINAL_FRONTIER",
+    }
+
+
+def test_s4_2b1_keeps_eligibility_and_admissibility_unselected():
+    development, protocol, research, diagnostic, evidence = _s4_2b1_inputs()
+    reconstruction = build_eligibility_reconstruction(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+        diagnostic=diagnostic,
+        evidence=evidence,
+    )
+
+    assert reconstruction["policy_state"] == {
+        "eligibility_policy": build_unset_eligibility_policy(),
+        "eligibility_policy_defined": False,
+        "minimum_prior_observations_selected": False,
+        "admissibility_policy_defined": False,
+        "final_candidate_selected": False,
+        "ready_for_holdout": False,
+        "rate_spike_state": "UNCALIBRATED",
+    }
+    assert reconstruction["ordering_contract"]["pipeline_order"] == [
+        "RAW_CANDIDATE_GENERATION",
+        "ELIGIBILITY",
+        "ADMISSIBILITY",
+        "BEHAVIOR_GROUPING",
+        "POLICY_PRESERVING_COMPRESSION",
+    ]
+    assert reconstruction["ordering_contract"]["admissibility_applied"] is False
+    assert reconstruction["ordering_contract"][
+        "post_admissibility_compression"
+    ] == "NOT_READY"
+    assert reconstruction["holdout_locked"] is True
+    assert reconstruction["holdout_accessed"] is False
+    assert reconstruction["network_requests"] == 0
+    assert reconstruction["macro_db_writes"] == 0
+    assert reconstruction["production_impact"] == "NONE"
+
+
+def test_s4_2b1_legacy_derived_support_is_audit_only():
+    development, protocol, research, diagnostic, evidence = _s4_2b1_inputs()
+    reconstruction = build_eligibility_reconstruction(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+        diagnostic=diagnostic,
+        evidence=evidence,
+    )
+
+    assert reconstruction["prior_support_audits"]
+    assert all(
+        item["legacy_derived_minimum_prior_support"] >= 1
+        and item["legacy_support_is_eligibility_enforced"] is False
+        and item["legacy_support_is_statistical_precision_guarantee"] is False
+        and item["approved_reference_support"] == "UNSET"
+        and item["signal_before_reference_policy_count"] == "NOT_EVALUATED"
+        for item in reconstruction["prior_support_audits"]
+    )
+
+    ept = [
+        item
+        for item in reconstruction["prior_support_audits"]
+        if item["method"] == "EMPIRICAL_POSITIVE_TAIL"
+    ]
+    adaptive = [
+        item
+        for item in reconstruction["prior_support_audits"]
+        if item["method"] != "EMPIRICAL_POSITIVE_TAIL"
+    ]
+    assert ept and adaptive
+    assert all(item["reference_support_applicable"] is False for item in ept)
+    assert all(item["reference_support_applicable"] is True for item in adaptive)
+
+
+def test_s4_2b1_support_counterfactual_uses_observed_prior_counts_only():
+    development, protocol, research, diagnostic, evidence = _s4_2b1_inputs()
+    reconstruction = build_eligibility_reconstruction(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+        diagnostic=diagnostic,
+        evidence=evidence,
+    )
+
+    for family in reconstruction["families"]:
+        curve = family["observed_support_counterfactual"]
+        assert curve["source"] == "OBSERVED_PRIOR_COUNTS_ONLY"
+        assert curve["invented_grid_points"] == 0
+        assert curve["recommended_support"] is None
+        if family["method"] == "EMPIRICAL_POSITIVE_TAIL":
+            assert curve["status"] == "NOT_APPLICABLE"
+            assert curve["reference_support_applicable"] is False
+            assert curve["point_count"] == 0
+            continue
+
+        assert curve["status"] in {
+            "DIAGNOSTIC_ONLY",
+            "NO_OBSERVED_PRIOR_COUNTS",
+        }
+        if curve["status"] == "DIAGNOSTIC_ONLY":
+            supports = [
+                point["minimum_prior_observations"]
+                for point in curve["points"]
+            ]
+            assert supports == sorted(set(supports))
+            observed = {
+                int(row["prior_count"])
+                for row in research["feature_results"][
+                    family["feature_id"]
+                ]["expanding"]["rows"]
+                if int(row["prior_count"]) > 0
+            }
+            assert set(supports) <= observed
+
+
+def test_s4_2b1_preserves_episode_and_left_boundary_semantics():
+    development, protocol, research, diagnostic, evidence = _s4_2b1_inputs()
+    reconstruction = build_eligibility_reconstruction(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+        diagnostic=diagnostic,
+        evidence=evidence,
+    )
+    episode = reconstruction["episode_semantics"]
+
+    assert episode["start_rule"] == "FALSE_OR_UNKNOWN_TO_TRUE"
+    assert episode["continue_rule"] == "ADJACENT_OBSERVATION_TRUE"
+    assert episode["end_rule"] == "TRUE_TO_FALSE_OR_UNKNOWN"
+    assert episode["gap_tolerance_observations"] == 0
+    assert episode["event_count_semantics"] == "EPISODE_START"
+    assert episode["left_boundary_episode_state_rule"] == "REQUIRE_PRIOR_STATE"
+    assert episode["left_boundary_rule_status"] == "DEFINED"
+    assert episode["calendar_day_adjacency"] is False
+
+
+def test_s4_2b1_rejects_tampered_s4_2b_evidence():
+    development, protocol, research, diagnostic, evidence = _s4_2b1_inputs()
+    tampered = deepcopy(evidence)
+    tampered["counts"]["frontier_group_count"] += 1
+
+    with pytest.raises(ValueError):
+        build_eligibility_reconstruction(
+            development_dataset=development,
+            protocol=protocol,
+            research=research,
+            diagnostic=diagnostic,
+            evidence=tampered,
+        )
+
+
+def test_s4_2b1_reconstruction_identity_is_deterministic():
+    development, protocol, research, diagnostic, evidence = _s4_2b1_inputs()
+
+    first = build_eligibility_reconstruction(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+        diagnostic=diagnostic,
+        evidence=evidence,
+    )
+    second = build_eligibility_reconstruction(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+        diagnostic=diagnostic,
+        evidence=evidence,
+    )
+
+    assert first["reconstruction_hash"] == second["reconstruction_hash"]
+    assert first["reconstruction_id"] == second["reconstruction_id"]
+    assert first["raw_candidate_hashes_hash"] == second[
+        "raw_candidate_hashes_hash"
+    ]
+    assert first["lineage_payload_hash"] == second["lineage_payload_hash"]
+    assert first["prior_support_audit_payload_hash"] == second[
+        "prior_support_audit_payload_hash"
+    ]
+
+
+def test_s4_2b1_render_is_compact_and_policy_free():
+    development, protocol, research, diagnostic, evidence = _s4_2b1_inputs()
+    reconstruction = build_eligibility_reconstruction(
+        development_dataset=development,
+        protocol=protocol,
+        research=research,
+        diagnostic=diagnostic,
+        evidence=evidence,
+    )
+    rendered = render_eligibility_reconstruction_text(reconstruction)
+
+    assert "NEXT-6B-S4.2-B.1 RAW UNIVERSE & ELIGIBILITY AUDIT" in rendered
+    assert "Raw Replay / Legacy Lineage / Eligibility Audit : PASS / COMPLETE / COMPLETE" in rendered
+    assert "FROZEN_RAW_GENERATION" in rendered
+    assert "NOT_READY" in rendered
+    assert "Reference Support Policy / Minimum Prior Observations : UNDEFINED / None" in rendered
+    assert "Reconstruction status: COMPLETE" in rendered
+
+
+def test_s4_2b1_cli_has_no_holdout_or_policy_selection_arguments():
+    parser = build_s4_2b1_parser()
+    option_strings = {
+        option
+        for action in parser._actions
+        for option in action.option_strings
+    }
+
+    assert "--development-artifact" in option_strings
+    assert "--protocol-artifact" in option_strings
+    assert "--research-artifact" in option_strings
+    assert "--diagnostic-artifact" in option_strings
+    assert "--evidence-artifact" in option_strings
+    assert "--write-artifact" in option_strings
+
+    assert "--holdout-artifact" not in option_strings
+    assert "--minimum-prior-observations" not in option_strings
+    assert "--minimum-event-count" not in option_strings
+    assert "--maximum-signal-fraction" not in option_strings
+    assert "--maximum-episode-rate" not in option_strings
+    assert "--minimum-year-coverage" not in option_strings
+    assert "--select" not in option_strings
+    assert "--approve" not in option_strings
