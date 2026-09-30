@@ -116,3 +116,20 @@ def test_macro_sync_source_includes_r21_evidence_stage():
     assert "build_macro_reference_adequacy_evidence_next6b_s4_2b16_r21.py" in source
     assert "adequacy_evidence" in source
     assert "--holdout-artifact" not in source
+
+
+def test_macro_sync_requires_compact_v2_and_reports_metadata():
+    root = Path(__file__).resolve().parents[2]
+    source = (root / "tools" / "dev" / "sync_macro_artifacts.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'REFERENCE-ADEQUACY-EVIDENCE-*.json.gz' in source
+    assert 'REFERENCE-ADEQUACY-EVIDENCE-*.json")' not in source
+    assert "LEGACY_R21_V1_NAME" in source
+    assert '"HISTORICAL"' in source
+    assert "--legacy-v1-artifact" in source
+    assert "evidence_summary" in source
+    assert "Forward comparisons" in source
+    assert "Macro DB writes" in source
+    assert "Production" in source
