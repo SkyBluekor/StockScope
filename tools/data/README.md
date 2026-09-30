@@ -349,6 +349,32 @@ Preview 검수 후 재현 가능한 full evidence를 저장할 때만 `--write-a
 
 S4.2-B 완료 후에도 `event_unit=UNSET`, `episode_rate_unit=UNSET`, `minimum_sample_unit=UNSET`, `evaluation_rule=UNSET`, threshold/minimum sample/event unit 미선택, Holdout locked/unread, `RATE_SPIKE=UNCALIBRATED` 상태를 유지합니다. Network request, Macro DB write, Production 영향은 모두 0입니다.
 
+## NEXT-6B-S4.2-B.1 Raw Universe & Eligibility Reconstruction
+### 정책 적용 전 원시 후보 집합과 판단 가능 조건 분리
+
+S4.2-B.1은 기존 S4/S4.1/S4.2-B artifact를 수정하지 않고, S4의 `FROZEN_RAW_GENERATION` 후보 집합을 Development에서 deterministic replay합니다. 기존 method-local Pareto, trivial-direction 제거, behavior grouping, cross-method Pareto, 최종 frontier까지 각 raw candidate의 legacy lineage를 기록합니다.
+
+핵심 목적은 `computable`과 `policy eligible`을 분리하는 것입니다. 현재 TAIL/MAD는 metric이 계산 가능하면 baseline candidate behavior에 참여하지만, 이것은 승인된 minimum prior support가 아닙니다. 기존 `derived_minimum_prior_support=CEIL(eligible/signal)`도 metadata일 뿐 eligibility gate나 통계적 정밀도 보장으로 사용되지 않습니다.
+
+실행:
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\reconstruct_macro_eligibility_next6b_s4_2b1.py `
+  --development-artifact .\backend\runtime\macro\calibration\DEV-7c3f6660b3aae03f.json `
+  --protocol-artifact .\backend\runtime\macro\calibration\PROTOCOL-e1de868dc8f16670.json `
+  --research-artifact .\backend\runtime\macro\calibration\RESEARCH-cdd96e164e12017d.json `
+  --diagnostic-artifact .\backend\runtime\macro\calibration\FRONTIER-DIAGNOSTIC-74458592d2e610da.json `
+  --evidence-artifact .\backend\runtime\macro\calibration\ADMISSIBILITY-EVIDENCE-da7b94a2a51e3ff6.json
+```
+
+Family audit는 first-computable prior count와 first-signal prior count를 보여주고, TAIL/MAD에는 Development에 실제 존재하는 prior-count만 사용한 support counterfactual을 제공합니다. 이 curve는 signal/event behavior가 변하는 point만 저장하며 eligible-only denominator 변화는 별도 point를 만들지 않습니다. 임의의 20/30/50/100 grid는 만들지 않고 `recommended_support=null`을 유지합니다.
+
+향후 pipeline ordering은 `RAW_CANDIDATE_GENERATION → ELIGIBILITY → ADMISSIBILITY → BEHAVIOR_GROUPING → POLICY_PRESERVING_COMPRESSION`으로 선언하지만, B.1에서는 eligibility/admissibility 수치나 새 compression 규칙을 선택하지 않습니다.
+
+Episode 의미는 기존 `VN_NEXT6B_S4_CONSECUTIVE_TRUE_RUN_V1`을 유지하고 event count 의미를 `EPISODE_START`로 기록합니다. 평가 왼쪽 경계에서 이미 진행 중인 episode를 새 event로 세지 않도록 `REQUIRE_PRIOR_STATE` 규칙을 명시하지만 Holdout 평가는 수행하지 않습니다.
+
+Preview 검수 후에만 `--write-artifact`를 추가해 `ELIGIBILITY-RECONSTRUCTION-<hash>.json`을 저장합니다. 이 artifact는 policy preregistration이 아니므로 eligibility/admissibility는 계속 UNDEFINED, minimum prior observations는 UNSET, `ready_for_holdout=false`, `RATE_SPIKE=UNCALIBRATED`, Network/Macro DB/Production 영향은 0입니다.
+
 ## P2-S2 실제 추천 평가 저장소 준비
 
 P2-S2는 새 Scanner 실행부터 실제 추천 표본을 사후 선택 전에 보존합니다. 과거 Scanner 실행을 prospective 표본으로 소급 생성하지 않습니다.
