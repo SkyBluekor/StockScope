@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  fetchMarketStockImpact,
-  type MarketStockImpactResponse,
-} from "../services/marketImpactApi";
+  fetchMacroEventReference,
+  type MacroEventReferenceResponse,
+} from "../services/macroEventReferenceApi";
 
 type Options = {
   market: "KOSPI" | "KOSDAQ";
@@ -15,13 +15,14 @@ function isAbortError(error: unknown) {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
-export default function useMarketStockImpact({
+export default function useMacroEventReference({
   market,
   ticker,
   endDate,
   enabled = true,
 }: Options) {
-  const [impact, setImpact] = useState<MarketStockImpactResponse | null>(null);
+  const [reference, setReference] =
+    useState<MacroEventReferenceResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const generationRef = useRef(0);
@@ -33,13 +34,13 @@ export default function useMarketStockImpact({
 
     if (
       !enabled ||
-      !/^\d{6}$/.test(normalizedTicker) ||
+      !/^[0-9A-Z]{6}$/.test(normalizedTicker) ||
       !/^\d{4}-?\d{2}-?\d{2}$/.test(normalizedEndDate)
     ) {
       generationRef.current += 1;
       abortRef.current?.abort();
       abortRef.current = null;
-      setImpact(null);
+      setReference(null);
       setLoading(false);
       setError(null);
       return null;
@@ -49,31 +50,33 @@ export default function useMarketStockImpact({
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+    const cutoff = new Date().toISOString();
 
     setLoading(true);
     setError(null);
 
     try {
-      const result = await fetchMarketStockImpact(
+      const result = await fetchMacroEventReference(
         market,
         normalizedTicker,
         normalizedEndDate,
+        cutoff,
         { signal: controller.signal },
       );
       if (generation !== generationRef.current || controller.signal.aborted) {
         return null;
       }
-      setImpact(result);
+      setReference(result);
       return result;
     } catch (reason) {
       if (isAbortError(reason) || generation !== generationRef.current) {
         return null;
       }
-      setImpact(null);
+      setReference(null);
       setError(
         reason instanceof Error
           ? reason.message
-          : "시장 대비 비교 데이터를 확인하지 못했습니다.",
+          : "시장·이벤트 참고 데이터를 확인하지 못했습니다.",
       );
       return null;
     } finally {
@@ -94,5 +97,5 @@ export default function useMarketStockImpact({
     };
   }, [refresh]);
 
-  return { impact, loading, error, refresh };
+  return { reference, loading, error, refresh };
 }
