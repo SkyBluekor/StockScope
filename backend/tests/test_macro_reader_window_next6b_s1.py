@@ -197,3 +197,75 @@ def test_window_requires_timezone_aware_cutoff(tmp_path: Path):
         assert "timezone-aware" in str(exc)
     else:
         raise AssertionError("timezone-less cutoff must be rejected")
+
+
+
+def test_history_as_of_returns_all_cutoff_eligible_rows_in_order(tmp_path: Path):
+    store = _store(tmp_path)
+    for index, current_date in enumerate(
+        ("2026-09-01", "2026-09-02", "2026-09-03"),
+        start=1,
+    ):
+        _publish(
+            store,
+            run_id=f"HISTORY-{index}",
+            observation=_obs(
+                date=current_date,
+                value=f"4.0{index}",
+                available_at="2026-09-29T10:00:00+00:00",
+                source_hash=f"{index}" * 64,
+            ),
+        )
+
+    result = LocalMacroReader(store.db_path).read_series_history_as_of(
+        SERIES,
+        cutoff="2026-09-29T11:00:00+00:00",
+        historical_eligible_only=False,
+    )
+
+    assert result["status"] == "COMPLETE"
+    assert result["returned_count"] == 3
+    assert [row["observation_date"] for row in result["observations"]] == [
+        "2026-09-01",
+        "2026-09-02",
+        "2026-09-03",
+    ]
+    assert "requested_limit" not in result
+    assert result["history_hash"]
+
+
+def test_history_as_of_uses_latest_revision_available_by_cutoff(tmp_path: Path):
+    store = _store(tmp_path)
+    original = _obs(
+        date="2026-09-01",
+        value="4.00",
+        available_at="2026-09-29T10:00:00+00:00",
+        source_hash="a" * 64,
+    )
+    future_revision = _obs(
+        date="2026-09-01",
+        value="4.50",
+        available_at="2026-09-29T12:00:00+00:00",
+        source_hash="b" * 64,
+    )
+    _publish(store, run_id="HISTORY-R1", observation=original)
+    _publish(store, run_id="HISTORY-R2", observation=future_revision)
+
+    reader = LocalMacroReader(store.db_path)
+    before = reader.read_series_history_as_of(
+        SERIES,
+        cutoff="2026-09-29T11:00:00+00:00",
+        historical_eligible_only=False,
+    )
+    after = reader.read_series_history_as_of(
+        SERIES,
+        cutoff="2026-09-29T13:00:00+00:00",
+        historical_eligible_only=False,
+    )
+
+    assert before["returned_count"] == 1
+    assert before["observations"][0]["normalized_value"] == "4.00"
+    assert before["observations"][0]["revision_no"] == 1
+    assert after["observations"][0]["normalized_value"] == "4.50"
+    assert after["observations"][0]["revision_no"] == 2
+    assert before["history_hash"] != after["history_hash"]
