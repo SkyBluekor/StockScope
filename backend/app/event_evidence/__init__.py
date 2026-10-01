@@ -159,3 +159,18 @@ __all__ += [
     "EVENT_EVIDENCE_PRODUCT_CONTRACT_VERSION",
     "EventEvidenceProductQuery",
 ]
+
+
+from app.event_evidence.asof import (
+    DEFAULT_REFERENCE_LIMIT,
+    EVENT_REFERENCE_AS_OF_CONTRACT_VERSION,
+    EVENT_REFERENCE_AS_OF_MODE,
+    EventEvidenceAsOfReader,
+)
+
+__all__ += [
+    "EVENT_REFERENCE_AS_OF_CONTRACT_VERSION",
+    "EVENT_REFERENCE_AS_OF_MODE",
+    "DEFAULT_REFERENCE_LIMIT",
+    "EventEvidenceAsOfReader",
+]
