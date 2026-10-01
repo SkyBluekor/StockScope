@@ -110,6 +110,19 @@ from app.macro.impact import (
     LocalMarketImpactReader,
     build_market_stock_impact,
 )
+from app.macro.sector_evidence import (
+    SECTOR_MEMBERSHIP_EVIDENCE_CONTRACT_VERSION,
+    TEMPORAL_POINT_IN_TIME as SECTOR_TEMPORAL_POINT_IN_TIME,
+    TEMPORAL_STATIC_CURRENT as SECTOR_TEMPORAL_STATIC_CURRENT,
+    TEMPORAL_UNKNOWN as SECTOR_TEMPORAL_UNKNOWN,
+    assess_sector_membership_evidence,
+    build_sector_membership_evidence,
+    validate_sector_membership_evidence,
+)
+from app.macro.sector_pit_audit import (
+    SECTOR_PIT_COVERAGE_AUDIT_CONTRACT_VERSION,
+    build_sector_pit_coverage_audit,
+)
 from app.macro.shock import (
     MACRO_EPISODE_CONTRACT_VERSION,
     MACRO_SHOCK_CONTRACT_VERSION,
@@ -179,6 +192,11 @@ __all__ = [
     "MACRO_CONTEXT_CONTRACT_VERSION",
     "MARKET_STOCK_IMPACT_CONTRACT_VERSION",
     "MARKET_STOCK_IMPACT_WINDOW_MODE",
+    "SECTOR_MEMBERSHIP_EVIDENCE_CONTRACT_VERSION",
+    "SECTOR_PIT_COVERAGE_AUDIT_CONTRACT_VERSION",
+    "SECTOR_TEMPORAL_POINT_IN_TIME",
+    "SECTOR_TEMPORAL_STATIC_CURRENT",
+    "SECTOR_TEMPORAL_UNKNOWN",
     "REFERENCE_DIAGNOSTIC_AS_OF",
     "REFERENCE_DIAGNOSTIC_CONTEXT_PROJECTION_VERSION",
     "REFERENCE_DIAGNOSTIC_CONTRACT_VERSION",
@@ -198,10 +216,14 @@ __all__ = [
     "build_dgs10_features",
     "build_macro_context",
     "build_market_stock_impact",
+    "build_sector_membership_evidence",
+    "build_sector_pit_coverage_audit",
     "build_retrospective_reference_diagnostic",
     "build_uncalibrated_shock_assessment",
+    "assess_sector_membership_evidence",
     "project_reference_diagnostic_for_context",
     "validate_reference_diagnostic",
+    "validate_sector_membership_evidence",
     "uncalibrated_rate_spike_calibration",
     "EvidenceTimeQuality",
     "LocalMacroReader",
