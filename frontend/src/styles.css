@@ -264,6 +264,111 @@ td small { display: block; color: var(--text-subtle); font-size: 14px; }
 .summary-copy { padding: 14px; border-radius: 12px; background: var(--surface-muted); border: 1px solid var(--line); }
 .summary-copy strong { color: #2457d6; font-size: 15px; }
 .summary-copy p { margin: 7px 0 0; color: var(--text-subtle); font-size: 14px; line-height: 1.7; }
+
+.macro-reference-inline {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.macro-reference-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.macro-reference-head > div {
+  min-width: 0;
+}
+
+.macro-reference-head span,
+.macro-reference-values span {
+  display: block;
+  color: var(--text-subtle);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.macro-reference-head strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.macro-reference-head small {
+  flex: 0 0 auto;
+  color: var(--text-subtle);
+  font-size: 12px;
+  text-align: right;
+}
+
+.macro-reference-values {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 12px;
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.macro-reference-values > div {
+  min-width: 0;
+  padding: 10px 9px;
+  border-right: 1px solid var(--line-soft);
+}
+
+.macro-reference-values > div:first-child {
+  padding-left: 0;
+}
+
+.macro-reference-values > div:last-child {
+  padding-right: 0;
+  border-right: 0;
+}
+
+.macro-reference-values strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--text);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.macro-reference-note,
+.macro-reference-state {
+  margin: 10px 0 0;
+  color: var(--text-subtle);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+@media (max-width: 560px) {
+  .macro-reference-head {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .macro-reference-head small {
+    text-align: left;
+  }
+
+  .macro-reference-values {
+    grid-template-columns: 1fr;
+  }
+
+  .macro-reference-values > div,
+  .macro-reference-values > div:first-child,
+  .macro-reference-values > div:last-child {
+    padding: 8px 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--line-soft);
+  }
+
+  .macro-reference-values > div:last-child {
+    border-bottom: 0;
+  }
+}
 .engine-status { display: grid; gap: 7px; margin-top: 13px; }
 .engine-status div { display: flex; justify-content: space-between; align-items: center; padding: 9px 10px; background: var(--surface-muted); border-radius: 9px; font-size: 14px; }
 .engine-status span { color: var(--text-subtle); }
