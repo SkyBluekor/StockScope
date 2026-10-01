@@ -110,6 +110,10 @@ from app.macro.impact import (
     LocalMarketImpactReader,
     build_market_stock_impact,
 )
+from app.macro.event_composition import (
+    MACRO_EVENT_REFERENCE_COMPOSITION_CONTRACT_VERSION,
+    build_macro_event_reference_composition,
+)
 from app.macro.sector_evidence import (
     SECTOR_MEMBERSHIP_EVIDENCE_CONTRACT_VERSION,
     TEMPORAL_POINT_IN_TIME as SECTOR_TEMPORAL_POINT_IN_TIME,
@@ -200,6 +204,7 @@ __all__ = [
     "MACRO_CONTEXT_CONTRACT_VERSION",
     "MARKET_STOCK_IMPACT_CONTRACT_VERSION",
     "MARKET_STOCK_IMPACT_WINDOW_MODE",
+    "MACRO_EVENT_REFERENCE_COMPOSITION_CONTRACT_VERSION",
     "SECTOR_MEMBERSHIP_EVIDENCE_CONTRACT_VERSION",
     "SECTOR_PIT_COVERAGE_AUDIT_CONTRACT_VERSION",
     "SECTOR_ROUTE_CONTRACT_VERSION",
@@ -229,6 +234,7 @@ __all__ = [
     "build_dgs10_features",
     "build_macro_context",
     "build_market_stock_impact",
+    "build_macro_event_reference_composition",
     "build_sector_membership_evidence",
     "build_sector_pit_coverage_audit",
     "build_sector_route",
