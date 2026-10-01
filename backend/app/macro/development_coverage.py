@@ -243,6 +243,8 @@ class DevelopmentCoverageSampleReader:
                     "trading_date": item["trading_date"],
                     "market": item["market"],
                     "ticker": item["ticker"],
+                    "rank": item["rank"],
+                    "result_bucket": item["result_bucket"],
                     "candidate_snapshot_hash": item[
                         "candidate_snapshot_hash"
                     ],
