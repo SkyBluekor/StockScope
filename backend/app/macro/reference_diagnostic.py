@@ -20,6 +20,9 @@ REFERENCE_DIAGNOSTIC_CONTRACT_VERSION = (
 )
 REFERENCE_DIAGNOSTIC_AS_OF = "AS_OF"
 REFERENCE_DIAGNOSTIC_RETROSPECTIVE = "RETROSPECTIVE"
+REFERENCE_DIAGNOSTIC_CONTEXT_PROJECTION_VERSION = (
+    "VN_NEXT6B_S4_2B16_REFERENCE_DIAGNOSTIC_CONTEXT_V1"
+)
 
 RATE_SPIKE_FEATURE_IDS = (
     "delta_bp_1obs",
@@ -34,6 +37,7 @@ _FEATURE_DISTANCE = {
 
 AS_OF_ALLOWED_USAGE = (
     "REFERENCE_CONTEXT",
+    "HISTORICAL_EVALUATION",
     "SHADOW_RESEARCH",
     "USER_INFORMATION",
 )
@@ -612,6 +616,52 @@ def build_retrospective_reference_diagnostic(
     }
     validate_reference_diagnostic(result)
     return result
+
+
+def project_reference_diagnostic_for_context(
+    diagnostic: dict[str, Any],
+) -> dict[str, Any]:
+    """Build a bounded MacroContext-safe projection of an AS-OF diagnostic.
+
+    Full observation refs remain in the diagnostic identity and are represented
+    here only by count/hash lineage. Retrospective research projections are
+    rejected so MacroContext cannot accidentally expose non-PIT evidence.
+    """
+    validate_reference_diagnostic(diagnostic)
+    if diagnostic.get("projection_mode") != REFERENCE_DIAGNOSTIC_AS_OF:
+        raise ValueError(
+            "MacroContext only accepts AS-OF reference diagnostics."
+        )
+
+    source = diagnostic["source"]
+    source_projection = {
+        "series_id": source["series_id"],
+        "decision_cutoff": source["decision_cutoff"],
+        "eligible_observation_count": source[
+            "eligible_observation_count"
+        ],
+        "observation_refs_hash": source["observation_refs_hash"],
+        "current_observation_date": source["current_observation_date"],
+    }
+    payload = {
+        "projection_contract_version": (
+            REFERENCE_DIAGNOSTIC_CONTEXT_PROJECTION_VERSION
+        ),
+        "diagnostic_contract_version": diagnostic["contract_version"],
+        "diagnostic_id": diagnostic["diagnostic_id"],
+        "diagnostic_hash": diagnostic["diagnostic_hash"],
+        "projection_mode": diagnostic["projection_mode"],
+        "status": diagnostic["status"],
+        "source": source_projection,
+        "horizons": diagnostic["horizons"],
+        "limitations": diagnostic["limitations"],
+        "governance": diagnostic["governance"],
+    }
+    projection_hash = content_hash(payload)
+    return {
+        **payload,
+        "context_projection_hash": projection_hash,
+    }
 
 
 def validate_reference_diagnostic(

@@ -104,8 +104,16 @@ def test_reference_context_uses_date_only_data_but_preserves_limitation(tmp_path
         usage="REFERENCE_SHADOW",
     )
 
-    assert context["status"] == "COMPLETE_REFERENCE"
+    assert context["status"] == "PARTIAL"
     assert context["availability"]["returned_observations"] == 11
+    assert context["reference_diagnostic"]["projection_mode"] == "AS_OF"
+    assert context["reference_diagnostic"]["status"] == "PARTIAL"
+    assert (
+        context["reference_diagnostic"]["source"]["eligible_observation_count"]
+        == 11
+    )
+    assert "observation_refs" not in context["reference_diagnostic"]["source"]
+    assert "REFERENCE_DIAGNOSTIC_PARTIAL" in context["limitations"]
     assert context["availability"]["historical_evaluation_eligible"] is False
     assert context["availability"]["time_qualities"] == ["DATE_ONLY"]
     assert "HISTORICAL_TIME_NOT_PROVEN" in context["limitations"]
@@ -284,3 +292,115 @@ def test_next6b_s1_refuses_to_execute_approved_calibration(tmp_path: Path):
             usage="HISTORICAL_EVALUATION",
             rate_calibration=approved,
         )
+
+
+
+def test_context_keeps_feature_window_bounded_but_uses_full_reference_history(
+    tmp_path: Path,
+):
+    store = _store(tmp_path)
+    _add_series(
+        store,
+        count=30,
+        quality=EvidenceTimeQuality.DATE_ONLY,
+        available_at="2026-09-30T10:00:00+00:00",
+    )
+
+    context = build_macro_context(
+        reader=LocalMacroReader(store.db_path),
+        decision_cutoff="2026-10-05T11:00:00+00:00",
+        usage="REFERENCE_SHADOW",
+    )
+
+    assert context["availability"]["returned_observations"] == 11
+    assert _feature(context, "rate_level_pct")["value"] == "4.29"
+    assert _feature(context, "delta_bp_10obs")["value"] == "10"
+
+    diagnostic = context["reference_diagnostic"]
+    assert diagnostic["projection_mode"] == "AS_OF"
+    assert diagnostic["source"]["eligible_observation_count"] == 30
+    assert "observation_refs" not in diagnostic["source"]
+    assert context["input_manifest"]["reference_history_observation_count"] == 30
+    assert (
+        context["input_manifest"]["reference_diagnostic_hash"]
+        == diagnostic["diagnostic_hash"]
+    )
+
+    horizons = {
+        item["feature_id"]: item
+        for item in diagnostic["horizons"]
+    }
+    assert horizons["delta_bp_1obs"]["reference_count"] == 28
+    assert horizons["delta_bp_5obs"]["reference_count"] == 24
+    assert horizons["delta_bp_10obs"]["reference_count"] == 19
+
+    rate = _rate_shock(context)
+    assert rate["state"] == "UNCALIBRATED"
+    assert context["production_decision_approved"] is False
+
+
+def test_old_reference_revision_changes_diagnostic_not_latest_feature_window(
+    tmp_path: Path,
+):
+    store = _store(tmp_path)
+    _add_series(
+        store,
+        count=30,
+        quality=EvidenceTimeQuality.DATE_ONLY,
+        available_at="2026-09-30T10:00:00+00:00",
+    )
+    reader = LocalMacroReader(store.db_path)
+    cutoff = "2026-10-05T11:00:00+00:00"
+
+    before = build_macro_context(
+        reader=reader,
+        decision_cutoff=cutoff,
+        usage="REFERENCE_SHADOW",
+    )
+
+    revised_date = date(2026, 9, 1).isoformat()
+    store.begin_collection_run(provider="FRED", run_id="OLD-REVISION-RUN")
+    store.store_observation(
+        run_id="OLD-REVISION-RUN",
+        observation=MacroObservation(
+            series_id=SERIES,
+            native_observation_id=f"DGS10:{revised_date}",
+            observation_date=revised_date,
+            source_value="8.00",
+            normalized_value="8.00",
+            source_unit="PERCENT",
+            source_payload_hash="e" * 64,
+            normalizer_version="TEST-NORMALIZER-V1",
+            realtime_start=revised_date,
+            realtime_end=revised_date,
+            vintage_id="2026-10-01",
+            temporal=TemporalEvidence(
+                event_time=revised_date,
+                source_published_at=None,
+                provider_published_at=None,
+                first_seen_at="2026-10-01T10:00:00+00:00",
+                available_at="2026-10-01T10:00:00+00:00",
+                fetched_at="2026-10-01T10:00:00+00:00",
+                time_quality=EvidenceTimeQuality.DATE_ONLY,
+            ),
+        ),
+    )
+    store.publish_collection_run("OLD-REVISION-RUN")
+
+    after = build_macro_context(
+        reader=reader,
+        decision_cutoff=cutoff,
+        usage="REFERENCE_SHADOW",
+    )
+
+    assert (
+        after["features"]["feature_set_hash"]
+        == before["features"]["feature_set_hash"]
+    )
+    assert (
+        after["reference_diagnostic"]["diagnostic_hash"]
+        != before["reference_diagnostic"]["diagnostic_hash"]
+    )
+    assert after["context_hash"] != before["context_hash"]
+    assert _feature(after, "rate_level_pct")["value"] == "4.29"
+    assert _rate_shock(after)["state"] == "UNCALIBRATED"

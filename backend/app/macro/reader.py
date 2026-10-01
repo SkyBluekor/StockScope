@@ -336,6 +336,147 @@ class LocalMacroReader:
             }
             return {**payload, "window_hash": content_hash(payload)}
 
+    def read_series_history_as_of(
+        self,
+        series_id: str,
+        *,
+        cutoff: str,
+        historical_eligible_only: bool = True,
+    ) -> dict[str, Any]:
+        """Read every published observation version eligible by the cutoff.
+
+        This path is intentionally unbounded by a rolling/window size. It is
+        used by expanding, strictly-prior reference diagnostics while
+        preserving the same point-in-time revision selection rule as
+        read_series_window().
+        """
+        cutoff_utc = self._aware_utc(cutoff, "cutoff")
+        ready, reason = self._schema_state()
+        if not ready:
+            payload = {
+                "status": "UNAVAILABLE",
+                "series_id": series_id,
+                "reason": reason,
+                "cutoff": cutoff,
+                "historical_eligible_only": historical_eligible_only,
+                "returned_count": 0,
+                "observations": [],
+            }
+            return {**payload, "history_hash": content_hash(payload)}
+
+        quality_sql = (
+            "AND time_quality IN ('EXACT','PROVIDER_TIME')"
+            if historical_eligible_only
+            else ""
+        )
+        try:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    f"""
+                    SELECT *
+                    FROM macro_observation_revision
+                    WHERE series_id=?
+                      AND published=1
+                      {quality_sql}
+                    """,
+                    (series_id,),
+                ).fetchall()
+
+                available_rows = [
+                    row
+                    for row in rows
+                    if self._aware_utc(
+                        str(row["available_at"]),
+                        "available_at",
+                    )
+                    <= cutoff_utc
+                ]
+
+                chosen: dict[str, sqlite3.Row] = {}
+                for row in available_rows:
+                    key = str(row["observation_key"])
+                    previous = chosen.get(key)
+                    if previous is None:
+                        chosen[key] = row
+                        continue
+                    current_rank = (
+                        self._aware_utc(
+                            str(row["available_at"]),
+                            "available_at",
+                        ),
+                        int(row["revision_no"]),
+                    )
+                    previous_rank = (
+                        self._aware_utc(
+                            str(previous["available_at"]),
+                            "available_at",
+                        ),
+                        int(previous["revision_no"]),
+                    )
+                    if current_rank > previous_rank:
+                        chosen[key] = row
+
+                selected = sorted(
+                    chosen.values(),
+                    key=lambda row: (
+                        str(row["observation_date"]),
+                        self._aware_utc(
+                            str(row["available_at"]),
+                            "available_at",
+                        ),
+                        int(row["revision_no"]),
+                    ),
+                )
+                observations = [
+                    self._observation_projection(row)
+                    for row in selected
+                ]
+
+                if observations:
+                    status = "COMPLETE"
+                    reason = None
+                else:
+                    published_count = int(
+                        conn.execute(
+                            """
+                            SELECT COUNT(*)
+                            FROM macro_observation_revision
+                            WHERE series_id=? AND published=1
+                            """,
+                            (series_id,),
+                        ).fetchone()[0]
+                    )
+                    if rows:
+                        reason = "DATA_NOT_AVAILABLE_BY_CUTOFF"
+                    elif historical_eligible_only and published_count > 0:
+                        reason = "NO_HISTORICALLY_ELIGIBLE_OBSERVATION"
+                    else:
+                        reason = "DATA_ABSENT"
+                    status = "UNAVAILABLE"
+
+                payload = {
+                    "status": status,
+                    "series_id": series_id,
+                    "reason": reason,
+                    "cutoff": cutoff,
+                    "historical_eligible_only": historical_eligible_only,
+                    "returned_count": len(observations),
+                    "observations": observations,
+                }
+                return {**payload, "history_hash": content_hash(payload)}
+        except sqlite3.Error as exc:
+            payload = {
+                "status": "UNAVAILABLE",
+                "series_id": series_id,
+                "reason": "READ_FAILED",
+                "cutoff": cutoff,
+                "historical_eligible_only": historical_eligible_only,
+                "returned_count": 0,
+                "observations": [],
+                "error": str(exc),
+            }
+            return {**payload, "history_hash": content_hash(payload)}
+
     @staticmethod
     def _date_text(value: str, field: str) -> str:
         text = str(value or "").strip()

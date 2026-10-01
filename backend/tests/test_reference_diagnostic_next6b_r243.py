@@ -11,6 +11,7 @@ from app.macro.reference_diagnostic import (
     TAIL_METHOD,
     build_as_of_reference_diagnostic,
     build_retrospective_reference_diagnostic,
+    project_reference_diagnostic_for_context,
     validate_reference_diagnostic,
 )
 
@@ -232,3 +233,62 @@ def test_retrospective_projection_is_research_only_not_point_in_time(
     assert "NOT_POINT_IN_TIME" in result["limitations"]
     assert "NOT_POLICY_INPUT" in result["limitations"]
     assert "REFERENCE_CONTEXT" not in result["governance"]["allowed_usage"]
+
+
+
+def test_context_projection_is_bounded_and_preserves_diagnostic_identity():
+    full = build_as_of_reference_diagnostic(
+        _rows(30),
+        decision_cutoff=CUTOFF,
+    )
+
+    projected = project_reference_diagnostic_for_context(full)
+
+    assert projected["projection_mode"] == "AS_OF"
+    assert projected["diagnostic_id"] == full["diagnostic_id"]
+    assert projected["diagnostic_hash"] == full["diagnostic_hash"]
+    assert projected["source"]["eligible_observation_count"] == 30
+    assert (
+        projected["source"]["observation_refs_hash"]
+        == full["source"]["observation_refs_hash"]
+    )
+    assert "observation_refs" not in projected["source"]
+    assert len(projected["horizons"]) == 3
+    assert projected["governance"]["rate_spike_state"] == "UNCALIBRATED"
+    assert projected["governance"]["reference_adequacy"] == "UNRESOLVED"
+    assert projected["context_projection_hash"]
+
+
+def test_context_projection_rejects_retrospective_diagnostic(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(
+        reference_diagnostic,
+        "validate_reference_stability_evidence",
+        lambda artifact: {"stability_hash": artifact["stability_hash"]},
+    )
+    families = []
+    for feature_id in (
+        "delta_bp_1obs",
+        "delta_bp_5obs",
+        "delta_bp_10obs",
+    ):
+        for method in (TAIL_METHOD, MAD_METHOD):
+            families.append(
+                {
+                    "feature_id": feature_id,
+                    "method": method,
+                    "transition_count": 1,
+                    "descriptive_summaries": {},
+                }
+            )
+    retrospective = build_retrospective_reference_diagnostic(
+        {
+            "stability_id": "RATESTAB-test",
+            "stability_hash": "b" * 64,
+            "families": families,
+        }
+    )
+
+    with pytest.raises(ValueError, match="only accepts AS-OF"):
+        project_reference_diagnostic_for_context(retrospective)

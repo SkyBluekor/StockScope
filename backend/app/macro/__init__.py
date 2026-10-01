@@ -78,10 +78,12 @@ from app.macro.context import (
 )
 from app.macro.reference_diagnostic import (
     REFERENCE_DIAGNOSTIC_AS_OF,
+    REFERENCE_DIAGNOSTIC_CONTEXT_PROJECTION_VERSION,
     REFERENCE_DIAGNOSTIC_CONTRACT_VERSION,
     REFERENCE_DIAGNOSTIC_RETROSPECTIVE,
     build_as_of_reference_diagnostic,
     build_retrospective_reference_diagnostic,
+    project_reference_diagnostic_for_context,
     validate_reference_diagnostic,
 )
 from app.macro.features import (
@@ -170,6 +172,7 @@ __all__ = [
     "CalibrationStatus",
     "MACRO_CONTEXT_CONTRACT_VERSION",
     "REFERENCE_DIAGNOSTIC_AS_OF",
+    "REFERENCE_DIAGNOSTIC_CONTEXT_PROJECTION_VERSION",
     "REFERENCE_DIAGNOSTIC_CONTRACT_VERSION",
     "REFERENCE_DIAGNOSTIC_RETROSPECTIVE",
     "MACRO_EPISODE_CONTRACT_VERSION",
@@ -188,6 +191,7 @@ __all__ = [
     "build_macro_context",
     "build_retrospective_reference_diagnostic",
     "build_uncalibrated_shock_assessment",
+    "project_reference_diagnostic_for_context",
     "validate_reference_diagnostic",
     "uncalibrated_rate_spike_calibration",
     "EvidenceTimeQuality",
