@@ -5,94 +5,172 @@ Repository baseline: d63f0ab7089dd92b5bd7cffb172868631c7cea35
 
 ## Decision
 
-- SOURCE_DECISION = DIRECT_PIT_SOURCE
-- PRIMARY_SOURCE = KRX Data Marketplace — 지수구성종목
-- HISTORICAL_DATE_SUPPORTED = true
-- CONSTITUENT_IDENTITY_SUPPORTED = true
-- EFFECTIVE_DATE_SUPPORTED = true
-- KNOWN_AT_SUPPORTED = false for the verified free historical-query surface
-- BENCHMARK_IDENTITY_SUPPORTED = true
-- PIT_CONTRACT_COMPATIBLE = false
-- RUNTIME_INTEGRATION = NONE
-- PRODUCTION_IMPACT = NONE
-- HOLDOUT_ACCESSED = false
+```text
+SOURCE_DECISION = DIRECT_PIT_SOURCE
+PRIMARY_SOURCE = KRX
+PUBLIC_SURFACE = KRX Data Marketplace [11006] 지수구성종목
+STRONGER_SOURCE = KRX 지수정보상품 구성종목정보/지수조치정보
 
-KRX provides a direct date-scoped historical constituent view, but the currently verified public query surface does not prove when each historical membership fact became knowable. NEXT-6C-S2 requires both effective membership and source-time proof, so the source cannot yet be promoted to PIT_ELIGIBLE.
+HISTORICAL_DATE_SUPPORTED = true
+CONSTITUENT_IDENTITY_SUPPORTED = true
+EFFECTIVE_DATE_SUPPORTED = true
+KNOWN_AT_SUPPORTED = false on the verified public historical-query surface
+BENCHMARK_IDENTITY_SUPPORTED = true
 
-## Evidence
+PIT_CONTRACT_COMPATIBLE = false today
+RUNTIME_INTEGRATION = NONE
+PRODUCTION_IMPACT = NONE
+HOLDOUT_ACCESSED = false
+```
 
-### KRX Data Marketplace direct constituent snapshot
+KRX is confirmed as the authoritative source family for dated index membership. The free/public constituent screen can directly answer which securities belong to a selected index on a selected query date, but the verified surface does not expose a publication/availability timestamp that satisfies NEXT-6C-S2 `known_at` proof. Therefore no historical membership is promoted to `PIT_ELIGIBLE` yet.
 
-Official page: https://data.krx.co.kr/contents/MDC/STAT/standard/MDCSTAT006.jsp
+## 1. KRX Data Marketplace — direct dated constituent snapshot
 
-Screen [11006] 지수구성종목 exposes 지수명, 조회일자, 종목코드, 종목명, 종가, 대비, 등락률, 상장시가총액. This is direct evidence that KRX exposes index membership scoped by a selected date rather than only today's constituents.
+Official source:
+https://data.krx.co.kr/contents/MDC/STAT/standard/MDCSTAT006.jsp
 
-The page also includes date-sensitive notes about sector-index discontinuations and new index bases from 2024-07-01, reinforcing that the screen represents dated index state.
+KRX screen **[11006] 지수구성종목** exposes:
 
-### Historical range corroboration
+- 지수명
+- 조회일자
+- 종목코드
+- 종목명
+- 종가
+- 대비
+- 등락률
+- 상장시가총액
 
-Current pykrx source maps the same KRX screen to BLD dbms/MDC/STAT/standard/MDCSTAT00601 with parameters trdDd, indIdx and indIdx2, and exposes get_index_portfolio_deposit_file(ticker, date). It explicitly blocks dates on or before 2014-05-01 because the KRX web server does not provide older constituent data.
+This is direct dated membership evidence rather than a current-company-industry proxy. The same page contains date-specific notes for sector-index discontinuations and index-base changes, so dated index state is a first-class concept on the screen.
 
-Reference: https://github.com/sharebook-kr/pykrx/blob/master/pykrx/stock/stock_api.py
+### Proven by this surface
 
-This is corroborating implementation evidence, not the authoritative source. The authoritative source remains KRX. StockScope's current Macro Development interval begins in 2016, so the observed historical range is sufficient in principle for that Development period.
+- historical/query-date dimension exists;
+- constituent stock identity exists;
+- selected benchmark/index identity exists;
+- a dated constituent snapshot can establish membership effective on the selected date.
 
-### Official KRX Open API gap
+### Not proven by this surface
 
-Official service list: https://openapi.krx.co.kr/contents/OPP/INFO/service/OPPINFO004.cmd
+- when the historical membership fact first became knowable;
+- publication/availability timestamp for each membership snapshot;
+- machine-readable access rights for StockScope automation;
+- complete 2016-2023 coverage for every sector index currently used by StockScope.
 
-The verified public Open API list provides index daily price services, but no constituent-membership API was found. StockScope must not assume its existing KRX Open API key authorizes the Data Marketplace constituent-screen backend.
+Because S2 separates `effective_*` from `known_at`, selected-date membership alone is insufficient for `PIT_ELIGIBLE`.
 
-### KRX index information product
+## 2. Official KRX Open API — no constituent-membership service verified
 
-Official description: https://openapi.krx.co.kr/contents/OPP/DATA/OPPDATA005.jsp
+Official service list:
+https://openapi.krx.co.kr/contents/OPP/INFO/service/OPPINFO004.cmd
 
-KRX explicitly describes constituent-information files and index corporate-action files. The constituent file contains index constituents, reflected share count, price, weight and free-float information; the corporate-action file contains constituent changes and other per-security index changes.
+The current KRX Open API service catalog publishes index daily-price services and states that the service catalog generally covers data from 2010 onward. No stock-to-index constituent-membership API was identified in the verified catalog.
 
-This confirms KRX is the correct authority for direct membership snapshots and membership-change evidence. It does not prove that StockScope currently has authorized machine-readable access to that product.
+Consequences:
 
-### OpenDART remains STATIC_CURRENT
+- StockScope must not assume its current KRX Open API integration can fetch historical constituents;
+- index price history and constituent history remain separate capabilities;
+- no new KRX Open API endpoint is added in this task.
 
-Corporate overview: https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS001&apiId=2019002
+## 3. KRX 지수정보상품 — stronger PIT evidence path exists
 
-OpenDART company.json exposes induty_code but no date parameter or historical industry-membership result.
+Official source:
+https://openapi.krx.co.kr/contents/OPP/DATA/OPPDATA005.jsp
 
-Corporation-code API: https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS001&apiId=2019018
+KRX describes three index-information files:
 
-modify_date is the final modification date of corporate-overview information. It is not an industry-change event and cannot prove which industry applied before or after that date.
+1. **종가지수정보 파일** — closing/next-day index information;
+2. **구성종목정보 파일** — closing/next-day constituent information, including constituents and index-reflected stock information;
+3. **지수조치정보 파일 (Corporate Action)** — individual-security index changes, including constituent changes.
 
-Therefore OpenDART company.json remains STATIC_CURRENT and historical PIT promotion remains forbidden.
+This establishes that KRX has an official source family capable of representing both membership state and membership-change events. The closing/next-day distinction and corporate-action records are the most promising route for satisfying S2 `known_at` and effective-date lineage.
 
-## Capability matrix
+However, StockScope does not currently have verified authorized access to this product. This task does not assume a license or silently use it.
+
+## 4. OpenDART remains STATIC_CURRENT
+
+Official corporate overview:
+https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS001&apiId=2019002
+
+OpenDART `company.json` exposes `induty_code`, but its request contract takes only an API key and `corp_code`; it has no historical date parameter for industry membership.
+
+Official corporation-code API:
+https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS001&apiId=2019018
+
+`modify_date` is documented as the **final modification date of corporate-overview information**. It is not documented as an industry-change event or an effective date for `induty_code`.
+
+Therefore:
+
+```text
+OpenDART company.json
+→ STATIC_CURRENT
+→ audit/current-reference use only
+→ historical PIT promotion forbidden
+```
+
+No date interval may be inferred from `modify_date`.
+
+## 5. Capability matrix
 
 | Capability | KRX constituent screen | KRX index information product | OpenDART company |
 | --- | --- | --- | --- |
 | stock ↔ index membership | Yes | Yes | No direct index membership |
-| historical date input | Yes | Yes / product history dependent | No |
-| stock code identity | Yes | Yes | Yes |
-| benchmark/index identity | Yes | Yes | No |
-| effective membership date | Selected snapshot date | Yes | No |
-| constituent change events | Not established by this screen | Yes | No |
-| historical known-at proof | Not established | Potentially supportable by dated delivery/action files | No |
-| current authorized machine access | Not established | No | Existing provider only |
-| NEXT-6C-S2 PIT-compatible today | No | Not yet operationally verified | No |
+| selected historical date | Yes | Product/file history dependent | No |
+| stock identity | Yes | Yes | Yes |
+| benchmark/index identity | Yes | Yes | No direct benchmark identity |
+| effective membership state | Yes, selected snapshot date | Yes | No |
+| constituent-change evidence | Not established by screen alone | Yes | No |
+| historical `known_at` proof | No verified timestamp | Strong candidate via closing/next-day/action files | No |
+| current StockScope machine access | Not established | Not established | Existing OpenDART provider |
+| S2 `PIT_ELIGIBLE` today | No | Not operationally verified | No |
 
-## Why S4 is not authorized yet
+## 6. Why no provider/backfill is implemented now
 
-S2 deliberately separates effective_from/effective_to from known_at. The historical KRX constituent screen can prove that a stock belonged to a selected index on a selected date, but the verified screen does not expose a publication timestamp or historical availability timestamp for that fact.
+S2 requires all of the following before historical sector membership can be used:
 
-Inventing known_at = selected_date would violate S2. Therefore this research does not authorize provider integration yet.
+```text
+effective membership
++
+source-time proof / known_at
++
+benchmark identity
++
+deterministic source lineage
+```
 
-## Next task
+The public KRX constituent screen currently proves the first and third items, but not the second. Fabricating `known_at = query_date` would create look-ahead risk and violate the S2 contract.
 
-NEXT-6C-S3.1 — KRX Historical Constituent Access & Known-At Proof
+Therefore:
 
-Verify without changing Production:
+- no `SectorMembershipEvidence` is generated from KRX yet;
+- no historical sector DB/cache is created;
+- no current OpenDART mapping is backfilled into the past;
+- NEXT-6C-S1 remains Market↔Stock only;
+- Strategy/Scanner/Risk/Holdings remain unchanged.
 
-1. whether authenticated KRX Data Marketplace access can retrieve MDCSTAT00601 historical constituent responses in a machine-readable and permitted way;
-2. whether index identifiers are stable enough to map existing SectorRelativeStrengthAnalyzer aliases to dated KRX index identities;
-3. whether official response/file metadata can provide a defensible known_at, or whether the licensed constituent/corporate-action product is required;
-4. whether 2016-2023 coverage is complete for the sector indexes StockScope currently maps;
-5. whether the result can populate SectorMembershipEvidence without inference.
+## 7. Next task
 
-No provider, DB migration, backfill, Strategy/Scanner/Risk/Holdings integration, R2.5 execution, or Holdout access is authorized by this decision.
+```text
+NEXT-6C-S3.1
+KRX Historical Constituent Access & Known-At Proof
+```
+
+Bounded objectives:
+
+1. verify authenticated/permitted machine-readable access to dated KRX constituent results;
+2. verify stable KRX benchmark identities for the sector indexes mapped by StockScope;
+3. verify whether response/file metadata can produce defensible `known_at`;
+4. if not, determine whether the KRX constituent/corporate-action information product is required;
+5. test coverage only against the Development-era sector universe without accessing Holdout;
+6. populate S2 `SectorMembershipEvidence` only if every required field is source-supported.
+
+## 8. Explicit non-actions
+
+```text
+Provider integration = NONE
+DB migration/backfill = NONE
+3-way Market→Sector→Stock impact = NONE
+Strategy/Scanner/Risk/Holdings changes = NONE
+R2.5 = NOT STARTED
+Holdout access = 0
+```
