@@ -143,6 +143,11 @@ from app.macro.shock import (
     ShockType,
     build_uncalibrated_shock_assessment,
 )
+from app.macro.validation_entry_gate import (
+    NEXT6E_VALIDATION_ENTRY_GATE_CONTRACT_VERSION,
+    OVERALL_SCOPE_REFERENCE_VALIDATION_ONLY,
+    build_next6e_validation_entry_gate,
+)
 from app.macro.store import (
     MACRO_META_EXPECTED,
     MACRO_STORE_SCHEMA_VERSION,
@@ -259,5 +264,8 @@ __all__ = [
     "fred_dgs10_research_contract",
     "MACRO_META_EXPECTED",
     "MACRO_STORE_SCHEMA_VERSION",
+    "NEXT6E_VALIDATION_ENTRY_GATE_CONTRACT_VERSION",
+    "OVERALL_SCOPE_REFERENCE_VALIDATION_ONLY",
+    "build_next6e_validation_entry_gate",
     "MACRO_STORE_TABLES",
 ]
