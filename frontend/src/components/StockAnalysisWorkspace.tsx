@@ -7,6 +7,7 @@ import StockAnalysisPriceChart from "./StockAnalysisPriceChart";
 import StockNewsPanel from "./StockNewsPanel";
 import StockTrackingActions from "./StockTrackingActions";
 import StockQuoteStrip from "./StockQuoteStrip";
+import MarketStockImpactInline from "./MarketStockImpactInline";
 import "../stock-analysis.css";
 
 type Props = {
@@ -334,6 +335,12 @@ export default function StockAnalysisWorkspace({
               </button>
             )}
           </div>
+
+          <MarketStockImpactInline
+            market={stock.market}
+            ticker={stock.code}
+            endDate={stock.data_date}
+          />
 
           <StockTrackingActions
             code={stock.code}

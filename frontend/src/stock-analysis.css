@@ -1854,3 +1854,112 @@
   font-size: var(--font-meta);
   line-height: 1.45;
 }
+
+
+/* NEXT-6C-S3.3 — descriptive Market↔Stock impact reference */
+.market-stock-impact-inline {
+  margin: 0 0 18px;
+  padding: 14px 0 16px;
+  border-top: 1px solid var(--border-default);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.market-stock-impact-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.market-stock-impact-head > div {
+  display: grid;
+  gap: 3px;
+}
+
+.market-stock-impact-head span {
+  color: var(--text-muted);
+  font-size: var(--font-meta);
+  font-weight: 850;
+}
+
+.market-stock-impact-head strong {
+  color: var(--text-primary);
+  font-size: var(--font-card-title);
+}
+
+.market-stock-impact-head small {
+  color: var(--text-muted);
+  font-size: var(--font-meta);
+  font-variant-numeric: tabular-nums;
+}
+
+.market-stock-impact-values {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.market-stock-impact-values > div {
+  min-width: 0;
+  padding: 11px 16px;
+  border-left: 1px solid var(--border-subtle);
+}
+
+.market-stock-impact-values > div:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.market-stock-impact-values span,
+.market-stock-impact-values strong {
+  display: block;
+}
+
+.market-stock-impact-values span {
+  color: var(--text-muted);
+  font-size: var(--font-meta);
+}
+
+.market-stock-impact-values strong {
+  margin-top: 3px;
+  color: var(--text-primary);
+  font-size: 1.02rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.market-stock-impact-note,
+.market-stock-impact-sector-note,
+.market-stock-impact-state {
+  margin: 9px 0 0;
+  color: var(--text-muted);
+  font-size: var(--font-meta);
+  line-height: 1.5;
+}
+
+.market-stock-impact-sector-note {
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+@media (max-width: 700px) {
+  .market-stock-impact-head {
+    display: grid;
+  }
+
+  .market-stock-impact-values {
+    grid-template-columns: 1fr;
+  }
+
+  .market-stock-impact-values > div,
+  .market-stock-impact-values > div:first-child {
+    padding: 9px 0;
+    border-left: 0;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .market-stock-impact-values > div:first-child {
+    border-top: 0;
+  }
+}
