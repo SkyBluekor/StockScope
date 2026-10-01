@@ -43,6 +43,13 @@ from app.macro.calibration_research import (
     validate_distribution_research_artifact,
     validate_research_protocol,
 )
+from app.macro.development_coverage import (
+    NEXT6E_DEVELOPMENT_COVERAGE_CONTRACT_VERSION,
+    NEXT6E_DEVELOPMENT_CUTOFF_POLICY_VERSION,
+    DevelopmentCoverageAuditError,
+    DevelopmentCoverageSampleReader,
+    audit_development_reference_coverage,
+)
 from app.macro.distribution import (
     MACRO_DISTRIBUTION_CONTRACT_VERSION,
     RESEARCH_FEATURE_IDS,
@@ -184,6 +191,11 @@ __all__ = [
     "pareto_prune_candidates",
     "build_consecutive_true_episodes",
     "MACRO_DISTRIBUTION_RESEARCH_CONTRACT_VERSION",
+    "NEXT6E_DEVELOPMENT_COVERAGE_CONTRACT_VERSION",
+    "NEXT6E_DEVELOPMENT_CUTOFF_POLICY_VERSION",
+    "DevelopmentCoverageAuditError",
+    "DevelopmentCoverageSampleReader",
+    "audit_development_reference_coverage",
     "MACRO_DISTRIBUTION_CONTRACT_VERSION",
     "RESEARCH_FEATURE_IDS",
     "analyze_feature_distribution",
