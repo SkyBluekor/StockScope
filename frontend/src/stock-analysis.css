@@ -1856,44 +1856,44 @@
 }
 
 
-/* NEXT-6C-S3.3 — descriptive Market↔Stock impact reference */
-.market-stock-impact-inline {
+/* NEXT-6D-S4 — compact Macro/Event reference */
+.macro-event-reference-inline {
   margin: 0 0 18px;
   padding: 14px 0 16px;
   border-top: 1px solid var(--border-default);
   border-bottom: 1px solid var(--border-default);
 }
 
-.market-stock-impact-head {
+.macro-event-reference-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
 }
 
-.market-stock-impact-head > div {
+.macro-event-reference-head > div {
   display: grid;
   gap: 3px;
 }
 
-.market-stock-impact-head span {
+.macro-event-reference-head span {
   color: var(--text-muted);
   font-size: var(--font-meta);
   font-weight: 850;
 }
 
-.market-stock-impact-head strong {
+.macro-event-reference-head strong {
   color: var(--text-primary);
   font-size: var(--font-card-title);
 }
 
-.market-stock-impact-head small {
+.macro-event-reference-head small {
   color: var(--text-muted);
   font-size: var(--font-meta);
   font-variant-numeric: tabular-nums;
 }
 
-.market-stock-impact-values {
+.macro-event-reference-values {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-top: 12px;
@@ -1901,65 +1901,71 @@
   border-bottom: 1px solid var(--border-subtle);
 }
 
-.market-stock-impact-values > div {
+.macro-event-reference-values > div {
   min-width: 0;
   padding: 11px 16px;
   border-left: 1px solid var(--border-subtle);
 }
 
-.market-stock-impact-values > div:first-child {
+.macro-event-reference-values > div:first-child {
   padding-left: 0;
   border-left: 0;
 }
 
-.market-stock-impact-values span,
-.market-stock-impact-values strong {
+.macro-event-reference-values span,
+.macro-event-reference-values strong {
   display: block;
 }
 
-.market-stock-impact-values span {
+.macro-event-reference-values span {
   color: var(--text-muted);
   font-size: var(--font-meta);
 }
 
-.market-stock-impact-values strong {
+.macro-event-reference-values strong {
   margin-top: 3px;
   color: var(--text-primary);
   font-size: 1.02rem;
   font-variant-numeric: tabular-nums;
 }
 
-.market-stock-impact-note,
-.market-stock-impact-sector-note,
-.market-stock-impact-state {
+.macro-event-reference-state,
+.macro-event-reference-event,
+.macro-event-reference-sector-note,
+.macro-event-reference-note {
   margin: 9px 0 0;
   color: var(--text-muted);
   font-size: var(--font-meta);
   line-height: 1.5;
 }
 
-.market-stock-impact-sector-note {
+.macro-event-reference-event {
+  color: var(--text-secondary);
+  font-weight: 750;
+}
+
+.macro-event-reference-sector-note {
   padding-top: 8px;
   border-top: 1px solid var(--border-subtle);
 }
 
 @media (max-width: 700px) {
-  .market-stock-impact-head {
+  .macro-event-reference-head {
     display: grid;
   }
 
-  .market-stock-impact-values {
+  .macro-event-reference-values {
     grid-template-columns: 1fr;
   }
 
-  .market-stock-impact-values > div,
-  .market-stock-impact-values > div:first-child {
+  .macro-event-reference-values > div,
+  .macro-event-reference-values > div:first-child {
     padding: 9px 0;
     border-left: 0;
     border-top: 1px solid var(--border-subtle);
   }
 
-  .market-stock-impact-values > div:first-child {
+  .macro-event-reference-values > div:first-child {
     border-top: 0;
   }
 }
