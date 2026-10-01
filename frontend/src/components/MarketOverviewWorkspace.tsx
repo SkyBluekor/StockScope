@@ -1,9 +1,16 @@
 import type { IndexPoint, MarketDashboard } from "../services/api";
+import type {
+  MacroReferenceDiagnosticResponse,
+  MacroReferenceFeatureId,
+} from "../services/macroReferenceApi";
 
 type Props = {
   dashboard: MarketDashboard | null;
   loading: boolean;
   error: string | null;
+  macroReference: MacroReferenceDiagnosticResponse | null;
+  macroReferenceLoading: boolean;
+  macroReferenceError: string | null;
   onReload: () => void;
   onNavigate: (page: "analysis" | "scanner" | "holdings") => void;
 };
@@ -37,6 +44,17 @@ function rateClass(value: number | null | undefined) {
   if ((value ?? 0) > 0) return "positive";
   if ((value ?? 0) < 0) return "negative";
   return "neutral";
+}
+
+function formatBasisPoint(value: string | null | undefined) {
+  if (value == null || value === "") return "-";
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return "-";
+  const absolute = new Intl.NumberFormat("ko-KR", {
+    maximumFractionDigits: 2,
+  }).format(Math.abs(parsed));
+  const sign = parsed > 0 ? "+" : parsed < 0 ? "-" : "";
+  return `${sign}${absolute} bp`;
 }
 
 function Sparkline({ points }: { points: IndexPoint[] }) {
@@ -80,12 +98,25 @@ export default function MarketOverviewWorkspace({
   dashboard,
   loading,
   error,
+  macroReference,
+  macroReferenceLoading,
+  macroReferenceError,
   onReload,
   onNavigate,
 }: Props) {
   const breadth = dashboard?.market.breadth;
   const upPercent = breadth?.total ? (breadth.up / breadth.total) * 100 : 0;
   const downPercent = breadth?.total ? (breadth.down / breadth.total) * 100 : 0;
+  const macroHorizons = new Map(
+    (macroReference?.reference_diagnostic.horizons ?? []).map((item) => [
+      item.feature_id,
+      item,
+    ]),
+  );
+  const macroValue = (featureId: MacroReferenceFeatureId) =>
+    macroHorizons.get(featureId)?.current_feature_value ?? null;
+  const macroDate =
+    macroReference?.reference_diagnostic.source.current_observation_date ?? null;
 
   return (
     <section className="market-overview-workspace" aria-label="시장 현황">
@@ -223,6 +254,42 @@ export default function MarketOverviewWorkspace({
                 <strong>{dashboard.market.regime}</strong>
                 <p>{dashboard.summary}</p>
               </div>
+
+              <section className="macro-reference-inline" aria-label="미국 10년물 금리 참고">
+                <div className="macro-reference-head">
+                  <div>
+                    <span>금리 참고</span>
+                    <strong>미국 10년물 최근 변화</strong>
+                  </div>
+                  {macroDate && <small>금리 데이터 기준 {formatDate(macroDate)}</small>}
+                </div>
+
+                {macroReferenceLoading ? (
+                  <p className="macro-reference-state">금리 참고 데이터를 확인하는 중입니다.</p>
+                ) : macroReferenceError || !macroReference ? (
+                  <p className="macro-reference-state">{macroReferenceError ?? "금리 참고 데이터가 아직 준비되지 않았습니다."}</p>
+                ) : (
+                  <>
+                    <div className="macro-reference-values">
+                      <div>
+                        <span>1관측 변화</span>
+                        <strong>{formatBasisPoint(macroValue("delta_bp_1obs"))}</strong>
+                      </div>
+                      <div>
+                        <span>5관측 변화</span>
+                        <strong>{formatBasisPoint(macroValue("delta_bp_5obs"))}</strong>
+                      </div>
+                      <div>
+                        <span>10관측 변화</span>
+                        <strong>{formatBasisPoint(macroValue("delta_bp_10obs"))}</strong>
+                      </div>
+                    </div>
+                    <p className="macro-reference-note">
+                      관측 변화량을 참고용으로 표시합니다. 급등 여부를 판정하는 기준은 아직 확정되지 않았습니다.
+                    </p>
+                  </>
+                )}
+              </section>
             </article>
           </section>
 
