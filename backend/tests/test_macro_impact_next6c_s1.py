@@ -103,7 +103,6 @@ def test_insufficient_common_sessions_are_unavailable_not_zero_return() -> None:
     assert result["market"]["return_pct"] is None
     assert result["stock"]["return_pct"] is None
     assert result["relative"]["stock_vs_market_pctp"] is None
-    assert result["production_decision_approved"] if False else True
     assert result["governance"]["production_decision_approved"] is False
 
 
@@ -175,6 +174,20 @@ def test_local_market_impact_reader_is_read_only_and_cutoff_bounded(
 ) -> None:
     db_path = tmp_path / "market_history.db"
     store = HistoricalMarketStore(db_path)
+
+
+    store.put_stock_day(
+        "KOSPI",
+        "20260928",
+        [{"date": "20260928", "code": "005930", "close": 1}],
+        stable=False,
+    )
+    store.put_index_day(
+        "KOSPI",
+        "20260928",
+        {"date": "20260928", "close": 1},
+        stable=False,
+    )
 
     store.put_stock_day(
         "KOSPI",
