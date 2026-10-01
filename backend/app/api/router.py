@@ -8,6 +8,7 @@ from app.api.event_evidence import router as event_evidence_router
 from app.api.prospective import router as prospective_router
 from app.api.health import router as health_router
 from app.api.market_session import router as market_session_router
+from app.api.macro import router as macro_router
 from app.api.news import router as news_router
 from app.api.quotes import router as quotes_router
 from app.api.strategy_governance import router as strategy_governance_router
@@ -20,6 +21,7 @@ from app.api.integrations import router as integrations_router
 api_router = APIRouter()
 api_router.include_router(health_router)
 api_router.include_router(market_session_router)
+api_router.include_router(macro_router)
 api_router.include_router(news_router)
 api_router.include_router(event_evidence_router)
 api_router.include_router(quotes_router)
