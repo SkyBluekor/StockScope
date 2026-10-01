@@ -123,6 +123,14 @@ from app.macro.sector_pit_audit import (
     SECTOR_PIT_COVERAGE_AUDIT_CONTRACT_VERSION,
     build_sector_pit_coverage_audit,
 )
+from app.macro.sector_route import (
+    HISTORICAL_IMPACT_MARKET_STOCK_ONLY,
+    HISTORICAL_SECTOR_BLOCKED_EXTERNAL_SOURCE,
+    PROSPECTIVE_SECTOR_NOT_STARTED,
+    SECTOR_ROUTE_CONTRACT_VERSION,
+    SECTOR_ROUTE_UNLOCK_REQUIREMENTS,
+    build_sector_route,
+)
 from app.macro.shock import (
     MACRO_EPISODE_CONTRACT_VERSION,
     MACRO_SHOCK_CONTRACT_VERSION,
@@ -194,6 +202,11 @@ __all__ = [
     "MARKET_STOCK_IMPACT_WINDOW_MODE",
     "SECTOR_MEMBERSHIP_EVIDENCE_CONTRACT_VERSION",
     "SECTOR_PIT_COVERAGE_AUDIT_CONTRACT_VERSION",
+    "SECTOR_ROUTE_CONTRACT_VERSION",
+    "HISTORICAL_SECTOR_BLOCKED_EXTERNAL_SOURCE",
+    "HISTORICAL_IMPACT_MARKET_STOCK_ONLY",
+    "PROSPECTIVE_SECTOR_NOT_STARTED",
+    "SECTOR_ROUTE_UNLOCK_REQUIREMENTS",
     "SECTOR_TEMPORAL_POINT_IN_TIME",
     "SECTOR_TEMPORAL_STATIC_CURRENT",
     "SECTOR_TEMPORAL_UNKNOWN",
@@ -218,6 +231,7 @@ __all__ = [
     "build_market_stock_impact",
     "build_sector_membership_evidence",
     "build_sector_pit_coverage_audit",
+    "build_sector_route",
     "build_retrospective_reference_diagnostic",
     "build_uncalibrated_shock_assessment",
     "assess_sector_membership_evidence",
