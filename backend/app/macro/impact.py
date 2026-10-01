@@ -132,8 +132,8 @@ def build_market_stock_impact(
     if not str(decision_cutoff or "").strip():
         raise ValueError("decision_cutoff is required.")
 
-    stock, stock_future = _close_by_date(stock_rows, end_date=end_date)
-    benchmark, market_future = _close_by_date(market_rows, end_date=end_date)
+    stock, _ = _close_by_date(stock_rows, end_date=end_date)
+    benchmark, _ = _close_by_date(market_rows, end_date=end_date)
     common_dates = sorted(set(stock) & set(benchmark))
 
     base = {
@@ -329,19 +329,29 @@ class LocalMarketImpactReader:
             with self._connect() as conn:
                 stock_rows = conn.execute(
                     """
-                    SELECT bas_dd,row_json
-                    FROM stock_daily
-                    WHERE market=? AND stock_code=? AND bas_dd<=?
-                    ORDER BY bas_dd
+                    SELECT s.bas_dd,s.row_json
+                    FROM stock_daily AS s
+                    JOIN day_status AS d
+                      ON d.market=s.market
+                     AND d.bas_dd=s.bas_dd
+                     AND d.kind='stock'
+                     AND d.status='data'
+                    WHERE s.market=? AND s.stock_code=? AND s.bas_dd<=?
+                    ORDER BY s.bas_dd
                     """,
                     (market_key, ticker_key, end_dd),
                 ).fetchall()
                 market_rows = conn.execute(
                     """
-                    SELECT bas_dd,row_json
-                    FROM main_index_daily
-                    WHERE market=? AND bas_dd<=?
-                    ORDER BY bas_dd
+                    SELECT i.bas_dd,i.row_json
+                    FROM main_index_daily AS i
+                    JOIN day_status AS d
+                      ON d.market=i.market
+                     AND d.bas_dd=i.bas_dd
+                     AND d.kind='index'
+                     AND d.status='data'
+                    WHERE i.market=? AND i.bas_dd<=?
+                    ORDER BY i.bas_dd
                     """,
                     (market_key, end_dd),
                 ).fetchall()
