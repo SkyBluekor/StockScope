@@ -13,10 +13,14 @@ from app.macro.calibration import (
 from app.macro.features import build_dgs10_features
 from app.macro.identity import content_hash
 from app.macro.reader import LocalMacroReader
+from app.macro.reference_diagnostic import (
+    build_as_of_reference_diagnostic,
+    project_reference_diagnostic_for_context,
+)
 from app.macro.shock import build_uncalibrated_shock_assessment
 
 
-MACRO_CONTEXT_CONTRACT_VERSION = "VN_NEXT6B_S1_MACRO_CONTEXT_V1"
+MACRO_CONTEXT_CONTRACT_VERSION = "VN_NEXT6B_S1_MACRO_CONTEXT_V2"
 MACRO_CUTOFF_POLICY_VERSION = "VN_NEXT6B_S1_AVAILABLE_AT_CUTOFF_V1"
 DGS10_SERIES_ID = "US_10Y_CONSTANT_MATURITY_YIELD"
 DGS10_CONTEXT_WINDOW_LIMIT = 11
@@ -89,6 +93,20 @@ def build_macro_context(
     )
     observations = list(window.get("observations") or [])
     feature_set = build_dgs10_features(observations)
+
+    reference_history = reader.read_series_history_as_of(
+        DGS10_SERIES_ID,
+        cutoff=cutoff,
+        historical_eligible_only=historical_only,
+    )
+    reference_diagnostic_full = build_as_of_reference_diagnostic(
+        list(reference_history.get("observations") or []),
+        decision_cutoff=cutoff,
+        series_id=DGS10_SERIES_ID,
+    )
+    reference_diagnostic = project_reference_diagnostic_for_context(
+        reference_diagnostic_full
+    )
     calibration = rate_calibration or uncalibrated_rate_spike_calibration()
     if calibration.status is CalibrationStatus.APPROVED_RESEARCH:
         raise ValueError(
@@ -136,6 +154,9 @@ def build_macro_context(
             limitations.append("HISTORICAL_TIME_NOT_PROVEN")
         if not all_feature_available:
             limitations.append("FEATURE_HISTORY_INCOMPLETE")
+        if reference_diagnostic["status"] != "AVAILABLE":
+            status = MacroContextStatus.PARTIAL
+            limitations.append("REFERENCE_DIAGNOSTIC_PARTIAL")
 
     limitations = sorted(set(limitations))
 
@@ -154,6 +175,22 @@ def build_macro_context(
             for row in observations
         ],
         "feature_contract_version": feature_set["contract_version"],
+        "reference_history_hash": reference_history["history_hash"],
+        "reference_history_reader_status": reference_history["status"],
+        "reference_history_reader_reason": reference_history.get("reason"),
+        "reference_history_observation_count": reference_history.get(
+            "returned_count",
+            0,
+        ),
+        "reference_diagnostic_contract_version": (
+            reference_diagnostic_full["contract_version"]
+        ),
+        "reference_diagnostic_hash": reference_diagnostic_full[
+            "diagnostic_hash"
+        ],
+        "reference_diagnostic_context_projection_hash": (
+            reference_diagnostic["context_projection_hash"]
+        ),
         "calibration_id": calibration.calibration_id,
         "calibration_version": calibration.version,
         "calibration_hash": calibration.calibration_hash,
@@ -168,6 +205,12 @@ def build_macro_context(
         "reason": reason,
         "input_manifest": input_manifest,
         "feature_set_hash": feature_set["feature_set_hash"],
+        "reference_diagnostic_hash": reference_diagnostic_full[
+            "diagnostic_hash"
+        ],
+        "reference_diagnostic_context_projection_hash": (
+            reference_diagnostic["context_projection_hash"]
+        ),
         "shock_assessment_hash": shock["shock_assessment_hash"],
         "limitations": limitations,
         "production_decision_approved": False,
@@ -199,6 +242,7 @@ def build_macro_context(
             ),
         },
         "features": feature_set,
+        "reference_diagnostic": reference_diagnostic,
         "shock_assessment": shock,
         "calibration": calibration.to_dict(),
         "input_manifest": input_manifest,
