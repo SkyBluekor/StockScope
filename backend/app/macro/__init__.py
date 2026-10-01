@@ -76,6 +76,14 @@ from app.macro.context import (
     MacroContextUsage,
     build_macro_context,
 )
+from app.macro.reference_diagnostic import (
+    REFERENCE_DIAGNOSTIC_AS_OF,
+    REFERENCE_DIAGNOSTIC_CONTRACT_VERSION,
+    REFERENCE_DIAGNOSTIC_RETROSPECTIVE,
+    build_as_of_reference_diagnostic,
+    build_retrospective_reference_diagnostic,
+    validate_reference_diagnostic,
+)
 from app.macro.features import (
     MACRO_FEATURE_CONTRACT_VERSION,
     MacroFeature,
@@ -161,6 +169,9 @@ __all__ = [
     "validate_split_ranges",
     "CalibrationStatus",
     "MACRO_CONTEXT_CONTRACT_VERSION",
+    "REFERENCE_DIAGNOSTIC_AS_OF",
+    "REFERENCE_DIAGNOSTIC_CONTRACT_VERSION",
+    "REFERENCE_DIAGNOSTIC_RETROSPECTIVE",
     "MACRO_EPISODE_CONTRACT_VERSION",
     "MACRO_FEATURE_CONTRACT_VERSION",
     "MACRO_SHOCK_CONTRACT_VERSION",
@@ -172,9 +183,12 @@ __all__ = [
     "ShockEpisodeContract",
     "ShockState",
     "ShockType",
+    "build_as_of_reference_diagnostic",
     "build_dgs10_features",
     "build_macro_context",
+    "build_retrospective_reference_diagnostic",
     "build_uncalibrated_shock_assessment",
+    "validate_reference_diagnostic",
     "uncalibrated_rate_spike_calibration",
     "EvidenceTimeQuality",
     "LocalMacroReader",
