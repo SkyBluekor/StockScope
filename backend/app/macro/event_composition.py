@@ -357,8 +357,55 @@ def build_macro_event_reference_composition(
         ),
     }
 
+    governance = {
+        "claim_scope": "REFERENCE_COMPOSITION_ONLY",
+        "causal_attribution": False,
+        "macro_exposure_relation_created": False,
+        "prediction_approved": False,
+        "strategy_input_approved": False,
+        "scanner_input_approved": False,
+        "risk_gate_input_approved": False,
+        "holdings_plan_input_approved": False,
+        "production_decision_approved": False,
+        "network_access": False,
+        "database_write": False,
+    }
+
+    # Identity intentionally pins only references eligible at the frozen cutoff.
+    # Diagnostic counts about later/current product rows may change as the P6
+    # projection evolves, but they cannot rewrite a past composition identity.
+    event_identity = {
+        "status": event_reference["status"],
+        "eligible_reference_count": event_reference[
+            "eligible_reference_count"
+        ],
+        "latest_as_of": event_reference["latest_as_of"],
+        "items": event_reference["items"],
+        "historical_completeness_proven": False,
+        "decision_cutoff": cutoff,
+    }
     identity_payload = {
         "contract_version": MACRO_EVENT_REFERENCE_COMPOSITION_CONTRACT_VERSION,
+        "status": status,
+        "decision_cutoff": cutoff,
+        "scope": {
+            "market": market,
+            "ticker": ticker,
+        },
+        "macro": bounded_macro,
+        "impact": bounded_impact,
+        "sector": sector,
+        "event_reference": event_identity,
+        "value_validation": value_validation,
+        "prediction": prediction,
+        "limitations": sorted(set(limitations)),
+        "governance": governance,
+    }
+    composition_hash = content_hash(identity_payload)
+    return {
+        "contract_version": MACRO_EVENT_REFERENCE_COMPOSITION_CONTRACT_VERSION,
+        "composition_id": f"MEVCOMP-{composition_hash[:16]}",
+        "composition_hash": composition_hash,
         "status": status,
         "decision_cutoff": cutoff,
         "scope": {
@@ -371,24 +418,7 @@ def build_macro_event_reference_composition(
         "event_reference": event_reference,
         "value_validation": value_validation,
         "prediction": prediction,
+        "identity_policy": "CUTOFF_ELIGIBLE_REFERENCES_ONLY",
         "limitations": sorted(set(limitations)),
-        "governance": {
-            "claim_scope": "REFERENCE_COMPOSITION_ONLY",
-            "causal_attribution": False,
-            "macro_exposure_relation_created": False,
-            "prediction_approved": False,
-            "strategy_input_approved": False,
-            "scanner_input_approved": False,
-            "risk_gate_input_approved": False,
-            "holdings_plan_input_approved": False,
-            "production_decision_approved": False,
-            "network_access": False,
-            "database_write": False,
-        },
-    }
-    composition_hash = content_hash(identity_payload)
-    return {
-        **identity_payload,
-        "composition_id": f"MEVCOMP-{composition_hash[:16]}",
-        "composition_hash": composition_hash,
+        "governance": governance,
     }
