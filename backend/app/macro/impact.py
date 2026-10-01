@@ -173,9 +173,8 @@ def build_market_stock_impact(
         "lineage": {
             "stock_rows_considered": len(stock),
             "market_rows_considered": len(benchmark),
-            "stock_future_rows_ignored": stock_future,
-            "market_future_rows_ignored": market_future,
             "common_dates_hash": content_hash(common_dates),
+            "future_rows_policy": "IGNORE_AFTER_REQUESTED_END_DATE",
         },
         "limitations": [
             "DESCRIPTIVE_ONLY",
