@@ -8,11 +8,18 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Response
 
 from app.core.config import PROJECT_ROOT
+from app.core.stock_code import normalize_stock_code
+from app.event_evidence import (
+    EVENT_REFERENCE_AS_OF_MODE,
+    EventEvidenceAsOfReader,
+    EventEvidenceContractError,
+)
 from app.macro import (
     LocalMacroReader,
     LocalMarketImpactReader,
     build_macro_context,
     build_market_stock_impact,
+    build_macro_event_reference_composition,
     build_sector_route,
 )
 
@@ -23,6 +30,9 @@ MACRO_REFERENCE_DIAGNOSTIC_API_CONTRACT_VERSION = (
 )
 MACRO_MARKET_STOCK_IMPACT_API_CONTRACT_VERSION = (
     "VN_NEXT6C_S32_MARKET_STOCK_IMPACT_API_V1"
+)
+MACRO_EVENT_REFERENCE_API_CONTRACT_VERSION = (
+    "VN_NEXT6D_S3_MACRO_EVENT_REFERENCE_API_V1"
 )
 
 
@@ -43,6 +53,19 @@ def _market_db_path() -> Path:
         / "runtime"
         / "market_history"
         / "market_history.db"
+    )
+
+
+def _simulation_db_path() -> Path:
+    raw = str(os.getenv("STOCKSCOPE_SIM_DB") or "").strip()
+    if raw:
+        return Path(raw)
+    return (
+        PROJECT_ROOT
+        / "backend"
+        / "runtime"
+        / "simulation"
+        / "simulation.db"
     )
 
 
@@ -278,5 +301,232 @@ def market_stock_impact(
         },
         "impact": impact,
         "sector_route": build_sector_route(),
+        "production_decision_approved": False,
+    }
+
+
+def _macro_event_invalid_request(message: str) -> HTTPException:
+    return HTTPException(
+        status_code=400,
+        detail={
+            "code": "MACRO_EVENT_REFERENCE_INVALID_REQUEST",
+            "message": message,
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+def _macro_event_context_unavailable(
+    context: dict[str, Any],
+) -> HTTPException:
+    availability = context.get("availability") or {}
+    reason = (
+        context.get("reason")
+        or availability.get("reader_reason")
+        or "MACRO_CONTEXT_UNAVAILABLE"
+    )
+    return HTTPException(
+        status_code=503,
+        detail={
+            "code": "MACRO_EVENT_CONTEXT_UNAVAILABLE",
+            "reason": str(reason),
+            "message": "Macro context for Macro/Event reference is not available.",
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+def _macro_event_market_unavailable(reason: str | None) -> HTTPException:
+    return HTTPException(
+        status_code=503,
+        detail={
+            "code": "MACRO_EVENT_MARKET_STORE_UNAVAILABLE",
+            "reason": str(reason or "MARKET_STORE_UNAVAILABLE"),
+            "message": (
+                "Market history store for Macro/Event reference is not available."
+            ),
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+_EVENT_REQUEST_ERROR_CODES = {
+    "EVENT_EVIDENCE_ASOF_TIME_INVALID",
+    "EVENT_EVIDENCE_ASOF_TIMEZONE_REQUIRED",
+    "STOCK_CODE_INVALID",
+    "EVENT_EVIDENCE_MARKET_INVALID",
+    "EVENT_EVIDENCE_ASOF_LIMIT_INVALID",
+}
+
+
+@router.get("/event-reference")
+def macro_event_reference(
+    response: Response,
+    market: str = Query(..., description="KOSPI or KOSDAQ."),
+    ticker: str = Query(..., min_length=1, description="Stock code."),
+    end_date: str = Query(
+        ...,
+        description="Required confirmed-EOD boundary in YYYY-MM-DD or YYYYMMDD.",
+    ),
+    cutoff: str = Query(
+        ...,
+        description="Required timezone-aware ISO-8601 decision cutoff.",
+    ),
+) -> dict[str, Any]:
+    """Expose the bounded NEXT-6D Macro/Event reference composition.
+
+    This endpoint is read-only and reference-only. Event Evidence degradation
+    does not erase otherwise valid Macro/Impact context, while Macro/Market
+    infrastructure failures remain fail-closed.
+    """
+
+    response.headers["Cache-Control"] = "no-store"
+
+    try:
+        market_key = str(market or "").strip().upper()
+        if market_key not in {"KOSPI", "KOSDAQ"}:
+            raise ValueError("market must be KOSPI or KOSDAQ.")
+        normalized_ticker = normalize_stock_code(ticker)
+        context = build_macro_context(
+            reader=LocalMacroReader(_macro_db_path()),
+            decision_cutoff=cutoff,
+            usage="REFERENCE_SHADOW",
+        )
+    except ValueError as exc:
+        raise _macro_event_invalid_request(str(exc)) from exc
+
+    if context.get("status") == "UNAVAILABLE":
+        raise _macro_event_context_unavailable(context)
+
+    try:
+        market_input = LocalMarketImpactReader(
+            _market_db_path()
+        ).read_pair_as_of(
+            market=market_key,
+            ticker=normalized_ticker,
+            end_date=end_date,
+        )
+    except ValueError as exc:
+        raise _macro_event_invalid_request(str(exc)) from exc
+
+    if market_input.get("reason") in {
+        "STORE_NOT_FOUND",
+        "SCHEMA_UNAVAILABLE",
+        "READ_FAILED",
+    }:
+        raise _macro_event_market_unavailable(market_input.get("reason"))
+
+    try:
+        impact = build_market_stock_impact(
+            stock_rows=market_input.get("stock_rows") or [],
+            market_rows=market_input.get("market_rows") or [],
+            market=market_key,
+            ticker=normalized_ticker,
+            end_date=end_date,
+            macro_context_id=context["context_id"],
+            macro_context_hash=context["context_hash"],
+            decision_cutoff=context["decision_cutoff"],
+            sector_temporal_status=None,
+        )
+    except ValueError as exc:
+        raise _macro_event_invalid_request(str(exc)) from exc
+
+    event_product: dict[str, Any] | None = None
+    event_source = {
+        "reader_status": "AVAILABLE",
+        "reason": None,
+        "projection_mode": EVENT_REFERENCE_AS_OF_MODE,
+    }
+    try:
+        event_product = EventEvidenceAsOfReader(
+            _simulation_db_path()
+        ).stock_reference_as_of(
+            normalized_ticker,
+            market_key,
+            context["decision_cutoff"],
+        )
+    except EventEvidenceContractError as exc:
+        if exc.code in _EVENT_REQUEST_ERROR_CODES:
+            raise _macro_event_invalid_request(exc.message) from exc
+        event_source = {
+            "reader_status": "UNAVAILABLE",
+            "reason": exc.code,
+            "projection_mode": EVENT_REFERENCE_AS_OF_MODE,
+        }
+
+    try:
+        composition = build_macro_event_reference_composition(
+            macro_context=context,
+            impact=impact,
+            sector_route=build_sector_route(),
+            event_product=event_product,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "MACRO_EVENT_REFERENCE_CONTRACT_ERROR",
+                "message": str(exc),
+            },
+            headers={"Cache-Control": "no-store"},
+        ) from exc
+
+    impact_projection = composition["impact"]
+    sector_projection = composition["sector"]
+    event_reference = composition["event_reference"]
+
+    return {
+        "contract_version": MACRO_EVENT_REFERENCE_API_CONTRACT_VERSION,
+        "status": composition["status"],
+        "decision_cutoff": composition["decision_cutoff"],
+        "scope": composition["scope"],
+        "composition_id": composition["composition_id"],
+        "composition_hash": composition["composition_hash"],
+        "macro": {
+            "status": composition["macro"]["status"],
+            "usage_mode": composition["macro"]["usage_mode"],
+        },
+        "impact": {
+            "status": impact_projection["status"],
+            "reason": impact_projection["reason"],
+            "window": impact_projection["window"],
+            "market_return_pct": impact_projection["market_return_pct"],
+            "stock_return_pct": impact_projection["stock_return_pct"],
+            "stock_vs_market_pctp": impact_projection[
+                "stock_vs_market_pctp"
+            ],
+        },
+        "sector": {
+            "historical_sector_status": sector_projection[
+                "historical_sector_status"
+            ],
+            "historical_impact_mode": sector_projection[
+                "historical_impact_mode"
+            ],
+            "prospective_sector_status": sector_projection[
+                "prospective_sector_status"
+            ],
+        },
+        "event_source": event_source,
+        "event_reference": {
+            "status": event_reference["status"],
+            "source_status": event_reference["source_status"],
+            "source_reference_count": event_reference[
+                "source_reference_count"
+            ],
+            "eligible_reference_count": event_reference[
+                "eligible_reference_count"
+            ],
+            "latest_as_of": event_reference["latest_as_of"],
+            "historical_completeness_proven": event_reference[
+                "historical_completeness_proven"
+            ],
+            "items": event_reference["items"],
+        },
+        "value_validation": composition["value_validation"],
+        "prediction": composition["prediction"],
+        "identity_policy": composition["identity_policy"],
+        "limitations": composition["limitations"],
+        "governance": composition["governance"],
         "production_decision_approved": False,
     }
