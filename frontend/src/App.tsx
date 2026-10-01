@@ -25,6 +25,10 @@ import {
   writeAnalysisSelectionContext,
 } from "./services/uiSession";
 import {
+  fetchMacroReferenceDiagnostic,
+  type MacroReferenceDiagnosticResponse,
+} from "./services/macroReferenceApi";
+import {
   fetchHealth,
   fetchBacktestJob,
   fetchMarketDashboard,
@@ -242,6 +246,9 @@ export default function App() {
   const [dashboard, setDashboard] = useState<MarketDashboard | null>(null);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [macroReference, setMacroReference] = useState<MacroReferenceDiagnosticResponse | null>(null);
+  const [macroReferenceLoading, setMacroReferenceLoading] = useState(false);
+  const [macroReferenceError, setMacroReferenceError] = useState<string | null>(null);
   const [appPage, setAppPage] = useState<AppPage>(() => pageFromPathname(window.location.pathname));
   const [initialAnalysisSelection] = useState(() => readAnalysisSelectionContext());
   const [stockCode, setStockCode] = useState(initialAnalysisSelection?.code ?? "005930");
@@ -353,9 +360,24 @@ export default function App() {
     setProviderRefreshing(false);
   }
 
+  async function loadMacroReference() {
+    setMacroReferenceLoading(true);
+    setMacroReferenceError(null);
+    try {
+      const result = await fetchMacroReferenceDiagnostic();
+      setMacroReference(result);
+    } catch {
+      setMacroReference(null);
+      setMacroReferenceError("금리 참고 데이터가 아직 준비되지 않았습니다.");
+    } finally {
+      setMacroReferenceLoading(false);
+    }
+  }
+
   async function loadDashboard() {
     setLoading(true);
     setDashboardError(null);
+    void loadMacroReference();
     try {
       // 1) 최신 시장 데이터부터 표시합니다.
       const result = await fetchMarketDashboard();
@@ -908,6 +930,9 @@ const strategyName: Record<string, string> = {
               dashboard={dashboard}
               loading={loading}
               error={dashboardError}
+              macroReference={macroReference}
+              macroReferenceLoading={macroReferenceLoading}
+              macroReferenceError={macroReferenceError}
               onReload={() => void loadDashboard()}
               onNavigate={navigateApp}
             />
