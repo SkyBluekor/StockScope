@@ -151,9 +151,15 @@ def build_sector_pit_coverage_audit(
     )
     benchmark_set = set(benchmark_ids)
 
+    target_keys = {
+        (target["ticker"], target["market"])
+        for target in normalized_targets
+    }
     known_evidences: list[dict[str, Any]] = []
     for evidence in evidences:
         validate_sector_membership_evidence(evidence)
+        if (evidence["ticker"], evidence["market"]) not in target_keys:
+            continue
         known_at = _aware_utc(str(evidence["known_at"]), "known_at")
         if known_at <= cutoff_dt:
             known_evidences.append(evidence)
