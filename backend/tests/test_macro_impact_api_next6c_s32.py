@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from pathlib import Path
+import sqlite3
 
 import pytest
 from fastapi.testclient import TestClient
@@ -85,6 +86,11 @@ def _create_market_db(path: Path) -> None:
         {"date": "20260930", "close": 202},
         stable=True,
     )
+
+    # HistoricalMarketStore writes in WAL mode. Flush fixture setup before taking
+    # file-state snapshots so the API read itself is the only operation measured.
+    with sqlite3.connect(path) as conn:
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
 
 def _request() -> object:
