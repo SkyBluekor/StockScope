@@ -104,6 +104,12 @@ from app.macro.contract import (
 from app.macro.errors import MacroContractError
 from app.macro.manifest import MacroPreparedRangeManifest
 from app.macro.reader import LocalMacroReader
+from app.macro.impact import (
+    MARKET_STOCK_IMPACT_CONTRACT_VERSION,
+    MARKET_STOCK_IMPACT_WINDOW_MODE,
+    LocalMarketImpactReader,
+    build_market_stock_impact,
+)
 from app.macro.shock import (
     MACRO_EPISODE_CONTRACT_VERSION,
     MACRO_SHOCK_CONTRACT_VERSION,
@@ -171,6 +177,8 @@ __all__ = [
     "validate_split_ranges",
     "CalibrationStatus",
     "MACRO_CONTEXT_CONTRACT_VERSION",
+    "MARKET_STOCK_IMPACT_CONTRACT_VERSION",
+    "MARKET_STOCK_IMPACT_WINDOW_MODE",
     "REFERENCE_DIAGNOSTIC_AS_OF",
     "REFERENCE_DIAGNOSTIC_CONTEXT_PROJECTION_VERSION",
     "REFERENCE_DIAGNOSTIC_CONTRACT_VERSION",
@@ -189,6 +197,7 @@ __all__ = [
     "build_as_of_reference_diagnostic",
     "build_dgs10_features",
     "build_macro_context",
+    "build_market_stock_impact",
     "build_retrospective_reference_diagnostic",
     "build_uncalibrated_shock_assessment",
     "project_reference_diagnostic_for_context",
@@ -196,6 +205,7 @@ __all__ = [
     "uncalibrated_rate_spike_calibration",
     "EvidenceTimeQuality",
     "LocalMacroReader",
+    "LocalMarketImpactReader",
     "MacroContractError",
     "MacroObservation",
     "MacroPreparedRangeManifest",
