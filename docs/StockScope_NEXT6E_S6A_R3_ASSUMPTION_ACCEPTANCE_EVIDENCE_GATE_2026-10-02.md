@@ -1,5 +1,257 @@
 # StockScope NEXT-6E-S6A-R3 — Assumption Acceptance Evidence Gate
 
+
+## 0. 2026-10-02 Development-input diagnostic rerun update
+
+> This section supersedes the source-unavailable disposition below where they conflict. The earlier blocked record is retained as historical evidence of the first R3 attempt.
+
+The exact frozen Development artifact was supplied explicitly and its canonical project identity was verified:
+
+```text
+dataset_id
+MACROCAL-DEV-7c3f6660b3aae03f
+
+dataset_hash
+7c3f6660b3aae03f46c4a3cd66e6652b56c01fc9ab9a00aea67de8a451cddfc1
+
+analysis rows
+1999
+```
+
+A DEV-only deterministic diagnostic implementation was added:
+
+```text
+backend/app/macro/assumption_acceptance.py
+tools/data/analyze_macro_assumption_acceptance_next6e_s6a_r3.py
+backend/tests/test_macro_assumption_acceptance_next6e_s6a_r3.py
+```
+
+The CLI accepts only an explicit Development JSON path. It has no runtime-artifact output switch, network path, database path, adequacy-outcome input, or automatic replacement-source path.
+
+Observed evidence identity for the current non-certified execution:
+
+```text
+evidence_id
+R3ASSUME-884c9c95edd745d3
+
+evidence_hash
+884c9c95edd745d3794757103f46de385a8b09255885b631a8a838b30ecf892d
+```
+
+The evidence-scope guard remains fail-closed:
+
+```text
+clean_isolation_certified
+NO
+
+reason
+PRIOR CONTEXT IN THIS CHAT HAD ALREADY SURFACED PROHIBITED ADJACENT METADATA
+
+new prohibited-source retrieval during this diagnostic execution
+NO
+
+Development adequacy outcome inspected
+NO
+
+passing N inspected
+NO
+
+recommended_support inspected
+NO
+
+network access
+NO
+
+database access
+NO
+
+runtime writes
+0
+```
+
+No prohibited metadata values are reproduced here. Because the broader conversation context had already been contaminated before this rerun started, this execution is not relabeled as a formally clean isolation-certified R3 run.
+
+### A0-A10 result
+
+| Gate | Result | Evidence |
+| --- | --- | --- |
+| A0 Evidence lineage | MATHEMATICALLY_VERIFIED | canonical dataset identity and all row/feature hashes reproduce |
+| A1 Native-position completeness | MATHEMATICALLY_VERIFIED | 2009 reconstructed native positions, -10..1998, strict date order |
+| A2 W→X representation | MATHEMATICALLY_VERIFIED | 5997 exact Decimal comparisons, 1/5/10 obs |
+| A3 Joint alignment | MATHEMATICALLY_VERIFIED | 1999 aligned 3D rows; κ=1/10 gives first approved anchor N=200 |
+| A4 Continuity / atoms | ASSUMPTION_NOT_ACCEPTED | frozen feature process is strongly quantized with repeated values; no jitter |
+| A5 Stationarity | UNRESOLVED | no pre-approved numeric acceptance rule; no post-hoc segmentation |
+| A6 Strong mixing | UNRESOLVED | finite sample does not verify α(r)=O(r^-a), a>15/2 |
+| A7 Median regularity | ASSUMPTION_NOT_ACCEPTED | quantization/ties do not support the frozen unique-median/positive-density route |
+| A8 Positive MAD / zero scale | MATHEMATICALLY_VERIFIED | no zero-MAD anchors over approved candidate domain |
+| A9 MAD local regularity | ASSUMPTION_NOT_ACCEPTED | discrete/tied absolute-deviation support does not support positive-density regularity |
+| A10 Multiplier preprocessor | MATHEMATICALLY_VERIFIED | frozen automatic profile computes deterministically without fallback |
+
+Quantization evidence:
+
+```text
+1obs
+count 1999
+unique values 46
+median 0
+median tie multiplicity 188
+MAD 3
+MAD tie multiplicity 297
+
+5obs
+count 1999
+unique values 81
+median 0
+median tie multiplicity 91
+MAD 7
+MAD tie multiplicity 118
+
+10obs
+count 1999
+unique values 113
+median 1
+median tie multiplicity 69
+MAD 10
+MAD tie multiplicity 95
+
+joint 3D rows
+1999
+
+joint unique triples
+1884
+
+maximum repeated joint triple
+4
+```
+
+All three marginal feature coordinates lie on the integer basis-point grid. This is used as fail-closed finite-record evidence against approving the current continuous-law regularity route. It is **not** claimed to mathematically prove that the latent population distribution has atoms.
+
+Approved-domain scale evidence:
+
+```text
+candidate anchors
+N = 200 .. 1998
+
+1obs minimum observed anchor MAD
+3
+
+5obs minimum observed anchor MAD
+5
+
+10obs minimum observed anchor MAD
+8
+
+zero-scale anchors
+0 / 0 / 0
+```
+
+Frozen multiplier preprocessor result:
+
+```text
+n
+1999
+
+k_n
+8
+
+lag_max
+53
+
+rho_crit
+0.120855930272575
+
+coordinate m
+[1, 5, 10]
+
+lag cutoff L
+10
+
+gamma_squared
+48713826.3462818
+
+delta
+2804.02624400312
+
+ell_opt
+42.5156272721241
+
+bandwidth b
+22
+
+effective ell
+43
+
+manual fallback
+NO
+```
+
+Focused implementation tests:
+
+```text
+7 passed
+```
+
+### Current R3 / G-A disposition
+
+The original source-unavailable blocker is resolved, but the method gate is **not** promoted:
+
+```text
+EVIDENCE_SOURCE_ACCESS_UNRESOLVED
+RESOLVED
+
+ASSUMPTION_ACCEPTANCE
+NOT_GRANTED
+
+Method state
+METHOD_PROFILE_FROZEN
+
+G-A
+BLOCKED
+
+Current blockers
+CLEAN_ISOLATION_NOT_CERTIFIED
+CONTINUITY_ATOM_COMPATIBILITY_NOT_ACCEPTED
+STATIONARITY_COMPATIBILITY_UNRESOLVED
+STRONG_MIXING_MODEL_USE_UNRESOLVED
+MEDIAN_REGULARITY_NOT_ACCEPTED
+MAD_LOCAL_REGULARITY_NOT_ACCEPTED
+```
+
+Even after a future isolation-certified replay removes the first process blocker, the observed quantization/regularity blockers and unresolved stationarity/mixing obligations remain. Therefore the current frozen continuous-law method route cannot be promoted merely by rerunning the same diagnostics.
+
+Downstream remains frozen:
+
+```text
+G-B
+BLOCKED
+
+Reference Adequacy
+UNRESOLVED
+
+minimum_prior_observations
+null
+
+recommended_support
+null
+
+RATE_SPIKE
+UNCALIBRATED
+
+V3 changed
+NO
+
+V4 created
+NO
+
+Evaluator implemented
+NO
+
+Production impact
+NONE
+```
+
+---
+
 ## 1. Status / Evidence Baseline
 
 - Date: 2026-10-02, Asia/Seoul.
