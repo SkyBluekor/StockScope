@@ -235,7 +235,10 @@ def export_handoff(
 
     final_dir = Path(
         destination
-        or (DEFAULT_HANDOFF_ROOT / f"StockScope_Handoff_{utc_stamp()}")
+        or (
+            DEFAULT_HANDOFF_ROOT
+            / f"StockScope_Handoff_{utc_stamp()}_{uuid.uuid4().hex[:8]}"
+        )
     )
     if final_dir.exists():
         raise DataToolError(f"Handoff 대상이 이미 존재합니다: {final_dir}")
