@@ -1,5 +1,135 @@
 # StockScope 인수인계 — 2026-10-02 / NEXT-6E R3 BLOCKED
 
+
+## 0. 최신 R3 복구 업데이트 — exact DEV 확보 후 진단 실행
+
+> 이 절은 아래의 `EVIDENCE_SOURCE_UNAVAILABLE` 중심 설명과 충돌하는 경우 우선한다. 아래 기존 내용은 최초 blocked 시점의 historical record로 보존한다.
+
+exact frozen Development artifact가 사용자 제공으로 확보되었고 canonical dataset identity가 일치했다.
+
+```text
+DEV source
+AVAILABLE EXPLICITLY
+
+dataset_id
+MACROCAL-DEV-7c3f6660b3aae03f
+
+dataset_hash
+7c3f6660b3aae03f46c4a3cd66e6652b56c01fc9ab9a00aea67de8a451cddfc1
+```
+
+따라서 기존 primary blocker였던:
+
+```text
+EVIDENCE_SOURCE_ACCESS_UNRESOLVED
+```
+
+는 해결되었다.
+
+R3 전용 DEV-only diagnostic이 구현/실행되었고 focused tests는 7 PASS다.
+
+현재 결과:
+
+```text
+A0 lineage
+MATHEMATICALLY_VERIFIED
+
+A1 native completeness
+MATHEMATICALLY_VERIFIED
+
+A2 W→X identity
+MATHEMATICALLY_VERIFIED
+
+A3 joint alignment
+MATHEMATICALLY_VERIFIED
+
+A4 continuity / atom compatibility
+ASSUMPTION_NOT_ACCEPTED
+
+A5 stationarity compatibility
+UNRESOLVED
+
+A6 strong-mixing model-use
+UNRESOLVED
+
+A7 median regularity
+ASSUMPTION_NOT_ACCEPTED
+
+A8 positive MAD / zero scale
+MATHEMATICALLY_VERIFIED
+
+A9 MAD local regularity
+ASSUMPTION_NOT_ACCEPTED
+
+A10 frozen multiplier preprocessor
+MATHEMATICALLY_VERIFIED
+```
+
+핵심 실질 blocker는 frozen Development feature가 강한 basis-point quantization / ties를 보인다는 점이다. 현재 R1 theorem route는 continuous joint law와 median/MAD local positive-density regularity를 요구하며 jitter는 금지되어 있다. 따라서 해당 가정들을 결과에 맞춰 억지로 승인하지 않는다.
+
+A10 frozen profile은 Development process에서 deterministic하게 계산되었다.
+
+```text
+coordinate m
+[1, 5, 10]
+
+lag cutoff L
+10
+
+bandwidth b
+22
+
+effective ell
+43
+
+manual fallback
+NO
+```
+
+현재 formal state:
+
+```text
+Method state
+METHOD_PROFILE_FROZEN
+
+Assumption Acceptance
+NOT_GRANTED
+
+G-A
+BLOCKED
+
+G-B
+BLOCKED
+
+Reference Adequacy
+UNRESOLVED
+
+V3 changed
+NO
+
+V4 created
+NO
+
+Evaluator implemented
+NO
+
+Production impact
+NONE
+```
+
+또한 이 대화는 diagnostic 실행 전에 과거 context retrieval에서 이미 금지된 인접 metadata가 노출된 incident가 있었으므로 `clean_isolation_certified=NO`로 fail-close 기록했다. 이번 진단 과정에서 새 prohibited-source retrieval은 하지 않았으며 실제 계산 입력은 explicit DEV artifact 하나뿐이다. 금지된 metadata 값은 이 문서에 재기록하지 않는다.
+
+중요:
+
+- 이제 문제는 **DEV 파일 부재가 아니다.**
+- 동일 R3를 반복 실행하는 것만으로 G-A가 PASS하지 않는다.
+- formal clean-isolation replay가 나중에 필요하더라도, 그것은 process blocker 하나만 제거한다.
+- 현재 substantive blocker는 quantization/continuity/median/MAD regularity와 stationarity/mixing acceptance다.
+- 따라서 다음 Track-A 작업은 이 blocker들을 실제로 해소할 별도 명세가 필요하다.
+- G-B도 여전히 BLOCKED이므로 S6C는 시작하지 않는다.
+
+---
+
 > 목적: ChatGPT 대화 최대 길이 도달로 새 채팅으로 넘어갈 때 프로젝트 흐름, 안전 규칙, 현재 GitHub 상태, 다음 작업 순서가 유실되지 않도록 하는 복구용 handoff 문서.
 >
 > 이 문서는 **현재 프로젝트 상태를 설명하는 문서**다. 새로운 구현 명세나 TASK SPEC이 아니다.
