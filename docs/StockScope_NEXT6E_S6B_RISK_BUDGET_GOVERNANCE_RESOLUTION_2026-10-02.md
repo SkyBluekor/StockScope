@@ -28,7 +28,7 @@ Metric semantics = DESIGNED
 τ_T = null / UNRESOLVED
 τ_L = null / UNRESOLVED
 τ_S = null / UNRESOLVED
-α_stat = null / TARGET_AND_AUTHORITY_DEPENT
+α_stat = null / TARGET_AND_AUTHORITY_DEPENDENT
 γ_repeat = null / REDEFINE_AFTER_METHOD_TARGET
 δ_MC = null / OUT_OF_SCOPE_S6C
 
@@ -99,12 +99,12 @@ metric = ECDF_SUP_DISTANCE
 unit = absolute probability difference
 domain = [0,1]
 policy meaning = maximum operationally acceptable movement for reuse of the declared empirical probability reference
-class = METHOD_INTERFAACE_DEPENDENT
+class = METHOD_INTERFACE_DEPENDENT
 value = null
 status = UNRESOLVED
 ```
 
-## τ_L
+### τ_L
 
 ```text
 metric = NORMALIZED_MEDIAN_SHIFT
@@ -175,7 +175,7 @@ Retain provenance categories:
 
 ```text
 1. EXISTING_PROJECT_REQUIREMENT
-2. _XTERNAL_DOMAIN_REQUIREMENT
+2. EXTERNAL_DOMAIN_REQUIREMENT
 3. FORMAL_STATISTICAL_ERROR_CONTROL
 4. NONE
 ```
@@ -337,7 +337,7 @@ status = UNRESOLVED
 verdict = POLICY_ENTRY_DESIGNED / NUMERIC_VALUE_UNJUSTIFIED
 ```
 
-### τ_L
+#### τ_L
 
 ```text
 value = null
@@ -397,7 +397,7 @@ policy_entries[]
   policy_version
   metric_id
   metric_contract_version
-  talue
+  value
   unit
   purpose
   harm
@@ -525,8 +525,8 @@ Policy entries are classified:
 | --- | --- |
 | τ_T | METHOD_INTERFACE_DEPENDENT |
 | τ_L | METHOD_INTERFACE_DEPENDENT |
-| τ_S | METHOD_INTERFACE_DEPENT |
-| α_stat | TARGET_AND_METHOD_DEPENT |
+| τ_S | METHOD_INTERFACE_DEPENDENT |
+| α_stat | TARGET_AND_METHOD_DEPENDENT |
 | γ_repeat | TARGET_REDEFINITION_REQUIRED |
 | δ_MC | S6C NUMERICAL LEDGER |
 
@@ -595,7 +595,7 @@ authority = NOT APPOINTED
 independent numeric evidence = NOT AVAILABLE
 
 target compatibility:
-  τ_T/τ_L/τ_S = METHOD_INTERFACE_DEPENT
+  τ_T/τ_L/τ_S = METHOD_INTERFACE_DEPENDENT
   α_stat = TARGET_AND_METHOD_DEPENDENT
   γ_repeat = TARGET_REDEFINITION_REQUIRED
 
