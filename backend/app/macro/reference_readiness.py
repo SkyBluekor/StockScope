@@ -13,13 +13,6 @@ from app.macro.validation_entry_gate import (
     NEXT6E_VALIDATION_ENTRY_GATE_CONTRACT_VERSION,
     OVERALL_SCOPE_REFERENCE_VALIDATION_ONLY,
 )
-from app.prospective.reference_capture import (
-    NEXT6E_PROSPECTIVE_REFERENCE_CAPTURE_CONTRACT_VERSION,
-    NEXT6E_PROSPECTIVE_REFERENCE_STORAGE_VERSION,
-    REFERENCE_TEMPORAL_MODE,
-)
-
-
 NEXT6E_REFERENCE_READINESS_CONTRACT_VERSION = (
     "VN_NEXT6E_S4_REFERENCE_READINESS_V1"
 )
@@ -57,6 +50,24 @@ class ReferenceReadinessError(RuntimeError):
     pass
 
 
+def _s3_contracts() -> dict[str, str]:
+    # Lazy import avoids app.macro <-> app.prospective package initialization
+    # cycles while keeping S3 as the single owner of its contract constants.
+    from app.prospective.reference_capture import (
+        NEXT6E_PROSPECTIVE_REFERENCE_CAPTURE_CONTRACT_VERSION,
+        NEXT6E_PROSPECTIVE_REFERENCE_STORAGE_VERSION,
+        REFERENCE_TEMPORAL_MODE,
+    )
+
+    return {
+        "capture_contract_version": (
+            NEXT6E_PROSPECTIVE_REFERENCE_CAPTURE_CONTRACT_VERSION
+        ),
+        "storage_version": NEXT6E_PROSPECTIVE_REFERENCE_STORAGE_VERSION,
+        "reference_temporal_mode": REFERENCE_TEMPORAL_MODE,
+    }
+
+
 class ProspectiveReferenceSummaryReader:
     """Read NEXT-6E-S3 reference-capture state without mutating runtime."""
 
@@ -84,6 +95,7 @@ class ProspectiveReferenceSummaryReader:
         }
 
     def read(self) -> dict[str, Any]:
+        s3 = _s3_contracts()
         with self._connect() as conn:
             tables = self._tables(conn)
             missing = sorted(_REQUIRED_REFERENCE_TABLES - tables)
@@ -93,9 +105,9 @@ class ProspectiveReferenceSummaryReader:
                     "reason": "PROSPECTIVE_REFERENCE_SCHEMA_MISSING",
                     "storage_version": None,
                     "capture_contract_version": (
-                        NEXT6E_PROSPECTIVE_REFERENCE_CAPTURE_CONTRACT_VERSION
+                        s3["capture_contract_version"]
                     ),
-                    "reference_temporal_mode": REFERENCE_TEMPORAL_MODE,
+                    "reference_temporal_mode": s3["reference_temporal_mode"],
                     "decision_input": False,
                     "signal_time_equivalence": False,
                     "completed_capture_count": 0,
@@ -115,15 +127,15 @@ class ProspectiveReferenceSummaryReader:
             storage_version = (
                 str(version_row["value"]) if version_row is not None else None
             )
-            if storage_version != NEXT6E_PROSPECTIVE_REFERENCE_STORAGE_VERSION:
+            if storage_version != s3["storage_version"]:
                 return {
                     "status": "NOT_READY",
                     "reason": "PROSPECTIVE_REFERENCE_SCHEMA_UNSUPPORTED",
                     "storage_version": storage_version,
                     "capture_contract_version": (
-                        NEXT6E_PROSPECTIVE_REFERENCE_CAPTURE_CONTRACT_VERSION
+                        s3["capture_contract_version"]
                     ),
-                    "reference_temporal_mode": REFERENCE_TEMPORAL_MODE,
+                    "reference_temporal_mode": s3["reference_temporal_mode"],
                     "decision_input": False,
                     "signal_time_equivalence": False,
                     "completed_capture_count": 0,
@@ -153,11 +165,11 @@ class ProspectiveReferenceSummaryReader:
                 continue
             if (
                 str(row["capture_contract_version"])
-                != NEXT6E_PROSPECTIVE_REFERENCE_CAPTURE_CONTRACT_VERSION
+                != s3["capture_contract_version"]
                 or str(row["storage_version"])
-                != NEXT6E_PROSPECTIVE_REFERENCE_STORAGE_VERSION
+                != s3["storage_version"]
                 or str(row["reference_temporal_mode"])
-                != REFERENCE_TEMPORAL_MODE
+                != s3["reference_temporal_mode"]
             ):
                 raise ReferenceReadinessError(
                     "Stored prospective reference contract mismatch."
@@ -185,9 +197,9 @@ class ProspectiveReferenceSummaryReader:
             "reason": None,
             "storage_version": storage_version,
             "capture_contract_version": (
-                NEXT6E_PROSPECTIVE_REFERENCE_CAPTURE_CONTRACT_VERSION
+                s3["capture_contract_version"]
             ),
-            "reference_temporal_mode": REFERENCE_TEMPORAL_MODE,
+            "reference_temporal_mode": s3["reference_temporal_mode"],
             "decision_input": False,
             "signal_time_equivalence": False,
             "completed_capture_count": len(completed),
@@ -414,15 +426,16 @@ def build_next6e_reference_readiness(
 
     _validate_entry_gate(entry_gate)
     _validate_development_report(entry_gate, development_report)
+    s3 = _s3_contracts()
 
     if prospective_reference.get("capture_contract_version") != (
-        NEXT6E_PROSPECTIVE_REFERENCE_CAPTURE_CONTRACT_VERSION
+        s3["capture_contract_version"]
     ):
         raise ReferenceReadinessError(
             "NEXT-6E-S3 capture contract mismatch."
         )
     if prospective_reference.get("reference_temporal_mode") != (
-        REFERENCE_TEMPORAL_MODE
+        s3["reference_temporal_mode"]
     ):
         raise ReferenceReadinessError(
             "Prospective reference temporal mode mismatch."
