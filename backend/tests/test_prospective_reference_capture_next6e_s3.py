@@ -727,7 +727,7 @@ def test_reference_module_has_no_network_or_evaluation_wiring() -> None:
         "ProspectiveEvaluator",
         "ProductionExitPolicyEngine",
         "StrategyChange",
-        "holding",
+        "app.holdings",
     ):
         assert forbidden not in source
 
