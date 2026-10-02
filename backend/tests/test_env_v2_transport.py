@@ -181,6 +181,37 @@ def test_transport_blocks_diverged_runtime_histories(
     assert _ids(a.simulation) == {"base", "a-branch"}
 
 
+def test_transport_detects_committed_wal_changes(
+    tmp_path: Path,
+) -> None:
+    shared = tmp_path / "GoogleDrive" / "StockScopeRuntime"
+    a = _locations(tmp_path / "pc-a")
+    configure_transport(shared, locations=a)
+    _make_simulation(a.simulation, "base")
+    post_sync(locations=a)
+
+    conn = sqlite3.connect(a.simulation)
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA wal_autocheckpoint=0")
+        conn.execute(
+            "INSERT INTO simulation_portfolio(id) VALUES('wal-change')"
+        )
+        conn.commit()
+
+        result = post_sync(locations=a)
+    finally:
+        conn.close()
+
+    assert result["status"] == "PUBLISHED"
+    assert "simulation:CONTENT_CHANGED" in result["reasons"]
+    bundles = [
+        path for path in (shared / "bundles").iterdir()
+        if path.is_dir()
+    ]
+    assert len(bundles) == 2
+
+
 def test_transport_does_not_publish_when_runtime_is_unchanged(
     tmp_path: Path,
 ) -> None:
