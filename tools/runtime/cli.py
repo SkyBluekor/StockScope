@@ -139,25 +139,23 @@ def main() -> int:
             return 0
 
         if args.command == "handoff" and args.handoff_command == "import":
-            _print_json(
-                import_handoff(
-                    args.bundle,
-                    domains=_domains(args.domains),
-                    strict=bool(args.strict),
-                )
+            result = import_handoff(
+                args.bundle,
+                domains=_domains(args.domains),
+                strict=bool(args.strict),
             )
-            return 0
+            _print_json(result)
+            return 2 if result["status"] == "BLOCKED" else 0
 
         if args.command == "bootstrap":
             if args.from_bundle is not None:
-                _print_json(
-                    import_handoff(
-                        args.from_bundle,
-                        domains=_domains(args.domains),
-                        strict=bool(args.strict),
-                    )
+                result = import_handoff(
+                    args.from_bundle,
+                    domains=_domains(args.domains),
+                    strict=bool(args.strict),
                 )
-                return 0
+                _print_json(result)
+                return 2 if result["status"] == "BLOCKED" else 0
             if args.new_simulation_history:
                 _print_json(
                     _bootstrap_new_simulation(
