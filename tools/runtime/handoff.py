@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import shutil
+import tempfile
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -163,6 +164,16 @@ def _manifest_file(path: Path) -> dict[str, Any]:
     }
 
 
+def sqlite_content_sha256(path: Path) -> str:
+    source = Path(path)
+    if not source.is_file():
+        raise DataToolError(f"SQLite content fingerprint 대상이 없습니다: {source}")
+    with tempfile.TemporaryDirectory(prefix="stockscope-sqlite-fingerprint-") as raw:
+        snapshot = Path(raw) / "snapshot.db"
+        sqlite_snapshot(source, snapshot)
+        return sha256_file(snapshot)
+
+
 def _domain_identity(
     *,
     previous: dict[str, Any] | None,
@@ -318,10 +329,9 @@ def export_handoff(
             sqlite_snapshot(source, target)
             validation = validator(target)
             snapshot_sha = sha256_file(target)
-            local_sha = sha256_file(source)
             identity, receipt = _domain_identity(
                 previous=state["domains"].get(domain),
-                local_content_sha256=local_sha,
+                local_content_sha256=snapshot_sha,
                 bundle_content_sha256=snapshot_sha,
                 bundle_id=bundle_id,
             )
@@ -511,7 +521,7 @@ def _plan_db_import(
     if not target.is_file():
         return {"domain": domain, "action": "INSTALL", "reason": "TARGET_ABSENT"}
 
-    current_hash = sha256_file(target)
+    current_hash = sqlite_content_sha256(target)
     incoming_hash = str(incoming.get("content_sha256") or "")
     if current_hash == incoming_hash:
         return {
@@ -719,7 +729,7 @@ def import_handoff(
         source = bundle / _DOMAIN_RELATIVE_PATHS[domain]
         target = _db_path(runtime, domain)
         _install_db(domain=domain, source=source, target=target)
-        current_hash = sha256_file(target)
+        current_hash = sqlite_content_sha256(target)
         state["domains"][domain] = {
             "domain_id": incoming["domain_id"],
             "snapshot_id": incoming["snapshot_id"],
@@ -742,7 +752,7 @@ def import_handoff(
             "domain_id": incoming["domain_id"],
             "snapshot_id": incoming["snapshot_id"],
             "parent_snapshot_id": incoming.get("parent_snapshot_id"),
-            "local_content_sha256": sha256_file(target),
+            "local_content_sha256": sqlite_content_sha256(target),
             "snapshot_content_sha256": incoming["content_sha256"],
             "last_bundle_id": manifest["bundle_id"],
             "updated_at": iso_now(),
