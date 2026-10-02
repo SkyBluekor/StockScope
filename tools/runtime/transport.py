@@ -12,7 +12,6 @@ from tools.data.common import (
     DataToolError,
     git_commit,
     iso_now,
-    sha256_file,
     write_json_atomic,
 )
 from tools.runtime.handoff import (
@@ -23,6 +22,7 @@ from tools.runtime.handoff import (
     export_handoff,
     import_handoff,
     inspect_handoff,
+    sqlite_content_sha256,
 )
 
 
@@ -657,7 +657,7 @@ def _local_domain_hashes(
     for domain in domains:
         path = _runtime_db_path(locations, domain)
         if path.is_file():
-            result[domain] = sha256_file(path)
+            result[domain] = sqlite_content_sha256(path)
     return result
 
 
