@@ -70,3 +70,73 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         run: npm run build
+
+
+  fresh-clone-windows:
+    name: Fresh Clone / Windows
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout clean repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Run canonical fresh setup
+        shell: powershell
+        run: .\setup.ps1
+
+      - name: Verify local startup contract without provider credentials
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_health.py
+
+      - name: Verify fresh runtime and no Drive dependency
+        shell: powershell
+        run: |
+          @'
+          import json
+          import sqlite3
+          from pathlib import Path
+
+          root = Path.cwd()
+          expected = {
+              "holdings": root / "backend/runtime/holdings/holdings.db",
+              "simulation": root / "backend/runtime/simulation/simulation.db",
+              "market": root / "backend/runtime/market_history/market_history.db",
+              "tracking": root / "backend/runtime/tracking/recommendation_tracking.db",
+              "macro": root / "backend/runtime/macro/macro.db",
+          }
+          missing = [name for name, path in expected.items() if not path.is_file()]
+          if missing:
+              raise SystemExit("Missing fresh runtime DBs: " + ", ".join(missing))
+
+          with sqlite3.connect(expected["holdings"]) as conn:
+              if conn.execute("SELECT COUNT(*) FROM holding_position").fetchone()[0] != 0:
+                  raise SystemExit("Fresh holdings is not empty")
+          with sqlite3.connect(expected["tracking"]) as conn:
+              if conn.execute("SELECT COUNT(*) FROM tracked_recommendation").fetchone()[0] != 0:
+                  raise SystemExit("Fresh tracking is not empty")
+          with sqlite3.connect(expected["market"]) as conn:
+              if conn.execute("SELECT COUNT(*) FROM stock_daily").fetchone()[0] != 0:
+                  raise SystemExit("Fresh market unexpectedly contains data")
+
+          transport = root / "backend/runtime/continuity/transport_config.json"
+          if transport.exists():
+              raise SystemExit("Fresh setup unexpectedly configured transport")
+
+          print(json.dumps({
+              "fresh_runtime": "PASS",
+              "market_data": "DATA_REQUIRED",
+              "google_drive_required": False,
+          }))
+          '@ | .\.venv\Scripts\python.exe -
