@@ -58,6 +58,7 @@ from app.strategy.production_selection_policy import (
 from tools.data.migrate_strategy_governance_vnp5s1 import (
     migrate_strategy_governance_store,
 )
+from tools.runtime.handoff import RuntimeLocations
 
 
 T0 = "2026-09-24T09:00:00+09:00"
@@ -1047,19 +1048,38 @@ def test_doctor_is_read_only_and_makes_no_network_request(tmp_path):
     assert report["requirements"]["full_chart_rows"] >= 252
 
 
-def test_bootstrap_runtime_is_repeatable_and_does_not_create_market_db(tmp_path, monkeypatch):
-    holdings = tmp_path / "runtime" / "holdings.db"
-    market = tmp_path / "runtime" / "market_history.db"
-    monkeypatch.setenv("STOCKSCOPE_HOLDINGS_DB", str(holdings))
-    monkeypatch.setenv("STOCKSCOPE_MARKET_STORE_DB", str(market))
+def test_bootstrap_runtime_is_repeatable_and_creates_fresh_runtime(tmp_path):
+    runtime = tmp_path / "runtime"
+    locations = RuntimeLocations(
+        holdings=runtime / "holdings" / "holdings.db",
+        simulation=runtime / "simulation" / "simulation.db",
+        market=runtime / "market_history" / "market_history.db",
+        tracking=runtime / "tracking" / "recommendation_tracking.db",
+        macro=runtime / "macro" / "macro.db",
+        strategy_selection=runtime / "strategy_selection",
+        continuity_state=runtime / "continuity" / "runtime_state.json",
+    )
 
     backup_root = tmp_path / "backups"
-    first = bootstrap_runtime(backup_root=backup_root)
-    second = bootstrap_runtime(backup_root=backup_root)
+    first = bootstrap_runtime(
+        backup_root=backup_root,
+        locations=locations,
+    )
+    second = bootstrap_runtime(
+        backup_root=backup_root,
+        locations=locations,
+    )
 
-    assert holdings.is_file()
-    assert not market.exists()
-    assert first["holdings_db"] == second["holdings_db"]
+    assert first["status"] == "COMPLETE"
+    assert second["status"] == "COMPLETE"
+    assert first["environment"] == "CURRENT"
+    assert second["environment"] == "CURRENT"
+    assert locations.holdings.is_file()
+    assert locations.market.is_file()
+    assert locations.simulation.is_file()
+    assert locations.tracking.is_file()
+    assert locations.macro.is_file()
+    assert second["market_data"]["status"] == "DATA_REQUIRED"
 
 
 def test_data_tools_do_not_run_scanner_ranking_or_delete_market_store():
@@ -1081,12 +1101,12 @@ def test_data_tools_do_not_run_scanner_ranking_or_delete_market_store():
     assert 'market_history.db").unlink' not in restore_source
 
 
-def test_setup_and_env_template_expose_data1_entrypoints():
+def test_setup_and_env_template_expose_runtime_entrypoints():
     root = Path(__file__).resolve().parents[2]
     setup = (root / "setup.ps1").read_text(encoding="utf-8")
     env_example = (root / ".env.example").read_text(encoding="utf-8")
 
-    assert "DATA.1 runtime bootstrap" in setup
+    assert "Preparing fresh-compatible runtime" in setup
     assert "tools\\data\\bootstrap_runtime.py" in setup
     assert "tools\\data\\doctor.py" in setup
     assert "STOCKSCOPE_HOLDINGS_DB=" in env_example
