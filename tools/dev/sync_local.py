@@ -38,9 +38,10 @@ from tools.data import migrate_watch_vnp4s1 as p4s1
 from tools.data import migrate_watch_observability_vnp4s2 as p4s2
 from tools.data import migrate_strategy_governance_vnp5s1 as p5s1
 from tools.data import migrate_event_evidence_vnp6s1 as p6s1
+from tools.data import migrate_prospective_reference_next6e_s3 as next6e_s3
 
 
-SYNC_VERSION = "LOCAL_SYNC_V1"
+SYNC_VERSION = "LOCAL_SYNC_V2"
 LOG_DIR = ROOT / "logs" / "local_sync"
 
 
@@ -82,6 +83,25 @@ class MigrationSpec:
     label: str
     detect: Callable[[RuntimePaths], MigrationStatus]
     run: Callable[[RuntimePaths], dict[str, Any]]
+
+
+MIGRATION_DEPENDENCIES: dict[str, tuple[str, ...]] = {
+    "VN-P3-S2": ("VN-P3-S1",),
+    "VN-P4-S1": ("VN-P3-S1",),
+    "VN-P4-S2": ("VN-P4-S1",),
+    "VN-P5-S1": ("VN-P2-S2",),
+    "NEXT-6E-S3": ("VN-P2-S2",),
+}
+
+SIMULATION_REQUIRED_MIGRATIONS = frozenset(
+    {
+        "VN-P2-S1",
+        "VN-P2-S2",
+        "VN-P5-S1",
+        "VN-P6-S1",
+        "NEXT-6E-S3",
+    }
+)
 
 
 def _tables(path: Path) -> set[str]:
@@ -439,6 +459,81 @@ def _detect_p6(paths: RuntimePaths) -> MigrationStatus:
     )
 
 
+def _detect_next6e_s3(paths: RuntimePaths) -> MigrationStatus:
+    if not paths.simulation.is_file():
+        return MigrationStatus(
+            "NEXT-6E-S3",
+            "Prospective Reference",
+            MigrationState.PREREQUISITE_MISSING,
+            f"DB missing: {paths.simulation}",
+        )
+
+    names = _tables(paths.simulation)
+    required_base = {
+        "prospective_schema_meta",
+        "prospective_capture_run",
+        "prospective_recommendation_sample",
+    }
+    missing_base = sorted(required_base - names)
+    if missing_base:
+        return MigrationStatus(
+            "NEXT-6E-S3",
+            "Prospective Reference",
+            MigrationState.PREREQUISITE_MISSING,
+            "missing Prospective base tables: " + ", ".join(missing_base),
+        )
+
+    expected = {
+        "prospective_reference_schema_meta",
+        "prospective_reference_capture",
+        "prospective_reference_attachment",
+    }
+    present = expected & names
+    if not present:
+        return MigrationStatus(
+            "NEXT-6E-S3",
+            "Prospective Reference",
+            MigrationState.MISSING,
+        )
+    if present != expected:
+        return MigrationStatus(
+            "NEXT-6E-S3",
+            "Prospective Reference",
+            MigrationState.PARTIAL,
+            "partial tables; missing: " + ", ".join(sorted(expected - names)),
+        )
+
+    actual = _meta_value(
+        paths.simulation,
+        "prospective_reference_schema_meta",
+    )
+    if actual != next6e_s3.NEXT6E_PROSPECTIVE_REFERENCE_STORAGE_VERSION:
+        return MigrationStatus(
+            "NEXT-6E-S3",
+            "Prospective Reference",
+            MigrationState.INCOMPATIBLE,
+            "prospective_reference_schema_meta.schema_version="
+            f"{actual!r}, expected="
+            f"{next6e_s3.NEXT6E_PROSPECTIVE_REFERENCE_STORAGE_VERSION!r}",
+        )
+    return MigrationStatus(
+        "NEXT-6E-S3",
+        "Prospective Reference",
+        MigrationState.CURRENT,
+    )
+
+
+def _run_next6e_s3(paths: RuntimePaths) -> dict[str, Any]:
+    result = next6e_s3.migrate_prospective_reference(
+        simulation_db=paths.simulation,
+    )
+    if result.get("historical_backfill_performed") is not False:
+        raise DataToolError(
+            "NEXT-6E-S3 migration이 historical backfill을 수행했습니다."
+        )
+    return result
+
+
 def _run_p2s1(paths: RuntimePaths) -> dict[str, Any]:
     return p2s1.migrate_feedback(simulation_db=paths.simulation)
 
@@ -623,6 +718,12 @@ MIGRATIONS: tuple[MigrationSpec, ...] = (
         _run_p5s1,
     ),
     MigrationSpec("VN-P6-S1", "Event Evidence", _detect_p6, _run_p6s1),
+    MigrationSpec(
+        "NEXT-6E-S3",
+        "Prospective Reference",
+        _detect_next6e_s3,
+        _run_next6e_s3,
+    ),
 )
 
 
@@ -702,11 +803,120 @@ def _verify_p5_p6(paths: RuntimePaths) -> dict[str, Any]:
     }
 
 
+def _is_deferred_for_missing_simulation(
+    status: MigrationStatus,
+    paths: RuntimePaths,
+) -> bool:
+    return (
+        not paths.simulation.is_file()
+        and status.key in SIMULATION_REQUIRED_MIGRATIONS
+        and status.state is MigrationState.PREREQUISITE_MISSING
+    )
+
+
+def _plan_action(
+    status: MigrationStatus,
+    status_by_key: dict[str, MigrationStatus],
+    paths: RuntimePaths,
+) -> str:
+    if status.state is MigrationState.CURRENT:
+        return "NO_ACTION"
+    if status.state is MigrationState.NOT_APPLICABLE:
+        return "OPTIONAL"
+    if status.state in {
+        MigrationState.PARTIAL,
+        MigrationState.INCOMPATIBLE,
+    }:
+        return "BLOCKED"
+
+    if _is_deferred_for_missing_simulation(status, paths):
+        return "WAITING_FOR_SIMULATION_RESTORE"
+
+    dependencies = MIGRATION_DEPENDENCIES.get(status.key, ())
+    if dependencies:
+        blocked_dependency = any(
+            status_by_key.get(key) is None
+            or status_by_key[key].state
+            in {
+                MigrationState.PARTIAL,
+                MigrationState.INCOMPATIBLE,
+            }
+            for key in dependencies
+        )
+        if blocked_dependency:
+            return "BLOCKED"
+        pending = [
+            key
+            for key in dependencies
+            if status_by_key[key].state is not MigrationState.CURRENT
+        ]
+        if pending:
+            return "APPLY_AFTER:" + ",".join(pending)
+
+    if status.state is MigrationState.MISSING:
+        return "APPLY"
+    if status.state is MigrationState.PREREQUISITE_MISSING:
+        return "BLOCKED"
+    return "BLOCKED"
+
+
+def build_runtime_plan(paths: RuntimePaths) -> dict[str, Any]:
+    statuses = inspect_all(paths)
+    status_by_key = {item.key: item for item in statuses}
+    planned: list[dict[str, Any]] = []
+    for item in statuses:
+        planned.append(
+            {
+                "key": item.key,
+                "label": item.label,
+                "state": item.state.value,
+                "detail": item.detail,
+                "plan": _plan_action(item, status_by_key, paths),
+            }
+        )
+
+    actions = {str(item["plan"]) for item in planned}
+    if "BLOCKED" in actions:
+        environment = "BLOCKED"
+    elif actions & {
+        "APPLY",
+        "WAITING_FOR_SIMULATION_RESTORE",
+    } or any(action.startswith("APPLY_AFTER:") for action in actions):
+        environment = "PARTIAL_RUNTIME"
+    else:
+        environment = "CURRENT"
+
+    return {
+        "environment": environment,
+        "paths": {
+            "holdings": str(paths.holdings),
+            "market": str(paths.market),
+            "simulation": str(paths.simulation),
+        },
+        "statuses": planned,
+    }
+
+
 def final_verify(paths: RuntimePaths) -> dict[str, Any]:
     holdings = validate_holdings_db(paths.holdings)
     market = validate_market_db(paths.market)
-    simulation = validate_simulation_db(paths.simulation)
-    governance = _verify_p5_p6(paths)
+
+    if paths.simulation.is_file():
+        simulation: dict[str, Any] = validate_simulation_db(paths.simulation)
+        governance: dict[str, Any] = _verify_p5_p6(paths)
+    else:
+        simulation = {
+            "status": "ABSENT",
+            "path": str(paths.simulation),
+        }
+        governance = {
+            "status": "NOT_AVAILABLE",
+            "operating_strategies": None,
+            "no_trade_registered": False,
+            "event_evidence": "NOT_AVAILABLE",
+            "prediction_enabled": False,
+        }
+
     statuses = inspect_all(paths)
     invalid_final = [
         status
@@ -716,6 +926,7 @@ def final_verify(paths: RuntimePaths) -> dict[str, Any]:
             MigrationState.CURRENT,
             MigrationState.NOT_APPLICABLE,
         }
+        and not _is_deferred_for_missing_simulation(status, paths)
     ]
     if invalid_final:
         raise DataToolError(
@@ -740,53 +951,69 @@ def sync_runtime(
     backup_factory: Callable[..., Path] = create_backup,
 ) -> dict[str, Any]:
     runtime = paths or RuntimePaths.current()
-    statuses = inspect_all(runtime)
-    blocked = _blocking(statuses)
-    if blocked:
-        raise DataToolError(
-            "Local Sync blocked: "
-            + " | ".join(
-                f"{item.key} {item.state.value}"
-                + (f" ({item.detail})" if item.detail else "")
-                for item in blocked
-            )
-        )
+    initial_plan = build_runtime_plan(runtime)
 
-    missing = [
-        spec
-        for spec, status in zip(MIGRATIONS, statuses)
-        if status.state is MigrationState.MISSING
-    ]
     if check_only:
         return {
             "sync_version": SYNC_VERSION,
             "check_only": True,
             "backup": None,
             "migrated": [],
-            "statuses": [
-                {
-                    "key": item.key,
-                    "label": item.label,
-                    "state": item.state.value,
-                    "detail": item.detail,
-                }
-                for item in statuses
+            "deferred": [
+                item["key"]
+                for item in initial_plan["statuses"]
+                if item["plan"] == "WAITING_FOR_SIMULATION_RESTORE"
             ],
+            **initial_plan,
         }
+
+    hard_blocked = [
+        item
+        for item in initial_plan["statuses"]
+        if item["plan"] == "BLOCKED"
+    ]
+    if hard_blocked:
+        raise DataToolError(
+            "Local Sync blocked: "
+            + " | ".join(
+                f"{item['key']} {item['state']}"
+                + (f" ({item['detail']})" if item.get("detail") else "")
+                for item in hard_blocked
+            )
+        )
 
     backup_path: Path | None = None
     migrated: list[dict[str, Any]] = []
-    if missing:
-        backup_path = backup_factory()
-        for spec in missing:
+
+    # Re-detect immediately before each migration. This lets an earlier
+    # migration satisfy a later prerequisite in the same sync run.
+    for _ in range(len(MIGRATIONS) + 1):
+        progress = False
+        for spec in MIGRATIONS:
             before = spec.detect(runtime)
-            if before.state is MigrationState.CURRENT:
+            if before.state in {
+                MigrationState.CURRENT,
+                MigrationState.NOT_APPLICABLE,
+            }:
                 continue
-            if before.state is not MigrationState.MISSING:
+            if _is_deferred_for_missing_simulation(before, runtime):
+                continue
+            if before.state in {
+                MigrationState.PARTIAL,
+                MigrationState.INCOMPATIBLE,
+            }:
                 raise DataToolError(
-                    f"{spec.key} migration 직전 상태가 안전하지 않습니다: "
+                    f"{spec.key} migration 상태가 안전하지 않습니다: "
                     f"{before.state.value} {before.detail}"
                 )
+            if before.state is MigrationState.PREREQUISITE_MISSING:
+                continue
+            if before.state is not MigrationState.MISSING:
+                continue
+
+            if backup_path is None:
+                backup_path = backup_factory()
+
             result = spec.run(runtime)
             after = spec.detect(runtime)
             if after.state is not MigrationState.CURRENT:
@@ -801,38 +1028,64 @@ def sync_runtime(
                     "result": result,
                 }
             )
+            progress = True
+
+        if not progress:
+            break
+
+    unresolved = [
+        item
+        for item in inspect_all(runtime)
+        if item.state
+        not in {
+            MigrationState.CURRENT,
+            MigrationState.NOT_APPLICABLE,
+        }
+        and not _is_deferred_for_missing_simulation(item, runtime)
+    ]
+    if unresolved:
+        raise DataToolError(
+            "Local Sync unresolved prerequisites: "
+            + " | ".join(
+                f"{item.key} {item.state.value}"
+                + (f" ({item.detail})" if item.detail else "")
+                for item in unresolved
+            )
+        )
 
     verification = final_verify(runtime)
-    final_statuses = inspect_all(runtime)
+    final_plan = build_runtime_plan(runtime)
+    deferred = [
+        item["key"]
+        for item in final_plan["statuses"]
+        if item["plan"] == "WAITING_FOR_SIMULATION_RESTORE"
+    ]
     return {
         "sync_version": SYNC_VERSION,
         "check_only": False,
         "backup": str(backup_path) if backup_path else None,
         "migrated": migrated,
-        "statuses": [
-            {
-                "key": item.key,
-                "label": item.label,
-                "state": item.state.value,
-                "detail": item.detail,
-            }
-            for item in final_statuses
-        ],
+        "deferred": deferred,
+        **final_plan,
         "verification": verification,
         "secrets": "UNCHANGED",
         "external_network_requests": 0,
     }
 
 
-def _print_statuses(statuses: list[dict[str, Any]], migrated: set[str]) -> None:
+def _print_statuses(
+    statuses: list[dict[str, Any]],
+    migrated: set[str],
+) -> None:
     for item in statuses:
         suffix = ""
         if item["key"] in migrated:
             suffix = " / MIGRATED"
+        plan = str(item.get("plan") or "NO_ACTION")
         detail = f"  {item['detail']}" if item.get("detail") else ""
         print(
-            f"  {item['key']:<10} {item['label']:<22} "
-            f"{item['state']}{suffix}{detail}"
+            f"  {item['key']:<12} {item['label']:<24} "
+            f"{item['state']:<22} {plan}{suffix}{detail}"
         )
 
 
@@ -841,35 +1094,50 @@ def _print_result(result: dict[str, Any]) -> None:
     print("STOCKSCOPE LOCAL SYNC")
     print("=" * 78)
     print(f"Mode                    {'CHECK ONLY' if result['check_only'] else 'SYNC'}")
+    print(f"Environment             {result['environment']}")
+    print(f"Holdings path           {result['paths']['holdings']}")
+    print(f"Market path             {result['paths']['market']}")
+    print(f"Simulation path         {result['paths']['simulation']}")
     migrated = {item["key"] for item in result.get("migrated", [])}
     print("")
     print("Runtime migrations")
     _print_statuses(result["statuses"], migrated)
     print("")
+
+    deferred = list(result.get("deferred") or [])
     if result["check_only"]:
-        missing = [
-            item for item in result["statuses"] if item["state"] == "MISSING"
-        ]
-        print(
-            "Action required         "
-            + ("YES" if missing else "NO")
+        action_required = any(
+            str(item.get("plan")) not in {"NO_ACTION", "OPTIONAL"}
+            for item in result["statuses"]
         )
+        print("Action required         " + ("YES" if action_required else "NO"))
+        if deferred:
+            print("Simulation restore      REQUIRED")
         print("DB writes               0")
         print("Backup                  SKIPPED")
         return
 
     print(
         "Backup                  "
-        + (result["backup"] if result.get("backup") else "SKIPPED (all CURRENT)")
+        + (result["backup"] if result.get("backup") else "SKIPPED (no migration writes)")
     )
+    if deferred:
+        print("Simulation restore      REQUIRED")
+        print("Deferred migrations     " + ", ".join(deferred))
     print("Secrets                 UNCHANGED")
     print("External network        0")
     gov = result["verification"]["governance"]
-    print(f"Operating strategies    {gov['operating_strategies']}")
-    print("NO_TRADE registered     NO")
-    print("Prediction              DISABLED")
+    if gov.get("operating_strategies") is not None:
+        print(f"Operating strategies    {gov['operating_strategies']}")
+        print("NO_TRADE registered     NO")
+        print("Prediction              DISABLED")
+    else:
+        print("Simulation governance   NOT AVAILABLE")
     print("")
-    print("LOCAL ENVIRONMENT READY")
+    if deferred:
+        print("LOCAL ENVIRONMENT PARTIAL - RESTORE REQUIRED")
+    else:
+        print("LOCAL ENVIRONMENT READY")
 
 
 def build_parser() -> argparse.ArgumentParser:
