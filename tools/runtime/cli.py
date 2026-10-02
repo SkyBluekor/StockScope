@@ -182,6 +182,9 @@ def build_parser() -> argparse.ArgumentParser:
     reconcile.add_argument("--prefer-remote", action="store_true")
     reconcile.add_argument("--confirm", action="store_true")
     reconcile.add_argument("--domains", help="쉼표 구분 domain 목록")
+
+    checkpoint = transport_sub.add_parser("checkpoint")
+    checkpoint.add_argument("--confirm", action="store_true")
     return parser
 
 
@@ -250,6 +253,12 @@ def main() -> int:
                     confirm=bool(args.confirm),
                     domains=_domains(args.domains),
                 )
+            elif args.transport_command == "checkpoint":
+                if not args.confirm:
+                    raise DataToolError(
+                        "Runtime checkpoint publish에는 --confirm이 필요합니다."
+                    )
+                result = transport_post_sync(force_checkpoint=True)
             else:
                 raise DataToolError("지원하지 않는 transport command입니다.")
             _print_transport(result)
