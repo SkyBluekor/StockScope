@@ -1,8 +1,11 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("status", "sync")]
-    [string]$Command = "status"
+    [ValidateSet("status", "sync", "handoff", "bootstrap")]
+    [string]$Command = "status",
+
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$CommandArgs
 )
 
 $ErrorActionPreference = "Stop"
@@ -22,6 +25,14 @@ switch ($Command) {
     }
     "sync" {
         & (Join-Path $Root "sync_local.ps1")
+        exit $LASTEXITCODE
+    }
+    "handoff" {
+        & $Python (Join-Path $Root "tools\runtime\cli.py") handoff @CommandArgs
+        exit $LASTEXITCODE
+    }
+    "bootstrap" {
+        & $Python (Join-Path $Root "tools\runtime\cli.py") bootstrap @CommandArgs
         exit $LASTEXITCODE
     }
 }
