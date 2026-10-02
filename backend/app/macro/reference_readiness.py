@@ -327,6 +327,66 @@ def _next_allowed_scope(
     }
 
 
+def _coverage_summary(
+    *,
+    development_report: dict[str, Any],
+    prospective_reference: dict[str, Any],
+) -> dict[str, Any]:
+    summary = development_report.get("summary") or {}
+    return {
+        "development": {
+            "samples": int(summary.get("sample_count") or 0),
+            "unique_days": int(
+                summary.get("unique_trading_day_count") or 0
+            ),
+            "unique_tickers": int(
+                summary.get("unique_ticker_count") or 0
+            ),
+        },
+        "macro": dict(summary.get("macro") or {}),
+        "market_impact": {
+            "market_reader": dict(
+                summary.get("market_reader") or {}
+            ),
+            "impact": dict(summary.get("impact") or {}),
+        },
+        "event": dict(summary.get("event") or {}),
+        "sector": dict(summary.get("sector") or {}),
+        "composition": dict(summary.get("composition") or {}),
+        "prospective": {
+            "completed_capture_count": int(
+                prospective_reference.get("completed_capture_count") or 0
+            ),
+            "attachment_count": int(
+                prospective_reference.get("attachment_count") or 0
+            ),
+        },
+    }
+
+
+def _source_availability(
+    *,
+    development_report: dict[str, Any],
+    prospective_reference: dict[str, Any],
+) -> dict[str, Any]:
+    summary = development_report.get("summary") or {}
+    return {
+        "development": {
+            "status": development_report.get("status"),
+            "unavailable_reason": development_report.get(
+                "unavailable_reason"
+            ),
+        },
+        "macro": dict(summary.get("macro") or {}),
+        "market_reader": dict(summary.get("market_reader") or {}),
+        "event": dict(summary.get("event") or {}),
+        "prospective": {
+            "status": prospective_reference.get("status"),
+            "reason": prospective_reference.get("reason"),
+        },
+    }
+
+
 def _governance() -> dict[str, Any]:
     return {
         "claim_scope": "REFERENCE_READINESS_ONLY",
@@ -428,6 +488,15 @@ def build_next6e_reference_readiness(
         ),
     }
 
+    coverage_summary = _coverage_summary(
+        development_report=development_report,
+        prospective_reference=prospective,
+    )
+    source_availability = _source_availability(
+        development_report=development_report,
+        prospective_reference=prospective,
+    )
+
     identity_payload = {
         "contract_version": NEXT6E_REFERENCE_READINESS_CONTRACT_VERSION,
         "entry_gate": {
@@ -436,6 +505,8 @@ def build_next6e_reference_readiness(
         },
         "development_reference": development,
         "prospective_reference": prospective,
+        "coverage_summary": coverage_summary,
+        "source_availability": source_availability,
         "readiness_state": state,
         "next_allowed_scope": next_scope,
         "blockers": list(entry_gate.get("blockers") or []),
