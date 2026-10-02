@@ -33,8 +33,8 @@
 - Git
 - Python 3.11 이상
 - Node.js LTS / npm
-- KRX OPEN API 인증키
-- OpenDART 인증키
+
+API 키는 설치 자체의 필수조건이 아닙니다. KRX, OpenDART, KIS, FRED, NAVER 등 외부 provider를 사용하는 기능은 해당 기능을 사용할 때 자신의 credential을 설정하면 됩니다.
 
 ### 2. 저장소 Clone
 
@@ -43,38 +43,10 @@ git clone <YOUR_GITHUB_REPOSITORY_URL>
 cd StockScope
 ```
 
-### 3. API 키 발급
+### 3. 최초 설치
 
-상세 절차는 [`docs/API_KEYS.md`](docs/API_KEYS.md)를 참고하세요.
+`setup.ps1`은 Fresh Clone의 canonical 설치 진입점입니다. API 키 설정 전에도 실행할 수 있습니다.
 
-StockScope V1에서 KRX는 아래 6개 서비스 활용 승인을 사용합니다.
-
-1. 유가증권 일별매매정보
-2. 코스닥 일별매매정보
-3. 유가증권 종목기본정보
-4. 코스닥 종목기본정보
-5. KOSPI 시리즈 일별시세정보
-6. KOSDAQ 시리즈 일별시세정보
-
-### 4. `.env` 생성
-
-루트의 `.env.example`을 복사합니다.
-
-```powershell
-Copy-Item .env.example .env
-```
-
-`.env`에 본인의 키를 입력합니다.
-
-```env
-KRX_API_KEY=본인의_KRX_인증키
-DART_API_KEY=본인의_OpenDART_인증키
-ENVIRONMENT=development
-```
-
-`.env`는 `.gitignore`에 포함되어 있으며 **절대로 GitHub에 커밋하지 않습니다.**
-
-### 5. 최초 설치
 
 먼저 Python/Node 설치 여부를 확인할 수 있습니다.
 
@@ -108,16 +80,34 @@ Unblock-File .\run-dev.ps1
 
 `setup.ps1`은 다음을 수행합니다.
 
-- Python / Node.js / npm 사전 검사
-- `.venv` 생성
-- **검증된 FastAPI/Starlette 버전으로 의존성 설치/복구**
-- 백엔드 테스트 실행
+- Python 3.11+ / Node.js / npm 사전 검사
+- `.venv` 생성 및 backend dependency 설치/복구
+- backend import smoke 검증
 - `package-lock.json`이 있으면 `npm ci`, 없으면 `npm install`
-- 프론트 빌드 검증
+- frontend build 검증
+- `.env`가 없으면 `.env.example`을 로컬 `.env`로 복사하되 credential은 비워 둠
+- Holdings / Simulation / Tracking / Macro / Market의 실제 base schema 준비
+- dependency-aware runtime migration을 CURRENT까지 적용
+- Market schema readiness와 실제 market data readiness를 별도 표시
+- Google Drive 없이도 신규 runtime 준비
+
+기존 `.env`와 사용자 runtime은 덮어쓰지 않습니다. 기존 runtime에 migration write가 필요하면 기존 backup 경로를 사용합니다.
 
 > `.venv`를 수동으로 Activate하지 않아도 `setup.ps1`과 `run-dev.ps1`은 `.venv\Scripts\python.exe`를 직접 사용합니다.
 
-### 6. 개발 서버 실행
+### 4. API 설정
+
+상세 발급 절차는 [`docs/API_KEYS.md`](docs/API_KEYS.md)를 참고하세요. 설치 전 또는 설치 후에 설정할 수 있습니다.
+
+```env
+KRX_API_KEY=본인의_KRX_인증키
+DART_API_KEY=본인의_OpenDART_인증키
+ENVIRONMENT=development
+```
+
+필요한 provider만 설정하면 됩니다. 설정이 없더라도 로컬 runtime 준비와 기본 앱 기동은 가능하며, 데이터 의존 기능은 `ACTION_REQUIRED` / `DATA_REQUIRED` 상태로 안내됩니다. `.env`는 **절대로 GitHub에 커밋하지 않습니다.**
+
+### 5. 개발 서버 실행
 
 ```powershell
 .\run-dev.ps1
@@ -126,6 +116,37 @@ Unblock-File .\run-dev.ps1
 - Frontend: http://127.0.0.1:5173
 - Backend: http://127.0.0.1:8000
 - Swagger: http://127.0.0.1:8000/docs
+
+## PC별 사용 흐름
+
+### 완전히 새로운 사용자
+
+```text
+git clone → .\setup.ps1 → 필요한 API 설정 → .\run-dev.ps1
+```
+
+이 흐름에는 기존 사용자의 Google Drive, runtime DB, handoff bundle이 필요하지 않습니다.
+
+### 기존 사용자 / 새 PC
+
+```text
+git clone → .\setup.ps1 → 기존 handoff 또는 Google Drive transport 설정/복원 → .\stockscope.ps1 sync
+```
+
+Fresh setup이 만든 **검증된 empty runtime**은 기존 handoff를 복원할 수 있지만, setup 이후 실제 사용자 데이터가 생긴 DB는 기존 conflict/lineage 보호를 그대로 적용합니다.
+
+### 기존 사용자 / 기존 PC
+
+```powershell
+git pull --ff-only origin main
+.\stockscope.ps1 sync
+```
+
+`setup.ps1`을 반복 실행해도 기존 사용자 데이터와 설정을 보존하도록 설계되어 있습니다.
+
+### Market 상태
+
+`Market schema CURRENT`와 `Market data READY`는 다른 상태입니다. Fresh setup은 빈 Market Store의 schema를 정상 준비하지만 가격/지수 데이터를 더미로 채우지 않습니다. 실제 데이터가 없으면 `DATA_REQUIRED`로 표시됩니다.
 
 ## 테스트
 

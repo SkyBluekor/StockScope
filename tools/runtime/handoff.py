@@ -40,6 +40,10 @@ from tools.data.strategy_selection_runtime import (
     state_file_paths,
     validate_strategy_selection_runtime,
 )
+from tools.runtime.bootstrap_state import (
+    consume_domain as consume_fresh_bootstrap_domain,
+    domain_hash as fresh_bootstrap_domain_hash,
+)
 
 
 HANDOFF_FORMAT_VERSION = 1
@@ -521,6 +525,7 @@ def _plan_db_import(
     receipt: dict[str, Any] | None,
     is_ancestor: Callable[[str, str, str], bool] | None = None,
     allow_unknown_lineage_replace: bool = False,
+    verified_fresh_bootstrap_hash: str | None = None,
 ) -> dict[str, Any]:
     if not target.is_file():
         return {"domain": domain, "action": "INSTALL", "reason": "TARGET_ABSENT"}
@@ -545,6 +550,16 @@ def _plan_db_import(
     )
 
     if not local_domain_id or not local_snapshot:
+        if (
+            verified_fresh_bootstrap_hash
+            and current_hash == verified_fresh_bootstrap_hash
+        ):
+            return {
+                "domain": domain,
+                "action": "REPLACE_FRESH_BOOTSTRAP",
+                "reason": "VERIFIED_EMPTY_BOOTSTRAP",
+                "current_hash": current_hash,
+            }
         if allow_unknown_lineage_replace:
             return {
                 "domain": domain,
@@ -705,6 +720,10 @@ def import_handoff(
                 receipt=state["domains"].get(domain),
                 is_ancestor=is_ancestor,
                 allow_unknown_lineage_replace=allow_unknown_lineage_replace,
+                verified_fresh_bootstrap_hash=fresh_bootstrap_domain_hash(
+                    runtime.continuity_state,
+                    domain,
+                ),
             )
         )
 
@@ -739,6 +758,7 @@ def import_handoff(
             "INSTALL",
             "FAST_FORWARD",
             "REPLACE_UNKNOWN_LINEAGE",
+            "REPLACE_FRESH_BOOTSTRAP",
         }:
             continue
         domain = str(item["domain"])
@@ -757,6 +777,7 @@ def import_handoff(
             "updated_at": iso_now(),
         }
         installed.append(domain)
+        consume_fresh_bootstrap_domain(runtime.continuity_state, domain)
         receipts_changed = True
 
     for item in plans:
@@ -774,6 +795,7 @@ def import_handoff(
             "last_bundle_id": manifest["bundle_id"],
             "updated_at": iso_now(),
         }
+        consume_fresh_bootstrap_domain(runtime.continuity_state, domain)
         receipts_changed = True
 
     if receipts_changed:
