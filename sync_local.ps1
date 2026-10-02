@@ -122,6 +122,19 @@ try {
     Write-Host ("Python venv             PASS  {0}" -f $Python)
     Write-Host ""
 
+    $TransportCli = Join-Path $Root "tools\runtime\cli.py"
+    if (Test-Path $TransportCli -PathType Leaf) {
+        if ($CheckOnly) {
+            & $Python $TransportCli transport status
+        } else {
+            & $Python $TransportCli transport pre-sync
+        }
+        $TransportPreExit = $LASTEXITCODE
+        if ($TransportPreExit -ne 0) {
+            Fail "Runtime transport pre-sync failed with exit code $TransportPreExit."
+        }
+    }
+
     $Arguments = @((Join-Path $Root "tools\dev\sync_local.py"))
     if ($CheckOnly) {
         $Arguments += "--check-only"
@@ -143,6 +156,15 @@ try {
     $MacroExit = $LASTEXITCODE
     if ($MacroExit -ne 0) {
         Fail "Macro artifact synchronization failed with exit code $MacroExit."
+    }
+
+    if (-not $CheckOnly -and (Test-Path $TransportCli -PathType Leaf)) {
+        Write-Host ""
+        & $Python $TransportCli transport post-sync
+        $TransportPostExit = $LASTEXITCODE
+        if ($TransportPostExit -ne 0) {
+            Fail "Runtime transport post-sync failed with exit code $TransportPostExit."
+        }
     }
 
     Write-Host ""
