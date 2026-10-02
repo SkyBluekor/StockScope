@@ -9,6 +9,14 @@ from .models import (
     EvaluationProtocolSpec,
     ProspectiveCaptureRequest,
 )
+from .reference_capture import (
+    NEXT6E_PROSPECTIVE_REFERENCE_CAPTURE_CONTRACT_VERSION,
+    NEXT6E_PROSPECTIVE_REFERENCE_CUTOFF_POLICY_VERSION,
+    NEXT6E_PROSPECTIVE_REFERENCE_STORAGE_VERSION,
+    REFERENCE_TEMPORAL_MODE,
+    ProspectiveReferenceCaptureError,
+    ProspectiveReferenceCaptureService,
+)
 from .service import ProspectiveService
 
 __all__ = [
@@ -16,6 +24,12 @@ __all__ = [
     "ProspectiveCatalogError",
     "ProspectiveEvaluationError",
     "ProspectiveEvaluator",
+    "ProspectiveReferenceCaptureService",
+    "ProspectiveReferenceCaptureError",
+    "NEXT6E_PROSPECTIVE_REFERENCE_CAPTURE_CONTRACT_VERSION",
+    "NEXT6E_PROSPECTIVE_REFERENCE_STORAGE_VERSION",
+    "NEXT6E_PROSPECTIVE_REFERENCE_CUTOFF_POLICY_VERSION",
+    "REFERENCE_TEMPORAL_MODE",
     "ProspectiveService",
     "EvaluationProtocolSpec",
     "ProspectiveCaptureRequest",
