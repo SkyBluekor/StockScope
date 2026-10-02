@@ -155,6 +155,13 @@ from app.macro.validation_entry_gate import (
     OVERALL_SCOPE_REFERENCE_VALIDATION_ONLY,
     build_next6e_validation_entry_gate,
 )
+from app.macro.reference_readiness import (
+    NEXT6E_REFERENCE_READINESS_CONTRACT_VERSION,
+    ProspectiveReferenceSummaryReader,
+    ReferenceReadinessError,
+    assess_next6e_reference_readiness,
+    build_next6e_reference_readiness,
+)
 from app.macro.store import (
     MACRO_META_EXPECTED,
     MACRO_STORE_SCHEMA_VERSION,
@@ -277,7 +284,12 @@ __all__ = [
     "MACRO_META_EXPECTED",
     "MACRO_STORE_SCHEMA_VERSION",
     "NEXT6E_VALIDATION_ENTRY_GATE_CONTRACT_VERSION",
+    "NEXT6E_REFERENCE_READINESS_CONTRACT_VERSION",
     "OVERALL_SCOPE_REFERENCE_VALIDATION_ONLY",
+    "ProspectiveReferenceSummaryReader",
+    "ReferenceReadinessError",
+    "assess_next6e_reference_readiness",
+    "build_next6e_reference_readiness",
     "build_next6e_validation_entry_gate",
     "MACRO_STORE_TABLES",
 ]
