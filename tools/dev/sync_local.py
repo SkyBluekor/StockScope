@@ -15,6 +15,9 @@ for candidate in (ROOT, BACKEND):
     if str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
+from app.strategy.production_selection_policy import (
+    DEFAULT_RUNTIME_DIR as DEFAULT_STRATEGY_SELECTION_RUNTIME_DIR,
+)
 from tools.data.backup_runtime import create_backup
 from tools.data.common import (
     DataToolError,
@@ -102,6 +105,22 @@ SIMULATION_REQUIRED_MIGRATIONS = frozenset(
         "NEXT-6E-S3",
     }
 )
+
+
+MIGRATION_WRITE_DOMAINS: dict[str, frozenset[str]] = {
+    "VN-P1-S1": frozenset({"holdings", "market", "simulation"}),
+    "VN-P1-S2": frozenset({"holdings", "simulation"}),
+    "VN-P1-S3": frozenset({"simulation"}),
+    "VN-P2-S1": frozenset({"simulation"}),
+    "VN-P2-S2": frozenset({"simulation"}),
+    "VN-P3-S1": frozenset({"holdings"}),
+    "VN-P3-S2": frozenset({"holdings"}),
+    "VN-P4-S1": frozenset({"holdings"}),
+    "VN-P4-S2": frozenset({"holdings"}),
+    "VN-P5-S1": frozenset({"simulation"}),
+    "VN-P6-S1": frozenset({"simulation"}),
+    "NEXT-6E-S3": frozenset({"simulation"}),
+}
 
 
 def _tables(path: Path) -> set[str]:
@@ -944,6 +963,37 @@ def final_verify(paths: RuntimePaths) -> dict[str, Any]:
     }
 
 
+def _planned_write_domains(plan: dict[str, Any]) -> set[str]:
+    domains: set[str] = set()
+    for item in plan["statuses"]:
+        action = str(item.get("plan") or "")
+        if action == "APPLY" or action.startswith("APPLY_AFTER:"):
+            domains.update(MIGRATION_WRITE_DOMAINS.get(str(item["key"]), ()))
+    return domains
+
+
+def _migration_backup(
+    *,
+    backup_factory: Callable[..., Path],
+    runtime: RuntimePaths,
+    write_domains: set[str],
+) -> Path:
+    if backup_factory is not create_backup:
+        return backup_factory()
+    return create_backup(
+        include_market="market" in write_domains,
+        holdings_db=runtime.holdings,
+        market_db=runtime.market,
+        simulation_db=runtime.simulation,
+        include_simulation=(
+            "simulation" in write_domains and runtime.simulation.is_file()
+        ),
+        include_tracking=False,
+        include_macro=False,
+        strategy_selection_runtime=DEFAULT_STRATEGY_SELECTION_RUNTIME_DIR,
+    )
+
+
 def sync_runtime(
     *,
     paths: RuntimePaths | None = None,
@@ -984,6 +1034,7 @@ def sync_runtime(
 
     backup_path: Path | None = None
     migrated: list[dict[str, Any]] = []
+    planned_write_domains = _planned_write_domains(initial_plan)
 
     # Re-detect immediately before each migration. This lets an earlier
     # migration satisfy a later prerequisite in the same sync run.
@@ -1012,7 +1063,11 @@ def sync_runtime(
                 continue
 
             if backup_path is None:
-                backup_path = backup_factory()
+                backup_path = _migration_backup(
+                    backup_factory=backup_factory,
+                    runtime=runtime,
+                    write_domains=planned_write_domains,
+                )
 
             result = spec.run(runtime)
             after = spec.detect(runtime)
