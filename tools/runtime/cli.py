@@ -29,6 +29,7 @@ from tools.runtime.transport import (
     disable_transport,
     post_sync as transport_post_sync,
     pre_sync as transport_pre_sync,
+    reconcile_remote as transport_reconcile_remote,
     transport_status,
 )
 
@@ -73,6 +74,9 @@ def _print_transport(payload: dict) -> None:
         print(f"Bundle size             {size_mb:.2f} MB")
     if payload.get("reasons"):
         print("Publish reasons         " + ", ".join(payload["reasons"]))
+    reconciled = list(payload.get("reconciled") or [])
+    if reconciled:
+        print("Reconciled domains      " + ", ".join(reconciled))
     print("")
 
 
@@ -173,6 +177,11 @@ def build_parser() -> argparse.ArgumentParser:
     transport_sub.add_parser("disable")
     transport_sub.add_parser("pre-sync")
     transport_sub.add_parser("post-sync")
+
+    reconcile = transport_sub.add_parser("reconcile")
+    reconcile.add_argument("--prefer-remote", action="store_true")
+    reconcile.add_argument("--confirm", action="store_true")
+    reconcile.add_argument("--domains", help="쉼표 구분 domain 목록")
     return parser
 
 
@@ -235,6 +244,12 @@ def main() -> int:
                 result = transport_pre_sync()
             elif args.transport_command == "post-sync":
                 result = transport_post_sync()
+            elif args.transport_command == "reconcile":
+                result = transport_reconcile_remote(
+                    prefer_remote=bool(args.prefer_remote),
+                    confirm=bool(args.confirm),
+                    domains=_domains(args.domains),
+                )
             else:
                 raise DataToolError("지원하지 않는 transport command입니다.")
             _print_transport(result)
