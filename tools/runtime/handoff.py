@@ -7,7 +7,7 @@ import shutil
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from app.strategy.production_selection_policy import (
     DEFAULT_RUNTIME_DIR as DEFAULT_STRATEGY_SELECTION_RUNTIME_DIR,
@@ -506,6 +506,7 @@ def _plan_db_import(
     incoming: dict[str, Any],
     target: Path,
     receipt: dict[str, Any] | None,
+    is_ancestor: Callable[[str, str, str], bool] | None = None,
 ) -> dict[str, Any]:
     if not target.is_file():
         return {"domain": domain, "action": "INSTALL", "reason": "TARGET_ABSENT"}
@@ -521,24 +522,81 @@ def _plan_db_import(
         }
 
     receipt = dict(receipt or {})
-    same_lineage = (
-        str(receipt.get("domain_id") or "")
-        == str(incoming.get("domain_id") or "")
-    )
-    parent_matches = (
-        str(receipt.get("snapshot_id") or "")
-        == str(incoming.get("parent_snapshot_id") or "")
-    )
+    local_domain_id = str(receipt.get("domain_id") or "")
+    incoming_domain_id = str(incoming.get("domain_id") or "")
+    local_snapshot = str(receipt.get("snapshot_id") or "")
+    incoming_snapshot = str(incoming.get("snapshot_id") or "")
     local_unchanged = (
         str(receipt.get("local_content_sha256") or "") == current_hash
     )
-    if same_lineage and parent_matches and local_unchanged:
+
+    if not local_domain_id or not local_snapshot:
         return {
             "domain": domain,
-            "action": "FAST_FORWARD",
-            "reason": "LINEAGE_DESCENDANT",
+            "action": "CONFLICT",
+            "reason": "LOCAL_LINEAGE_UNKNOWN",
             "current_hash": current_hash,
         }
+    if local_domain_id != incoming_domain_id:
+        return {
+            "domain": domain,
+            "action": "CONFLICT",
+            "reason": "DIFFERENT_HISTORY",
+            "current_hash": current_hash,
+        }
+
+    if local_snapshot == incoming_snapshot:
+        if local_unchanged:
+            return {
+                "domain": domain,
+                "action": "NO_ACTION",
+                "reason": "SNAPSHOT_IDENTICAL",
+                "current_hash": current_hash,
+            }
+        return {
+            "domain": domain,
+            "action": "LOCAL_AHEAD",
+            "reason": "LOCAL_CONTENT_CHANGED_AFTER_SNAPSHOT",
+            "current_hash": current_hash,
+        }
+
+    parent_matches = (
+        local_snapshot == str(incoming.get("parent_snapshot_id") or "")
+    )
+    incoming_descendant = parent_matches or (
+        is_ancestor is not None
+        and is_ancestor(incoming_domain_id, local_snapshot, incoming_snapshot)
+    )
+    if incoming_descendant:
+        if local_unchanged:
+            return {
+                "domain": domain,
+                "action": "FAST_FORWARD",
+                "reason": "LINEAGE_DESCENDANT",
+                "current_hash": current_hash,
+            }
+        return {
+            "domain": domain,
+            "action": "CONFLICT",
+            "reason": "LOCAL_CHANGED_REMOTE_DESCENDANT",
+            "current_hash": current_hash,
+        }
+
+    local_parent_matches = (
+        incoming_snapshot == str(receipt.get("parent_snapshot_id") or "")
+    )
+    local_descendant = local_parent_matches or (
+        is_ancestor is not None
+        and is_ancestor(incoming_domain_id, incoming_snapshot, local_snapshot)
+    )
+    if local_descendant:
+        return {
+            "domain": domain,
+            "action": "LOCAL_AHEAD",
+            "reason": "LOCAL_LINEAGE_DESCENDANT",
+            "current_hash": current_hash,
+        }
+
     return {
         "domain": domain,
         "action": "CONFLICT",
@@ -590,6 +648,8 @@ def import_handoff(
     domains: Iterable[str] | None = None,
     locations: RuntimeLocations | None = None,
     strict: bool = False,
+    dry_run: bool = False,
+    is_ancestor: Callable[[str, str, str], bool] | None = None,
 ) -> dict[str, Any]:
     runtime = locations or RuntimeLocations.current()
     manifest = inspect_handoff(bundle_dir)
@@ -621,6 +681,7 @@ def import_handoff(
                 incoming=incoming,
                 target=target,
                 receipt=state["domains"].get(domain),
+                is_ancestor=is_ancestor,
             )
         )
 
@@ -635,6 +696,16 @@ def import_handoff(
             "plans": plans,
             "installed": [],
             "conflicts": conflicts,
+        }
+
+    if dry_run:
+        return {
+            "status": "PARTIAL" if conflicts else "PLANNED",
+            "bundle_id": manifest["bundle_id"],
+            "plans": plans,
+            "installed": [],
+            "conflicts": conflicts,
+            "production_selection_policy_changed": False,
         }
 
     installed: list[str] = []
@@ -690,3 +761,4 @@ def import_handoff(
         "conflicts": conflicts,
         "production_selection_policy_changed": False,
     }
+
