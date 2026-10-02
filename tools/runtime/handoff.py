@@ -242,6 +242,14 @@ def export_handoff(
         for domain in selected:
             if domain == "strategy_selection":
                 source_simulation = runtime.simulation
+                if not source_simulation.is_file():
+                    skipped.append(
+                        {
+                            "domain": domain,
+                            "reason": "SIMULATION_NOT_PRESENT",
+                        }
+                    )
+                    continue
                 selection_state = validate_strategy_selection_runtime(
                     runtime.strategy_selection,
                     simulation_db=(
