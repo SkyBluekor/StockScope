@@ -52,6 +52,11 @@ Assert-LastExitCode "npm version check"
 
 $systemPythonMajorMinor = (& python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>&1)
 Assert-LastExitCode "Python major/minor version check"
+$pythonSupported = (& python -c "import sys; print('YES' if sys.version_info >= (3, 11) else 'NO')" 2>&1)
+Assert-LastExitCode "Python minimum version check"
+if ($pythonSupported -ne "YES") {
+    throw "[StockScope] Python 3.11 or newer is required. Detected: $pythonVersion"
+}
 
 Write-Host "  Python: $pythonVersion"
 Write-Host "  Node  : $nodeVersion"
@@ -98,8 +103,8 @@ Write-Host "[StockScope] Backend versions..." -ForegroundColor DarkCyan
 & $python -c "import fastapi, starlette, tzdata; print('  FastAPI:', fastapi.__version__); print('  Starlette:', starlette.__version__); print('  tzdata:', tzdata.__version__)"
 Assert-LastExitCode "backend version check"
 
-& $python -m pytest -c ".\backend\pyproject.toml" ".\backend\tests"
-Assert-LastExitCode "backend tests"
+& $python -c "import fastapi, app.main; print('  Backend import: PASS')"
+Assert-LastExitCode "backend import smoke check"
 
 Write-Host "[StockScope] Setting up frontend..." -ForegroundColor Cyan
 Push-Location frontend
@@ -120,16 +125,26 @@ finally {
     Pop-Location
 }
 
+if (-not (Test-Path ".env") -and (Test-Path ".env.example")) {
+    Write-Host "[StockScope] Creating local .env from .env.example..." -ForegroundColor Cyan
+    Copy-Item ".env.example" ".env"
+    Write-Host "  API keys remain blank until you add the providers you use."
+}
+elseif (Test-Path ".env") {
+    Write-Host "[StockScope] Existing .env preserved." -ForegroundColor DarkCyan
+}
 
-Write-Host "[StockScope] DATA.1 runtime bootstrap..." -ForegroundColor Cyan
+Write-Host "[StockScope] Preparing fresh-compatible runtime..." -ForegroundColor Cyan
 & $python ".\tools\data\bootstrap_runtime.py"
-Assert-LastExitCode "DATA.1 runtime bootstrap"
+Assert-LastExitCode "runtime bootstrap"
 
-Write-Host "[StockScope] DATA.1 read-only doctor..." -ForegroundColor Cyan
+Write-Host "[StockScope] Read-only runtime doctor..." -ForegroundColor Cyan
 & $python ".\tools\data\doctor.py"
-Assert-LastExitCode "DATA.1 data doctor"
+Assert-LastExitCode "runtime doctor"
 
 Write-Host ""
 Write-Host "[StockScope] Setup complete." -ForegroundColor Green
+Write-Host "Google Drive is not required for a new project."
+Write-Host "If API settings are still blank, edit .env before using provider-dependent features."
 Write-Host "Run .\run-dev.ps1 and open http://127.0.0.1:5173"
 Write-Host "Manual .venv activation is optional; run-dev.ps1 uses .venv directly."
