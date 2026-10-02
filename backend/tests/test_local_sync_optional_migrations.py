@@ -64,7 +64,9 @@ def test_final_verify_accepts_optional_not_applicable_migration(
     ]
     monkeypatch.setattr(sync_local, "inspect_all", lambda paths: statuses)
 
-    result = sync_local.final_verify(_paths(tmp_path))
+    paths = _paths(tmp_path)
+    paths.simulation.touch()
+    result = sync_local.final_verify(paths)
 
     assert result["governance"]["operating_strategies"] == 10
 

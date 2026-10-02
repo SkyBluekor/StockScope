@@ -289,7 +289,8 @@ def sync_macro_artifacts(
     check_only: bool = False,
     runner: Callable[[str, tuple[str, ...]], None] = _default_runner,
 ) -> dict[str, Any]:
-    calibration_dir.mkdir(parents=True, exist_ok=True)
+    if not check_only:
+        calibration_dir.mkdir(parents=True, exist_ok=True)
     statuses: list[dict[str, str]] = []
     generated: list[str] = []
 
