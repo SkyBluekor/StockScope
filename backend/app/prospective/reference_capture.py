@@ -611,9 +611,10 @@ class ProspectiveReferenceCaptureService:
                     capture_run_id,capture_contract_version,storage_version,
                     status,reference_cutoff,cutoff_policy_version,
                     reference_temporal_mode,source_sample_count,
-                    attachment_count,attachment_set_hash,error_code,
-                    error_message,created_at,completed_at
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    attachment_count,attachment_set_hash,
+                    source_manifest_hash,error_code,error_message,
+                    created_at,completed_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     source_before["capture_run_id"],
