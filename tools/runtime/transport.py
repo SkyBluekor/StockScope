@@ -606,7 +606,11 @@ def pre_sync(
 
     remote_actions = [
         item for item in plan["plans"]
-        if item["action"] in {"INSTALL", "FAST_FORWARD"}
+        if item["action"] in {
+            "INSTALL",
+            "FAST_FORWARD",
+            "REPLACE_FRESH_BOOTSTRAP",
+        }
     ]
     local_actions = [
         item for item in plan["plans"]
