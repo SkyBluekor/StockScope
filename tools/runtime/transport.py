@@ -417,11 +417,15 @@ def _head_from_manifest(
     *,
     machine_id: str,
     adopted_from: str | None = None,
+    selected_domains: list[str] | None = None,
 ) -> dict[str, Any]:
     domains: dict[str, Any] = {}
     bundle_id = str(manifest["bundle_id"])
+    allowed = set(selected_domains) if selected_domains is not None else None
     for domain, raw in dict(manifest.get("domains") or {}).items():
         if not isinstance(raw, dict) or domain == "strategy_selection":
+            continue
+        if allowed is not None and domain not in allowed:
             continue
         domains[str(domain)] = {
             "domain_id": str(raw.get("domain_id") or ""),
@@ -764,6 +768,7 @@ def reconcile_remote(
         manifest,
         machine_id=machine_id,
         adopted_from=str(candidate["machine_id"]),
+        selected_domains=selected,
     )
     _write_head(root, adopted)
     reconciled = [
@@ -882,6 +887,7 @@ def _publish_bundle(
 def post_sync(
     *,
     locations: RuntimeLocations | None = None,
+    force_checkpoint: bool = False,
 ) -> dict[str, Any]:
     runtime = locations or RuntimeLocations.current()
     prepared = _prepare_enabled_transport(locations=runtime)
@@ -895,12 +901,14 @@ def post_sync(
         state=state,
         domains=domains,
     )
-    if not needed:
+    if not needed and not force_checkpoint:
         return {
             "status": "CURRENT",
             "published": False,
             "reason": "RUNTIME_UNCHANGED",
         }
+    if force_checkpoint and not reasons:
+        reasons = ["MANUAL_CHECKPOINT"]
 
     exported = export_handoff(
         domains=domains,
