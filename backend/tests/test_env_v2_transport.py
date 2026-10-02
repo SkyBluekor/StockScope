@@ -14,6 +14,7 @@ from tools.runtime.transport import (
     configure_transport,
     post_sync,
     pre_sync,
+    reconcile_remote,
     transport_status,
 )
 
@@ -212,6 +213,104 @@ def test_transport_detects_committed_wal_changes(
     assert len(bundles) == 2
 
 
+def test_existing_pc_requires_explicit_remote_reconciliation(
+    tmp_path: Path,
+) -> None:
+    shared = tmp_path / "GoogleDrive" / "StockScopeRuntime"
+    a = _locations(tmp_path / "pc-a")
+    b = _locations(tmp_path / "pc-b")
+
+    configure_transport(shared, locations=a)
+    configure_transport(shared, locations=b)
+    _make_simulation(a.simulation, "remote")
+    _make_simulation(b.simulation, "local")
+    post_sync(locations=a)
+
+    with pytest.raises(DataToolError, match="LOCAL_LINEAGE_UNKNOWN"):
+        pre_sync(
+            locations=b,
+            retry_count=1,
+            retry_delay_seconds=0,
+        )
+
+    with pytest.raises(DataToolError, match="--confirm"):
+        reconcile_remote(
+            prefer_remote=True,
+            confirm=False,
+            locations=b,
+            retry_count=1,
+            retry_delay_seconds=0,
+        )
+
+    result = reconcile_remote(
+        prefer_remote=True,
+        confirm=True,
+        locations=b,
+        retry_count=1,
+        retry_delay_seconds=0,
+    )
+
+    assert result["status"] == "RECONCILED"
+    assert result["reconciled"] == ["simulation"]
+    assert _ids(b.simulation) == {"remote"}
+    backups = list(
+        b.simulation.parent.glob("simulation.db.pre_handoff_*.bak")
+    )
+    assert len(backups) == 1
+
+
+def test_reconcile_does_not_bypass_known_divergence(
+    tmp_path: Path,
+) -> None:
+    shared = tmp_path / "GoogleDrive" / "StockScopeRuntime"
+    a = _locations(tmp_path / "pc-a")
+    b = _locations(tmp_path / "pc-b")
+
+    configure_transport(shared, locations=a)
+    configure_transport(shared, locations=b)
+    _make_simulation(a.simulation, "base")
+    post_sync(locations=a)
+    pre_sync(locations=b, retry_count=1, retry_delay_seconds=0)
+
+    _make_simulation(a.simulation, "remote-change")
+    post_sync(locations=a)
+    _make_simulation(b.simulation, "local-change")
+
+    with pytest.raises(DataToolError, match="RUNTIME_TRANSPORT_CONFLICT"):
+        reconcile_remote(
+            prefer_remote=True,
+            confirm=True,
+            locations=b,
+            retry_count=1,
+            retry_delay_seconds=0,
+        )
+
+    assert _ids(b.simulation) == {"base", "local-change"}
+
+
+def test_reconcile_rejects_non_transport_domain(
+    tmp_path: Path,
+) -> None:
+    shared = tmp_path / "GoogleDrive" / "StockScopeRuntime"
+    a = _locations(tmp_path / "pc-a")
+    b = _locations(tmp_path / "pc-b")
+    configure_transport(shared, locations=a)
+    configure_transport(shared, locations=b)
+    _make_simulation(a.simulation, "base")
+    post_sync(locations=a)
+
+    with pytest.raises(DataToolError, match="자동 transport 정렬 대상"):
+        reconcile_remote(
+            prefer_remote=True,
+            confirm=True,
+            domains=["strategy_selection"],
+            locations=b,
+            retry_count=1,
+            retry_delay_seconds=0,
+        )
+
+
+
 def test_transport_does_not_publish_when_runtime_is_unchanged(
     tmp_path: Path,
 ) -> None:
@@ -319,5 +418,9 @@ def test_sync_launcher_has_pre_and_post_transport_hooks() -> None:
     assert "transport pre-sync" in sync_source
     assert "transport post-sync" in sync_source
     assert "transport status" in sync_source
+    cli_source = (root / "tools" / "runtime" / "cli.py").read_text(
+        encoding="utf-8"
+    )
+    assert "transport_reconcile_remote" in cli_source
     assert '"transport"' in entry_source
     assert "tools\\runtime\\cli.py" in entry_source

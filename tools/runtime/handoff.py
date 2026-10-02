@@ -520,6 +520,7 @@ def _plan_db_import(
     target: Path,
     receipt: dict[str, Any] | None,
     is_ancestor: Callable[[str, str, str], bool] | None = None,
+    allow_unknown_lineage_replace: bool = False,
 ) -> dict[str, Any]:
     if not target.is_file():
         return {"domain": domain, "action": "INSTALL", "reason": "TARGET_ABSENT"}
@@ -544,6 +545,13 @@ def _plan_db_import(
     )
 
     if not local_domain_id or not local_snapshot:
+        if allow_unknown_lineage_replace:
+            return {
+                "domain": domain,
+                "action": "REPLACE_UNKNOWN_LINEAGE",
+                "reason": "EXPLICIT_REMOTE_ENROLLMENT",
+                "current_hash": current_hash,
+            }
         return {
             "domain": domain,
             "action": "CONFLICT",
@@ -663,6 +671,7 @@ def import_handoff(
     strict: bool = False,
     dry_run: bool = False,
     is_ancestor: Callable[[str, str, str], bool] | None = None,
+    allow_unknown_lineage_replace: bool = False,
 ) -> dict[str, Any]:
     runtime = locations or RuntimeLocations.current()
     manifest = inspect_handoff(bundle_dir)
@@ -695,6 +704,7 @@ def import_handoff(
                 target=target,
                 receipt=state["domains"].get(domain),
                 is_ancestor=is_ancestor,
+                allow_unknown_lineage_replace=allow_unknown_lineage_replace,
             )
         )
 
@@ -725,7 +735,11 @@ def import_handoff(
     receipts_changed = False
     bundle = Path(bundle_dir)
     for item in plans:
-        if item["action"] not in {"INSTALL", "FAST_FORWARD"}:
+        if item["action"] not in {
+            "INSTALL",
+            "FAST_FORWARD",
+            "REPLACE_UNKNOWN_LINEAGE",
+        }:
             continue
         domain = str(item["domain"])
         incoming = dict(manifest["domains"][domain])
