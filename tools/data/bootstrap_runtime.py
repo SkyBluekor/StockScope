@@ -285,9 +285,32 @@ def bootstrap_runtime(
         market=Path(runtime.market),
         simulation=Path(runtime.simulation),
     )
+    effective_migration_backup_factory = migration_backup_factory
+    if migration_backup_factory is create_backup:
+        def setup_migration_backup() -> Path:
+            destination = (
+                backups
+                / f"StockScope_SetupMigration_{utc_stamp()}_{uuid4().hex[:8]}"
+            )
+            return create_backup(
+                destination=destination,
+                include_market=True,
+                holdings_db=runtime.holdings,
+                market_db=runtime.market,
+                simulation_db=runtime.simulation,
+                tracking_db=runtime.tracking,
+                macro_db=runtime.macro,
+                include_simulation=True,
+                include_tracking=True,
+                include_macro=True,
+                strategy_selection_runtime=runtime.strategy_selection,
+            )
+
+        effective_migration_backup_factory = setup_migration_backup
+
     sync_result = sync_runtime(
         paths=sync_paths,
-        backup_factory=migration_backup_factory,
+        backup_factory=effective_migration_backup_factory,
     )
 
     validate_holdings_db(runtime.holdings)
