@@ -19,7 +19,10 @@ from app.backtest.risk_validation import RiskPolicyValidationService
 from app.backtest.scanner import StockScannerService
 from app.backtest.production_exit_policy import ProductionExitPolicyRegistry
 from app.core.config import PROJECT_ROOT, get_settings
-from app.prospective import ProspectiveService
+from app.prospective import (
+    ProspectiveReferenceCaptureService,
+    ProspectiveService,
+)
 from app.horizon import (
     HorizonPolicyError,
     require_horizon_activatable,
@@ -45,6 +48,26 @@ def _prospective_service() -> ProspectiveService:
         or PROJECT_ROOT / "backend" / "runtime" / "market_history" / "market_history.db"
     )
     return ProspectiveService(simulation_db, market_db)
+
+
+def _prospective_reference_capture_service() -> ProspectiveReferenceCaptureService:
+    simulation_db = Path(
+        os.getenv("STOCKSCOPE_SIM_DB")
+        or PROJECT_ROOT / "backend" / "runtime" / "simulation" / "simulation.db"
+    )
+    market_db = Path(
+        (os.getenv("STOCKSCOPE_MARKET_STORE_DB") or os.getenv("STOCKSCOPE_MARKET_DB"))
+        or PROJECT_ROOT / "backend" / "runtime" / "market_history" / "market_history.db"
+    )
+    macro_db = Path(
+        os.getenv("STOCKSCOPE_MACRO_DB")
+        or PROJECT_ROOT / "backend" / "runtime" / "macro" / "macro.db"
+    )
+    return ProspectiveReferenceCaptureService(
+        simulation_db=simulation_db,
+        market_db=market_db,
+        macro_db=macro_db,
+    )
 
 
 
@@ -600,12 +623,25 @@ async def _run_scanner_job(
             result["horizon_context"] = resolve_horizon_context(
                 payload.horizon_intent
             ).to_dict()
-            result["prospective_capture"] = prospective.try_finalize_scanner_capture(
+            prospective_capture = prospective.try_finalize_scanner_capture(
                 source_job_id=job_id,
                 payload=payload,
                 result=result,
                 selection_policy_pin=selection_policy_pin,
             )
+            result["prospective_capture"] = prospective_capture
+            capture_id = prospective_capture.get("capture_id")
+            if capture_id:
+                result["prospective_reference_capture"] = (
+                    _prospective_reference_capture_service().try_capture(
+                        str(capture_id)
+                    )
+                )
+            else:
+                result["prospective_reference_capture"] = {
+                    "status": "SKIPPED_BASE_CAPTURE_NOT_READY",
+                    "capture_id": None,
+                }
     except BacktestJobCancelled:
         prospective.try_mark_scanner_capture_terminal(
             source_job_id=job_id,
