@@ -260,6 +260,7 @@ class ProspectiveReferenceCaptureService:
             "reference_cutoff": row["reference_cutoff"],
             "attachment_count": int(row["attachment_count"] or 0),
             "attachment_set_hash": row["attachment_set_hash"],
+            "source_manifest_hash": row["source_manifest_hash"],
             "error_code": row["error_code"],
             "error_message": row["error_message"],
         }
@@ -625,6 +626,7 @@ class ProspectiveReferenceCaptureService:
                     len(source_before["samples"]),
                     len(attachments),
                     attachment_set_hash,
+                    source_before["source_manifest_hash"],
                     None,
                     None,
                     reference_cutoff,
@@ -709,8 +711,17 @@ class ProspectiveReferenceCaptureService:
 
         existing = self._existing_capture(capture_key)
         if existing is not None:
-            if existing["status"] == "COMPLETE":
+            if (
+                existing["status"] == "COMPLETE"
+                and existing.get("source_manifest_hash")
+                == source["source_manifest_hash"]
+            ):
                 return existing
+            if existing["status"] == "COMPLETE":
+                raise ProspectiveReferenceCaptureError(
+                    "PROSPECTIVE_REFERENCE_SOURCE_CONFLICT",
+                    "Existing reference capture source identity has changed.",
+                )
             raise ProspectiveReferenceCaptureError(
                 "PROSPECTIVE_REFERENCE_SOURCE_CONFLICT",
                 "Existing reference capture is not reusable.",
