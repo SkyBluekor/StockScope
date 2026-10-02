@@ -311,6 +311,43 @@ def test_reconcile_rejects_non_transport_domain(
 
 
 
+def test_transport_checkpoint_round_trip_without_business_change(
+    tmp_path: Path,
+) -> None:
+    shared = tmp_path / "GoogleDrive" / "StockScopeRuntime"
+    a = _locations(tmp_path / "pc-a")
+    b = _locations(tmp_path / "pc-b")
+
+    configure_transport(shared, locations=a)
+    configure_transport(shared, locations=b)
+    _make_simulation(a.simulation, "base")
+    post_sync(locations=a)
+    pre_sync(locations=b, retry_count=1, retry_delay_seconds=0)
+
+    checkpoint = post_sync(locations=b, force_checkpoint=True)
+    assert checkpoint["status"] == "PUBLISHED"
+    assert checkpoint["reasons"] == ["MANUAL_CHECKPOINT"]
+
+    returned = pre_sync(
+        locations=a,
+        retry_count=1,
+        retry_delay_seconds=0,
+    )
+    assert returned["status"] == "CURRENT"
+    assert returned["bundle_id"] == checkpoint["bundle_id"]
+    assert returned["installed"] == []
+    assert _ids(a.simulation) == {"base"}
+
+    a_head = json.loads(
+        (
+            shared
+            / "heads"
+            / f"{_machine_id(a)}.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert a_head["bundle_id"] == checkpoint["bundle_id"]
+
+
 def test_transport_does_not_publish_when_runtime_is_unchanged(
     tmp_path: Path,
 ) -> None:
@@ -422,5 +459,7 @@ def test_sync_launcher_has_pre_and_post_transport_hooks() -> None:
         encoding="utf-8"
     )
     assert "transport_reconcile_remote" in cli_source
+    assert 'transport_sub.add_parser("checkpoint")' in cli_source
+    assert "force_checkpoint=True" in cli_source
     assert '"transport"' in entry_source
     assert "tools\\runtime\\cli.py" in entry_source
