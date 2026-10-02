@@ -15,6 +15,11 @@ from tools.runtime.handoff import (
     import_handoff,
     sqlite_content_sha256,
 )
+from tools.runtime.transport import (
+    configure_transport,
+    post_sync,
+    pre_sync,
+)
 
 
 def _locations(root: Path) -> RuntimeLocations:
@@ -139,6 +144,39 @@ def test_fresh_setup_target_accepts_handoff_restore_without_manual_reconcile(
     assert plan["reason"] == "VERIFIED_EMPTY_BOOTSTRAP"
     assert HoldingsCatalog(target.holdings).get_position_account(account.id).id == account.id
     assert domain_hash(target.continuity_state, "holdings") is None
+
+
+def test_fresh_setup_target_accepts_google_drive_transport_restore(
+    tmp_path: Path,
+) -> None:
+    shared = tmp_path / "GoogleDrive" / "StockScopeRuntime"
+    source, _ = _bootstrap(tmp_path / "source-transport")
+    target, _ = _bootstrap(tmp_path / "target-transport")
+
+    HoldingsCatalog(source.holdings).create_position_account(
+        provider="MANUAL",
+        account_kind="MANUAL",
+        display_name="transport account",
+    )
+
+    configure_transport(shared, locations=source)
+    published = post_sync(locations=source)
+    assert published["status"] == "PUBLISHED"
+
+    configure_transport(shared, locations=target)
+    restored = pre_sync(
+        locations=target,
+        retry_count=1,
+        retry_delay_seconds=0,
+    )
+
+    assert restored["status"] == "FAST_FORWARD"
+    assert restored["changed"] is True
+    assert "holdings" in restored["installed"]
+    assert any(
+        item["action"] == "REPLACE_FRESH_BOOTSTRAP"
+        for item in restored["plans"]
+    )
 
 
 def test_user_modified_fresh_target_still_blocks_older_or_foreign_handoff(
