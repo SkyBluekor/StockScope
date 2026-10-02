@@ -4,10 +4,11 @@ import hashlib
 import json
 import os
 import shutil
+import tempfile
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from app.strategy.production_selection_policy import (
     DEFAULT_RUNTIME_DIR as DEFAULT_STRATEGY_SELECTION_RUNTIME_DIR,
@@ -163,6 +164,16 @@ def _manifest_file(path: Path) -> dict[str, Any]:
     }
 
 
+def sqlite_content_sha256(path: Path) -> str:
+    source = Path(path)
+    if not source.is_file():
+        raise DataToolError(f"SQLite content fingerprint 대상이 없습니다: {source}")
+    with tempfile.TemporaryDirectory(prefix="stockscope-sqlite-fingerprint-") as raw:
+        snapshot = Path(raw) / "snapshot.db"
+        sqlite_snapshot(source, snapshot)
+        return sha256_file(snapshot)
+
+
 def _domain_identity(
     *,
     previous: dict[str, Any] | None,
@@ -224,7 +235,10 @@ def export_handoff(
 
     final_dir = Path(
         destination
-        or (DEFAULT_HANDOFF_ROOT / f"StockScope_Handoff_{utc_stamp()}")
+        or (
+            DEFAULT_HANDOFF_ROOT
+            / f"StockScope_Handoff_{utc_stamp()}_{uuid.uuid4().hex[:8]}"
+        )
     )
     if final_dir.exists():
         raise DataToolError(f"Handoff 대상이 이미 존재합니다: {final_dir}")
@@ -318,10 +332,9 @@ def export_handoff(
             sqlite_snapshot(source, target)
             validation = validator(target)
             snapshot_sha = sha256_file(target)
-            local_sha = sha256_file(source)
             identity, receipt = _domain_identity(
                 previous=state["domains"].get(domain),
-                local_content_sha256=local_sha,
+                local_content_sha256=snapshot_sha,
                 bundle_content_sha256=snapshot_sha,
                 bundle_id=bundle_id,
             )
@@ -506,11 +519,12 @@ def _plan_db_import(
     incoming: dict[str, Any],
     target: Path,
     receipt: dict[str, Any] | None,
+    is_ancestor: Callable[[str, str, str], bool] | None = None,
 ) -> dict[str, Any]:
     if not target.is_file():
         return {"domain": domain, "action": "INSTALL", "reason": "TARGET_ABSENT"}
 
-    current_hash = sha256_file(target)
+    current_hash = sqlite_content_sha256(target)
     incoming_hash = str(incoming.get("content_sha256") or "")
     if current_hash == incoming_hash:
         return {
@@ -521,24 +535,81 @@ def _plan_db_import(
         }
 
     receipt = dict(receipt or {})
-    same_lineage = (
-        str(receipt.get("domain_id") or "")
-        == str(incoming.get("domain_id") or "")
-    )
-    parent_matches = (
-        str(receipt.get("snapshot_id") or "")
-        == str(incoming.get("parent_snapshot_id") or "")
-    )
+    local_domain_id = str(receipt.get("domain_id") or "")
+    incoming_domain_id = str(incoming.get("domain_id") or "")
+    local_snapshot = str(receipt.get("snapshot_id") or "")
+    incoming_snapshot = str(incoming.get("snapshot_id") or "")
     local_unchanged = (
         str(receipt.get("local_content_sha256") or "") == current_hash
     )
-    if same_lineage and parent_matches and local_unchanged:
+
+    if not local_domain_id or not local_snapshot:
         return {
             "domain": domain,
-            "action": "FAST_FORWARD",
-            "reason": "LINEAGE_DESCENDANT",
+            "action": "CONFLICT",
+            "reason": "LOCAL_LINEAGE_UNKNOWN",
             "current_hash": current_hash,
         }
+    if local_domain_id != incoming_domain_id:
+        return {
+            "domain": domain,
+            "action": "CONFLICT",
+            "reason": "DIFFERENT_HISTORY",
+            "current_hash": current_hash,
+        }
+
+    if local_snapshot == incoming_snapshot:
+        if local_unchanged:
+            return {
+                "domain": domain,
+                "action": "NO_ACTION",
+                "reason": "SNAPSHOT_IDENTICAL",
+                "current_hash": current_hash,
+            }
+        return {
+            "domain": domain,
+            "action": "LOCAL_AHEAD",
+            "reason": "LOCAL_CONTENT_CHANGED_AFTER_SNAPSHOT",
+            "current_hash": current_hash,
+        }
+
+    parent_matches = (
+        local_snapshot == str(incoming.get("parent_snapshot_id") or "")
+    )
+    incoming_descendant = parent_matches or (
+        is_ancestor is not None
+        and is_ancestor(incoming_domain_id, local_snapshot, incoming_snapshot)
+    )
+    if incoming_descendant:
+        if local_unchanged:
+            return {
+                "domain": domain,
+                "action": "FAST_FORWARD",
+                "reason": "LINEAGE_DESCENDANT",
+                "current_hash": current_hash,
+            }
+        return {
+            "domain": domain,
+            "action": "CONFLICT",
+            "reason": "LOCAL_CHANGED_REMOTE_DESCENDANT",
+            "current_hash": current_hash,
+        }
+
+    local_parent_matches = (
+        incoming_snapshot == str(receipt.get("parent_snapshot_id") or "")
+    )
+    local_descendant = local_parent_matches or (
+        is_ancestor is not None
+        and is_ancestor(incoming_domain_id, incoming_snapshot, local_snapshot)
+    )
+    if local_descendant:
+        return {
+            "domain": domain,
+            "action": "LOCAL_AHEAD",
+            "reason": "LOCAL_LINEAGE_DESCENDANT",
+            "current_hash": current_hash,
+        }
+
     return {
         "domain": domain,
         "action": "CONFLICT",
@@ -590,6 +661,8 @@ def import_handoff(
     domains: Iterable[str] | None = None,
     locations: RuntimeLocations | None = None,
     strict: bool = False,
+    dry_run: bool = False,
+    is_ancestor: Callable[[str, str, str], bool] | None = None,
 ) -> dict[str, Any]:
     runtime = locations or RuntimeLocations.current()
     manifest = inspect_handoff(bundle_dir)
@@ -621,6 +694,7 @@ def import_handoff(
                 incoming=incoming,
                 target=target,
                 receipt=state["domains"].get(domain),
+                is_ancestor=is_ancestor,
             )
         )
 
@@ -637,6 +711,16 @@ def import_handoff(
             "conflicts": conflicts,
         }
 
+    if dry_run:
+        return {
+            "status": "PARTIAL" if conflicts else "PLANNED",
+            "bundle_id": manifest["bundle_id"],
+            "plans": plans,
+            "installed": [],
+            "conflicts": conflicts,
+            "production_selection_policy_changed": False,
+        }
+
     installed: list[str] = []
     receipts_changed = False
     bundle = Path(bundle_dir)
@@ -648,7 +732,7 @@ def import_handoff(
         source = bundle / _DOMAIN_RELATIVE_PATHS[domain]
         target = _db_path(runtime, domain)
         _install_db(domain=domain, source=source, target=target)
-        current_hash = sha256_file(target)
+        current_hash = sqlite_content_sha256(target)
         state["domains"][domain] = {
             "domain_id": incoming["domain_id"],
             "snapshot_id": incoming["snapshot_id"],
@@ -671,7 +755,7 @@ def import_handoff(
             "domain_id": incoming["domain_id"],
             "snapshot_id": incoming["snapshot_id"],
             "parent_snapshot_id": incoming.get("parent_snapshot_id"),
-            "local_content_sha256": sha256_file(target),
+            "local_content_sha256": sqlite_content_sha256(target),
             "snapshot_content_sha256": incoming["content_sha256"],
             "last_bundle_id": manifest["bundle_id"],
             "updated_at": iso_now(),
@@ -690,3 +774,4 @@ def import_handoff(
         "conflicts": conflicts,
         "production_selection_policy_changed": False,
     }
+

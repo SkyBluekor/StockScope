@@ -24,6 +24,13 @@ from tools.runtime.handoff import (
     export_handoff,
     import_handoff,
 )
+from tools.runtime.transport import (
+    configure_transport,
+    disable_transport,
+    post_sync as transport_post_sync,
+    pre_sync as transport_pre_sync,
+    transport_status,
+)
 
 
 def _domains(value: str | None) -> list[str] | None:
@@ -34,6 +41,39 @@ def _domains(value: str | None) -> list[str] | None:
 
 def _print_json(payload: dict) -> None:
     print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
+
+
+def _print_transport(payload: dict) -> None:
+    print("=" * 78)
+    print("STOCKSCOPE RUNTIME TRANSPORT")
+    print("=" * 78)
+    print(f"Status                  {payload.get('status')}")
+    if payload.get("provider"):
+        print(f"Provider                {payload.get('provider')}")
+    if payload.get("root"):
+        print(f"Root                    {payload.get('root')}")
+    if payload.get("machine_id"):
+        print(f"Machine ID              {payload.get('machine_id')}")
+    if payload.get("remote_machine_id"):
+        print(f"Remote machine          {payload.get('remote_machine_id')}")
+    if payload.get("bundle_id"):
+        print(f"Bundle                  {payload.get('bundle_id')}")
+    installed = list(payload.get("installed") or [])
+    if installed:
+        print("Imported domains        " + ", ".join(installed))
+    if payload.get("published"):
+        print("Publish                 COMPLETE")
+    elif payload.get("status") == "CURRENT":
+        print("Publish                 SKIPPED (runtime unchanged)")
+    if "remote_machines" in payload:
+        print(f"Remote machines         {payload.get('remote_machines')}")
+    if "bundle_count" in payload:
+        print(f"Bundle count            {payload.get('bundle_count')}")
+        size_mb = float(payload.get("total_size_bytes") or 0) / 1024 / 1024
+        print(f"Bundle size             {size_mb:.2f} MB")
+    if payload.get("reasons"):
+        print("Publish reasons         " + ", ".join(payload["reasons"]))
+    print("")
 
 
 def _bootstrap_status() -> dict:
@@ -118,6 +158,21 @@ def build_parser() -> argparse.ArgumentParser:
     bootstrap.add_argument("--strict", action="store_true")
     bootstrap.add_argument("--new-simulation-history", action="store_true")
     bootstrap.add_argument("--confirm-new-history", action="store_true")
+
+    transport = sub.add_parser("transport")
+    transport_sub = transport.add_subparsers(
+        dest="transport_command",
+        required=True,
+    )
+
+    configure = transport_sub.add_parser("configure")
+    configure.add_argument("root", type=Path)
+    configure.add_argument("--include-market", action="store_true")
+
+    transport_sub.add_parser("status")
+    transport_sub.add_parser("disable")
+    transport_sub.add_parser("pre-sync")
+    transport_sub.add_parser("post-sync")
     return parser
 
 
@@ -164,6 +219,25 @@ def main() -> int:
                 )
                 return 0
             _print_json(_bootstrap_status())
+            return 0
+
+        if args.command == "transport":
+            if args.transport_command == "configure":
+                result = configure_transport(
+                    args.root,
+                    include_market=bool(args.include_market),
+                )
+            elif args.transport_command == "status":
+                result = transport_status()
+            elif args.transport_command == "disable":
+                result = disable_transport()
+            elif args.transport_command == "pre-sync":
+                result = transport_pre_sync()
+            elif args.transport_command == "post-sync":
+                result = transport_post_sync()
+            else:
+                raise DataToolError("지원하지 않는 transport command입니다.")
+            _print_transport(result)
             return 0
 
         raise DataToolError("지원하지 않는 ENV-V2 command입니다.")

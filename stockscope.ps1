@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("status", "sync", "handoff", "bootstrap")]
+    [ValidateSet("status", "sync", "handoff", "bootstrap", "transport")]
     [string]$Command = "status",
 
     [Parameter(ValueFromRemainingArguments = $true)]
@@ -33,6 +33,10 @@ switch ($Command) {
     }
     "bootstrap" {
         & $Python (Join-Path $Root "tools\runtime\cli.py") bootstrap @CommandArgs
+        exit $LASTEXITCODE
+    }
+    "transport" {
+        & $Python (Join-Path $Root "tools\runtime\cli.py") transport @CommandArgs
         exit $LASTEXITCODE
     }
 }
