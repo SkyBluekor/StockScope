@@ -648,6 +648,142 @@ def pre_sync(
     }
 
 
+def reconcile_remote(
+    *,
+    prefer_remote: bool,
+    confirm: bool,
+    domains: list[str] | None = None,
+    locations: RuntimeLocations | None = None,
+    retry_count: int = DEFAULT_RETRY_COUNT,
+    retry_delay_seconds: float = DEFAULT_RETRY_DELAY_SECONDS,
+) -> dict[str, Any]:
+    runtime = locations or RuntimeLocations.current()
+    if not prefer_remote:
+        raise DataToolError(
+            "초기 Runtime 정렬은 현재 --prefer-remote 방식만 지원합니다."
+        )
+    if not confirm:
+        raise DataToolError(
+            "기존 local Runtime을 remote 기준으로 정렬하려면 --confirm이 필요합니다."
+        )
+
+    prepared = _prepare_enabled_transport(locations=runtime)
+    if prepared is None:
+        raise DataToolError("Runtime Transport가 설정되지 않았습니다.")
+    config, root, state = prepared
+    machine_id = str(state["machine_id"])
+    resolver = _ancestry_resolver(root, state=state)
+    remote_heads = [
+        item for item in _heads(root)
+        if str(item.get("machine_id")) != machine_id
+    ]
+    candidate = _select_remote_head(remote_heads, is_ancestor=resolver)
+    if candidate is None:
+        raise DataToolError("정렬할 remote Runtime head가 없습니다.")
+
+    bundle_id = str(candidate["bundle_id"])
+    bundle, manifest = _wait_for_bundle(
+        root,
+        bundle_id,
+        retry_count=retry_count,
+        retry_delay_seconds=retry_delay_seconds,
+    )
+
+    allowed = _auto_domains(config)
+    if domains is None:
+        selected = [
+            domain
+            for domain in allowed
+            if domain in dict(manifest.get("domains") or {})
+        ]
+    else:
+        requested = []
+        for raw in domains:
+            domain = str(raw).strip().lower()
+            if not domain:
+                continue
+            if domain not in allowed:
+                raise DataToolError(
+                    f"자동 transport 정렬 대상이 아닌 domain입니다: {domain}"
+                )
+            if domain not in requested:
+                requested.append(domain)
+        selected = [
+            domain
+            for domain in requested
+            if domain in dict(manifest.get("domains") or {})
+        ]
+
+    if not selected:
+        raise DataToolError("정렬할 remote Runtime domain이 없습니다.")
+
+    plan = import_handoff(
+        bundle,
+        domains=selected,
+        locations=runtime,
+        strict=True,
+        dry_run=True,
+        is_ancestor=resolver,
+        allow_unknown_lineage_replace=True,
+    )
+    if plan["status"] == "BLOCKED":
+        raise DataToolError(
+            "RUNTIME_TRANSPORT_CONFLICT: "
+            + " | ".join(
+                f"{item['domain']}={item['reason']}"
+                for item in plan["conflicts"]
+            )
+        )
+
+    local_ahead = [
+        item
+        for item in plan["plans"]
+        if item["action"] == "LOCAL_AHEAD"
+    ]
+    if local_ahead:
+        raise DataToolError(
+            "RUNTIME_TRANSPORT_CONFLICT: known local lineage가 remote보다 최신입니다: "
+            + " | ".join(
+                f"{item['domain']}={item['reason']}"
+                for item in local_ahead
+            )
+        )
+
+    applied = import_handoff(
+        bundle,
+        domains=selected,
+        locations=runtime,
+        strict=True,
+        is_ancestor=resolver,
+        allow_unknown_lineage_replace=True,
+    )
+    if applied["status"] == "BLOCKED":
+        raise DataToolError("RUNTIME_TRANSPORT_CONFLICT: 초기 정렬이 차단되었습니다.")
+
+    adopted = _head_from_manifest(
+        manifest,
+        machine_id=machine_id,
+        adopted_from=str(candidate["machine_id"]),
+    )
+    _write_head(root, adopted)
+    reconciled = [
+        item["domain"]
+        for item in plan["plans"]
+        if item["action"] == "REPLACE_UNKNOWN_LINEAGE"
+    ]
+    return {
+        "status": "RECONCILED",
+        "changed": bool(applied["installed"]),
+        "remote_machine_id": candidate["machine_id"],
+        "bundle_id": bundle_id,
+        "installed": applied["installed"],
+        "reconciled": reconciled,
+        "plans": plan["plans"],
+        "production_selection_policy_changed": False,
+    }
+
+
+
 def _local_domain_hashes(
     *,
     locations: RuntimeLocations,
