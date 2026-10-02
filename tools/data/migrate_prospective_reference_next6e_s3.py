@@ -139,6 +139,7 @@ def migrate_prospective_reference_store(path: Path) -> dict[str, object]:
                 source_sample_count INTEGER NOT NULL,
                 attachment_count INTEGER NOT NULL,
                 attachment_set_hash TEXT NOT NULL,
+                source_manifest_hash TEXT NOT NULL,
                 error_code TEXT,
                 error_message TEXT,
                 created_at TEXT NOT NULL,
