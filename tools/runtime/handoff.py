@@ -450,9 +450,24 @@ def inspect_handoff(bundle_dir: Path) -> dict[str, Any]:
                 if not isinstance(entry, dict):
                     raise DataToolError("Strategy Selection file entry가 잘못되었습니다.")
                 relative = str(entry.get("path") or "")
-                if not relative.startswith("strategy_selection/"):
+                relative_path = Path(relative)
+                parts = relative_path.parts
+                allowed = (
+                    relative == "strategy_selection/active.json"
+                    or (
+                        len(parts) == 3
+                        and parts[0] == "strategy_selection"
+                        and parts[1] == "policies"
+                        and relative_path.suffix == ".json"
+                    )
+                )
+                if (
+                    relative_path.is_absolute()
+                    or ".." in parts
+                    or not allowed
+                ):
                     raise DataToolError("Strategy Selection path allowlist 위반입니다.")
-                source = bundle / relative
+                source = bundle / relative_path
                 if not source.is_file():
                     raise DataToolError(
                         f"Strategy Selection file이 없습니다: {relative}"
@@ -543,7 +558,7 @@ def _install_db(
     pre_restore: Path | None = None
     if target.is_file():
         pre_restore = target.with_name(
-            f"{target.name}.pre_handoff_{utc_stamp()}.bak"
+            f"{target.name}.pre_handoff_{utc_stamp()}_{uuid.uuid4().hex[:8]}.bak"
         )
         sqlite_snapshot(target, pre_restore)
         validator(pre_restore)
