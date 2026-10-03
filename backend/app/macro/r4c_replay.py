@@ -19,7 +19,6 @@ from app.macro.r4_diagnostic import build_dev_diagnostic
 from app.macro.r4_gate import build_gate_assessment
 
 R4C_STAGE_ID = "NEXT-6E-S6A-R4C"
-R4C_BASELINE_MAIN_SHA = "15a001d83779072b7e007c8d16fc0d6e82bf5eca"
 CLEAN_ATTESTATION_SCHEMA_ID = "NEXT6E_S6A_R4C_CLEAN_REPLAY_ATTESTATION_V1"
 PHASE_A_SCHEMA_ID = "NEXT6E_S6A_R4C_PHASE_A_RESULT_V1"
 FINAL_ASSESSMENT_SCHEMA_ID = "NEXT6E_S6A_R4C_GATE_ASSESSMENT_V1"
@@ -45,7 +44,15 @@ def _sha256_text(value: Any) -> bool:
     return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
 
 
-def validate_clean_attestation(value: dict[str, Any]) -> str:
+def _git_sha_text(value: Any) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{40}", value) is not None
+
+
+def validate_clean_attestation(
+    value: dict[str, Any],
+    *,
+    expected_baseline_main_sha: str,
+) -> str:
     required = {
         "schema_id", "stage_id", "baseline_main_sha", "method_id", "design_hash",
         "execution_context_id", "input_allowlist_id", "allowed_inputs",
@@ -59,11 +66,14 @@ def validate_clean_attestation(value: dict[str, Any]) -> str:
     except (TypeError, ValueError) as exc:
         raise R4CError("CLEAN_ATTESTATION_INVALID", str(exc)) from exc
 
+    if not _git_sha_text(expected_baseline_main_sha):
+        raise R4CError("CLEAN_ATTESTATION_INVALID", "expected baseline main SHA invalid")
+
     design = build_design_manifest()
     exact = {
         "schema_id": CLEAN_ATTESTATION_SCHEMA_ID,
         "stage_id": R4C_STAGE_ID,
-        "baseline_main_sha": R4C_BASELINE_MAIN_SHA,
+        "baseline_main_sha": expected_baseline_main_sha,
         "method_id": METHOD_ID,
         "design_hash": design["design_hash"],
         "development_dataset_id": EXPECTED_DATASET_ID,
@@ -123,8 +133,16 @@ def _verify_diagnostic_integrity(diagnostic: dict[str, Any]) -> None:
         raise R4CError("ISOLATION_NOT_CERTIFIED", "sealed diagnostic is not clean-isolation certified")
 
 
-def build_phase_a_result(*, development_bytes: bytes, attestation: dict[str, Any]) -> dict[str, Any]:
-    attestation_hash = validate_clean_attestation(attestation)
+def build_phase_a_result(
+    *,
+    development_bytes: bytes,
+    attestation: dict[str, Any],
+    expected_baseline_main_sha: str,
+) -> dict[str, Any]:
+    attestation_hash = validate_clean_attestation(
+        attestation,
+        expected_baseline_main_sha=expected_baseline_main_sha,
+    )
 
     import hashlib
     transport_digest = hashlib.sha256(development_bytes).hexdigest()
@@ -162,7 +180,7 @@ def build_phase_a_result(*, development_bytes: bytes, attestation: dict[str, Any
     base = {
         "schema_id": PHASE_A_SCHEMA_ID,
         "stage_id": R4C_STAGE_ID,
-        "baseline_main_sha": R4C_BASELINE_MAIN_SHA,
+        "baseline_main_sha": expected_baseline_main_sha,
         "method_id": METHOD_ID,
         "target_id": TARGET_ID,
         "design": design,
@@ -182,7 +200,11 @@ def build_phase_a_result(*, development_bytes: bytes, attestation: dict[str, Any
     return {**base, "payload_hash": content_hash(base)}
 
 
-def validate_phase_a_result(value: dict[str, Any]) -> None:
+def validate_phase_a_result(
+    value: dict[str, Any],
+    *,
+    expected_baseline_main_sha: str | None = None,
+) -> None:
     required = {
         "schema_id", "stage_id", "baseline_main_sha", "method_id", "target_id",
         "design", "clean_attestation_hash", "development_identity", "diagnostic",
@@ -196,8 +218,13 @@ def validate_phase_a_result(value: dict[str, Any]) -> None:
 
     if value["schema_id"] != PHASE_A_SCHEMA_ID or value["stage_id"] != R4C_STAGE_ID:
         raise R4CError("PHASE_A_SCHEMA_INVALID", "Phase A version mismatch")
-    if value["baseline_main_sha"] != R4C_BASELINE_MAIN_SHA:
-        raise R4CError("PHASE_A_SCHEMA_INVALID", "baseline main mismatch")
+    if not _git_sha_text(value["baseline_main_sha"]):
+        raise R4CError("PHASE_A_SCHEMA_INVALID", "baseline main SHA invalid")
+    if expected_baseline_main_sha is not None:
+        if not _git_sha_text(expected_baseline_main_sha):
+            raise R4CError("PHASE_A_SCHEMA_INVALID", "expected baseline main SHA invalid")
+        if value["baseline_main_sha"] != expected_baseline_main_sha:
+            raise R4CError("PHASE_A_SCHEMA_INVALID", "baseline main mismatch")
     if value["method_id"] != METHOD_ID or value["target_id"] != TARGET_ID:
         raise R4CError("PHASE_A_SCHEMA_INVALID", "method or target mismatch")
     if value["design"] != build_design_manifest():
