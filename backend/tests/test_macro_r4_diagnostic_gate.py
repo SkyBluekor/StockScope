@@ -42,8 +42,17 @@ def test_exact_dev_diagnostic_reproduces_structure_and_legacy_profile(diagnostic
     assert legacy['lag_cutoff_L']==10
     assert legacy['bandwidth_b']==22
     assert legacy['effective_ell']==43
-    assert legacy['matches_expected'] is False
-    assert 'LEGACY_R2_PROFILE_MISMATCH' in diag['failure_codes']
+    assert legacy['canonical_reference_match'] is True
+    assert legacy['historical_record_match'] is False
+    assert legacy['historical_variant_reproduced'] is True
+    assert legacy['selector_profile']['k_n']==5
+    assert legacy['selector_profile']['lag_max']==50
+    assert legacy['historical_natural_log_selector']['k_n']==8
+    assert legacy['historical_natural_log_selector']['lag_max']==53
+    assert legacy['historical_natural_log_selector']['coordinate_m']==[1,5,10]
+    assert legacy['provenance_resolution']['classification']=='REFERENCE_SPEC_TRANSCRIPTION_ERROR_LOG_BASE'
+    assert 'LEGACY_R2_CANONICAL_MISMATCH' not in diag['failure_codes']
+    assert diag['diagnostics']['new_calibration_contract']['symbolic_contract_verified'] is True
     assert diag['diagnostics']['new_calibration_contract']['stochastic_computation_performed'] is False
 
 
@@ -52,5 +61,5 @@ def test_missing_approvals_leave_ga_blocked(diagnostic):
     a=build_gate_assessment(design=design,diagnostic=diag,model_use=None,theorem_review=None)
     assert a['ga_status']=='BLOCKED'
     states={g['gate_id']:g['status'] for g in a['gates']}
-    assert states['A10']=='BLOCKED' and states['A5']=='UNRESOLVED' and states['A6']=='UNRESOLVED' and states['G1']=='BLOCKED'
+    assert states['A10']=='PASS' and states['A5']=='UNRESOLVED' and states['A6']=='UNRESOLVED' and states['G1']=='BLOCKED'
     assert a['downstream_execution_authorized'] is False
