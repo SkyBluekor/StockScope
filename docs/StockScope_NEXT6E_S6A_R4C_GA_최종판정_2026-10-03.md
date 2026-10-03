@@ -1,7 +1,7 @@
 # StockScope NEXT-6E-S6A-R4C — Formal Clean Replay & G-A Final Decision
 
 작성일: 2026-10-03, Asia/Seoul  
-구현 기준 main: `15a001d83779072b7e007c8d16fc0d6e82bf5eca`  
+구현 기준 parent main: `356ea60167545a0453ab3c4b5b4429d686706906`  
 Stage: `NEXT-6E-S6A-R4C`
 
 ## 1. 현재 상태
@@ -12,6 +12,9 @@ R4C 실행 계약과 two-phase runner를 구현한다.
 
 ```text
 R4C implementation
+COMPLETE
+
+R4C-E1 baseline binding fix
 IN PROGRESS / TARGET COMPLETE AFTER CI
 
 Formal Phase A clean replay
@@ -31,6 +34,35 @@ WAITING_FOR_EXTERNAL_APPROVAL
 ```
 
 본 구현 작업 자체를 clean replay로 취급하지 않는다.
+
+## 1.1 R4C-E1 baseline binding correction
+
+초기 R4C 구현은 formal Phase A attestation의 `baseline_main_sha`를 코드 상수로 고정했다. 이 방식은 baseline 값을 갱신하는 commit 자체가 main SHA를 다시 바꾸므로 self-invalidating 한다.
+
+R4C-E1 준비에서는 이 문제만 수정한다.
+
+Formal Phase A runner는 실행 시 다음을 직접 확인한다.
+
+```text
+current branch
+main
+
+git working tree
+clean
+
+baseline_main_sha
+exact current checkout HEAD
+```
+
+attestation의 `baseline_main_sha`는 해당 execution context에서 확인한 exact HEAD와 같아야 한다. 따라서 template은 고정 SHA 대신:
+
+```text
+<CURRENT_CLEAN_MAIN_SHA_AT_EXECUTION>
+```
+
+placeholder를 사용한다.
+
+이 변경은 통계 방법, DEV identity, theorem/model-use contract, gate semantics를 변경하지 않는다.
 
 ## 2. Canonical R4C route
 
@@ -216,3 +248,54 @@ NONE
 ```
 
 실제 승인 artifact가 제공된 별도 clean execution에서만 Phase A/Phase B evidence를 생성하고 이 문서의 disposition을 갱신한다.
+
+## 9. NEXT-6E-S6A-R4C-E1 실행 준비 상태
+
+R4C-E1의 formal Phase A는 이 문서를 수정한 대화에서 실행하지 않는다.
+
+실행 전용 clean context에서:
+
+```text
+1. main checkout
+2. clean working tree
+3. exact current HEAD를 attestation.baseline_main_sha에 기록
+4. explicit frozen DEV 한 개 지정
+5. attestation 검증
+6. Phase A 실행
+```
+
+순서로 진행한다.
+
+현재 실제 gate state:
+
+```text
+Formal Phase A
+NOT EXECUTED
+
+G0
+NOT EXECUTED
+
+A5
+UNRESOLVED
+
+A6
+UNRESOLVED
+
+G1
+BLOCKED
+
+G-A
+BLOCKED
+
+G-B
+BLOCKED
+
+Reference Adequacy
+UNRESOLVED
+
+Holdout accessed
+NO
+
+Production impact
+NONE
+```

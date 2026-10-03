@@ -1,7 +1,7 @@
 {
   "schema_id": "NEXT6E_S6A_R4C_CLEAN_REPLAY_ATTESTATION_V1",
   "stage_id": "NEXT-6E-S6A-R4C",
-  "baseline_main_sha": "15a001d83779072b7e007c8d16fc0d6e82bf5eca",
+  "baseline_main_sha": "<CURRENT_CLEAN_MAIN_SHA_AT_EXECUTION>",
   "method_id": "NEXT6E_S6A_R4_LATTICE_CDF_PROJECTION_V1",
   "design_hash": "874c3387b54bdeff6701f1ca7b72469cfda158fb588a2b366c2d799754dc2a18",
   "execution_context_id": "",
