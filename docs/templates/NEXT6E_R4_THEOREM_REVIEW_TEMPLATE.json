@@ -1,0 +1,15 @@
+{
+  "schema_id": "NEXT6E_S6A_R4_THEOREM_REVIEW_V1",
+  "method_id": "NEXT6E_S6A_R4_LATTICE_CDF_PROJECTION_V1",
+  "design_hash": "874c3387b54bdeff6701f1ca7b72469cfda158fb588a2b366c2d799754dc2a18",
+  "proof_units": {
+    "D1": "UNRESOLVED",
+    "D2": "UNRESOLVED",
+    "D3": "UNRESOLVED",
+    "D4": "UNRESOLVED"
+  },
+  "reviewer_identity": "",
+  "approval_reference": "",
+  "unresolved_objections": [],
+  "status": "UNRESOLVED"
+}
