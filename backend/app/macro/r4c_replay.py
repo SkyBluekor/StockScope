@@ -82,7 +82,12 @@ def validate_clean_attestation(value: dict[str, Any]) -> str:
         raise R4CError("CLEAN_ATTESTATION_INVALID", "operator or attestation reference missing")
 
     inputs = value["allowed_inputs"]
-    if not isinstance(inputs, list) or len(inputs) != len(set(inputs)) or set(inputs) != set(ALLOWED_INPUTS):
+    if (
+        not isinstance(inputs, list)
+        or not all(isinstance(item, str) for item in inputs)
+        or len(inputs) != len(set(inputs))
+        or set(inputs) != set(ALLOWED_INPUTS)
+    ):
         raise R4CError("INPUT_NOT_ALLOWLISTED", "allowed_inputs must match the fixed Phase A allowlist")
 
     forbidden_flags = (
@@ -230,6 +235,8 @@ def validate_phase_a_result(value: dict[str, Any]) -> None:
         raise R4CError("PHASE_A_DETERMINISTIC_GATE_BLOCKED", "deterministic gate not PASS")
     if value["failure_codes"] != diagnostic.get("failure_codes", []):
         raise R4CError("SEALED_EVIDENCE_HASH_MISMATCH", "failure code seal mismatch")
+    if value["failure_codes"]:
+        raise R4CError("PHASE_A_DETERMINISTIC_GATE_BLOCKED", "Phase A contains active diagnostic blockers")
 
 
 def approval_binding_status(
