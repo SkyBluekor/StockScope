@@ -3,7 +3,7 @@ import hashlib, json
 from pathlib import Path
 import pytest
 from app.macro.r4_contract import build_design_manifest
-from app.macro.r4_diagnostic import build_dev_diagnostic, validate_lineage, R4DiagnosticError
+from app.macro.r4_diagnostic import build_dev_diagnostic, validate_lineage, R4DiagnosticError, _selector_profile
 from app.macro.r4_gate import build_gate_assessment
 
 DEV=Path('/mnt/data/DEV-7c3f6660b3aae03f.json')
@@ -42,8 +42,17 @@ def test_exact_dev_diagnostic_reproduces_structure_and_legacy_profile(diagnostic
     assert legacy['lag_cutoff_L']==10
     assert legacy['bandwidth_b']==22
     assert legacy['effective_ell']==43
-    assert legacy['matches_expected'] is False
-    assert 'LEGACY_R2_PROFILE_MISMATCH' in diag['failure_codes']
+    assert legacy['canonical_reference_match'] is True
+    assert legacy['historical_record_match'] is False
+    assert legacy['historical_variant_reproduced'] is True
+    assert legacy['selector_profile']['k_n']==5
+    assert legacy['selector_profile']['lag_max']==50
+    assert legacy['historical_natural_log_selector']['k_n']==8
+    assert legacy['historical_natural_log_selector']['lag_max']==53
+    assert legacy['historical_natural_log_selector']['coordinate_m']==[1,5,10]
+    assert legacy['provenance_resolution']['classification']=='REFERENCE_SPEC_TRANSCRIPTION_ERROR_LOG_BASE'
+    assert 'LEGACY_R2_CANONICAL_MISMATCH' not in diag['failure_codes']
+    assert diag['diagnostics']['new_calibration_contract']['symbolic_contract_verified'] is True
     assert diag['diagnostics']['new_calibration_contract']['stochastic_computation_performed'] is False
 
 
@@ -52,5 +61,20 @@ def test_missing_approvals_leave_ga_blocked(diagnostic):
     a=build_gate_assessment(design=design,diagnostic=diag,model_use=None,theorem_review=None)
     assert a['ga_status']=='BLOCKED'
     states={g['gate_id']:g['status'] for g in a['gates']}
-    assert states['A10']=='BLOCKED' and states['A5']=='UNRESOLVED' and states['A6']=='UNRESOLVED' and states['G1']=='BLOCKED'
+    assert states['A10']=='PASS' and states['A5']=='UNRESOLVED' and states['A6']=='UNRESOLVED' and states['G1']=='BLOCKED'
     assert a['downstream_execution_authorized'] is False
+
+
+def test_selector_profile_freezes_reference_log_base():
+    cols=[
+        [float((i*7 + (i//3)*2) % 31 - 15) for i in range(1999)],
+        [float((i*5 + (i//5)*3) % 37 - 18) for i in range(1999)],
+        [float((i*11 + (i//7)*4) % 41 - 20) for i in range(1999)],
+    ]
+    canonical=_selector_profile(cols,log_base='LOG10')
+    historical=_selector_profile(cols,log_base='NATURAL_LOG')
+    assert canonical['k_n']==5
+    assert canonical['lag_max']==50
+    assert historical['k_n']==8
+    assert historical['lag_max']==53
+    assert canonical['rho_crit'] != historical['rho_crit']

@@ -20,7 +20,11 @@ from app.macro.r4_lattice import midpoint_median, raw_mad, median_set
 
 HORIZONS = (1, 5, 10)
 FIDS = {h: f"delta_bp_{h}obs" for h in HORIZONS}
-EXPECTED_LEGACY = {"coordinate_m": [1, 5, 10], "lag_cutoff_L": 10, "bandwidth_b": 22, "effective_ell": 43}
+CANONICAL_LEGACY = {"coordinate_m": [1, 5, 21], "lag_cutoff_L": 10, "bandwidth_b": 22, "effective_ell": 43}
+HISTORICAL_R3_LEGACY = {"coordinate_m": [1, 5, 10], "lag_cutoff_L": 10, "bandwidth_b": 22, "effective_ell": 43}
+NPCP_REFERENCE_COMMIT = "d602c9b50730560c947fb776bfd3c7b4f4905bf8"
+NPCP_LNOPT_BLOB = "b9c92dcf245106b0a122035214e269a05fbe392f"
+LEGACY_PROVENANCE_RESOLUTION = "REFERENCE_SPEC_TRANSCRIPTION_ERROR_LOG_BASE"
 
 
 class R4DiagnosticError(ValueError):
@@ -261,10 +265,24 @@ def _binary_ccov(mask_a: int, total_a: int, pref_a: list[int], mask_b: int, tota
     return (pairs-ma*sumb-mb*suma+count*ma*mb)/n
 
 
+def _selector_profile(cols: list[list[float]], *, log_base: str) -> dict[str, Any]:
+    n=len(cols[0])
+    if log_base == "LOG10":
+        log_n=math.log10(n)
+    elif log_base == "NATURAL_LOG":
+        log_n=math.log(n)
+    else:
+        raise ValueError("UNKNOWN_LOG_BASE")
+    kn=max(5, math.ceil(log_n)); lagmax=math.ceil(math.sqrt(n))+kn; crit=1.96*math.sqrt(log_n/n)
+    coordinate_m=[_mval(_acf(col,lagmax),kn,crit) for col in cols]
+    return {"log_base":log_base,"k_n":kn,"lag_max":lagmax,"rho_crit":format(crit,'.15g'),"coordinate_m":coordinate_m,"lag_cutoff_L":2*int(median(coordinate_m))}
+
+
 def legacy_r2_audit(values: dict[int,list[Decimal]]) -> dict[str,Any]:
-    n=len(values[1]); kn=max(5, math.ceil(math.log10(n))); lagmax=math.ceil(math.sqrt(n))+kn; crit=1.96*math.sqrt(math.log10(n)/n)
-    cols=[[float(x) for x in values[h]] for h in HORIZONS]
-    m=[_mval(_acf(col,lagmax),kn,crit) for col in cols]; L=2*int(median(m))
+    n=len(values[1]); cols=[[float(x) for x in values[h]] for h in HORIZONS]
+    selector=_selector_profile(cols,log_base="LOG10")
+    historical_selector=_selector_profile(cols,log_base="NATURAL_LOG")
+    m=selector["coordinate_m"]; L=selector["lag_cutoff_L"]; lagmax=selector["lag_max"]
     ranks=[_rank_average(values[h]) for h in HORIZONS]; U=[[r/(n+1) for r in col] for col in ranks]
     grid=[i/6 for i in range(1,6)]; points=list(itertools.product(grid, repeat=3)); ng=len(points)
     binary=[]
@@ -292,8 +310,10 @@ def legacy_r2_audit(values: dict[int,list[Decimal]]) -> dict[str,Any]:
     gamma2=495.136227/4*mean_k_sq; delta=0.3723388234*(mean_diag**2+mean_sigma_sq)
     if not math.isfinite(gamma2) or not math.isfinite(delta) or delta<=0: raise R4DiagnosticError("LEGACY_R2_PROFILE_MISMATCH","legacy estimator nonfinite")
     ell=(4*gamma2/delta*n)**0.2; b=round((ell+1)/2); eff=2*b-1
-    actual={"coordinate_m":m,"lag_cutoff_L":L,"bandwidth_b":b,"effective_ell":eff,"gamma_squared":format(gamma2,'.15g'),"delta":format(delta,'.15g'),"ell_opt":format(ell,'.15g'),"rounding_mode":"ROUND_TO_NEAREST_TIES_TO_EVEN","status":"LEGACY_REPRODUCTION_ONLY"}
-    actual["matches_expected"] = all(actual[k]==v for k,v in EXPECTED_LEGACY.items())
+    actual={"coordinate_m":m,"lag_cutoff_L":L,"bandwidth_b":b,"effective_ell":eff,"gamma_squared":format(gamma2,'.15g'),"delta":format(delta,'.15g'),"ell_opt":format(ell,'.15g'),"rounding_mode":"ROUND_TO_NEAREST_TIES_TO_EVEN","status":"LEGACY_REPRODUCTION_ONLY","selector_profile":selector,"historical_natural_log_selector":historical_selector,"reference_identity":{"repository":"cran/npcp","commit":NPCP_REFERENCE_COMMIT,"path":"R/lnOpt.R","blob":NPCP_LNOPT_BLOB,"formula":"kn=max(5,ceiling(log10(n))); rho.crit=1.96*sqrt(log10(n)/n)"},"provenance_resolution":{"classification":LEGACY_PROVENANCE_RESOLUTION,"historical_record_preserved":True,"canonical_log_base":"LOG10","historical_log_base":"NATURAL_LOG"}}
+    actual["canonical_reference_match"] = all(actual[k]==v for k,v in CANONICAL_LEGACY.items())
+    actual["historical_record_match"] = all(actual[k]==v for k,v in HISTORICAL_R3_LEGACY.items())
+    actual["historical_variant_reproduced"] = historical_selector["coordinate_m"] == HISTORICAL_R3_LEGACY["coordinate_m"] and historical_selector["lag_cutoff_L"] == HISTORICAL_R3_LEGACY["lag_cutoff_L"]
     return actual
 
 
@@ -323,7 +343,7 @@ def build_dev_diagnostic(dataset: dict[str,Any], *, transport_digest: str, desig
     if any(zero.values()): raise R4DiagnosticError("NON_COMPUTABLE_ZERO_SCALE","zero MAD in approved domain")
     legacy=legacy_r2_audit(values)
     failure_codes=[]
-    if not legacy["matches_expected"]: failure_codes.append("LEGACY_R2_PROFILE_MISMATCH")
+    if not legacy["canonical_reference_match"]: failure_codes.append("LEGACY_R2_CANONICAL_MISMATCH")
     native_map_hash=content_hash([[p,refs[p],dates[p],str(levels[p])] for p in sorted(refs)])
     alignment_hash=content_hash([[rows[i]["observation_date"],*[str(values[h][i]) for h in HORIZONS]] for i in range(n)])
     source_scope={"development_only":True,"input_allowlist_id":input_allowlist_id,"isolation_audit_id":isolation_audit_id,"clean_isolation_certified":True}
@@ -334,7 +354,7 @@ def build_dev_diagnostic(dataset: dict[str,Any], *, transport_digest: str, desig
         "scope":source_scope,
         "representation":{"units":"BASIS_POINT","horizon_order":[1,5,10],"n":n,"warmup_rule":"10_NATIVE_OBSERVATIONS","alignment_hash":alignment_hash},
         "domain":{"domain_id":"R2A_CANDIDATE_DOMAIN_V1","lower_bound":n0,"upper_anchor":n-1},
-        "diagnostics":{"lineage_checks":["CANONICAL_DATASET_IDENTITY_VERIFIED"],"native_checks":["NATIVE_MAP_COMPLETE","STRICT_DATE_ORDER"],"representation_checks":[f"EXACT_COMPARISONS:{comparisons}"],"lattice_counts":lattice,"joint_unique_count":len(set(zip(values[1],values[5],values[10]))),"median_quantile_counts":[x["summary"] for x in lattice],"mad_diagnostics":[{"horizon":h,"zero_scale_anchor_count":len(zero[str(h)])} for h in HORIZONS],"zero_scale_mask":zero,"chronological_bin_summaries":_bins(values),"raw_coordinate_lag_covariances":{str(h):_lag_cov_raw(values[h]) for h in HORIZONS},"cross_horizon_lag_covariances":{f"{a}->{b}":_cross_lag_covariances(values[a],values[b]) for a,b in ((1,5),(1,10),(5,10))},"indicator_lag_covariances":{str(h):_indicator_covariances(values[h]) for h in HORIZONS},"legacy_r2_profile_audit":legacy,"new_calibration_contract":{"span_set":"ALL_INTEGERS_1_THROUGH_N","span_count":n,"covariance_kernel":"PARZEN_COVARIANCE_V1","centering":"FULL_SAMPLE_EMPIRICAL","coupling":"SHARED_GAUSSIAN_VECTOR_PER_REPLICATE","stochastic_computation_performed":False}},
+        "diagnostics":{"lineage_checks":["CANONICAL_DATASET_IDENTITY_VERIFIED"],"native_checks":["NATIVE_MAP_COMPLETE","STRICT_DATE_ORDER"],"representation_checks":[f"EXACT_COMPARISONS:{comparisons}"],"lattice_counts":lattice,"joint_unique_count":len(set(zip(values[1],values[5],values[10]))),"median_quantile_counts":[x["summary"] for x in lattice],"mad_diagnostics":[{"horizon":h,"zero_scale_anchor_count":len(zero[str(h)])} for h in HORIZONS],"zero_scale_mask":zero,"chronological_bin_summaries":_bins(values),"raw_coordinate_lag_covariances":{str(h):_lag_cov_raw(values[h]) for h in HORIZONS},"cross_horizon_lag_covariances":{f"{a}->{b}":_cross_lag_covariances(values[a],values[b]) for a,b in ((1,5),(1,10),(5,10))},"indicator_lag_covariances":{str(h):_indicator_covariances(values[h]) for h in HORIZONS},"legacy_r2_profile_audit":legacy,"new_calibration_contract":{"span_set":"ALL_INTEGERS_1_THROUGH_N","span_count":n,"covariance_kernel":"PARZEN_COVARIANCE_V1","centering":"FULL_SAMPLE_EMPIRICAL","coupling":"SHARED_GAUSSIAN_VECTOR_PER_REPLICATE","symbolic_contract_verified":True,"stochastic_computation_performed":False}},
         "arithmetic_profile_id":ARITHMETIC_PROFILE_ID,"computation_status":"COMPLETE_WITH_BLOCKERS" if failure_codes else "COMPLETE","failure_codes":failure_codes,
     }
     return {**base,"source_scope_hash":source_scope_hash,"semantic_payload_hash":content_hash(base)}
