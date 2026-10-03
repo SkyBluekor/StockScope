@@ -3,7 +3,7 @@ import hashlib, json
 from pathlib import Path
 import pytest
 from app.macro.r4_contract import build_design_manifest
-from app.macro.r4_diagnostic import build_dev_diagnostic, validate_lineage, R4DiagnosticError
+from app.macro.r4_diagnostic import build_dev_diagnostic, validate_lineage, R4DiagnosticError, _selector_profile
 from app.macro.r4_gate import build_gate_assessment
 
 DEV=Path('/mnt/data/DEV-7c3f6660b3aae03f.json')
@@ -63,3 +63,18 @@ def test_missing_approvals_leave_ga_blocked(diagnostic):
     states={g['gate_id']:g['status'] for g in a['gates']}
     assert states['A10']=='PASS' and states['A5']=='UNRESOLVED' and states['A6']=='UNRESOLVED' and states['G1']=='BLOCKED'
     assert a['downstream_execution_authorized'] is False
+
+
+def test_selector_profile_freezes_reference_log_base():
+    cols=[
+        [float((i*7 + (i//3)*2) % 31 - 15) for i in range(1999)],
+        [float((i*5 + (i//5)*3) % 37 - 18) for i in range(1999)],
+        [float((i*11 + (i//7)*4) % 41 - 20) for i in range(1999)],
+    ]
+    canonical=_selector_profile(cols,log_base='LOG10')
+    historical=_selector_profile(cols,log_base='NATURAL_LOG')
+    assert canonical['k_n']==5
+    assert canonical['lag_max']==50
+    assert historical['k_n']==8
+    assert historical['lag_max']==53
+    assert canonical['rho_crit'] != historical['rho_crit']
