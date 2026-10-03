@@ -20,7 +20,6 @@ from app.macro.r4c_replay import (
     CLEAN_ATTESTATION_SCHEMA_ID,
     DETERMINISTIC_GATES,
     PHASE_A_SCHEMA_ID,
-    R4C_BASELINE_MAIN_SHA,
     R4C_STAGE_ID,
     R4CError,
     approval_binding_status,
@@ -29,13 +28,15 @@ from app.macro.r4c_replay import (
     validate_phase_a_result,
 )
 
+TEST_BASELINE_SHA = "f" * 40
+
 
 def _attestation():
     design = build_design_manifest()
     return {
         "schema_id": CLEAN_ATTESTATION_SCHEMA_ID,
         "stage_id": R4C_STAGE_ID,
-        "baseline_main_sha": R4C_BASELINE_MAIN_SHA,
+        "baseline_main_sha": TEST_BASELINE_SHA,
         "method_id": METHOD_ID,
         "design_hash": design["design_hash"],
         "execution_context_id": "TEST_CLEAN_CONTEXT",
@@ -99,7 +100,7 @@ def _synthetic_phase_a():
     base = {
         "schema_id": PHASE_A_SCHEMA_ID,
         "stage_id": R4C_STAGE_ID,
-        "baseline_main_sha": R4C_BASELINE_MAIN_SHA,
+        "baseline_main_sha": TEST_BASELINE_SHA,
         "method_id": METHOD_ID,
         "target_id": design["target_id"],
         "design": design,
@@ -172,7 +173,7 @@ def _approved_model(phase_a):
 
 def test_clean_attestation_accepts_only_fixed_fail_closed_scope():
     value = _attestation()
-    assert len(validate_clean_attestation(value)) == 64
+    assert len(validate_clean_attestation(value, expected_baseline_main_sha=TEST_BASELINE_SHA)) == 64
 
     for field in (
         "network_accessed",
@@ -185,7 +186,7 @@ def test_clean_attestation_accepts_only_fixed_fail_closed_scope():
         bad = copy.deepcopy(value)
         bad[field] = True
         with pytest.raises(R4CError) as exc:
-            validate_clean_attestation(bad)
+            validate_clean_attestation(bad, expected_baseline_main_sha=TEST_BASELINE_SHA)
         assert exc.value.code == "CLEAN_ATTESTATION_INVALID"
 
 
@@ -193,25 +194,29 @@ def test_clean_attestation_rejects_unknown_field_wrong_baseline_and_allowlist():
     bad = _attestation()
     bad["extra"] = 1
     with pytest.raises(R4CError) as exc:
-        validate_clean_attestation(bad)
+        validate_clean_attestation(bad, expected_baseline_main_sha=TEST_BASELINE_SHA)
     assert exc.value.code == "CLEAN_ATTESTATION_INVALID"
 
     bad = _attestation()
     bad["baseline_main_sha"] = "0" * 40
     with pytest.raises(R4CError) as exc:
-        validate_clean_attestation(bad)
+        validate_clean_attestation(bad, expected_baseline_main_sha=TEST_BASELINE_SHA)
     assert exc.value.code == "CLEAN_ATTESTATION_INVALID"
 
     bad = _attestation()
     bad["allowed_inputs"].append("HOLDOUT")
     with pytest.raises(R4CError) as exc:
-        validate_clean_attestation(bad)
+        validate_clean_attestation(bad, expected_baseline_main_sha=TEST_BASELINE_SHA)
     assert exc.value.code == "INPUT_NOT_ALLOWLISTED"
 
 
-def test_phase_a_seal_detects_tampering():
+def test_phase_a_seal_detects_tampering_and_can_bind_expected_checkout():
     phase_a = _synthetic_phase_a()
-    validate_phase_a_result(phase_a)
+    validate_phase_a_result(phase_a, expected_baseline_main_sha=TEST_BASELINE_SHA)
+
+    with pytest.raises(R4CError) as exc:
+        validate_phase_a_result(phase_a, expected_baseline_main_sha="0" * 40)
+    assert exc.value.code == "PHASE_A_SCHEMA_INVALID"
 
     tampered = copy.deepcopy(phase_a)
     tampered["diagnostic"]["representation"]["n"] = 2000
