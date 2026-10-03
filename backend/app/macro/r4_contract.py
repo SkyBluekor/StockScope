@@ -44,6 +44,10 @@ def require_closed_schema(value: dict[str, Any], *, required: set[str], optional
         raise R4ContractError(code, f"Missing fields: {sorted(missing)}")
 
 
+def _nonblank(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
 def build_design_manifest() -> dict[str, Any]:
     base = {
         "schema_id": DESIGN_SCHEMA_ID,
@@ -102,19 +106,51 @@ def validate_model_use_dossier(value: dict[str, Any] | None, *, diagnostic_hash:
         return "UNRESOLVED", ["MODEL_USE_SCOPE_HASH_MISMATCH"], content_hash(value)
     if value["finite_sample_proof_claim"] is not False:
         return "NOT_ACCEPTED", ["FINITE_SAMPLE_PROOF_CLAIM_FORBIDDEN"], content_hash(value)
+
     reasons: list[str] = []
-    for name, expected_class in (("stationarity", "STRICT"), ("dependence", "ALPHA_MIXING")):
-        block = value[name]
-        if not isinstance(block, dict) or block.get("class") != expected_class:
-            reasons.append(f"{name.upper()}_CLASS_INVALID")
-        if block.get("decision") != "ACCEPTED_FOR_MODEL_USE":
-            reasons.append(f"{name.upper()}_MODEL_USE_UNRESOLVED")
-        if block.get("contradictions") and len(block.get("dispositions", [])) < len(block["contradictions"]):
-            reasons.append(f"{name.upper()}_CONTRADICTION_UNDISPOSED")
+    identity_fields = ("owner_identity", "reviewer_identity", "authority_reference", "approval_reference", "approved_scope", "validity_rule", "revocation_rule")
+    for field in identity_fields:
+        if not _nonblank(value[field]):
+            reasons.append(f"{field.upper()}_MISSING")
+
+    stationarity_required = {"class", "rationale", "evidence_refs", "contradictions", "dispositions", "decision"}
+    dependence_required = {
+        "class", "rate", "rationale", "evidence_refs", "contradictions", "dispositions",
+        "nondegenerate_root_condition", "quantile_continuity_review", "decision",
+    }
+    try:
+        require_closed_schema(value["stationarity"], required=stationarity_required, code="STATIONARITY_SCHEMA_INVALID")
+        require_closed_schema(value["dependence"], required=dependence_required, code="DEPENDENCE_SCHEMA_INVALID")
+    except (TypeError, R4ContractError):
+        return "UNRESOLVED", ["MODEL_USE_NESTED_SCHEMA_INVALID"], content_hash(value)
+
+    stationarity=value["stationarity"]
+    dependence=value["dependence"]
+    if stationarity["class"] != "STRICT":
+        reasons.append("STATIONARITY_CLASS_INVALID")
+    if stationarity["decision"] != "ACCEPTED_FOR_MODEL_USE":
+        reasons.append("STATIONARITY_MODEL_USE_UNRESOLVED")
+    if not _nonblank(stationarity["rationale"]) or not stationarity["evidence_refs"]:
+        reasons.append("STATIONARITY_RATIONALE_OR_EVIDENCE_MISSING")
+    if stationarity["contradictions"] and len(stationarity["dispositions"]) < len(stationarity["contradictions"]):
+        reasons.append("STATIONARITY_CONTRADICTION_UNDISPOSED")
+
+    if dependence["class"] != "ALPHA_MIXING" or dependence["rate"] != "exists a>15/2":
+        reasons.append("DEPENDENCE_CLASS_OR_RATE_INVALID")
+    if dependence["decision"] != "ACCEPTED_FOR_MODEL_USE":
+        reasons.append("DEPENDENCE_MODEL_USE_UNRESOLVED")
+    if not _nonblank(dependence["rationale"]) or not dependence["evidence_refs"]:
+        reasons.append("DEPENDENCE_RATIONALE_OR_EVIDENCE_MISSING")
+    if not _nonblank(dependence["nondegenerate_root_condition"]):
+        reasons.append("DEPENDENCE_ROOT_REVIEW_MISSING")
+    if not _nonblank(dependence["quantile_continuity_review"]):
+        reasons.append("DEPENDENCE_QUANTILE_REVIEW_MISSING")
+    if dependence["contradictions"] and len(dependence["dispositions"]) < len(dependence["contradictions"]):
+        reasons.append("DEPENDENCE_CONTRADICTION_UNDISPOSED")
+
     if value["status"] != "MODEL_USE_ACCEPTED":
         reasons.append("MODEL_USE_STATUS_NOT_ACCEPTED")
     return ("ASSUMPTION_ACCEPTED_FOR_MODEL_USE" if not reasons else "UNRESOLVED", reasons, content_hash(value))
-
 
 def validate_theorem_review(value: dict[str, Any] | None, *, design_hash: str) -> tuple[str, list[str], str | None]:
     if value is None:
@@ -123,12 +159,17 @@ def validate_theorem_review(value: dict[str, Any] | None, *, design_hash: str) -
     require_closed_schema(value, required=required, code="THEOREM_REVIEW_SCHEMA_INVALID")
     if value["schema_id"] != THEOREM_REVIEW_SCHEMA_ID or value["method_id"] != METHOD_ID or value["design_hash"] != design_hash:
         return "BLOCKED", ["THEOREM_REVIEW_VERSION_MISMATCH"], content_hash(value)
-    proof = value["proof_units"]
     reasons = []
-    if set(proof) != {"D1", "D2", "D3", "D4"} or any(proof[k] != "APPROVED" for k in proof):
+    if not _nonblank(value["reviewer_identity"]):
+        reasons.append("THEOREM_REVIEWER_MISSING")
+    if not _nonblank(value["approval_reference"]):
+        reasons.append("THEOREM_APPROVAL_REFERENCE_MISSING")
+    proof = value["proof_units"]
+    if not isinstance(proof, dict) or set(proof) != {"D1", "D2", "D3", "D4"} or any(proof.get(k) != "APPROVED" for k in ("D1","D2","D3","D4")):
         reasons.append("THEOREM_PROOF_UNIT_UNAPPROVED")
     if value["unresolved_objections"]:
         reasons.append("THEOREM_REVIEW_OBJECTIONS_OPEN")
     if value["status"] != "APPROVED":
         reasons.append("THEOREM_REVIEW_NOT_APPROVED")
     return ("PASS" if not reasons else "BLOCKED", reasons, content_hash(value))
+
