@@ -1,0 +1,34 @@
+{
+  "schema_id": "NEXT6E_S6A_R4_MODEL_USE_V1",
+  "method_id": "NEXT6E_S6A_R4_LATTICE_CDF_PROJECTION_V1",
+  "diagnostic_hash": "<CLEAN_REPLAY_DIAGNOSTIC_HASH>",
+  "source_scope_hash": "<CLEAN_REPLAY_SOURCE_SCOPE_HASH>",
+  "stationarity": {
+    "class": "STRICT",
+    "rationale": "",
+    "evidence_refs": [],
+    "contradictions": [],
+    "dispositions": [],
+    "decision": "UNRESOLVED"
+  },
+  "dependence": {
+    "class": "ALPHA_MIXING",
+    "rate": "exists a>15/2",
+    "rationale": "",
+    "evidence_refs": [],
+    "contradictions": [],
+    "dispositions": [],
+    "nondegenerate_root_condition": "",
+    "quantile_continuity_review": "",
+    "decision": "UNRESOLVED"
+  },
+  "finite_sample_proof_claim": false,
+  "owner_identity": "",
+  "reviewer_identity": "",
+  "authority_reference": "",
+  "approval_reference": "",
+  "approved_scope": "",
+  "validity_rule": "",
+  "revocation_rule": "",
+  "status": "UNRESOLVED"
+}
