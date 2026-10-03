@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,30 @@ def _load_optional(path: Path | None) -> dict[str, Any] | None:
     return None if path is None else _load_object(path)
 
 
+def _git(*args: str) -> str:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(ROOT), *args],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise R4CError("BASELINE_CHANGED", "unable to resolve explicit Git execution baseline") from exc
+    return result.stdout.strip()
+
+
+def _current_clean_main_sha() -> str:
+    branch = _git("branch", "--show-current")
+    if branch != "main":
+        raise R4CError("BASELINE_CHANGED", f"formal Phase A requires branch main, got {branch or '<detached>'}")
+    head = _git("rev-parse", "HEAD")
+    dirty = _git("status", "--porcelain")
+    if dirty:
+        raise R4CError("WORKTREE_NOT_CLEAN", "formal Phase A requires a clean Git working tree")
+    return head
+
+
 def _write_json(path: Path, value: dict[str, Any]) -> None:
     if not path.parent.exists():
         raise R4CError("OUTPUT_PARENT_MISSING", str(path.parent))
@@ -60,10 +85,14 @@ def _print_status(value: dict[str, Any], *, as_json: bool) -> None:
 
 
 def _phase_a(args: argparse.Namespace) -> int:
+    baseline_main_sha = _current_clean_main_sha()
     attestation = _load_object(args.clean_attestation)
 
-    # Validate clean-scope governance before opening the Development artifact.
-    validate_clean_attestation(attestation)
+    # Validate clean-scope governance and exact checkout binding before opening DEV.
+    validate_clean_attestation(
+        attestation,
+        expected_baseline_main_sha=baseline_main_sha,
+    )
 
     try:
         development_bytes = args.development_artifact.read_bytes()
@@ -73,9 +102,11 @@ def _phase_a(args: argparse.Namespace) -> int:
     result = build_phase_a_result(
         development_bytes=development_bytes,
         attestation=attestation,
+        expected_baseline_main_sha=baseline_main_sha,
     )
     _write_json(args.output, result)
     print("NEXT-6E-S6A-R4C PHASE A")
+    print("Baseline main:", result["baseline_main_sha"])
     print("Status:", result["phase_a_status"])
     print("Diagnostic:", result["diagnostic_hash"])
     print("Source scope:", result["source_scope_hash"])
