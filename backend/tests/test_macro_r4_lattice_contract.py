@@ -50,3 +50,30 @@ def test_closed_model_use_schema_rejects_unknown_field():
       'authority_reference':'a','approval_reference':'p','approved_scope':'s','validity_rule':'v','revocation_rule':'x','status':'MODEL_USE_ACCEPTED','extra':1
     }
     with pytest.raises(Exception): validate_model_use_dossier(d,diagnostic_hash='a'*64,source_scope_hash='b'*64)
+
+
+def test_model_use_requires_real_identity_and_nested_evidence():
+    payload={
+      'schema_id':MODEL_USE_SCHEMA_ID,'method_id':METHOD_ID,'diagnostic_hash':'a'*64,'source_scope_hash':'b'*64,
+      'stationarity':{'class':'STRICT','rationale':'scoped working model','evidence_refs':['diag:1'],'contradictions':[],'dispositions':[],'decision':'ACCEPTED_FOR_MODEL_USE'},
+      'dependence':{'class':'ALPHA_MIXING','rate':'exists a>15/2','rationale':'scoped working model','evidence_refs':['diag:2'],'contradictions':[],'dispositions':[],'nondegenerate_root_condition':'reviewed','quantile_continuity_review':'reviewed','decision':'ACCEPTED_FOR_MODEL_USE'},
+      'finite_sample_proof_claim':False,'owner_identity':'','reviewer_identity':'','authority_reference':'','approval_reference':'',
+      'approved_scope':'R4 DEV scope','validity_rule':'until revoked','revocation_rule':'on contradiction','status':'MODEL_USE_ACCEPTED'
+    }
+    status,reasons,_=validate_model_use_dossier(payload,diagnostic_hash='a'*64,source_scope_hash='b'*64)
+    assert status=='UNRESOLVED'
+    assert 'OWNER_IDENTITY_MISSING' in reasons
+    assert 'REVIEWER_IDENTITY_MISSING' in reasons
+
+
+def test_theorem_review_requires_named_reviewer_and_approval_reference():
+    design=build_design_manifest()
+    payload={
+      'schema_id':'NEXT6E_S6A_R4_THEOREM_REVIEW_V1','method_id':METHOD_ID,'design_hash':design['design_hash'],
+      'proof_units':{'D1':'APPROVED','D2':'APPROVED','D3':'APPROVED','D4':'APPROVED'},
+      'reviewer_identity':'','approval_reference':'','unresolved_objections':[],'status':'APPROVED'
+    }
+    status,reasons,_=validate_theorem_review(payload,design_hash=design['design_hash'])
+    assert status=='BLOCKED'
+    assert 'THEOREM_REVIEWER_MISSING' in reasons
+    assert 'THEOREM_APPROVAL_REFERENCE_MISSING' in reasons
