@@ -3,6 +3,7 @@ from fractions import Fraction
 import pytest
 from app.macro.r4_contract import build_design_manifest, validate_model_use_dossier, validate_theorem_review, MODEL_USE_SCHEMA_ID, METHOD_ID
 from app.macro.r4_lattice import median_set, midpoint_median, raw_mad, median_outer_interval, mad_outer_interval, POS_INF, NEG_INF
+from app.macro.r4_gate import build_gate_assessment
 
 
 def test_design_manifest_is_deterministic():
@@ -77,3 +78,25 @@ def test_theorem_review_requires_named_reviewer_and_approval_reference():
     assert status=='BLOCKED'
     assert 'THEOREM_REVIEWER_MISSING' in reasons
     assert 'THEOREM_APPROVAL_REFERENCE_MISSING' in reasons
+
+
+def test_a10_symbolic_contract_can_pass_while_governance_remains_blocked():
+    design=build_design_manifest()
+    diagnostic={
+      'scope':{'clean_isolation_certified':True},
+      'representation':{'n':1999},
+      'diagnostics':{'new_calibration_contract':{
+        'span_set':'ALL_INTEGERS_1_THROUGH_N','span_count':1999,'covariance_kernel':'PARZEN_COVARIANCE_V1',
+        'centering':'FULL_SAMPLE_EMPIRICAL','coupling':'SHARED_GAUSSIAN_VECTOR_PER_REPLICATE',
+        'symbolic_contract_verified':True,'stochastic_computation_performed':False}},
+      'failure_codes':[],
+      'semantic_payload_hash':'a'*64,
+      'source_scope_hash':'b'*64,
+    }
+    assessment=build_gate_assessment(design=design,diagnostic=diagnostic,model_use=None,theorem_review=None)
+    states={g['gate_id']:g['status'] for g in assessment['gates']}
+    assert states['A10']=='PASS'
+    assert states['A5']=='UNRESOLVED'
+    assert states['A6']=='UNRESOLVED'
+    assert states['G1']=='BLOCKED'
+    assert assessment['ga_status']=='BLOCKED'
