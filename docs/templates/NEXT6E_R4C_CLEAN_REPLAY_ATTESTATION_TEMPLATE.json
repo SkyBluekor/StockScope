@@ -1,0 +1,26 @@
+{
+  "schema_id": "NEXT6E_S6A_R4C_CLEAN_REPLAY_ATTESTATION_V1",
+  "stage_id": "NEXT-6E-S6A-R4C",
+  "baseline_main_sha": "15a001d83779072b7e007c8d16fc0d6e82bf5eca",
+  "method_id": "NEXT6E_S6A_R4_LATTICE_CDF_PROJECTION_V1",
+  "design_hash": "874c3387b54bdeff6701f1ca7b72469cfda158fb588a2b366c2d799754dc2a18",
+  "execution_context_id": "",
+  "input_allowlist_id": "",
+  "allowed_inputs": [
+    "CLEAN_REPLAY_ATTESTATION",
+    "EXPLICIT_FROZEN_DEVELOPMENT",
+    "METHOD_DESIGN_MANIFEST"
+  ],
+  "development_transport_sha256": "<EXACT_EXPLICIT_DEV_TRANSPORT_SHA256>",
+  "development_dataset_id": "MACROCAL-DEV-7c3f6660b3aae03f",
+  "development_canonical_hash": "7c3f6660b3aae03f46c4a3cd66e6652b56c01fc9ab9a00aea67de8a451cddfc1",
+  "network_accessed": false,
+  "runtime_db_accessed": false,
+  "directory_discovery_performed": false,
+  "replacement_dev_used": false,
+  "holdout_accessed": false,
+  "adequacy_outputs_accessed": false,
+  "operator_identity": "",
+  "attestation_reference": "",
+  "status": "UNRESOLVED"
+}
