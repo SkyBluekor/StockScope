@@ -1,0 +1,179 @@
+{
+  "schema_id": "NEXT6E_S6A_R5R_MUR3_BR1_TARGETED_FIXTURES_V1",
+  "artifact_type": "TARGETED_DETERMINISTIC_FIXTURES",
+  "stage_id": "NEXT-6E-S6A-R5-MUR3-BR1",
+  "method_contract": {
+    "schema_id": "NEXT6E_S6A_R5R_METHOD_CONTRACT_V2",
+    "semantic_sha256": "d3b133f01f8d705fabd1456d5d5053570ff6d73586675c80903b06ce72c6e8e8",
+    "design_sha256": "05852b077e6c29820643299f66984f496ffe806d88c6544c577ee3357c5f74eb"
+  },
+  "inherited_fixture_artifact": {
+    "schema_id": "NEXT6E_S6A_R5R_DETERMINISTIC_FIXTURES_V1",
+    "relation": "HISTORICAL_V1_FIXTURES_INHERITED_WHERE_UNAFFECTED"
+  },
+  "fixtures": [
+    {
+      "fixture_id": "BR1-F01-A_UPSTREAM_EXCLUSION_BEFORE_BINDING",
+      "finding_id": "MUR3-F01",
+      "input": {
+        "source_rows": [
+          {
+            "date": "2026-01-01",
+            "h1": "AVAILABLE",
+            "h5": "AVAILABLE",
+            "h10": "MISSING"
+          },
+          {
+            "date": "2026-01-02",
+            "h1": "AVAILABLE",
+            "h5": "AVAILABLE",
+            "h10": "AVAILABLE"
+          },
+          {
+            "date": "2026-01-05",
+            "h1": "AVAILABLE",
+            "h5": "AVAILABLE",
+            "h10": "AVAILABLE"
+          }
+        ]
+      },
+      "operation": "Apply predefined joint eligibility before evaluation dataset identity/hash binding.",
+      "expected": {
+        "source_row_count": 3,
+        "joint_row_count": 2,
+        "excluded_before_binding_count": 1,
+        "excluded_reason_counts": {
+          "REQUIRED_HORIZON_UNAVAILABLE": 1
+        },
+        "bound_dates": [
+          "2026-01-02",
+          "2026-01-05"
+        ],
+        "evaluator_row_filtering": false,
+        "status": "VALID_PREBINDING_PREPROCESSING"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "fixture_id": "BR1-F01-B_MISSING_INSIDE_BOUND_PAYLOAD",
+      "finding_id": "MUR3-F01",
+      "input": {
+        "bound_evaluation_rows": [
+          {
+            "date": "2026-01-01",
+            "h1": "AVAILABLE",
+            "h5": "AVAILABLE",
+            "h10": "AVAILABLE"
+          },
+          {
+            "date": "2026-01-02",
+            "h1": "AVAILABLE",
+            "h5": "AVAILABLE",
+            "h10": "MISSING"
+          }
+        ]
+      },
+      "expected": {
+        "result_status": "BLOCKED",
+        "failure_code": "MISSING_REQUIRED_HORIZON",
+        "evaluator_row_filtering": false,
+        "recompute_joint_n": false
+      },
+      "verdict": "PASS"
+    },
+    {
+      "fixture_id": "BR1-F02-A_CANONICAL_CHRONOLOGY_HASH",
+      "finding_id": "MUR3-F02",
+      "input": {
+        "schema_id": "R5R_JOINT_CHRONOLOGY_HASH_V1",
+        "horizon_set": [
+          1,
+          5,
+          10
+        ],
+        "n": 3,
+        "rows": [
+          {
+            "i": 1,
+            "observation_date": "2026-01-01"
+          },
+          {
+            "i": 2,
+            "observation_date": "2026-01-02"
+          },
+          {
+            "i": 3,
+            "observation_date": "2026-01-05"
+          }
+        ]
+      },
+      "canonical_serialization": "{\"horizon_set\":[1,5,10],\"n\":3,\"rows\":[{\"i\":1,\"observation_date\":\"2026-01-01\"},{\"i\":2,\"observation_date\":\"2026-01-02\"},{\"i\":3,\"observation_date\":\"2026-01-05\"}],\"schema_id\":\"R5R_JOINT_CHRONOLOGY_HASH_V1\"}",
+      "expected": {
+        "algorithm": "SHA-256",
+        "output_format": "lowercase_hex_64",
+        "sha256": "afea17c4285bd17e3e486af30c993cf53093ce30876af4ac6ba37e912767ecf5"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "fixture_id": "BR1-F03-A_EXACT_EQUALITY_BOUNDARY",
+      "finding_id": "MUR3-F03",
+      "input": {
+        "metric": {
+          "numerator": "1",
+          "denominator": "3"
+        },
+        "tolerance": {
+          "numerator": "1",
+          "denominator": "3"
+        }
+      },
+      "exact_comparison": "1*3 <= 1*3",
+      "expected": {
+        "comparison": "WITHIN_POLICY",
+        "supported_boundary": true
+      },
+      "verdict": "PASS"
+    },
+    {
+      "fixture_id": "BR1-F03-B_EXACT_DECIMAL_BELOW_ONE_THIRD",
+      "finding_id": "MUR3-F03",
+      "input": {
+        "metric": {
+          "numerator": "1",
+          "denominator": "3"
+        },
+        "tolerance": {
+          "numerator": "333333",
+          "denominator": "1000000"
+        }
+      },
+      "exact_comparison": "1*1000000 <= 333333*3 is false because 1000000 > 999999",
+      "expected": {
+        "comparison": "EXCEEDS_POLICY"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "fixture_id": "BR1-F03-C_DECIMAL_TEXT_BINDING",
+      "finding_id": "MUR3-F03",
+      "input": {
+        "approved_decimal_text": "0.5"
+      },
+      "exact_decimal_conversion": "5/10 -> 1/2",
+      "expected": {
+        "canonical_rational": {
+          "numerator": "1",
+          "denominator": "2"
+        },
+        "metric_equal_boundary": {
+          "numerator": "1",
+          "denominator": "2"
+        },
+        "comparison": "WITHIN_POLICY"
+      },
+      "verdict": "PASS"
+    }
+  ],
+  "final_targeted_fixture_verdict": "PASS"
+}
