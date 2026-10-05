@@ -1,0 +1,172 @@
+{
+  "schema_id": "NEXT6E_S6A_R5_MODEL_USE_BINDING_ROUTE_V1",
+  "artifact_type": "MODEL_USE_BINDING_ROUTE_RESOLUTION",
+  "stage_id": "NEXT-6E-S6A-R5-GA2-BR1",
+  "method_id": "NEXT6E_S6A_R5_LOCAL_REFERENCE_CONCENTRATION_V1",
+  "final_method_contract": {
+    "schema_id": "NEXT6E_S6A_R5_FINAL_METHOD_CONTRACT_V2",
+    "semantic_sha256": "b1fffaeb292f1a7f513ca7d3376a0febbb4ad34aaa3bc4e6c63d951efb2a168c",
+    "design_hash_sha256": "351ba2d22352da821b5b3c7711dccc6553745945acd2c16c1b78678bb5a5f432"
+  },
+  "overall_verdict": "PARTIALLY_FEASIBLE",
+  "complete_auditable_route_for_current_r5": false,
+  "method_use_redesign_required": true,
+  "ga2_br2_authorized": false,
+  "single_model_candidate": {
+    "id": "SM1_LOCALLY_STATIONARY_CONTRACTING_CAUSAL_MODEL",
+    "examples": [
+      "time-varying autoregressive process",
+      "time-varying nonlinear Markov process",
+      "V-geometrically ergodic time-varying Markov kernel",
+      "smooth-parameter causal Bernoulli-shift process"
+    ],
+    "theoretical_compatibility": "PASS",
+    "actual_dgs10_binding": "NOT_ESTABLISHED",
+    "concern": "Adopting a new generative model solely to supply frozen constants relocates rather than resolves the evidence burden."
+  },
+  "assumptions": {
+    "A_R5_01_IID_INNOVATION_BASE": {
+      "burden": "CRITICAL",
+      "route_verdict": "THEORETICALLY_POSSIBLE_BUT_NOT_AUDITABLY_BINDABLE",
+      "candidate_routes": {
+        "construction_proof": "NO",
+        "published_model_theorem": "ABSTRACTLY_AVAILABLE",
+        "external_calibrated_dgs10_model": "NO_MATCH_TO_FROZEN_REQUIREMENT_FOUND",
+        "prospective_dedicated_estimation": "CANNOT_PROVE_REPRESENTATION_FROM_FINITE_PATH",
+        "explicit_model_assumption": "POSSIBLE"
+      },
+      "current_binding": false,
+      "redesign_trigger": true
+    },
+    "A_R5_02_INDICATOR_FINITE_MEMORY": {
+      "burden": "CRITICAL",
+      "route_verdict": "THEORETICALLY_POSSIBLE_BUT_NOT_AUDITABLY_BINDABLE",
+      "required_values": [
+        "C_dep",
+        "rho"
+      ],
+      "candidate_route": "Explicit contracting Markov/stochastic-recursion model plus uniform indicator coupling/contraction proof and parameter uncertainty control.",
+      "invalid_routes": [
+        "ACF fit",
+        "PACF fit",
+        "best exponential empirical decay",
+        "DEV outcome tuning"
+      ],
+      "current_binding": false,
+      "redesign_trigger": true
+    },
+    "A_R5_03_LOCAL_MARGINAL_APPROXIMATION": {
+      "burden": "HIGH",
+      "route_verdict": "BINDABLE_WITH_DEDICATED_EVIDENCE_STAGE",
+      "required_values": [
+        "C_ls",
+        "zeta"
+      ],
+      "dependency": "Must use the same explicit process model as A_R5_01/A_R5_02.",
+      "current_binding": false,
+      "redesign_trigger": "CONDITIONAL"
+    },
+    "A_R5_04_TIME_SMOOTHNESS": {
+      "burden": "CRITICAL",
+      "route_verdict": "THEORETICALLY_POSSIBLE_BUT_NOT_AUDITABLY_BINDABLE",
+      "required_values": [
+        "L2"
+      ],
+      "concern": "Global uniform second-time-derivative bound is not supplied by reviewed Treasury evidence; regime-shift evidence makes casual acceptance unsafe.",
+      "current_binding": false,
+      "redesign_trigger": true
+    },
+    "A_R5_05_UNIFORM_MOMENT": {
+      "burden": "MEDIUM",
+      "route_verdict": "BINDABLE_WITH_DEDICATED_EVIDENCE_STAGE",
+      "required_values": [
+        "q",
+        "M_q"
+      ],
+      "dependency": "Requires an explicit innovation/tail model and stability bound from the same adopted process model.",
+      "current_binding": false,
+      "redesign_trigger": "CONDITIONAL"
+    }
+  },
+  "external_sources": [
+    {
+      "id": "WU_2005",
+      "title": "Nonlinear system theory: Another look at dependence",
+      "venue": "PNAS",
+      "doi": "10.1073/pnas.0506715102",
+      "role": "causal iid-innovation representation and functional dependence"
+    },
+    {
+      "id": "DAHLHAUS_RICHTER_WU_2019",
+      "title": "Towards a general theory for nonlinear locally stationary processes",
+      "venue": "Bernoulli",
+      "doi": "10.3150/17-BEJ1011",
+      "role": "locally stationary nonlinear/Markov process framework"
+    },
+    {
+      "id": "PHANDOIDAEN_RICHTER",
+      "title": "Empirical process theory for nonsmooth functions under functional dependence",
+      "role": "locally stationary Bernoulli shifts, nonsmooth EDF empirical-process theory"
+    },
+    {
+      "id": "TRUQUET_LOCAL_MARKOV",
+      "title": "Local stationarity and time-inhomogeneous Markov chains",
+      "role": "contracting time-varying Markov kernels, local approximation and mixing"
+    },
+    {
+      "id": "TRUQUET_PERTURBATION",
+      "title": "A perturbation analysis of some Markov chains models with time-varying parameters",
+      "role": "V-geometric ergodicity and invariant-distribution regularity"
+    },
+    {
+      "id": "COVARRUBIAS_EWING_HEIN_THOMPSON_2006",
+      "title": "Modeling volatility changes in the 10-year Treasury",
+      "doi": "10.1016/j.physa.2006.01.074",
+      "role": "direct evidence of volatility regime shifts in daily 10-year Treasury rate changes"
+    },
+    {
+      "id": "BANSAL_TAUCHEN_ZHOU_2003",
+      "title": "Regime-Shifts, Risk Premiums in the Term Structure, and the Business Cycle",
+      "venue": "Federal Reserve FEDS 2003-21",
+      "role": "regime-shift evidence in US Treasury term-structure dynamics"
+    }
+  ],
+  "redesign_principles": [
+    "Prefer assumptions tied to observable or auditable quantities.",
+    "Reduce population constants that cannot be independently bounded.",
+    "Allow genuine Treasury regime variation.",
+    "Retain atomic/lattice observations without jitter.",
+    "Retain prospective CandidateDomain semantics where supportable.",
+    "Reassess all-later/latest-state requirements under candidate replacement methods.",
+    "Evaluate bounded/robust transforms that reduce moment assumptions.",
+    "Separate descriptive stability evidence from probability guarantees.",
+    "Do not hide a strong generative model beneath a nominally nonparametric method."
+  ],
+  "redesign_candidates": [
+    "DIRECT_WEAK_DEPENDENCE_ROUTE",
+    "REGIME_OR_PIECEWISE_LOCALLY_STATIONARY_ROUTE",
+    "BOUNDED_TRANSFORM_FINITE_SAMPLE_ROUTE",
+    "TARGET_REDUCED_CONSERVATIVE_ROUTE",
+    "EXPLICIT_PARAMETRIC_MODEL_ROUTE"
+  ],
+  "access_boundary": {
+    "additional_dev_diagnostics": "NONE",
+    "existing_ga2_dev_diagnostics": "CONTEXT_ONLY",
+    "reference_adequacy": "NOT_ACCESSED",
+    "passing_n": "NOT_ACCESSED",
+    "forward_envelope": "NOT_ACCESSED",
+    "holdout": "LOCKED_NOT_ACCESSED",
+    "runtime_db": "NOT_ACCESSED",
+    "production": "NONE"
+  },
+  "gate_state": {
+    "G_A0": "PASS",
+    "G_A1": "PASS",
+    "G_A2": "BLOCKED",
+    "G_A3": "NOT_AUTHORIZED_TO_PROCEED_AS_IF_G_A2_PASSED",
+    "G_A4": "PENDING",
+    "G_A": "BLOCKED",
+    "D3_IMPLEMENTATION": "NOT_AUTHORIZED"
+  },
+  "next_task": "NEXT-6E-S6A-R5-MUR1 METHOD-USE REDESIGN ARCHITECTURE COMPARISON"
+}
