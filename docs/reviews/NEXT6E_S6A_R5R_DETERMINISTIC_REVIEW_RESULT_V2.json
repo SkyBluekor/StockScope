@@ -1,0 +1,121 @@
+{
+  "schema_id": "NEXT6E_S6A_R5R_DETERMINISTIC_REVIEW_RESULT_V2",
+  "artifact_type": "TARGETED_DETERMINISTIC_CONTRACT_REVIEW_RESULT",
+  "stage_id": "NEXT-6E-S6A-R5-MUR3-BR1",
+  "supersedes_review_result": "NEXT6E_S6A_R5R_DETERMINISTIC_REVIEW_RESULT_V1",
+  "historical_prior_verdict": "BLOCKED_CONTRACT_AMBIGUITY",
+  "target_id": "NEXT6E_S6A_R5R_OBSERVED_PATH_EMPIRICAL_STABILITY_V1",
+  "method_id": "NEXT6E_S6A_R5R_EMPIRICAL_STABILITY_V1",
+  "method_contract": {
+    "schema_id": "NEXT6E_S6A_R5R_METHOD_CONTRACT_V2",
+    "semantic_sha256": "5519ad12a6e3dafb30041935c6ead2869d35148aadb2a6bab8443521ea8310c4",
+    "design_sha256": "05852b077e6c29820643299f66984f496ffe806d88c6544c577ee3357c5f74eb"
+  },
+  "child_contracts": {
+    "candidate_domain": {
+      "schema_id": "NEXT6E_S6A_R5R_CANDIDATE_DOMAIN_V1",
+      "semantic_sha256": "2f89ea3fdf775d718fabf955ee266b5cf36736f68b0fe97ced2cc5da83e0cdb4",
+      "changed": false
+    },
+    "window_profile": {
+      "schema_id": "NEXT6E_S6A_R5R_WINDOW_PROFILE_V1",
+      "semantic_sha256": "47a11455b159564db80eaf2c61bd89710a4bf56aea5d740eb60617ac2a3d385c",
+      "changed": false
+    }
+  },
+  "inheritance": {
+    "source_review": "NEXT6E_S6A_R5R_DETERMINISTIC_REVIEW_RESULT_V1",
+    "inherited_units": [
+      "primitive arithmetic",
+      "exact ECDF",
+      "median/MAD/ties",
+      "zero-MAD fail-close",
+      "window rule",
+      "first-anchor/window identity",
+      "candidate mapping/collision",
+      "all-later",
+      "latest-state",
+      "horizon AND",
+      "metric AND",
+      "earliest common-N",
+      "no-supported-anchor semantics",
+      "BLOCKED vs NOT_SUPPORTED",
+      "argmax tie rule",
+      "fixture-policy isolation"
+    ],
+    "inheritance_condition": "T_EMP/L_EMP/S_EMP formulas, Window Profile V1, CandidateDomain V1, all-later/latest/common-N intent remain unchanged.",
+    "full_25_fixture_rerun_claim": false
+  },
+  "targeted_fixture_artifact": {
+    "schema_id": "NEXT6E_S6A_R5R_MUR3_BR1_TARGETED_FIXTURES_V1",
+    "path": "docs/fixtures/NEXT6E_S6A_R5R_MUR3_BR1_TARGETED_FIXTURES_V1.json",
+    "fixture_count": 6,
+    "verdict": "PASS"
+  },
+  "findings": [
+    {
+      "id": "MUR3-F01",
+      "previous_status": "UNRESOLVED",
+      "previous_severity": "MAJOR",
+      "current_status": "RESOLVED",
+      "resolution": "PREBOUND_COMPLETE_JOINT_CHRONOLOGY separates upstream joint eligibility before dataset binding from evaluator fail-close semantics. The evaluator cannot filter/drop/impute/repair bound rows; missing required horizon inside the bound payload returns MISSING_REQUIRED_HORIZON."
+    },
+    {
+      "id": "MUR3-F02",
+      "previous_status": "UNRESOLVED",
+      "previous_severity": "MEDIUM",
+      "current_status": "RESOLVED",
+      "resolution": "R5R_JOINT_CHRONOLOGY_HASH_V1 freezes canonical chronology payload, lexicographically canonical compact UTF-8 JSON serialization, YYYY-MM-DD dates, SHA-256, and lowercase 64-hex output."
+    },
+    {
+      "id": "MUR3-F03",
+      "previous_status": "UNRESOLVED",
+      "previous_severity": "MAJOR",
+      "current_status": "RESOLVED",
+      "resolution": "R5R_EXACT_RATIONAL_V1 freezes reduced rational authoritative values and exact <= comparison by arbitrary-precision cross multiplication; binary-float epsilon is forbidden."
+    }
+  ],
+  "targeted_checks": {
+    "target_id_unchanged": "PASS",
+    "method_id_unchanged": "PASS",
+    "metric_formulas_unchanged": "PASS",
+    "candidate_domain_hash_unchanged": "PASS",
+    "window_profile_hash_unchanged": "PASS",
+    "all_later_unchanged": "PASS",
+    "latest_state_unchanged": "PASS",
+    "common_n_intent_unchanged": "PASS",
+    "missing_horizon_semantics": "PASS",
+    "chronology_hash_reproducibility": "PASS",
+    "exact_numeric_comparison": "PASS",
+    "unresolved_findings": "NONE"
+  },
+  "metadata_correction": {
+    "occurred": true,
+    "description": "During BR1 self-check, the first V2 semantic hash was found to include semantic_hash_rule contrary to the declared hash rule. Before review finalization, semantic_contract_sha256 metadata was corrected without changing design_core or design_hash.",
+    "final_semantic_sha256": "5519ad12a6e3dafb30041935c6ead2869d35148aadb2a6bab8443521ea8310c4",
+    "design_changed": false
+  },
+  "formula_defect_found": false,
+  "architecture_redesign_required": false,
+  "final_verdict": "PASS",
+  "gate_state_after_review": {
+    "R5R_G0": "PASS",
+    "R5R_G1": "BLOCKED_PENDING_EVALUATION_DATA_BINDING",
+    "R5R_G2": "PASS",
+    "R5R_DETERMINISTIC_CONTRACT_REVIEW": "PASS",
+    "R5R_G3": "BLOCKED_PENDING_S6B_R5R_POLICY_AMENDMENT",
+    "R5R_G4": "NOT_AUTHORIZED",
+    "R5R_REFERENCE_ADEQUACY_EVALUATION": "NOT_AUTHORIZED",
+    "IMPLEMENTATION": "NOT_AUTHORIZED"
+  },
+  "access_boundary": {
+    "DEV": "NOT_ACCESSED",
+    "Reference_Adequacy": "NOT_ACCESSED",
+    "passing_N": "NOT_ACCESSED",
+    "forward_envelope": "NOT_ACCESSED",
+    "Holdout": "LOCKED_NOT_ACCESSED",
+    "runtime_db": "NOT_ACCESSED",
+    "Production": "NONE"
+  },
+  "next_task": "NEXT-6E-S6B-R5R-P1 R5R POLICY AMENDMENT / TOLERANCE EVIDENCE DESIGN"
+}
