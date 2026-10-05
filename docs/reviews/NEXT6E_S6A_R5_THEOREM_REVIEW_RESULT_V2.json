@@ -1,0 +1,77 @@
+{
+  "schema_id": "NEXT6E_S6A_R5_THEOREM_REVIEW_RESULT_V2",
+  "artifact_type": "THEOREM_REVIEW_RESULT",
+  "stage_id": "NEXT-6E-S6A-R5-GA1-BR1",
+  "review_type": "TARGETED_GA1_F01_REREVIEW",
+  "supersedes_review_result": "NEXT6E_S6A_R5_THEOREM_REVIEW_RESULT_V1",
+  "method_id": "NEXT6E_S6A_R5_LOCAL_REFERENCE_CONCENTRATION_V1",
+  "final_method_contract": {
+    "schema_id": "NEXT6E_S6A_R5_FINAL_METHOD_CONTRACT_V2",
+    "semantic_sha256": "b1fffaeb292f1a7f513ca7d3376a0febbb4ad34aaa3bc4e6c63d951efb2a168c"
+  },
+  "design_hash": "351ba2d22352da821b5b3c7711dccc6553745945acd2c16c1b78678bb5a5f432",
+  "inheritance_basis": {
+    "prior_review_result": "NEXT6E_S6A_R5_THEOREM_REVIEW_RESULT_V1",
+    "prior_final_verdict": "BLOCKED",
+    "inherited_units": "P1-P8",
+    "condition": {
+      "method_id_unchanged": true,
+      "design_hash_unchanged": true,
+      "candidate_domain_hash_unchanged": true,
+      "concentration_band_hash_unchanged": true
+    },
+    "note": "P1-P8 are inherited from GA1 V1; they were not fully rerun in BR1."
+  },
+  "inherited_review_units": {
+    "P1": "PASS",
+    "P2": "PASS",
+    "P3": "PASS",
+    "P4": "PASS",
+    "P5": "PASS",
+    "P6": "PASS",
+    "P7": "PASS",
+    "P8": "PASS"
+  },
+  "targeted_checks": {
+    "GA1_F01_ownership_resolution": "PASS",
+    "A_R5_01_explicit_GA2_acceptance_item": "PASS",
+    "model_use_template_v2_structural_entry": "PASS",
+    "identical_scope_requirement": "PASS",
+    "structural_failure_states": "PASS",
+    "method_id_unchanged": "PASS",
+    "design_hash_unchanged": "PASS",
+    "candidate_domain_hash_unchanged": "PASS",
+    "concentration_band_hash_unchanged": "PASS"
+  },
+  "finding_resolution": {
+    "id": "GA1-F01",
+    "previous_severity": "MAJOR",
+    "previous_status": "UNRESOLVED",
+    "current_status": "RESOLVED",
+    "resolution": "A_R5_01_IID_INNOVATION_BASE is explicitly both a theorem assumption and a mandatory actual-process model-use acceptance item in Final Method Contract V2 and Model-Use Approval Template V2."
+  },
+  "hash_verification": {
+    "candidate_domain_v2": "e9a0427ea3c5e34b96db3bbaab026de51d83f27fc0f4d0ef32c9122398d31e09",
+    "concentration_band_v1": "8a7097992b1fb89478a5d6079df55cc89c39385b6762b9b945ecc19c966f3c6d",
+    "design_hash": "351ba2d22352da821b5b3c7711dccc6553745945acd2c16c1b78678bb5a5f432",
+    "final_method_v2_semantic_hash": "b1fffaeb292f1a7f513ca7d3376a0febbb4ad34aaa3bc4e6c63d951efb2a168c",
+    "status": "PASS"
+  },
+  "final_verdict": "PASS",
+  "gate_state_after_review": {
+    "G_A0": "PASS",
+    "G_A1": "PASS",
+    "G_A2": "BLOCKED_PENDING_MODEL_USE",
+    "G_A3": "BLOCKED_PENDING_PROFILE",
+    "G_A4": "BLOCKED_PENDING_ALPHA",
+    "G_A": "BLOCKED",
+    "D3_IMPLEMENTATION": "NOT_AUTHORIZED"
+  },
+  "next_gate": "NEXT-6E-S6A-R5-GA2 ACTUAL-PROCESS MODEL-USE ACCEPTANCE",
+  "frozen_statistical_design_modified": false,
+  "dev_accessed": false,
+  "reference_adequacy_accessed": false,
+  "holdout_accessed": false,
+  "runtime_db_accessed": false,
+  "production_impact": "NONE"
+}
