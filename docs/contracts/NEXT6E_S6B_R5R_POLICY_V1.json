@@ -1,0 +1,193 @@
+{
+  "schema_id": "NEXT6E_S6B_R5R_POLICY_V1",
+  "policy_id": "NEXT6E_S6B_R5R_INITIAL_OPERATIONAL_POLICY_V1",
+  "stage_id": "NEXT-6E-S6B-R5R-POLICY",
+  "status": "APPROVED_FOR_INITIAL_INTERNAL_REFERENCE_VALIDATION",
+  "policy_class": "INITIAL_OPERATIONAL_POLICY",
+  "target_binding": {
+    "target_id": "NEXT6E_S6A_R5R_OBSERVED_PATH_EMPIRICAL_STABILITY_V1",
+    "method_id": "NEXT6E_S6A_R5R_EMPIRICAL_STABILITY_V1",
+    "method_contract_schema": "NEXT6E_S6A_R5R_METHOD_CONTRACT_V2",
+    "method_contract_semantic_sha256": "5519ad12a6e3dafb30041935c6ead2869d35148aadb2a6bab8443521ea8310c4",
+    "method_contract_design_sha256": "05852b077e6c29820643299f66984f496ffe806d88c6544c577ee3357c5f74eb",
+    "candidate_domain_sha256": "2f89ea3fdf775d718fabf955ee266b5cf36736f68b0fe97ced2cc5da83e0cdb4",
+    "window_profile_sha256": "47a11455b159564db80eaf2c61bd89710a4bf56aea5d740eb60617ac2a3d385c"
+  },
+  "reference_use_scope": {
+    "allowed": [
+      "REFERENCE_CONTEXT",
+      "HISTORICAL_EVALUATION",
+      "SHADOW_RESEARCH",
+      "USER_INFORMATION"
+    ],
+    "purpose": "Prevent unsupported reuse of the declared empirical rate-change reference when probability, robust-location, or robust-scale interpretation has moved beyond an independently fixed initial operational boundary.",
+    "prohibited": [
+      "SHOCK_CALIBRATION_APPROVAL",
+      "SHOCK_DETECTION_APPROVAL",
+      "STRATEGY_INPUT",
+      "MARKET_REGIME_OVERRIDE",
+      "RISK_GATE",
+      "ORDER_DECISION",
+      "PRODUCTION_POLICY",
+      "AUTO_BUY",
+      "AUTO_SELL",
+      "FUTURE_PROBABILITY_GUARANTEE",
+      "TAIL_MAGNITUDE_GUARANTEE",
+      "INVESTMENT_OUTCOME_GUARANTEE"
+    ]
+  },
+  "metric_activation": {
+    "T_EMP": {
+      "role": "GATE",
+      "reason": "Empirical tail/cutoff probability is an existing reference semantic and candidate-research input."
+    },
+    "L_EMP": {
+      "role": "GATE",
+      "reason": "Robust center is part of the existing reference diagnostic and robust-MAD candidate interpretation."
+    },
+    "S_EMP": {
+      "role": "GATE",
+      "reason": "MAD is the scale denominator for robust-deviation interpretation; material scale drift changes that reference meaning."
+    },
+    "aggregation": "ALL_ACTIVE_METRICS_AND",
+    "horizon_aggregation": "ALL_HORIZONS_AND",
+    "later_state_aggregation": "ALL_LATER_STATES",
+    "method_v3_required": false
+  },
+  "tolerances": {
+    "tau_T": {
+      "metric": "T_EMP",
+      "exact": {
+        "numerator": "1",
+        "denominator": "10"
+      },
+      "display_decimal": "0.10",
+      "unit": "ABSOLUTE_PROBABILITY_DIFFERENCE",
+      "interpretation": "At every cutoff x, the two empirical CDF values may differ by at most 10 percentage points.",
+      "boundary": "INCLUSIVE"
+    },
+    "tau_L": {
+      "metric": "L_EMP",
+      "exact": {
+        "numerator": "1",
+        "denominator": "2"
+      },
+      "display_decimal": "0.50",
+      "unit": "ANCHOR_MAD_MULTIPLE",
+      "interpretation": "The later midpoint median may move by at most one-half of the anchor midpoint MAD.",
+      "boundary": "INCLUSIVE"
+    },
+    "tau_S": {
+      "metric": "S_EMP",
+      "exact": {
+        "numerator": "1",
+        "denominator": "4"
+      },
+      "display_decimal": "0.25",
+      "unit": "RELATIVE_ANCHOR_MAD_CHANGE",
+      "interpretation": "The later midpoint MAD may differ from anchor MAD by at most 25 percent of anchor MAD.",
+      "boundary": "INCLUSIVE"
+    }
+  },
+  "evidence": {
+    "source_class": "OUTCOME_INDEPENDENT_PRODUCT_SEMANTICS_PLUS_MINIMAL_SYNTHETIC_CHECK",
+    "development_outcomes_used": false,
+    "reference_adequacy_results_used": false,
+    "passing_n_used": false,
+    "forward_envelope_used": false,
+    "holdout_used": false,
+    "production_outcomes_used": false,
+    "synthetic_cases": [
+      {
+        "id": "SYN-T-01",
+        "change": "ECDF movement 0.05",
+        "expected": "WITHIN_POLICY",
+        "rationale": "5 percentage-point empirical cutoff-probability movement is below tau_T."
+      },
+      {
+        "id": "SYN-T-02",
+        "change": "ECDF movement 0.10",
+        "expected": "WITHIN_POLICY_BOUNDARY",
+        "rationale": "Exact equality is within policy."
+      },
+      {
+        "id": "SYN-T-03",
+        "change": "ECDF movement 0.20",
+        "expected": "EXCEEDS_POLICY",
+        "rationale": "20 percentage points exceeds the initial empirical probability-reuse budget."
+      },
+      {
+        "id": "SYN-L-01",
+        "change": "pure location shift = 0.50 anchor MAD",
+        "expected": "WITHIN_POLICY_BOUNDARY",
+        "rationale": "For a pure translation with unchanged MAD, L_EMP=0.50."
+      },
+      {
+        "id": "SYN-L-02",
+        "change": "pure location shift = 1.00 anchor MAD",
+        "expected": "EXCEEDS_POLICY",
+        "rationale": "A full anchor-MAD center shift is materially different from the initial robust-location reference."
+      },
+      {
+        "id": "SYN-S-01",
+        "change": "pure scale multiplier = 1.25",
+        "expected": "WITHIN_POLICY_BOUNDARY",
+        "rationale": "S_EMP=|1.25-1|=0.25."
+      },
+      {
+        "id": "SYN-S-02",
+        "change": "pure scale multiplier = 1.50",
+        "expected": "EXCEEDS_POLICY",
+        "rationale": "S_EMP=0.50 exceeds the initial robust-scale reuse budget."
+      },
+      {
+        "id": "SYN-BLIND-01",
+        "change": "small mass moved to an arbitrarily distant tail while T/L/S remain within limits",
+        "expected": "OUTSIDE_AUTHORIZED_CLAIM_NOT_A_POLICY_PASS_FOR_TAIL_MAGNITUDE",
+        "rationale": "R5R does not authorize tail-magnitude, mean, future-probability, or investment-outcome claims."
+      }
+    ],
+    "evidence_strength": "SUFFICIENT_FOR_INITIAL_INTERNAL_REFERENCE_USE_NOT_EXTERNAL_OR_PRODUCTION_STANDARD"
+  },
+  "governance": {
+    "policy_owner_role": "STOCKSCOPE_PROJECT_OWNER",
+    "method_reviewer_role": "AI_ASSISTED_METHOD_REVIEW_WITH_HUMAN_PROJECT_OWNERSHIP",
+    "approval_authority_role": "STOCKSCOPE_PROJECT_OWNER",
+    "approval_basis": "Project owner explicitly authorized execution of NEXT-6E-S6B-R5R-POLICY after reviewing the task specification; this artifact records the resulting initial internal policy.",
+    "ai_is_final_approval_authority": false,
+    "external_regulatory_claim": false
+  },
+  "change_control": {
+    "outcome_driven_relaxation": "FORBIDDEN",
+    "automatic_horizon_specific_tolerance": "FORBIDDEN",
+    "automatic_method_specific_tolerance": "FORBIDDEN",
+    "review_triggers": [
+      "REFERENCE_USE_SCOPE_CHANGE",
+      "METRIC_DEFINITION_CHANGE",
+      "TARGET_CHANGE",
+      "WINDOW_RULE_CHANGE",
+      "HORIZON_SEMANTICS_CHANGE",
+      "FEATURE_DEFINITION_CHANGE",
+      "NEW_DOWNSTREAM_DECISION_CONSUMER",
+      "MATERIAL_IMPLEMENTATION_DEFECT"
+    ],
+    "evaluation_failure_alone_is_not_change_basis": true
+  },
+  "gate_effect": {
+    "R5R_G3_POLICY_TOLERANCES": "PASS",
+    "R5R_G1_DATA_IDENTITY_CHRONOLOGY": "PENDING",
+    "R5R_G4_DETERMINISTIC_IMPLEMENTATION_VERIFICATION": "NOT_AUTHORIZED_UNTIL_IMPLEMENTATION_TASK",
+    "reference_adequacy_evaluation": "NOT_AUTHORIZED"
+  },
+  "access_boundary": {
+    "DEV": "NOT_ACCESSED",
+    "Reference_Adequacy": "NOT_ACCESSED",
+    "passing_N": "NOT_ACCESSED",
+    "forward_envelope": "NOT_ACCESSED",
+    "Holdout": "LOCKED_NOT_ACCESSED",
+    "runtime_db": "NOT_ACCESSED",
+    "Production": "NONE"
+  },
+  "semantic_hash_rule": "SHA256 of UTF-8 canonical JSON with recursively lexicographically sorted object keys, compact separators, and semantic_contract_sha256 plus semantic_hash_rule omitted",
+  "semantic_contract_sha256": "8934d99d808b8c7afa837fb71601695457154747fbcafd592da44b337343bc22"
+}
