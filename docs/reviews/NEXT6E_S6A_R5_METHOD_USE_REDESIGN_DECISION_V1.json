@@ -1,0 +1,178 @@
+{
+  "schema_id": "NEXT6E_S6A_R5_METHOD_USE_REDESIGN_DECISION_V1",
+  "artifact_type": "METHOD_USE_REDESIGN_ARCHITECTURE_DECISION",
+  "stage_id": "NEXT-6E-S6A-R5-MUR1",
+  "baseline_main_sha": "715b2657b621901851fb59b765b57a23cd28b8a8",
+  "legacy_method": {
+    "method_id": "NEXT6E_S6A_R5_LOCAL_REFERENCE_CONCENTRATION_V1",
+    "contract": "NEXT6E_S6A_R5_FINAL_METHOD_CONTRACT_V2",
+    "semantic_sha256": "b1fffaeb292f1a7f513ca7d3376a0febbb4ad34aaa3bc4e6c63d951efb2a168c",
+    "design_sha256": "351ba2d22352da821b5b3c7711dccc6553745945acd2c16c1b78678bb5a5f432",
+    "disposition": "FROZEN_HISTORICAL_METHOD_MODEL_USE_NOT_APPROVED_IMPLEMENTATION_NOT_AUTHORIZED"
+  },
+  "candidates": [
+    {
+      "id": "DIRECT_WEAK_DEPENDENCE_ROUTE",
+      "assumption_burden": "HIGH",
+      "auditability": "LOW",
+      "regime_realism": "MEDIUM",
+      "all_later_latest_support": "HIGH",
+      "population_inference_strength": "HIGH",
+      "hidden_model_risk": "MEDIUM",
+      "complexity": "HIGH",
+      "verdict": "REJECTED_AS_PRIMARY",
+      "reason": "Dependent concentration still requires auditable mixing/weak-dependence conditions and coefficients; this largely renames the current binding problem."
+    },
+    {
+      "id": "REGIME_OR_PIECEWISE_LOCALLY_STATIONARY_ROUTE",
+      "assumption_burden": "MEDIUM_HIGH",
+      "auditability": "MEDIUM",
+      "regime_realism": "VERY_HIGH",
+      "all_later_latest_support": "MEDIUM",
+      "population_inference_strength": "MEDIUM_HIGH",
+      "hidden_model_risk": "MEDIUM",
+      "complexity": "HIGH",
+      "verdict": "SECONDARY_DIAGNOSTIC_CANDIDATE",
+      "reason": "Better fit to Treasury regime variation, but change-point selection and within-regime dependence assumptions remain."
+    },
+    {
+      "id": "BOUNDED_TRANSFORM_FINITE_SAMPLE_ROUTE",
+      "assumption_burden": "MEDIUM",
+      "auditability": "HIGH",
+      "regime_realism": "HIGH",
+      "all_later_latest_support": "HIGH",
+      "population_inference_strength": "INSUFFICIENT_STANDALONE",
+      "hidden_model_risk": "LOW",
+      "complexity": "MEDIUM",
+      "verdict": "OPTIONAL_COMPONENT",
+      "reason": "Bounded transforms reduce moment/tail burden but do not remove serial-dependence assumptions required for population inference."
+    },
+    {
+      "id": "TARGET_REDUCED_OBSERVED_PATH_EMPIRICAL_STABILITY",
+      "architecture_id": "R5R_OBSERVED_PATH_EMPIRICAL_STABILITY_V1",
+      "assumption_burden": "VERY_LOW",
+      "auditability": "VERY_HIGH",
+      "regime_realism": "VERY_HIGH",
+      "all_later_latest_support": "VERY_HIGH",
+      "population_inference_strength": "INTENTIONALLY_NONE_IN_PRIMARY_CERTIFICATE",
+      "hidden_model_risk": "VERY_LOW",
+      "complexity": "LOW",
+      "verdict": "SELECTED_PRIMARY",
+      "reason": "Directly certifies empirical stability on the fixed observed path without unverifiable population-process constants while retaining the core operational comparison."
+    },
+    {
+      "id": "EXPLICIT_PARAMETRIC_MODEL_ROUTE",
+      "assumption_burden": "VERY_HIGH",
+      "auditability": "MEDIUM",
+      "regime_realism": "MODEL_DEPENDENT",
+      "all_later_latest_support": "HIGH",
+      "population_inference_strength": "HIGH",
+      "hidden_model_risk": "VERY_HIGH",
+      "complexity": "VERY_HIGH",
+      "verdict": "REJECTED_AS_PRIMARY",
+      "reason": "Would turn Reference Adequacy into validation of a strong generative model and introduce substantial model-misspecification risk."
+    }
+  ],
+  "selected": {
+    "architecture_family": "TARGET_REDUCED_CONSERVATIVE_ROUTE",
+    "architecture_id": "R5R_OBSERVED_PATH_EMPIRICAL_STABILITY_V1",
+    "primary_claim": "Historical/reference observed-path empirical stability only.",
+    "prohibited_claims": [
+      "population CDF confidence coverage",
+      "future-law stability probability",
+      "iid-innovation representation approval",
+      "global local-law smoothness approval"
+    ],
+    "provisional_metrics": {
+      "T_EMP": "sup_x |Fhat_h,v(x)-Fhat_h,s(x)| using fixed backward empirical windows",
+      "L_EMP": "|empirical_median_h(v)-empirical_median_h(s)| / empirical_MAD_h(s)",
+      "S_EMP": "|empirical_MAD_h(v)-empirical_MAD_h(s)| / empirical_MAD_h(s)"
+    },
+    "primary_transform": "NONE",
+    "regime_annotation": "OPTIONAL_NON_GATING",
+    "statistical_alpha": "NOT_PART_OF_PRIMARY_CERTIFICATE",
+    "operational_tolerances": [
+      "tau_T",
+      "tau_L",
+      "tau_S"
+    ],
+    "candidate_domain_intent": "Retain prospective 18-anchor/all-later/latest structure if MUR2 confirms contract compatibility."
+  },
+  "architecture_consequences": {
+    "removes_primary_requirements": [
+      "A_R5_01_IID_INNOVATION_BASE",
+      "C_dep",
+      "rho",
+      "C_ls",
+      "zeta",
+      "L2",
+      "q",
+      "M_q",
+      "alpha_stat"
+    ],
+    "retains_or_redefines": [
+      "atomic/lattice and ties",
+      "horizons 1/5/10",
+      "backward-only chronology",
+      "prospective anchor grid",
+      "all-later comparisons",
+      "latest-state inclusion",
+      "empirical T/L/S style drift outputs",
+      "fail-close anchor scale handling",
+      "policy tolerances tau_T/tau_L/tau_S"
+    ],
+    "semantic_change": "Population-law support certificate becomes observed-path empirical stability certificate."
+  },
+  "literature_basis": [
+    {
+      "id": "ARVANITIS_2023",
+      "title": "Concentration inequalities for Kernel density estimators under uniform mixing",
+      "role": "Shows dependent-data concentration still requires explicit mixing assumptions."
+    },
+    {
+      "id": "OLIVEIRA_ORENSTEIN_RAMOS_ROMANO_2024",
+      "title": "Split Conformal Prediction and Non-Exchangeable Data",
+      "role": "Non-exchangeable conformal validity uses concentration/decoupling conditions and coverage penalties rather than removing dependence assumptions."
+    },
+    {
+      "id": "BARBER_CANDES_RAMdas_TIBSHIRANI_2023",
+      "title": "Conformal prediction beyond exchangeability",
+      "role": "Shows exchangeability violations require explicitly modified robustness guarantees, not assumption-free time-series inference."
+    },
+    {
+      "id": "COVARRUBIAS_EWING_HEIN_THOMPSON_2006",
+      "title": "Modeling volatility changes in the 10-year Treasury",
+      "doi": "10.1016/j.physa.2006.01.074",
+      "role": "Documents sudden volatility regime shifts in 10-year Treasury rate changes."
+    },
+    {
+      "id": "BANSAL_TAUCHEN_ZHOU_2003",
+      "title": "Regime-Shifts, Risk Premiums in the Term Structure, and the Business Cycle",
+      "venue": "Federal Reserve FEDS 2003-21",
+      "role": "Supports regime-shift realism in US Treasury term-structure dynamics."
+    },
+    {
+      "id": "HAMILTON_1988",
+      "title": "Rational-expectations econometric analysis of changes in regime: An investigation of the term structure of interest rates",
+      "doi": "10.1016/0165-1889(88)90047-4",
+      "role": "Canonical evidence that term-structure dynamics can involve regime changes."
+    }
+  ],
+  "gates": {
+    "MUR1": "COMPLETE",
+    "LEGACY_G_A2": "BLOCKED",
+    "LEGACY_G_A": "BLOCKED",
+    "NEW_ARCHITECTURE_METHOD_CONTRACT": "NOT_YET_DEFINED",
+    "IMPLEMENTATION": "NOT_AUTHORIZED"
+  },
+  "access_boundary": {
+    "DEV": "NOT_ACCESSED_IN_MUR1",
+    "Reference_Adequacy": "NOT_ACCESSED",
+    "passing_N": "NOT_ACCESSED",
+    "forward_envelope": "NOT_ACCESSED",
+    "Holdout": "LOCKED_NOT_ACCESSED",
+    "runtime_db": "NOT_ACCESSED",
+    "production": "NONE"
+  },
+  "next_task": "NEXT-6E-S6A-R5-MUR2 OBSERVED-PATH EMPIRICAL STABILITY TARGET / CONTRACT DESIGN"
+}
