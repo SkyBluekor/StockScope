@@ -1,0 +1,162 @@
+{
+  "schema_id": "NEXT6E_S6A_R5_MODEL_USE_RESULT_V1",
+  "artifact_type": "MODEL_USE_RESULT",
+  "stage_id": "NEXT-6E-S6A-R5-GA2",
+  "method_id": "NEXT6E_S6A_R5_LOCAL_REFERENCE_CONCENTRATION_V1",
+  "final_method_contract": {
+    "schema_id": "NEXT6E_S6A_R5_FINAL_METHOD_CONTRACT_V2",
+    "semantic_sha256": "b1fffaeb292f1a7f513ca7d3376a0febbb4ad34aaa3bc4e6c63d951efb2a168c",
+    "design_hash_sha256": "351ba2d22352da821b5b3c7711dccc6553745945acd2c16c1b78678bb5a5f432"
+  },
+  "declared_scope": {
+    "provider": "FRED",
+    "provider_series_id": "DGS10",
+    "series_id": "US_10Y_CONSTANT_MATURITY_YIELD",
+    "dataset_contract": "VN_NEXT6B_S2_CALIBRATION_DATASET_V1",
+    "feature_contract": "VN_NEXT6B_S1_MACRO_FEATURE_V1",
+    "split_role": "DEVELOPMENT",
+    "usage_scope": "REFERENCE_RESEARCH_ONLY",
+    "manifest_observation_start": "2016-01-04",
+    "manifest_observation_end": "2023-12-29",
+    "analysis_row_count": 1999,
+    "horizons": [
+      1,
+      5,
+      10
+    ],
+    "unit": "BASIS_POINT",
+    "dataset_sha256": "7b1dfe33537bb8855b9441b2aeb24338a13950abf8cdc186b2821898d47313f4",
+    "dataset_limitations": [
+      "HISTORICAL_TIME_NOT_PROVEN"
+    ]
+  },
+  "evidence_boundary": {
+    "dev_access": "READ_ONLY_PREDECLARED_DIAGNOSTICS",
+    "holdout_access": false,
+    "reference_adequacy_access": false,
+    "passing_anchor_access": false,
+    "forward_envelope_access": false,
+    "runtime_db_access": false,
+    "production_access": false,
+    "diagnostic_role": [
+      "SUPPORTING_EVIDENCE",
+      "CONTRADICTION_SEARCH",
+      "INSUFFICIENT_EVIDENCE"
+    ],
+    "forbidden_interpretation": "Finite-sample non-rejection does not prove a population assumption."
+  },
+  "dev_diagnostics": {
+    "delta_bp_1obs": {
+      "median": 0,
+      "sample_mad": 3,
+      "sample_std": 5.344988640858329,
+      "min": -30,
+      "max": 29,
+      "abs_q99": 16,
+      "raw_acf_lag1": -0.011005122443943619,
+      "squared_acf_lag1": 0.22787827174691744,
+      "sample_second_moment": 28.5607803901951
+    },
+    "delta_bp_5obs": {
+      "median": 0,
+      "sample_mad": 7,
+      "sample_std": 11.567666855042361,
+      "min": -56,
+      "max": 51,
+      "abs_q99": 35,
+      "raw_acf_lag1": 0.7949000117092528,
+      "squared_acf_lag1": 0.6614881539581663,
+      "sample_second_moment": 133.9009504752376
+    },
+    "delta_bp_10obs": {
+      "median": 1,
+      "sample_mad": 10,
+      "sample_std": 16.491234649048106,
+      "min": -84,
+      "max": 69,
+      "abs_q99": 51,
+      "raw_acf_lag1": 0.8995817729356267,
+      "squared_acf_lag1": 0.8059325346607131,
+      "sample_second_moment": 272.4937468734367
+    },
+    "year_scale_notes": {
+      "delta_bp_1obs_sample_std_2021": 4.278846,
+      "delta_bp_1obs_sample_std_2022": 7.78603,
+      "delta_bp_1obs_sample_std_2023": 7.48653,
+      "delta_bp_10obs_sample_std_2021": 11.192,
+      "delta_bp_10obs_sample_std_2022": 23.549,
+      "delta_bp_10obs_sample_std_2023": 22.185
+    },
+    "adjacent_125_observation_ecdf_distance_max": {
+      "delta_bp_1obs": 0.232,
+      "delta_bp_5obs": 0.352,
+      "delta_bp_10obs": 0.488
+    },
+    "interpretation": "Descriptive contradiction/support diagnostics only. Overlapping 5/10-observation features mechanically induce serial dependence; these ACFs are not rho estimates."
+  },
+  "assumptions": {
+    "A_R5_01_IID_INNOVATION_BASE": {
+      "review_status": "UNRESOLVED",
+      "value_or_bound": "N/A",
+      "reason_code": "BLOCKED_IID_REPRESENTATION_UNRESOLVED",
+      "evidence_summary": "No project construction or primary source proves the declared DGS10 scope admits the exact iid-innovation representation required by the frozen finite-memory proof."
+    },
+    "A_R5_02_INDICATOR_FINITE_MEMORY": {
+      "review_status": "UNRESOLVED",
+      "values": {
+        "C_dep": null,
+        "rho": null
+      },
+      "reason_code": "BLOCKED_FINITE_MEMORY_BOUND_UNRESOLVED",
+      "evidence_summary": "Observed autocorrelation is not the frozen functional-dependence coefficient; no conservative population C_dep/rho bounds are independently established."
+    },
+    "A_R5_03_LOCAL_MARGINAL_APPROXIMATION": {
+      "review_status": "UNRESOLVED",
+      "values": {
+        "C_ls": null,
+        "zeta": null
+      },
+      "reason_code": "BLOCKED_LOCAL_APPROXIMATION_RATE_UNRESOLVED",
+      "evidence_summary": "Finite Development data cannot identify the required uniform population approximation rate; dataset also retains HISTORICAL_TIME_NOT_PROVEN."
+    },
+    "A_R5_04_TIME_SMOOTHNESS": {
+      "review_status": "UNRESOLVED",
+      "values": {
+        "L2": null
+      },
+      "reason_code": "BLOCKED_TIME_SMOOTHNESS_UNRESOLVED",
+      "evidence_summary": "Strong scale/distribution variation provides contradiction-supporting evidence against casual structural-stability assumptions, but does not prove no finite L2 exists."
+    },
+    "A_R5_05_UNIFORM_MOMENT": {
+      "review_status": "UNRESOLVED",
+      "values": {
+        "q": null,
+        "M_q": null
+      },
+      "reason_code": "BLOCKED_MOMENT_BOUND_UNRESOLVED",
+      "evidence_summary": "Finite sample moments do not establish a uniform population moment bound."
+    }
+  },
+  "cross_assumption_consistency": {
+    "theoretical_compatibility": "PASS",
+    "actual_process_binding": "UNRESOLVED",
+    "scope_consistency": "PASS_FOR_DECLARED_REVIEW_SCOPE",
+    "outcome_independence": "PASS",
+    "contradiction_review": "COMPLETE",
+    "limitations_recorded": true
+  },
+  "aggregate_status": "UNRESOLVED",
+  "final_verdict": "BLOCKED",
+  "gate_state_after_review": {
+    "G_A0": "PASS",
+    "G_A1": "PASS",
+    "G_A2": "BLOCKED_INSUFFICIENT_MODEL_USE_EVIDENCE",
+    "G_A3": "NOT_AUTHORIZED_TO_PROCEED_AS_IF_G_A2_PASSED",
+    "G_A4": "PENDING",
+    "G_A": "BLOCKED",
+    "D3_IMPLEMENTATION": "NOT_AUTHORIZED"
+  },
+  "next_task": "NEXT-6E-S6A-R5-GA2-BR1 MODEL-USE EVIDENCE / ASSUMPTION BINDING RESOLUTION",
+  "frozen_method_modified": false,
+  "production_impact": "NONE"
+}
