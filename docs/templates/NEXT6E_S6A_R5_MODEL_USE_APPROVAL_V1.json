@@ -1,0 +1,108 @@
+{
+  "schema_id": "NEXT6E_S6A_R5_MODEL_USE_APPROVAL_V1",
+  "artifact_type": "APPROVAL_TEMPLATE",
+  "status": "UNFILLED_TEMPLATE",
+  "method_id": "NEXT6E_S6A_R5_LOCAL_REFERENCE_CONCENTRATION_V1",
+  "frozen_method_contract": {
+    "schema_id": "NEXT6E_S6A_R5_FINAL_METHOD_CONTRACT_V1",
+    "semantic_sha256": "6651a174e4b1c2cb92395bb9a2f3b122f49412a07f8b533f764be7cd48f89424",
+    "design_hash_sha256": "351ba2d22352da821b5b3c7711dccc6553745945acd2c16c1b78678bb5a5f432"
+  },
+  "prerequisite": {
+    "theorem_review_verdict_required": "PASS",
+    "numerical_profile_status_required": "APPROVED",
+    "alpha_stat_status_required": "APPROVED",
+    "holdout_access_required": false
+  },
+  "declared_scope": {
+    "source_identity": null,
+    "process_representation": null,
+    "chronology_definition": null,
+    "horizon_set": [
+      1,
+      5,
+      10
+    ],
+    "date_or_population_scope": null,
+    "exclusions": null
+  },
+  "required_inputs": {
+    "C_dep": {
+      "value_or_bound": null,
+      "domain": "finite and >0",
+      "evidence": null,
+      "justification": null,
+      "status": "UNREVIEWED"
+    },
+    "rho": {
+      "value_or_bound": null,
+      "domain": "0<rho<1",
+      "evidence": null,
+      "justification": null,
+      "status": "UNREVIEWED"
+    },
+    "C_ls": {
+      "value_or_bound": null,
+      "domain": "finite and >=0",
+      "evidence": null,
+      "justification": null,
+      "status": "UNREVIEWED"
+    },
+    "zeta": {
+      "value_or_bound": null,
+      "domain": "zeta>0",
+      "evidence": null,
+      "justification": null,
+      "status": "UNREVIEWED"
+    },
+    "L2": {
+      "value_or_bound": null,
+      "domain": "finite and >=0",
+      "evidence": null,
+      "justification": null,
+      "status": "UNREVIEWED"
+    },
+    "q": {
+      "value_or_bound": null,
+      "domain": "q>0",
+      "evidence": null,
+      "justification": null,
+      "status": "UNREVIEWED"
+    },
+    "M_q": {
+      "value_or_bound": null,
+      "domain": "finite and >=0",
+      "evidence": null,
+      "justification": null,
+      "status": "UNREVIEWED"
+    }
+  },
+  "acceptance_checks": {
+    "scope_consistency": "UNREVIEWED",
+    "outcome_independence": "UNREVIEWED",
+    "finite_memory_contract_supported": "UNREVIEWED",
+    "local_marginal_approximation_supported": "UNREVIEWED",
+    "time_smoothness_supported": "UNREVIEWED",
+    "uniform_moment_supported": "UNREVIEWED",
+    "contradiction_evidence_reviewed": "UNREVIEWED",
+    "unverifiable_limitations_recorded": "UNREVIEWED"
+  },
+  "forbidden_logic": [
+    "diagnostic non-rejection equals proof of a population assumption",
+    "choose constants because they improve passing anchors",
+    "choose scope after seeing adequacy results",
+    "use Holdout to bind model-use inputs",
+    "reuse an approval from a materially different source/process scope"
+  ],
+  "allowed_input_status": [
+    "ACCEPTED_FOR_MODEL_USE",
+    "REJECTED_FOR_MODEL_USE",
+    "UNRESOLVED"
+  ],
+  "final_model_use_status": null,
+  "approval_reference": null,
+  "approver": null,
+  "approval_date": null,
+  "activation_rule": "All required inputs ACCEPTED_FOR_MODEL_USE on the identical declared scope and all acceptance checks PASS.",
+  "implementation_authorization": false
+}
