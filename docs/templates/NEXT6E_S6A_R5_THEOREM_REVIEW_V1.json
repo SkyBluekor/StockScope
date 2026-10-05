@@ -1,0 +1,123 @@
+{
+  "schema_id": "NEXT6E_S6A_R5_THEOREM_REVIEW_V1",
+  "artifact_type": "REVIEW_TEMPLATE",
+  "status": "UNFILLED_TEMPLATE",
+  "method_id": "NEXT6E_S6A_R5_LOCAL_REFERENCE_CONCENTRATION_V1",
+  "frozen_method_contract": {
+    "schema_id": "NEXT6E_S6A_R5_FINAL_METHOD_CONTRACT_V1",
+    "semantic_sha256": "6651a174e4b1c2cb92395bb9a2f3b122f49412a07f8b533f764be7cd48f89424",
+    "design_hash_sha256": "351ba2d22352da821b5b3c7711dccc6553745945acd2c16c1b78678bb5a5f432"
+  },
+  "reviewer": {
+    "identity": null,
+    "reviewer_type": null,
+    "model_or_organization": null,
+    "review_date": null,
+    "independence_statement": null
+  },
+  "source_scope": {
+    "required_project_artifacts": [
+      "docs/contracts/NEXT6E_S6A_R5_FINAL_METHOD_CONTRACT_V1.json",
+      "docs/contracts/NEXT6E_S6A_R5_CANDIDATE_DOMAIN_V2.json",
+      "docs/contracts/NEXT6E_S6A_R5_CONCENTRATION_BAND_V1.json",
+      "docs/NEXT6E_S6A_R5_D2E2_Theorem_Chain_Consolidation_2026-10-05.md"
+    ],
+    "external_sources_reviewed": [],
+    "forbidden_evidence": [
+      "DEV outcome",
+      "Reference Adequacy outcome",
+      "Holdout",
+      "Production outcome"
+    ]
+  },
+  "review_units": {
+    "P1_ATOMIC_LATTICE": {
+      "status": "UNREVIEWED",
+      "required_checks": [
+        "integer-lattice and ties retained",
+        "no randomized implementation transform required"
+      ]
+    },
+    "P2_FINITE_MEMORY_DEPENDENCE": {
+      "status": "UNREVIEWED",
+      "required_checks": [
+        "iid innovation-base sufficiency",
+        "finite-memory conditional-expectation construction",
+        "uniform L1 approximation semantics",
+        "residue-class independence consequence"
+      ]
+    },
+    "P3_LOCAL_LINEAR_ESTIMATOR": {
+      "status": "UNREVIEWED",
+      "required_checks": [
+        "weight sum identity",
+        "first-moment cancellation",
+        "Q_w identity",
+        "absolute-weight bound"
+      ]
+    },
+    "P4_BOUNDARY": {
+      "status": "UNREVIEWED",
+      "required_checks": [
+        "earliest window rule",
+        "latest-state no-future-leakage"
+      ]
+    },
+    "P5_CANDIDATE_DOMAIN": {
+      "status": "UNREVIEWED",
+      "required_checks": [
+        "V2 binding hash",
+        "anchor reuse does not alter family coverage",
+        "common-N semantics"
+      ]
+    },
+    "P6_ALL_LATER": {
+      "status": "UNREVIEWED",
+      "required_checks": [
+        "common event covers all required chronology states before candidate selection",
+        "post-selection common-N validity"
+      ]
+    },
+    "P7_CONCENTRATION": {
+      "status": "UNREVIEWED",
+      "required_checks": [
+        "finite-memory Markov step",
+        "d_n formula and alpha split",
+        "residue-class Hoeffding derivation",
+        "epsilon_ind constants",
+        "bias constant",
+        "tail envelope",
+        "non-vacuity rates"
+      ]
+    },
+    "P8_FUNCTIONAL_PROJECTION": {
+      "status": "UNREVIEWED",
+      "required_checks": [
+        "monotone CDF projection coverage",
+        "general median inversion",
+        "center-aware MAD inversion",
+        "TAIL lower/upper interval",
+        "location/scale denominator fail-close"
+      ]
+    }
+  },
+  "decisive_review_questions": [
+    "Does every stated probability bound follow from the declared method assumptions without hidden oracle quantities?",
+    "Does the finite-memory blocking proof remain valid for signed deterministic local-linear weights?",
+    "Are all probability-union factors and constants correct?",
+    "Does the CDF projection preserve the common simultaneous event?",
+    "Are median/MAD/location/scale outer intervals valid for atomic distributions and nonunique medians?",
+    "Is the theorem chain internally valid independently of whether actual-process assumptions are accepted?"
+  ],
+  "findings": [],
+  "allowed_verdicts": [
+    "PASS",
+    "BLOCKED",
+    "REJECTED"
+  ],
+  "final_verdict": null,
+  "pass_rule": "All P1-P8 review units PASS, no decisive unresolved finding, method/design hashes match frozen contract.",
+  "blocked_rule": "A potentially repairable proof/review gap remains; implementation and model-use activation remain blocked.",
+  "rejected_rule": "A core method theorem claim is false or requires an architectural change.",
+  "implementation_authorization": false
+}
