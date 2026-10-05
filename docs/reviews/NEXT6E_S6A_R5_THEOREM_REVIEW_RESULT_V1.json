@@ -1,0 +1,150 @@
+{
+  "schema_id": "NEXT6E_S6A_R5_THEOREM_REVIEW_RESULT_V1",
+  "artifact_type": "THEOREM_REVIEW_RESULT",
+  "stage_id": "NEXT-6E-S6A-R5-GA1",
+  "review_type": "FROZEN_METHOD_INDEPENDENT_REDERIVATION",
+  "independence_statement": "The frozen method was not modified. Core identities, probability bounds, bias constants, and functional projections were independently rederived. This is not external institutional certification.",
+  "method_id": "NEXT6E_S6A_R5_LOCAL_REFERENCE_CONCENTRATION_V1",
+  "method_hash": "6651a174e4b1c2cb92395bb9a2f3b122f49412a07f8b533f764be7cd48f89424",
+  "design_hash": "351ba2d22352da821b5b3c7711dccc6553745945acd2c16c1b78678bb5a5f432",
+  "hash_verification": {
+    "final_method_contract": "PASS",
+    "candidate_domain_v2": "PASS",
+    "concentration_band_v1": "PASS",
+    "consolidated_draft": "PASS"
+  },
+  "reviewed_sources": [
+    {
+      "type": "PROJECT",
+      "path": "docs/contracts/NEXT6E_S6A_R5_FINAL_METHOD_CONTRACT_V1.json"
+    },
+    {
+      "type": "PROJECT",
+      "path": "docs/contracts/NEXT6E_S6A_R5_CANDIDATE_DOMAIN_V2.json"
+    },
+    {
+      "type": "PROJECT",
+      "path": "docs/contracts/NEXT6E_S6A_R5_CONCENTRATION_BAND_V1.json"
+    },
+    {
+      "type": "PROJECT",
+      "path": "docs/contracts/NEXT6E_S6A_R5_METHOD_CONSOLIDATED_V1.json"
+    },
+    {
+      "type": "PROJECT",
+      "path": "docs/NEXT6E_S6A_R5_D2E2_Theorem_Chain_Consolidation_2026-10-05.md"
+    },
+    {
+      "type": "EXTERNAL",
+      "citation": "Phandoidaen & Richter, Empirical process theory for nonsmooth functions under functional dependence, EJS 2022"
+    },
+    {
+      "type": "EXTERNAL",
+      "citation": "Phandoidaen & Richter, Empirical process theory for locally stationary processes, Bernoulli 2022"
+    },
+    {
+      "type": "EXTERNAL",
+      "citation": "Hoeffding, Probability Inequalities for Sums of Bounded Random Variables, JASA 1963"
+    }
+  ],
+  "review_units": {
+    "P1_ATOMIC_LATTICE": {
+      "verdict": "PASS",
+      "note": "Direct integer-indicator route is valid; no continuity, density, or jitter is required."
+    },
+    "P2_FINITE_MEMORY_DEPENDENCE": {
+      "verdict": "PASS",
+      "note": "Given the declared iid innovation base and uniform finite-memory L1 approximation, d-spaced finite-memory approximations are measurable with respect to disjoint independent innovation blocks."
+    },
+    "P3_LOCAL_LINEAR_ESTIMATOR": {
+      "verdict": "PASS",
+      "checks": {
+        "sum_weights": "1",
+        "weighted_first_index_moment": "0",
+        "Q_w": "2*(2*w-1)/(w*(w+1))",
+        "max_abs_weight_bound": "<4/w",
+        "sum_abs_weight_bound": "<4"
+      }
+    },
+    "P4_BOUNDARY": {
+      "verdict": "PASS",
+      "note": "w_n<=ceil(n/10) gives a full earliest backward window; t=n uses no future observation."
+    },
+    "P5_CANDIDATE_DOMAIN": {
+      "verdict": "PASS",
+      "note": "Frozen V2 anchor/grid semantics are consistent with the estimator."
+    },
+    "P6_ALL_LATER": {
+      "verdict": "PASS",
+      "note": "The simultaneous CDF-state event covers all required chronology states before anchor post-selection; no separate anchor stochastic dimension is required."
+    },
+    "P7_CONCENTRATION": {
+      "verdict": "PASS",
+      "checks": {
+        "finite_memory_replacement_bound": "PASS",
+        "d_n_formula": "PASS",
+        "hoeffding_range_factor": "PASS",
+        "residue_union_constants": "PASS",
+        "probability_accounting": "PASS",
+        "bias_constant": "PASS",
+        "tail_envelope": "PASS",
+        "nonvacuity_rates": "PASS"
+      }
+    },
+    "P8_FUNCTIONAL_PROJECTION": {
+      "verdict": "PASS",
+      "checks": {
+        "cdf_projection": "PASS",
+        "median_inversion": "PASS",
+        "mad_inversion": "PASS",
+        "tail_projection": "PASS",
+        "location_scale_ratio": "PASS"
+      }
+    }
+  },
+  "assumption_ownership_verdict": "BLOCKED",
+  "findings": [
+    {
+      "id": "GA1-F01",
+      "severity": "MAJOR",
+      "area": "ASSUMPTION_OWNERSHIP_GA2",
+      "status": "UNRESOLVED",
+      "finding": "A_R5_01_IID_INNOVATION_BASE is proof-critical for residue-class independence, but the frozen G-A2 actual-process model-use schema and model-use template do not explicitly require an acceptance verdict for that structural representation.",
+      "consequence": "G-A2 could be interpreted as passing after numeric model-use inputs are accepted without an explicit affirmative acceptance of the innovation representation required by P2/P7.",
+      "required_resolution": "Make actual-process model-use acceptance explicitly include A_R5_01_IID_INNOVATION_BASE for the identical declared process scope."
+    },
+    {
+      "id": "GA1-F02",
+      "severity": "INFO",
+      "area": "LITERATURE_BOUNDARY",
+      "status": "DOCUMENTED",
+      "finding": "The final finite-memory blocking/Hoeffding band is a project-specific lemma chain rather than a verbatim theorem from one publication."
+    },
+    {
+      "id": "GA1-F03",
+      "severity": "INFO",
+      "area": "REVIEW_INDEPENDENCE",
+      "status": "DOCUMENTED",
+      "finding": "This review is an internal frozen-method rederivation, not external human or institutional certification."
+    }
+  ],
+  "final_verdict": "BLOCKED",
+  "verdict_reason": "P1-P8 pass, but the frozen PASS rule forbids PASS with an unresolved MAJOR finding. GA1-F01 remains unresolved.",
+  "gate_state_after_review": {
+    "G_A0": "PASS",
+    "G_A1": "BLOCKED",
+    "G_A2": "NOT_AUTHORIZED_TO_START_AS_CURRENT_SCHEMA",
+    "G_A3": "PENDING",
+    "G_A4": "PENDING",
+    "G_A": "BLOCKED",
+    "D3_IMPLEMENTATION": "NOT_AUTHORIZED"
+  },
+  "next_gate": null,
+  "next_task": "NEXT-6E-S6A-R5-GA1-BR1 ASSUMPTION-OWNERSHIP BLOCKER RESOLUTION",
+  "frozen_method_modified": false,
+  "dev_accessed": false,
+  "reference_adequacy_accessed": false,
+  "holdout_accessed": false,
+  "runtime_db_accessed": false,
+  "production_impact": "NONE"
+}
