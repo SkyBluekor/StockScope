@@ -1148,7 +1148,15 @@ PASS
 
 Evaluation policy
 =
-UNRESOLVED
+R5R_POLICY_V1 FROZEN
+
+Policy tolerances
+=
+tau_T 0.10 / tau_L 0.50 / tau_S 0.25
+
+R5R-G3
+=
+PASS
 
 Evaluation data binding
 =
@@ -1218,40 +1226,93 @@ exact rational numeric semantics
 현재 실제로 해결해야 하는 것은 다음이다.
 
 ~~~text
-1. Reference reuse purpose
+1. Evaluation data binding
 
-2. Metric activation
-   GATE / DIAGNOSTIC / NOT_USED
+2. R5R evaluator implementation
 
-3. Reasonable initial operational tolerance
+3. Deterministic implementation verification
 
-4. Lightweight policy ownership / approval
-
-5. Evaluation data binding
-
-6. Implementation / deterministic verification
+4. JEV execution after G1/G4 PASS
 ~~~
 
 이 목록 밖의 새 연구는 실제 blocker가 확인될 때만 추가한다.
 
 ---
 
-# 39. NEXT TASK
+# 39. POLICY RESOLUTION COMPLETE
+
+현재 policy:
 
 ~~~text
-NEXT-6E-S6B-R5R-POLICY
-Reference Use + Metric Activation + Initial Policy Resolution
+NEXT6E_S6B_R5R_POLICY_V1
+
+Reference Use
+=
+REFERENCE_CONTEXT
+HISTORICAL_EVALUATION
+SHADOW_RESEARCH
+USER_INFORMATION
+
+Metric Activation
+=
+T_EMP GATE
+L_EMP GATE
+S_EMP GATE
+
+tau_T
+=
+0.10
+
+tau_L
+=
+0.50
+
+tau_S
+=
+0.25
+
+R5R-G3
+=
+PASS
+~~~
+
+Method V2의 ALL_METRICS_AND 구조를 그대로 사용하므로 Method V3는 만들지 않았다.
+
+정책 문서:
+
+~~~text
+docs/설계/
+StockScope_NEXT6E_R5R_초기정책결정_2026-10-05.md
+
+docs/contracts/
+NEXT6E_S6B_R5R_POLICY_V1.json
+~~~
+
+# 40. NEXT TASK
+
+~~~text
+NEXT-6E-R5R-IMPLEMENT
+~~~
+
+범위:
+
+~~~text
+R5R evaluator implementation
++
+deterministic fixture verification
++
+evaluation dataset binding
 ~~~
 
 목적:
 
-> 현재 R5R 계산계약을 다시 연구하지 않고, StockScope 제품에서 실제로 필요한 reference reuse 범위와 최소 운영 policy를 한 번에 확정한다.
+> 현재 frozen R5R Method V2 + Policy V1을 코드로 구현하고 G1/G4를 닫는다.
 
-이 작업이 끝나면 별도 장기 설계 chain으로 빠지지 않고 implementation 쪽으로 이동한다.
+그 다음 실제 JEV 실행으로 이동한다.
 
 ---
 
-# 40. 이 기준선의 변경 규칙
+# 41. 이 기준선의 변경 규칙
 
 이 문서를 변경해야 하는 경우:
 
@@ -1266,7 +1327,7 @@ Reference Use + Metric Activation + Initial Policy Resolution
 
 ---
 
-# 41. 최종 원칙
+# 42. 최종 원칙
 
 StockScope의 품질은 문서 수나 theorem 수로 결정되지 않는다.
 
