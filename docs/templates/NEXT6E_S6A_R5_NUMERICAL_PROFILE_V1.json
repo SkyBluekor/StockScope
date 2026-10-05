@@ -1,0 +1,58 @@
+{
+  "schema_id": "NEXT6E_S6A_R5_NUMERICAL_PROFILE_V1",
+  "artifact_type": "APPROVAL_TEMPLATE",
+  "status": "UNFILLED_TEMPLATE",
+  "method_id": "NEXT6E_S6A_R5_LOCAL_REFERENCE_CONCENTRATION_V1",
+  "frozen_method_contract": {
+    "schema_id": "NEXT6E_S6A_R5_FINAL_METHOD_CONTRACT_V1",
+    "semantic_sha256": "6651a174e4b1c2cb92395bb9a2f3b122f49412a07f8b533f764be7cd48f89424",
+    "design_hash_sha256": "351ba2d22352da821b5b3c7711dccc6553745945acd2c16c1b78678bb5a5f432"
+  },
+  "profile_id": null,
+  "parameters": {
+    "beta": {
+      "value": null,
+      "domain": "0<beta<1",
+      "formula_effect": "w_n=ceil(n^(1-beta))",
+      "status": "UNBOUND"
+    },
+    "mu": {
+      "value": null,
+      "domain": "mu>0",
+      "formula_effect": "M_n=ceil(n^mu)",
+      "status": "UNBOUND"
+    }
+  },
+  "selection_basis": {
+    "prospective": true,
+    "outcome_independent": true,
+    "rationale": null,
+    "prohibited_evidence": [
+      "DEV passing rate",
+      "Reference Adequacy output",
+      "Holdout",
+      "Production outcome"
+    ]
+  },
+  "required_checks": {
+    "theorem_domain": "UNREVIEWED",
+    "w_n_ge_2_over_supported_n": "UNREVIEWED",
+    "w_n_le_N_min_over_supported_n": "UNREVIEWED",
+    "d_n_le_w_n_given_approved_model_use_and_alpha": "UNREVIEWED",
+    "threshold_growth_computable": "UNREVIEWED",
+    "numeric_stability": "UNREVIEWED"
+  },
+  "supported_n_domain": null,
+  "alpha_stat_binding_reference": null,
+  "model_use_binding_reference": null,
+  "allowed_status": [
+    "APPROVED",
+    "BLOCKED",
+    "REJECTED"
+  ],
+  "final_status": null,
+  "approval_reference": null,
+  "approver": null,
+  "approval_date": null,
+  "implementation_authorization": false
+}
