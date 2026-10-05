@@ -90,7 +90,7 @@ Design SHA256:
 Semantic SHA256:
 
 ```text
-d3b133f01f8d705fabd1456d5d5053570ff6d73586675c80903b06ce72c6e8e8
+5519ad12a6e3dafb30041935c6ead2869d35148aadb2a6bab8443521ea8310c4
 ```
 
 V1은 historical frozen artifact로 유지한다.
