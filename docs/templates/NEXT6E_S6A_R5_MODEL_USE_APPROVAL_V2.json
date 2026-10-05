@@ -1,0 +1,138 @@
+{
+  "schema_id": "NEXT6E_S6A_R5_MODEL_USE_APPROVAL_V2",
+  "artifact_type": "APPROVAL_TEMPLATE",
+  "status": "UNFILLED_TEMPLATE",
+  "supersedes": {
+    "schema_id": "NEXT6E_S6A_R5_MODEL_USE_APPROVAL_V1",
+    "reason": "GA1-F01_ASSUMPTION_OWNERSHIP_RESOLUTION"
+  },
+  "method_id": "NEXT6E_S6A_R5_LOCAL_REFERENCE_CONCENTRATION_V1",
+  "frozen_method_contract": {
+    "schema_id": "NEXT6E_S6A_R5_FINAL_METHOD_CONTRACT_V2",
+    "semantic_sha256": "b1fffaeb292f1a7f513ca7d3376a0febbb4ad34aaa3bc4e6c63d951efb2a168c",
+    "design_hash_sha256": "351ba2d22352da821b5b3c7711dccc6553745945acd2c16c1b78678bb5a5f432"
+  },
+  "prerequisite": {
+    "theorem_review_verdict_required": "PASS",
+    "numerical_profile_status_required": "APPROVED",
+    "alpha_stat_status_required": "APPROVED",
+    "holdout_access_required": false
+  },
+  "declared_scope": {
+    "source_identity": null,
+    "process_representation": null,
+    "chronology_definition": null,
+    "horizon_set": [
+      1,
+      5,
+      10
+    ],
+    "date_or_population_scope": null,
+    "exclusions": null
+  },
+  "structural_assumptions": {
+    "A_R5_01_IID_INNOVATION_BASE": {
+      "statement": "There exists an iid innovation sequence supporting the finite-memory indicator representation used by the frozen method.",
+      "declared_scope": null,
+      "process_representation": null,
+      "evidence": [],
+      "supporting_reason": null,
+      "contradiction_evidence": [],
+      "limitations": [],
+      "review_status": "UNREVIEWED",
+      "allowed_status": [
+        "ACCEPTED_FOR_MODEL_USE",
+        "REJECTED_FOR_MODEL_USE",
+        "UNRESOLVED"
+      ],
+      "approval_reference": null
+    }
+  },
+  "required_inputs": {
+    "C_dep": {
+      "value_or_bound": null,
+      "domain": "finite and >0",
+      "evidence": null,
+      "justification": null,
+      "status": "UNREVIEWED"
+    },
+    "rho": {
+      "value_or_bound": null,
+      "domain": "0<rho<1",
+      "evidence": null,
+      "justification": null,
+      "status": "UNREVIEWED"
+    },
+    "C_ls": {
+      "value_or_bound": null,
+      "domain": "finite and >=0",
+      "evidence": null,
+      "justification": null,
+      "status": "UNREVIEWED"
+    },
+    "zeta": {
+      "value_or_bound": null,
+      "domain": "zeta>0",
+      "evidence": null,
+      "justification": null,
+      "status": "UNREVIEWED"
+    },
+    "L2": {
+      "value_or_bound": null,
+      "domain": "finite and >=0",
+      "evidence": null,
+      "justification": null,
+      "status": "UNREVIEWED"
+    },
+    "q": {
+      "value_or_bound": null,
+      "domain": "q>0",
+      "evidence": null,
+      "justification": null,
+      "status": "UNREVIEWED"
+    },
+    "M_q": {
+      "value_or_bound": null,
+      "domain": "finite and >=0",
+      "evidence": null,
+      "justification": null,
+      "status": "UNREVIEWED"
+    }
+  },
+  "acceptance_checks": {
+    "structural_assumption_A_R5_01": "UNREVIEWED",
+    "scope_consistency": "UNREVIEWED",
+    "outcome_independence": "UNREVIEWED",
+    "finite_memory_contract_supported": "UNREVIEWED",
+    "local_marginal_approximation_supported": "UNREVIEWED",
+    "time_smoothness_supported": "UNREVIEWED",
+    "uniform_moment_supported": "UNREVIEWED",
+    "contradiction_evidence_reviewed": "UNREVIEWED",
+    "unverifiable_limitations_recorded": "UNREVIEWED"
+  },
+  "forbidden_logic": [
+    "diagnostic non-rejection equals proof of iid innovation representation",
+    "diagnostic non-rejection equals proof of any population assumption",
+    "choose structural assumption status or constants because they improve passing anchors",
+    "choose scope after seeing adequacy results",
+    "use Holdout to bind structural or numeric model-use assumptions",
+    "reuse an approval from a materially different source/process scope"
+  ],
+  "aggregate_acceptance_rule": "ACCEPTED_FOR_MODEL_USE only if A_R5_01_IID_INNOVATION_BASE is ACCEPTED_FOR_MODEL_USE, every required numeric/bound input is ACCEPTED_FOR_MODEL_USE, every item uses one identical declared process scope, and all acceptance checks PASS.",
+  "structural_failure_states": {
+    "missing_or_unresolved": "MODEL_STRUCTURAL_ASSUMPTION_UNBOUND",
+    "rejected": "MODEL_STRUCTURAL_ASSUMPTION_REJECTED",
+    "scope_mismatch": "MODEL_USE_SCOPE_MISMATCH"
+  },
+  "allowed_final_status": [
+    "ACCEPTED_FOR_MODEL_USE",
+    "REJECTED_FOR_MODEL_USE",
+    "UNRESOLVED"
+  ],
+  "final_model_use_status": null,
+  "approval_reference": null,
+  "approver": null,
+  "approval_date": null,
+  "activation_rule": "G-A2 may PASS only when aggregate_acceptance_rule is satisfied for the exact frozen method/design identity.",
+  "implementation_authorization": false
+}
