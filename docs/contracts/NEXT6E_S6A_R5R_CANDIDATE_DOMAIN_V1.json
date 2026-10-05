@@ -1,0 +1,199 @@
+{
+  "schema_id": "NEXT6E_S6A_R5R_CANDIDATE_DOMAIN_V1",
+  "contract_version": "NEXT6E_S6A_R5R_CANDIDATE_DOMAIN_V1",
+  "contract_id": "STOCKSCOPE_R5R_OBSERVED_PATH_CANDIDATE_DOMAIN_V1",
+  "stage_id": "NEXT-6E-S6A-R5-MUR2",
+  "architecture": "PROSPECTIVE_FINITE_ANCHOR_GRID",
+  "method_family": "R5R_OBSERVED_PATH_EMPIRICAL_STABILITY",
+  "source_lineage": {
+    "source_schema_id": "NEXT6E_S6A_R5_CANDIDATE_DOMAIN_V2",
+    "source_semantic_sha256": "e9a0427ea3c5e34b96db3bbaab026de51d83f27fc0f4d0ef32c9122398d31e09",
+    "inheritance": "ANCHOR_FRACTIONS_INTEGER_MAPPING_COLLISION_RULE_ALL_LATER_LATEST_RETAINED"
+  },
+  "development_outcome_used": false,
+  "reference_adequacy_outcome_used": false,
+  "holdout_used": false,
+  "lower_fraction": {
+    "numerator": 1,
+    "denominator": 10,
+    "decimal_display": "0.10"
+  },
+  "grid_step": {
+    "numerator": 1,
+    "denominator": 20,
+    "decimal_display": "0.05"
+  },
+  "upper_reserve": {
+    "numerator": 1,
+    "denominator": 20,
+    "decimal_display": "0.05"
+  },
+  "anchor_count_nominal": 18,
+  "anchor_generation_rule": "r_j=j/20 for integer j=2,...,19",
+  "integer_mapping": {
+    "rule": "CEILING_EXACT_RATIONAL",
+    "formula": "N_j(n)=ceil(j*n/20)=floor((j*n+19)/20) for positive integer n",
+    "floating_point_required": false
+  },
+  "collision_rule": {
+    "deduplicate_by": "MAPPED_INTEGER_N",
+    "canonical_representative": "SMALLEST_GRID_NUMERATOR_J",
+    "retain_source_anchor_ids": true
+  },
+  "ordering_rule": "ASCENDING_MAPPED_INTEGER_N_THEN_GRID_NUMERATOR",
+  "effective_anchor_rule": {
+    "approved_grid_member": true,
+    "full_empirical_window_required": true,
+    "formula": "N>=w(n)",
+    "mapped_N_must_satisfy": "N<n",
+    "later_state_exists": true,
+    "joint_horizon_features_required": true
+  },
+  "window_binding": {
+    "schema_id": "NEXT6E_S6A_R5R_WINDOW_PROFILE_V1",
+    "role": "STRUCTURAL_ELIGIBILITY_INPUT",
+    "expected_rule": "w(n)=ceil(n/10) common to horizons 1/5/10"
+  },
+  "first_nominal_anchor_property": "A02 maps to ceil(n/10), exactly equal to the frozen common window length w(n).",
+  "later_state_scope": "ALL_INTEGER_STATES_v=N+1,...,n_ON_JOINT_ELIGIBLE_CHRONOLOGY",
+  "latest_state_required": true,
+  "later_state_subsampling": "FORBIDDEN",
+  "horizon_aggregation": "ALL_HORIZONS_AND",
+  "metric_aggregation": "ALL_METRICS_AND",
+  "common_N_semantics": "MINIMUM_SUPPORTED_APPROVED_GRID_ANCHOR_FOR_OBSERVED_PATH_EMPIRICAL_STABILITY",
+  "out_of_grid_semantics": "OUTSIDE_R5R_APPROVED_CANDIDATE_GRID",
+  "no_candidate_state": "NO_ELIGIBLE_GRID_ANCHOR",
+  "no_supported_anchor_state": "NO_SUPPORTED_OBSERVED_PATH_ANCHOR",
+  "anchor_fractions": [
+    {
+      "anchor_id": "A02",
+      "numerator": 2,
+      "denominator": 20,
+      "decimal_display": "0.10"
+    },
+    {
+      "anchor_id": "A03",
+      "numerator": 3,
+      "denominator": 20,
+      "decimal_display": "0.15"
+    },
+    {
+      "anchor_id": "A04",
+      "numerator": 4,
+      "denominator": 20,
+      "decimal_display": "0.20"
+    },
+    {
+      "anchor_id": "A05",
+      "numerator": 5,
+      "denominator": 20,
+      "decimal_display": "0.25"
+    },
+    {
+      "anchor_id": "A06",
+      "numerator": 6,
+      "denominator": 20,
+      "decimal_display": "0.30"
+    },
+    {
+      "anchor_id": "A07",
+      "numerator": 7,
+      "denominator": 20,
+      "decimal_display": "0.35"
+    },
+    {
+      "anchor_id": "A08",
+      "numerator": 8,
+      "denominator": 20,
+      "decimal_display": "0.40"
+    },
+    {
+      "anchor_id": "A09",
+      "numerator": 9,
+      "denominator": 20,
+      "decimal_display": "0.45"
+    },
+    {
+      "anchor_id": "A10",
+      "numerator": 10,
+      "denominator": 20,
+      "decimal_display": "0.50"
+    },
+    {
+      "anchor_id": "A11",
+      "numerator": 11,
+      "denominator": 20,
+      "decimal_display": "0.55"
+    },
+    {
+      "anchor_id": "A12",
+      "numerator": 12,
+      "denominator": 20,
+      "decimal_display": "0.60"
+    },
+    {
+      "anchor_id": "A13",
+      "numerator": 13,
+      "denominator": 20,
+      "decimal_display": "0.65"
+    },
+    {
+      "anchor_id": "A14",
+      "numerator": 14,
+      "denominator": 20,
+      "decimal_display": "0.70"
+    },
+    {
+      "anchor_id": "A15",
+      "numerator": 15,
+      "denominator": 20,
+      "decimal_display": "0.75"
+    },
+    {
+      "anchor_id": "A16",
+      "numerator": 16,
+      "denominator": 20,
+      "decimal_display": "0.80"
+    },
+    {
+      "anchor_id": "A17",
+      "numerator": 17,
+      "denominator": 20,
+      "decimal_display": "0.85"
+    },
+    {
+      "anchor_id": "A18",
+      "numerator": 18,
+      "denominator": 20,
+      "decimal_display": "0.90"
+    },
+    {
+      "anchor_id": "A19",
+      "numerator": 19,
+      "denominator": 20,
+      "decimal_display": "0.95"
+    }
+  ],
+  "change_control": {
+    "new_version_required_for": [
+      "ANCHOR_ADD",
+      "ANCHOR_REMOVE",
+      "ANCHOR_FRACTION_CHANGE",
+      "GRID_STEP_CHANGE",
+      "INTEGER_MAPPING_CHANGE",
+      "COLLISION_RULE_CHANGE",
+      "WINDOW_ELIGIBILITY_CHANGE",
+      "LATER_STATE_SCOPE_CHANGE",
+      "LATEST_STATE_REQUIREMENT_CHANGE",
+      "HORIZON_AGGREGATION_CHANGE",
+      "METRIC_AGGREGATION_CHANGE"
+    ],
+    "development_result_driven_change": "FORBIDDEN",
+    "reference_adequacy_result_driven_change": "FORBIDDEN",
+    "holdout_result_driven_change": "FORBIDDEN",
+    "retroactive_relabeling": "FORBIDDEN"
+  },
+  "status": "FROZEN",
+  "semantic_hash_rule": "SHA256 of UTF-8 canonical JSON with recursively lexicographically sorted object keys, compact separators, and semantic_contract_sha256 plus semantic_hash_rule omitted",
+  "semantic_contract_sha256": "2f89ea3fdf775d718fabf955ee266b5cf36736f68b0fe97ced2cc5da83e0cdb4"
+}
