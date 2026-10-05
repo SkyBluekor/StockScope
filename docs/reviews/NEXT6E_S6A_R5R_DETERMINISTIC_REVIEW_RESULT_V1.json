@@ -1,0 +1,100 @@
+{
+  "schema_id": "NEXT6E_S6A_R5R_DETERMINISTIC_REVIEW_RESULT_V1",
+  "artifact_type": "DETERMINISTIC_CONTRACT_REVIEW_RESULT",
+  "stage_id": "NEXT-6E-S6A-R5-MUR3",
+  "baseline_main_sha": "450e219b46ce2a6e617938ba7734291a865083ef",
+  "target_id": "NEXT6E_S6A_R5R_OBSERVED_PATH_EMPIRICAL_STABILITY_V1",
+  "method_id": "NEXT6E_S6A_R5R_EMPIRICAL_STABILITY_V1",
+  "method_contract": {
+    "schema_id": "NEXT6E_S6A_R5R_METHOD_CONTRACT_V1",
+    "semantic_sha256": "def7ad5c5cdaea0ab1ff6be9efb45e3d5ec0488c62d31610d767a762b46f836d",
+    "design_sha256": "9eabdd9bb9a6fbd0d1477f47adf797aaaeab9dfea9822e7fb3618c07500757c3"
+  },
+  "child_contracts": {
+    "candidate_domain": {
+      "schema_id": "NEXT6E_S6A_R5R_CANDIDATE_DOMAIN_V1",
+      "semantic_sha256": "2f89ea3fdf775d718fabf955ee266b5cf36736f68b0fe97ced2cc5da83e0cdb4"
+    },
+    "window_profile": {
+      "schema_id": "NEXT6E_S6A_R5R_WINDOW_PROFILE_V1",
+      "semantic_sha256": "47a11455b159564db80eaf2c61bd89710a4bf56aea5d740eb60617ac2a3d385c"
+    }
+  },
+  "fixture_artifact": {
+    "schema_id": "NEXT6E_S6A_R5R_DETERMINISTIC_FIXTURES_V1",
+    "path": "docs/fixtures/NEXT6E_S6A_R5R_DETERMINISTIC_FIXTURES_V1.json",
+    "fixture_count": 25,
+    "oracle_origin": "HAND_DERIVED_AND_INDEPENDENTLY_RECALCULATED"
+  },
+  "review_units": {
+    "primitive_arithmetic": "PASS",
+    "exact_ecdf": "PASS",
+    "median_mad_ties": "PASS",
+    "zero_mad_fail_close": "PASS",
+    "window_rule": "PASS",
+    "first_anchor_window_identity": "PASS",
+    "candidate_mapping_collision": "PASS",
+    "all_later": "PASS",
+    "latest_state": "PASS",
+    "horizon_and": "PASS",
+    "metric_and": "PASS",
+    "earliest_common_n": "PASS",
+    "no_supported_anchor_semantics": "PASS",
+    "blocked_vs_not_supported": "PASS",
+    "argmax_tie_rule": "PASS",
+    "policy_fixture_isolation": "PASS"
+  },
+  "findings": [
+    {
+      "id": "MUR3-F01",
+      "title": "MISSING_HORIZON_JOINT_CHRONOLOGY_SEMANTICS",
+      "severity": "MAJOR",
+      "status": "UNRESOLVED",
+      "issue": "joint_eligibility implies excluding rows lacking any required horizon, while missing_required_horizon=INVALID_INPUT_DO_NOT_IMPUTE implies fail-close invalid input.",
+      "consequence": "Different implementations can produce different joint n, window length, candidate mapping, metrics, and common-N.",
+      "required_resolution": "Freeze exactly one rule: STRICT_COMPLETE_DATASET or PREDEFINED_JOINT_ELIGIBILITY_FILTER, including status/failure behavior."
+    },
+    {
+      "id": "MUR3-F02",
+      "title": "JOINT_CHRONOLOGY_HASH_CANONICALIZATION_UNDEFINED",
+      "severity": "MEDIUM",
+      "status": "UNRESOLVED",
+      "issue": "joint_chronology_hash is required in result identity but canonical payload, serialization, date/numeric representation, and hash rule are unspecified.",
+      "consequence": "Identical metric outputs may have non-identical result identities across implementations.",
+      "required_resolution": "Freeze canonical chronology payload + canonical serialization + SHA256 rule."
+    },
+    {
+      "id": "MUR3-F03",
+      "title": "NUMERIC_COMPARISON_CANONICALIZATION_UNDEFINED",
+      "severity": "MAJOR",
+      "status": "UNRESOLVED",
+      "issue": "T_EMP/L_EMP/S_EMP can be exact rational values but policy tolerance representation/comparison precision is unspecified.",
+      "consequence": "Boundary cases may differ between SUPPORTED_WITHIN_POLICY and EXCEEDS_POLICY, changing common-N.",
+      "required_resolution": "Freeze exact numeric representation and <= comparison semantics without implementation-dependent binary-float tolerance."
+    }
+  ],
+  "formula_defect_found": false,
+  "architecture_redesign_required": false,
+  "frozen_contracts_modified": false,
+  "final_verdict": "BLOCKED_CONTRACT_AMBIGUITY",
+  "gate_state_after_review": {
+    "R5R_G0": "PASS",
+    "R5R_G1": "BLOCKED_PENDING_EVALUATION_DATA_BINDING",
+    "R5R_G2": "PASS",
+    "R5R_DETERMINISTIC_CONTRACT_REVIEW": "BLOCKED_CONTRACT_AMBIGUITY",
+    "R5R_G3": "BLOCKED_PENDING_S6B_R5R_POLICY_AMENDMENT",
+    "R5R_G4": "NOT_AUTHORIZED",
+    "R5R_REFERENCE_ADEQUACY_EVALUATION": "NOT_AUTHORIZED",
+    "IMPLEMENTATION": "NOT_AUTHORIZED"
+  },
+  "access_boundary": {
+    "DEV": "NOT_ACCESSED",
+    "Reference_Adequacy": "NOT_ACCESSED",
+    "passing_N": "NOT_ACCESSED",
+    "forward_envelope": "NOT_ACCESSED",
+    "Holdout": "LOCKED_NOT_ACCESSED",
+    "runtime_db": "NOT_ACCESSED",
+    "Production": "NONE"
+  },
+  "next_task": "NEXT-6E-S6A-R5-MUR3-BR1 R5R CONTRACT AMBIGUITY RESOLUTION"
+}
