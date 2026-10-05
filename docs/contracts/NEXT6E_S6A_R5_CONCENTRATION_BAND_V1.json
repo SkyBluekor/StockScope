@@ -54,6 +54,10 @@
         "M_q": "<infinity"
       },
       "binding": "EXTERNAL_MODEL_USE_BINDING_REQUIRED"
+    },
+    "innovation_base": {
+      "statement": "There exists an iid innovation sequence {epsilon_i}; each indicator finite-memory approximation Y_i^[d] is measurable with respect to epsilon_i,...,epsilon_{i-d+1}.",
+      "binding": "METHOD_ASSUMPTION"
     }
   },
   "threshold_domain": {
@@ -61,7 +65,7 @@
     "radius": "M_n=ceil(n^mu)",
     "mu": ">0",
     "central_thresholds": "integers x with -M_n<=x<=M_n",
-    "tail_width": "tau_n=M_q/M_n^q",
+    "tail_width": "tau_n=min(1,M_q/M_n^q)",
     "full_real_extension": "integer-valued CDF is extended by floor(x)"
   },
   "family": {
@@ -82,7 +86,7 @@
     "m_dependent_hoeffding": "alpha_stat/2"
   },
   "finite_memory_depth": {
-    "formula": "d_n=ceil(log(16*p_n*C_dep*n/alpha_stat)/(-log(rho)))",
+    "formula": "d_n=max(1,ceil(log(16*p_n*C_dep*n/alpha_stat)/(-log(rho))))",
     "required_eligibility": "d_n<=w_n"
   },
   "stochastic_width": {
@@ -100,7 +104,7 @@
   },
   "eligibility": [
     "w_n>=2",
-    "w_n<=ceil(n/10)",
+    "w_n<=N_min(n), where N_min(n)=ceil(n/10)",
     "d_n<=w_n",
     "all external model-use parameters are bound",
     "alpha_stat is bound"
@@ -124,8 +128,13 @@
     "TAIL_upper": "sup_x pointwise_abs_upper"
   },
   "median_mad": {
-    "projection": "REUSE_R4_D4_CONDITIONALLY",
-    "density_assumption": false
+    "projection": "GENERAL_CDF_BAND_INVERSION_V1",
+    "median_outer": "I_m(F)=[q^-_{U*}(1/2), q^+_{L*}(1/2)] contains the generalized median set and midpoint median",
+    "deviation_lower": "H_low(r)=max(0, inf_{m in I_m}[L*(m+r)-U*((m-r)-)])",
+    "deviation_upper": "H_up(r)=min(1, sup_{m in I_m}[U*(m+r)-L*((m-r)-)])",
+    "mad_outer": "I_d(F)=[max(0,q^-_{H_up}(1/2)), q^+_{H_low}(1/2)] contains the raw midpoint MAD; unbounded upper endpoint is allowed",
+    "density_assumption": false,
+    "center_uncertainty_included": true
   },
   "asymptotic_nonvacuity": {
     "conditions": [
@@ -148,10 +157,30 @@
     "MODEL_PARAMETER_BINDING_MISSING",
     "INSUFFICIENT_LOCAL_WINDOW_DOMAIN",
     "FINITE_MEMORY_DEPTH_EXCEEDS_WINDOW",
-    "EMPTY_PROJECTED_CDF_BAND"
+    "EMPTY_PROJECTED_CDF_BAND",
+    "ANCHOR_SCALE_ZERO_NOT_EXCLUDED"
   ],
   "implementation": "NOT_AUTHORIZED",
   "independent_theorem_review_required": true,
-  "semantic_contract_sha256": "03d77e20b4843d8181b96255691278d954b240f1b558e779309f68a3064aa78b",
-  "semantic_hash_rule": "SHA256 of canonical JSON with semantic_contract_sha256 and semantic_hash_rule fields omitted"
+  "semantic_hash_rule": "SHA256 of UTF-8 canonical JSON with recursively lexicographically sorted object keys, compact separators, and semantic_contract_sha256 plus semantic_hash_rule omitted",
+  "amendment": {
+    "stage_id": "NEXT-6E-S6A-R5-D2E2",
+    "type": "NON_ARCHITECTURAL_THEOREM_CHAIN_CORRECTION",
+    "changes": [
+      "require iid innovation base for finite-memory block independence",
+      "enforce d_n>=1",
+      "clip tail width at one",
+      "express earliest-window rule as w_n<=N_min(n)",
+      "replace e-specific R4 median/MAD reuse with general CDF-band inversion",
+      "add location/scale drift interval and denominator fail-close semantics"
+    ]
+  },
+  "location_scale_drift_projection": {
+    "interval_distance_lower": "dist0([a,b],[c,d])=max(0,c-b,a-d)",
+    "interval_distance_upper": "distMax([a,b],[c,d])=max(|a-c|,|a-d|,|b-c|,|b-d|) with infinity propagated",
+    "denominator_rule": "If anchor MAD lower bound <=0, return ANCHOR_SCALE_ZERO_NOT_EXCLUDED; otherwise ratio lower uses numerator_lower/anchor_MAD_upper and ratio upper uses numerator_upper/anchor_MAD_lower.",
+    "location_target": "|m(v)-m(s)|/d(s)",
+    "scale_target": "|d(v)-d(s)|/d(s)"
+  },
+  "semantic_contract_sha256": "8a7097992b1fb89478a5d6079df55cc89c39385b6762b9b945ecc19c966f3c6d"
 }
