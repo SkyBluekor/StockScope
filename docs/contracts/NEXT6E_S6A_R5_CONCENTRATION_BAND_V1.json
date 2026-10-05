@@ -1,0 +1,157 @@
+{
+  "schema_id": "NEXT6E_S6A_R5_CONCENTRATION_BAND_V1",
+  "contract_version": "NEXT6E_S6A_R5_CONCENTRATION_BAND_V1",
+  "stage_id": "NEXT-6E-S6A-R5-D2E1",
+  "architecture_id": "R5_CONSERVATIVE_LOCAL_CDF_CONCENTRATION_V1",
+  "baseline_main_sha": "6c445f72c157b50143e86a6142bbf69089541a88",
+  "candidate_domain_semantic_sha256": "e9a0427ea3c5e34b96db3bbaab026de51d83f27fc0f4d0ef32c9122398d31e09",
+  "status": "THEOREM_DESIGN_FROZEN",
+  "estimator": {
+    "type": "BACKWARD_DISCRETE_LOCAL_LINEAR_CDF",
+    "window_length": "w_n=ceil(n^(1-beta))",
+    "bandwidth": "h_n=w_n/n",
+    "support": "last w_n observed chronology positions ending at t",
+    "weight_index": "r=0,...,w_n-1 where observation index is t-r",
+    "weight_formula": "a_{r,w}=2*(2*w-1-3*r)/(w*(w+1))",
+    "exact_properties": [
+      "sum_r a_{r,w}=1",
+      "sum_r r*a_{r,w}=0",
+      "max_r |a_{r,w}|<4/w",
+      "sum_r |a_{r,w}|<=4",
+      "sum_r a_{r,w}^2=2*(2*w-1)/(w*(w+1))<4/w"
+    ],
+    "future_leakage": false,
+    "latest_state_supported_structurally": true
+  },
+  "model_assumptions": {
+    "indicator_finite_memory": {
+      "statement": "sup_{n,i,h,x} ||I{X_i^h<=x}-E[I{X_i^h<=x}|epsilon_i,...,epsilon_{i-d+1}]||_1 <= C_dep*rho^d for all d>=1",
+      "parameters": {
+        "C_dep": ">0",
+        "rho": "in (0,1)"
+      },
+      "binding": "EXTERNAL_MODEL_USE_BINDING_REQUIRED"
+    },
+    "local_marginal_approximation": {
+      "statement": "sup_{i,h,x}|P(X_i^h<=x)-F_h(i/n,x)| <= C_ls*n^(-zeta)",
+      "parameters": {
+        "C_ls": ">=0",
+        "zeta": ">0"
+      },
+      "binding": "EXTERNAL_MODEL_USE_BINDING_REQUIRED"
+    },
+    "time_smoothness": {
+      "statement": "sup_{h,u,x}|partial_u^2 F_h(u,x)| <= L2",
+      "parameters": {
+        "L2": ">=0"
+      },
+      "binding": "EXTERNAL_MODEL_USE_BINDING_REQUIRED"
+    },
+    "uniform_moment": {
+      "statement": "sup_{h,u} E|Xtilde_h(u)|^q <= M_q",
+      "parameters": {
+        "q": ">0",
+        "M_q": "<infinity"
+      },
+      "binding": "EXTERNAL_MODEL_USE_BINDING_REQUIRED"
+    }
+  },
+  "threshold_domain": {
+    "route": "DETERMINISTIC_LATTICE_TRUNCATION",
+    "radius": "M_n=ceil(n^mu)",
+    "mu": ">0",
+    "central_thresholds": "integers x with -M_n<=x<=M_n",
+    "tail_width": "tau_n=M_q/M_n^q",
+    "full_real_extension": "integer-valued CDF is extended by floor(x)"
+  },
+  "family": {
+    "required_times": "all observed chronology positions from the minimum approved grid anchor through n",
+    "horizons": [
+      1,
+      5,
+      10
+    ],
+    "cardinality_upper_bound": "p_n=3*n*(2*M_n+1)",
+    "anchors_are_reused_not_multiplied": true,
+    "all_later": true,
+    "latest_state": true
+  },
+  "alpha_allocation": {
+    "alpha_stat": "input in (0,1)",
+    "finite_memory_approximation": "alpha_stat/2",
+    "m_dependent_hoeffding": "alpha_stat/2"
+  },
+  "finite_memory_depth": {
+    "formula": "d_n=ceil(log(16*p_n*C_dep*n/alpha_stat)/(-log(rho)))",
+    "required_eligibility": "d_n<=w_n"
+  },
+  "stochastic_width": {
+    "Q_w": "2*(2*w_n-1)/(w_n*(w_n+1))",
+    "epsilon_ind": "d_n*sqrt((Q_w/2)*log(4*p_n*d_n/alpha_stat))",
+    "epsilon_dep": "1/n",
+    "epsilon_stoch": "epsilon_ind+epsilon_dep",
+    "coverage": "P(max_required_coordinate |Ftilde-EFtilde| <= epsilon_stoch) >= 1-alpha_stat"
+  },
+  "bias_width": {
+    "formula": "epsilon_bias=4*C_ls*n^(-zeta)+2*L2*(w_n/n)^2"
+  },
+  "core_width": {
+    "formula": "epsilon_core=epsilon_stoch+epsilon_bias"
+  },
+  "eligibility": [
+    "w_n>=2",
+    "w_n<=ceil(n/10)",
+    "d_n<=w_n",
+    "all external model-use parameters are bound",
+    "alpha_stat is bound"
+  ],
+  "raw_band": {
+    "central": "[Ftilde-epsilon_core, Ftilde+epsilon_core]",
+    "left_tail": "[0,tau_n]",
+    "right_tail": "[1-tau_n,1]"
+  },
+  "cdf_projection": {
+    "lower": "L*(x)=max(0,sup_{y<=x}L_raw(y))",
+    "upper": "U*(x)=min(1,inf_{y>=x}U_raw(y))",
+    "crossing_state": "EMPTY_PROJECTED_CDF_BAND",
+    "coverage_preserving": true
+  },
+  "tail_drift_projection": {
+    "pointwise_difference_interval": "[L_v(x)-U_s(x), U_v(x)-L_s(x)]",
+    "pointwise_abs_lower": "0 if interval crosses 0 else min(abs(endpoints))",
+    "pointwise_abs_upper": "max(abs(endpoints))",
+    "TAIL_lower": "sup_x pointwise_abs_lower",
+    "TAIL_upper": "sup_x pointwise_abs_upper"
+  },
+  "median_mad": {
+    "projection": "REUSE_R4_D4_CONDITIONALLY",
+    "density_assumption": false
+  },
+  "asymptotic_nonvacuity": {
+    "conditions": [
+      "0<beta<1",
+      "mu>0",
+      "zeta>0",
+      "q>0",
+      "C_dep<infinity",
+      "0<rho<1",
+      "L2<infinity",
+      "M_q<infinity"
+    ],
+    "epsilon_ind_order": "O(log(n)^(3/2)*n^(-(1-beta)/2)) for polynomial p_n",
+    "epsilon_dep_order": "O(n^-1)",
+    "epsilon_bias_order": "O(n^-zeta+n^(-2*beta))",
+    "tau_order": "O(n^(-mu*q))",
+    "conclusion": "all declared widths converge to zero"
+  },
+  "failure_codes": [
+    "MODEL_PARAMETER_BINDING_MISSING",
+    "INSUFFICIENT_LOCAL_WINDOW_DOMAIN",
+    "FINITE_MEMORY_DEPTH_EXCEEDS_WINDOW",
+    "EMPTY_PROJECTED_CDF_BAND"
+  ],
+  "implementation": "NOT_AUTHORIZED",
+  "independent_theorem_review_required": true,
+  "semantic_contract_sha256": "03d77e20b4843d8181b96255691278d954b240f1b558e779309f68a3064aa78b",
+  "semantic_hash_rule": "SHA256 of canonical JSON with semantic_contract_sha256 and semantic_hash_rule fields omitted"
+}
