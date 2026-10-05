@@ -1,0 +1,161 @@
+{
+  "schema_id": "NEXT6E_S6A_R5_METHOD_CONSOLIDATED_V1",
+  "contract_version": "NEXT6E_S6A_R5_METHOD_CONSOLIDATED_V1",
+  "stage_id": "NEXT-6E-S6A-R5-D2E2",
+  "status": "READY_FOR_FINAL_METHOD_FREEZE",
+  "target_id": "NEXT6E_S6A_R5_LOCAL_TIME_REFERENCE_LAW_DRIFT_V1",
+  "architecture_id": "R5_CONSERVATIVE_LOCAL_CDF_CONCENTRATION_V1",
+  "baseline_main_sha": "b55bfc217a7a14c791697a4b28ab3d32d92c4e21",
+  "bindings": {
+    "candidate_domain": {
+      "schema_id": "NEXT6E_S6A_R5_CANDIDATE_DOMAIN_V2",
+      "semantic_sha256": "e9a0427ea3c5e34b96db3bbaab026de51d83f27fc0f4d0ef32c9122398d31e09",
+      "status_required": "FROZEN"
+    },
+    "concentration_band": {
+      "schema_id": "NEXT6E_S6A_R5_CONCENTRATION_BAND_V1",
+      "semantic_sha256": "8a7097992b1fb89478a5d6079df55cc89c39385b6762b9b945ecc19c966f3c6d",
+      "status_required": "THEOREM_DESIGN_FROZEN"
+    }
+  },
+  "process": {
+    "horizons": [
+      1,
+      5,
+      10
+    ],
+    "aligned_chronology": true,
+    "integer_lattice": true,
+    "ties_preserved": true,
+    "local_law": "F_h(u,x)=P{Xtilde_0^h(u)<=x}",
+    "distributional_transform": "NOT_REQUIRED_BY_FINAL_A3_METHOD"
+  },
+  "statistical_targets": {
+    "tail": "T_h(s,v)=sup_x|F_h(v,x)-F_h(s,x)|",
+    "location": "L_h(s,v)=|m_h(v)-m_h(s)|/d_h(s)",
+    "scale": "S_h(s,v)=|d_h(v)-d_h(s)|/d_h(s)",
+    "median": "midpoint generalized median",
+    "scale_functional": "raw midpoint MAD"
+  },
+  "theorem_chain": {
+    "P1": {
+      "name": "ATOMIC_LATTICE",
+      "status": "PASS",
+      "note": "direct indicator route; no jitter"
+    },
+    "P2": {
+      "name": "FINITE_MEMORY_DEPENDENCE",
+      "status": "PASS_METHOD_LEVEL_MODEL_USE_PENDING"
+    },
+    "P3": {
+      "name": "BACKWARD_DISCRETE_LOCAL_LINEAR_ESTIMATOR",
+      "status": "PASS"
+    },
+    "P4": {
+      "name": "EARLIEST_AND_LATEST_BOUNDARY",
+      "status": "PASS"
+    },
+    "P5": {
+      "name": "CANDIDATE_DOMAIN_V2",
+      "status": "PASS"
+    },
+    "P6": {
+      "name": "ALL_LATER_SIMULTANEOUS_FAMILY",
+      "status": "PASS_METHOD_LEVEL"
+    },
+    "P7": {
+      "name": "EXPLICIT_A3_CONCENTRATION_BAND",
+      "status": "PASS_METHOD_LEVEL"
+    },
+    "P8": {
+      "name": "CDF_TAIL_MEDIAN_MAD_LOCATION_SCALE_PROJECTION",
+      "status": "PASS"
+    }
+  },
+  "method_assumptions": {
+    "innovation_base": "iid innovation sequence",
+    "indicator_finite_memory": "uniform L1 error <= C_dep*rho^d",
+    "local_marginal_approximation": "uniform CDF error <= C_ls*n^(-zeta)",
+    "time_smoothness": "uniform |partial_u^2 F_h(u,x)| <= L2",
+    "uniform_moment": "uniform E|Xtilde_h(u)|^q <= M_q"
+  },
+  "model_use_inputs": {
+    "required": [
+      "C_dep",
+      "rho",
+      "C_ls",
+      "zeta",
+      "L2",
+      "q",
+      "M_q"
+    ],
+    "status": "UNBOUND",
+    "interpretation": "Method validity is conditional on later actual-process acceptance."
+  },
+  "numerical_profile": {
+    "parameters": {
+      "beta": "0<beta<1",
+      "mu": "mu>0"
+    },
+    "status": "UNBOUND"
+  },
+  "statistical_governance": {
+    "alpha_stat": "0<alpha_stat<1",
+    "status": "UNBOUND"
+  },
+  "structural_eligibility": [
+    "w_n=ceil(n^(1-beta))>=2",
+    "w_n<=N_min(n)=ceil(n/10)",
+    "d_n<=w_n",
+    "approved grid member satisfies N<n",
+    "joint horizon features available",
+    "all required model-use inputs are bound before evaluation"
+  ],
+  "simultaneous_scope": {
+    "candidate_anchors": "CandidateDomain V2 effective anchors",
+    "chronology": "all required observed states from N_min(n) through n",
+    "horizons": [
+      1,
+      5,
+      10
+    ],
+    "thresholds": "full real CDF represented by central deterministic lattice thresholds plus deterministic tails",
+    "latest_state_required": true,
+    "post_selection_common_N": "MINIMUM_SUPPORTED_APPROVED_GRID_ANCHOR"
+  },
+  "functional_projection": {
+    "cdf_projection": "coverage-preserving monotone envelope from ConcentrationBand V1",
+    "median": "general CDF-band inversion",
+    "mad": "center-aware general CDF-band inversion",
+    "tail_drift": "difference-band supremum interval",
+    "location_scale": "interval-distance ratios; denominator must be separated from zero"
+  },
+  "failure_codes": [
+    "MODEL_PARAMETER_BINDING_MISSING",
+    "INSUFFICIENT_LOCAL_WINDOW_DOMAIN",
+    "FINITE_MEMORY_DEPTH_EXCEEDS_WINDOW",
+    "EMPTY_PROJECTED_CDF_BAND",
+    "ANCHOR_SCALE_ZERO_NOT_EXCLUDED",
+    "OUTSIDE_R5_APPROVED_CANDIDATE_GRID",
+    "NO_ELIGIBLE_GRID_ANCHOR",
+    "STRUCTURALLY_INELIGIBLE_NO_LATER_STATE"
+  ],
+  "forbidden": [
+    "implementation jitter",
+    "DEV-tuned beta or mu",
+    "DEV-tuned threshold range",
+    "Gaussian/bootstrap fallback without new governance",
+    "later-state subsampling",
+    "latest-state removal",
+    "every-integer common-N claim"
+  ],
+  "implementation": "NOT_AUTHORIZED",
+  "dev_rerun": "NO",
+  "reference_adequacy": "NOT_ACCESSED",
+  "holdout": "LOCKED_NOT_ACCESSED",
+  "production_impact": "NONE",
+  "final_method_freeze_required": true,
+  "actual_process_model_use_approval_required": true,
+  "semantic_hash_rule": "SHA256 of UTF-8 canonical JSON with recursively lexicographically sorted object keys, compact separators, and semantic_contract_sha256 plus semantic_hash_rule omitted",
+  "semantic_contract_sha256": "1aa3664d921544a4eb1e2ab24669bc1da46f544b653caa6848c42db8aa38255d"
+}
