@@ -1,0 +1,216 @@
+{
+  "schema_id": "NEXT6E_S6A_R5_CANDIDATE_DOMAIN_V2",
+  "contract_version": "NEXT6E_S6A_R5_CANDIDATE_DOMAIN_V2",
+  "contract_id": "STOCKSCOPE_R5_REFERENCE_ADEQUACY_CANDIDATE_DOMAIN_V2",
+  "stage_id": "NEXT-6E-S6A-R5-D2C",
+  "decision_date": "2026-10-05",
+  "baseline_main_sha": "e3c61333db5325b099af9d947622b5f83d4cf50c",
+  "semantic_contract_sha256": "e9a0427ea3c5e34b96db3bbaab026de51d83f27fc0f4d0ef32c9122398d31e09",
+  "semantic_hash_rule": "SHA256 of canonical JSON payload with semantic_contract_sha256 and semantic_hash_rule fields omitted",
+  "architecture": "PROSPECTIVE_FINITE_ANCHOR_GRID",
+  "decision_basis": "PROJECT_METHOD_GOVERNANCE_DECISION",
+  "theorem_optimal_claim": false,
+  "development_outcome_used": false,
+  "lower_fraction": {
+    "numerator": 1,
+    "denominator": 10,
+    "decimal_display": "0.10",
+    "role": "LOWER_CLAIM_BOUNDARY_RETAINED_FROM_R2A_V1"
+  },
+  "grid_step": {
+    "numerator": 1,
+    "denominator": 20,
+    "decimal_display": "0.05",
+    "classification": "METHOD_RESOLUTION_PARAMETER",
+    "rationale": "Half of the retained kappa lower-bound fraction; finer than the original lower-domain truncation while keeping the family finite."
+  },
+  "upper_reserve": {
+    "numerator": 1,
+    "denominator": 20,
+    "decimal_display": "0.05",
+    "meaning": "MINIMUM_NOMINAL_FRACTION_BETWEEN_LARGEST_GRID_ANCHOR_AND_1"
+  },
+  "anchor_count_nominal": 18,
+  "anchor_generation_rule": "r_j=j/20 for integer j=2,...,19",
+  "anchor_fractions": [
+    {
+      "anchor_id": "A02",
+      "numerator": 2,
+      "denominator": 20,
+      "decimal_display": "0.10"
+    },
+    {
+      "anchor_id": "A03",
+      "numerator": 3,
+      "denominator": 20,
+      "decimal_display": "0.15"
+    },
+    {
+      "anchor_id": "A04",
+      "numerator": 4,
+      "denominator": 20,
+      "decimal_display": "0.20"
+    },
+    {
+      "anchor_id": "A05",
+      "numerator": 5,
+      "denominator": 20,
+      "decimal_display": "0.25"
+    },
+    {
+      "anchor_id": "A06",
+      "numerator": 6,
+      "denominator": 20,
+      "decimal_display": "0.30"
+    },
+    {
+      "anchor_id": "A07",
+      "numerator": 7,
+      "denominator": 20,
+      "decimal_display": "0.35"
+    },
+    {
+      "anchor_id": "A08",
+      "numerator": 8,
+      "denominator": 20,
+      "decimal_display": "0.40"
+    },
+    {
+      "anchor_id": "A09",
+      "numerator": 9,
+      "denominator": 20,
+      "decimal_display": "0.45"
+    },
+    {
+      "anchor_id": "A10",
+      "numerator": 10,
+      "denominator": 20,
+      "decimal_display": "0.50"
+    },
+    {
+      "anchor_id": "A11",
+      "numerator": 11,
+      "denominator": 20,
+      "decimal_display": "0.55"
+    },
+    {
+      "anchor_id": "A12",
+      "numerator": 12,
+      "denominator": 20,
+      "decimal_display": "0.60"
+    },
+    {
+      "anchor_id": "A13",
+      "numerator": 13,
+      "denominator": 20,
+      "decimal_display": "0.65"
+    },
+    {
+      "anchor_id": "A14",
+      "numerator": 14,
+      "denominator": 20,
+      "decimal_display": "0.70"
+    },
+    {
+      "anchor_id": "A15",
+      "numerator": 15,
+      "denominator": 20,
+      "decimal_display": "0.75"
+    },
+    {
+      "anchor_id": "A16",
+      "numerator": 16,
+      "denominator": 20,
+      "decimal_display": "0.80"
+    },
+    {
+      "anchor_id": "A17",
+      "numerator": 17,
+      "denominator": 20,
+      "decimal_display": "0.85"
+    },
+    {
+      "anchor_id": "A18",
+      "numerator": 18,
+      "denominator": 20,
+      "decimal_display": "0.90"
+    },
+    {
+      "anchor_id": "A19",
+      "numerator": 19,
+      "denominator": 20,
+      "decimal_display": "0.95"
+    }
+  ],
+  "integer_mapping": {
+    "rule": "CEILING_EXACT_RATIONAL",
+    "formula": "N_j(n)=ceil(j*n/20)=floor((j*n+19)/20) for positive integer n",
+    "floating_point_required": false
+  },
+  "collision_rule": {
+    "deduplicate_by": "MAPPED_INTEGER_N",
+    "canonical_representative": "SMALLEST_GRID_NUMERATOR_J",
+    "retain_source_anchor_ids": true,
+    "candidate_count_after_dedup": "<=18"
+  },
+  "ordering_rule": "ASCENDING_MAPPED_INTEGER_N_THEN_GRID_NUMERATOR",
+  "upper_boundary_rule": {
+    "largest_anchor": {
+      "numerator": 19,
+      "denominator": 20,
+      "decimal_display": "0.95"
+    },
+    "mapped_N_must_satisfy": "N<n",
+    "if_N_ge_n": "STRUCTURALLY_INELIGIBLE_NO_LATER_STATE"
+  },
+  "candidate_resolution": {
+    "class": "METHOD_RESOLUTION_GRANULARITY",
+    "max_fraction_gap": {
+      "numerator": 1,
+      "denominator": 20,
+      "decimal_display": "0.05"
+    },
+    "covered_fraction_span": "[1/10,19/20]",
+    "prospective_upward_rounding_bound": "for s in [1/10,19/20], the next approved fraction r satisfies 0<=r-s<1/20",
+    "prospective_integer_overshoot_bound": "ceil(r*n)-ceil(s*n) <= ceil(n/20)",
+    "above_19_20": "NO_APPROVED_UPWARD_GRID_ANCHOR; do not approximate",
+    "not_statistical_uncertainty": true,
+    "not_monte_carlo_error": true,
+    "not_policy_tolerance": true
+  },
+  "effective_cardinality": {
+    "minimum_structural": 1,
+    "maximum": 18,
+    "zero_state": "NO_ELIGIBLE_GRID_ANCHOR"
+  },
+  "eligibility_rule": [
+    "APPROVED_GRID_MEMBER",
+    "MAPPED_INTEGER_N_LT_N",
+    "LATER_STATE_EXISTS",
+    "JOINT_FEATURE_AVAILABLE",
+    "FUNCTIONAL_COMPUTABLE",
+    "R5_METHOD_CONTRACT_APPLICABLE"
+  ],
+  "common_N_semantics": "MINIMUM_SUPPORTED_APPROVED_GRID_ANCHOR",
+  "later_state_scope": "ALL_APPROVED_LATER_STATES",
+  "latest_state_required": true,
+  "out_of_grid_semantics": "OUTSIDE_R5_APPROVED_CANDIDATE_GRID",
+  "r2a_v1_relation": "HISTORICAL_IMMUTABLE_SUPERSEDED_FOR_R5_ONLY",
+  "change_control": {
+    "new_version_required_for": [
+      "ANCHOR_ADD",
+      "ANCHOR_REMOVE",
+      "ANCHOR_FRACTION_CHANGE",
+      "GRID_STEP_CHANGE",
+      "CARDINALITY_CHANGE",
+      "INTEGER_MAPPING_CHANGE",
+      "COLLISION_RULE_CHANGE",
+      "UPPER_BOUNDARY_CHANGE",
+      "LATER_STATE_SCOPE_CHANGE"
+    ],
+    "retroactive_relabeling": "FORBIDDEN",
+    "development_result_driven_change": "FORBIDDEN",
+    "production_result_driven_change": "FORBIDDEN"
+  },
+  "status": "FROZEN"
+}
