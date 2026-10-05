@@ -1,0 +1,448 @@
+{
+  "schema_id": "NEXT6E_S6A_R5R_METHOD_CONTRACT_V2",
+  "contract_version": "NEXT6E_S6A_R5R_METHOD_CONTRACT_V2",
+  "contract_id": "STOCKSCOPE_R5R_OBSERVED_PATH_EMPIRICAL_STABILITY_METHOD_V2",
+  "stage_id": "NEXT-6E-S6A-R5-MUR3-BR1",
+  "status": "METHOD_DESIGN_FROZEN",
+  "target_status": "TARGET_DESIGN_FROZEN",
+  "lineage": {
+    "redesign_decision": "NEXT6E_S6A_R5_METHOD_USE_REDESIGN_DECISION_V1",
+    "legacy_method_id": "NEXT6E_S6A_R5_LOCAL_REFERENCE_CONCENTRATION_V1",
+    "legacy_contract_schema": "NEXT6E_S6A_R5_FINAL_METHOD_CONTRACT_V2",
+    "legacy_contract_sha256": "b1fffaeb292f1a7f513ca7d3376a0febbb4ad34aaa3bc4e6c63d951efb2a168c",
+    "relation": "NEW_TARGET_AND_METHOD_FAMILY_NOT_A_PATCH",
+    "legacy_disposition": "FROZEN_HISTORICAL_METHOD_MODEL_USE_BLOCKED_IMPLEMENTATION_NOT_AUTHORIZED"
+  },
+  "design_core": {
+    "target": {
+      "target_id": "NEXT6E_S6A_R5R_OBSERVED_PATH_EMPIRICAL_STABILITY_V1",
+      "claim_class": "HISTORICAL_OBSERVED_PATH_EMPIRICAL_STABILITY",
+      "statement": "On one fixed declared dataset path, compare prospectively defined backward empirical windows at approved anchors and all later states, and determine whether empirical distribution/location/scale drift stays within separately approved operational tolerances.",
+      "prohibited_claims": [
+        "population CDF confidence coverage",
+        "future distribution stability probability",
+        "minimum sample size theorem for a latent population law",
+        "iid innovation representation",
+        "mixing or functional-dependence parameter approval",
+        "global local-law smoothness approval"
+      ]
+    },
+    "method_id": "NEXT6E_S6A_R5R_EMPIRICAL_STABILITY_V1",
+    "architecture_id": "R5R_OBSERVED_PATH_EMPIRICAL_STABILITY_V1",
+    "horizons": [
+      1,
+      5,
+      10
+    ],
+    "chronology": {
+      "key": "observation_date",
+      "ordering": "STRICTLY_ASCENDING_UNIQUE",
+      "source_to_evaluation_boundary": {
+        "source_chronology": "May contain rows where one or more required horizon features are unavailable.",
+        "predefined_joint_eligibility_rule": "Before evaluation dataset identity is frozen, retain only source rows where all required horizons 1/5/10 are AVAILABLE and exact-valid.",
+        "binding_order": [
+          "SOURCE_DATASET",
+          "APPLY_PREDEFINED_JOINT_ELIGIBILITY_RULE",
+          "RECORD_EXCLUSION_PROVENANCE",
+          "FREEZE_EVALUATION_DATASET_IDENTITY_AND_HASH",
+          "PASS_COMPLETE_JOINT_CHRONOLOGY_TO_R5R_EVALUATOR"
+        ],
+        "required_binding_provenance": [
+          "source_row_count",
+          "joint_row_count",
+          "excluded_before_binding_count",
+          "joint_eligibility_rule",
+          "excluded_reason_counts"
+        ]
+      },
+      "evaluation_payload_rule": "PREBOUND_COMPLETE_JOINT_CHRONOLOGY",
+      "evaluator_row_filtering": "FORBIDDEN",
+      "evaluator_row_drop": "FORBIDDEN",
+      "evaluator_imputation": "FORBIDDEN",
+      "evaluator_repair": "FORBIDDEN",
+      "missing_required_horizon_inside_bound_payload": "BLOCKED_WITH_MISSING_REQUIRED_HORIZON",
+      "index": "1..n on the bound complete joint chronology",
+      "duplicate_key": "BLOCKED_WITH_INVALID_CHRONOLOGY",
+      "future_leakage": "FORBIDDEN"
+    },
+    "value_contract": {
+      "feature_ids": {
+        "1": "delta_bp_1obs",
+        "5": "delta_bp_5obs",
+        "10": "delta_bp_10obs"
+      },
+      "unit": "BASIS_POINT",
+      "lattice": "SIGNED_INTEGER",
+      "rounding": "FORBIDDEN",
+      "jitter": "FORBIDDEN",
+      "ties": "PRESERVE"
+    },
+    "window": {
+      "contract_schema_id": "NEXT6E_S6A_R5R_WINDOW_PROFILE_V1",
+      "semantic_sha256": "47a11455b159564db80eaf2c61bd89710a4bf56aea5d740eb60617ac2a3d385c",
+      "formula": "w(n)=ceil(n/10)",
+      "state_window": "W_t={t-w+1,...,t}",
+      "common_across_horizons": true,
+      "backward_only": true
+    },
+    "empirical_cdf": {
+      "formula": "Fhat_h,t(x)=(1/w)*sum_{i=t-w+1}^t 1{X_i^(h)<=x}",
+      "exact_support_evaluation": "UNION_OF_OBSERVED_VALUES_IN_THE_TWO_WINDOWS",
+      "synthetic_x_grid": "FORBIDDEN"
+    },
+    "location_scale": {
+      "sample_median": "MIDPOINT_SAMPLE_MEDIAN",
+      "sample_median_algorithm": "sort x_(1)<=...<=x_(w); odd w -> x_((w+1)/2); even w -> (x_(w/2)+x_(w/2+1))/2",
+      "sample_mad": "MIDPOINT_MEDIAN_OF_ABSOLUTE_DEVIATIONS_FROM_MIDPOINT_SAMPLE_MEDIAN",
+      "zero_anchor_mad": "FAIL_CLOSE"
+    },
+    "metrics": {
+      "T_EMP": "sup_x |Fhat_h,v(x)-Fhat_h,s(x)|",
+      "L_EMP": "|mhat_h(v)-mhat_h(s)|/dhat_h(s)",
+      "S_EMP": "|dhat_h(v)-dhat_h(s)|/dhat_h(s)"
+    },
+    "candidate_domain": {
+      "schema_id": "NEXT6E_S6A_R5R_CANDIDATE_DOMAIN_V1",
+      "semantic_sha256": "2f89ea3fdf775d718fabf955ee266b5cf36736f68b0fe97ced2cc5da83e0cdb4",
+      "anchor_rule": "j/20 for j=2,...,19 mapped by ceil(j*n/20)",
+      "all_later": true,
+      "latest_state_required": true,
+      "horizon_aggregation": "ALL_HORIZONS_AND",
+      "metric_aggregation": "ALL_METRICS_AND"
+    },
+    "policy": {
+      "tau_T_metric": "ECDF_SUP_DISTANCE",
+      "tau_L_metric": "NORMALIZED_MEDIAN_SHIFT",
+      "tau_S_metric": "RELATIVE_MAD_SHIFT",
+      "interpretation": "OPERATIONAL_EMPIRICAL_DRIFT_TOLERANCES",
+      "values_owned_by": "S6B_R5R_POLICY_GOVERNANCE",
+      "alpha_stat": "NOT_APPLICABLE_TO_PRIMARY_CERTIFICATE"
+    },
+    "common_n": {
+      "id": "OBSERVED_PATH_COMMON_N",
+      "definition": "minimum effective approved anchor N such that for every h in {1,5,10} and every v=N+1,...,n, T_EMP<=tau_T, L_EMP<=tau_L, and S_EMP<=tau_S",
+      "meaning": "earliest approved anchor after which the fixed observed path stayed within all approved empirical drift tolerances",
+      "population_support_claim": false
+    },
+    "chronology_hash_contract": {
+      "contract_id": "R5R_JOINT_CHRONOLOGY_HASH_V1",
+      "purpose": "Bind the exact ordered observation-date sequence used by the R5R evaluator; feature/content integrity remains separately bound by dataset_hash.",
+      "payload_schema": {
+        "schema_id": "R5R_JOINT_CHRONOLOGY_HASH_V1",
+        "horizon_set": [
+          1,
+          5,
+          10
+        ],
+        "n": "joint_row_count",
+        "rows": "array of {i, observation_date}"
+      },
+      "included_fields": [
+        "schema_id",
+        "horizon_set",
+        "n",
+        "rows[].i",
+        "rows[].observation_date"
+      ],
+      "excluded_fields": [
+        "feature values",
+        "tau values",
+        "metric values",
+        "window outputs",
+        "generation timestamp"
+      ],
+      "row_order": "observation_date strictly ascending; i=1,...,n",
+      "observation_date_format": "YYYY-MM-DD",
+      "serialization": {
+        "encoding": "UTF-8",
+        "object_key_order": "recursive lexicographic",
+        "array_order": "preserved",
+        "separators": "compact",
+        "whitespace": "none"
+      },
+      "hash_algorithm": "SHA-256",
+      "output_format": "64 lowercase hexadecimal characters"
+    },
+    "numeric_contract": {
+      "contract_id": "R5R_EXACT_RATIONAL_V1",
+      "authoritative_representation": {
+        "type": "REDUCED_RATIONAL",
+        "json_shape": {
+          "numerator": "base-10 integer string",
+          "denominator": "base-10 positive integer string"
+        },
+        "normalization": [
+          "denominator > 0",
+          "gcd(abs(numerator), denominator) = 1",
+          "zero canonicalized as 0/1",
+          "no leading zeros except the single digit 0",
+          "negative sign, when present, belongs only on numerator"
+        ]
+      },
+      "authoritative_arithmetic": "ARBITRARY_PRECISION_EXACT_RATIONAL",
+      "binary_floating_point_authoritative": false,
+      "metric_representation": {
+        "T_EMP": "exact rational",
+        "midpoint_median": "exact rational",
+        "midpoint_MAD": "exact rational",
+        "L_EMP": "exact rational",
+        "S_EMP": "exact rational"
+      },
+      "policy_tolerance_representation": "R5R_EXACT_RATIONAL_V1",
+      "decimal_policy_binding": "An approved terminating decimal proposal must be converted exactly from its decimal text to a reduced rational before it becomes authoritative.",
+      "comparison": {
+        "rule": "a/b <= c/d iff a*d <= c*b using arbitrary-precision integer arithmetic",
+        "equality": "WITHIN_POLICY",
+        "epsilon": "FORBIDDEN"
+      },
+      "display_decimal": "OPTIONAL_NON_AUTHORITATIVE"
+    }
+  },
+  "design_hash_rule": "SHA256 of canonical JSON for design_core only",
+  "input_identity_required": [
+    "dataset_id",
+    "dataset_hash",
+    "provider",
+    "provider_series_id",
+    "series_id",
+    "vintage_id",
+    "feature_contract_version",
+    "split_role",
+    "usage_scope"
+  ],
+  "chronology_validation": {
+    "required_horizon_feature_ids": [
+      "delta_bp_1obs",
+      "delta_bp_5obs",
+      "delta_bp_10obs"
+    ],
+    "upstream_joint_eligibility": "Source rows lacking any required AVAILABLE/exact-valid horizon may be excluded only before evaluation dataset identity/hash binding, under the predefined eligibility rule with recorded exclusion provenance.",
+    "bound_payload_required_status": "AVAILABLE for all three required horizon features on every bound evaluation row",
+    "chronology_key": "observation_date",
+    "chronology_key_requirement": "unique and strictly increasing after canonical sort; duplicates are invalid rather than silently deduplicated",
+    "feature_numeric_requirement": "exact signed integer basis-point value",
+    "evaluator_row_filtering": "FORBIDDEN",
+    "evaluator_row_imputation": "FORBIDDEN",
+    "evaluator_row_repair": "FORBIDDEN",
+    "missing_required_horizon_inside_bound_payload": "MISSING_REQUIRED_HORIZON",
+    "silent_row_drop_after_binding": "FORBIDDEN",
+    "limitation_propagation": "Dataset limitations including HISTORICAL_TIME_NOT_PROVEN must be copied into the result and cannot be upgraded."
+  },
+  "metric_computation": {
+    "anchor_state": "s=N",
+    "later_states": "v=N+1,...,n",
+    "T_EMP_exact": "evaluate right-continuous ECDF difference exactly on the union of observed values from anchor and later windows",
+    "L_EMP_denominator": "anchor empirical MAD dhat_h(N)",
+    "S_EMP_denominator": "anchor empirical MAD dhat_h(N)",
+    "zero_denominator_action": "candidate-horizon BLOCKED with ANCHOR_EMPIRICAL_MAD_ZERO",
+    "later_state_subsampling": "FORBIDDEN",
+    "exact_numeric_contract": "R5R_EXACT_RATIONAL_V1",
+    "policy_comparison": "EXACT_RATIONAL_LESS_THAN_OR_EQUAL",
+    "binary_float_epsilon": "FORBIDDEN"
+  },
+  "per_anchor_output": {
+    "per_horizon_required": [
+      "max_T_EMP",
+      "argmax_T_EMP",
+      "max_L_EMP",
+      "argmax_L_EMP",
+      "max_S_EMP",
+      "argmax_S_EMP",
+      "latest_T_EMP",
+      "latest_L_EMP",
+      "latest_S_EMP"
+    ],
+    "argmax_tie_rule": "EARLIEST_LATER_STATE",
+    "candidate_statuses": [
+      "SUPPORTED_WITHIN_POLICY",
+      "EXCEEDS_POLICY",
+      "BLOCKED"
+    ]
+  },
+  "support_rule": {
+    "supported": "all horizons AND all later states AND all three metrics are within approved tolerances",
+    "exceeds_policy": "all required metrics computable and at least one required comparison exceeds an approved tolerance",
+    "blocked": "metric cannot be computed or a required contract/policy/input is missing",
+    "no_supported_anchor": {
+      "result_status": "NOT_SUPPORTED",
+      "result_code": "NO_SUPPORTED_OBSERVED_PATH_ANCHOR",
+      "failure_code": null,
+      "condition": "at least one approved candidate is computable, policy is bound, all candidates evaluated, and none is SUPPORTED_WITHIN_POLICY"
+    }
+  },
+  "policy_interface": {
+    "source_document": "docs/StockScope_NEXT6E_S6B_RISK_BUDGET_GOVERNANCE_RESOLUTION_2026-10-02.md",
+    "semantic_compatibility": {
+      "tau_T": "DIRECT_MATCH_ECDF_SUP_DISTANCE",
+      "tau_L": "DIRECT_MATCH_NORMALIZED_MEDIAN_SHIFT",
+      "tau_S": "DIRECT_MATCH_RELATIVE_MAD_SHIFT"
+    },
+    "numeric_values_current": "UNRESOLVED",
+    "approval_authority_current": "NOT_APPOINTED",
+    "r5r_policy_amendment_required": true,
+    "required_future_binding": [
+      "exact R5R target_id",
+      "exact R5R method_id",
+      "tau_T",
+      "tau_L",
+      "tau_S",
+      "owner/approval authority",
+      "approval reference"
+    ],
+    "alpha_stat": "NOT_APPLICABLE_TO_R5R_PRIMARY_CERTIFICATE",
+    "gamma_repeat": "OUTSIDE_PRIMARY_R5R_GATE_UNLESS_REDEFINED",
+    "delta_MC": "NOT_APPLICABLE_TO_DETERMINISTIC_EXACT_PRIMARY_COMPUTATION",
+    "authoritative_numeric_contract": "R5R_EXACT_RATIONAL_V1",
+    "approved_decimal_binding_rule": "Convert approved decimal text exactly to a reduced rational before binding.",
+    "boundary_rule": "metric == tolerance is WITHIN_POLICY"
+  },
+  "result_identity_required": [
+    "target_id",
+    "method_id",
+    "method_contract_sha256",
+    "design_hash_sha256",
+    "dataset_id",
+    "dataset_hash",
+    "vintage_id",
+    "feature_contract_version",
+    "joint_chronology_hash",
+    "joint_row_count",
+    "window_profile_id",
+    "window_profile_sha256",
+    "window_length",
+    "candidate_domain_id",
+    "candidate_domain_sha256",
+    "policy_contract_reference",
+    "tau_T",
+    "tau_L",
+    "tau_S",
+    "horizon_set",
+    "result_generation_version",
+    "chronology_hash_contract_id",
+    "numeric_contract_id"
+  ],
+  "prohibited_result_language": [
+    "confidence band",
+    "95% confidence",
+    "p-value",
+    "statistically significant",
+    "population guarantee",
+    "probability of future stability",
+    "minimum population sample size"
+  ],
+  "failure_taxonomy": {
+    "INVALID_DATA_IDENTITY": "required dataset identity mismatch or missing",
+    "INVALID_CHRONOLOGY": "bound evaluation chronology has duplicate/noncanonical/non-orderable date identity or otherwise violates chronology contract",
+    "MISSING_REQUIRED_HORIZON": "one or more required horizons are absent/unavailable inside the already-bound evaluation payload; evaluator must not filter the row",
+    "INVALID_FEATURE_LATTICE": "feature is not an exact signed integer basis-point value",
+    "INSUFFICIENT_EMPIRICAL_WINDOW": "joint chronology cannot satisfy frozen window minimum",
+    "OUTSIDE_R5R_APPROVED_CANDIDATE_GRID": "candidate is outside approved grid; not a policy failure",
+    "NO_ELIGIBLE_GRID_ANCHOR": "no structural candidate has a full window and later state",
+    "NO_LATER_STATE": "candidate has no later state",
+    "ANCHOR_EMPIRICAL_MAD_ZERO": "anchor empirical MAD equals zero for a required horizon",
+    "NO_COMPUTABLE_APPROVED_ANCHOR": "all structurally eligible anchors are blocked from complete metric computation",
+    "POLICY_TOLERANCE_UNBOUND": "tau_T, tau_L, or tau_S lacks compatible approved binding",
+    "WINDOW_PROFILE_MISMATCH": "runtime window profile differs from frozen contract",
+    "CANDIDATE_DOMAIN_MISMATCH": "runtime candidate contract differs from frozen contract",
+    "METHOD_CONTRACT_MISMATCH": "runtime target/method/hash identity differs from frozen contract",
+    "NUMERIC_CONTRACT_MISMATCH": "runtime metric or policy numeric representation/comparison semantics differ from R5R_EXACT_RATIONAL_V1",
+    "CHRONOLOGY_HASH_CONTRACT_MISMATCH": "runtime chronology payload/hash semantics differ from R5R_JOINT_CHRONOLOGY_HASH_V1"
+  },
+  "normal_negative_result": {
+    "code": "NO_SUPPORTED_OBSERVED_PATH_ANCHOR",
+    "classification": "NOT_SUPPORTED_RESULT_NOT_FAILURE"
+  },
+  "gate_definitions": {
+    "R5R_G0_TARGET_METHOD_CONTRACT": {
+      "required": "target and Method Contract V2 frozen with CandidateDomain V1 and Window Profile V1 hashes bound, plus chronology/numeric deterministic semantics frozen",
+      "status": "PASS"
+    },
+    "R5R_G1_DATA_IDENTITY_CHRONOLOGY": {
+      "required": "an evaluation dataset identity is explicitly bound and passes chronology/value validation",
+      "status": "BLOCKED_PENDING_EVALUATION_DATA_BINDING"
+    },
+    "R5R_G2_WINDOW_CANDIDATE_STRUCTURE": {
+      "required": "frozen window and CandidateDomain contracts compatible with method contract",
+      "status": "PASS"
+    },
+    "R5R_G3_POLICY_TOLERANCES": {
+      "required": "R5R-compatible tau_T/tau_L/tau_S and approval authority/reference approved",
+      "status": "BLOCKED_PENDING_S6B_R5R_POLICY_AMENDMENT"
+    },
+    "R5R_G4_DETERMINISTIC_IMPLEMENTATION_VERIFICATION": {
+      "required": "implementation passes independent exact fixtures for ECDF, ties, median, MAD, window boundaries, all-later/latest, common-N, and failure paths",
+      "status": "NOT_AUTHORIZED"
+    },
+    "R5R_REFERENCE_ADEQUACY_EVALUATION": {
+      "required": "R5R_G0..G4 PASS",
+      "status": "NOT_AUTHORIZED"
+    }
+  },
+  "deterministic_review_requirements": [
+    "hand-calculable integer fixtures",
+    "odd and even window sample medians",
+    "ties and nonunique median cases",
+    "zero empirical MAD fail-close",
+    "exact two-ECDF sup distance",
+    "earliest full-window anchor",
+    "candidate collision mapping",
+    "all-later complete scan",
+    "latest-state inclusion",
+    "first supported approved anchor",
+    "no-supported-anchor normal negative result",
+    "pre-binding missing-horizon exclusion provenance",
+    "missing horizon inside bound payload fail-close",
+    "canonical chronology SHA-256 fixture",
+    "exact rational equality boundary",
+    "exact rational decimal-boundary comparison"
+  ],
+  "access_boundary_at_design": {
+    "DEV": "NOT_ACCESSED",
+    "Reference_Adequacy": "NOT_ACCESSED",
+    "Holdout": "LOCKED_NOT_ACCESSED",
+    "runtime_db": "NOT_ACCESSED",
+    "Production": "NONE"
+  },
+  "implementation": "NOT_AUTHORIZED",
+  "change_control": {
+    "new_contract_version_required_for": [
+      "target claim class change",
+      "metric definition change",
+      "median or MAD convention change",
+      "window formula change",
+      "CandidateDomain change",
+      "all-later scope change",
+      "latest-state requirement change",
+      "common-N semantics change",
+      "policy metric semantics change",
+      "population-inference claim introduction",
+      "joint eligibility or bound-payload missing-horizon semantics change",
+      "joint chronology hash contract change",
+      "authoritative numeric representation or policy comparison semantics change"
+    ],
+    "outcome_driven_change": "FORBIDDEN",
+    "retroactive_relabeling": "FORBIDDEN"
+  },
+  "semantic_hash_rule": "SHA256 of UTF-8 canonical JSON with recursively lexicographically sorted object keys, compact separators, and semantic_contract_sha256 plus semantic_hash_rule omitted",
+  "supersedes": {
+    "schema_id": "NEXT6E_S6A_R5R_METHOD_CONTRACT_V1",
+    "semantic_sha256": "def7ad5c5cdaea0ab1ff6be9efb45e3d5ec0488c62d31610d767a762b46f836d",
+    "design_sha256": "9eabdd9bb9a6fbd0d1477f47adf797aaaeab9dfea9822e7fb3618c07500757c3",
+    "reason": "MUR3_F01_F02_F03_CONTRACT_AMBIGUITY_RESOLUTION"
+  },
+  "mur3_br1_resolution": {
+    "findings": {
+      "MUR3-F01": "Resolved by PREBOUND_COMPLETE_JOINT_CHRONOLOGY: upstream eligibility before dataset binding; no evaluator row filtering; missing horizon inside bound payload fails closed.",
+      "MUR3-F02": "Resolved by R5R_JOINT_CHRONOLOGY_HASH_V1 canonical payload + canonical UTF-8 JSON serialization + SHA-256.",
+      "MUR3-F03": "Resolved by R5R_EXACT_RATIONAL_V1 exact arithmetic and exact <= cross-multiplication comparison; binary-float epsilon forbidden."
+    },
+    "metric_formulas_changed": false,
+    "window_contract_changed": false,
+    "candidate_domain_contract_changed": false,
+    "all_later_changed": false,
+    "latest_state_changed": false,
+    "common_n_intent_changed": false
+  },
+  "design_hash_sha256": "05852b077e6c29820643299f66984f496ffe806d88c6544c577ee3357c5f74eb",
+  "semantic_contract_sha256": "d3b133f01f8d705fabd1456d5d5053570ff6d73586675c80903b06ce72c6e8e8"
+}
