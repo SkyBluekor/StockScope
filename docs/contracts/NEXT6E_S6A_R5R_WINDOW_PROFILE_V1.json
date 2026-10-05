@@ -1,0 +1,60 @@
+{
+  "schema_id": "NEXT6E_S6A_R5R_WINDOW_PROFILE_V1",
+  "contract_version": "NEXT6E_S6A_R5R_WINDOW_PROFILE_V1",
+  "contract_id": "STOCKSCOPE_R5R_COMMON_BACKWARD_WINDOW_V1",
+  "stage_id": "NEXT-6E-S6A-R5-MUR2",
+  "architecture_id": "R5R_OBSERVED_PATH_EMPIRICAL_STABILITY_V1",
+  "chronology_basis": "JOINT_ELIGIBLE_CHRONOLOGY_AFTER_REQUIRING_HORIZONS_1_5_10_AVAILABLE",
+  "horizon_set": [
+    1,
+    5,
+    10
+  ],
+  "profile_type": "COMMON_DETERMINISTIC_FRACTION_WINDOW",
+  "common_across_horizons": true,
+  "rule": {
+    "formula": "w(n)=ceil(n/10)=floor((n+9)/10)",
+    "numerator": 1,
+    "denominator": 10,
+    "n_definition": "number of rows in joint eligible chronology",
+    "minimum_w": 2,
+    "minimum_joint_n": 11
+  },
+  "window_definition": {
+    "formula": "W_t={t-w(n)+1,...,t}",
+    "backward_only": true,
+    "includes_current_state": true,
+    "future_observations_used": false,
+    "same_index_set_for_all_horizons": true,
+    "earliest_computable_state": "t=w(n)",
+    "latest_computable_state": "t=n"
+  },
+  "structural_rationale": [
+    "The earliest approved nominal anchor A02 maps to ceil(n/10).",
+    "Choosing w(n)=ceil(n/10) makes A02 exactly the earliest full-window anchor.",
+    "Among common backward windows that preserve the earliest approved 10% anchor, this is the maximal observation count.",
+    "The rule depends only on joint chronology length and the prospective anchor design, not on Development outcomes, Reference Adequacy results, policy tolerances, Holdout, or Production outcomes."
+  ],
+  "candidate_domain_binding": {
+    "schema_id": "NEXT6E_S6A_R5R_CANDIDATE_DOMAIN_V1",
+    "expected_first_anchor_property": "N_A02(n)=w(n)",
+    "anchor_eligibility": "mapped N must satisfy N>=w(n) and N<n"
+  },
+  "forbidden_selection_basis": [
+    "Development pass rate",
+    "Reference Adequacy passing N",
+    "minimum common-N optimization",
+    "metric drift minimization",
+    "Holdout outcome",
+    "Production outcome",
+    "visual smoothness"
+  ],
+  "no_adaptive_window": true,
+  "no_horizon_specific_tuning": true,
+  "no_later_state_specific_tuning": true,
+  "insufficient_state": "INSUFFICIENT_EMPIRICAL_WINDOW",
+  "unbound_state": "WINDOW_PROFILE_UNBOUND",
+  "status": "FROZEN",
+  "semantic_hash_rule": "SHA256 of UTF-8 canonical JSON with recursively lexicographically sorted object keys, compact separators, and semantic_contract_sha256 plus semantic_hash_rule omitted",
+  "semantic_contract_sha256": "47a11455b159564db80eaf2c61bd89710a4bf56aea5d740eb60617ac2a3d385c"
+}
