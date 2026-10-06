@@ -4,6 +4,21 @@
 
 > **중요:** StockScope는 실제 매수·매도·정정·취소 주문을 수행하지 않습니다. 증권사 주문 API를 구현하지 않으며, 모든 가격·전략·손절·목표 값은 분석/시뮬레이션 참고용입니다.
 
+
+## 문서 읽기 순서
+
+현재 설계/개발 상태를 확인할 때 과거 task spec을 순서대로 읽지 않습니다.
+
+1. [Master Architecture](docs/StockScope_MASTER_ARCHITECTURE_vNext.md)
+2. [Implementation Baseline](docs/StockScope_IMPLEMENTATION_BASELINE_vNext.md)
+3. 현재 작업 기준
+   - [R5R 통합 기준](docs/설계/StockScope_NEXT6E_R5R_통합설계기준_2026-10-05.md)
+   - [JEV 통합설계 v2](docs/설계/StockScope_JEV_통합설계_v2_2026-10-06.md)
+4. [Development Roadmap](docs/StockScope_DEVELOPMENT_ROADMAP_vNext.md)
+5. 필요할 때만 [R4/R5/R5R 설계변경이력](docs/history/StockScope_R4_R5_R5R_설계변경이력.md)
+
+R5R actual evaluation은 `NEXT-6E-R5R-EVALUATION`, AI Decision Reviewer 평가는 `JEV-REVIEWER-EVALUATION`으로 구분합니다.
+
 ## 현재 구현 범위
 
 - KRX KOSPI/KOSDAQ 최근 확정 일별 데이터
