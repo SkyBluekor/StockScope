@@ -235,3 +235,46 @@ Stage 명세는 경로·스키마·API·정책값을 구현 가능한 수준으�
 질문이 해결되었다고 갱신할 때는 근거 문서·code/test·평가 보고서·결정 시점을 기록한다. 새 목표 구조를 결정했다는 이유로 과거 Position Manager/Realtime Watch의 공식 형태를 발견한 것으로 쓰지 않는다. `REALTIME.5`, `HOLD.1-H`, `H.0~H.3`, `DEV.*`의 역사적 UNKNOWN은 원본 증거가 생길 때만 바뀐다.
 
 문서 간 변경은 책임(Architecture), 순서/완료 조건(Roadmap), 구현·검증 규칙(Baseline)의 영향을 함께 검토한다. 과거 입력 문서와 완료 이력을 조용히 수정하지 않는다. 구현 시작 HEAD가 이번 설계 기준과 다르면 변경 차이를 먼저 조사하고 사실·설계·추정을 구분해 작업 명세에 남긴다.
+
+## 2026-10-06 통합 구현 불변식
+
+Cleanup으로 개별 버전 설명 문서를 제거한 뒤에도 다음 계약은 이 문서에서 유지한다.
+
+### Strategy / Risk / Entry
+- 적합도 점수는 수익확률이 아니다.
+- NO_TRADE / Risk Gate가 우선한다.
+- 구조적 가격·ATR·전략 owner를 보존하고 새 threshold를 문서 정리 과정에서 만들지 않는다.
+- manual/reference 가격은 EOD 원본을 덮어쓰지 않는 별도 scenario다.
+- Holdings quantity/plan은 reference/JEV가 자동 변경하지 않는다.
+
+### Scanner / Ranking / Evidence
+- 현재조건·랭킹과 과거 evidence를 분리한다.
+- 반환 후보 identity, selection policy, exit policy, cache/input identity를 보존한다.
+- historical-first 같은 옛 표현을 현재 production 정책으로 승격하지 않는다.
+
+### Backtest / Execution
+- D+1/일봉 순서·비용·CENSORED/NOT_EXECUTED/NO_ENTRY_DATA 상태를 구분한다.
+- 연구 exit policy와 운영 exit policy는 별도 pin이다.
+- 미성숙/CENSORED를 0수익으로 채우지 않는다.
+
+### Fundamental / Event / Relative Strength
+- 최신 공식 실적과 연간 장기 지표의 기간 의미를 분리한다.
+- 상대강도는 시장/업종 비교 근거이며 수익확률이 아니다.
+- Event/reference 표시 가능성과 AI_TRANSFORM/PREDICTION_INPUT 권한을 분리한다.
+
+### UX / Input / Session
+- 결론→행동→핵심 근거→상세 순서를 우선한다.
+- 관찰값/체결값, 표시값/계산값, EOD/Preview를 혼동하지 않는다.
+- 입력 변경은 stale/revision 규칙을 적용하고 back/reload/reanalysis에서도 identity를 보존한다.
+- 진행/취소/오류는 기존 결과를 조용히 덮어쓰지 않는다.
+
+### Data / Performance / Fresh setup
+- Market store/cache/network 책임을 분리하고 API budget·progress·cancel을 명시한다.
+- 역사 성능 측정치를 현재 SLA로 자동 승격하지 않는다.
+- `setup.ps1`, runtime bootstrap/state, fresh-clone regression이 현재 setup owner다. 과거 “미착수” task spec은 더 이상 현재 상태가 아니다.
+
+### R5R / JEV
+- R5R Method V2 + Policy V1 + Binding V1 및 deterministic evaluator가 현재 authority다.
+- R5R actual evaluation은 `NEXT-6E-R5R-EVALUATION`으로 부른다.
+- JEV AI reviewer 평가는 `JEV-REVIEWER-EVALUATION`으로 분리한다.
+- JEV Phase 1은 shadow reviewer이며 production rank/action/Risk/plan write 권한이 없다.
