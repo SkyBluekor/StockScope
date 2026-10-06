@@ -12,10 +12,17 @@ from .models import (
 from .provider import (
     FakeJevProvider,
     JevProviderError,
+    OpenAIResponsesJevProvider,
     ProviderResult,
     load_jev_api_key,
 )
 from .service import JevShadowService
+from .trial import (
+    JevTrialError,
+    configure_trial_protocol,
+    load_trial_artifact,
+    trial_readiness,
+)
 
 __all__ = [
     "FakeJevProvider",
@@ -29,9 +36,14 @@ __all__ = [
     "JevCatalogError",
     "JevProviderError",
     "JevShadowService",
+    "JevTrialError",
     "JevTrialProtocolSpec",
+    "OpenAIResponsesJevProvider",
     "ProviderResult",
     "build_comparison_report",
+    "configure_trial_protocol",
     "join_reviews_with_outcomes",
     "load_jev_api_key",
+    "load_trial_artifact",
+    "trial_readiness",
 ]
