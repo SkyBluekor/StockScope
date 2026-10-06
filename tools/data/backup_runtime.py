@@ -27,6 +27,7 @@ from app.horizon_context import (
 )
 from app.feedback.models import FEEDBACK_SCHEMA_VERSION
 from app.prospective.models import PROSPECTIVE_SCHEMA_VERSION
+from app.jev.models import JEV_SCHEMA_VERSION
 from app.holdings.decision_support import HOLDING_DECISION_SCHEMA_VERSION
 from app.holdings.recovery import RECOVERY_SCHEMA_VERSION
 from app.watch.policy import WATCH_POLICY_CONTRACT_VERSION
@@ -198,6 +199,42 @@ def _prospective_extension(
             "VN-P2-S2 prospective capture, immutable samples, protocols, "
             "evaluation runs/units/reports live in Simulation DB. "
             "Market Store remains the separate local evaluation input owner."
+        ),
+    }
+
+
+JEV_SHADOW_TABLES = (
+    "jev_shadow_schema_meta",
+    "jev_shadow_protocol",
+    "jev_shadow_activation",
+    "jev_shadow_review",
+    "jev_shadow_comparison_report",
+)
+
+
+def _jev_shadow_extension(
+    simulation_copy: Path | None,
+) -> dict[str, object]:
+    if simulation_copy is None or not simulation_copy.is_file():
+        return {
+            "schema_version": JEV_SCHEMA_VERSION,
+            "present": False,
+            "tables": [],
+            "restorable": False,
+        }
+    present = [
+        table for table in JEV_SHADOW_TABLES
+        if _table_exists(simulation_copy, table)
+    ]
+    return {
+        "schema_version": JEV_SCHEMA_VERSION,
+        "present": bool(present),
+        "tables": present,
+        "restorable": len(present) == len(JEV_SHADOW_TABLES),
+        "secret_values_included": False,
+        "note": (
+            "JEV shadow protocol/review/comparison records live in Simulation DB. "
+            "JEV_API_KEY and authorization secrets are never stored in these tables."
         ),
     }
 
@@ -568,6 +605,9 @@ def create_backup(
                     simulation_copy,
                 ),
                 "prospective_evaluation_v1": _prospective_extension(
+                    simulation_copy,
+                ),
+                "jev_shadow_v1": _jev_shadow_extension(
                     simulation_copy,
                 ),
                 "holding_decision_v1": _holding_decision_extension(
