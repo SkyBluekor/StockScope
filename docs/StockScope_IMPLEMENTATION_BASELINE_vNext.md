@@ -2,9 +2,11 @@
 
 작성일: 2026-09-27 (Asia/Seoul) · 설계 버전: `vNext-2026-09-27`
 
+> 과거 입력 문서(Current State / Recovery Context / Astra handoff)는 현재 checkout의 active 문서가 아니다. 필요한 설계 이유는 `history/StockScope_R4_R5_R5R_설계변경이력.md`와 Git history에서 확인한다.
+
 ## 1. 적용 범위와 문서 관계
 
-이 문서는 향후 Codex가 [Development Roadmap](StockScope_DEVELOPMENT_ROADMAP_vNext.md)의 `VN-P*` Stage를 구현할 때 적용할 기준이다. 책임·데이터 소유권은 [Master Architecture](StockScope_MASTER_ARCHITECTURE_vNext.md), 현재 구현 사실과 이력은 [Current State](StockScope_CURRENT_STATE_2026-09-26.md), 배경과 미결 질문은 [Recovery Context](StockScope_RECOVERY_CONTEXT_2026-09-26.md), 전체 재설계 원칙은 [Handoff](StockScope_ASTRA_REDESIGN_HANDOFF_2026-09-27.md)를 따른다.
+이 문서는 향후 Codex가 [Development Roadmap](StockScope_DEVELOPMENT_ROADMAP_vNext.md)의 `VN-P*` Stage를 구현할 때 적용할 기준이다. 책임·데이터 소유권은 [Master Architecture](StockScope_MASTER_ARCHITECTURE_vNext.md), 현재 구현 사실과 이력은 과거 Current State, 배경과 미결 질문은 과거 Recovery Context, 전체 재설계 원칙은 과거 Astra handoff를 따른다.
 
 이번에는 세 설계 문서만 작성했다. 여기 적힌 Migration, 테스트, 운영 절차는 **향후 구현의 요구사항이며 수행 결과가 아니다.** 현재 DB 내용·외부 인증·장중 smoke·배포 상태는 확인하지 않았다.
 
