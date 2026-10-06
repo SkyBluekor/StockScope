@@ -1,0 +1,24 @@
+{
+  "artifact_version": "JEV_TYPESAFE_MODEL_BINDING_ARTIFACT_V1",
+  "status": "OBSERVED_CANARY_BINDING",
+  "checked_at": "2026-10-06T08:02:42.343652+00:00",
+  "provider_id": "TYPESAFE_SYSTEM_ONE",
+  "available_models": [
+    {
+      "name": "jev-latest",
+      "description": "The latest iteration of TypeSafe's System One Model: Jev",
+      "release_date": "2026-09-10T18:38:01.391457+00:00"
+    },
+    {
+      "name": "jev-preview",
+      "description": "A preview version of `jev-latest`: should be better in most ways",
+      "release_date": "2026-09-10T18:39:06.057655+00:00"
+    }
+  ],
+  "selected_request_model": "jev-preview",
+  "selected_release_date": "2026-09-10T18:39:06.057655+00:00",
+  "alias_used": false,
+  "observed_response_model": "jev-1.13.0",
+  "discovery_hash": "cc4c152d747bd139de424fe589e807c59f31dd411a90ff61e37a55e0ae892f8a",
+  "canary_protocol_hash": "62ca6a4477ef3247e296a2e85de1a15ffd2609f2f451158fd6fbb0f0cac7a306"
+}

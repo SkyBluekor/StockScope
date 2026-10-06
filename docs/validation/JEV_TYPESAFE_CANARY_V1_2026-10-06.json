@@ -1,0 +1,524 @@
+{
+  "report_version": "JEV_TYPESAFE_CANARY_REPORT_V1",
+  "status": "FAIL",
+  "canary_protocol_id": "JEV-TYPESAFE-CANARY-V1",
+  "canary_protocol_hash": "62ca6a4477ef3247e296a2e85de1a15ffd2609f2f451158fd6fbb0f0cac7a306",
+  "question_contract_version": "JEV_TYPESAFE_QUESTIONS_V1",
+  "question_set_hash": "b5cc517aaa0c818a0d53e3dcdc84818a04677b4b08c4265092724522a62195ee",
+  "started_at": "2026-10-06T08:02:29.530313+00:00",
+  "completed_at": "2026-10-06T08:02:42.343652+00:00",
+  "public_contract_snapshot": {
+    "api_version": "0.2.0",
+    "docs_url": "https://api.typesafe.ai/docs",
+    "openapi_url": "https://api.typesafe.ai/openapi.json",
+    "input_price_usd_per_million": 0.042,
+    "output_price_usd_per_million": 0.0,
+    "privacy_binding": "PUBLIC_POLICY_ONLY"
+  },
+  "model_binding": {
+    "artifact_version": "JEV_TYPESAFE_MODEL_BINDING_ARTIFACT_V1",
+    "status": "OBSERVED_CANARY_BINDING",
+    "checked_at": "2026-10-06T08:02:42.343652+00:00",
+    "provider_id": "TYPESAFE_SYSTEM_ONE",
+    "available_models": [
+      {
+        "name": "jev-latest",
+        "description": "The latest iteration of TypeSafe's System One Model: Jev",
+        "release_date": "2026-09-10T18:38:01.391457+00:00"
+      },
+      {
+        "name": "jev-preview",
+        "description": "A preview version of `jev-latest`: should be better in most ways",
+        "release_date": "2026-09-10T18:39:06.057655+00:00"
+      }
+    ],
+    "selected_request_model": "jev-preview",
+    "selected_release_date": "2026-09-10T18:39:06.057655+00:00",
+    "alias_used": false,
+    "observed_response_model": "jev-1.13.0",
+    "discovery_hash": "cc4c152d747bd139de424fe589e807c59f31dd411a90ff61e37a55e0ae892f8a",
+    "canary_protocol_hash": "62ca6a4477ef3247e296a2e85de1a15ffd2609f2f451158fd6fbb0f0cac7a306"
+  },
+  "api_calls": {
+    "model_discovery": 1,
+    "systemone": 24,
+    "total": 25,
+    "hard_cap": 25
+  },
+  "usage": {
+    "input_tokens": 25518,
+    "output_tokens": 1560,
+    "estimated_public_price_usd": 0.001071756,
+    "hard_budget_usd": 0.25
+  },
+  "threshold_analysis": {
+    "candidates": [
+      {
+        "low": 0.1,
+        "high": 0.9,
+        "hard_checks": 52,
+        "hard_mismatches": 50,
+        "hard_instability_count": 0,
+        "eligible": false
+      },
+      {
+        "low": 0.15,
+        "high": 0.85,
+        "hard_checks": 52,
+        "hard_mismatches": 46,
+        "hard_instability_count": 0,
+        "eligible": false
+      },
+      {
+        "low": 0.2,
+        "high": 0.8,
+        "hard_checks": 52,
+        "hard_mismatches": 35,
+        "hard_instability_count": 1,
+        "eligible": false
+      }
+    ],
+    "selected": null
+  },
+  "records": [
+    {
+      "fixture_id": "normal-01",
+      "category": "CLEAR_NORMAL",
+      "fixture_hash": "aeb05b829e45522f04e04d10bdc03e1f0e2c6cffd4843b185a86df9b143a117c",
+      "repetition": 1,
+      "model_requested": "jev-preview",
+      "model_returned": "jev-1.13.0",
+      "probabilities": {
+        "strategy_context_conflict": 0.19,
+        "entry_context_conflict": 0.28,
+        "review_evidence_insufficient": 0.36
+      },
+      "usage": {
+        "input_tokens": 1079,
+        "output_tokens": 65
+      },
+      "latency_ms": 518
+    },
+    {
+      "fixture_id": "normal-01",
+      "category": "CLEAR_NORMAL",
+      "fixture_hash": "aeb05b829e45522f04e04d10bdc03e1f0e2c6cffd4843b185a86df9b143a117c",
+      "repetition": 2,
+      "model_requested": "jev-preview",
+      "model_returned": "jev-1.13.0",
+      "probabilities": {
+        "strategy_context_conflict": 0.19,
+        "entry_context_conflict": 0.27,
+        "review_evidence_insufficient": 0.38
+      },
+      "usage": {
+        "input_tokens": 1079,
+        "output_tokens": 65
+      },
+      "latency_ms": 480
+    },
+    {
+      "fixture_id": "normal-02",
+      "category": "CLEAR_NORMAL",
+      "fixture_hash": "5d6c0669b0ea14369f6a63c10dec84ca9f1db160757193191c946f1fbc68a142",
+      "repetition": 1,
+      "model_requested": "jev-preview",
+      "model_returned": "jev-1.13.0",
+      "probabilities": {
+        "strategy_context_conflict": 0.2,
+        "entry_context_conflict": 0.29,
+        "review_evidence_insufficient": 0.4
+      },
+      "usage": {
+        "input_tokens": 1068,
+        "output_tokens": 65
+      },
+      "latency_ms": 499
+    },
+    {
+      "fixture_id": "normal-02",
+      "category": "CLEAR_NORMAL",
+      "fixture_hash": "5d6c0669b0ea14369f6a63c10dec84ca9f1db160757193191c946f1fbc68a142",
+      "repetition": 2,
+      "model_requested": "jev-preview",
+      "model_returned": "jev-1.13.0",
+      "probabilities": {
+        "strategy_context_conflict": 0.19,
+        "entry_context_conflict": 0.29,
+        "review_evidence_insufficient": 0.38
+      },
+      "usage": {
+        "input_tokens": 1068,
+        "output_tokens": 65
+      },
+      "latency_ms": 505
+    },
+    {
+      "fixture_id": "future-uncertainty-control",
+      "category": "CLEAR_NORMAL",
+      "fixture_hash": "c8b204a7f6f7a0bc0eafae31b3bd8bec510c4bb1f73199420bc48b178c753ad6",
+      "repetition": 1,
+      "model_requested": "jev-preview",
+      "model_returned": "jev-1.13.0",
+      "probabilities": {
+        "strategy_context_conflict": 0.21,
+        "entry_context_conflict": 0.27,
+        "review_evidence_insufficient": 0.32
+      },
+      "usage": {
+        "input_tokens": 1083,
+        "output_tokens": 65
+      },
+      "latency_ms": 476
+    },
+    {
+      "fixture_id": "future-uncertainty-control",
+      "category": "CLEAR_NORMAL",
+      "fixture_hash": "c8b204a7f6f7a0bc0eafae31b3bd8bec510c4bb1f73199420bc48b178c753ad6",
+      "repetition": 2,
+      "model_requested": "jev-preview",
+      "model_returned": "jev-1.13.0",
+      "probabilities": {
+        "strategy_context_conflict": 0.19,
+        "entry_context_conflict": 0.26,
+        "review_evidence_insufficient": 0.34
+      },
+      "usage": {
+        "input_tokens": 1083,
+        "output_tokens": 65
+      },
+      "latency_ms": 524
+    },
+    {
+      "fixture_id": "strategy-conflict-01",
+      "category": "STRATEGY_CONFLICT",
+      "fixture_hash": "7859c7c0beaab2cb55c6b36945be2fa9b0eda1fd5f228a980634ec606d2fa6a5",
+      "repetition": 1,
+      "model_requested": "jev-preview",
+      "model_returned": "jev-1.13.0",
+      "probabilities": {
+        "strategy_context_conflict": 0.91,
+        "entry_context_conflict": 0.49,
+        "review_evidence_insufficient": 0.48
+      },
+      "usage": {
+        "input_tokens": 1076,
+        "output_tokens": 65
+      },
+      "latency_ms": 523
+    },
+    {
+      "fixture_id": "strategy-conflict-01",
+      "category": "STRATEGY_CONFLICT",
+      "fixture_hash": "7859c7c0beaab2cb55c6b36945be2fa9b0eda1fd5f228a980634ec606d2fa6a5",
+      "repetition": 2,
+      "model_requested": "jev-preview",
+      "model_returned": "jev-1.13.0",
+      "probabilities": {
+        "strategy_context_conflict": 0.91,
+        "entry_context_conflict": 0.54,
+        "review_evidence_insufficient": 0.47
+      },
+      "usage": {
+        "input_tokens": 1076,
+        "output_tokens": 65
+      },
+      "latency_ms": 500
+    },
+    {
+      "fixture_id": "strategy-conflict-02",
+      "category": "STRATEGY_CONFLICT",
+      "fixture_hash": "6db2e46ed7611b94c9a895aea6b9c34bfeca912a22536418186baf83031893b1",
+      "repetition": 1,
+      "model_requested": "jev-preview",
+      "model_returned": "jev-1.13.0",
+      "probabilities": {
+        "strategy_context_conflict": 0.69,
+        "entry_context_conflict": 0.35,
+        "review_evidence_insufficient": 0.47
+      },
+      "usage": {
+        "input_tokens": 1069,
+        "output_tokens": 65
+      },
+      "latency_ms": 504
+    },
+    {
+      "fixture_id": "strategy-conflict-02",
+      "category": "STRATEGY_CONFLICT",
+      "fixture_hash": "6db2e46ed7611b94c9a895aea6b9c34bfeca912a22536418186baf83031893b1",
+      "repetition": 2,
+      "model_requested": "jev-preview",
+      "model_returned": "jev-1.13.0",
+      "probabilities": {
+        "strategy_context_conflict": 0.62,
+        "entry_context_conflict": 0.35,
+        "review_evidence_insufficient": 0.45
+      },
+      "usage": {
+        "input_tokens": 1069,
+        "output_tokens": 65
+      },
+      "latency_ms": 518
+    },
+    {
+      "fixture_id": "entry-conflict-01",
+      "category": "ENTRY_CONFLICT",
+      "fixture_hash": "0b61c5d7b7a5be497396f0ecb5436aa5f9d9823e848d906975e486056e2e71d1",
+      "repetition": 1,
+      "model_requested": "jev-preview",
+      "model_returned": "jev-1.13.0",
+      "probabilities": {
+        "strategy_context_conflict": 0.23,
+        "entry_context_conflict": 0.57,
+        "review_evidence_insufficient": 0.49
+      },
+      "usage": {
+        "input_tokens": 1082,
+        "output_tokens": 65
+      },
+      "latency_ms": 530
+    },
+    {
+      "fixture_id": "entry-conflict-01",
+      "category": "ENTRY_CONFLICT",
+      "fixture_hash": "0b61c5d7b7a5be497396f0ecb5436aa5f9d9823e848d906975e486056e2e71d1",
+      "repetition": 2,
+      "model_requested": "jev-preview",
+      "model_returned": "jev-1.13.0",
+      "probabilities": {
+        "strategy_context_conflict": 0.24,
+        "entry_context_conflict": 0.59,
+        "review_evidence_insufficient": 0.46
+      },
+      "usage": {
+        "input_tokens": 1082,
+        "output_tokens": 65
+      },
+      "latency_ms": 505
+    },
+    {
+      "fixture_id": "entry-conflict-02",
+      "category": "ENTRY_CONFLICT",
+      "fixture_hash": "fbbdb379a300fa060ec8f2bfddfacfd84bb626931299096638aea1d60ceca03e",
+      "repetition": 1,
+      "model_requested": "jev-preview",
+      "model_returned": "jev-1.13.0",
+      "probabilities": {
+        "strategy_context_conflict": 0.18,
+        "entry_context_conflict": 0.21,
+        "review_evidence_insufficient": 0.39
+      },
+      "usage": {
+        "input_tokens": 1074,
+        "output_tokens": 65
+      },
+      "latency_ms": 487
+    },
+    {
+      "fixture_id": "entry-conflict-02",
+      "category": "ENTRY_CONFLICT",
+      "fixture_hash": "fbbdb379a300fa060ec8f2bfddfacfd84bb626931299096638aea1d60ceca03e",
+      "repetition": 2,
+      "model_requested": "jev-preview",
+      "model_returned": "jev-1.13.0",
+      "probabilities": {
+        "strategy_context_conflict": 0.18,
+        "entry_context_conflict": 0.31,
+        "review_evidence_insufficient": 0.41
+      },
+      "usage": {
+        "input_tokens": 1074,
+        "output_tokens": 65
+      },
+      "latency_ms": 482
+    },
+    {
+      "fixture_id": "evidence-insufficient-01",
+      "category": "EVIDENCE_INSUFFICIENT",
+      "fixture_hash": "cc8f826bc0d19b1777e1513bdff76a8ef4c8426890032f12e4ba4c1b46c61cfb",
+      "repetition": 1,
+      "model_requested": "jev-preview",
+      "model_returned": "jev-1.13.0",
+      "probabilities": {
+        "strategy_context_conflict": 0.19,
+        "entry_context_conflict": 0.66,
+        "review_evidence_insufficient": 0.88
+      },
+      "usage": {
+        "input_tokens": 998,
+        "output_tokens": 65
+      },
+      "latency_ms": 511
+    },
+    {
+      "fixture_id": "evidence-insufficient-01",
+      "category": "EVIDENCE_INSUFFICIENT",
+      "fixture_hash": "cc8f826bc0d19b1777e1513bdff76a8ef4c8426890032f12e4ba4c1b46c61cfb",
+      "repetition": 2,
+      "model_requested": "jev-preview",
+      "model_returned": "jev-1.13.0",
+      "probabilities": {
+        "strategy_context_conflict": 0.19,
+        "entry_context_conflict": 0.63,
+        "review_evidence_insufficient": 0.87
+      },
+      "usage": {
+        "input_tokens": 998,
+        "output_tokens": 65
+      },
+      "latency_ms": 472
+    },
+    {
+      "fixture_id": "evidence-insufficient-02",
+      "category": "EVIDENCE_INSUFFICIENT",
+      "fixture_hash": "c95d3dbc08d96ae4c7a3c5f926114067894aeb9baf0bf7188cc9bfa3cee19896",
+      "repetition": 1,
+      "model_requested": "jev-preview",
+      "model_returned": "jev-1.13.0",
+      "probabilities": {
+        "strategy_context_conflict": 0.14,
+        "entry_context_conflict": 0.62,
+        "review_evidence_insufficient": 0.87
+      },
+      "usage": {
+        "input_tokens": 999,
+        "output_tokens": 65
+      },
+      "latency_ms": 534
+    },
+    {
+      "fixture_id": "evidence-insufficient-02",
+      "category": "EVIDENCE_INSUFFICIENT",
+      "fixture_hash": "c95d3dbc08d96ae4c7a3c5f926114067894aeb9baf0bf7188cc9bfa3cee19896",
+      "repetition": 2,
+      "model_requested": "jev-preview",
+      "model_returned": "jev-1.13.0",
+      "probabilities": {
+        "strategy_context_conflict": 0.15,
+        "entry_context_conflict": 0.62,
+        "review_evidence_insufficient": 0.88
+      },
+      "usage": {
+        "input_tokens": 999,
+        "output_tokens": 65
+      },
+      "latency_ms": 532
+    },
+    {
+      "fixture_id": "ambiguous-strategy-01",
+      "category": "AMBIGUOUS_BOUNDARY",
+      "fixture_hash": "99e3939fda3303e0b5edac4050a847c232ad42a32cde5eea068c7cde16d6ff98",
+      "repetition": 1,
+      "model_requested": "jev-preview",
+      "model_returned": "jev-1.13.0",
+      "probabilities": {
+        "strategy_context_conflict": 0.27,
+        "entry_context_conflict": 0.28,
+        "review_evidence_insufficient": 0.46
+      },
+      "usage": {
+        "input_tokens": 1073,
+        "output_tokens": 65
+      },
+      "latency_ms": 491
+    },
+    {
+      "fixture_id": "ambiguous-strategy-01",
+      "category": "AMBIGUOUS_BOUNDARY",
+      "fixture_hash": "99e3939fda3303e0b5edac4050a847c232ad42a32cde5eea068c7cde16d6ff98",
+      "repetition": 2,
+      "model_requested": "jev-preview",
+      "model_returned": "jev-1.13.0",
+      "probabilities": {
+        "strategy_context_conflict": 0.3,
+        "entry_context_conflict": 0.28,
+        "review_evidence_insufficient": 0.46
+      },
+      "usage": {
+        "input_tokens": 1073,
+        "output_tokens": 65
+      },
+      "latency_ms": 484
+    },
+    {
+      "fixture_id": "ambiguous-entry-01",
+      "category": "AMBIGUOUS_BOUNDARY",
+      "fixture_hash": "91e56dd34291ccc21cc3d0b33f828b64e593849ed2f892549fc3c05be8b0af5f",
+      "repetition": 1,
+      "model_requested": "jev-preview",
+      "model_returned": "jev-1.13.0",
+      "probabilities": {
+        "strategy_context_conflict": 0.18,
+        "entry_context_conflict": 0.42,
+        "review_evidence_insufficient": 0.46
+      },
+      "usage": {
+        "input_tokens": 1085,
+        "output_tokens": 65
+      },
+      "latency_ms": 495
+    },
+    {
+      "fixture_id": "ambiguous-entry-01",
+      "category": "AMBIGUOUS_BOUNDARY",
+      "fixture_hash": "91e56dd34291ccc21cc3d0b33f828b64e593849ed2f892549fc3c05be8b0af5f",
+      "repetition": 2,
+      "model_requested": "jev-preview",
+      "model_returned": "jev-1.13.0",
+      "probabilities": {
+        "strategy_context_conflict": 0.18,
+        "entry_context_conflict": 0.4,
+        "review_evidence_insufficient": 0.48
+      },
+      "usage": {
+        "input_tokens": 1085,
+        "output_tokens": 65
+      },
+      "latency_ms": 549
+    },
+    {
+      "fixture_id": "compound-conflict-01",
+      "category": "COMPOUND_CONFLICT",
+      "fixture_hash": "ff35f15b78e077bc83dd76709e08ea38fc3b1fc6eb4e70197c95687d91f03715",
+      "repetition": 1,
+      "model_requested": "jev-preview",
+      "model_returned": "jev-1.13.0",
+      "probabilities": {
+        "strategy_context_conflict": 0.84,
+        "entry_context_conflict": 0.84,
+        "review_evidence_insufficient": 0.49
+      },
+      "usage": {
+        "input_tokens": 1073,
+        "output_tokens": 65
+      },
+      "latency_ms": 566
+    },
+    {
+      "fixture_id": "compound-conflict-01",
+      "category": "COMPOUND_CONFLICT",
+      "fixture_hash": "ff35f15b78e077bc83dd76709e08ea38fc3b1fc6eb4e70197c95687d91f03715",
+      "repetition": 2,
+      "model_requested": "jev-preview",
+      "model_returned": "jev-1.13.0",
+      "probabilities": {
+        "strategy_context_conflict": 0.83,
+        "entry_context_conflict": 0.83,
+        "review_evidence_insufficient": 0.47
+      },
+      "usage": {
+        "input_tokens": 1073,
+        "output_tokens": 65
+      },
+      "latency_ms": 480
+    }
+  ],
+  "errors": [
+    "CANARY_NO_ELIGIBLE_THRESHOLD"
+  ],
+  "real_stock_data_sent": false,
+  "actual_trial_activation": false,
+  "trial_freeze_readiness": "BLOCKED_CANARY_FAILED",
+  "account_policy_binding": "NOT_VERIFIED_BY_CANARY"
+}

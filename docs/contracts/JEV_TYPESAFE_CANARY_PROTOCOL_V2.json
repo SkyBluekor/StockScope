@@ -1,0 +1,1752 @@
+{
+  "artifact_version": "JEV_TYPESAFE_CANARY_PROTOCOL_ARTIFACT_V2",
+  "protocol_id": "JEV-TYPESAFE-CANARY-V2",
+  "status": "FROZEN_BEFORE_REAL_CALLS",
+  "frozen_at": "2026-10-06",
+  "protocol_hash": "e567606b949886a615ee9762c706daf75d1d8b9f194b487ca40e5c4cbc7ad0e3",
+  "spec": {
+    "provider_id": "TYPESAFE_SYSTEM_ONE",
+    "models_endpoint": "https://api.typesafe.ai/v1/models",
+    "systemone_endpoint": "https://api.typesafe.ai/v1/systemone",
+    "model_discovery_attempts_max": 1,
+    "systemone_attempts_max": 72,
+    "total_api_attempts_max": 73,
+    "repetitions": 3,
+    "api_budget_usd": 0.25,
+    "per_call_reservation_required": true,
+    "threshold_candidates": [
+      {
+        "threshold_strategy": 0.5,
+        "threshold_entry": 0.5,
+        "threshold_evidence": 0.6
+      },
+      {
+        "threshold_strategy": 0.5,
+        "threshold_entry": 0.5,
+        "threshold_evidence": 0.75
+      },
+      {
+        "threshold_strategy": 0.5,
+        "threshold_entry": 0.5,
+        "threshold_evidence": 0.9
+      },
+      {
+        "threshold_strategy": 0.5,
+        "threshold_entry": 0.65,
+        "threshold_evidence": 0.6
+      },
+      {
+        "threshold_strategy": 0.5,
+        "threshold_entry": 0.65,
+        "threshold_evidence": 0.75
+      },
+      {
+        "threshold_strategy": 0.5,
+        "threshold_entry": 0.65,
+        "threshold_evidence": 0.9
+      },
+      {
+        "threshold_strategy": 0.5,
+        "threshold_entry": 0.8,
+        "threshold_evidence": 0.6
+      },
+      {
+        "threshold_strategy": 0.5,
+        "threshold_entry": 0.8,
+        "threshold_evidence": 0.75
+      },
+      {
+        "threshold_strategy": 0.5,
+        "threshold_entry": 0.8,
+        "threshold_evidence": 0.9
+      },
+      {
+        "threshold_strategy": 0.65,
+        "threshold_entry": 0.5,
+        "threshold_evidence": 0.6
+      },
+      {
+        "threshold_strategy": 0.65,
+        "threshold_entry": 0.5,
+        "threshold_evidence": 0.75
+      },
+      {
+        "threshold_strategy": 0.65,
+        "threshold_entry": 0.5,
+        "threshold_evidence": 0.9
+      },
+      {
+        "threshold_strategy": 0.65,
+        "threshold_entry": 0.65,
+        "threshold_evidence": 0.6
+      },
+      {
+        "threshold_strategy": 0.65,
+        "threshold_entry": 0.65,
+        "threshold_evidence": 0.75
+      },
+      {
+        "threshold_strategy": 0.65,
+        "threshold_entry": 0.65,
+        "threshold_evidence": 0.9
+      },
+      {
+        "threshold_strategy": 0.65,
+        "threshold_entry": 0.8,
+        "threshold_evidence": 0.6
+      },
+      {
+        "threshold_strategy": 0.65,
+        "threshold_entry": 0.8,
+        "threshold_evidence": 0.75
+      },
+      {
+        "threshold_strategy": 0.65,
+        "threshold_entry": 0.8,
+        "threshold_evidence": 0.9
+      },
+      {
+        "threshold_strategy": 0.8,
+        "threshold_entry": 0.5,
+        "threshold_evidence": 0.6
+      },
+      {
+        "threshold_strategy": 0.8,
+        "threshold_entry": 0.5,
+        "threshold_evidence": 0.75
+      },
+      {
+        "threshold_strategy": 0.8,
+        "threshold_entry": 0.5,
+        "threshold_evidence": 0.9
+      },
+      {
+        "threshold_strategy": 0.8,
+        "threshold_entry": 0.65,
+        "threshold_evidence": 0.6
+      },
+      {
+        "threshold_strategy": 0.8,
+        "threshold_entry": 0.65,
+        "threshold_evidence": 0.75
+      },
+      {
+        "threshold_strategy": 0.8,
+        "threshold_entry": 0.65,
+        "threshold_evidence": 0.9
+      },
+      {
+        "threshold_strategy": 0.8,
+        "threshold_entry": 0.8,
+        "threshold_evidence": 0.6
+      },
+      {
+        "threshold_strategy": 0.8,
+        "threshold_entry": 0.8,
+        "threshold_evidence": 0.75
+      },
+      {
+        "threshold_strategy": 0.8,
+        "threshold_entry": 0.8,
+        "threshold_evidence": 0.9
+      }
+    ],
+    "question_contract_version": "JEV_TYPESAFE_QUESTIONS_V2",
+    "question_set_hash": "7a24ad5b280f6de9bc111efb822070fb9866b7537cf2d67813fce0822f85bc1f",
+    "disposition_policy_version": "JEV_TYPESAFE_DISPOSITION_POLICY_V2",
+    "disposition_policy_hash": "dfc05fcc22771fe8264160fe2d758ba3e533eb483066c593d846abf9c8566089",
+    "fixtures": [
+      {
+        "fixture_id": "v2-s01",
+        "partition": "selection",
+        "purpose": "clear normal",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "SHORT"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_CANARY_V2",
+            "strategy_description": "This strategy accepts a rising 20-day average above the 60-day average. The single rule in entry_context is an executable entry range."
+          },
+          "condition_context": [
+            {
+              "metric_key": "ma20_slope",
+              "status": "PASS",
+              "current_value": "rising",
+              "required_value": "rising",
+              "semantic_label": "20-day moving-average slope condition"
+            },
+            {
+              "metric_key": "ma20_vs_ma60",
+              "status": "PASS",
+              "current_value": "above",
+              "required_value": "above",
+              "semantic_label": "20-day versus 60-day moving-average relation"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "EXECUTABLE_ENTRY_RANGE",
+              "executable_entry_range": true
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "ALIGNED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "state_hash": "10eed4eb68ceed1dc5d0470d3cffeb28519f7df532bc77b417d9dd2e56706f9f",
+        "expected_propositions": {
+          "strategy_context_conflict": false,
+          "entry_context_conflict": false,
+          "overall_semantic_review_insufficient": false
+        },
+        "expected_disposition": "PASS_THROUGH",
+        "expected_reason_codes": [
+          "NO_ADDITIONAL_CONTEXT_CONFLICT"
+        ],
+        "expected_uncertainty_reason": null,
+        "metric_group": "NEGATIVE",
+        "hard_expectation": true,
+        "cross_question": false,
+        "gold_rationale": "Condition direction and executable-rule meaning agree."
+      },
+      {
+        "fixture_id": "v2-s02",
+        "partition": "selection",
+        "purpose": "future uncertainty negative control",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "SHORT"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_CANARY_V2",
+            "strategy_description": "Falling averages with the 20-day below the 60-day are intentional here. The entry_context rule is executable. Later price performance is outside this review."
+          },
+          "condition_context": [
+            {
+              "metric_key": "ma20_slope",
+              "status": "PASS",
+              "current_value": "falling",
+              "required_value": "falling",
+              "semantic_label": "20-day moving-average slope condition"
+            },
+            {
+              "metric_key": "ma20_vs_ma60",
+              "status": "PASS",
+              "current_value": "below",
+              "required_value": "below",
+              "semantic_label": "20-day versus 60-day moving-average relation"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "EXECUTABLE_ENTRY_RANGE",
+              "executable_entry_range": true
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "ALIGNED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "state_hash": "c8aee13e896fd06dbd93d5edb4b0850d7f267a462c5a446897359ac1ab20018b",
+        "expected_propositions": {
+          "strategy_context_conflict": false,
+          "entry_context_conflict": false,
+          "overall_semantic_review_insufficient": false
+        },
+        "expected_disposition": "PASS_THROUGH",
+        "expected_reason_codes": [
+          "NO_ADDITIONAL_CONTEXT_CONFLICT"
+        ],
+        "expected_uncertainty_reason": null,
+        "metric_group": "NEGATIVE",
+        "hard_expectation": true,
+        "cross_question": false,
+        "gold_rationale": "Current semantics are complete; future outcome is irrelevant."
+      },
+      {
+        "fixture_id": "v2-s03",
+        "partition": "selection",
+        "purpose": "false-positive trap: confirmation band",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "SHORT"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_CANARY_V2",
+            "strategy_description": "Rising averages above the slower average fit this setup. The only rule in entry_context is a confirmation band, never an executable range. Candidate status does not change that role."
+          },
+          "condition_context": [
+            {
+              "metric_key": "ma20_slope",
+              "status": "PASS",
+              "current_value": "rising",
+              "required_value": "rising",
+              "semantic_label": "20-day moving-average slope condition"
+            },
+            {
+              "metric_key": "ma20_vs_ma60",
+              "status": "PASS",
+              "current_value": "above",
+              "required_value": "above",
+              "semantic_label": "20-day versus 60-day moving-average relation"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "STRATEGY_CONDITION_THRESHOLD",
+              "executable_entry_range": false
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "SEPARATED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "state_hash": "860233c64d0953098ed82d28e2a403cea3d2346e9c2eef5a454ad58b319ba8a4",
+        "expected_propositions": {
+          "strategy_context_conflict": false,
+          "entry_context_conflict": false,
+          "overall_semantic_review_insufficient": false
+        },
+        "expected_disposition": "PASS_THROUGH",
+        "expected_reason_codes": [
+          "NO_ADDITIONAL_CONTEXT_CONFLICT"
+        ],
+        "expected_uncertainty_reason": null,
+        "metric_group": "NEGATIVE",
+        "hard_expectation": true,
+        "cross_question": false,
+        "gold_rationale": "Non-executable confirmation meaning agrees with state."
+      },
+      {
+        "fixture_id": "v2-s04",
+        "partition": "selection",
+        "purpose": "false-abstain trap: excluded information",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "SHORT"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_CANARY_V2",
+            "strategy_description": "Positive sector-relative strength with a rising average is the intended context. The entry_context rule is executable. Company identity, news and target prices play no role in these meaning comparisons."
+          },
+          "condition_context": [
+            {
+              "metric_key": "relative_strength_sector",
+              "status": "PASS",
+              "current_value": "positive",
+              "required_value": "positive",
+              "semantic_label": "relative strength versus the sector"
+            },
+            {
+              "metric_key": "ma20_slope",
+              "status": "PASS",
+              "current_value": "rising",
+              "required_value": "rising",
+              "semantic_label": "20-day moving-average slope condition"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "EXECUTABLE_ENTRY_RANGE",
+              "executable_entry_range": true
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "ALIGNED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "state_hash": "4887952e356d04cb906f5b25059c462e362a8faee6861d65411f9f6e83d7ea7b",
+        "expected_propositions": {
+          "strategy_context_conflict": false,
+          "entry_context_conflict": false,
+          "overall_semantic_review_insufficient": false
+        },
+        "expected_disposition": "PASS_THROUGH",
+        "expected_reason_codes": [
+          "NO_ADDITIONAL_CONTEXT_CONFLICT"
+        ],
+        "expected_uncertainty_reason": null,
+        "metric_group": "NEGATIVE",
+        "hard_expectation": true,
+        "cross_question": false,
+        "gold_rationale": "All semantics needed for the limited review are present."
+      },
+      {
+        "fixture_id": "v2-s05",
+        "partition": "selection",
+        "purpose": "clear strategy conflict",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "SHORT"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_CANARY_V2",
+            "strategy_description": "Only falling averages with the 20-day below the 60-day fit this strategy; the opposite rising arrangement is excluded. The entry_context rule is executable."
+          },
+          "condition_context": [
+            {
+              "metric_key": "ma20_slope",
+              "status": "PASS",
+              "current_value": "rising",
+              "required_value": "rising",
+              "semantic_label": "20-day moving-average slope condition"
+            },
+            {
+              "metric_key": "ma20_vs_ma60",
+              "status": "PASS",
+              "current_value": "above",
+              "required_value": "above",
+              "semantic_label": "20-day versus 60-day moving-average relation"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "EXECUTABLE_ENTRY_RANGE",
+              "executable_entry_range": true
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "ALIGNED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "state_hash": "bea888b2381983c59520a38caebf5f4d7eafa52342efa740a7dc2f206d857c5c",
+        "expected_propositions": {
+          "strategy_context_conflict": true,
+          "entry_context_conflict": false,
+          "overall_semantic_review_insufficient": false
+        },
+        "expected_disposition": "REVIEW_REQUIRED",
+        "expected_reason_codes": [
+          "STRATEGY_CONTEXT_CONFLICT"
+        ],
+        "expected_uncertainty_reason": null,
+        "metric_group": "CONFLICT",
+        "hard_expectation": true,
+        "cross_question": false,
+        "gold_rationale": "Provided conditions are explicitly excluded by strategy intent."
+      },
+      {
+        "fixture_id": "v2-s06",
+        "partition": "selection",
+        "purpose": "clear Q1 conflict plus Q2 insufficient",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "SHORT"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_CANARY_V2",
+            "strategy_description": "Sector underperformance with a falling average is required; sector outperformance with a rising average contradicts that intent. Band Alpha is confirmation-only and band Beta is executable. The entry_context rule represents the selected band."
+          },
+          "condition_context": [
+            {
+              "metric_key": "relative_strength_sector",
+              "status": "PASS",
+              "current_value": "positive",
+              "required_value": "positive",
+              "semantic_label": "relative strength versus the sector"
+            },
+            {
+              "metric_key": "ma20_slope",
+              "status": "PASS",
+              "current_value": "rising",
+              "required_value": "rising",
+              "semantic_label": "20-day moving-average slope condition"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "EXECUTABLE_ENTRY_RANGE",
+              "executable_entry_range": true
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "ALIGNED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "state_hash": "c8a95f62cda6b0c8d7f5e6eb7d9c46af8719897e2a7ff0ab0b83d6b6c6b7e1dc",
+        "expected_propositions": {
+          "strategy_context_conflict": true,
+          "entry_context_conflict": false,
+          "overall_semantic_review_insufficient": false
+        },
+        "expected_disposition": "REVIEW_REQUIRED",
+        "expected_reason_codes": [
+          "STRATEGY_CONTEXT_CONFLICT"
+        ],
+        "expected_uncertainty_reason": null,
+        "metric_group": "CONFLICT",
+        "hard_expectation": true,
+        "cross_question": true,
+        "gold_rationale": "Q1 is explicit; missing selected-band link cannot suppress Q1."
+      },
+      {
+        "fixture_id": "v2-s07",
+        "partition": "selection",
+        "purpose": "clear entry conflict",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "SHORT"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_CANARY_V2",
+            "strategy_description": "Rising averages above the slower average fit the strategy. The sole rule represented in entry_context is confirmation-only and must not denote an executable entry range."
+          },
+          "condition_context": [
+            {
+              "metric_key": "ma20_slope",
+              "status": "PASS",
+              "current_value": "rising",
+              "required_value": "rising",
+              "semantic_label": "20-day moving-average slope condition"
+            },
+            {
+              "metric_key": "ma20_vs_ma60",
+              "status": "PASS",
+              "current_value": "above",
+              "required_value": "above",
+              "semantic_label": "20-day versus 60-day moving-average relation"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "EXECUTABLE_ENTRY_RANGE",
+              "executable_entry_range": true
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "ALIGNED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "state_hash": "55a5ebfb34ac021fee6e2cc9420a3dcd4c7422277b6221bbb9e8046c8098f8b1",
+        "expected_propositions": {
+          "strategy_context_conflict": false,
+          "entry_context_conflict": true,
+          "overall_semantic_review_insufficient": false
+        },
+        "expected_disposition": "REVIEW_REQUIRED",
+        "expected_reason_codes": [
+          "ENTRY_CONTEXT_CONFLICT"
+        ],
+        "expected_uncertainty_reason": null,
+        "metric_group": "CONFLICT",
+        "hard_expectation": true,
+        "cross_question": false,
+        "gold_rationale": "Same rule is confirmation-only in description but executable in state."
+      },
+      {
+        "fixture_id": "v2-s08",
+        "partition": "selection",
+        "purpose": "clear Q2 conflict plus Q1 insufficient",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "SHORT"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_CANARY_V2",
+            "strategy_description": "Context class K alone defines which directional condition combination fits this strategy. The single entry_context rule specifically denotes an executable range, not a strategy confirmation threshold."
+          },
+          "condition_context": [
+            {
+              "metric_key": "ma20_slope",
+              "status": "PASS",
+              "current_value": "falling",
+              "required_value": "falling",
+              "semantic_label": "20-day moving-average slope condition"
+            },
+            {
+              "metric_key": "ma20_vs_ma60",
+              "status": "PASS",
+              "current_value": "below",
+              "required_value": "below",
+              "semantic_label": "20-day versus 60-day moving-average relation"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "STRATEGY_CONDITION_THRESHOLD",
+              "executable_entry_range": false
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "SEPARATED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "state_hash": "3a1a31cdc890e1470b00cb3130687d8ee3e125ebb6556385a5e75291d7317dd4",
+        "expected_propositions": {
+          "strategy_context_conflict": false,
+          "entry_context_conflict": true,
+          "overall_semantic_review_insufficient": false
+        },
+        "expected_disposition": "REVIEW_REQUIRED",
+        "expected_reason_codes": [
+          "ENTRY_CONTEXT_CONFLICT"
+        ],
+        "expected_uncertainty_reason": null,
+        "metric_group": "CONFLICT",
+        "hard_expectation": true,
+        "cross_question": true,
+        "gold_rationale": "Q2 is explicit; missing K definition cannot suppress Q2."
+      },
+      {
+        "fixture_id": "v2-s09",
+        "partition": "selection",
+        "purpose": "no conflict plus Q1 definition missing",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "SHORT"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_CANARY_V2",
+            "strategy_description": "Conditions are interpreted according to context class K. Only that class defines the intended directional combination. The entry_context rule is an executable range."
+          },
+          "condition_context": [
+            {
+              "metric_key": "ma20_slope",
+              "status": "PASS",
+              "current_value": "rising",
+              "required_value": "rising",
+              "semantic_label": "20-day moving-average slope condition"
+            },
+            {
+              "metric_key": "ma20_vs_ma60",
+              "status": "PASS",
+              "current_value": "above",
+              "required_value": "above",
+              "semantic_label": "20-day versus 60-day moving-average relation"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "EXECUTABLE_ENTRY_RANGE",
+              "executable_entry_range": true
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "ALIGNED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "state_hash": "5430133bd93d7d3221c8ba9ea41a5ac91e6fe95bd342873f5c02ca1633f101d7",
+        "expected_propositions": {
+          "strategy_context_conflict": false,
+          "entry_context_conflict": false,
+          "overall_semantic_review_insufficient": true
+        },
+        "expected_disposition": "ABSTAIN",
+        "expected_reason_codes": [],
+        "expected_uncertainty_reason": "EVIDENCE_INSUFFICIENT",
+        "metric_group": "INSUFFICIENT",
+        "hard_expectation": true,
+        "cross_question": false,
+        "gold_rationale": "K is required for Q1 and absent; Q2 is consistent."
+      },
+      {
+        "fixture_id": "v2-s10",
+        "partition": "selection",
+        "purpose": "no conflict plus Q2 rule link missing",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "SHORT"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_CANARY_V2",
+            "strategy_description": "Rising averages above the slower average fit this setup. Band Alpha is confirmation-only and band Beta is executable. The rule in entry_context represents the selected band."
+          },
+          "condition_context": [
+            {
+              "metric_key": "ma20_slope",
+              "status": "PASS",
+              "current_value": "rising",
+              "required_value": "rising",
+              "semantic_label": "20-day moving-average slope condition"
+            },
+            {
+              "metric_key": "ma20_vs_ma60",
+              "status": "PASS",
+              "current_value": "above",
+              "required_value": "above",
+              "semantic_label": "20-day versus 60-day moving-average relation"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "EXECUTABLE_ENTRY_RANGE",
+              "executable_entry_range": true
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "ALIGNED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "state_hash": "dced29d94add7e4223e3b2e185ec953c16a2b1d697fbc6fdcd69bab823633071",
+        "expected_propositions": {
+          "strategy_context_conflict": false,
+          "entry_context_conflict": false,
+          "overall_semantic_review_insufficient": true
+        },
+        "expected_disposition": "ABSTAIN",
+        "expected_reason_codes": [],
+        "expected_uncertainty_reason": "EVIDENCE_INSUFFICIENT",
+        "metric_group": "INSUFFICIENT",
+        "hard_expectation": true,
+        "cross_question": false,
+        "gold_rationale": "Selected band is unspecified, so Q2 cannot be completed."
+      },
+      {
+        "fixture_id": "v2-s11",
+        "partition": "selection",
+        "purpose": "compound conflict",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "SHORT"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_CANARY_V2",
+            "strategy_description": "Only falling averages with the 20-day below the 60-day are compatible. The sole rule in entry_context is confirmation-only and is never executable."
+          },
+          "condition_context": [
+            {
+              "metric_key": "ma20_slope",
+              "status": "PASS",
+              "current_value": "rising",
+              "required_value": "rising",
+              "semantic_label": "20-day moving-average slope condition"
+            },
+            {
+              "metric_key": "ma20_vs_ma60",
+              "status": "PASS",
+              "current_value": "above",
+              "required_value": "above",
+              "semantic_label": "20-day versus 60-day moving-average relation"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "EXECUTABLE_ENTRY_RANGE",
+              "executable_entry_range": true
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "ALIGNED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "state_hash": "c398fa2854ee74219ec1b2b5003bbb3d08e714ee372364d8194c5f8f7e0cb1da",
+        "expected_propositions": {
+          "strategy_context_conflict": true,
+          "entry_context_conflict": true,
+          "overall_semantic_review_insufficient": false
+        },
+        "expected_disposition": "REVIEW_REQUIRED",
+        "expected_reason_codes": [
+          "STRATEGY_CONTEXT_CONFLICT",
+          "ENTRY_CONTEXT_CONFLICT"
+        ],
+        "expected_uncertainty_reason": null,
+        "metric_group": "CONFLICT",
+        "hard_expectation": true,
+        "cross_question": false,
+        "gold_rationale": "Both independent conflicts are fully evidenced."
+      },
+      {
+        "fixture_id": "v2-s12",
+        "partition": "selection",
+        "purpose": "semantic ambiguity",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "SHORT"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_CANARY_V2",
+            "strategy_description": "This strategy prefers vigorous upward movement but can accept modest progress. A slightly rising average is a borderline fit. The entry_context rule is executable."
+          },
+          "condition_context": [
+            {
+              "metric_key": "ma20_slope",
+              "status": "PASS",
+              "current_value": "slightly rising",
+              "required_value": "nondecreasing",
+              "semantic_label": "20-day moving-average slope condition"
+            },
+            {
+              "metric_key": "ma20_vs_ma60",
+              "status": "PASS",
+              "current_value": "above",
+              "required_value": "above",
+              "semantic_label": "20-day versus 60-day moving-average relation"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "EXECUTABLE_ENTRY_RANGE",
+              "executable_entry_range": true
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "ALIGNED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "state_hash": "7349c4f7988f82c73f1d8ab021b945d270ee1028d1c78b73e1f7604bdb753384",
+        "expected_propositions": {
+          "strategy_context_conflict": null,
+          "entry_context_conflict": null,
+          "overall_semantic_review_insufficient": null
+        },
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "expected_uncertainty_reason": null,
+        "metric_group": "SOFT",
+        "hard_expectation": false,
+        "cross_question": false,
+        "gold_rationale": "Degree wording is intentionally soft; no single hard result."
+      },
+      {
+        "fixture_id": "v2-v01",
+        "partition": "validation",
+        "purpose": "clear normal",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "MEDIUM"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_CANARY_V2",
+            "strategy_description": "A 60-day average above its 120-day counterpart and positive market-relative strength express the intended structure. The rule in entry_context defines executable entries."
+          },
+          "condition_context": [
+            {
+              "metric_key": "ma60_vs_ma120",
+              "status": "PASS",
+              "current_value": "above",
+              "required_value": "above",
+              "semantic_label": "60-day versus 120-day moving-average relation"
+            },
+            {
+              "metric_key": "relative_strength_market",
+              "status": "PASS",
+              "current_value": "positive",
+              "required_value": "positive",
+              "semantic_label": "relative strength versus the broad market"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "EXECUTABLE_ENTRY_RANGE",
+              "executable_entry_range": true
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "ALIGNED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "state_hash": "91ae1b65fcaa65577711b2cc6dd0d3eb33ac6a475a4fccdb38b8c9bd199e1d35",
+        "expected_propositions": {
+          "strategy_context_conflict": false,
+          "entry_context_conflict": false,
+          "overall_semantic_review_insufficient": false
+        },
+        "expected_disposition": "PASS_THROUGH",
+        "expected_reason_codes": [
+          "NO_ADDITIONAL_CONTEXT_CONFLICT"
+        ],
+        "expected_uncertainty_reason": null,
+        "metric_group": "NEGATIVE",
+        "hard_expectation": true,
+        "cross_question": false,
+        "gold_rationale": "Long-horizon condition and execution meanings agree."
+      },
+      {
+        "fixture_id": "v2-v02",
+        "partition": "validation",
+        "purpose": "future uncertainty negative control",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "MEDIUM"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_CANARY_V2",
+            "strategy_description": "The intended context is a 60-day average below the 120-day average with negative market-relative strength. The entry_context rule is executable. Nothing here asserts what prices will do next."
+          },
+          "condition_context": [
+            {
+              "metric_key": "ma60_vs_ma120",
+              "status": "PASS",
+              "current_value": "below",
+              "required_value": "below",
+              "semantic_label": "60-day versus 120-day moving-average relation"
+            },
+            {
+              "metric_key": "relative_strength_market",
+              "status": "PASS",
+              "current_value": "negative",
+              "required_value": "negative",
+              "semantic_label": "relative strength versus the broad market"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "EXECUTABLE_ENTRY_RANGE",
+              "executable_entry_range": true
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "ALIGNED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "state_hash": "1947b935168e67969a4f3e12b3586c44e136d88a3e7f58d06e51415365df2d5f",
+        "expected_propositions": {
+          "strategy_context_conflict": false,
+          "entry_context_conflict": false,
+          "overall_semantic_review_insufficient": false
+        },
+        "expected_disposition": "PASS_THROUGH",
+        "expected_reason_codes": [
+          "NO_ADDITIONAL_CONTEXT_CONFLICT"
+        ],
+        "expected_uncertainty_reason": null,
+        "metric_group": "NEGATIVE",
+        "hard_expectation": true,
+        "cross_question": false,
+        "gold_rationale": "Future outcome is not needed for current semantic comparison."
+      },
+      {
+        "fixture_id": "v2-v03",
+        "partition": "validation",
+        "purpose": "false-positive trap: proximity wording",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "MEDIUM"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_CANARY_V2",
+            "strategy_description": "The 60-day average above the 120-day and market outperformance fit this setup. The sole entry_context rule is a confirmation band. Its proximity to an execution area does not make it executable."
+          },
+          "condition_context": [
+            {
+              "metric_key": "ma60_vs_ma120",
+              "status": "PASS",
+              "current_value": "above",
+              "required_value": "above",
+              "semantic_label": "60-day versus 120-day moving-average relation"
+            },
+            {
+              "metric_key": "relative_strength_market",
+              "status": "PASS",
+              "current_value": "positive",
+              "required_value": "positive",
+              "semantic_label": "relative strength versus the broad market"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "STRATEGY_CONDITION_THRESHOLD",
+              "executable_entry_range": false
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "SEPARATED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "state_hash": "d4a516bc3a0f2f2bccafa1687fe73aee157609edcd4d5ee89969547334a40865",
+        "expected_propositions": {
+          "strategy_context_conflict": false,
+          "entry_context_conflict": false,
+          "overall_semantic_review_insufficient": false
+        },
+        "expected_disposition": "PASS_THROUGH",
+        "expected_reason_codes": [
+          "NO_ADDITIONAL_CONTEXT_CONFLICT"
+        ],
+        "expected_uncertainty_reason": null,
+        "metric_group": "NEGATIVE",
+        "hard_expectation": true,
+        "cross_question": false,
+        "gold_rationale": "Proximity does not change the confirmation-only role."
+      },
+      {
+        "fixture_id": "v2-v04",
+        "partition": "validation",
+        "purpose": "false-abstain trap: complete bearish context",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "MEDIUM"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_CANARY_V2",
+            "strategy_description": "Negative sector-relative strength together with a falling average is deliberately accepted by this strategy. The sole rule in entry_context is an executable range; no external event narrative is needed."
+          },
+          "condition_context": [
+            {
+              "metric_key": "relative_strength_sector",
+              "status": "PASS",
+              "current_value": "negative",
+              "required_value": "negative",
+              "semantic_label": "relative strength versus the sector"
+            },
+            {
+              "metric_key": "ma20_slope",
+              "status": "PASS",
+              "current_value": "falling",
+              "required_value": "falling",
+              "semantic_label": "20-day moving-average slope condition"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "EXECUTABLE_ENTRY_RANGE",
+              "executable_entry_range": true
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "ALIGNED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "state_hash": "13d1eb723c6fcc9b8d9a3df5b97d364b490d92735ca70843288a2d59d477a132",
+        "expected_propositions": {
+          "strategy_context_conflict": false,
+          "entry_context_conflict": false,
+          "overall_semantic_review_insufficient": false
+        },
+        "expected_disposition": "PASS_THROUGH",
+        "expected_reason_codes": [
+          "NO_ADDITIONAL_CONTEXT_CONFLICT"
+        ],
+        "expected_uncertainty_reason": null,
+        "metric_group": "NEGATIVE",
+        "hard_expectation": true,
+        "cross_question": false,
+        "gold_rationale": "A bearish-looking context can still be semantically complete."
+      },
+      {
+        "fixture_id": "v2-v05",
+        "partition": "validation",
+        "purpose": "clear strategy conflict",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "MEDIUM"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_CANARY_V2",
+            "strategy_description": "The strategy excludes a 60-day average above the 120-day accompanied by market outperformance; it requires the reverse arrangement. The entry_context rule defines executable entries."
+          },
+          "condition_context": [
+            {
+              "metric_key": "ma60_vs_ma120",
+              "status": "PASS",
+              "current_value": "above",
+              "required_value": "above",
+              "semantic_label": "60-day versus 120-day moving-average relation"
+            },
+            {
+              "metric_key": "relative_strength_market",
+              "status": "PASS",
+              "current_value": "positive",
+              "required_value": "positive",
+              "semantic_label": "relative strength versus the broad market"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "EXECUTABLE_ENTRY_RANGE",
+              "executable_entry_range": true
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "ALIGNED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "state_hash": "07aa757c732266ebe87c8b5a1ed2ceebe4f18aa10cb963042dbba0337ec00ef3",
+        "expected_propositions": {
+          "strategy_context_conflict": true,
+          "entry_context_conflict": false,
+          "overall_semantic_review_insufficient": false
+        },
+        "expected_disposition": "REVIEW_REQUIRED",
+        "expected_reason_codes": [
+          "STRATEGY_CONTEXT_CONFLICT"
+        ],
+        "expected_uncertainty_reason": null,
+        "metric_group": "CONFLICT",
+        "hard_expectation": true,
+        "cross_question": false,
+        "gold_rationale": "Observed long-horizon arrangement is directly excluded."
+      },
+      {
+        "fixture_id": "v2-v06",
+        "partition": "validation",
+        "purpose": "clear Q1 conflict plus Q2 insufficient",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "MEDIUM"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_CANARY_V2",
+            "strategy_description": "Sector leadership and a rising average are essential. Sector underperformance combined with a falling average is incompatible. One strategy band is executable and the other only confirms conditions. The entry_context rule names the chosen band."
+          },
+          "condition_context": [
+            {
+              "metric_key": "relative_strength_sector",
+              "status": "PASS",
+              "current_value": "negative",
+              "required_value": "negative",
+              "semantic_label": "relative strength versus the sector"
+            },
+            {
+              "metric_key": "ma20_slope",
+              "status": "PASS",
+              "current_value": "falling",
+              "required_value": "falling",
+              "semantic_label": "20-day moving-average slope condition"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "EXECUTABLE_ENTRY_RANGE",
+              "executable_entry_range": true
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "ALIGNED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "state_hash": "608de69454fd67aba33a6f1f2500014dd6e4cb30be1acea44cdbd1b15696377c",
+        "expected_propositions": {
+          "strategy_context_conflict": true,
+          "entry_context_conflict": false,
+          "overall_semantic_review_insufficient": false
+        },
+        "expected_disposition": "REVIEW_REQUIRED",
+        "expected_reason_codes": [
+          "STRATEGY_CONTEXT_CONFLICT"
+        ],
+        "expected_uncertainty_reason": null,
+        "metric_group": "CONFLICT",
+        "hard_expectation": true,
+        "cross_question": true,
+        "gold_rationale": "Q1 is explicit while the chosen-band link is missing for Q2."
+      },
+      {
+        "fixture_id": "v2-v07",
+        "partition": "validation",
+        "purpose": "clear entry conflict",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "MEDIUM"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_CANARY_V2",
+            "strategy_description": "A 60-day average above the 120-day and market outperformance match the intent. The only rule supplied in entry_context marks confirmation, and granting execution meaning to that rule contradicts its purpose."
+          },
+          "condition_context": [
+            {
+              "metric_key": "ma60_vs_ma120",
+              "status": "PASS",
+              "current_value": "above",
+              "required_value": "above",
+              "semantic_label": "60-day versus 120-day moving-average relation"
+            },
+            {
+              "metric_key": "relative_strength_market",
+              "status": "PASS",
+              "current_value": "positive",
+              "required_value": "positive",
+              "semantic_label": "relative strength versus the broad market"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "EXECUTABLE_ENTRY_RANGE",
+              "executable_entry_range": true
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "ALIGNED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "state_hash": "c29cc5a54ed5faeea312888eb86ec8e3f3daac6e597a7375b0235eca1008efec",
+        "expected_propositions": {
+          "strategy_context_conflict": false,
+          "entry_context_conflict": true,
+          "overall_semantic_review_insufficient": false
+        },
+        "expected_disposition": "REVIEW_REQUIRED",
+        "expected_reason_codes": [
+          "ENTRY_CONTEXT_CONFLICT"
+        ],
+        "expected_uncertainty_reason": null,
+        "metric_group": "CONFLICT",
+        "hard_expectation": true,
+        "cross_question": false,
+        "gold_rationale": "Same rule is confirmation in description but executable in state."
+      },
+      {
+        "fixture_id": "v2-v08",
+        "partition": "validation",
+        "purpose": "clear Q2 conflict plus Q1 insufficient",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "MEDIUM"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_CANARY_V2",
+            "strategy_description": "Profile P determines whether the sector-relative strength and average slope match the strategy. The single rule in entry_context is the executable entry range itself, rather than a non-executable confirmation marker."
+          },
+          "condition_context": [
+            {
+              "metric_key": "relative_strength_sector",
+              "status": "PASS",
+              "current_value": "negative",
+              "required_value": "negative",
+              "semantic_label": "relative strength versus the sector"
+            },
+            {
+              "metric_key": "ma20_slope",
+              "status": "PASS",
+              "current_value": "falling",
+              "required_value": "falling",
+              "semantic_label": "20-day moving-average slope condition"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "STRATEGY_CONDITION_THRESHOLD",
+              "executable_entry_range": false
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "SEPARATED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "state_hash": "1025b7b7b04e5a30c6b633dea5344ffa98f09ca99e709d0f5e2ef4b25ca59174",
+        "expected_propositions": {
+          "strategy_context_conflict": false,
+          "entry_context_conflict": true,
+          "overall_semantic_review_insufficient": false
+        },
+        "expected_disposition": "REVIEW_REQUIRED",
+        "expected_reason_codes": [
+          "ENTRY_CONTEXT_CONFLICT"
+        ],
+        "expected_uncertainty_reason": null,
+        "metric_group": "CONFLICT",
+        "hard_expectation": true,
+        "cross_question": true,
+        "gold_rationale": "Q2 is explicit while Profile P is missing for Q1."
+      },
+      {
+        "fixture_id": "v2-v09",
+        "partition": "validation",
+        "purpose": "no conflict plus Q1 definition missing",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "MEDIUM"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_CANARY_V2",
+            "strategy_description": "The relationship of the two long averages is evaluated using profile P, which determines whether the observed arrangement matches the strategy. The entry_context rule is executable."
+          },
+          "condition_context": [
+            {
+              "metric_key": "ma60_vs_ma120",
+              "status": "PASS",
+              "current_value": "above",
+              "required_value": "above",
+              "semantic_label": "60-day versus 120-day moving-average relation"
+            },
+            {
+              "metric_key": "relative_strength_market",
+              "status": "PASS",
+              "current_value": "positive",
+              "required_value": "positive",
+              "semantic_label": "relative strength versus the broad market"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "EXECUTABLE_ENTRY_RANGE",
+              "executable_entry_range": true
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "ALIGNED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "state_hash": "f4635bde6d7ba6970a41539d2d587bb9d59fa3dabc505f6a89ee774f939793ed",
+        "expected_propositions": {
+          "strategy_context_conflict": false,
+          "entry_context_conflict": false,
+          "overall_semantic_review_insufficient": true
+        },
+        "expected_disposition": "ABSTAIN",
+        "expected_reason_codes": [],
+        "expected_uncertainty_reason": "EVIDENCE_INSUFFICIENT",
+        "metric_group": "INSUFFICIENT",
+        "hard_expectation": true,
+        "cross_question": false,
+        "gold_rationale": "Profile P is required for Q1 and absent; Q2 is consistent."
+      },
+      {
+        "fixture_id": "v2-v10",
+        "partition": "validation",
+        "purpose": "no conflict plus Q2 rule link missing",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "MEDIUM"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_CANARY_V2",
+            "strategy_description": "The supplied negative sector-relative strength and falling average are intentional. One strategy band is executable and the other only confirms conditions. The entry_context rule names the chosen band."
+          },
+          "condition_context": [
+            {
+              "metric_key": "relative_strength_sector",
+              "status": "PASS",
+              "current_value": "negative",
+              "required_value": "negative",
+              "semantic_label": "relative strength versus the sector"
+            },
+            {
+              "metric_key": "ma20_slope",
+              "status": "PASS",
+              "current_value": "falling",
+              "required_value": "falling",
+              "semantic_label": "20-day moving-average slope condition"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "STRATEGY_CONDITION_THRESHOLD",
+              "executable_entry_range": false
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "SEPARATED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "state_hash": "0ad4183baa6146951dbec5f054fda1d3a20cf67a627eebb259938b6f180fd64f",
+        "expected_propositions": {
+          "strategy_context_conflict": false,
+          "entry_context_conflict": false,
+          "overall_semantic_review_insufficient": true
+        },
+        "expected_disposition": "ABSTAIN",
+        "expected_reason_codes": [],
+        "expected_uncertainty_reason": "EVIDENCE_INSUFFICIENT",
+        "metric_group": "INSUFFICIENT",
+        "hard_expectation": true,
+        "cross_question": false,
+        "gold_rationale": "Chosen-band link is missing, leaving Q2 incomplete."
+      },
+      {
+        "fixture_id": "v2-v11",
+        "partition": "validation",
+        "purpose": "compound conflict",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "MEDIUM"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_CANARY_V2",
+            "strategy_description": "Only sector leadership with a rising average fits this strategy. The single rule in entry_context is an executable entry range and must not be classified as a confirmation-only threshold."
+          },
+          "condition_context": [
+            {
+              "metric_key": "relative_strength_sector",
+              "status": "PASS",
+              "current_value": "negative",
+              "required_value": "negative",
+              "semantic_label": "relative strength versus the sector"
+            },
+            {
+              "metric_key": "ma20_slope",
+              "status": "PASS",
+              "current_value": "falling",
+              "required_value": "falling",
+              "semantic_label": "20-day moving-average slope condition"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "STRATEGY_CONDITION_THRESHOLD",
+              "executable_entry_range": false
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "SEPARATED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "state_hash": "c7c73ef467a76e755b7b1f84a75372f2d18648109e695cea9bee9f49da3f09b7",
+        "expected_propositions": {
+          "strategy_context_conflict": true,
+          "entry_context_conflict": true,
+          "overall_semantic_review_insufficient": false
+        },
+        "expected_disposition": "REVIEW_REQUIRED",
+        "expected_reason_codes": [
+          "STRATEGY_CONTEXT_CONFLICT",
+          "ENTRY_CONTEXT_CONFLICT"
+        ],
+        "expected_uncertainty_reason": null,
+        "metric_group": "CONFLICT",
+        "hard_expectation": true,
+        "cross_question": false,
+        "gold_rationale": "Both strategy and entry meanings explicitly conflict."
+      },
+      {
+        "fixture_id": "v2-v12",
+        "partition": "validation",
+        "purpose": "semantic ambiguity",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "MEDIUM"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_CANARY_V2",
+            "strategy_description": "The intended structure favors the 60-day above the 120-day with market outperformance. The entry_context band is normally confirmation-only, though its practical entry meaning can vary with context."
+          },
+          "condition_context": [
+            {
+              "metric_key": "ma60_vs_ma120",
+              "status": "PASS",
+              "current_value": "above",
+              "required_value": "above",
+              "semantic_label": "60-day versus 120-day moving-average relation"
+            },
+            {
+              "metric_key": "relative_strength_market",
+              "status": "PASS",
+              "current_value": "positive",
+              "required_value": "positive",
+              "semantic_label": "relative strength versus the broad market"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "STRATEGY_CONDITION_THRESHOLD",
+              "executable_entry_range": false
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "SEPARATED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "state_hash": "f7b0c3469ce2208c762595105d0f7c6e0994daf0351f1e8e0fd878087400f0aa",
+        "expected_propositions": {
+          "strategy_context_conflict": null,
+          "entry_context_conflict": null,
+          "overall_semantic_review_insufficient": null
+        },
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "expected_uncertainty_reason": null,
+        "metric_group": "SOFT",
+        "hard_expectation": false,
+        "cross_question": false,
+        "gold_rationale": "Normally/can-vary wording is intentionally soft."
+      }
+    ],
+    "selection_rule": {
+      "selection_partition": "selection",
+      "validation_partition": "validation",
+      "lock_one_tuple_before_validation": true,
+      "validation_fallback_forbidden": true,
+      "tie_break": [
+        "soft_intervention_count_asc",
+        "soft_abstain_count_asc",
+        "threshold_strategy_desc",
+        "threshold_entry_desc",
+        "threshold_evidence_desc"
+      ]
+    },
+    "real_stock_data_allowed": false,
+    "actual_trial_activation_allowed": false,
+    "retry_count": 0,
+    "concurrency_cap": 1
+  }
+}
