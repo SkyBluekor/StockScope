@@ -1160,15 +1160,27 @@ PASS
 
 Evaluation data binding
 =
-PENDING
+NEXT6E_R5R_EVALUATION_BINDING_V1 FROZEN
 
-Implementation
+R5R-G1
 =
-NOT AUTHORIZED
+PASS
+
+Evaluator implementation
+=
+IMPLEMENTED
+
+Deterministic implementation verification
+=
+PASS
+
+R5R-G4
+=
+PASS
 
 Reference Adequacy evaluation
 =
-NOT AUTHORIZED
+AUTHORIZED / NOT EXECUTED
 
 Holdout
 =
@@ -1223,17 +1235,15 @@ exact rational numeric semantics
 
 # 38. UNRESOLVED
 
-현재 실제로 해결해야 하는 것은 다음이다.
+현재 실제로 남은 것은 다음이다.
 
 ~~~text
-1. Evaluation data binding
+1. NEXT-6E-R5R-JEV actual evaluation
 
-2. R5R evaluator implementation
-
-3. Deterministic implementation verification
-
-4. JEV execution after G1/G4 PASS
+2. JEV 결과에 따른 다음 validation / product integration
 ~~~
+
+Evaluation binding, evaluator implementation, deterministic verification은 완료됐다.
 
 이 목록 밖의 새 연구는 실제 blocker가 확인될 때만 추가한다.
 
@@ -1288,31 +1298,76 @@ docs/contracts/
 NEXT6E_S6B_R5R_POLICY_V1.json
 ~~~
 
-# 40. NEXT TASK
+# 40. IMPLEMENTATION / BINDING COMPLETE
+
+구현:
 
 ~~~text
-NEXT-6E-R5R-IMPLEMENT
+backend/app/macro/r5r_evaluator.py
+backend/app/macro/r5r_binding.py
+
+backend/tests/test_macro_r5r_evaluator_next6e.py
+backend/tests/test_macro_r5r_binding_next6e.py
+
+tools/data/bind_macro_r5r_evaluation_next6e.py
 ~~~
 
-범위:
+DEV binding:
 
 ~~~text
-R5R evaluator implementation
-+
-deterministic fixture verification
-+
-evaluation dataset binding
+docs/bindings/NEXT6E_R5R_EVALUATION_BINDING_V1.json
+
+binding_id
+=
+R5RBIND-b27cf5c12ab37aac
+
+joint_row_count
+=
+1999
+
+window_length
+=
+200
+
+joint_chronology_hash
+=
+f2fa057b25e1ff9b2012b76f29f28b40627a4040a3dffa0e4c3b9b8ea430a62d
+~~~
+
+Implementation verification:
+
+~~~text
+R5R-G1
+=
+PASS
+
+R5R-G4
+=
+PASS
+~~~
+
+Implementation document:
+
+~~~text
+docs/설계/
+StockScope_NEXT6E_R5R_구현및바인딩_2026-10-06.md
+~~~
+
+# 41. NEXT TASK
+
+~~~text
+NEXT-6E-R5R-JEV
 ~~~
 
 목적:
 
-> 현재 frozen R5R Method V2 + Policy V1을 코드로 구현하고 G1/G4를 닫는다.
+> frozen Method V2 + Policy V1 + DEV binding + verified evaluator를 실제 실행해 R5R observed-path 결과를 처음 확인한다.
 
-그 다음 실제 JEV 실행으로 이동한다.
+JEV에서 처음 T/L/S, candidate status, Common-N, overall SUPPORTED / NOT_SUPPORTED / BLOCKED를 계산한다.
 
 ---
 
-# 41. 이 기준선의 변경 규칙
+# 42. 이 기준선의 변경 규칙
 
 이 문서를 변경해야 하는 경우:
 
@@ -1327,7 +1382,7 @@ evaluation dataset binding
 
 ---
 
-# 42. 최종 원칙
+# 43. 최종 원칙
 
 StockScope의 품질은 문서 수나 theorem 수로 결정되지 않는다.
 
