@@ -19,7 +19,7 @@ StockScope는 기존 분석·전략·위험·보유·검증 정보를 사용자�
 - `NEXT-6E-R5R-JEV`는 **R5R Evaluation**의 과거 단계 별칭으로 분리한다. AI JEV의 성능 평가가 아니다.
 - 실행 흐름은 **Design Freeze → Shadow Implementation → Evaluation → Adoption Decision** 네 묶음이다.
 
-이 문서가 기존 [JEV Integration Concept](../StockScope_JEV_INTEGRATION_CONCEPT.md)을 JEV 설계 authority에서 대체한다. 원문은 이번에 수정·이동·삭제하지 않는다. 정리 분류와 실행 조건은 [Docs 정리계획](StockScope_DOCS_정리계획_2026-10-06.md)에 둔다.
+이 문서가 2026-09-28의 기존 JEV Integration Concept을 JEV 설계 authority에서 대체한다. 기존 원문은 cleanup 기준 revision `893f2b96289a02f7cfce46b2a4ea7abb0d86326c`의 Git history에서 복원하며, 핵심 전환 이유는 [통합 설계 변경이력](../history/StockScope_R4_R5_R5R_설계변경이력.md)에 보존한다. 정리 분류와 실행 조건은 [Docs 정리계획](StockScope_DOCS_정리계획_2026-10-06.md)에 둔다.
 
 ## 2. 조사 범위와 authoritative source
 
