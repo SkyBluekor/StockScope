@@ -865,3 +865,99 @@ NEXT-6E-R5R-EVALUATION으로 진행한다.
 단, 사용자가 앞서 정한 원칙에 따라 실제 provider activation과 실제 JEV 호출은 전체 평가 준비가 끝난 뒤 명시적으로 통합 테스트할 때만 수행한다. 다음 명세/구현에서 evaluation join, cohort accounting, maturity/denominator, frozen metric report 경로를 먼저 완성할 수 있으며, 이 과정에서도 실제 model call은 자동으로 시작하지 않는다.
 
 R5R actual evaluation은 계속 별도 작업이며 JEV evaluation과 혼동하지 않는다.
+
+
+---
+
+# 35. 2026-10-06 Post-Handoff Update — JEV Reviewer Evaluation Prep COMPLETE
+
+이 섹션은 JEV Trial Freeze 이후 후속 구현 상태만 추가한다. 기존 R4/R5/R5R frozen 설계와 이전 완료 상태는 다시 열지 않는다.
+
+## 완료된 후속 작업
+
+- JEV Reviewer Evaluation Prep: IMPLEMENTED / CI PASS
+- Evaluation policy artifact: `docs/contracts/JEV_REVIEWER_EVALUATION_POLICY_V1.json`
+- Evaluation policy ID: `JEV_REVIEWER_EVALUATION_POLICY_V1`
+- Evaluation policy semantic SHA256: `2e31e99ace3b2760dfed1db06466d1f51c44b250e5143acf387de2dc05ae0edc`
+- Evaluation report version: `JEV_REVIEWER_EVALUATION_REPORT_V1`
+- Evaluation storage: `JEV_REVIEWER_EVALUATION_STORAGE_V1`
+- New local-only storage:
+  - `jev_evaluation_schema_meta`
+  - `jev_evaluation_run`
+  - `jev_evaluation_unit`
+- Existing `jev_shadow_comparison_report` reused for immutable final report snapshots
+- Local sync migration: `JEV-EVALUATION-V1`
+- CLI: `tools/data/evaluate_jev_reviewer_v1.py`
+- Read-only API:
+  - `GET /api/simulation/jev-shadow/evaluation/latest`
+  - `GET /api/simulation/jev-shadow/evaluation-runs/{run_id}`
+- Backup/restore declaration: COMPLETE
+- Interrupted evaluation recovery: COMPLETE
+- Outcome engine: existing local Prospective outcome kernel reused without opening legacy split selection paths
+- JEV cohort accounting: COMPLETE
+- Maturity accounting: COMPLETE
+- Primary comparison set: CLOSED + non-null net return only
+- CENSORED: never converted to 0% realized return
+- Comparison policy: VALID + REVIEW_REQUIRED only means virtual skip; every other review outcome preserves baseline
+- Model cohort identity accounting: protocol/provider/model/served-model/prompt/adapter identity
+- Concentration gates: ticker and signal-date
+- Evaluation states:
+  - COLLECTING
+  - HOLD
+  - REJECT
+  - ELIGIBLE_FOR_ADOPTION_REVIEW
+- `ELIGIBLE_FOR_ADOPTION_REVIEW` is not automatic adoption.
+
+## Frozen evaluation gates
+
+- Mature candidates >= 60
+- Comparable CLOSED disagreements >= 12
+- Error rate <= 5%
+- Abstain rate <= 30%
+- Review rate <= 50%
+- Single ticker share <= 20%
+- Single signal-date share <= 20%
+- Observed API cost <= USD 5
+- Primary delta > 0
+- Avoided loss - missed profit > 0
+- Retained-candidate loss rate <= baseline loss rate
+- Mixed served-model cohort => HOLD
+
+## 이번 단계에서 실행하지 않은 것
+
+- 실제 OpenAI/JEV provider call: 0
+- 실제 JEV token 소비: 0
+- 실제 JEV trial activation: OFF
+- 실제 JEV Reviewer Evaluation: NOT EXECUTED
+- 자동 adoption: NOT EXECUTED
+- R5R Actual Evaluation: NOT EXECUTED
+- 잠긴 데이터 영역: LOCKED / NOT ACCESSED
+- `JEV_API_KEY` 실제 secret 값: NOT READ / NOT LOGGED / NOT STORED
+
+## 검증
+
+최종 implementation CI:
+- Frontend / Node 22: PASS
+- Backend / Python 3.11: PASS
+- Backend / Python 3.14: PASS
+- Fresh Clone / Windows: PASS
+
+평가 준비 테스트에는 다음이 포함된다:
+- frozen policy/hash 검증
+- local-only review→outcome join
+- COLLECTING / HOLD / REJECT / ELIGIBLE_FOR_ADOPTION_REVIEW 상태 gate
+- migration 외부 network/model call 0 검증
+- read-only evaluation API route
+- local sync migration order
+- backup/restore JEV evaluation store 복원 경계
+
+## 다음 단계
+
+다음 큰 단계는 **JEV-INTEGRATED-SHADOW-TRIAL**이다.
+
+사용자가 정한 원칙에 따라 실제 provider activation과 실제 JEV 호출은 모든 준비 작업이 끝난 뒤 명시적으로 통합 테스트할 때만 수행한다.
+
+통합 시험 시 흐름:
+`Scanner → real JEV shadow review → Monitor UI → immutable review storage → 시간이 지난 후 local outcome → JEV evaluation snapshot/report`
+
+R5R Actual Evaluation은 계속 별도 작업으로 유지하며 JEV evaluation과 혼동하지 않는다.
