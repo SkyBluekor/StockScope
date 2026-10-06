@@ -365,11 +365,12 @@ MUR3에서 발견된 세 ambiguity:
 
 은 MUR3-BR1에서 모두 RESOLVED 상태다.
 
-관련 문서:
+관련 authority:
 
 ~~~text
-docs/reviews/
-NEXT6E_S6A_R5_MUR3_BR1_R5R_계약_모호성_해소_2026-10-05.md
+docs/reviews/NEXT6E_S6A_R5R_DETERMINISTIC_REVIEW_RESULT_V2.json
+docs/fixtures/NEXT6E_S6A_R5R_MUR3_BR1_TARGETED_FIXTURES_V1.json
+docs/history/StockScope_R4_R5_R5R_설계변경이력.md
 ~~~
 
 ---
@@ -948,14 +949,12 @@ BR 분기는 다음에만 사용한다.
 | MUR3 | deterministic edge-case review |
 | MUR3-BR1 | 세 contract ambiguity 해소 |
 
-대표 lineage artifacts:
+대표 lineage entry points:
 
 ~~~text
 docs/reviews/NEXT6E_S6A_R5_MODEL_USE_BINDING_ROUTE_V1.json
-
 docs/reviews/NEXT6E_S6A_R5_METHOD_USE_REDESIGN_DECISION_V1.json
-
-docs/NEXT6E_S6A_R5_MUR2_관측경로_경험적안정성_계약설계_2026-10-05.md
+docs/history/StockScope_R4_R5_R5R_설계변경이력.md
 ~~~
 
 ## HISTORICAL / SUPERSEDED
