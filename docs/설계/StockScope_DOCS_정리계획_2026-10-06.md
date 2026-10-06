@@ -2,7 +2,7 @@
 
 작성일: 2026-10-06 (Asia/Seoul)  
 조사 기준: 로컬 `main` HEAD `893f2b96289a02f7cfce46b2a4ea7abb0d86326c`  
-지위: **cleanup manifest / 다음 작업의 실행계획. 이번에는 이동·통합 편집·삭제·rename을 수행하지 않는다.**
+지위: **cleanup manifest + 2026-10-06 실행 기록. 계획에 따른 통합·링크 정정·삭제가 완료됐다.**
 
 ## 1. 확정 결론과 집계
 
@@ -438,6 +438,99 @@ M6/M7의 58개 소형 설명 파일을 그냥 삭제하지 않는다. 다음 계
 
 검수 기준은 실제 main 파일 목록 154개의 누락/중복 없는 분류, 현재 machine artifact 27개 전부 보존, 핵심 baseline 4개 보존, JEV concept superseded 분류, R5R 과거/현재 gate 구분, R5R/AI 평가 명칭 분리, 고유 proof/직접 경로 참조 보존이다.
 
-**이번 실행 상태:** 신규 설계/계획 문서 2개 작성. 기존 문서 이동/통합 편집/삭제/rename **NO**. 코드 구현 **NO**. JEV/R5R/Reference Adequacy 실행 **NO**. DEV T/L/S·passing N 계산 **NO**. Holdout 접근 **NO**. Threshold 조정 **NO**.
+**계획 작성 당시 상태:** 신규 설계/계획 문서 2개만 작성했고 기존 문서 정리는 아직 실행하지 않았었다.  
+**현재 실행 결과:** 아래 §10에 기록한 cleanup 실행이 완료됐다. Production code, JEV/R5R actual evaluation, DEV T/L/S/Common-N 계산, Holdout 접근, threshold 조정은 수행하지 않았다.
 
-다음 작업은 사용자 검토 후 **이 manifest에 따른 docs cleanup 실행**이다. JEV는 별도 Shadow Implementation 작업으로 진행하고, R5R 실제 평가는 별도 NEXT-6E-R5R-EVALUATION으로 명확히 구분한다.
+Docs cleanup 실행은 완료됐다. 다음 작업은 **JEV-SHADOW-IMPLEMENT**다. R5R 실제 평가는 별도 **NEXT-6E-R5R-EVALUATION**으로 유지한다.
+
+
+## 10. Cleanup 실행 결과 — 2026-10-06
+
+실행 기준선:
+
+```text
+pre-cleanup planning baseline
+=
+893f2b96289a02f7cfce46b2a4ea7abb0d86326c
+```
+
+실제 수행:
+
+- JEV v2를 authoritative active design으로 main에 반영.
+- canonical JEV credential env를 `JEV_API_KEY`로 문서화하고 `.env.example`에는 빈 placeholder만 추가.
+- Master / Implementation Baseline / Roadmap / R5R baseline / Macro-Event architecture / README / tools README를 현재 기준에 맞게 통합.
+- `docs/history/StockScope_R4_R5_R5R_설계변경이력.md` 생성.
+- R5R actual evaluation과 AI JEV reviewer evaluation 명칭을 분리.
+- Active 문서의 오래된 handoff/current-state/legacy guide 링크를 현재 baseline/history로 교체.
+- `MERGE_INTO_ACTIVE` 95개와 `DELETE_REDUNDANT` 9개를 manifest의 explicit path 목록으로 제거.
+- wildcard 삭제 및 전체 archive 이동은 사용하지 않음.
+
+삭제 결과:
+
+```text
+MERGE 원본 제거
+=
+95
+
+DELETE_REDUNDANT 제거
+=
+9
+
+total removed
+=
+104
+```
+
+현재 docs:
+
+```text
+Markdown
+=
+25
+
+JSON
+=
+27
+
+DOCX
+=
+1
+
+total
+=
+53
+```
+
+보존 검증:
+
+- KEEP_ACTIVE / KEEP_HISTORY 누락 0.
+- 제거 대상 104개 잔존 0.
+- machine-readable JSON 27개의 Git blob SHA 변경 0.
+- contracts / bindings / fixtures / review JSON은 rename·move·reserialize하지 않음.
+- remaining Markdown의 repository-local 링크를 검사하고 active stale link를 교체함.
+- Holdout 접근 0.
+- R5R actual evaluation 0.
+- JEV model call/evaluation 0.
+- DEV T/L/S/Common-N 계산 0.
+
+현재 문서 읽기 순서:
+
+1. `StockScope_MASTER_ARCHITECTURE_vNext.md`
+2. `StockScope_IMPLEMENTATION_BASELINE_vNext.md`
+3. 현재 작업 기준: R5R baseline 또는 JEV v2
+4. `StockScope_DEVELOPMENT_ROADMAP_vNext.md`
+5. 필요 시 `history/StockScope_R4_R5_R5R_설계변경이력.md`
+
+다음 작업:
+
+```text
+JEV-SHADOW-IMPLEMENT
+```
+
+R5R actual observed-path 실행은 별도:
+
+```text
+NEXT-6E-R5R-EVALUATION
+```
+
+으로 유지한다.
