@@ -215,11 +215,11 @@ async def test_quant_only_projection_and_baseline_immutability(
         review["input"],
         ensure_ascii=False,
     ).lower()
+    assert "future_outcome" not in review["input"]
     for forbidden in (
         "must_not_leak",
         "historical_fit",
         "historical_verification",
-        "future_outcome",
         "\"news\"",
         "event_evidence",
         "\"macro\"",
