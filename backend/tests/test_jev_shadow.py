@@ -11,11 +11,15 @@ from app.jev import (
     FakeJevProvider,
     JevCatalog,
     JevCatalogError,
+    JevEvaluationCatalog,
+    JevReviewerEvaluationService,
     JevShadowService,
     JevTrialProtocolSpec,
     OpenAIResponsesJevProvider,
     build_comparison_report,
+    build_evaluation_summary,
     configure_trial_protocol,
+    load_evaluation_policy,
     load_trial_artifact,
     trial_readiness,
 )
@@ -32,6 +36,9 @@ from app.jev.prompt import (
 from app.prospective import ProspectiveCatalog
 from app.prospective.models import ProspectiveCaptureRequest
 from tools.data.migrate_jev_shadow_v1 import migrate_jev_shadow_store
+from tools.data.migrate_jev_evaluation_v1 import (
+    migrate_jev_evaluation_store,
+)
 from tools.data.migrate_prospective_vnp2s2 import migrate_prospective_store
 
 
@@ -43,6 +50,7 @@ def _simulation_db(path: Path) -> Path:
         )
     migrate_prospective_store(path)
     migrate_jev_shadow_store(path)
+    migrate_jev_evaluation_store(path)
     return path
 
 
@@ -684,3 +692,267 @@ async def test_openai_provider_builds_store_false_structured_request_without_rea
 
     encoded_body = json.dumps(body, ensure_ascii=False)
     assert sentinel not in encoded_body
+
+
+
+class _StubJevOutcomeEvaluator:
+    def __init__(self, net_return_pct: float = -10.0) -> None:
+        self.net_return_pct = net_return_pct
+
+    def evaluate_sample(self, *, sample, spec):
+        return {
+            "capture_run_id": sample["capture_run_id"],
+            "sample_index": int(sample["sample_index"]),
+            "maturity_status": "MATURE",
+            "available_trading_days": 20,
+            "evaluated_through": "2026-11-03",
+            "return_5d": -2.0,
+            "return_10d": -5.0,
+            "return_20d": self.net_return_pct,
+            "mfe_pct": 1.0,
+            "mae_pct": -12.0,
+            "execution_status": "CLOSED",
+            "execution_reason": "STOP",
+            "entry_date": "2026-10-07",
+            "entry_price": 100.0,
+            "exit_date": "2026-10-10",
+            "exit_price": 90.0,
+            "exit_reason": "STOP",
+            "holding_days": 3,
+            "gross_return_pct": self.net_return_pct,
+            "net_return_pct": self.net_return_pct,
+            "mark_return_pct": None,
+            "details": {
+                "future_data_used_for_signal": False,
+                "observation_windows": spec["observation_windows"],
+            },
+        }
+
+
+def test_evaluation_policy_is_frozen_and_hash_valid() -> None:
+    policy = load_evaluation_policy()
+    assert policy["status"] == "FROZEN"
+    assert (
+        policy["computed_policy_hash"]
+        == "2e31e99ace3b2760dfed1db06466d1f51c44b250e5143acf387de2dc05ae0edc"
+    )
+    assert policy["spec"]["maturity_trading_days"] == 20
+    assert policy["spec"]["gates"]["min_mature_candidates"] == 60
+    assert policy["spec"]["gates"]["min_closed_disagreements"] == 12
+
+
+def test_local_only_evaluation_snapshot_joins_review_and_outcome(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    sentinel = "JEV_EVALUATION_MUST_NOT_READ_THIS_SECRET"
+    monkeypatch.setenv("JEV_API_KEY", sentinel)
+    db = _simulation_db(tmp_path / "simulation.db")
+    capture = _capture(db)
+    shadow = JevCatalog(db)
+    configured = configure_trial_protocol(shadow)
+    protocol = shadow.get_protocol(configured["protocol_id"])
+    assert protocol is not None
+
+    payload = {
+        "schema_version": "JEV_SCANNER_REVIEW_INPUT_V1",
+        "request_id": "eval-review-1",
+        "candidate_ref": (
+            f"{capture['id']}:0:KOSPI:005930"
+        ),
+        "baseline_identity": {
+            "horizon_intent": "LEGACY_UNSPECIFIED",
+        },
+        "evidence_items": [],
+        "input_hash": "eval-input-hash",
+    }
+    review = shadow.enqueue_review(
+        request_id="eval-review-1",
+        protocol=protocol,
+        capture_run_id=capture["id"],
+        sample_index=0,
+        candidate_ref=payload["candidate_ref"],
+        candidate_snapshot_hash="snapshot-hash",
+        idempotency_key="eval-idempotency-1",
+        input_payload=payload,
+        deadline_at="2026-10-06T00:00:12+00:00",
+    )
+    review = shadow.complete_review(
+        review["id"],
+        status="VALID",
+        decision="REVIEW_REQUIRED",
+        abstain_reason=None,
+        failure_code=None,
+        normalized_response={
+            "decision": "REVIEW_REQUIRED",
+            "abstain_reason": None,
+            "supporting_reasons": [],
+            "opposing_reasons": [
+                {
+                    "code": "RISK_CAUTION",
+                    "evidence_refs": ["E-RISK"],
+                    "explanation": "test",
+                }
+            ],
+        },
+        raw_response_hash="raw-hash",
+        latency_ms=500,
+        usage={
+            "served_model": "gpt-5.6-terra",
+            "provider": "OPENAI_RESPONSES",
+        },
+        cost_usd=0.01,
+    )
+
+    service = JevReviewerEvaluationService(
+        db,
+        tmp_path / "unused-market.db",
+        outcome_evaluator=_StubJevOutcomeEvaluator(-10.0),
+    )
+    run = service.create_run(
+        client_request_id="JEV-EVAL-LOCAL-ONLY-1",
+        evaluation_as_of="2026-11-03",
+    )
+    detail = service.execute_run(run["id"])
+
+    assert detail["run"]["status"] == "COMPLETED"
+    assert detail["run"]["mature_count"] == 1
+    assert detail["run"]["comparable_closed_count"] == 1
+    assert detail["run"]["disagreement_count"] == 1
+    assert len(detail["units"]) == 1
+    assert detail["units"][0]["review_id"] == review["id"]
+    assert detail["units"][0]["comparison_eligible"] == 1
+
+    summary = detail["report"]["summary"]
+    assert summary["comparison"]["comparable_closed_count"] == 1
+    assert summary["comparison"]["avoided_loss_pct_sum"] == 10.0
+    assert (
+        summary["comparison"]["incremental_return_per_opportunity_pct"]
+        == 10.0
+    )
+    assert summary["evaluation_state"] == "COLLECTING"
+    assert summary["automatic_adoption_allowed"] is False
+
+    encoded = json.dumps(detail, ensure_ascii=False)
+    assert sentinel not in encoded
+    assert "JEV_API_KEY" not in encoded
+
+
+def test_evaluation_summary_state_gates_are_deterministic() -> None:
+    policy = load_evaluation_policy()
+    trial = load_trial_artifact()
+
+    reviews = []
+    units = []
+    for index in range(60):
+        decision = "REVIEW_REQUIRED" if index < 12 else "PASS_THROUGH"
+        reviews.append(
+            {
+                "id": f"r-{index}",
+                "capture_run_id": f"c-{index}",
+                "sample_index": 0,
+                "status": "VALID",
+                "decision": decision,
+                "provider_id": "OPENAI_RESPONSES",
+                "cost_usd": 0.01,
+                "latency_ms": 500,
+            }
+        )
+        units.append(
+            {
+                "capture_run_id": f"c-{index}",
+                "sample_index": 0,
+                "review_status": "VALID",
+                "review_decision": decision,
+                "model_cohort_key": "cohort-a",
+                "maturity_status": "MATURE",
+                "comparison_eligible": 1,
+                "ticker": f"T{index % 10}",
+                "signal_date": f"2026-10-{(index % 10) + 1:02d}",
+            }
+        )
+
+    comparison = {
+        "comparison_policy": "JEV_DEFER_THIS_OPPORTUNITY_V1",
+        "comparable_closed_count": 60,
+        "baseline_mean_return_pct": 1.0,
+        "shadow_mean_return_pct": 1.5,
+        "incremental_return_per_opportunity_pct": 0.5,
+        "avoided_loss_pct_sum": 30.0,
+        "missed_profit_pct_sum": 10.0,
+        "disagreement_count": 12,
+        "disagreement_precision": 0.75,
+        "baseline_loss_rate": 0.30,
+        "shadow_loss_rate": 0.20,
+        "retained_candidate_loss_rate": 0.20,
+        "review_status_counts": {"VALID": 60},
+        "review_decision_counts": {
+            "PASS_THROUGH": 48,
+            "REVIEW_REQUIRED": 12,
+        },
+    }
+
+    eligible = build_evaluation_summary(
+        policy=policy,
+        trial_spec=trial["spec"],
+        reviews=reviews,
+        units=units,
+        comparison=comparison,
+        evaluation_as_of="2026-12-01",
+        exit_policy_token="token",
+    )
+    assert eligible["evaluation_state"] == "ELIGIBLE_FOR_ADOPTION_REVIEW"
+
+    rejected = build_evaluation_summary(
+        policy=policy,
+        trial_spec=trial["spec"],
+        reviews=reviews,
+        units=units,
+        comparison={
+            **comparison,
+            "incremental_return_per_opportunity_pct": -0.1,
+        },
+        evaluation_as_of="2026-12-01",
+        exit_policy_token="token",
+    )
+    assert rejected["evaluation_state"] == "REJECT"
+    assert "DELTA_NOT_POSITIVE" in rejected["evaluation_state_reasons"]
+
+    mixed_units = [dict(unit) for unit in units]
+    mixed_units[-1]["model_cohort_key"] = "cohort-b"
+    held = build_evaluation_summary(
+        policy=policy,
+        trial_spec=trial["spec"],
+        reviews=reviews,
+        units=mixed_units,
+        comparison=comparison,
+        evaluation_as_of="2026-12-01",
+        exit_policy_token="token",
+    )
+    assert held["evaluation_state"] == "HOLD"
+    assert "MODEL_COHORT_CHANGED" in held["evaluation_state_reasons"]
+
+
+def test_evaluation_migration_is_local_only(tmp_path: Path) -> None:
+    db = tmp_path / "simulation.db"
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "CREATE TABLE simulation_placeholder(id INTEGER PRIMARY KEY)"
+        )
+    migrate_prospective_store(db)
+    migrate_jev_shadow_store(db)
+    result = migrate_jev_evaluation_store(db)
+    assert result["historical_backfill_performed"] is False
+    assert result["external_network_requests"] == 0
+    assert result["model_calls_executed"] == 0
+    catalog = JevEvaluationCatalog(db)
+    catalog.require_ready()
+
+
+def test_jev_evaluation_read_routes_are_registered() -> None:
+    paths = {route.path for route in app.routes}
+    assert "/api/simulation/jev-shadow/evaluation/latest" in paths
+    assert (
+        "/api/simulation/jev-shadow/evaluation-runs/{run_id}"
+        in paths
+    )
