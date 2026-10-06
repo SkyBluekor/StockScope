@@ -38,7 +38,7 @@ StockScope는 이미 국내 EOD 분석, 시장 대비 상대강도, 제한된 �
 
 아래 경로의 구현·호출 경계와 관련 테스트 선언을 읽었다. 테스트는 실행하지 않았고 로컬 DB의 실데이터 개수·진행 중 작업·운영 승인 상태는 확인하지 않았다. 따라서 “코드 존재”와 “운영 검증 완료”를 분리한다. 작업 트리에서 추적된 코드 변경은 없었으므로 소스 조사 결과는 위 HEAD와 일치한다.
 
-기존 [handoff](StockScope_HANDOFF_2026-09-28_P5S1E_COMPLETE.md)는 P6를 LATER로 기록하지만 현재 코드에는 P6 평가·Value Gate·제품 조회가 존재한다. [P6 완료 보고서](StockScope_P6_S1_FINAL_VERIFICATION_2026-09-28.md)의 과거 실데이터 0건 기록은 당시 보고이며 이번 조사에서 다시 확인한 수치가 아니다. NEXT-3 병합과 NEXT-2 Workspace 조회 구현도 코드로 확인했다. NEXT-2 및 NEXT-3~5의 작업 상태를 이 문서에서 재정의하거나 완료 선언하지 않는다.
+기존 [통합 설계 변경이력](history/StockScope_R4_R5_R5R_설계변경이력.md)는 P6를 LATER로 기록하지만 현재 코드에는 P6 평가·Value Gate·제품 조회가 존재한다. [P6 완료 보고서](StockScope_P6_S1_FINAL_VERIFICATION_2026-09-28.md)의 과거 실데이터 0건 기록은 당시 보고이며 이번 조사에서 다시 확인한 수치가 아니다. NEXT-3 병합과 NEXT-2 Workspace 조회 구현도 코드로 확인했다. NEXT-2 및 NEXT-3~5의 작업 상태를 이 문서에서 재정의하거나 완료 선언하지 않는다.
 
 | 영역 | [현재 구현] 확인 내용과 코드 근거 | NEXT-6에서 재사용할 것 / 한계 |
 |---|---|---|
@@ -464,7 +464,7 @@ Jev는 NEXT-7 검토 대상이다. 확장 지점은 **as-of Context와 Impact·E
 
 개념 입력은 shock 유형/강도/불확실성, 시장·업종·종목 반응, 기존 Strategy, Risk State, Event Context, source/time/rights 제한과 identity다. 이 문서는 Jev 전용 schema, API, 호출 방식, 모델 선택·가중치·앙상블 정책을 정의하지 않는다.
 
-향후 Jev Decision Provider가 제안하더라도 기존 Risk·stale·계획 버전·stop-loosening protection·P5 governance가 최종 경계다. P6 reference 권한과 Jev로 전송/AI 변환할 권한은 별도이며 허용되지 않은 source 본문·값은 입력에서 제외해야 한다. [기존 Jev 개념 문서](StockScope_JEV_INTEGRATION_CONCEPT.md)는 참고이며 시작 시 최신 코드와 재대조한다.
+향후 Jev Decision Provider가 제안하더라도 기존 Risk·stale·계획 버전·stop-loosening protection·P5 governance가 최종 경계다. P6 reference 권한과 Jev로 전송/AI 변환할 권한은 별도이며 허용되지 않은 source 본문·값은 입력에서 제외해야 한다. [JEV 통합설계 v2](설계/StockScope_JEV_통합설계_v2_2026-10-06.md)는 참고이며 시작 시 최신 코드와 재대조한다.
 
 ## 16. Failure / Fallback Strategy
 
