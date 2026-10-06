@@ -1492,3 +1492,354 @@ Implementation CI run:
 
 다음 action은 사용자가 로컬에서 real synthetic canary를 한 번 실행하고 생성된 report 결과를 확인하는 것이다. Canary PASS 이후에만 final model binding / threshold / Trial V2 / Evaluation V2 numeric policy를 freeze한다.
 
+
+
+# 39. 2026-10-06 Update — TypeSafe Jev Canary V2 Implementation READY / Real V2 Canary NOT EXECUTED
+
+이 section은 실제 TypeSafe Canary V1의 diagnostic FAIL 이후 확정한
+`TYPE-JEV-CANARY-V2-IMPLEMENT` 구현 상태를 기록한다.
+
+## V1 결과의 현재 지위
+
+실제 TypeSafe synthetic Canary V1은 이미 실행되었다.
+
+- model discovery: 1회
+- System One: 24회
+- total API calls: 25회
+- real StockScope data sent: false
+- actual prospective trial activation: false
+- final result: `FAIL / CANARY_NO_ELIGIBLE_THRESHOLD`
+
+V1에서 provider 연결 및 native response contract는 관측 범위에서 정상 동작했다.
+실패의 주원인은 공통 LOW/GRAY/HIGH threshold architecture, 일부 잘못되거나 모호한
+gold, Q2 질문 범위 및 model selector 설계였다.
+
+따라서 V1은 다음 지위를 유지한다.
+
+`EXECUTED / DIAGNOSTIC FAIL / PRESERVED`
+
+V1 protocol/report/model binding을 PASS로 재작성하거나 V2 결과로 덮어쓰지 않는다.
+
+## Final redesign authority
+
+현재 정책 authority:
+
+`docs/설계/StockScope_TypeSafe_Jev_Canary_정책재설계_v1_2026-10-06.md`
+
+최종 핵심:
+
+- Question-specific one-sided policy
+- Q1/Q2 conflict-first
+- Q3 = `overall_semantic_review_insufficient`
+- Q3는 근거 있는 Q1/Q2 conflict를 veto하지 않음
+- 3 Noul 유지
+- Risk fuzzy question 복구 없음
+- Final threshold는 아직 동결하지 않음
+
+## Implementation commits
+
+V2 policy core:
+
+`3f5fb82433aa52b19326d340693660a8c74045a1`
+
+`feat: add versioned TypeSafe JEV V2 policy core`
+
+Canary V2 harness:
+
+`b44710388154c863eea57e84f07b9f5c884e42f6`
+
+`feat: add TypeSafe JEV Canary V2 harness`
+
+Policy document finalization:
+
+`3d3b1f37d487dd7b25db20f65b2cb7243c5e4001`
+
+`docs: finalize conflict-first Jev Canary V2 policy`
+
+Model-channel correction:
+
+`7ca1acdd9f7a9db04390b8fe49368241796365f5`
+
+`fix: require verified immutable Jev model metadata`
+
+Frozen-protocol execution guard:
+
+`5b1581578e4d3d6616aed9b97e493806869d358d`
+
+`fix: require frozen Canary V2 protocol before execution`
+
+## Questions / Policy V2
+
+신규 question contract:
+
+`JEV_TYPESAFE_QUESTIONS_V2`
+
+3 Noul:
+
+1. `strategy_context_conflict`
+2. `entry_context_conflict`
+3. `overall_semantic_review_insufficient`
+
+신규 disposition policy:
+
+`JEV_TYPESAFE_DISPOSITION_POLICY_V2`
+
+V2 gate:
+
+```text
+g1 = p(strategy_context_conflict) >= T_strategy
+g2 = p(entry_context_conflict) >= T_entry
+g3 = p(overall_semantic_review_insufficient) >= T_evidence
+
+if g1 or g2:
+    REVIEW_REQUIRED
+    reasons = Q1 then Q2 fixed order
+elif g3:
+    ABSTAIN / EVIDENCE_INSUFFICIENT
+else:
+    PASS_THROUGH / NO_ADDITIONAL_CONTEXT_CONFLICT
+```
+
+Probability 합산/평균/곱셈은 없다.
+
+V1은 기존 `JEV_TYPESAFE_QUESTIONS_V1`,
+`JEV_TYPESAFE_DISPOSITION_POLICY_V1`, `threshold_low/high`를 그대로 사용한다.
+V2는 별도 version dispatch로 동작하며 V1 history를 새 정책으로 재해석하지 않는다.
+
+## Threshold V2 slots
+
+신규 protocol spec slots:
+
+- `threshold_strategy`
+- `threshold_entry`
+- `threshold_evidence`
+
+V1의:
+
+- `threshold_low`
+- `threshold_high`
+
+는 historical/runtime compatibility를 위해 유지한다.
+
+V2 candidate grid는 첫 V2 응답 전에 사전 고정한다.
+
+- T_strategy = {0.50, 0.65, 0.80}
+- T_entry = {0.50, 0.65, 0.80}
+- T_evidence = {0.60, 0.75, 0.90}
+
+총 27 tuples.
+
+이 값들은 후보 집합이며 final threshold가 아니다.
+
+## Core / Monitor / Evaluation version dispatch
+
+완료:
+
+- System One request가 question/policy version에 따라 V1/V2 question set을 선택
+- provider validator가 expected question ID set을 명시적으로 검증
+- Fake provider도 request question set을 따라 V1/V2 검증 가능
+- stored review projection이 V1/V2 policy를 version-aware하게 재검증
+- V2 projection은 LOW/GRAY/HIGH bands 대신 one-sided gate result를 사용
+- V1 projection의 historical bands 유지
+- V2 cohort identity에 T_strategy/T_entry/T_evidence 포함
+- V1 cohort identity는 threshold_low/high 유지
+
+DB protocol은 `spec_json`에 threshold slots를 저장하므로 이번 correction에서
+새 DB column migration은 필요하지 않았다. 기존 row backfill도 하지 않는다.
+
+## Model binding correction
+
+request channel과 returned concrete identity를 분리한다.
+
+Channel class:
+
+- `STABLE_ALIAS`
+- `PREVIEW_ALIAS`
+- `IMMUTABLE_VERSION_VERIFIED`
+- `UNKNOWN`
+
+현재 규칙:
+
+- `jev-preview` = PREVIEW_ALIAS
+- `jev-latest` = STABLE_ALIAS
+- 이름이 `jev-1.13.0`처럼 보인다는 이유만으로 immutable로 인정하지 않음
+- immutable은 별도의 verified evidence가 있어야 함
+- preview는 Canary V2 기본 acceptance request model로 사용하지 않음
+- verified immutable requestable model이 없다면 `jev-latest`를 stable request channel로 사용
+- returned `response.model`은 별도 concrete identity로 저장
+- returned identity가 Canary 중 바뀌면 FAIL
+- discovery에 없는 concrete ID를 추측하여 request하지 않음
+
+첫 구현 CI가 "immutable" 문자열 substring을 잘못 신뢰하는 classifier bug를 잡았고,
+`7ca1acdd...`에서 별도 verified metadata 없이는 immutable로 인정하지 않도록 수정했다.
+
+## Canary V2 harness
+
+신규:
+
+- `backend/app/jev/typesafe_canary_v2.py`
+- `tools/data/run_jev_typesafe_canary_v2.py`
+- `backend/tests/test_jev_typesafe_canary_v2.py`
+
+Synthetic fixtures:
+
+- selection: `v2-s01..v2-s12`
+- validation: `v2-v01..v2-v12`
+- 총 24개
+- 각 3회 repetition
+- hard 11 + soft 1 per partition
+- 각 partition:
+  - negative 4
+  - conflict 5
+  - no-clear-conflict insufficiency 2
+  - soft ambiguity 1
+  - cross-question suppression hard cases 2
+
+모든 fixture는 production TypeSafe projector로 synthetic wrapper preflight를 통과해야
+protocol validation이 성공한다.
+
+## Selection / validation independence
+
+Selection partition 36 responses에 27 threshold tuples를 offline 적용한다.
+
+- eligible 0개 → `CANARY_V2_FAIL`, validation 호출 0
+- 여러 eligible → 사전 고정 tie-break로 하나만 잠금
+- validation partition은 잠근 하나만 검증
+- validation 실패 후 다른 tuple로 fallback/reselect 금지
+- 실패한 protocol은 diagnostic evidence로 보존
+
+## Attempt / budget semantics
+
+Hard limits:
+
+- model discovery attempts <= 1
+- System One attempts <= 72
+- total API attempts <= 73
+- retry = 0
+- concurrency = 1
+- synthetic canary budget <= USD 0.25
+
+V2에서는 provider call 직전에 attempt를 먼저 기록한다.
+따라서 provider error도 successful response가 아니라 실제 attempt로 남는다.
+
+Budget은 post-hoc estimate만으로 통과시키지 않는다.
+
+실제 V2 실행에는 `per_call_reservation_usd`가 필수다.
+
+`72 × reservation <= 0.25`가 호출 전에 보장되지 않으면 network call 0 상태로 BLOCKED다.
+부분 실패로 actual provider cost를 알 수 없어도 예약 exposure를 0으로 되돌리지 않는다.
+
+현재 account-specific price/billing reservation은 아직 검증하지 않았으므로 실제 V2 canary는 실행하지 않았다.
+
+## Protocol pre-freeze guard
+
+Default runner는 dry-run이며 external network call을 하지 않는다.
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\run_jev_typesafe_canary_v2.py
+```
+
+Dry-run은 다음을 수행한다.
+
+- exact 24 synthetic payload/gold를 검증
+- projector preflight
+- exact V2 question/policy hash 검증
+- 27 candidate grid / selection rule / caps 검증
+- `docs/contracts/JEV_TYPESAFE_CANARY_PROTOCOL_V2.json`을 local에 machine-readable하게 materialize
+
+실제 `--execute`는 위 파일이 존재하고 현재 code-generated artifact와 **exact equality**를
+만족하지 않으면 호출 전에 BLOCKED된다.
+
+즉 V2 real call은 frozen protocol materialization 이전에 시작할 수 없다.
+
+이 implementation 단계에서는 real `--execute`를 실행하지 않았다.
+
+## Tests / CI
+
+최종 code CI run:
+
+`37459480659`
+
+결과:
+
+- Backend / Python 3.11: PASS
+- Backend / Python 3.14: PASS
+- Frontend / Node 22: PASS
+- Fresh Clone / Windows: PASS
+
+해당 CI와 단위 검증에는 최소 다음을 포함한다.
+
+- V1 policy/question regression
+- V2 exact 3 Noul
+- conflict-first truth table
+- Q1/Q2 reason fixed order
+- invalid probability fail-close
+- V1/V2 protocol threshold dispatch
+- V2 3-threshold cohort identity
+- stable/preview/immutable model-channel classification
+- 24 fixtures / 12+12 partition / 3 repetitions
+- projector preflight
+- selection failure → validation 0 calls
+- failed provider request도 attempt count 증가
+- budget preflight network=0 block
+- fake full V2 73-attempt path
+- secret sentinel report 미포함
+- exact frozen-protocol requirement before real execute
+- frontend build
+- fresh Windows setup
+
+## 실행하지 않은 것
+
+이번 implementation 동안:
+
+- actual TypeSafe `GET /v1/models`: 0
+- actual TypeSafe `POST /v1/systemone`: 0
+- actual TypeSafe token consumption: 0
+- actual TypeSafe provider cost: 0
+- actual Canary V2: NOT EXECUTED
+- actual StockScope candidate transmission: 0
+- actual prospective trial: NOT STARTED
+- final V2 threshold freeze: NOT DONE
+- Trial V2 final freeze: NOT DONE
+- Evaluation V2 numeric policy final freeze: NOT DONE
+- actual TypeSafe efficacy evaluation: NOT EXECUTED
+- R5R Actual Evaluation: NOT EXECUTED
+- automatic adoption: NOT EXECUTED
+- `JEV_API_KEY` actual secret value: NOT READ / NOT LOGGED / NOT STORED
+- Holdout: LOCKED / NOT ACCESSED
+
+## 현재 상태
+
+`TYPE-JEV CANARY V1                  EXECUTED / DIAGNOSTIC FAIL / PRESERVED`
+
+`TYPE-JEV QUESTIONS V2               IMPLEMENTED`
+
+`TYPE-JEV DISPOSITION POLICY V2      IMPLEMENTED`
+
+`TYPE-JEV MODEL BINDING V2 LOGIC     IMPLEMENTED`
+
+`TYPE-JEV CORE/PROJECTION/EVAL DISPATCH IMPLEMENTED`
+
+`TYPE-JEV CANARY V2 HARNESS          READY`
+
+`TYPE-JEV CANARY V2 REAL EXECUTION   NOT EXECUTED`
+
+`TYPE-JEV FINAL THRESHOLDS            NOT FROZEN`
+
+`TYPE-JEV TRIAL V2                    BLOCKED`
+
+`TYPE-JEV PROSPECTIVE TRIAL           NOT STARTED`
+
+`R5R ACTUAL EVALUATION                NOT EXECUTED`
+
+`HOLDOUT                               LOCKED / NOT ACCESSED`
+
+## 다음 action
+
+다음 action은 사용자 local에서 **zero-network Canary V2 dry-run**을 한 번 실행하여
+현재 exact protocol artifact를 materialize하고 출력된 hash/count/cap을 확인하는 것이다.
+
+그 다음에만 account-specific pricing/billing/retention 조건과
+`per_call_reservation_usd`를 검증하고, 별도 명시 승인 하에 real synthetic Canary V2를 실행한다.
+
+Canary V2 PASS 자체는 Trial V2 activation이나 adoption 승인이 아니다.
