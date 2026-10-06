@@ -604,6 +604,7 @@ class JevReviewerEvaluationService:
                 {
                     "protocol_spec_hash": protocol["spec_hash"],
                     "evaluation_policy_hash": policy["computed_policy_hash"],
+                    "evaluation_as_of": run["evaluation_as_of"],
                     "exit_policy_token": run["exit_policy_token"],
                     "units": [
                         {
