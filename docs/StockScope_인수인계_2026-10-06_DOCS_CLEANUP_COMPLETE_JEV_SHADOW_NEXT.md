@@ -1355,3 +1355,140 @@ Implementation CI run:
 
 Phase 1 correction/canary/trial이 끝난 뒤에는 별도 **TYPE-JEV-EXPANSION-REVIEW** 문서를 작성하여 StockScope의 다른 fuzzy decision 영역에서 TypeSafe Jev가 실제 추가 가치를 주는지 검토한다.
 
+# 38. 2026-10-06 Update — TypeSafe Jev Canary Harness READY / Real Canary PENDING
+
+Implementation commit:
+
+`869f2e86b91b26997beff59b152cfdc2fa774c75`
+
+Commit message:
+
+`feat: add TypeSafe JEV synthetic canary harness`
+
+## 완료
+
+- TypeSafe official API v0.2.0 contract에 맞춘 model discovery helper 추가
+- `GET /v1/models` account model discovery 경계 구현
+- 기존 `POST /v1/systemone` adapter와 동일 credential loader 사용
+- 실제 secret 값 출력/로그/artifact 저장 없음
+- synthetic canary fixture 12개 고정
+- 각 fixture 2회 반복, System One 최대 24회
+- model discovery 최대 1회
+- 총 API hard cap 25회
+- canary API budget hard cap USD 0.25
+- 실제 종목/ticker/name/rank/holdings/account/future outcome 전송 금지
+- actual prospective trial activation 금지
+- threshold 후보군 사전고정:
+  - 0.10 / 0.90
+  - 0.15 / 0.85
+  - 0.20 / 0.80
+- preferred threshold = 0.15 / 0.85
+- 결과를 본 뒤 새 threshold 후보를 즉흥적으로 추가하지 않음
+- 명확 normal / strategy conflict / entry conflict / evidence insufficient / ambiguous / compound fixture 포함
+- future uncertainty를 q3 evidence insufficiency로 오인하는지 보는 negative-control 포함
+- versioned Jev model이 계정에 있으면 rolling alias보다 우선 선택
+- 첫 System One response model을 observed binding으로 잡고 이후 call에서 model identity 변화 감지
+- usage / latency / Noul probabilities / repetition 결과 기록
+- public price snapshot 기준 estimated cost 계산
+- raw API key / Authorization header 결과 artifact 저장 금지
+- model binding artifact writer 준비
+- canary validation report writer 준비
+- real canary 실행은 simulation DB나 actual StockScope candidate를 읽지 않음
+
+Frozen canary protocol:
+
+`docs/contracts/JEV_TYPESAFE_CANARY_PROTOCOL_V1.json`
+
+Canary runner:
+
+`tools/data/run_jev_typesafe_canary_v1.py`
+
+## 실행 방법
+
+Project root PowerShell에서 dry-run:
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\run_jev_typesafe_canary_v1.py
+```
+
+dry-run은:
+- protocol/fixture 검증
+- protocol JSON 재생성
+- network call 0
+- JEV_API_KEY 사용 0
+- actual trial 0
+
+실제 TypeSafe synthetic canary:
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\run_jev_typesafe_canary_v1.py --execute
+```
+
+이 명령만 실제로:
+- GET /v1/models 최대 1회
+- POST /v1/systemone 최대 24회
+- project-root `.env`의 `JEV_API_KEY`를 provider 내부 인증에 사용
+
+실제 key 값/prefix/length/hash는 출력하지 않는다.
+
+선택 모델을 직접 지정하려면 account discovery가 반환하는 exact model name으로:
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\run_jev_typesafe_canary_v1.py --execute --model "<MODEL_NAME>"
+```
+
+Mock-only 단위검증:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest .\backend\tests\test_jev_typesafe_canary.py -q
+```
+
+## 실제 canary 산출물
+
+성공/실패와 무관하게 실행 결과는 local worktree에 기록한다.
+
+- `docs/contracts/JEV_TYPESAFE_CANARY_PROTOCOL_V1.json`
+- `docs/contracts/JEV_TYPESAFE_MODEL_BINDING_V1.json`
+- `docs/validation/JEV_TYPESAFE_CANARY_V1_<DATE>.json`
+
+report에는 secret이 들어가면 안 된다.
+
+## CI
+
+Implementation CI run:
+
+`37432052438`
+
+결과:
+
+- Frontend / Node 22: PASS
+- Backend / Python 3.11: PASS
+- Backend / Python 3.14: PASS
+- Fresh Clone / Windows: PASS
+
+## 현재 상태
+
+`TYPE-JEV-DESIGN-FREEZE                 COMPLETE`
+
+`TYPE-JEV-CORE-CORRECTION               COMPLETE`
+
+`TYPE-JEV-MONITOR-EVALUATION-CORRECTION COMPLETE`
+
+`TYPE-JEV-APPROVED-CANARY-TRIAL         HARNESS READY / REAL CANARY PENDING`
+
+아직 실행하지 않은 것:
+
+- actual GET /v1/models: 0
+- actual POST /v1/systemone: 0
+- actual TypeSafe token use: 0
+- actual TypeSafe provider cost: 0
+- actual StockScope candidate sent: 0
+- actual prospective shadow trial: NOT STARTED
+- Trial V2 final freeze: NOT DONE
+- Evaluation V2 numeric policy final freeze: NOT DONE
+- automatic adoption: NOT EXECUTED
+- R5R Actual Evaluation: NOT EXECUTED
+- 잠긴 데이터 영역: LOCKED / NOT ACCESSED
+
+다음 action은 사용자가 로컬에서 real synthetic canary를 한 번 실행하고 생성된 report 결과를 확인하는 것이다. Canary PASS 이후에만 final model binding / threshold / Trial V2 / Evaluation V2 numeric policy를 freeze한다.
+
