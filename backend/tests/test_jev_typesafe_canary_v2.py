@@ -13,6 +13,7 @@ from app.jev.typesafe_canary_v2 import (
     PREVIEW_ALIAS,
     STABLE_ALIAS,
     classify_model_channel,
+    load_frozen_canary_v2_protocol,
     run_real_canary_v2,
     select_canary_v2_model,
     select_threshold_from_selection,
@@ -268,3 +269,20 @@ def test_offline_selection_locks_only_pre_registered_grid() -> None:
         selected["threshold_entry"],
     } <= {0.50, 0.65, 0.80}
     assert selected["threshold_evidence"] in {0.60, 0.75, 0.90}
+
+
+def test_v2_real_execution_requires_exact_frozen_protocol_file(tmp_path) -> None:
+    path = tmp_path / "JEV_TYPESAFE_CANARY_PROTOCOL_V2.json"
+    with pytest.raises(Exception):
+        load_frozen_canary_v2_protocol(path)
+
+    artifact = validate_canary_v2_contract()
+    path.write_text(json.dumps(artifact, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    loaded = load_frozen_canary_v2_protocol(path)
+    assert loaded["protocol_hash"] == artifact["protocol_hash"]
+
+    changed = dict(artifact)
+    changed["protocol_id"] = "MUTATED"
+    path.write_text(json.dumps(changed, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    with pytest.raises(Exception):
+        load_frozen_canary_v2_protocol(path)

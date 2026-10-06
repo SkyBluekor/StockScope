@@ -684,6 +684,21 @@ def write_canary_v2_protocol(
     return path
 
 
+def load_frozen_canary_v2_protocol(
+    path: Path = CANARY_V2_PROTOCOL_PATH,
+) -> dict[str, Any]:
+    expected = validate_canary_v2_contract()
+    if not path.is_file():
+        raise TypeSafeCanaryV2Error("CANARY_V2_PROTOCOL_NOT_FROZEN")
+    try:
+        stored = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise TypeSafeCanaryV2Error("CANARY_V2_PROTOCOL_INVALID") from exc
+    if stored != expected:
+        raise TypeSafeCanaryV2Error("CANARY_V2_PROTOCOL_MISMATCH")
+    return stored
+
+
 def classify_model_channel(model: dict[str, Any]) -> str:
     name = str(model.get("name") or "").strip().lower()
     if "preview" in name:

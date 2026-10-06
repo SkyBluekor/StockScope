@@ -17,6 +17,7 @@ from app.jev.typesafe_canary_v2 import (
     MAX_MODEL_DISCOVERY_ATTEMPTS,
     MAX_SYSTEM_ONE_ATTEMPTS,
     MAX_TOTAL_API_ATTEMPTS,
+    load_frozen_canary_v2_protocol,
     run_real_canary_v2,
     threshold_candidate_grid,
     validate_canary_v2_contract,
@@ -95,6 +96,16 @@ async def _execute(args: argparse.Namespace) -> int:
     if reservation * MAX_SYSTEM_ONE_ATTEMPTS > CANARY_V2_API_BUDGET_USD:
         print(
             "ERROR: reservation would exceed the Canary V2 hard budget.",
+            file=sys.stderr,
+        )
+        return 2
+
+    try:
+        load_frozen_canary_v2_protocol()
+    except Exception as exc:
+        print(
+            "ERROR: Canary V2 protocol must be frozen by a successful dry-run "
+            f"before --execute ({exc}).",
             file=sys.stderr,
         )
         return 2
