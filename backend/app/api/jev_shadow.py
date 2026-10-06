@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query
 
 from app.core.config import PROJECT_ROOT
-from app.jev import JevCatalog, JevCatalogError
+from app.jev import JevCatalog, JevCatalogError, trial_readiness
 
 
 router = APIRouter(
@@ -42,9 +42,12 @@ def _catalog() -> JevCatalog:
 
 
 def _unavailable(error: JevCatalogError) -> dict[str, object]:
+    readiness = trial_readiness()
     return {
         "available": False,
         "enabled": False,
+        "ready_for_activation": bool(readiness.get("ready")),
+        "trial_status": readiness.get("status"),
         "protocol_status": None,
         "network_enabled": False,
         "status_counts": {key: 0 for key in _STATUS_KEYS},
@@ -93,9 +96,12 @@ def jev_shadow_status():
             key: int(summary["decision_counts"].get(key, 0))
             for key in _DECISION_KEYS
         }
+        readiness = trial_readiness()
         return {
             "available": True,
             "enabled": enabled,
+            "ready_for_activation": bool(readiness.get("ready")),
+            "trial_status": readiness.get("status"),
             "protocol_status": protocol_status,
             "network_enabled": network_enabled,
             "status_counts": status_counts,
