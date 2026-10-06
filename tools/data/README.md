@@ -570,3 +570,20 @@ V2는 TAIL ECDF distance를 exact numerator varint로, MAD absolute shift를 los
 `.\sync_local.ps1`은 compact V2가 없으면 자동 생성하며, historical V1이 있으면 최초 migration에서 전체 logical-equivalence를 검증합니다. V2 compressed size가 V1의 25%를 넘으면 artifact 쓰기 전에 fail closed 합니다. `-CheckOnly`에서는 생성하지 않습니다.
 
 원클릭 출력에는 current V2 artifact 이름, compressed size, support point 수, family 수, forward comparison 수, encoding, DB write/Production 상태가 함께 표시됩니다.
+
+
+## NEXT-6E R5R binding / evaluation naming
+
+현재 frozen DEV binding 도구:
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\bind_macro_r5r_evaluation_next6e.py --dataset <DEV.json> --output <binding.json>
+```
+
+이 도구는 identity / chronology / structural metadata만 바인딩하며 T_EMP/L_EMP/S_EMP, candidate support, Common-N을 계산하지 않는다.
+
+명칭:
+- `NEXT-6E-R5R-EVALUATION`: frozen R5R actual observed-path evaluation
+- `JEV-REVIEWER-EVALUATION`: AI Decision Reviewer incremental-value evaluation
+
+둘은 별도 작업이다. 과거 narrative의 `NEXT-6E-R5R-JEV` 표현은 current command/task name으로 사용하지 않는다.
