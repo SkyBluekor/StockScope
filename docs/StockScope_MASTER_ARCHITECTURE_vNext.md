@@ -3,6 +3,8 @@
 작성일: 2026-09-27 (Asia/Seoul) · 설계 버전: `vNext-2026-09-27`
 
 
+> 과거 입력 문서(Current State / Recovery Context / Astra handoff)는 현재 checkout의 active 문서가 아니다. 필요한 설계 이유는 `history/StockScope_R4_R5_R5R_설계변경이력.md`와 Git history에서 확인한다.
+
 ## 현재 기준과 읽는 순서 — 2026-10-06
 
 이 문서가 제품 책임의 최상위 진입점이다. 새 작업에서는 다음 순서만 기본으로 읽고, 과거 resolution을 연속으로 읽지 않는다.
@@ -28,7 +30,7 @@
 
 이 문서는 **현재 구현을 출발점으로 새로 작성한 목표 설계**다. 아래의 선택은 유실된 과거 설계를 복원한 결과나 현재 구현 완료 선언이 아니다. 설계 문서 작성만 수행했으며 코드·DB·기존 기준 문서는 변경하지 않았다.
 
-입력은 [Handoff](StockScope_ASTRA_REDESIGN_HANDOFF_2026-09-27.md) → [Current State](StockScope_CURRENT_STATE_2026-09-26.md) → [Recovery Context](StockScope_RECOVERY_CONTEXT_2026-09-26.md) 순서로 읽었다. Handoff의 재설계 원칙을 따른다. Handoff 10절의 STEP 5 문서 생성 한정은 완료된 이전 작업의 범위이고, 이번 작업은 사용자가 명시적으로 요청한 세 설계 문서 작성이다.
+입력은 과거 Astra handoff → 과거 Current State → 과거 Recovery Context 순서로 읽었다. Handoff의 재설계 원칙을 따른다. Handoff 10절의 STEP 5 문서 생성 한정은 완료된 이전 작업의 범위이고, 이번 작업은 사용자가 명시적으로 요청한 세 설계 문서 작성이다.
 
 | 기준 | 확인 내용 |
 | --- | --- |
