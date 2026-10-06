@@ -31,6 +31,7 @@ def test_registry_order_is_explicit_and_stable():
         "VN-P5-S1",
         "VN-P6-S1",
         "NEXT-6E-S3",
+        "JEV-SHADOW-V1",
     ]
 
 
