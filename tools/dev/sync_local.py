@@ -99,6 +99,7 @@ MIGRATION_DEPENDENCIES: dict[str, tuple[str, ...]] = {
     "NEXT-6E-S3": ("VN-P2-S2",),
     "JEV-SHADOW-V1": ("VN-P2-S2",),
     "JEV-EVALUATION-V1": ("JEV-SHADOW-V1",),
+    "JEV-TYPESAFE-V2": ("VN-P2-S2",),
 }
 
 SIMULATION_REQUIRED_MIGRATIONS = frozenset(
@@ -110,6 +111,7 @@ SIMULATION_REQUIRED_MIGRATIONS = frozenset(
         "NEXT-6E-S3",
         "JEV-SHADOW-V1",
         "JEV-EVALUATION-V1",
+        "JEV-TYPESAFE-V2",
     }
 )
 
@@ -129,6 +131,7 @@ MIGRATION_WRITE_DOMAINS: dict[str, frozenset[str]] = {
     "NEXT-6E-S3": frozenset({"simulation"}),
     "JEV-SHADOW-V1": frozenset({"simulation"}),
     "JEV-EVALUATION-V1": frozenset({"simulation"}),
+    "JEV-TYPESAFE-V2": frozenset({"simulation"}),
 }
 
 
