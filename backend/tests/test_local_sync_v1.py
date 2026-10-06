@@ -33,6 +33,7 @@ def test_registry_order_is_explicit_and_stable():
         "NEXT-6E-S3",
         "JEV-SHADOW-V1",
         "JEV-EVALUATION-V1",
+        "JEV-TYPESAFE-V2",
     ]
 
 

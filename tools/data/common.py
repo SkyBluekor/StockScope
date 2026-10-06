@@ -119,6 +119,13 @@ SIMULATION_TABLE_FAMILIES = (
         "jev_evaluation_run",
         "jev_evaluation_unit",
     }),
+    frozenset({
+        "jev_typesafe_schema_meta",
+        "jev_typesafe_protocol",
+        "jev_typesafe_activation",
+        "jev_typesafe_recruitment",
+        "jev_typesafe_review",
+    }),
 )
 
 REQUIRED_TRACKING_TABLES = frozenset(

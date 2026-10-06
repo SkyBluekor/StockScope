@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sqlite3
 import sys
 from pathlib import Path
 from uuid import uuid4
@@ -77,6 +78,21 @@ def _prepare_restore_copy(
     sqlite_snapshot(source, temp)
     validator(temp)
     return temp
+
+
+def _force_typesafe_jev_network_off(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    with sqlite3.connect(path) as conn:
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='jev_typesafe_activation'"
+        ).fetchone()
+        if exists is None:
+            return False
+        conn.execute(
+            "UPDATE jev_typesafe_activation SET enabled=0, allow_network=0"
+        )
+        return True
 
 
 def restore_backup(
@@ -359,6 +375,7 @@ def restore_backup(
     strategy_selection_result: dict[str, object] | None = None
     restored_event_evidence_state = inspect_event_evidence_store(None)
     restored_macro_state = inspect_macro_store(None)
+    typesafe_network_forced_off = False
 
     try:
         for label, _, target, validator in targets:
@@ -433,6 +450,9 @@ def restore_backup(
                 )
 
             if restore_simulation:
+                typesafe_network_forced_off = _force_typesafe_jev_network_off(
+                    simulation_target
+                )
                 restored_event_evidence_state = inspect_event_evidence_store(
                     simulation_target
                 )
@@ -498,6 +518,9 @@ def restore_backup(
         )
         jev_evaluation_manifest = dict(
             extensions.get("jev_evaluation_v1") or {}
+        )
+        jev_typesafe_manifest = dict(
+            extensions.get("jev_typesafe_v2") or {}
         )
         holding_decision_manifest = dict(
             extensions.get("holding_decision_v1") or {}
@@ -630,6 +653,21 @@ def restore_backup(
                     jev_evaluation_manifest.get("tables") or []
                 ),
                 "secret_values_restored": False,
+            },
+            "jev_typesafe": {
+                "schema_version": jev_typesafe_manifest.get("schema_version"),
+                "store_present_in_backup": bool(
+                    jev_typesafe_manifest.get("present")
+                ),
+                "store_restored": bool(
+                    restore_simulation
+                    and jev_typesafe_manifest.get("restorable")
+                ),
+                "tables": list(jev_typesafe_manifest.get("tables") or []),
+                "secret_values_restored": False,
+                "network_forced_off": bool(
+                    restore_simulation and typesafe_network_forced_off
+                ),
             },
             "holding_decision": {
                 "schema_version": holding_decision_manifest.get("schema_version"),

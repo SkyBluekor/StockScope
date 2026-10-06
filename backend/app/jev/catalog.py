@@ -199,6 +199,11 @@ class JevCatalog:
             )
         spec = dict(protocol.get("spec") or {})
         provider_id = str(spec.get("provider_id") or "").strip().upper()
+        if enabled and provider_id != "FAKE":
+            raise JevCatalogError(
+                "JEV_LEGACY_V1_ACTIVATION_BLOCKED",
+                "OpenAI/Terra JEV V1은 legacy history로만 보존하며 신규 활성화를 허용하지 않습니다.",
+            )
         if enabled and provider_id != "FAKE" and not allow_network:
             raise JevCatalogError(
                 "JEV_NETWORK_ACTIVATION_REQUIRED",

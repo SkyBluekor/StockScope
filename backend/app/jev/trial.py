@@ -164,9 +164,9 @@ def trial_readiness() -> dict[str, Any]:
             "protocol_id": TRIAL_PROTOCOL_ID,
         }
     return {
-        "ready": True,
-        "status": "READY_FOR_ACTIVATION",
-        "code": None,
+        "ready": False,
+        "status": "LEGACY_BLOCKED",
+        "code": "JEV_LEGACY_V1_ACTIVATION_BLOCKED",
         "protocol_id": TRIAL_PROTOCOL_ID,
         "spec_hash": artifact["computed_spec_hash"],
         "provider_id": artifact["spec"]["provider_id"],
@@ -178,7 +178,14 @@ def trial_readiness() -> dict[str, Any]:
 
 def configure_trial_protocol(
     catalog: JevCatalog,
+    *,
+    allow_legacy_test: bool = False,
 ) -> dict[str, Any]:
+    if not allow_legacy_test:
+        raise JevTrialError(
+            "JEV_LEGACY_V1_ACTIVATION_BLOCKED",
+            "OpenAI/Terra JEV Trial V1은 legacy history로만 보존합니다. TypeSafe V2 경로를 사용하세요.",
+        )
     artifact = load_trial_artifact()
     spec = artifact["spec_object"]
 

@@ -22,6 +22,14 @@ from app.prospective import (
     ProspectiveCatalog,
 )
 from app.jev import JevCatalog, JevTrialProtocolSpec
+from app.jev.typesafe_catalog import TypeSafeJevCatalog
+from app.jev.typesafe_models import TypeSafeJevTrialProtocolSpec
+from app.jev.typesafe_policy import JEV_TYPESAFE_DISPOSITION_POLICY_HASH
+from app.jev.typesafe_questions import JEV_TYPESAFE_QUESTION_SET_HASH
+from app.jev.typesafe_state import (
+    JEV_TYPESAFE_PROJECTOR_HASH,
+    JEV_TYPESAFE_STATE_CONTRACT_HASH,
+)
 from app.simulation.execution_catalog import HistoricalExecutionCatalog
 from app.simulation.sim1_store import SimulationRepository
 from app.simulation.validation_catalog import HistoricalValidationCatalog
@@ -41,6 +49,7 @@ from tools.data.migrate_feedback_vnp2s1 import migrate_feedback_store
 from tools.data.migrate_prospective_vnp2s2 import migrate_prospective_store
 from tools.data.migrate_jev_shadow_v1 import migrate_jev_shadow_store
 from tools.data.migrate_jev_evaluation_v1 import migrate_jev_evaluation_store
+from tools.data.migrate_jev_typesafe_v2 import migrate_jev_typesafe
 from tools.data.migrate_holdings_decision_vnp3s1 import (
     HOLDING_DECISION_POLICY_VERSION,
     HOLDING_PLAN_CONTEXT_VERSION,
@@ -1647,6 +1656,7 @@ def test_jev_shadow_store_roundtrip_is_declared_and_restored(tmp_path):
     migrate_prospective_store(simulation)
     migrate_jev_shadow_store(simulation)
     migrate_jev_evaluation_store(simulation)
+    migrate_jev_typesafe(simulation)
 
     catalog = JevCatalog(simulation)
     protocol = catalog.create_protocol(
@@ -1676,6 +1686,33 @@ def test_jev_shadow_store_roundtrip_is_declared_and_restored(tmp_path):
         allow_network=False,
     )
 
+    typesafe = TypeSafeJevCatalog(simulation)
+    typesafe_protocol = typesafe.create_protocol(
+        client_request_id="backup-jev-typesafe-v2",
+        spec=TypeSafeJevTrialProtocolSpec(
+            name="backup fake TypeSafe V2",
+            provider_id="FAKE",
+            model_requested="FAKE-JEV-V2",
+            expected_model_returned="FAKE-JEV-V2",
+            state_contract_hash=JEV_TYPESAFE_STATE_CONTRACT_HASH,
+            projector_hash=JEV_TYPESAFE_PROJECTOR_HASH,
+            question_set_hash=JEV_TYPESAFE_QUESTION_SET_HASH,
+            disposition_policy_hash=JEV_TYPESAFE_DISPOSITION_POLICY_HASH,
+            threshold_low=0.15,
+            threshold_high=0.85,
+            recruitment_duration_calendar_days=30,
+            max_recruited_candidates=20,
+            budget_limit_usd=1.0,
+            per_call_reservation_usd=0.01,
+        ),
+    )
+    assert typesafe_protocol["status"] == "FROZEN"
+    typesafe.set_activation(
+        typesafe_protocol["id"],
+        enabled=True,
+        allow_network=False,
+    )
+
     backup = create_backup(
         destination=tmp_path / "jev-shadow-backup",
         holdings_db=holdings,
@@ -1693,6 +1730,10 @@ def test_jev_shadow_store_roundtrip_is_declared_and_restored(tmp_path):
     assert evaluation_extension["present"] is True
     assert evaluation_extension["restorable"] is True
     assert evaluation_extension["secret_values_included"] is False
+    typesafe_extension = manifest["extensions"]["jev_typesafe_v2"]
+    assert typesafe_extension["present"] is True
+    assert typesafe_extension["restorable"] is True
+    assert typesafe_extension["secret_values_included"] is False
 
     restored_holdings = tmp_path / "restored-holdings-jev.db"
     restored_simulation = tmp_path / "restored-simulation-jev.db"
@@ -1709,6 +1750,10 @@ def test_jev_shadow_store_roundtrip_is_declared_and_restored(tmp_path):
     assert result["jev_evaluation"]["store_present_in_backup"] is True
     assert result["jev_evaluation"]["store_restored"] is True
     assert result["jev_evaluation"]["secret_values_restored"] is False
+    assert result["jev_typesafe"]["store_present_in_backup"] is True
+    assert result["jev_typesafe"]["store_restored"] is True
+    assert result["jev_typesafe"]["secret_values_restored"] is False
+    assert result["jev_typesafe"]["network_forced_off"] is True
     with sqlite3.connect(restored_simulation) as conn:
         assert conn.execute(
             "SELECT COUNT(*) FROM jev_shadow_protocol"
@@ -1722,3 +1767,8 @@ def test_jev_shadow_store_roundtrip_is_declared_and_restored(tmp_path):
         assert conn.execute(
             "SELECT COUNT(*) FROM jev_evaluation_unit"
         ).fetchone()[0] == 0
+        activation = conn.execute(
+            "SELECT enabled,allow_network FROM jev_typesafe_activation "
+            "WHERE singleton_id=1"
+        ).fetchone()
+        assert activation == (0, 0)

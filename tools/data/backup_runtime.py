@@ -29,6 +29,7 @@ from app.feedback.models import FEEDBACK_SCHEMA_VERSION
 from app.prospective.models import PROSPECTIVE_SCHEMA_VERSION
 from app.jev.models import JEV_SCHEMA_VERSION
 from app.jev.evaluation_models import JEV_EVALUATION_SCHEMA_VERSION
+from app.jev.typesafe_models import JEV_TYPESAFE_SCHEMA_VERSION
 from app.holdings.decision_support import HOLDING_DECISION_SCHEMA_VERSION
 from app.holdings.recovery import RECOVERY_SCHEMA_VERSION
 from app.watch.policy import WATCH_POLICY_CONTRACT_VERSION
@@ -245,6 +246,42 @@ JEV_EVALUATION_TABLES = (
     "jev_evaluation_run",
     "jev_evaluation_unit",
 )
+
+JEV_TYPESAFE_TABLES = (
+    "jev_typesafe_schema_meta",
+    "jev_typesafe_protocol",
+    "jev_typesafe_activation",
+    "jev_typesafe_recruitment",
+    "jev_typesafe_review",
+)
+
+
+def _jev_typesafe_extension(
+    simulation_copy: Path | None,
+) -> dict[str, object]:
+    if simulation_copy is None or not simulation_copy.is_file():
+        return {
+            "schema_version": JEV_TYPESAFE_SCHEMA_VERSION,
+            "present": False,
+            "tables": [],
+            "restorable": False,
+        }
+    present = [
+        table for table in JEV_TYPESAFE_TABLES
+        if _table_exists(simulation_copy, table)
+    ]
+    return {
+        "schema_version": JEV_TYPESAFE_SCHEMA_VERSION,
+        "present": bool(present),
+        "tables": present,
+        "restorable": len(present) == len(JEV_TYPESAFE_TABLES),
+        "secret_values_included": False,
+        "network_activation_restored_as_enabled": False,
+        "note": (
+            "TypeSafe JEV V2 protocol/recruitment/review records live in Simulation DB. "
+            "JEV_API_KEY is never stored; restore forces activation/network OFF."
+        ),
+    }
 
 
 def _jev_evaluation_extension(
@@ -646,6 +683,9 @@ def create_backup(
                     simulation_copy,
                 ),
                 "jev_evaluation_v1": _jev_evaluation_extension(
+                    simulation_copy,
+                ),
+                "jev_typesafe_v2": _jev_typesafe_extension(
                     simulation_copy,
                 ),
                 "holding_decision_v1": _holding_decision_extension(

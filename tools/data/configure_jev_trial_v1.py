@@ -18,8 +18,8 @@ from tools.data.common import simulation_db_path
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Frozen JEV Reviewer Trial V1을 runtime DB에 configure합니다. "
-            "이 작업은 network를 활성화하거나 모델을 호출하지 않습니다."
+            "Legacy OpenAI/Terra JEV Reviewer Trial V1 configure는 차단되어 있습니다. "
+            "TypeSafe V2 경로를 사용하세요."
         )
     )
     parser.add_argument("--simulation-db", type=Path)

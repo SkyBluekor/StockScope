@@ -67,3 +67,34 @@ __all__ = [
     "load_trial_artifact",
     "trial_readiness",
 ]
+
+
+# TypeSafe Jev V2 core. Legacy V1 exports above remain for history/tests.
+from .typesafe_catalog import TypeSafeJevCatalog, TypeSafeJevCatalogError
+from .typesafe_models import TypeSafeJevTrialProtocolSpec
+from .typesafe_policy import (
+    JEV_TYPESAFE_DISPOSITION_POLICY_HASH,
+    TypeSafeDisposition,
+    decide_typesafe_disposition,
+)
+from .typesafe_provider import (
+    FakeTypeSafeJevProvider,
+    TypeSafeJevProviderError,
+    TypeSafeSystemOneProvider,
+    validate_system_one_response,
+)
+from .typesafe_questions import (
+    JEV_TYPESAFE_QUESTION_SET_HASH,
+    build_typesafe_questions,
+)
+from .typesafe_service import (
+    TypeSafeCoreReview,
+    build_system_one_request,
+    review_once as review_typesafe_once,
+)
+from .typesafe_state import (
+    JEV_TYPESAFE_PROJECTOR_HASH,
+    JEV_TYPESAFE_STATE_CONTRACT_HASH,
+    TypeSafeStateProjectionError,
+    project_typesafe_state,
+)

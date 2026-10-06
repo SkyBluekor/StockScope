@@ -14,6 +14,7 @@ from app.jev import (
     JevEvaluationCatalog,
     JevReviewerEvaluationService,
     JevShadowService,
+    JevTrialError,
     JevTrialProtocolSpec,
     OpenAIResponsesJevProvider,
     build_comparison_report,
@@ -572,8 +573,9 @@ def test_frozen_trial_artifact_is_ready_and_not_activated(
     tmp_path: Path,
 ) -> None:
     readiness = trial_readiness()
-    assert readiness["ready"] is True
-    assert readiness["status"] == "READY_FOR_ACTIVATION"
+    assert readiness["ready"] is False
+    assert readiness["status"] == "LEGACY_BLOCKED"
+    assert readiness["code"] == "JEV_LEGACY_V1_ACTIVATION_BLOCKED"
 
     artifact = load_trial_artifact()
     spec = artifact["spec"]
@@ -591,7 +593,13 @@ def test_frozen_trial_artifact_is_ready_and_not_activated(
     assert spec["recruitment_mode"] == "ACTIVATION_FORWARD"
 
     db = _simulation_db(tmp_path / "simulation.db")
-    result = configure_trial_protocol(JevCatalog(db))
+    with pytest.raises(JevTrialError) as blocked:
+        configure_trial_protocol(JevCatalog(db))
+    assert blocked.value.code == "JEV_LEGACY_V1_ACTIVATION_BLOCKED"
+
+    result = configure_trial_protocol(
+        JevCatalog(db), allow_legacy_test=True
+    )
     assert result["status"] == "READY_FOR_ACTIVATION"
     assert result["network_enabled"] is False
     assert result["model_calls_executed"] == 0
@@ -750,7 +758,9 @@ def test_local_only_evaluation_snapshot_joins_review_and_outcome(
     db = _simulation_db(tmp_path / "simulation.db")
     capture = _capture(db)
     shadow = JevCatalog(db)
-    configured = configure_trial_protocol(shadow)
+    configured = configure_trial_protocol(
+        shadow, allow_legacy_test=True
+    )
     protocol = shadow.get_protocol(configured["protocol_id"])
     assert protocol is not None
 

@@ -44,6 +44,7 @@ from tools.data import migrate_event_evidence_vnp6s1 as p6s1
 from tools.data import migrate_prospective_reference_next6e_s3 as next6e_s3
 from tools.data import migrate_jev_shadow_v1 as jev_shadow_v1
 from tools.data import migrate_jev_evaluation_v1 as jev_evaluation_v1
+from tools.data import migrate_jev_typesafe_v2 as jev_typesafe_v2
 
 
 SYNC_VERSION = "LOCAL_SYNC_V2"
@@ -658,6 +659,29 @@ def _run_jev_shadow_v1(paths: RuntimePaths) -> dict[str, Any]:
     return result
 
 
+def _run_jev_typesafe_v2(paths: RuntimePaths) -> dict[str, Any]:
+    result = jev_typesafe_v2.migrate_jev_typesafe(
+        simulation_db=paths.simulation
+    )
+    if result.get("historical_backfill_performed") is not False:
+        raise DataToolError(
+            "TypeSafe JEV V2 migration이 historical backfill을 수행했습니다."
+        )
+    if int(result.get("external_network_requests", -1)) != 0:
+        raise DataToolError(
+            "TypeSafe JEV V2 migration에서 외부 network request가 발생했습니다."
+        )
+    if int(result.get("model_calls_executed", -1)) != 0:
+        raise DataToolError(
+            "TypeSafe JEV V2 migration에서 model call이 발생했습니다."
+        )
+    if result.get("secret_values_read") is not False:
+        raise DataToolError(
+            "TypeSafe JEV V2 migration이 secret 값을 읽었습니다."
+        )
+    return result
+
+
 def _run_jev_evaluation_v1(paths: RuntimePaths) -> dict[str, Any]:
     result = jev_evaluation_v1.migrate_jev_evaluation(
         simulation_db=paths.simulation
@@ -818,6 +842,23 @@ MIGRATIONS: tuple[MigrationSpec, ...] = (
             expected_version=jev_evaluation_v1.JEV_EVALUATION_SCHEMA_VERSION,
         ),
         _run_jev_evaluation_v1,
+    ),
+    MigrationSpec(
+        "JEV-TYPESAFE-V2",
+        "TypeSafe JEV V2 Core",
+        _simple_detector(
+            "JEV-TYPESAFE-V2",
+            "TypeSafe JEV V2 Core",
+            db_attr="simulation",
+            expected_tables={
+                "jev_typesafe_schema_meta",
+                *jev_typesafe_v2.JEV_TYPESAFE_TABLE_COLUMNS.keys(),
+            },
+            required_base=set(jev_typesafe_v2.REQUIRED_BASE_TABLES),
+            meta_table="jev_typesafe_schema_meta",
+            expected_version=jev_typesafe_v2.JEV_TYPESAFE_SCHEMA_VERSION,
+        ),
+        _run_jev_typesafe_v2,
     ),
 )
 
