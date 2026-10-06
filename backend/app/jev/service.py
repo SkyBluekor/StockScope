@@ -78,6 +78,40 @@ class JevShadowService:
         )
 
     @staticmethod
+    def _analysis_unit_key(payload: dict[str, Any]) -> tuple[str, ...]:
+        baseline = payload.get("baseline_decision")
+        identity = payload.get("baseline_identity")
+        as_of = payload.get("as_of")
+        candidate_ref = str(payload.get("candidate_ref") or "")
+        parts = candidate_ref.split(":")
+        market = parts[-2] if len(parts) >= 2 else ""
+        ticker = parts[-1] if len(parts) >= 1 else ""
+        return (
+            market,
+            ticker,
+            str(as_of.get("signal_date") or "") if isinstance(as_of, dict) else "",
+            str(baseline.get("strategy_version_id") or "")
+            if isinstance(baseline, dict)
+            else "",
+            str(identity.get("horizon_intent") or "")
+            if isinstance(identity, dict)
+            else "",
+        )
+
+    @staticmethod
+    def _parse_iso(value: Any) -> datetime | None:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
+    @staticmethod
     def _scope_reason(
         sample: dict[str, Any],
         spec: dict[str, Any],
@@ -413,10 +447,76 @@ class JevShadowService:
             0.1,
             float(spec.get("deadline_seconds") or 8.0),
         )
+        existing_reviews = self.catalog.list_reviews(
+            protocol_id=protocol["id"],
+        )
+        occupied_units = {
+            self._analysis_unit_key(row["input"])
+            for row in existing_reviews
+            if row.get("status") != "SKIPPED"
+        }
+        recruited_count = sum(
+            1
+            for row in existing_reviews
+            if row.get("status") != "SKIPPED"
+        )
+        spent_usd = sum(
+            float(row.get("cost_usd") or 0.0)
+            for row in existing_reviews
+        )
+        activation_at = self._parse_iso(
+            activation.get("updated_at")
+        )
+        recruitment_days = int(
+            spec.get("recruitment_duration_calendar_days") or 0
+        )
+        recruitment_end = (
+            activation_at + timedelta(days=recruitment_days)
+            if activation_at is not None and recruitment_days > 0
+            else None
+        )
+        max_recruited = int(
+            spec.get("max_recruited_candidates") or 0
+        )
+        budget_limit = float(
+            spec.get("budget_limit_usd") or 0.0
+        )
 
         for sample in rows:
             payload, skip_reason = self._projection(sample, protocol)
             candidate_ref = self._candidate_ref(sample)
+            if payload is not None and str(
+                spec.get("recruitment_mode") or ""
+            ).upper() == "ACTIVATION_FORWARD":
+                capture_time = self._parse_iso(
+                    sample.get("completed_at") or sample.get("created_at")
+                )
+                if (
+                    activation_at is not None
+                    and capture_time is not None
+                    and capture_time < activation_at
+                ):
+                    skip_reason = "PRE_ACTIVATION_CAPTURE"
+                    payload = None
+                elif (
+                    recruitment_end is not None
+                    and _now() > recruitment_end
+                ):
+                    skip_reason = "RECRUITMENT_WINDOW_CLOSED"
+                    payload = None
+            if payload is not None and max_recruited > 0:
+                if recruited_count >= max_recruited:
+                    skip_reason = "RECRUITMENT_CAP_REACHED"
+                    payload = None
+            if payload is not None and budget_limit > 0:
+                if spent_usd >= budget_limit:
+                    skip_reason = "TRIAL_BUDGET_EXHAUSTED"
+                    payload = None
+            if payload is not None:
+                analysis_unit = self._analysis_unit_key(payload)
+                if analysis_unit in occupied_units:
+                    skip_reason = "DUPLICATE_OBSERVATION"
+                    payload = None
             if payload is None:
                 minimal = {
                     "schema_version": JEV_INPUT_CONTRACT_VERSION,
@@ -511,23 +611,27 @@ class JevShadowService:
                 "comparison_policy": JEV_COMPARISON_POLICY,
             }
             requested = _now()
-            created.append(
-                self.catalog.enqueue_review(
-                    request_id=str(payload["request_id"]),
-                    protocol=protocol,
-                    capture_run_id=str(sample["capture_run_id"]),
-                    sample_index=int(sample["sample_index"]),
-                    candidate_ref=candidate_ref,
-                    candidate_snapshot_hash=str(sample["snapshot_hash"]),
-                    idempotency_key=digest_json(identity),
-                    input_payload=payload,
-                    deadline_at=_iso(
-                        requested + timedelta(seconds=deadline_seconds)
-                    ),
-                    status="PENDING",
-                    requested_at=_iso(requested),
-                )
+            review = self.catalog.enqueue_review(
+                request_id=str(payload["request_id"]),
+                protocol=protocol,
+                capture_run_id=str(sample["capture_run_id"]),
+                sample_index=int(sample["sample_index"]),
+                candidate_ref=candidate_ref,
+                candidate_snapshot_hash=str(sample["snapshot_hash"]),
+                idempotency_key=digest_json(identity),
+                input_payload=payload,
+                deadline_at=_iso(
+                    requested + timedelta(seconds=deadline_seconds)
+                ),
+                status="PENDING",
+                requested_at=_iso(requested),
             )
+            created.append(review)
+            if review.get("status") != "SKIPPED":
+                recruited_count += 1
+                occupied_units.add(
+                    self._analysis_unit_key(payload)
+                )
         return created
 
     async def run_review(self, review_id: str) -> dict[str, Any]:
