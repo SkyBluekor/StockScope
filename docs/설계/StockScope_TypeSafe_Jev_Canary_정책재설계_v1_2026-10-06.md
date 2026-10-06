@@ -4,7 +4,7 @@
 
 작업 모드: **DESIGN / ANALYSIS ONLY**
 
-확인한 로컬 `main` 및 작업 HEAD: `8304781928f3e975c7abcd0f49701eeeade70ebf`
+최초 설계 분석 기준 base HEAD: `8304781928f3e975c7abcd0f49701eeeade70ebf`\n\n후속 Q3 재검토 및 구현 시작 기준 원격 `main` HEAD: `7eb2f53945d7c024c176a7cddc885885ce482131`
 
 산출물: 이 설계 문서 1개. 코드·JSON contract·migration·frontend·기존 문서는 변경하지 않는다.
 
@@ -15,10 +15,10 @@
 | 결정 항목 | 이번 결정 |
 |---|---|
 | V1 실패 원인 | threshold architecture + gold 품질 + 질문 범위의 복합 원인. provider failure 증거 없음 |
-| Phase 1 architecture | **B: question-specific one-sided escalation**. Q3 evidence gate 후 Q1/Q2 conflict gate |
+| Phase 1 architecture | **B: question-specific one-sided escalation**. 근거 있는 Q1/Q2 conflict 우선, 충돌 신호가 없을 때 Q3 overall insufficiency gate |
 | Q1 | **유지 + 명료화**: 제공된 condition 의미와 strategy intent의 실질적 충돌 |
 | Q2 | **수정 후 검증 대상으로 유지**: strategy description의 price-rule 의미와 entry_context 표현을 직접 비교. 존재하지 않는 UI 문구 추정 금지 |
-| Q3 | **유지 + 명료화**: 제한된 두 명제를 해석하는 데 필수 의미가 빠졌는지 판단. 일반적 불확실성과 구분 |
+| Q3 | **3-Noul 유지 + 재정의**: 명백한 충돌이 없고 필수 의미가 빠져 전체 semantic review를 마칠 수 없는지 판단. 다른 질문의 충돌을 억제하지 않음 |
 | Risk fuzzy question | 삭제 상태 유지. 복구하지 않음 |
 | model binding | request channel과 returned concrete identity 분리. preview를 immutable version으로 분류하지 않음 |
 | V1 지위 | **EXECUTED / DIAGNOSTIC FAIL**, 향후 설계를 위한 DIAGNOSTIC / CALIBRATION CANARY |
@@ -172,7 +172,7 @@ V1은 architecture를 의심할 충분한 진단 자료지만 one-sided의 실�
 | 평가 가능성 | band 정답과 제품 행동이 섞이기 쉬움 | 명제별 gate, disposition, 부담 분리가 쉬움 | threshold와 구간 폭 동시 선택은 자유도를 늘림 |
 | V1 근거 | 현 후보에서는 부적합 | 개선 가설, 성능은 미검증 | 추가 복잡성을 정당화할 경계 반전 근거가 아직 부족 |
 
-C에서는 같은 response의 Q3를 먼저 적용하는 논리적 두 단계와, Q3만 별도 호출하는 물리적 두 단계를 구분한다. 후자는 call 수·지연·질문 맥락을 바꾸므로 채택하지 않는다. B도 Q3가 우선이지만 C와 같은 추가 근처 band는 없다.
+C에서는 같은 response의 Q3를 먼저 적용하는 논리적 두 단계와, Q3만 별도 호출하는 물리적 두 단계를 구분한다. 후자는 call 수·지연·질문 맥락을 바꾸므로 채택하지 않는다. 재검토한 B는 **Q1/Q2 conflict 우선**이며 C와 같은 추가 근처 band는 없다. 기존 B의 Q3-first는 한 질문의 의미 누락이 다른 질문의 명백한 충돌까지 가리는 cross-question suppression 때문에 폐기한다.
 
 **관찰 사실 → 문제 → 선택지 → 채택 결정 → 이유 → 다음 검증**: V1 전건 유보, 주요 경계 반전은 미검증 → A의 부담은 과도하고 C의 추가 parameter 이익은 불명확 → A/B/C → **B 채택** → 세 threshold로 제품 행동에 직접 대응 → V2의 clear-gold error·부담·crossing gate로 검증. B 실패 시 C로 자동 전환하지 않고 새 protocol에서 필요성을 논증한다.
 
@@ -186,10 +186,10 @@ provider/schema/usage/model identity failure -> ERROR, disposition=null
 deadline/recovery failure -> LATE or INTERRUPTED, disposition=null
 
 on-time, typed valid, verified response only:
-  if p3 >= T_evidence:
-      ABSTAIN / EVIDENCE_INSUFFICIENT
-  else if p1 >= T_strategy or p2 >= T_entry:
+  if p1 >= T_strategy or p2 >= T_entry:
       REVIEW_REQUIRED / applicable conflict reasons
+  else if p3 >= T_evidence:
+      ABSTAIN / EVIDENCE_INSUFFICIENT
   else:
       PASS_THROUGH / NO_ADDITIONAL_CONTEXT_CONFLICT
 ```
@@ -198,7 +198,19 @@ on-time, typed valid, verified response only:
 
 Q3 미도달은 충분성의 증명이 아니라 근거 부족 escalation 기준에 도달하지 않았다는 뜻이다. Q1/Q2 미도달도 정확성 인증이 아니다. Q1/Q2의 중간 p만으로 ABSTAIN을 부여하지 않는다. threshold 근처는 local 진단으로 기록하고 자동 재호출·다수결·임의 유보를 추가하지 않는다.
 
-reason은 threshold 이상인 질문만 사용한다. 둘 다 해당하면 **고정 순서 Q1→Q2**이며 원시 p 크기로 우선순위를 정하지 않는다. 다른 명제의 p 크기가 사용자 중요도를 뜻하지 않기 때문이다. Q3 우선이면 높은 Q1/Q2도 사용자용 review reason으로 승격하지 않는다. typed answer 전체는 audit에 남긴다.
+reason은 threshold 이상인 Q1/Q2만 사용한다. 둘 다 해당하면 **고정 순서 Q1→Q2**이며 원시 p 크기로 우선순위를 정하지 않는다. 다른 명제의 p 크기가 사용자 중요도를 뜻하지 않기 때문이다. Q3가 높더라도 Q1/Q2의 review reason을 제거하거나 Q3를 conflict reason에 추가하지 않는다. typed answer 전체는 audit에 남긴다.
+
+`g1=[p1>=T_strategy]`, `g2=[p2>=T_entry]`, `g3=[p3>=T_evidence]`일 때 다음 표가 모든 binary 조합을 정의한다. 여기서 ANY는 정책 분기의 두 값 모두를 뜻하며 fixture gold의 미정 표기가 아니다.
+
+| g1 | g2 | g3 | disposition / reason |
+|---|---|---|---|
+| true | false | ANY | REVIEW_REQUIRED(Q1) |
+| false | true | ANY | REVIEW_REQUIRED(Q2) |
+| true | true | ANY | REVIEW_REQUIRED(Q1,Q2) |
+| false | false | true | ABSTAIN / EVIDENCE_INSUFFICIENT |
+| false | false | false | PASS_THROUGH / NO_ADDITIONAL_CONTEXT_CONFLICT |
+
+Q3의 새 의미상 명백한 충돌과 overall insufficiency는 동시에 참이 아니다. 다만 세 Noul 출력의 threshold 판정이 서로 어긋날 수 있으므로 **g3는 이미 발생한 conflict 신호를 veto하지 않는다**. hard gold와 어긋난 g3는 disposition이 맞아도 proposition error로 남긴다. 이 우선순위가 높은 p를 사실로 보증하지는 않으며, 정보 부족만 있는 질문의 잘못된 양성은 false escalation/wrong reason gate로 탈락시킨다.
 
 fail-safe는 운영상 무효 응답을 정상 판단에 넣지 않고 기존 baseline을 유지하는 방식으로 보장한다. shadow 비교의 virtual defer는 계속 `VALID + REVIEW_REQUIRED`만 사용한다. SKIPPED/ERROR/LATE/INTERRUPTED/ABSTAIN을 후보 제거 또는 0% 수익으로 바꾸지 않는다.
 
@@ -208,13 +220,13 @@ fail-safe는 운영상 무효 응답을 정상 판단에 넣지 않고 기존 ba
 
 | 관점 | Q1 | Q2 | Q3 |
 |---|---|---|---|
-| 단일 명제인가 | 조건 의미와 전략 의도의 실질적 충돌 하나로 제한 가능 | 현행 could mislead는 알 수 없는 UI 해석까지 넓음. 교정 후 같은 rule의 설명과 state 의미 불일치 하나로 제한 | 두 review를 위한 필수 의미가 부족한가라는 한 명제. 어느 질문이 부족한지는 scalar로 분리되지 않음 |
+| 단일 명제인가 | 조건 의미와 전략 의도의 근거 있는 실질적 충돌 하나로 제한 가능 | 현행 could mislead는 알 수 없는 UI 해석까지 넓음. 교정 후 같은 rule의 설명과 state 의미 불일치 하나로 제한 | 근거 있는 충돌이 없고 필수 의미 누락 때문에 전체 review를 마칠 수 없는가라는 한 명제. 질문별 부족 위치는 scalar로 분리되지 않음 |
 | current state만으로 가능한가 | 명시된 description과 condition으로 제한하면 가능 | 현행 entry_context/baseline만으로 실제 표시 의미를 비교할 수 없음. 이미 있는 strategy_description 참조를 허용하면 가능한 사례가 있음 | field 존재는 local, 그 뒤 남는 의미 누락은 가능 |
 | deterministic 중복인가 | 숫자 PASS/FAIL 재판정은 중복. 설명 조합의 의미만 검토 | role/flag 모순과 가격 유효성은 local. 자연어 description과 role의 의미 비교만 유지 | 필수 field 누락/unknown mapping/크기 초과는 local에서 처리. Q3로 구제하지 않음 |
 | normal baseline p의 가능한 이유 | material의 정도, 축약 설명, 응답 척도. 원인 미확정 | 실제 UI 부재 및 후보를 실행 지시로 오해할 수 있는 넓은 wording. 원인 미확정 | reliably와 ambiguous가 일반적 불확실성까지 포함할 수 있음. 원인 미확정 |
 | 실제 분리 증거 | 명백한 below/above는 .91, normal은 .19 전후로 제한적 지지 | 유효한 clear positive군이 없어 감도·분리 미입증 | 쉬운 부족 .87–.88 대 normal .32–.40으로 가치 가설 지지 |
 | 사용자 추가 가치 | PASS 조건과 전략 설명의 불일치 재확인 | 확인 조건과 실행 범위 설명의 혼동 재확인 | 빠진 의미를 모델이 보충하여 단정하는 일을 억제 |
-| 결정 | KEEP + CLARIFY | MODIFY / KEEP FOR V2 VALIDATION | KEEP + CLARIFY |
+| 결정 | KEEP + CLARIFY | MODIFY / KEEP FOR V2 VALIDATION | REDEFINE / KEEP 3-NOUL FOR V2 VALIDATION |
 
 baseline p의 원인은 가설이며 확인된 provider 특성이 아니다.
 
@@ -224,13 +236,15 @@ baseline p의 원인은 가설이며 확인된 provider 특성이 아니다.
 
 아래는 후속 새 question version의 문안이다. V1 instructions/hash는 변경하지 않는다. Q2의 참조 범위를 명시적으로 고치지만 **외부 state field 추가는 요구하지 않는다**.
 
+공통 기준: Q1/Q2는 **제공된 해당 질문의 근거로 성립하는 명시적 충돌이 있는가**를 묻는다. 빠진 의미를 보충해야만 생기는 가상 충돌은 양성이 아니다. 한 질문의 필수 의미가 빠져도 다른 질문의 근거가 완결되어 있으면 그 충돌은 그대로 판단한다. Q1/Q2의 false는 “근거 있는 충돌이 제시되지 않음”이며, 의미 일치나 검토 완결을 항상 보증하지 않는다. 충돌이 없을 때 필수 의미 부족에 따른 유보 여부는 Q3가 구분한다. 세 질문은 같은 state를 함께 읽으며 Q3가 다른 Noul 값이나 threshold를 입력으로 받는 재귀 구조는 아니다.
+
 **Q1 — strategy_context_conflict**
 
 > 제공된 strategy description의 조건 관련 의도와, 이미 PASS로 판정된 condition_context의 의미 사이에 사용자가 재확인할 만한 명시적·실질적 불일치가 있는가. entry role 비교는 Q2에 맡긴다. 숫자 판정을 다시 계산하거나 미기재 시장 조건을 보충하지 않는다.
 
 true: 주어진 조건 의미가 설명된 의도를 부정하거나 배제한다.
 
-false: 의미가 일치하거나 명시적으로 허용된 변동 범위다. 통상적인 미래 불확실성은 충돌이 아니다.
+false: 의미가 일치하거나 명시적으로 허용된 변동 범위다. 또는 필수 의도·정의가 빠져 제공된 근거만으로 명시적 충돌이 성립하지 않는다. 통상적인 미래 불확실성은 충돌이 아니다.
 
 **Q2 — entry_context_conflict**
 
@@ -238,19 +252,19 @@ false: 의미가 일치하거나 명시적으로 허용된 변동 범위다. 통
 
 true: 설명이 확인 용도로 제한한 같은 rule을 entry context가 실행 가능하다고 표현하는 등, 양쪽 근거가 실제로 제공되고 의미가 반대다.
 
-false: condition-only를 false로 구분하는 등 양쪽 의미가 일치한다. RANGE·SEPARATED·NEAR·overlap 자체는 양성 근거가 아니다. 입력에 없는 화면 문구나 사용자 오독을 창작하지 않는다.
+false: condition-only를 false로 구분하는 등 양쪽 의미가 일치한다. 또는 같은 rule인지 등 필수 연결이 빠져 제공된 근거만으로 명시적 충돌이 성립하지 않는다. RANGE·SEPARATED·NEAR·overlap 자체는 양성 근거가 아니다. 입력에 없는 화면 문구나 사용자 오독을 창작하지 않는다.
 
-description이 다른 band를 설명할 가능성이 남으면 Q2 양성 gold를 강제하지 않는다. 동일 rule이라는 필수 대응 관계가 빠졌다면 Q3 검증 대상이다. state 자체 enum/boolean 모순과 기존 deterministic issue는 local owner가 처리한다.
+description이 다른 band를 설명할 가능성이 남으면 그 추측만으로 Q2 양성 gold를 만들지 않는다. 동일 rule이라는 필수 대응 관계가 빠졌고 Q1에도 명백한 충돌이 없다면 Q3 검증 대상이다. Q1 충돌이 독립적으로 명백하면 Q2의 누락이 Q1 review를 막지 않는다. state 자체 enum/boolean 모순과 기존 deterministic issue는 local owner가 처리한다.
 
-**Q3 — review_evidence_insufficient**
+**Q3 — overall_semantic_review_insufficient**
 
-> Q1/Q2 중 적어도 하나의 제한된 의미 판단에 필요한 의도·용어·지시 대상이 제공되지 않아, 그 빠진 의미를 창작해야만 판단할 수 있는가.
+> 제공된 근거만으로 Q1 또는 Q2의 명시적·실질적 충돌을 하나도 확립할 수 없고, 적어도 하나의 제한된 의미 판단에 필수인 의도·용어·지시 대상이 빠져 전체 semantic review를 마칠 수 없는가.
 
-true: 필수 정의 또는 같은 rule과의 대응 관계가 없고, 서로 다른 보충에 따라 결론이 달라진다.
+true: **근거 있는 명백한 충돌 없음 AND 필수 의미 누락 있음**. 누락된 정의나 같은 rule과의 대응 관계를 서로 다르게 보충하면 해당 비교 결론이 달라지며, 누락 없이 끝낼 수 있는 다른 비교에서도 충돌이 확립되지 않는다.
 
-false: 의미가 제공되어 일치/불일치를 검토할 수 있다. 명백한 모순, 일반적인 정도의 망설임, 미래 불명, News/종목명/가격 상세의 의도적 제외는 부족이 아니다.
+false: Q1 또는 Q2 중 하나라도 제공된 근거로 명백한 충돌이 성립한다. 다른 질문의 의미가 부족해도 같다. 또는 두 비교에 필요한 의미가 제공되어 있다. 일반적인 정도의 망설임, 미래 불명, News/종목명/가격 상세의 의도적 제외만으로 true가 되지 않는다.
 
-Q3가 참이면 전체 review를 유보한다. Q1만 부분 채택하는 확장은 넣지 않는다. 반대로 clear conflict를 근거 부족으로 처리하지 않도록 false-abstain trap으로 검증한다.
+Q3는 질문별 completeness를 모두 보고하는 flag가 아니다. Q3=false도 두 질문 모두 충분하다는 뜻이 아니다. **근거가 있는 질문의 충돌만 review reason으로 채택**하고, 충돌 gate가 모두 미도달한 경우에만 Q3 gate로 ABSTAIN한다. 별도 네 번째 Noul이나 질문별 insufficiency 출력은 추가하지 않는다. 이 3-Noul 구조로 부족 위치를 사용자에게 확정 표시할 수 없다는 한계는 수용한다. 양쪽 비교 중 하나라도 review가 필요한 제품 목적을 충족하며, 누락된 쪽을 검토 완료로 인증하지 않는다.
 
 **관찰 사실 → 문제 → 선택지 → 채택 결정 → 이유 → 다음 검증**: Q1/Q3에는 제한적 분리, Q2에는 무효 gold와 범위 불일치 → 세 질문 무조건 유지도 일괄 삭제도 부적절 → 삭제 / 현상 유지 / 제한 교정 → **교정된 세 질문을 새 version으로 검증** → 기존 state 안에서 측정 가능한 보조 가치가 있음 → V2에서 Q1/Q2 단독 양성과 정확한 reason을 요구한다. Q2가 실패하면 삼문항 정책 전체를 FAIL로 하고, 몰래 제외하여 PASS로 만들지 않는다. 삭제하려면 새 question/protocol로 검증한다.
 
@@ -302,7 +316,9 @@ trial 중 identity가 달라지면 그 응답을 원 cohort의 VALID에 넣지 �
 
 ### 10.1 구성과 독립성
 
-**24개 신규 fixture**를 선택용 `v2-s01..s12`와 확인용 `v2-v01..v12`로 나눈다. 각 partition은 음성 대조 4, Q1 단독 충돌 2, Q2 단독 충돌 2, 의미 부족 2, 복합 충돌 1, soft ambiguity 1이다. 모든 fixture는 세 번 반복한다.
+**24개 신규 fixture**를 선택용 `v2-s01..s12`와 확인용 `v2-v01..v12`로 나눈다. 각 partition은 음성 대조 4, Q1 단독 충돌 2, Q2 단독 충돌 2, 충돌 없는 의미 부족 2, 복합 충돌 1, soft ambiguity 1이다. Q1 단독 충돌 2개 중 1개는 Q2 insufficient, Q2 단독 충돌 2개 중 1개는 Q1 insufficient인 hard 사례다. 모든 fixture는 세 번 반복한다.
+
+cross-question suppression 재검토로 `s06/v06`, `s08/v08`의 기존 완결된 단독 충돌 사례를 교체했다. `s05/v05`, `s07/v07`은 완결된 단독 충돌 대조로 유지하고, `s09/v09`, `s10/v10`은 **명백한 충돌 없이 필수 의미 하나만 빠진 ABSTAIN** 대조로 유지한다. 후자의 Q1/Q2 gold는 아래의 근거 기반 명제 정의에 맞춰 명시한다. 총수·partition·hard/soft 수·호출 계획은 바꾸지 않는다.
 
 V1 state의 기대값만 고쳐 재사용하지 않는다. V1은 새 architecture의 동기이며, V2의 payload·question 의미·gold·partition·선택 규칙을 **V2 응답 이전**에 고정한다. 선택용 결과로 하나를 선택한 뒤 확인용은 그 하나만 acceptance 판정한다. 확인용 결과로 다른 후보를 골라내는 경로는 없다. 이는 새 synthetic 자료의 내부 역할 분리이며, 접근 금지된 기존 Holdout 자료와 아무 관련이 없다.
 
@@ -355,7 +371,7 @@ E의 공통부는 `price_rule.kind="RANGE"`, `price_rule.status="MET"`, `action.
 
 ### 10.3 선택용 12 fixture
 
-T/F는 semantic proposition의 긍정/부정이며 특정 확률 band가 아니다. `*`는 의미 부족으로 정답을 강제하지 않는 질문이다. hard는 모든 반복에서 해당 명제 방향의 threshold 판정과 disposition을 요구한다. soft는 한 개 band를 hard truth로 만들지 않는다.
+T/F는 §7의 semantic proposition의 긍정/부정이며 특정 확률 band가 아니다. 의미가 부족한 Q1/Q2도 **제공된 근거로 충돌이 성립하는가**의 답은 F로 고정한다. 미지의 실제 관계가 일치한다는 gold가 아니다. 정보 부족에 따른 추측 양성을 허용하면 단독 충돌에 잘못된 reason이 붙거나 ABSTAIN 대조가 REVIEW_REQUIRED로 바뀌므로, V2 hard gold에서는 기존 `*`를 사용하지 않는다. hard는 모든 반복에서 세 명제 방향의 threshold 판정과 정확한 disposition/reason set을 요구한다. soft는 한 개 band를 hard truth로 만들지 않는다. §4의 역사적 V1 ANY gold에는 이 새 정의를 소급 적용하지 않는다.
 
 | fixture_id | purpose | state = S(description; C; E; horizon) | expected semantic proposition (Q1,Q2,Q3) / disposition | hard/soft | why this is valid gold |
 |---|---|---|---|---|---|
@@ -364,11 +380,11 @@ T/F는 semantic proposition의 긍정/부정이며 특정 확률 band가 아니�
 | v2-s03 | false-positive trap: 확인 band | `Rising averages above the slower average fit this setup. The only rule in entry_context is a confirmation band, never an executable range. Candidate status does not change that role.`; R; C; SHORT | F,F,F / PASS_THROUGH | hard | V1 오류와 같은 개념 경계를 새 state에서 명시. 비실행과 후보 상태는 양립 |
 | v2-s04 | false-abstain trap: 불필요한 정보 제외 | `Positive sector-relative strength with a rising average is the intended context. The entry_context rule is executable. Company identity, news and target prices play no role in these meaning comparisons.`; SP; X; SHORT | F,F,F / PASS_THROUGH | hard | 검토할 조건과 rule 의미가 모두 있고 금지·불필요 정보만 빠짐 |
 | v2-s05 | clear strategy conflict: 방향 | `Only falling averages with the 20-day below the 60-day fit this strategy; the opposite rising arrangement is excluded. The entry_context rule is executable.`; R; X; SHORT | T,F,F / REVIEW_REQUIRED(Q1) | hard | 설명이 배제한 조합을 conditions가 명시. 산술 없이 반대 관계 확인 |
-| v2-s06 | clear strategy conflict: 상대강도 | `Sector underperformance with a falling average is required; sector outperformance with a rising average contradicts that intent. The entry_context rule is executable.`; SP; X; SHORT | T,F,F / REVIEW_REQUIRED(Q1) | hard | positive/rising과 명시적 underperformance/falling 의도가 반대 |
+| v2-s06 | clear Q1 conflict + Q2 insufficient | `Sector underperformance with a falling average is required; sector outperformance with a rising average contradicts that intent. Band Alpha is confirmation-only and band Beta is executable. The entry_context rule represents the selected band.`; SP; X; SHORT | T,F,F / REVIEW_REQUIRED(Q1) | hard | Q1은 positive/rising과 명시적으로 반대. selected band의 대응은 빠져 Q2 충돌을 확립할 수 없지만 Q1은 완결. 따라서 Q3=false |
 | v2-s07 | clear entry conflict: 확인→실행 혼동 | `Rising averages above the slower average fit the strategy. The sole rule represented in entry_context is confirmation-only and must not denote an executable entry range.`; R; X; SHORT | F,T,F / REVIEW_REQUIRED(Q2) | hard | 같은 rule이라는 지시가 명확하고 설명은 확인 전용, state는 실행 가능 |
-| v2-s08 | clear entry conflict: 실행→확인 혼동 | `Falling averages with the 20-day below the 60-day are allowed. The single entry_context rule specifically denotes an executable range, not a strategy confirmation threshold.`; F; C; SHORT | F,T,F / REVIEW_REQUIRED(Q2) | hard | 같은 rule의 실행 의미를 설명하지만 state는 확인 전용. 조건은 일치 |
-| v2-s09 | clear evidence insufficiency: 전략 용어 | `Conditions are interpreted according to context class K. Only that class defines the intended directional combination. The entry_context rule is an executable range.`; R; X; SHORT | *,*,T / ABSTAIN | hard | K의 정의가 없어 Q1 결론은 보충한 의미에 따라 달라짐. 필수 field는 존재 |
-| v2-s10 | clear evidence insufficiency: rule 지시 대상 | `Rising averages above the slower average fit this setup. Band Alpha is confirmation-only and band Beta is executable. The rule in entry_context represents the selected band.`; R; X; SHORT | *,*,T / ABSTAIN | hard | selected가 Alpha인지 Beta인지 빠져 Q2 판단에 필요한 대응 관계가 없음 |
+| v2-s08 | clear Q2 conflict + Q1 insufficient | `Context class K alone defines which directional condition combination fits this strategy. The single entry_context rule specifically denotes an executable range, not a strategy confirmation threshold.`; F; C; SHORT | F,T,F / REVIEW_REQUIRED(Q2) | hard | K 정의가 없어 Q1 충돌은 확립 불가. 같은 rule의 실행 의미와 확인 전용 state는 명백히 반대이며 K와 독립. 따라서 Q3=false |
+| v2-s09 | no clear conflict + Q1 required definition missing | `Conditions are interpreted according to context class K. Only that class defines the intended directional combination. The entry_context rule is an executable range.`; R; X; SHORT | F,F,T / ABSTAIN | hard | K 정의가 없어 Q1 충돌을 확립 불가, Q2는 일치. 필수 field는 있지만 Q1에 필요한 정의가 빠져 전체 review 미완결 |
+| v2-s10 | no clear conflict + Q2 required link missing | `Rising averages above the slower average fit this setup. Band Alpha is confirmation-only and band Beta is executable. The rule in entry_context represents the selected band.`; R; X; SHORT | F,F,T / ABSTAIN | hard | Q1은 일치. selected가 Alpha인지 Beta인지 빠져 Q2 충돌을 확립 불가. 이 필수 연결 누락 때문에 전체 review 미완결 |
 | v2-s11 | compound conflict / false-abstain trap | `Only falling averages with the 20-day below the 60-day are compatible. The sole rule in entry_context is confirmation-only and is never executable.`; R; X; SHORT | T,T,F / REVIEW_REQUIRED(Q1,Q2) | hard | 두 독립 불일치의 양쪽 정보가 완전. 모순을 부족으로 숨길 수 없음 |
 | v2-s12 | semantic ambiguity: 정도 | `This strategy prefers vigorous upward movement but can accept modest progress. A slightly rising average is a borderline fit. The entry_context rule is executable.`; M; X; SHORT | Q1 정도 모호, Q2 일치, Q3 부족 단정 불가 / 단일 disposition 강제 안 함 | soft | 명시된 정도의 경계여서 material conflict의 강도를 하나의 band로 정하기 어려움 |
 
@@ -383,11 +399,11 @@ T/F는 semantic proposition의 긍정/부정이며 특정 확률 band가 아니�
 | v2-v03 | false-positive trap: 근접 문구 | `The 60-day average above the 120-day and market outperformance fit this setup. The sole entry_context rule is a confirmation band. Its proximity to an execution area does not make it executable.`; L; C; MEDIUM | F,F,F / PASS_THROUGH | hard | 근접 문구와 role은 별개이며 설명과 condition-only false가 일치 |
 | v2-v04 | false-abstain trap: 비관적 맥락도 완결 | `Negative sector-relative strength together with a falling average is deliberately accepted by this strategy. The sole rule in entry_context is an executable range; no external event narrative is needed.`; SN; X; MEDIUM | F,F,F / PASS_THROUGH | hard | 조건의 매력도를 묻지 않음. 하락 맥락도 명시된 의도와 일치하면 부족·충돌 아님 |
 | v2-v05 | clear strategy conflict: 느린 기준 | `The strategy excludes a 60-day average above the 120-day accompanied by market outperformance; it requires the reverse arrangement. The entry_context rule defines executable entries.`; L; X; MEDIUM | T,F,F / REVIEW_REQUIRED(Q1) | hard | 실제 제공된 조합을 description이 직접 배제 |
-| v2-v06 | clear strategy conflict: 반대 방향 | `Sector leadership and a rising average are essential. Sector underperformance combined with a falling average is incompatible. The entry_context rule is executable.`; SN; X; MEDIUM | T,F,F / REVIEW_REQUIRED(Q1) | hard | SN의 의미와 설명된 필수 방향이 반대 |
+| v2-v06 | clear Q1 conflict + Q2 insufficient | `Sector leadership and a rising average are essential. Sector underperformance combined with a falling average is incompatible. One strategy band is executable and the other only confirms conditions. The entry_context rule names the chosen band.`; SN; X; MEDIUM | T,F,F / REVIEW_REQUIRED(Q1) | hard | SN과 필수 방향은 명백히 반대. chosen band의 연결 부재는 Q2에만 해당하므로 Q1 review를 숨기지 않으며 Q3=false |
 | v2-v07 | clear entry conflict: 다른 문구 | `A 60-day average above the 120-day and market outperformance match the intent. The only rule supplied in entry_context marks confirmation, and granting execution meaning to that rule contradicts its purpose.`; L; X; MEDIUM | F,T,F / REVIEW_REQUIRED(Q2) | hard | same rule의 확인 목적과 실행 annotation이 충돌. Q1은 일치 |
-| v2-v08 | clear entry conflict: 역방향 표현 | `Sector underperformance and a falling average are the intended context. For this setup, the entry_context rule is the executable entry range itself, rather than a non-executable confirmation marker.`; SN; C; MEDIUM | F,T,F / REVIEW_REQUIRED(Q2) | hard | 설명은 실행 범위 자체, state는 비실행 확인. 기준값 계산 불필요 |
-| v2-v09 | clear evidence insufficiency: 참조 정의 | `The relationship of the two long averages is evaluated using profile P, which determines whether the observed arrangement matches the strategy. The entry_context rule is executable.`; L; X; MEDIUM | *,*,T / ABSTAIN | hard | P를 긍정/반대 방향 어느 쪽으로 정의하느냐에 따라 Q1 결론이 달라짐 |
-| v2-v10 | clear evidence insufficiency: 연결 부재 | `The supplied negative sector-relative strength and falling average are intentional. One strategy band is executable and the other only confirms conditions. The entry_context rule names the chosen band.`; SN; C; MEDIUM | *,*,T / ABSTAIN | hard | chosen band가 어느 것인지 설명과 entry 사이 연결이 빠짐 |
+| v2-v08 | clear Q2 conflict + Q1 insufficient | `Profile P determines whether the sector-relative strength and average slope match the strategy. The single rule in entry_context is the executable entry range itself, rather than a non-executable confirmation marker.`; SN; C; MEDIUM | F,T,F / REVIEW_REQUIRED(Q2) | hard | P 정의가 없어 Q1 충돌을 확립 불가. 같은 rule의 실행 의미와 비실행 확인 state의 Q2 충돌은 P 없이도 완결. 따라서 Q3=false |
+| v2-v09 | no clear conflict + Q1 required definition missing | `The relationship of the two long averages is evaluated using profile P, which determines whether the observed arrangement matches the strategy. The entry_context rule is executable.`; L; X; MEDIUM | F,F,T / ABSTAIN | hard | P 정의 부재로 Q1 충돌을 확립 불가, Q2는 일치. 서로 다른 P 보충에 따라 비교 결론이 달라져 전체 review 미완결 |
+| v2-v10 | no clear conflict + Q2 required link missing | `The supplied negative sector-relative strength and falling average are intentional. One strategy band is executable and the other only confirms conditions. The entry_context rule names the chosen band.`; SN; C; MEDIUM | F,F,T / ABSTAIN | hard | Q1은 일치. chosen band의 대응이 없어 Q2 충돌을 확립 불가. 필수 의미 연결 하나의 누락으로 전체 review 미완결 |
 | v2-v11 | compound conflict / false-abstain trap | `Only sector leadership with a rising average fits this strategy. The single rule in entry_context is an executable entry range and must not be classified as a confirmation-only threshold.`; SN; C; MEDIUM | T,T,F / REVIEW_REQUIRED(Q1,Q2) | hard | 조건 방향 및 rule 의미가 각각 반대이며 양쪽 근거는 모두 존재 |
 | v2-v12 | semantic ambiguity: 문구 강도 | `The intended structure favors the 60-day above the 120-day with market outperformance. The entry_context band is normally confirmation-only, though its practical entry meaning can vary with context.`; L; C; MEDIUM | Q1 일치, Q2/Q3 해석 여지 / 단일 disposition 강제 안 함 | soft | normally/can vary의 한정 때문에 같은 명확 band를 hard truth로 요구할 수 없음 |
 
@@ -413,7 +429,7 @@ soft 사례의 gold는 “강제할 단일 정답이 없다”는 사전 의미 
 
 ### 11.1 후보와 final을 분리한다
 
-V1 관찰은 0 근처를 요구하지 않는 architecture와 질문별 slot을 제안할 근거다. 어느 threshold가 최적인지는 제공하지 않는다. 특히 Q2가 교정되고 request channel도 달라지므로 V1 수치로 새 질문의 양성 감도를 추정하지 않는다.
+V1 관찰은 0 근처를 요구하지 않는 architecture와 질문별 slot을 제안할 근거다. 어느 threshold가 최적인지는 제공하지 않는다. 특히 Q2가 교정되고 Q3가 overall insufficiency로 재정의되며 request channel도 달라지므로 V1 수치로 새 질문의 양성 감도를 추정하지 않는다. Q1/Q2의 근거 기반 false 기준과 conflict 우선순위도 새 question/policy version에 함께 묶는다.
 
 다음은 **후속 V2 protocol에 넣을 candidate grid 설계**이며 final threshold가 아니다.
 
@@ -421,7 +437,7 @@ V1 관찰은 0 근처를 요구하지 않는 architecture와 질문별 slot을 �
 |---|---|---|
 | T_strategy | {.50, .65, .80} | 약한 다수 신호부터 강한 신호까지 거친 간격으로 비교 |
 | T_entry | {.50, .65, .80} | 같은 초기 탐색 범위지만 Q1과 독립 slot. 같아야 한다는 제약 없음 |
-| T_evidence | {.60, .75, .90} | 의미 부족에 의한 전체 유보를 별도 강도로 검증 |
+| T_evidence | {.60, .75, .90} | conflict gate 미도달 시 overall semantic review insufficiency에 의한 유보를 검증 |
 
 Cartesian product는 27개다. 각 값은 설계자가 정한 탐색 후보이지 industry standard·교정 확률·V1 최적값이 아니다. V1을 새 grid로 sweep하여 정답에 맞는 조합을 찾지 않았다. 간격을 좁혀 .57/.59 등의 관측값을 끼워 맞추지 않는다.
 
@@ -453,16 +469,17 @@ tie-break는 사전 고정한 다음 사전식 순서다.
 
 ### 12.1 분모와 계산
 
-각 partition은 12 fixture × 3회 = 36 planned responses, hard는 11 fixture × 3회 = 33이다. normal/negative control은 4 fixture × 3회 = 12, 충분한 근거의 conflict는 5 × 3 = 15, insufficient는 2 × 3 = 6이다. 나머지 soft는 3 responses다. 반복을 서로 독립적인 의미 사례로 계산하지 않고 fixture 수와 response 수를 함께 보고한다.
+각 partition은 12 fixture × 3회 = 36 planned responses, hard는 11 fixture × 3회 = 33이다. normal/negative control은 4 fixture × 3회 = 12, 근거 있는 conflict는 5 × 3 = 15, 충돌 없는 overall insufficient는 2 × 3 = 6이다. conflict 15 responses 중 다른 질문의 의미가 부족한 cross-question 사례는 2 fixture × 3 = 6이며, 나머지 9는 양쪽 의미가 완결된 conflict다. 나머지 soft는 3 responses다. 반복을 서로 독립적인 의미 사례로 계산하지 않고 fixture 수와 response 수를 함께 보고한다.
 
-질문별 binary decision은 `g1=[p1>=T_strategy]`, `g2=[p2>=T_entry]`, `g3=[p3>=T_evidence]`다. Q3 우선순위와 별개로 hard의 알려진 proposition은 각 g와 직접 비교한다. `*,*,T`에서는 g1/g2를 오답 분모에서 빼고 g3만 비교한다. 각 partition의 hard proposition check는 `(9×3 + 2×1)×3 = 87`이다. 이는 독립적인 표본 87개가 아니다.
+질문별 binary decision은 `g1=[p1>=T_strategy]`, `g2=[p2>=T_entry]`, `g3=[p3>=T_evidence]`다. conflict 우선순위와 별개로 hard의 알려진 proposition은 각 g와 직접 비교한다. 근거 기반 명제 정의로 hard 전부의 Q1/Q2/Q3 gold가 정해지므로 각 partition의 hard proposition check는 `11×3×3 = 99`다. 이전 설계의 87에서 증가한 12 check는 충돌 없는 insufficient 2 fixture의 Q1/Q2 × 3회다. fixture나 호출 수 증가가 아니며 독립적인 표본 99개도 아니다.
 
 | metric | 정의 |
 |---|---|
-| clear gold error | hard에서 알려진 명제의 g가 gold와 다르거나, disposition/reason set이 기대와 다른 경우. 명제 check /87, disposition /33을 각각 보고 |
+| clear gold error | hard에서 알려진 명제의 g가 gold와 다르거나, disposition/reason set이 기대와 다른 경우. 명제 check /99, disposition /33을 각각 보고 |
 | false escalation | hard 음성 12 responses 중 REVIEW_REQUIRED 건수 /12 |
-| false abstention | 충분한 의미의 hard 27 responses 중 ABSTAIN 건수 /27. 음성 12와 conflict 15를 별도 표기 |
+| false abstention | ABSTAIN이 부적절한 hard 27 responses 중 ABSTAIN 건수 /27. 음성 12와 conflict 15를 별도 표기. 다른 질문이 부족해도 근거 있는 conflict는 이 분모에 포함 |
 | missed conflict | hard conflict 15 responses 중 정확한 REVIEW_REQUIRED reason set이 아닌 건수 /15. ABSTAIN도 누락에 포함 |
+| cross-question suppression / reason error | 혼합 hard 6 responses 중 정확한 단독 REVIEW_REQUIRED reason set이 아닌 건수 /6. Q1 충돌+Q2 부족 3, Q2 충돌+Q1 부족 3을 별도 표기. ABSTAIN/PASS_THROUGH 및 부족한 질문의 reason 추가 모두 오류 |
 | missed insufficiency | hard insufficient 6 responses 중 ABSTAIN이 아닌 건수 /6 |
 | wrong reason | hard 단독 conflict에 다른 질문의 reason이 추가되거나 compound에서 reason이 빠진 건수. disposition만 맞아도 오류 |
 | review burden | REVIEW_REQUIRED / VALID, 전체 partition과 category별 병기 |
@@ -474,7 +491,7 @@ tie-break는 사전 고정한 다음 사전식 순서다.
 | reason crossing | REVIEW_REQUIRED 여부가 일정해도 그 reason 집합이 바뀐 fixture 수 /12 |
 | question crossing | 각 g1/g2/g3가 반복 사이 달라진 fixture 수 /12, 질문별 보고 |
 
-E/A-crossing은 D-crossing의 세분 진단이며 서로 더해 독립 위험처럼 계산하지 않는다. Q3가 계속 높아 ABSTAIN이고 g1/g2만 바뀌는 경우는 question crossing에 기록하지만 제품 escalation crossing으로 계산하지 않는다. soft의 raw g 변화도 진단에 남긴다. max/min/절대차는 보조 지표이며 큰 차이가 없어도 경계를 넘으면 실패할 수 있다.
+E/A-crossing은 D-crossing의 세분 진단이며 서로 더해 독립 위험처럼 계산하지 않는다. Q3가 계속 높아도 g1/g2가 모두 false인 상태에서 하나라도 true가 되면 ABSTAIN→REVIEW_REQUIRED로 D/E/A-crossing에 반영한다. conflict reason이 일정한 채 g3만 바뀌면 question crossing에는 기록하지만 제품 disposition crossing은 아니다. soft의 raw g 변화도 진단에 남긴다. max/min/절대차는 보조 지표이며 큰 차이가 없어도 경계를 넘으면 실패할 수 있다. cross-question metric은 missed conflict/wrong reason의 부분집합이며 오류를 더해 독립 사건처럼 세지 않는다.
 
 분모 0은 0%가 아니라 N/A다. 오류·지연·미호출 때문에 응답이 줄어들면 남은 valid만으로 합격하지 않고 완결성 gate에서 실패한다. 원시 records, 전체 planned/attempted/completed/valid 및 identity별 개수를 함께 남긴다.
 
@@ -485,9 +502,10 @@ E/A-crossing은 D-crossing의 세분 진단이며 서로 더해 독립 위험처
 | 사전 설계 완결성 | payload/gold/questions/grid/선택 규칙/caps를 응답 전에 고정, local preflight 및 의미 감사 완료 | 호출 전 BLOCKED |
 | provider/response | planned 36건 모두 on-time VALID, 정확한 3 Noul과 유효 usage/model, 누락·error·late·interrupt 0 | 해당 partition FAIL |
 | identity | request channel 고정, 확인된 concrete가 최초 binding과 전건 일치 | 전체 V2 FAIL, 변경 model 혼합 금지 |
-| 명제 및 행동 | hard proposition mismatch 0/87, hard disposition/reason error 0/33 | 후보 ineligible 또는 확인 단계 FAIL |
+| 명제 및 행동 | hard proposition mismatch 0/99, hard disposition/reason error 0/33 | 후보 ineligible 또는 확인 단계 FAIL |
 | false intervention | false escalation 0/12, false abstention 0/27 | 같은 처리 |
 | 필요한 신호 | missed conflict 0/15, missed insufficiency 0/6, wrong reason 0 | 같은 처리 |
+| 교차 질문 신호 보존 | cross-question suppression / reason error 0/6, 두 방향 각각 0/3 | 같은 처리. 다른 질문의 부족으로 유보하거나 불필요한 reason을 추가한 후보는 탈락 |
 | 반복 제품 경계 | D/E/A/reason crossing 각각 0/12, soft도 포함 | 같은 처리 |
 | hard 질문 경계 | 정답이 고정된 hard proposition의 question crossing 0 | 같은 처리 |
 | burden | 전체 36 VALID에서 review ≤18/36(50%), abstain ≤9/36(25%), intervention ≤24/36(66.67%) | 같은 처리 |
@@ -509,13 +527,13 @@ V2는 미리 정한 세 번을 수행한다. 실패가 난 fixture만 더 호출
 
 ## 13. 제품 적용과 Trial V2 freeze로 넘어갈 조건
 
-사용자에게 보여줄 기본 의미는 유지한다. PASS_THROUGH는 추가 확인 신호 없음, REVIEW_REQUIRED는 해당 의미 충돌 재확인, ABSTAIN은 해석 근거 부족이다. 원시 확률·AI 종목 점수·매수 확률은 기본 사용자 판단 흐름에 추가하지 않는다. 이 문서에서는 frontend를 바꾸지 않는다.
+사용자에게 보여줄 기본 의미는 유지한다. PASS_THROUGH는 추가 확인 신호 없음, REVIEW_REQUIRED는 근거가 있는 해당 의미 충돌 재확인, ABSTAIN은 충돌 신호 없이 전체 review를 마칠 해석 근거가 부족한 경우다. REVIEW_REQUIRED가 다른 질문의 해석까지 완결됐다는 뜻은 아니다. 원시 확률·AI 종목 점수·매수 확률은 기본 사용자 판단 흐름에 추가하지 않는다. 이 문서에서는 frontend를 바꾸지 않는다.
 
 후속 작업의 순서는 다음과 같다. 이번 작업에서 실행하지 않는다.
 
 1. 새 question/disposition/model binding 및 V2 harness를 별도 승인된 구현 작업에서 반영한다. 현재 threshold_low/high 두 slot에 세 threshold를 억지로 넣지 않는다.
 2. Core, Monitor의 stored-answer 재검증, Evaluation의 cohort identity가 같은 새 policy version과 세 threshold를 사용하도록 교정한다. 기존 V1 답변·disposition·artifact는 보존하고 version별 해석을 유지한다.
-3. fake-only로 경계 equality, 잘못된 확률, missing/unknown model, channel 분류, ERROR/LATE/SKIPPED의 null disposition 및 baseline 유지, Q3 우선순위를 검증한다. 이는 후속 구현 의무이며 이번 테스트 실행이 아니다.
+3. fake-only로 경계 equality, 잘못된 확률, missing/unknown model, channel 분류, ERROR/LATE/SKIPPED의 null disposition 및 baseline 유지, §6.1의 conflict 우선순위를 검증한다. 특히 g3=true와 Q1 또는 Q2 gate=true가 함께 나와도 해당 REVIEW_REQUIRED reason을 보존하고, 양 conflict gate=false일 때만 g3=true로 ABSTAIN하는 모든 조합을 확인한다. 이는 후속 구현 의무이며 이번 테스트 실행이 아니다.
 4. 위 24 fixture와 정확한 wire question 문구, candidate grid/선택 규칙, caps를 새 Canary V2 protocol로 호출 전에 동결한다. 최신 계정 정책·비용·requestable model 근거 및 synthetic 전송 승인 범위를 확인한다.
 5. 별도의 실행 권한 아래 Canary V2를 수행하고 선택용→단일 후보 잠금→확인용 순서를 지킨다. V2가 FAIL이면 trial은 계속 BLOCKED다.
 6. V2 PASS 뒤 model request/returned, state/projector/questions/policy/adapter, 선택된 threshold tuple 및 protocol identity를 일치시킨다. account retention/ZDR/billing, 실제 minimized StockScope 전송 승인, 예산 예약과 operational gates를 완료한다. synthetic 승인만으로 실데이터 승인을 승계하지 않는다.
@@ -534,7 +552,7 @@ V2는 미리 정한 세 번을 수행한다. 실패가 난 fixture만 더 호출
 | PROVIDER CONNECTION | **PASS — V1 관측 범위** |
 | MODEL RESPONSE CONTRACT | **PASS — V1 관측 범위** |
 | CANARY V1 POLICY | **INVALID / SUPERSEDED FOR ACCEPTANCE**; 역사적 protocol/report는 보존 |
-| NEW DISPOSITION ARCHITECTURE | **DESIGNED — question-specific one-sided** |
+| NEW DISPOSITION ARCHITECTURE | **DESIGNED — question-specific one-sided, conflict-first / overall insufficiency fallback** |
 | MODEL BINDING POLICY | **REDESIGNED — request channel / returned concrete 분리** |
 | CANARY V2 | **DESIGNED / NOT EXECUTED**; wire/protocol의 machine freeze는 후속 작업 |
 | FINAL THRESHOLDS | **NOT FROZEN** |
@@ -547,3 +565,23 @@ V2는 미리 정한 세 번을 수행한다. 실패가 난 fixture만 더 호출
 이번 검증은 지정된 V1 JSON records의 합계·band mismatch·반복 차이·현재 policy 결과를 독립 산술로 재확인한 것과 이 문서의 일관성 확인이다. 새로운 canary, trial, evaluation, project runtime 또는 테스트 suite를 실행하지 않았다. 생성 산출물은 이 문서 하나다.
 
 보존 확인에서는 명시적으로 읽은 근거 파일 13개의 작업 전후 SHA-256이 일치했다. 대상은 §2의 지정 문서·JSON·TypeSafe 코드뿐이며 금지된 데이터 영역을 탐색하거나 해시하지 않았다.
+
+## 15. Q3 cross-question suppression 재검토 기록 — 2026-10-06
+
+이 절은 같은 날짜의 후속 **문서 한정 재검토** 기록이다. §3–5의 V1 관측·진단과 §14의 최초 작성 시 검증 이력은 당시 기록으로 보존한다. 이번 재검토에서 V1 재채점이나 실행 결과 검증을 다시 수행했다는 뜻이 아니다.
+
+**수정 이유**: 기존 Q3는 Q1/Q2 중 하나라도 필수 의미가 빠지면 true이고 Q3-first가 전체 ABSTAIN을 강제했다. 따라서 Q1 충돌의 근거가 완결되어도 Q2의 연결 누락만으로 그 신호가 사라지며, 반대 방향도 같았다. “필요한 의미 충돌만 추가 검토하는 reviewer”라는 목적에는 유효한 단독 충돌을 보존하는 정책이 필요하다.
+
+| 변경 | 영향 범위와 선택 이유 |
+|---|---|
+| Q3를 overall semantic review insufficiency로 재정의 | §1, §7. 명백한 충돌이 없고 필수 의미가 빠진 경우만 양성. 한 질문의 부족을 전체 veto로 쓰지 않음 |
+| Q1/Q2의 근거 기반 양성·부정 기준 명시 | §7, §10. 누락된 의미를 추측해 양성이나 추가 reason을 만들지 않음. false는 의미 일치 인증이 아님 |
+| Q3-first 폐기, conflict-first 채택 | §6, §12–13. Q3 출력이 동시에 높아도 충돌 reason을 보존. 정책만 뒤집고 부족 질문의 가상 충돌을 허용하는 문제도 gold/gate로 차단 |
+| 3-Noul 구조 유지 | 기존 state 안에서 Q1/Q2 충돌과 전체 유보를 판단. 질문별 부족 위치의 확정 출력은 지원하지 않으며 별도 질문·추가 호출은 없음 |
+| 혼합 hard fixture 교체 | 선택용 s06/s08, 확인용 v06/v08. 각 partition에 두 방향을 모두 포함. s09/s10/v09/v10은 충돌 없는 필수 의미 누락 대조로 유지하며 Q1/Q2 gold를 명시 |
+| 검증 분모·gate 정합성 | §12. hard proposition 87→99/partition, 혼합 사례 오류 0/6 gate 추가. hard disposition 33, 음성 12, conflict 15, overall insufficient 6 및 burden 상한 유지 |
+| 검증 독립성 유지 | 24 fixture, 선택용 12 / 확인용 12, 각 3회. 응답 전 정의 고정, 선택 후 단일 tuple 잠금, 확인 결과로 재선택 금지 |
+
+후속 구현에서는 새 question/policy version과 정확한 wire 문구·hash 및 V2 gold를 함께 고정해야 한다. §9 model binding 정책, §11의 후보 27개와 tie-break, 호출·예산 상한은 변경하지 않는다. **final threshold는 계속 NOT FROZEN**, Canary V2는 NOT EXECUTED, Trial V2는 기존 선행조건 충족 전 BLOCKED다. 교차 질문 신호 보존은 설계상 성질이며 모델이 이 의미를 안정적으로 출력한다는 실증 결과는 아직 없다.
+
+이번 수정 대상은 이 Markdown 문서 하나다. 문서의 정책표·fixture 구성·분모·교차 참조를 정적으로 확인하고, 지정 V1 protocol/report/model binding/설계동결 문서 4개의 수정 전후 SHA-256 일치로 보존을 확인했다. 코드 변경·프로젝트 코드 실행·테스트·API/provider 호출·외부 조회는 하지 않았다. 기존 V1 artifact/report와 다른 문서는 수정하지 않았다.
