@@ -111,7 +111,13 @@ function overallLabel(
   status: JevShadowStatus | null,
   reviews: JevShadowReviewResponse | null,
 ) {
+  if (status && !status.available && status.ready_for_activation) {
+    return "준비됨 · 아직 시작하지 않음";
+  }
   if (status && !status.available) return "준비되지 않음";
+  if (status && !status.enabled && status.ready_for_activation) {
+    return "준비됨 · 아직 시작하지 않음";
+  }
   if (status && !status.enabled) return "사용 안 함";
   if (!reviews) return "상태 확인 중";
   if (!reviews.available) return "준비되지 않음";
