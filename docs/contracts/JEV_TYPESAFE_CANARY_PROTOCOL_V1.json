@@ -1,0 +1,713 @@
+{
+  "artifact_version": "JEV_TYPESAFE_CANARY_PROTOCOL_ARTIFACT_V1",
+  "protocol_id": "JEV-TYPESAFE-CANARY-V1",
+  "status": "FROZEN_BEFORE_REAL_CALLS",
+  "frozen_at": "2026-10-06",
+  "protocol_hash": "62ca6a4477ef3247e296a2e85de1a15ffd2609f2f451158fd6fbb0f0cac7a306",
+  "spec": {
+    "provider_id": "TYPESAFE_SYSTEM_ONE",
+    "public_api_version": "0.2.0",
+    "models_endpoint": "https://api.typesafe.ai/v1/models",
+    "systemone_endpoint": "https://api.typesafe.ai/v1/systemone",
+    "model_discovery_calls_max": 1,
+    "systemone_calls_max": 24,
+    "total_api_calls_max": 25,
+    "repetitions": 2,
+    "api_budget_usd": 0.25,
+    "public_input_price_usd_per_million": 0.042,
+    "public_output_price_usd_per_million": 0.0,
+    "threshold_candidates": [
+      {
+        "low": 0.1,
+        "high": 0.9
+      },
+      {
+        "low": 0.15,
+        "high": 0.85
+      },
+      {
+        "low": 0.2,
+        "high": 0.8
+      }
+    ],
+    "preferred_threshold": {
+      "low": 0.15,
+      "high": 0.85
+    },
+    "question_contract_version": "JEV_TYPESAFE_QUESTIONS_V1",
+    "fixtures": [
+      {
+        "fixture_id": "normal-01",
+        "category": "CLEAR_NORMAL",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "SHORT"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_PHASE1",
+            "strategy_description": "This strategy seeks confirmed trend continuation with price above its medium-term reference and adequate participation."
+          },
+          "condition_context": [
+            {
+              "metric_key": "price_vs_ma20",
+              "status": "PASS",
+              "current_value": "above",
+              "required_value": "above",
+              "semantic_label": "price relation to the 20-day moving average"
+            },
+            {
+              "metric_key": "volume_ratio_20",
+              "status": "PASS",
+              "current_value": "1.3x",
+              "required_value": "at least 1.0x",
+              "semantic_label": "volume versus 20-day average condition"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "EXECUTABLE_ENTRY_RANGE",
+              "executable_entry_range": true
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "ALIGNED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "expected_bands": {
+          "strategy_context_conflict": "LOW",
+          "entry_context_conflict": "LOW",
+          "review_evidence_insufficient": "LOW"
+        },
+        "hard_expectation": true,
+        "note": ""
+      },
+      {
+        "fixture_id": "normal-02",
+        "category": "CLEAR_NORMAL",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "SHORT"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_PHASE1",
+            "strategy_description": "This strategy accepts an executable entry range only after its already-passed trend and participation conditions are satisfied."
+          },
+          "condition_context": [
+            {
+              "metric_key": "ma20_slope",
+              "status": "PASS",
+              "current_value": "rising",
+              "required_value": "rising",
+              "semantic_label": "20-day moving-average slope condition"
+            },
+            {
+              "metric_key": "relative_strength_market",
+              "status": "PASS",
+              "current_value": "positive",
+              "required_value": "positive",
+              "semantic_label": "relative strength versus the broad market"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "EXECUTABLE_ENTRY_RANGE",
+              "executable_entry_range": true
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "ALIGNED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "expected_bands": {
+          "strategy_context_conflict": "LOW",
+          "entry_context_conflict": "LOW",
+          "review_evidence_insufficient": "LOW"
+        },
+        "hard_expectation": true,
+        "note": ""
+      },
+      {
+        "fixture_id": "future-uncertainty-control",
+        "category": "CLEAR_NORMAL",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "SHORT"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_PHASE1",
+            "strategy_description": "This strategy reviews present trend context only. Future returns are intentionally unknown and are not required for this review."
+          },
+          "condition_context": [
+            {
+              "metric_key": "price_vs_ma20",
+              "status": "PASS",
+              "current_value": "above",
+              "required_value": "above",
+              "semantic_label": "price relation to the 20-day moving average"
+            },
+            {
+              "metric_key": "volume_ratio_20",
+              "status": "PASS",
+              "current_value": "1.3x",
+              "required_value": "at least 1.0x",
+              "semantic_label": "volume versus 20-day average condition"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "EXECUTABLE_ENTRY_RANGE",
+              "executable_entry_range": true
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "ALIGNED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "expected_bands": {
+          "strategy_context_conflict": "LOW",
+          "entry_context_conflict": "LOW",
+          "review_evidence_insufficient": "LOW"
+        },
+        "hard_expectation": true,
+        "note": "q3 must not confuse ordinary future uncertainty with insufficient semantic evidence."
+      },
+      {
+        "fixture_id": "strategy-conflict-01",
+        "category": "STRATEGY_CONFLICT",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "SHORT"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_PHASE1",
+            "strategy_description": "This strategy requires price to remain below the 20-day moving average and explicitly avoids above-average price continuation."
+          },
+          "condition_context": [
+            {
+              "metric_key": "price_vs_ma20",
+              "status": "PASS",
+              "current_value": "above",
+              "required_value": "above",
+              "semantic_label": "price relation to the 20-day moving average"
+            },
+            {
+              "metric_key": "ma20_slope",
+              "status": "PASS",
+              "current_value": "rising",
+              "required_value": "rising",
+              "semantic_label": "20-day moving-average slope condition"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "EXECUTABLE_ENTRY_RANGE",
+              "executable_entry_range": true
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "ALIGNED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "expected_bands": {
+          "strategy_context_conflict": "HIGH",
+          "entry_context_conflict": "LOW",
+          "review_evidence_insufficient": "LOW"
+        },
+        "hard_expectation": true,
+        "note": ""
+      },
+      {
+        "fixture_id": "strategy-conflict-02",
+        "category": "STRATEGY_CONFLICT",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "SHORT"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_PHASE1",
+            "strategy_description": "This strategy only accepts weak participation and explicitly rejects unusually active volume."
+          },
+          "condition_context": [
+            {
+              "metric_key": "volume_ratio_20",
+              "status": "PASS",
+              "current_value": "1.6x",
+              "required_value": "at least 1.0x",
+              "semantic_label": "volume versus 20-day average condition"
+            },
+            {
+              "metric_key": "relative_strength_market",
+              "status": "PASS",
+              "current_value": "positive",
+              "required_value": "positive",
+              "semantic_label": "relative strength versus the broad market"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "EXECUTABLE_ENTRY_RANGE",
+              "executable_entry_range": true
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "ALIGNED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "expected_bands": {
+          "strategy_context_conflict": "HIGH",
+          "entry_context_conflict": "LOW",
+          "review_evidence_insufficient": "LOW"
+        },
+        "hard_expectation": true,
+        "note": ""
+      },
+      {
+        "fixture_id": "entry-conflict-01",
+        "category": "ENTRY_CONFLICT",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "SHORT"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_PHASE1",
+            "strategy_description": "This strategy uses a condition threshold as confirmation; that threshold is not itself an executable buy range."
+          },
+          "condition_context": [
+            {
+              "metric_key": "price_vs_ma20",
+              "status": "PASS",
+              "current_value": "above",
+              "required_value": "above",
+              "semantic_label": "price relation to the 20-day moving average"
+            },
+            {
+              "metric_key": "volume_ratio_20",
+              "status": "PASS",
+              "current_value": "1.3x",
+              "required_value": "at least 1.0x",
+              "semantic_label": "volume versus 20-day average condition"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "STRATEGY_CONDITION_THRESHOLD",
+              "executable_entry_range": false
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "SEPARATED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "expected_bands": {
+          "strategy_context_conflict": "LOW",
+          "entry_context_conflict": "HIGH",
+          "review_evidence_insufficient": "LOW"
+        },
+        "hard_expectation": true,
+        "note": ""
+      },
+      {
+        "fixture_id": "entry-conflict-02",
+        "category": "ENTRY_CONFLICT",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "SHORT"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_PHASE1",
+            "strategy_description": "This strategy separates confirmation bands from executable entries; confirmation bands must not be presented as buy ranges."
+          },
+          "condition_context": [
+            {
+              "metric_key": "distance_to_ma20",
+              "status": "PASS",
+              "current_value": "near",
+              "required_value": "within condition band",
+              "semantic_label": "distance to the 20-day moving average condition"
+            },
+            {
+              "metric_key": "rsi14",
+              "status": "PASS",
+              "current_value": "58",
+              "required_value": "within confirmation band",
+              "semantic_label": "14-period RSI condition"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "STRATEGY_CONDITION_THRESHOLD",
+              "executable_entry_range": false
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "SEPARATED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "expected_bands": {
+          "strategy_context_conflict": "LOW",
+          "entry_context_conflict": "HIGH",
+          "review_evidence_insufficient": "LOW"
+        },
+        "hard_expectation": true,
+        "note": ""
+      },
+      {
+        "fixture_id": "evidence-insufficient-01",
+        "category": "EVIDENCE_INSUFFICIENT",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "SHORT"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_PHASE1",
+            "strategy_description": "This strategy has a specific semantic intent that cannot be determined from the supplied abbreviated context."
+          },
+          "condition_context": [
+            {
+              "metric_key": "price_vs_ma20",
+              "status": "PASS",
+              "current_value": null,
+              "required_value": null,
+              "semantic_label": "price relation"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "UNSPECIFIED",
+              "executable_entry_range": false
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "UNKNOWN",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "expected_bands": {
+          "strategy_context_conflict": "ANY",
+          "entry_context_conflict": "ANY",
+          "review_evidence_insufficient": "HIGH"
+        },
+        "hard_expectation": true,
+        "note": ""
+      },
+      {
+        "fixture_id": "evidence-insufficient-02",
+        "category": "EVIDENCE_INSUFFICIENT",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "SHORT"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_PHASE1",
+            "strategy_description": "The strategy description is intentionally incomplete for this synthetic evidence-sufficiency control."
+          },
+          "condition_context": [
+            {
+              "metric_key": "volume_ratio_20",
+              "status": "PASS",
+              "current_value": null,
+              "required_value": null,
+              "semantic_label": "participation condition"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "UNSPECIFIED",
+              "executable_entry_range": false
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "UNKNOWN",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "expected_bands": {
+          "strategy_context_conflict": "ANY",
+          "entry_context_conflict": "ANY",
+          "review_evidence_insufficient": "HIGH"
+        },
+        "hard_expectation": true,
+        "note": ""
+      },
+      {
+        "fixture_id": "ambiguous-strategy-01",
+        "category": "AMBIGUOUS_BOUNDARY",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "SHORT"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_PHASE1",
+            "strategy_description": "This strategy usually prefers continuation but can tolerate mild pullback characteristics when the broader structure remains constructive."
+          },
+          "condition_context": [
+            {
+              "metric_key": "price_vs_ma20",
+              "status": "PASS",
+              "current_value": "near threshold",
+              "required_value": "confirmation threshold",
+              "semantic_label": "price relation to the 20-day moving average"
+            },
+            {
+              "metric_key": "relative_strength_market",
+              "status": "PASS",
+              "current_value": "slightly positive",
+              "required_value": "positive",
+              "semantic_label": "relative strength versus the broad market"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "EXECUTABLE_ENTRY_RANGE",
+              "executable_entry_range": true
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "ALIGNED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "expected_bands": {
+          "strategy_context_conflict": "ANY",
+          "entry_context_conflict": "LOW",
+          "review_evidence_insufficient": "LOW"
+        },
+        "hard_expectation": false,
+        "note": ""
+      },
+      {
+        "fixture_id": "ambiguous-entry-01",
+        "category": "AMBIGUOUS_BOUNDARY",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "SHORT"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_PHASE1",
+            "strategy_description": "This strategy uses a confirmation band near the eventual execution area, but the two concepts remain distinct."
+          },
+          "condition_context": [
+            {
+              "metric_key": "price_vs_ma20",
+              "status": "PASS",
+              "current_value": "above",
+              "required_value": "above",
+              "semantic_label": "price relation to the 20-day moving average"
+            },
+            {
+              "metric_key": "volume_ratio_20",
+              "status": "PASS",
+              "current_value": "1.3x",
+              "required_value": "at least 1.0x",
+              "semantic_label": "volume versus 20-day average condition"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "CONDITION_BAND_NEAR_EXECUTION",
+              "executable_entry_range": false
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "NEAR",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "expected_bands": {
+          "strategy_context_conflict": "LOW",
+          "entry_context_conflict": "ANY",
+          "review_evidence_insufficient": "LOW"
+        },
+        "hard_expectation": false,
+        "note": ""
+      },
+      {
+        "fixture_id": "compound-conflict-01",
+        "category": "COMPOUND_CONFLICT",
+        "state": {
+          "context": {
+            "market": "SYNTHETIC",
+            "as_of_date": "2026-10-06",
+            "horizon_intent": "SHORT"
+          },
+          "strategy_context": {
+            "strategy_key": "SYNTHETIC_PHASE1",
+            "strategy_description": "This strategy requires price below its reference and treats only an explicitly executable range as an entry."
+          },
+          "condition_context": [
+            {
+              "metric_key": "price_vs_ma20",
+              "status": "PASS",
+              "current_value": "above",
+              "required_value": "above",
+              "semantic_label": "price relation to the 20-day moving average"
+            },
+            {
+              "metric_key": "ma20_slope",
+              "status": "PASS",
+              "current_value": "rising",
+              "required_value": "rising",
+              "semantic_label": "20-day moving-average slope condition"
+            }
+          ],
+          "entry_context": {
+            "price_rule": {
+              "kind": "RANGE",
+              "status": "MET",
+              "semantic_role": "STRATEGY_CONDITION_THRESHOLD",
+              "executable_entry_range": false
+            },
+            "action": {
+              "status": "ENTRY_CANDIDATE"
+            },
+            "price_consistency": {
+              "classification": "SEPARATED",
+              "semantic_overlap": false
+            }
+          },
+          "baseline": {
+            "action": "ENTRY_CANDIDATE",
+            "candidate_state": "READY"
+          }
+        },
+        "expected_bands": {
+          "strategy_context_conflict": "HIGH",
+          "entry_context_conflict": "HIGH",
+          "review_evidence_insufficient": "LOW"
+        },
+        "hard_expectation": true,
+        "note": ""
+      }
+    ],
+    "real_stock_data_allowed": false,
+    "actual_trial_activation_allowed": false
+  }
+}

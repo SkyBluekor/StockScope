@@ -17,6 +17,7 @@ from .typesafe_questions import JEV_TYPESAFE_QUESTION_IDS
 
 
 TYPESAFE_SYSTEM_ONE_URL = "https://api.typesafe.ai/v1/systemone"
+TYPESAFE_MODELS_URL = "https://api.typesafe.ai/v1/models"
 
 
 class TypeSafeJevProviderError(RuntimeError):
@@ -51,6 +52,66 @@ def load_typesafe_jev_api_key() -> str | None:
         dotenv_values(PROJECT_ROOT / ".env").get("JEV_API_KEY") or ""
     ).strip()
     return value or None
+
+
+async def discover_typesafe_models(
+    *,
+    deadline_seconds: float = 10.0,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> list[dict[str, str]]:
+    api_key = load_typesafe_jev_api_key()
+    if not api_key:
+        raise TypeSafeJevProviderError("JEV_API_KEY_MISSING")
+    headers = {"Authorization": f"Bearer {api_key}"}
+    timeout = httpx.Timeout(max(0.1, float(deadline_seconds)))
+    try:
+        async with httpx.AsyncClient(
+            timeout=timeout,
+            transport=transport,
+        ) as client:
+            response = await client.get(
+                TYPESAFE_MODELS_URL,
+                headers=headers,
+            )
+    except httpx.TimeoutException as exc:
+        raise TypeSafeJevProviderError("TYPESAFE_MODELS_TIMEOUT") from exc
+    except httpx.HTTPError as exc:
+        raise TypeSafeJevProviderError("TYPESAFE_MODELS_NETWORK_ERROR") from exc
+
+    if response.status_code == 401:
+        raise TypeSafeJevProviderError("TYPESAFE_PROVIDER_AUTH_ERROR")
+    if response.status_code == 429:
+        raise TypeSafeJevProviderError("TYPESAFE_PROVIDER_RATE_LIMIT")
+    if response.status_code >= 500:
+        raise TypeSafeJevProviderError("TYPESAFE_PROVIDER_UNAVAILABLE")
+    if response.status_code >= 400:
+        raise TypeSafeJevProviderError("TYPESAFE_MODELS_REQUEST_REJECTED")
+    try:
+        payload = response.json()
+    except json.JSONDecodeError as exc:
+        raise TypeSafeJevProviderError("TYPESAFE_MODELS_INVALID_JSON") from exc
+    if not isinstance(payload, dict) or not isinstance(payload.get("models"), list):
+        raise TypeSafeJevProviderError("TYPESAFE_MODELS_RESPONSE_INVALID")
+
+    models: list[dict[str, str]] = []
+    for item in payload["models"]:
+        if not isinstance(item, dict):
+            raise TypeSafeJevProviderError("TYPESAFE_MODEL_METADATA_INVALID")
+        name = str(item.get("name") or "").strip()
+        description = str(item.get("description") or "").strip()
+        release_date = str(item.get("release_date") or "").strip()
+        if not name or not description or not release_date:
+            raise TypeSafeJevProviderError("TYPESAFE_MODEL_METADATA_INVALID")
+        models.append(
+            {
+                "name": name,
+                "description": description,
+                "release_date": release_date,
+            }
+        )
+    if not models:
+        raise TypeSafeJevProviderError("TYPESAFE_MODELS_EMPTY")
+    return models
 
 
 def _token_count(value: Any, field: str) -> int:
