@@ -10,18 +10,23 @@ JEV_TYPESAFE_SCHEMA_VERSION = "JEV_TYPESAFE_STORAGE_V2"
 JEV_TYPESAFE_PROTOCOL_VERSION = "JEV_TYPESAFE_TRIAL_PROTOCOL_V2"
 JEV_TYPESAFE_STATE_CONTRACT_VERSION = "JEV_TYPESAFE_STATE_V1"
 JEV_TYPESAFE_PROJECTOR_VERSION = "JEV_TYPESAFE_PROJECTOR_V1"
+JEV_TYPESAFE_STATE_CONTRACT_VERSION_V3 = "JEV_TYPESAFE_STATE_V3"
+JEV_TYPESAFE_PROJECTOR_VERSION_V3 = "JEV_TYPESAFE_PROJECTOR_V3"
 
 JEV_TYPESAFE_QUESTION_CONTRACT_VERSION_V1 = "JEV_TYPESAFE_QUESTIONS_V1"
 JEV_TYPESAFE_QUESTION_CONTRACT_VERSION_V2 = "JEV_TYPESAFE_QUESTIONS_V2"
+JEV_TYPESAFE_QUESTION_CONTRACT_VERSION_V3 = "JEV_TYPESAFE_QUESTIONS_V3"
 JEV_TYPESAFE_QUESTION_CONTRACT_VERSION = JEV_TYPESAFE_QUESTION_CONTRACT_VERSION_V1
 
 JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V1 = "JEV_TYPESAFE_DISPOSITION_POLICY_V1"
 JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V2 = "JEV_TYPESAFE_DISPOSITION_POLICY_V2"
+JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V3 = "JEV_TYPESAFE_DISPOSITION_POLICY_V3"
 JEV_TYPESAFE_DISPOSITION_POLICY_VERSION = JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V1
 
 JEV_TYPESAFE_ADAPTER_VERSION = "JEV_TYPESAFE_SYSTEMONE_ADAPTER_V1"
 JEV_TYPESAFE_PROVIDER_ID = "TYPESAFE_SYSTEM_ONE"
 JEV_TYPESAFE_ALLOWED_PAYLOAD_CLASS = "MINIMIZED_DERIVED_SCANNER_SEMANTIC_STATE_V1"
+JEV_TYPESAFE_ALLOWED_PAYLOAD_CLASS_V3 = "MINIMIZED_SEMANTIC_SOURCE_Q1_STATE_V1"
 
 JEV_TYPESAFE_OPERATIONAL_STATUSES = frozenset(
     {"SKIPPED", "PENDING", "VALID", "ERROR", "LATE", "INTERRUPTED"}
@@ -125,7 +130,11 @@ class TypeSafeJevTrialProtocolSpec:
             question_version == JEV_TYPESAFE_QUESTION_CONTRACT_VERSION_V2
             and policy_version == JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V2
         )
-        if not (is_v1 or is_v2):
+        is_v3 = (
+            question_version == JEV_TYPESAFE_QUESTION_CONTRACT_VERSION_V3
+            and policy_version == JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V3
+        )
+        if not (is_v1 or is_v2 or is_v3):
             missing.append("contract_version_pair")
         elif is_v1:
             if self.threshold_low is None:
@@ -137,7 +146,7 @@ class TypeSafeJevTrialProtocolSpec:
                 high = float(self.threshold_high)
                 if not (0.0 <= low < 0.5 < high <= 1.0):
                     missing.append("threshold_order")
-        else:
+        elif is_v2:
             for name in (
                 "threshold_strategy",
                 "threshold_entry",
@@ -145,6 +154,13 @@ class TypeSafeJevTrialProtocolSpec:
             ):
                 if not _valid_probability_threshold(getattr(self, name)):
                     missing.append(name)
+        else:
+            if not _valid_probability_threshold(self.threshold_strategy):
+                missing.append("threshold_strategy")
+            if self.state_contract_version != JEV_TYPESAFE_STATE_CONTRACT_VERSION_V3:
+                missing.append("state_contract_version")
+            if self.projector_version != JEV_TYPESAFE_PROJECTOR_VERSION_V3:
+                missing.append("projector_version")
 
         if tuple(self.horizon_intents) != ("SHORT", "MEDIUM"):
             missing.append("horizon_intents")
@@ -187,7 +203,12 @@ class TypeSafeJevTrialProtocolSpec:
             ):
                 if not str(getattr(self, name) or "").strip():
                     missing.append(name)
-            if self.allowed_payload_class != JEV_TYPESAFE_ALLOWED_PAYLOAD_CLASS:
+            expected_payload_class = (
+                JEV_TYPESAFE_ALLOWED_PAYLOAD_CLASS_V3
+                if is_v3
+                else JEV_TYPESAFE_ALLOWED_PAYLOAD_CLASS
+            )
+            if self.allowed_payload_class != expected_payload_class:
                 missing.append("allowed_payload_class")
         return sorted(set(missing))
 
