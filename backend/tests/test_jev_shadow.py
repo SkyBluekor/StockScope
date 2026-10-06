@@ -13,6 +13,11 @@ from app.jev import (
     JevTrialProtocolSpec,
     build_comparison_report,
 )
+from app.api.jev_shadow import (
+    jev_shadow_status,
+    list_jev_shadow_reviews,
+)
+from app.main import app
 from app.prospective import ProspectiveCatalog
 from app.prospective.models import ProspectiveCaptureRequest
 from tools.data.migrate_jev_shadow_v1 import migrate_jev_shadow_store
@@ -442,3 +447,106 @@ def test_comparison_uses_valid_review_required_and_closed_only() -> None:
         "incremental_return_per_opportunity_pct"
     ] == pytest.approx(5.0 / 3.0)
     assert report["retained_candidate_loss_rate"] == 1.0
+
+
+
+@pytest.mark.asyncio
+async def test_monitor_api_returns_read_only_safe_projection(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    sentinel = "JEV_MONITOR_SECRET_MUST_NOT_LEAK"
+    monkeypatch.setenv("JEV_API_KEY", sentinel)
+    db = _simulation_db(tmp_path / "simulation.db")
+    capture = _capture(db)
+    catalog = JevCatalog(db)
+    _frozen_protocol(catalog)
+
+    service = JevShadowService(
+        db,
+        provider_override=FakeJevProvider(
+            mode="REVIEW_REQUIRED"
+        ),
+    )
+    review = (await service.process_capture(capture["id"]))[0]
+    assert review["status"] == "VALID"
+    assert review["decision"] == "REVIEW_REQUIRED"
+
+    monkeypatch.setenv("STOCKSCOPE_SIM_DB", str(db))
+    status = jev_shadow_status()
+    payload = list_jev_shadow_reviews(capture["id"])
+
+    assert status["available"] is True
+    assert status["enabled"] is True
+    assert status["network_enabled"] is False
+    assert status["protocol_status"] == "FROZEN"
+
+    assert payload["available"] is True
+    assert payload["capture_id"] == capture["id"]
+    assert payload["summary"]["total"] == 1
+    assert payload["summary"]["review_required"] == 1
+    assert len(payload["items"]) == 1
+
+    item = payload["items"][0]
+    assert set(item) == {
+        "capture_id",
+        "sample_index",
+        "market",
+        "ticker",
+        "name",
+        "status",
+        "decision",
+        "failure_code",
+        "completed_at",
+        "latency_ms",
+        "reason_codes",
+    }
+    assert item["market"] == "KOSPI"
+    assert item["ticker"] == "005930"
+    assert item["name"] == "삼성전자"
+    assert item["reason_codes"] == ["CONDITION_CONFLICT"]
+
+    encoded = json.dumps(
+        {
+            "status": status,
+            "reviews": payload,
+        },
+        ensure_ascii=False,
+    )
+    for forbidden in (
+        sentinel,
+        "input_json",
+        "raw_response",
+        "prompt_hash",
+        "model_id",
+        "provider_id",
+        "MUST_NOT_LEAK",
+    ):
+        assert forbidden not in encoded
+
+
+def test_monitor_api_is_non_blocking_when_schema_is_not_ready(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    db = tmp_path / "simulation.db"
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "CREATE TABLE simulation_placeholder(id INTEGER PRIMARY KEY)"
+        )
+    monkeypatch.setenv("STOCKSCOPE_SIM_DB", str(db))
+
+    status = jev_shadow_status()
+    reviews = list_jev_shadow_reviews("missing-capture")
+
+    assert status["available"] is False
+    assert status["enabled"] is False
+    assert reviews["available"] is False
+    assert reviews["items"] == []
+    assert reviews["summary"]["total"] == 0
+
+
+def test_jev_shadow_monitor_routes_are_registered() -> None:
+    paths = {route.path for route in app.routes}
+    assert "/api/simulation/jev-shadow/status" in paths
+    assert "/api/simulation/jev-shadow/reviews" in paths
