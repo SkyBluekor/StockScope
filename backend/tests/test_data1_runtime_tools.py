@@ -21,6 +21,7 @@ from app.prospective import (
     ProspectiveCaptureRequest,
     ProspectiveCatalog,
 )
+from app.jev import JevCatalog, JevTrialProtocolSpec
 from app.simulation.execution_catalog import HistoricalExecutionCatalog
 from app.simulation.sim1_store import SimulationRepository
 from app.simulation.validation_catalog import HistoricalValidationCatalog
@@ -38,6 +39,7 @@ from tools.data import restore_runtime as restore_module
 from tools.data.restore_runtime import restore_backup
 from tools.data.migrate_feedback_vnp2s1 import migrate_feedback_store
 from tools.data.migrate_prospective_vnp2s2 import migrate_prospective_store
+from tools.data.migrate_jev_shadow_v1 import migrate_jev_shadow_store
 from tools.data.migrate_holdings_decision_vnp3s1 import (
     HOLDING_DECISION_POLICY_VERSION,
     HOLDING_PLAN_CONTEXT_VERSION,
@@ -1635,3 +1637,70 @@ def test_p5_rolled_back_selection_roundtrip_preserves_one_way_state(tmp_path):
             expected_active_policy_id=rollback_snapshot["policy_id"],
         )
     assert second_rollback.value.code == "ROLLBACK_POLICY_NOT_AVAILABLE"
+
+
+
+def test_jev_shadow_store_roundtrip_is_declared_and_restored(tmp_path):
+    holdings = _holdings_db(tmp_path / "holdings.db")
+    simulation = _simulation_db(tmp_path / "simulation.db")
+    migrate_prospective_store(simulation)
+    migrate_jev_shadow_store(simulation)
+
+    catalog = JevCatalog(simulation)
+    protocol = catalog.create_protocol(
+        client_request_id="backup-jev-shadow",
+        spec=JevTrialProtocolSpec(
+            name="backup fake shadow",
+            provider_id="FAKE",
+            model_id="FAKE-MODEL",
+            model_revision="FAKE-REV-1",
+            prompt_version="PROMPT-V1",
+            prompt_hash="prompt-hash",
+            recruitment_start="2026-10-01",
+            recruitment_end="2026-10-31",
+            min_mature_candidates=10,
+            min_disagreements=2,
+            max_error_rate=0.10,
+            max_abstain_rate=0.25,
+            budget_limit_usd=1.0,
+        ),
+    )
+    catalog.set_activation(
+        protocol["id"],
+        enabled=True,
+        allow_network=False,
+    )
+
+    backup = create_backup(
+        destination=tmp_path / "jev-shadow-backup",
+        holdings_db=holdings,
+        simulation_db=simulation,
+        include_tracking=False,
+    )
+    manifest = json.loads(
+        (backup / "backup_manifest.json").read_text(encoding="utf-8")
+    )
+    extension = manifest["extensions"]["jev_shadow_v1"]
+    assert extension["present"] is True
+    assert extension["restorable"] is True
+    assert extension["secret_values_included"] is False
+
+    restored_holdings = tmp_path / "restored-holdings-jev.db"
+    restored_simulation = tmp_path / "restored-simulation-jev.db"
+    result = restore_backup(
+        backup,
+        restore_simulation=True,
+        target_holdings=restored_holdings,
+        target_simulation=restored_simulation,
+    )
+
+    assert result["jev_shadow"]["store_present_in_backup"] is True
+    assert result["jev_shadow"]["store_restored"] is True
+    assert result["jev_shadow"]["secret_values_restored"] is False
+    with sqlite3.connect(restored_simulation) as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM jev_shadow_protocol"
+        ).fetchone()[0] == 1
+        assert conn.execute(
+            "SELECT COUNT(*) FROM jev_shadow_activation"
+        ).fetchone()[0] == 1
