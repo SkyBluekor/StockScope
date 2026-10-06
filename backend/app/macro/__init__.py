@@ -169,6 +169,28 @@ from app.macro.store import (
     MacroStore,
 )
 
+from app.macro.r5r_evaluator import (
+    R5R_EVALUATOR_VERSION,
+    R5R_TARGET_ID,
+    R5R_METHOD_ID,
+    R5RContractError,
+    canonical_rational,
+    ecdf_sup_distance,
+    effective_candidate_mapping,
+    evaluate_r5r,
+    midpoint_mad,
+    midpoint_median,
+    parse_canonical_rational,
+    select_common_n,
+    window_length as r5r_window_length,
+)
+from app.macro.r5r_binding import (
+    R5R_BINDING_CONTRACT_VERSION,
+    R5RBindingError,
+    bind_r5r_evaluation_dataset,
+    canonical_chronology_hash,
+)
+
 __all__ = [
     "MACRO_CANDIDATE_BEHAVIOR_CONTRACT_VERSION",
     "MACRO_CANDIDATE_BEHAVIOR_GROUP_CONTRACT_VERSION",
@@ -292,4 +314,21 @@ __all__ = [
     "build_next6e_reference_readiness",
     "build_next6e_validation_entry_gate",
     "MACRO_STORE_TABLES",
+    "R5R_EVALUATOR_VERSION",
+    "R5R_TARGET_ID",
+    "R5R_METHOD_ID",
+    "R5R_BINDING_CONTRACT_VERSION",
+    "R5RContractError",
+    "R5RBindingError",
+    "canonical_rational",
+    "parse_canonical_rational",
+    "midpoint_median",
+    "midpoint_mad",
+    "ecdf_sup_distance",
+    "r5r_window_length",
+    "effective_candidate_mapping",
+    "select_common_n",
+    "evaluate_r5r",
+    "bind_r5r_evaluation_dataset",
+    "canonical_chronology_hash",
 ]
