@@ -1,0 +1,72 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+import math
+from typing import Any
+
+from .models import digest_json
+from .typesafe_models import JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V3
+from .typesafe_questions_v3 import STRATEGY_CONTEXT_CONFLICT
+
+
+POLICY_DEFINITION_V3 = {
+    "version": JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V3,
+    "threshold_slots": ["threshold_strategy"],
+    "gate": "p(strategy_context_conflict) >= T_strategy",
+    "precedence": ["strategy_context_conflict", "pass_through"],
+    "semantic_insufficiency_owner": "LOCAL_PRECALL_READINESS",
+    "no_probability_aggregation": True,
+}
+JEV_TYPESAFE_DISPOSITION_POLICY_HASH_V3 = digest_json(POLICY_DEFINITION_V3)
+
+
+@dataclass(frozen=True, slots=True)
+class TypeSafeDispositionV3:
+    disposition: str
+    reason_codes: tuple[str, ...]
+    uncertainty_reason: str | None
+    gate_results: dict[str, bool]
+
+
+def _probability(value: Any) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("JEV_TYPESAFE_PROBABILITY_INVALID")
+    number = float(value)
+    if not math.isfinite(number) or not 0.0 <= number <= 1.0:
+        raise ValueError("JEV_TYPESAFE_PROBABILITY_INVALID")
+    return number
+
+
+def _threshold(value: Any) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("JEV_TYPESAFE_THRESHOLD_INVALID")
+    number = float(value)
+    if not math.isfinite(number) or not 0.0 <= number <= 1.0:
+        raise ValueError("JEV_TYPESAFE_THRESHOLD_INVALID")
+    return number
+
+
+def decide_typesafe_disposition_v3(
+    probabilities: dict[str, Any],
+    *,
+    threshold_strategy: float,
+) -> TypeSafeDispositionV3:
+    if set(probabilities) != {STRATEGY_CONTEXT_CONFLICT}:
+        raise ValueError("JEV_TYPESAFE_PROBABILITY_SET_INVALID")
+    value = _probability(probabilities[STRATEGY_CONTEXT_CONFLICT])
+    threshold = _threshold(threshold_strategy)
+    conflict = value >= threshold
+    gates = {STRATEGY_CONTEXT_CONFLICT: conflict}
+    if conflict:
+        return TypeSafeDispositionV3(
+            disposition="REVIEW_REQUIRED",
+            reason_codes=("STRATEGY_CONTEXT_CONFLICT",),
+            uncertainty_reason=None,
+            gate_results=gates,
+        )
+    return TypeSafeDispositionV3(
+        disposition="PASS_THROUGH",
+        reason_codes=("NO_ADDITIONAL_CONTEXT_CONFLICT",),
+        uncertainty_reason=None,
+        gate_results=gates,
+    )
