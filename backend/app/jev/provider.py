@@ -5,7 +5,9 @@ import os
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from app.core.config import get_settings
+from dotenv import dotenv_values
+
+from app.core.config import PROJECT_ROOT
 
 from .models import JEV_REASON_CODES
 
@@ -37,7 +39,9 @@ def load_jev_api_key() -> str | None:
     raw = (os.getenv("JEV_API_KEY") or "").strip()
     if raw:
         return raw
-    value = (get_settings().jev_api_key or "").strip()
+    value = str(
+        dotenv_values(PROJECT_ROOT / ".env").get("JEV_API_KEY") or ""
+    ).strip()
     return value or None
 
 
