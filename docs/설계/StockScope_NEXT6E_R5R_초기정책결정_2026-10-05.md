@@ -4,6 +4,11 @@
 단계: NEXT-6E-S6B-R5R-POLICY  
 Baseline main: 0c9e2cb1a76df0186e4c4d62253cbcb5107fb044
 
+
+## 현재 상태 주석 — 2026-10-06
+
+이 문서의 gate 표는 **정책 결정 당시 상태**를 기록한다. 이후 IMPLEMENT 단계에서 DEV binding과 deterministic implementation verification이 완료되어 현재 effective state는 G0~G4 PASS다. 현재 상태는 `StockScope_NEXT6E_R5R_통합설계기준_2026-10-05.md`와 `StockScope_NEXT6E_R5R_구현및바인딩_2026-10-06.md`를 우선한다.
+
 ## 1. 결론
 
 이번 작업에서 R5R의 초기 내부 운영 정책을 확정했다.
