@@ -804,3 +804,64 @@ NEXT-6E-R5R-EVALUATION으로 진행한다.
 짧게 시작하고 싶다면:
 
 > StockScope 이어서 하자. `docs/StockScope_인수인계_2026-10-06_DOCS_CLEANUP_COMPLETE_JEV_SHADOW_NEXT.md` 먼저 읽고 main HEAD 확인해. 다음 작업은 JEV-SHADOW-IMPLEMENT이고, 명세/실행 분리·Holdout lock·JEV_API_KEY secret 비노출 원칙 그대로 유지해.
+
+
+---
+
+# 34. 2026-10-06 Post-Handoff Update — JEV Trial Freeze COMPLETE
+
+이 섹션은 기존 handoff의 후속 실행 결과만 추가한다. 앞의 historical 상태를 삭제하거나 R4/R5/R5R frozen 설계를 다시 열지 않는다.
+
+## 완료된 후속 작업
+
+- JEV Shadow Core: IMPLEMENTED / CI PASS
+- Minimal Shadow Monitor UI: IMPLEMENTED / CI PASS
+- JEV Trial Freeze: IMPLEMENTED / CI PASS
+- Read-only monitor API: IMPLEMENTED
+- Real provider adapter: IMPLEMENTED but NOT ACTIVATED
+- Provider: OpenAI Responses API
+- Model: `gpt-5.6-terra`
+- Model revision: `NOT_PINNABLE_2026-10-06`
+- Revision policy: returned served-model identity + protocol hash cohort separation
+- Prompt: `JEV_DECISION_REVIEWER_PROMPT_V1`
+- Prompt SHA256: `4f16a87bddd4696bd8d484e949675ff8a7739afaae45af3ad1cc466fc2068319`
+- Output schema SHA256: `84a320572bb2753fc98aa65180c7143c6b4c8a8ecbc576b7f919c26081ffa26f`
+- Trial artifact: `docs/contracts/JEV_REVIEWER_TRIAL_PROTOCOL_V1.json`
+- Trial spec SHA256: `9f4e42fbd5cc957a9dc72ed7ce3f84c0dbf07c4a768b38695e4c90c16297b36b`
+- Adapter: `JEV_OPENAI_RESPONSES_ADAPTER_V1`
+- Responses storage: `store=false`
+- Cohort: activation 이후 새 canonical Scanner capture만 모집
+- Duplicate unit: market + ticker + signal_date + strategy_version + horizon의 최초 유효 canonical observation
+- Recruitment cap: 200 candidates / 90 calendar days
+- Mature minimum: 60
+- Disagreement minimum: 12
+- Error maximum: 5%
+- Abstain maximum: 30%
+- Review-rate maximum: 50%
+- Trial API budget: USD 5
+- Observation: max 20 trading days
+- Purge: 20 trading days
+- 2026 listed-share statutory market tax assumption: 0.20%; broker fee/slippage는 pilot에서 0.00%로 고정하고 unmodeled로 명시
+- Source transmission: derived quant-only; News/Event/Macro/Holdings/account/user/future outcome/raw source content 금지
+- Pre-activation capture / recruitment window / recruitment cap / duplicate / budget gate: IMPLEMENTED
+- Explicit activation gate: IMPLEMENTED
+- Runtime trial configure tool: `tools/data/configure_jev_trial_v1.py`
+
+## 실행하지 않은 것
+
+- 실제 JEV API call: 0
+- 실제 JEV token 소비: 0
+- JEV Reviewer Evaluation: NOT EXECUTED
+- Adoption Decision: NOT EXECUTED
+- NEXT-6E-R5R-EVALUATION: NOT EXECUTED
+- Holdout: LOCKED / NOT ACCESSED
+
+실제 `JEV_API_KEY` 값은 읽거나 출력·로그·artifact·backup·Git에 남기지 않았다.
+
+## 다음 단계
+
+다음 단계명은 **JEV-REVIEWER-EVALUATION**이다.
+
+단, 사용자가 앞서 정한 원칙에 따라 실제 provider activation과 실제 JEV 호출은 전체 평가 준비가 끝난 뒤 명시적으로 통합 테스트할 때만 수행한다. 다음 명세/구현에서 evaluation join, cohort accounting, maturity/denominator, frozen metric report 경로를 먼저 완성할 수 있으며, 이 과정에서도 실제 model call은 자동으로 시작하지 않는다.
+
+R5R actual evaluation은 계속 별도 작업이며 JEV evaluation과 혼동하지 않는다.
