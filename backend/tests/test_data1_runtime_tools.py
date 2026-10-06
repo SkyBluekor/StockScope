@@ -1658,11 +1658,14 @@ def test_jev_shadow_store_roundtrip_is_declared_and_restored(tmp_path):
             prompt_hash="prompt-hash",
             recruitment_start="2026-10-01",
             recruitment_end="2026-10-31",
+            duplicate_rule="FIRST_VALID_FAKE",
             min_mature_candidates=10,
             min_disagreements=2,
             max_error_rate=0.10,
             max_abstain_rate=0.25,
+            max_review_rate=0.50,
             budget_limit_usd=1.0,
+            model_revision_policy="FAKE_PINNED",
         ),
     )
     catalog.set_activation(
