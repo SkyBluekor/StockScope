@@ -3,6 +3,8 @@
 작성일: 2026-09-27 (Asia/Seoul) · 설계 버전: `vNext-2026-09-27`
 
 
+> 과거 입력 문서(Current State / Recovery Context / Astra handoff)는 현재 checkout의 active 문서가 아니다. 필요한 설계 이유는 `history/StockScope_R4_R5_R5R_설계변경이력.md`와 Git history에서 확인한다.
+
 ## 현재 실행 순서 — 2026-10-06
 
 이 절이 과거 문서의 오래된 NEXT 표현보다 우선한다.
@@ -20,7 +22,7 @@
 
 ## 1. 범위와 단계 의미
 
-이 Roadmap은 [Handoff](StockScope_ASTRA_REDESIGN_HANDOFF_2026-09-27.md), 고정된 [Current State](StockScope_CURRENT_STATE_2026-09-26.md), [Recovery Context](StockScope_RECOVERY_CONTEXT_2026-09-26.md)에 근거해 **이번 설계에서 새로 만든 8 Phase·12 Stage**다. `VN-P1-S1` 등의 ID는 과거 작업 번호의 복원·후속 번호·별칭이 아니다. `REALTIME.5`, `HOLD.1-H`, `H.0~H.3`, `DEV.*`와 대응시키지 않는다.
+이 Roadmap은 과거 Astra handoff, 고정된 과거 Current State, 과거 Recovery Context에 근거해 **이번 설계에서 새로 만든 8 Phase·12 Stage**다. `VN-P1-S1` 등의 ID는 과거 작업 번호의 복원·후속 번호·별칭이 아니다. `REALTIME.5`, `HOLD.1-H`, `H.0~H.3`, `DEV.*`와 대응시키지 않는다.
 
 [Master Architecture](StockScope_MASTER_ARCHITECTURE_vNext.md)의 책임·데이터 소유권과 [Implementation Baseline](StockScope_IMPLEMENTATION_BASELINE_vNext.md)의 보존·검증 규칙을 따른다. 아래는 미래 개발 계획이다. 이번 작업에서 어떤 Stage도 구현·테스트·Migration·운영 검증을 완료하지 않았다.
 
