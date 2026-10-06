@@ -97,9 +97,13 @@ JEV Phase 1의 실제 provider adapter가 활성화될 때 사용하는 canonica
 JEV_API_KEY=
 ```
 
-현재 credential slot은 준비됐지만 **provider / model ID / revision / prompt는 아직 freeze되지 않았습니다.** 키가 존재한다는 사실을 특정 provider 채택으로 해석하지 않습니다.
+Trial V1은 **OpenAI Responses API + `gpt-5.6-terra` + JEV Prompt V1**으로 freeze되어 있습니다. 현재 공식 모델 문서에서 별도 날짜 snapshot을 고정할 수 없어 revision은 `NOT_PINNABLE_2026-10-06`로 기록하고, 실제 응답의 served model identity와 protocol hash로 cohort를 분리합니다.
+
+중요: **freeze 완료와 실제 호출 활성화는 별개입니다.** Trial V1은 기본 비활성이며 전체 작업 종료 후 명시적인 통합 테스트/activation 단계 전까지 외부 model call을 실행하지 않습니다.
 
 - 실제 secret 값은 로컬 `.env`에만 둡니다.
 - `.env.example`에는 빈 placeholder만 둡니다.
 - Git commit, 로그, report artifact, runtime backup에 key를 기록하지 않습니다.
+- Responses API 요청은 `store=false`로 고정합니다.
+- 외부 전송 payload는 derived quant-only이며 News/Event/Macro/Holdings/account/user/future outcome/raw source content를 포함하지 않습니다.
 - provider adapter가 비활성인 동안 JEV_API_KEY가 없어도 기존 StockScope baseline은 정상 동작해야 합니다.
