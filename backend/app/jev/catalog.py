@@ -158,6 +158,21 @@ class JevCatalog:
             ).fetchone()
         return None if row is None else self._protocol_from_row(row)
 
+    def get_protocol_by_client_request_id(
+        self,
+        client_request_id: str,
+    ) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            self.require_ready(conn)
+            row = conn.execute(
+                """
+                SELECT * FROM jev_shadow_protocol
+                WHERE client_request_id=?
+                """,
+                (client_request_id,),
+            ).fetchone()
+        return None if row is None else self._protocol_from_row(row)
+
     def set_activation(
         self,
         protocol_id: str,
