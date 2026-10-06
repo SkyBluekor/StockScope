@@ -32,6 +32,7 @@ def test_registry_order_is_explicit_and_stable():
         "VN-P6-S1",
         "NEXT-6E-S3",
         "JEV-SHADOW-V1",
+        "JEV-EVALUATION-V1",
     ]
 
 
