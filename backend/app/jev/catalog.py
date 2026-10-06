@@ -172,6 +172,32 @@ class JevCatalog:
                 "JEV_PROTOCOL_NOT_FOUND",
                 "활성화할 JEV protocol을 찾을 수 없습니다.",
             )
+        if allow_network and not enabled:
+            raise JevCatalogError(
+                "JEV_ACTIVATION_INVALID",
+                "network 호출 허용은 enabled=true와 함께만 설정할 수 있습니다.",
+            )
+        if enabled and str(protocol.get("status") or "") != "FROZEN":
+            raise JevCatalogError(
+                "JEV_PROTOCOL_NOT_FROZEN",
+                "FROZEN 상태의 JEV protocol만 활성화할 수 있습니다.",
+            )
+        spec = dict(protocol.get("spec") or {})
+        provider_id = str(spec.get("provider_id") or "").strip().upper()
+        if enabled and provider_id != "FAKE" and not allow_network:
+            raise JevCatalogError(
+                "JEV_NETWORK_ACTIVATION_REQUIRED",
+                "실제 provider trial은 명시적인 network activation 없이는 시작할 수 없습니다.",
+            )
+        if (
+            enabled
+            and provider_id != "FAKE"
+            and not bool(spec.get("source_transmission_approved"))
+        ):
+            raise JevCatalogError(
+                "JEV_SOURCE_TRANSMISSION_NOT_APPROVED",
+                "외부 provider 전송 승인이 없는 JEV protocol은 활성화할 수 없습니다.",
+            )
         now = updated_at or _now()
         with self.connect() as conn:
             self.require_ready(conn)
