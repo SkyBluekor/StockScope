@@ -4,20 +4,31 @@ import json
 import sqlite3
 from pathlib import Path
 
+import httpx
 import pytest
 
 from app.jev import (
     FakeJevProvider,
     JevCatalog,
+    JevCatalogError,
     JevShadowService,
     JevTrialProtocolSpec,
+    OpenAIResponsesJevProvider,
     build_comparison_report,
+    configure_trial_protocol,
+    load_trial_artifact,
+    trial_readiness,
 )
 from app.api.jev_shadow import (
     jev_shadow_status,
     list_jev_shadow_reviews,
 )
 from app.main import app
+from app.jev.prompt import (
+    JEV_OUTPUT_SCHEMA_HASH,
+    JEV_PROMPT_HASH,
+    JEV_PROMPT_VERSION,
+)
 from app.prospective import ProspectiveCatalog
 from app.prospective.models import ProspectiveCaptureRequest
 from tools.data.migrate_jev_shadow_v1 import migrate_jev_shadow_store
@@ -169,11 +180,14 @@ def _frozen_protocol(
             generation_settings={"fake_mode": fake_mode},
             recruitment_start="2026-10-01",
             recruitment_end="2026-10-31",
+            duplicate_rule="FIRST_VALID_FAKE",
             min_mature_candidates=10,
             min_disagreements=2,
             max_error_rate=0.10,
             max_abstain_rate=0.25,
+            max_review_rate=0.50,
             budget_limit_usd=1.0,
+            model_revision_policy="FAKE_PINNED",
         ),
     )
     assert protocol["status"] == "FROZEN"
@@ -342,11 +356,10 @@ def test_secret_value_is_not_persisted(
     assert sentinel not in dump
 
 
-def test_real_provider_is_not_callable_without_network_authorization(
+def test_unfrozen_real_provider_cannot_be_activated(
     tmp_path: Path,
 ) -> None:
     db = _simulation_db(tmp_path / "simulation.db")
-    capture = _capture(db)
     catalog = JevCatalog(db)
     protocol = catalog.create_protocol(
         client_request_id="real-unfrozen",
@@ -356,20 +369,14 @@ def test_real_provider_is_not_callable_without_network_authorization(
         ),
     )
     assert protocol["status"] == "UNFROZEN"
-    catalog.set_activation(
-        protocol["id"],
-        enabled=True,
-        allow_network=False,
-    )
 
-    review = JevShadowService(db).enqueue_capture(
-        capture["id"]
-    )[0]
-    assert review["status"] == "SKIPPED"
-    assert (
-        review["failure_code"]
-        == "JEV_NETWORK_NOT_AUTHORIZED"
-    )
+    with pytest.raises(JevCatalogError) as raised:
+        catalog.set_activation(
+            protocol["id"],
+            enabled=True,
+            allow_network=True,
+        )
+    assert raised.value.code == "JEV_PROTOCOL_NOT_FROZEN"
 
 
 def test_comparison_uses_valid_review_required_and_closed_only() -> None:
@@ -550,3 +557,130 @@ def test_jev_shadow_monitor_routes_are_registered() -> None:
     paths = {route.path for route in app.routes}
     assert "/api/simulation/jev-shadow/status" in paths
     assert "/api/simulation/jev-shadow/reviews" in paths
+
+
+
+def test_frozen_trial_artifact_is_ready_and_not_activated(
+    tmp_path: Path,
+) -> None:
+    readiness = trial_readiness()
+    assert readiness["ready"] is True
+    assert readiness["status"] == "READY_FOR_ACTIVATION"
+
+    artifact = load_trial_artifact()
+    spec = artifact["spec"]
+    assert artifact["status"] == "FROZEN_READY_FOR_ACTIVATION"
+    assert spec["provider_id"] == "OPENAI_RESPONSES"
+    assert spec["model_id"] == "gpt-5.6-terra"
+    assert spec["prompt_version"] == JEV_PROMPT_VERSION
+    assert spec["prompt_hash"] == JEV_PROMPT_HASH
+    assert (
+        spec["generation_settings"]["structured_output_schema_hash"]
+        == JEV_OUTPUT_SCHEMA_HASH
+    )
+    assert spec["generation_settings"]["store"] is False
+    assert spec["source_transmission_approved"] is True
+    assert spec["recruitment_mode"] == "ACTIVATION_FORWARD"
+
+    db = _simulation_db(tmp_path / "simulation.db")
+    result = configure_trial_protocol(JevCatalog(db))
+    assert result["status"] == "READY_FOR_ACTIVATION"
+    assert result["network_enabled"] is False
+    assert result["model_calls_executed"] == 0
+
+    summary = JevCatalog(db).status_summary()
+    activation = summary["activation"]
+    assert activation is not None
+    assert activation["enabled"] == 0
+    assert activation["allow_network"] == 0
+
+
+@pytest.mark.asyncio
+async def test_openai_provider_builds_store_false_structured_request_without_real_network(
+    monkeypatch,
+) -> None:
+    sentinel = "JEV_TEST_KEY_NOT_A_REAL_SECRET"
+    monkeypatch.setenv("JEV_API_KEY", sentinel)
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["authorization"] = request.headers.get("Authorization")
+        body = json.loads(request.content.decode("utf-8"))
+        captured["body"] = body
+        output = {
+            "decision": "PASS_THROUGH",
+            "abstain_reason": None,
+            "supporting_reasons": [
+                {
+                    "code": "CONDITION_ALIGNMENT",
+                    "evidence_refs": ["E-CONDITIONS"],
+                    "explanation": "조건 근거가 baseline과 일치합니다.",
+                }
+            ],
+            "opposing_reasons": [],
+        }
+        return httpx.Response(
+            200,
+            json={
+                "id": "resp-test",
+                "status": "completed",
+                "model": "gpt-5.6-terra",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": json.dumps(output),
+                            }
+                        ],
+                    }
+                ],
+                "usage": {
+                    "input_tokens": 1000,
+                    "input_tokens_details": {"cached_tokens": 200},
+                    "output_tokens": 100,
+                    "output_tokens_details": {"reasoning_tokens": 20},
+                    "total_tokens": 1100,
+                },
+            },
+        )
+
+    provider = OpenAIResponsesJevProvider(
+        model_id="gpt-5.6-terra",
+        reasoning_effort="low",
+        max_output_tokens=1200,
+        transport=httpx.MockTransport(handler),
+    )
+    result = await provider.review(
+        {
+            "request_id": "test",
+            "evidence_items": [
+                {
+                    "evidence_id": "E-CONDITIONS",
+                    "value": {"passed": 5, "total": 5},
+                }
+            ],
+        },
+        deadline_seconds=12.0,
+    )
+
+    assert result.raw_response["decision"] == "PASS_THROUGH"
+    assert result.usage is not None
+    assert result.usage["served_model"] == "gpt-5.6-terra"
+    assert result.usage["store"] is False
+    assert result.cost_usd == pytest.approx(0.00284)
+
+    body = captured["body"]
+    assert isinstance(body, dict)
+    assert body["model"] == "gpt-5.6-terra"
+    assert body["store"] is False
+    assert body["reasoning"]["effort"] == "low"
+    assert body["max_output_tokens"] == 1200
+    assert body["text"]["format"]["type"] == "json_schema"
+    assert body["text"]["format"]["strict"] is True
+    assert body["instructions"]
+    assert captured["authorization"] == f"Bearer {sentinel}"
+
+    encoded_body = json.dumps(body, ensure_ascii=False)
+    assert sentinel not in encoded_body
