@@ -36,6 +36,7 @@ import {
   writeActiveDataTask,
 } from "../services/dataTask";
 import StockNewsPanel from "./StockNewsPanel";
+import JevShadowMonitor from "./JevShadowMonitor";
 import "./scannerProgress.css";
 
 type MarketScope = "ALL" | "KOSPI" | "KOSDAQ";
@@ -1849,6 +1850,11 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
                   </div>
                 )}
               </section>
+
+              <JevShadowMonitor
+                captureId={result.jev_shadow?.capture_id ?? null}
+                selectedCandidate={selectedCandidate}
+              />
 
               {selectedCandidate && (
                 <CandidateDetail
