@@ -3,7 +3,7 @@
   "protocol_id": "JEV-REVIEWER-TRIAL-V1",
   "status": "FROZEN_READY_FOR_ACTIVATION",
   "frozen_at": "2026-10-06",
-  "spec_hash": "c59fbd8063fb04cce64de49a4f3091c59be9267efd2df4f43e7aec904348ae39",
+  "spec_hash": "9f4e42fbd5cc957a9dc72ed7ce3f84c0dbf07c4a768b38695e4c90c16297b36b",
   "spec": {
     "name": "JEV Reviewer Trial V1",
     "provider_id": "OPENAI_RESPONSES",
