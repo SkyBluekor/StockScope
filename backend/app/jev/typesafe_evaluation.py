@@ -9,7 +9,10 @@ from .typesafe_evaluation_models import (
     JEV_TYPESAFE_EVALUATION_GATE_KEYS,
     JEV_TYPESAFE_EVALUATION_POLICY_ID,
 )
-from .typesafe_models import JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V2
+from .typesafe_models import (
+    JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V2,
+    JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V3,
+)
 from .typesafe_projection import project_typesafe_review
 
 
@@ -52,6 +55,7 @@ def typesafe_model_cohort_key(
     protocol_spec_hash: str,
     protocol_spec: dict[str, Any],
     review: dict[str, Any] | None,
+    sample: dict[str, Any] | None = None,
 ) -> str:
     if review is None:
         return ""
@@ -70,10 +74,48 @@ def typesafe_model_cohort_key(
         "disposition_policy_hash": review.get("disposition_policy_hash"),
         "adapter_version": review.get("adapter_version"),
     }
-    if (
-        str(review.get("disposition_policy_version") or "")
-        == JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V2
-    ):
+    policy_version = str(review.get("disposition_policy_version") or "")
+    if policy_version == JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V3:
+        identity["threshold_strategy"] = protocol_spec.get("threshold_strategy")
+        snapshot = (
+            sample.get("snapshot")
+            if isinstance(sample, dict) and isinstance(sample.get("snapshot"), dict)
+            else {}
+        )
+        semantic_source = (
+            snapshot.get("semantic_source")
+            if isinstance(snapshot.get("semantic_source"), dict)
+            else {}
+        )
+        strategy = (
+            semantic_source.get("strategy")
+            if isinstance(semantic_source.get("strategy"), dict)
+            else {}
+        )
+        conditions = (
+            semantic_source.get("conditions")
+            if isinstance(semantic_source.get("conditions"), dict)
+            else {}
+        )
+        identity["semantic_source_contract_version"] = semantic_source.get(
+            "source_contract_version"
+        )
+        identity["semantic_source_contract_hash"] = semantic_source.get(
+            "source_contract_hash"
+        )
+        identity["strategy_semantic_contract_version"] = strategy.get(
+            "semantic_contract_version"
+        )
+        identity["strategy_semantic_contract_hash"] = strategy.get(
+            "semantic_contract_hash"
+        )
+        identity["condition_semantic_mapping_version"] = conditions.get(
+            "mapping_version"
+        )
+        identity["condition_semantic_mapping_hash"] = conditions.get(
+            "mapping_hash"
+        )
+    elif policy_version == JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V2:
         identity["threshold_strategy"] = protocol_spec.get("threshold_strategy")
         identity["threshold_entry"] = protocol_spec.get("threshold_entry")
         identity["threshold_evidence"] = protocol_spec.get("threshold_evidence")
@@ -144,6 +186,7 @@ def build_typesafe_evaluation_unit(
             protocol_spec_hash=protocol_spec_hash,
             protocol_spec=protocol_spec,
             review=review,
+            sample=sample,
         ),
         "latency_ms": latency_ms,
         "reserved_cost_usd": float(recruitment.get("reserved_cost_usd") or 0.0),

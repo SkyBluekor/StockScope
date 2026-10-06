@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from app.strategy.semantic_source import attach_semantic_source
+
 from .models import (
     PROSPECTIVE_CAPTURE_VERSION,
     PROSPECTIVE_EVALUATION_VERSION,
@@ -216,7 +218,7 @@ class ProspectiveCatalog:
 
     @staticmethod
     def _candidate_snapshot(item: dict[str, Any]) -> dict[str, Any]:
-        return dict(item)
+        return attach_semantic_source(dict(item))
 
     def finalize_capture(
         self,
@@ -230,7 +232,7 @@ class ProspectiveCatalog:
         top = result.get("candidates") if isinstance(result.get("candidates"), list) else []
         more = result.get("more_candidates") if isinstance(result.get("more_candidates"), list) else []
         candidates = [
-            dict(item)
+            self._candidate_snapshot(item)
             for item in [*top, *more]
             if isinstance(item, dict)
         ]

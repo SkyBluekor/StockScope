@@ -7,18 +7,26 @@ from typing import Any
 from .typesafe_models import (
     JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V1,
     JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V2,
+    JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V3,
     JEV_TYPESAFE_QUESTION_CONTRACT_VERSION_V1,
     JEV_TYPESAFE_QUESTION_CONTRACT_VERSION_V2,
+    JEV_TYPESAFE_QUESTION_CONTRACT_VERSION_V3,
 )
 from .typesafe_policy import decide_typesafe_disposition
 from .typesafe_policy_v2 import decide_typesafe_disposition_v2
+from .typesafe_policy_v3 import decide_typesafe_disposition_v3
 from .typesafe_provider import TypeSafeJevProvider, validate_system_one_response
 from .typesafe_questions import JEV_TYPESAFE_QUESTION_IDS, build_typesafe_questions
 from .typesafe_questions_v2 import (
     JEV_TYPESAFE_QUESTION_IDS_V2,
     build_typesafe_questions_v2,
 )
+from .typesafe_questions_v3 import (
+    JEV_TYPESAFE_QUESTION_IDS_V3,
+    build_typesafe_questions_v3,
+)
 from .typesafe_state import TypeSafeStateProjection, project_typesafe_state
+from .typesafe_state_v3 import project_typesafe_state_v3
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +68,11 @@ def _contract_family(protocol_spec: dict[str, Any]) -> str:
         and policy_version == JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V2
     ):
         return "V2"
+    if (
+        question_version == JEV_TYPESAFE_QUESTION_CONTRACT_VERSION_V3
+        and policy_version == JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V3
+    ):
+        return "V3"
     raise ValueError("JEV_TYPESAFE_CONTRACT_VERSION_MISMATCH")
 
 
@@ -67,16 +80,21 @@ def build_system_one_request(
     sample: dict[str, Any],
     protocol_spec: dict[str, Any],
 ) -> tuple[dict[str, Any], TypeSafeStateProjection]:
-    projection = project_typesafe_state(sample)
+    family = _contract_family(protocol_spec)
+    projection = (
+        project_typesafe_state_v3(sample)
+        if family == "V3"
+        else project_typesafe_state(sample)
+    )
     model = str(protocol_spec.get("model_requested") or "").strip()
     if not model or model.upper() == "UNFROZEN":
         raise ValueError("TYPESAFE_MODEL_REQUIRED")
-    family = _contract_family(protocol_spec)
-    questions = (
-        build_typesafe_questions_v2()
-        if family == "V2"
-        else build_typesafe_questions()
-    )
+    if family == "V3":
+        questions = build_typesafe_questions_v3()
+    elif family == "V2":
+        questions = build_typesafe_questions_v2()
+    else:
+        questions = build_typesafe_questions()
     return {
         "state": projection.state,
         "questions": questions,
@@ -95,11 +113,12 @@ async def review_once(
         request,
         deadline_seconds=float(protocol_spec.get("deadline_seconds") or 12.0),
     )
-    question_ids = (
-        JEV_TYPESAFE_QUESTION_IDS_V2
-        if family == "V2"
-        else JEV_TYPESAFE_QUESTION_IDS
-    )
+    if family == "V3":
+        question_ids = JEV_TYPESAFE_QUESTION_IDS_V3
+    elif family == "V2":
+        question_ids = JEV_TYPESAFE_QUESTION_IDS_V2
+    else:
+        question_ids = JEV_TYPESAFE_QUESTION_IDS
     normalized = validate_system_one_response(
         result.raw_response,
         expected_model_returned=str(
@@ -108,14 +127,21 @@ async def review_once(
         expected_question_ids=question_ids,
     )
 
-    if family == "V2":
+    if family == "V3":
+        decision = decide_typesafe_disposition_v3(
+            normalized["probabilities"],
+            threshold_strategy=protocol_spec["threshold_strategy"],
+        )
+        bands: dict[str, str] = {}
+        gate_results = dict(decision.gate_results)
+    elif family == "V2":
         decision = decide_typesafe_disposition_v2(
             normalized["probabilities"],
             threshold_strategy=protocol_spec["threshold_strategy"],
             threshold_entry=protocol_spec["threshold_entry"],
             threshold_evidence=protocol_spec["threshold_evidence"],
         )
-        bands: dict[str, str] = {}
+        bands = {}
         gate_results = dict(decision.gate_results)
     else:
         decision = decide_typesafe_disposition(
