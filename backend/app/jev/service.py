@@ -483,6 +483,20 @@ class JevShadowService:
         )
 
         for sample in rows:
+            existing_same = next(
+                (
+                    row
+                    for row in existing_reviews
+                    if row.get("capture_run_id") == sample.get("capture_run_id")
+                    and int(row.get("sample_index") or 0)
+                    == int(sample.get("sample_index") or 0)
+                ),
+                None,
+            )
+            if existing_same is not None:
+                created.append(existing_same)
+                continue
+
             payload, skip_reason = self._projection(sample, protocol)
             candidate_ref = self._candidate_ref(sample)
             if payload is not None and str(
