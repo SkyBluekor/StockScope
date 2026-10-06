@@ -17,6 +17,19 @@ from .provider import (
     load_jev_api_key,
 )
 from .service import JevShadowService
+from .evaluation import (
+    JevReviewerEvaluationError,
+    JevReviewerEvaluationService,
+    build_evaluation_summary,
+)
+from .evaluation_catalog import (
+    JevEvaluationCatalog,
+    JevEvaluationCatalogError,
+)
+from .evaluation_policy import (
+    JevEvaluationPolicyError,
+    load_evaluation_policy,
+)
 from .trial import (
     JevTrialError,
     configure_trial_protocol,
@@ -34,15 +47,22 @@ __all__ = [
     "JEV_TRIAL_PROTOCOL_VERSION",
     "JevCatalog",
     "JevCatalogError",
+    "JevEvaluationCatalog",
+    "JevEvaluationCatalogError",
+    "JevEvaluationPolicyError",
     "JevProviderError",
+    "JevReviewerEvaluationError",
+    "JevReviewerEvaluationService",
     "JevShadowService",
     "JevTrialError",
     "JevTrialProtocolSpec",
     "OpenAIResponsesJevProvider",
     "ProviderResult",
     "build_comparison_report",
+    "build_evaluation_summary",
     "configure_trial_protocol",
     "join_reviews_with_outcomes",
+    "load_evaluation_policy",
     "load_jev_api_key",
     "load_trial_artifact",
     "trial_readiness",
