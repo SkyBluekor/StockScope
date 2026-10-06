@@ -6,7 +6,13 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query
 
 from app.core.config import PROJECT_ROOT
-from app.jev import JevCatalog, JevCatalogError, trial_readiness
+from app.jev import (
+    JevCatalog,
+    JevCatalogError,
+    JevEvaluationCatalog,
+    JevEvaluationCatalogError,
+    trial_readiness,
+)
 
 
 router = APIRouter(
@@ -39,6 +45,14 @@ def _catalog() -> JevCatalog:
         or DEFAULT_SIMULATION_DB
     )
     return JevCatalog(simulation_db)
+
+
+def _evaluation_catalog() -> JevEvaluationCatalog:
+    simulation_db = Path(
+        os.getenv("STOCKSCOPE_SIM_DB")
+        or DEFAULT_SIMULATION_DB
+    )
+    return JevEvaluationCatalog(simulation_db)
 
 
 def _unavailable(error: JevCatalogError) -> dict[str, object]:
@@ -175,3 +189,55 @@ def list_jev_shadow_reviews(
                 "code": error.code,
             }
         _raise(error)
+
+
+
+@router.get("/evaluation/latest")
+def latest_jev_reviewer_evaluation():
+    catalog = _evaluation_catalog()
+    try:
+        latest = catalog.latest_completed()
+        return {
+            "available": True,
+            "evaluation": latest,
+        }
+    except JevEvaluationCatalogError as error:
+        if error.code in {
+            "JEV_EVALUATION_MIGRATION_REQUIRED",
+            "JEV_EVALUATION_SCHEMA_UNSUPPORTED",
+        }:
+            return {
+                "available": False,
+                "evaluation": None,
+                "code": error.code,
+            }
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": error.code,
+                "message": error.message,
+            },
+        ) from error
+
+
+@router.get("/evaluation-runs/{run_id}")
+def get_jev_reviewer_evaluation_run(run_id: str):
+    catalog = _evaluation_catalog()
+    try:
+        return {
+            "available": True,
+            "evaluation": catalog.detail(run_id),
+        }
+    except JevEvaluationCatalogError as error:
+        status = (
+            404
+            if error.code == "JEV_EVALUATION_RUN_NOT_FOUND"
+            else 422
+        )
+        raise HTTPException(
+            status_code=status,
+            detail={
+                "code": error.code,
+                "message": error.message,
+            },
+        ) from error
