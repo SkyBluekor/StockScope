@@ -107,6 +107,13 @@ SIMULATION_TABLE_FAMILIES = (
         "prospective_evaluation_unit",
         "prospective_evaluation_report",
     }),
+    frozenset({
+        "jev_shadow_schema_meta",
+        "jev_shadow_protocol",
+        "jev_shadow_activation",
+        "jev_shadow_review",
+        "jev_shadow_comparison_report",
+    }),
 )
 
 REQUIRED_TRACKING_TABLES = frozenset(
