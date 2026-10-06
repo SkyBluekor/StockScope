@@ -2,6 +2,28 @@
 
 작성일: 2026-09-27 (Asia/Seoul) · 설계 버전: `vNext-2026-09-27`
 
+
+## 현재 기준과 읽는 순서 — 2026-10-06
+
+이 문서가 제품 책임의 최상위 진입점이다. 새 작업에서는 다음 순서만 기본으로 읽고, 과거 resolution을 연속으로 읽지 않는다.
+
+1. **Master Architecture (이 문서)** — 제품 목적·도메인 owner·금지 경계
+2. **Implementation Baseline** — 현재 구현 계약·회귀·운영 경계
+3. **현재 작업 기준 하나** — R5R이면 `설계/StockScope_NEXT6E_R5R_통합설계기준_2026-10-05.md`, JEV이면 `설계/StockScope_JEV_통합설계_v2_2026-10-06.md`
+4. **Development Roadmap** — 현재 다음 작업과 조건부 backlog
+5. **History** — 특정 결정 이유가 필요할 때만 `history/StockScope_R4_R5_R5R_설계변경이력.md`
+
+### 통합된 제품 불변식
+
+- StockScope는 **판단 보조** 제품이며 실제 주문 owner가 아니다.
+- 전략 적합도·조건 확인률·스타일 점수는 상승확률이 아니다.
+- Risk/NO_TRADE가 전략 점수보다 우선하며 AI/JEV가 이를 우회하지 않는다.
+- entry/stop/target은 기존 Strategy/Risk owner가 계산한다. Reference/JEV가 자동 변경하지 않는다.
+- Historical evidence, current ranking, execution outcome, prospective evidence를 같은 의미로 합산하지 않는다.
+- 사용자 화면은 **결론 → 행동 → 핵심 근거 → 상세** 순서를 기본으로 하고 원시 수치·진단은 접을 수 있다.
+- EOD 확정값과 장중 preview/reference를 구분하며 입력 변경 시 stale/revision 규칙을 지킨다.
+- JEV Phase 1은 Scanner의 Decision Reviewer shadow이며 rank/action/Risk/plan을 바꾸지 않는다.
+
 ## 1. 문서 지위와 근거
 
 이 문서는 **현재 구현을 출발점으로 새로 작성한 목표 설계**다. 아래의 선택은 유실된 과거 설계를 복원한 결과나 현재 구현 완료 선언이 아니다. 설계 문서 작성만 수행했으며 코드·DB·기존 기준 문서는 변경하지 않았다.
