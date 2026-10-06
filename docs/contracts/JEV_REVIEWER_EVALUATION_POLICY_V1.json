@@ -1,0 +1,53 @@
+{
+  "artifact_version": "JEV_REVIEWER_EVALUATION_POLICY_ARTIFACT_V1",
+  "policy_id": "JEV_REVIEWER_EVALUATION_POLICY_V1",
+  "status": "FROZEN",
+  "policy_spec_hash": "0dcc0c931e7d624b748ac2c53f4a083206a86de56696c11bb840d14bd7e4abc8",
+  "trial_protocol_id": "JEV-REVIEWER-TRIAL-V1",
+  "trial_spec_hash": "9f4e42fbd5cc957a9dc72ed7ce3f84c0dbf07c4a768b38695e4c90c16297b36b",
+  "report_version": "JEV_REVIEWER_EVALUATION_REPORT_V1",
+  "comparison_policy": "JEV_DEFER_THIS_OPPORTUNITY_V1",
+  "observation_windows": [
+    5,
+    10,
+    20
+  ],
+  "max_holding_days": 20,
+  "maturity_trading_days": 20,
+  "gates": {
+    "min_mature_candidates": 60,
+    "min_closed_disagreements": 12,
+    "max_error_rate": 0.05,
+    "max_abstain_rate": 0.3,
+    "max_review_rate": 0.5,
+    "max_single_ticker_share": 0.2,
+    "max_single_signal_date_share": 0.2,
+    "max_api_cost_usd": 5
+  },
+  "performance_gates": {
+    "incremental_return_per_opportunity_pct_gt": 0,
+    "avoided_minus_missed_pct_sum_gt": 0,
+    "retained_candidate_loss_rate_lte_baseline_loss_rate": true
+  },
+  "model_identity_policy": "SINGLE_PROTOCOL_PROVIDER_MODEL_SERVED_MODEL_PROMPT_ADAPTER_COHORT_REQUIRED",
+  "execution_policy_identity": "CAPTURE_PRODUCTION_POLICY_CACHE_TOKEN_AT_EVALUATION_RUN",
+  "states": [
+    "COLLECTING",
+    "HOLD",
+    "REJECT",
+    "ELIGIBLE_FOR_ADOPTION_REVIEW"
+  ],
+  "state_precedence": [
+    "HOLD_INTEGRITY",
+    "COLLECTING_SAMPLE",
+    "HOLD_OPERATIONAL",
+    "REJECT_PERFORMANCE",
+    "ELIGIBLE_FOR_ADOPTION_REVIEW"
+  ],
+  "notes": [
+    "CENSORED is never converted to 0 return.",
+    "Only CLOSED units with non-null net return belong to primary comparison set C.",
+    "VALID REVIEW_REQUIRED means virtual skip; all other review outcomes preserve baseline.",
+    "Eligibility is not automatic adoption."
+  ]
+}
