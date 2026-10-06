@@ -45,6 +45,8 @@ async function jevShadowJson<T>(
 export type JevShadowStatus = {
   available: boolean;
   enabled: boolean;
+  ready_for_activation: boolean;
+  trial_status: string | null;
   protocol_status: string | null;
   network_enabled: boolean;
   status_counts: Record<string, number>;
