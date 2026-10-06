@@ -1105,3 +1105,253 @@ Threshold policy의 구조는 freeze됐지만 `0.15 / 0.85`는 여전히 candida
 
 잠긴 데이터 영역은 계속 **LOCKED / NOT ACCESSED**이며 검색·metadata·hash·존재 probe를 포함해 접근하지 않는다.
 
+# 37. 2026-10-06 Correction Update — TypeSafe Jev Monitor/Evaluation Correction COMPLETE
+
+이 section은 §36의 TypeSafe Core Correction 이후 후속 단계인 **TYPE-JEV-MONITOR-EVALUATION-CORRECTION** 완료 상태를 기록한다.
+
+## Implementation
+
+Implementation commit:
+
+`4d9dff3ba414f4a838bad80c66eecf6ed1b8b913`
+
+Commit message:
+
+`feat: correct TypeSafe JEV monitor and evaluation`
+
+완료된 핵심 변경:
+
+- 현재 Scanner 화면의 Jev Monitor를 Legacy `/simulation/jev-shadow/*`에서 TypeSafe V2 `/simulation/jev/*` read-only API로 전환
+- Legacy V1 API는 삭제하지 않고 historical read-only 경로로 보존
+- V2 Monitor source of truth를 review row가 아니라 `jev_typesafe_recruitment` ledger로 변경
+- callable=false recruitment를 SKIPPED로 유지하여 모집 분모에서 사라지지 않게 함
+- Operational status와 application disposition 분리
+- `SKIPPED / ERROR / LATE / INTERRUPTED`에 application disposition을 부여하지 않음
+- `VALID`일 때만 `PASS_THROUGH / REVIEW_REQUIRED / ABSTAIN` 사용
+- TypeSafe reason semantics:
+  - `STRATEGY_CONTEXT_CONFLICT`
+  - `ENTRY_CONTEXT_CONFLICT`
+  - `NO_ADDITIONAL_CONTEXT_CONFLICT`
+  - uncertainty: `EVIDENCE_INSUFFICIENT / MODEL_UNCERTAIN`
+- Legacy `RISK_CAUTION` Monitor 의미 제거
+- stored typed answers를 frozen threshold/policy로 다시 계산하여 stored disposition과 동일한지 검증
+- 불일치 시 `DISPOSITION_INTEGRITY_MISMATCH`로 정상 결과에서 제외
+- model identity가 MATCHED가 아닌 VALID result를 정상 결과로 인정하지 않음
+- raw Noul probability는 기본 UI에 노출하지 않음
+- 기본 UI guardrail: Jev 보조 검토가 기존 후보·순위·진입·Risk 판단을 변경하지 않음을 유지
+
+## TypeSafe V2 Monitor API
+
+신규 API:
+
+- `GET /api/simulation/jev/status`
+- `GET /api/simulation/jev/reviews?capture_id=...`
+- `GET /api/simulation/jev/evaluation/latest`
+- `GET /api/simulation/jev/evaluation-runs/{run_id}`
+
+신규 응답은 `engine = TYPESAFE_V2` identity를 명시한다.
+
+현재 Trial V2 machine-readable artifact 및 final threshold/model binding은 아직 없으므로, protocol이 없거나 DRAFT 상태이면 UI/API는 `TRIAL_NOT_FROZEN`을 표시한다. Core ready와 actual trial ready를 혼동하지 않는다.
+
+## TypeSafe Evaluation V2
+
+신규 schema:
+
+`JEV_TYPESAFE_EVALUATION_STORAGE_V2`
+
+신규 logical tables:
+
+- `jev_typesafe_evaluation_schema_meta`
+- `jev_typesafe_evaluation_run`
+- `jev_typesafe_evaluation_unit`
+- `jev_typesafe_evaluation_report`
+
+Migration:
+
+`JEV-TYPESAFE-EVALUATION-V2`
+
+Local Sync dependency:
+
+`JEV-TYPESAFE-V2 → JEV-TYPESAFE-EVALUATION-V2`
+
+Evaluation V2는 Legacy `jev_evaluation_*` / `jev_shadow_comparison_report`를 재사용하거나 mutate하지 않는다.
+
+## Evaluation denominator correction
+
+V2 cohort source of truth:
+
+`R = jev_typesafe_recruitment`
+
+평가 funnel:
+
+`recruited → callable → review_created → VALID/ERROR/LATE/INTERRUPTED → disposition → outcome → mature → comparable CLOSED`
+
+비율 정의를 분리했다:
+
+- skip rate = SKIPPED / recruited
+- attempt coverage = review_created / callable
+- error rate = ERROR / review_created
+- late rate = LATE / review_created
+- interrupted rate = INTERRUPTED / review_created
+- valid rate = VALID / review_created
+- abstain rate = VALID+ABSTAIN / VALID
+- review-required rate = VALID+REVIEW_REQUIRED / VALID
+- pass-through rate = VALID+PASS_THROUGH / VALID
+
+분모가 0이면 0%가 아니라 null/N/A로 처리한다.
+
+## Performance comparison
+
+성과 비교에서 virtual defer는 오직:
+
+`VALID + REVIEW_REQUIRED`
+
+만 사용한다.
+
+다음은 모두 baseline을 유지한다:
+
+- PASS_THROUGH
+- ABSTAIN
+- ERROR
+- LATE
+- INTERRUPTED
+- SKIPPED
+- review not created
+
+따라서 provider 운영 실패나 semantic abstention 때문에 baseline 후보가 임의로 삭제되지 않는다.
+
+CENSORED는 계속 0% realized return으로 변환하지 않는다.
+
+기존 comparison 의미:
+
+`r_shadow,i = (1-d_i) r_i`
+
+`d_i=1` iff `VALID + REVIEW_REQUIRED`
+
+를 유지한다.
+
+## Evaluation identity / integrity
+
+TypeSafe cohort identity에는 최소 다음을 반영한다:
+
+- protocol spec hash
+- provider
+- model requested / returned
+- model identity status
+- state contract
+- projector
+- question contract/hash
+- disposition policy/hash
+- threshold low/high
+- adapter version
+
+mixed model cohort는 정상 efficacy cohort로 자동 합치지 않는다.
+
+typed-answer/disposition integrity mismatch도 HOLD/integrity failure 대상이다.
+
+## Cost semantics
+
+Unknown provider cost는 0 USD로 해석하지 않는다.
+
+V2 evaluation은 다음을 분리한다:
+
+- known cost
+- unknown cost count
+- reserved unknown cost
+- budget exposure
+
+실제 TypeSafe billing binding이 확인되기 전에는 unknown cost가 있는 cohort를 비용 gate PASS로 자동 처리하지 않는다.
+
+## Evaluation gate status
+
+Evaluation V2의 **metric engine / gate slots / storage contract는 COMPLETE**다.
+
+하지만 실제 Trial V2 숫자는 아직 freeze하지 않았다.
+
+미확정:
+
+- final threshold low/high
+- min mature
+- min closed disagreements
+- max skip/error/late/interrupted/abstain/review rate
+- min attempt coverage
+- concentration gate
+- budget exposure gate
+- actual model identity
+
+gate slot이 비어 있으면 evaluator는 `EVALUATION_POLICY_NOT_FROZEN` integrity reason으로 HOLD한다.
+
+기존 OpenAI/Terra V1 숫자를 자동 승계하지 않는다.
+
+## Backup / Restore / Recovery
+
+완료:
+
+- backup manifest에 `jev_typesafe_evaluation_v2` extension 추가
+- Evaluation V2 tables restore 경계 추가
+- secret value 저장/복원 없음
+- startup에서 RUNNING TypeSafe Evaluation V2 → INTERRUPTED recovery
+- TypeSafe Core activation은 기존 §36 원칙대로 restore 후 `enabled=0 / allow_network=0`
+
+## Tests / CI
+
+Synthetic/fake-only 회귀 검증 포함:
+
+- SKIPPED와 ABSTAIN 분리
+- recruitment row 유지
+- valid ABSTAIN projection
+- stored disposition integrity mismatch 감지
+- recruitment denominator
+- ERROR candidate baseline retention
+- REVIEW_REQUIRED만 virtual defer
+- unknown cost를 0으로 간주하지 않음
+- local-only Evaluation V2 migration
+- Evaluation V2 catalog roundtrip
+- Evaluation V2 backup/restore
+- Local Sync migration order
+- frontend TypeScript/build
+
+Implementation CI run:
+
+`37426330708`
+
+결과:
+
+- Frontend / Node 22: PASS
+- Backend / Python 3.11: PASS
+- Backend / Python 3.14: PASS
+- Fresh Clone / Windows: PASS
+
+## 실행하지 않은 것
+
+- 실제 TypeSafe model discovery: NOT EXECUTED
+- 실제 `GET /v1/models`: 0
+- 실제 `POST /v1/systemone`: 0
+- 실제 TypeSafe token consumption: 0
+- 실제 provider cost: 0
+- 실제 TypeSafe Trial: NOT STARTED
+- 실제 TypeSafe Evaluation: NOT EXECUTED
+- Trial V2 machine-readable frozen artifact: NOT CREATED
+- final threshold numeric freeze: NOT DONE
+- actual account retention/ZDR/billing binding: NOT VERIFIED
+- R5R Actual Evaluation: NOT EXECUTED
+- automatic adoption: NOT EXECUTED
+- `JEV_API_KEY` actual secret value: NOT READ / NOT LOGGED / NOT STORED
+- 잠긴 데이터 영역: LOCKED / NOT ACCESSED
+
+## 현재 상태
+
+`TYPE-JEV-DESIGN-FREEZE                COMPLETE`
+
+`TYPE-JEV-CORE-CORRECTION              COMPLETE`
+
+`TYPE-JEV-MONITOR-EVALUATION-CORRECTION COMPLETE`
+
+다음 단계는 **TYPE-JEV-APPROVED-CANARY-TRIAL**이다.
+
+이 다음 단계에서 처음으로 사용자 명시 승인 하에 TypeSafe 외부 사실(model discovery, account policy/billing, synthetic canary)을 확인하고, prospective actual trial 시작 전 Trial V2 artifact 및 final threshold/gates를 freeze한다.
+
+실제 prospective efficacy trial은 canary/binding 검증과 별개이며, 자동으로 시작하지 않는다.
+
+Phase 1 correction/canary/trial이 끝난 뒤에는 별도 **TYPE-JEV-EXPANSION-REVIEW** 문서를 작성하여 StockScope의 다른 fuzzy decision 영역에서 TypeSafe Jev가 실제 추가 가치를 주는지 검토한다.
+
