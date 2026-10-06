@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.router import api_router
 from app.core.config import PROJECT_ROOT, get_settings
 from app.holdings.catalog import DEFAULT_HOLDINGS_DB, HoldingsCatalog
+from app.jev import JevCatalog, JevCatalogError
 from app.prospective import ProspectiveCatalogError, ProspectiveService
 from app.quotes.websocket_manager import quote_websocket_manager
 from app.watch import WatchCoordinator, WatchService
@@ -37,6 +38,15 @@ async def lifespan(_app: FastAPI):
         if exc.code not in {
             "PROSPECTIVE_MIGRATION_REQUIRED",
             "PROSPECTIVE_SCHEMA_UNSUPPORTED",
+        }:
+            raise
+
+    try:
+        JevCatalog(simulation_db).mark_pending_interrupted()
+    except JevCatalogError as exc:
+        if exc.code not in {
+            "JEV_MIGRATION_REQUIRED",
+            "JEV_SCHEMA_UNSUPPORTED",
         }:
             raise
 
