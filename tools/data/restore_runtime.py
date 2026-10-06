@@ -496,6 +496,9 @@ def restore_backup(
         jev_shadow_manifest = dict(
             extensions.get("jev_shadow_v1") or {}
         )
+        jev_evaluation_manifest = dict(
+            extensions.get("jev_evaluation_v1") or {}
+        )
         holding_decision_manifest = dict(
             extensions.get("holding_decision_v1") or {}
         )
@@ -612,6 +615,20 @@ def restore_backup(
                     and jev_shadow_manifest.get("restorable")
                 ),
                 "tables": list(jev_shadow_manifest.get("tables") or []),
+                "secret_values_restored": False,
+            },
+            "jev_evaluation": {
+                "schema_version": jev_evaluation_manifest.get("schema_version"),
+                "store_present_in_backup": bool(
+                    jev_evaluation_manifest.get("present")
+                ),
+                "store_restored": bool(
+                    restore_simulation
+                    and jev_evaluation_manifest.get("restorable")
+                ),
+                "tables": list(
+                    jev_evaluation_manifest.get("tables") or []
+                ),
                 "secret_values_restored": False,
             },
             "holding_decision": {
