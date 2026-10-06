@@ -323,7 +323,7 @@ npm -v
 
 둘 다 버전이 출력되어야 합니다.
 
-자세한 새 PC 복구/데이터 최신성 절차는 [`docs/setup-data-freshness-v0.14.md`](docs/setup-data-freshness-v0.14.md)를 참고하세요.
+현재 새 PC 복구/데이터 도구 절차는 [`tools/data/README.md`](tools/data/README.md)와 [`docs/StockScope_IMPLEMENTATION_BASELINE_vNext.md`](docs/StockScope_IMPLEMENTATION_BASELINE_vNext.md)를 참고하세요.
 
 
 ### Windows에서 `Asia/Seoul` / `tzdata` 오류
@@ -381,7 +381,7 @@ StockScope는 OpenDART 공시를 제목만 나열하지 않고 `공시 사실 �
 
 현재 참고가격은 직접 입력과 버튼 조작을 함께 제공합니다. `- / +`는 가격대별 KRX 호가가격단위를 사용하며, 짧게 누르면 1호가씩 이동하고 약 0.32초 이상 꾹 누르면 연속 이동하면서 점차 빨라집니다. `-5% / -1% / KRX 종가 / +1% / +5%`는 고정 점프가 아니라 **현재 누적 변동률에서 계속 더하고 빼는 방식**으로 동작하며 버튼 조정 범위는 최근 확정 종가 대비 `-30% ~ +30%`입니다. 최근 KRX 확정 일봉의 시가·고가·저가·종가도 한 번에 현재 참고가격으로 선택할 수 있습니다. 평균 매수가와 보유 수량에도 `- / +` 조작을 제공합니다. 숫자는 입력 즉시 천 단위 콤마로 표시됩니다.
 
-분석 후 가격·보유정보가 변경되면 기존 결과를 지우지 않고 **이전 입력 기준 결과**라고 경고하며 재분석을 유도합니다. 자세한 내용은 [`docs/input-ux-v0.15.2.md`](docs/input-ux-v0.15.2.md)를 참고하세요.
+분석 후 가격·보유정보가 변경되면 기존 결과를 지우지 않고 **이전 입력 기준 결과**라고 경고하며 재분석을 유도합니다. 현재 입력·stale·reference 불변식은 [`docs/StockScope_IMPLEMENTATION_BASELINE_vNext.md`](docs/StockScope_IMPLEMENTATION_BASELINE_vNext.md)를 참고하세요.
 
 ## 개발 로드맵
 
