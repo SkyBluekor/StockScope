@@ -6,6 +6,29 @@ Baseline main: c4b65a660d8b550545be957f3ae8aeb73171727a
 
 ---
 
+## 현재 유효 상태 — 2026-10-06
+
+이 절이 아래의 단계별 historical gate 서술보다 우선한다.
+
+```text
+R5R-G0 = PASS
+R5R-G1 = PASS
+R5R-G2 = PASS
+R5R-G3 = PASS
+R5R-G4 = PASS
+
+Reference Adequacy actual evaluation
+=
+AUTHORIZED / NOT EXECUTED
+```
+
+현재 actual observed-path 실행 단계명은 **`NEXT-6E-R5R-EVALUATION`** 이다. 과거 narrative의 `NEXT-6E-R5R-EVALUATION`는 historical alias이며 AI Decision Reviewer JEV와 같은 작업이 아니다.
+
+AI Decision Reviewer의 기준은 `StockScope_JEV_통합설계_v2_2026-10-06.md`, 평가 단계명은 **`JEV-REVIEWER-EVALUATION`** 이다.
+
+과거 BLOCKED/PENDING 상태는 당시 이력으로만 읽고 현재 gate로 재해석하지 않는다.
+
+
 ## 0. 이 문서의 지위
 
 이 문서는 R4 → R5 → R5R로 이어진 Reference Adequacy / empirical stability 설계 흐름을 앞으로의 작업에서 반복해서 재해석하지 않도록 정리한 **Current Design Baseline**이다.
@@ -1238,7 +1261,7 @@ exact rational numeric semantics
 현재 실제로 남은 것은 다음이다.
 
 ~~~text
-1. NEXT-6E-R5R-JEV actual evaluation
+1. NEXT-6E-R5R-EVALUATION actual evaluation
 
 2. JEV 결과에 따른 다음 validation / product integration
 ~~~
@@ -1356,7 +1379,7 @@ StockScope_NEXT6E_R5R_구현및바인딩_2026-10-06.md
 # 41. NEXT TASK
 
 ~~~text
-NEXT-6E-R5R-JEV
+NEXT-6E-R5R-EVALUATION
 ~~~
 
 목적:
