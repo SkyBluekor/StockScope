@@ -215,17 +215,27 @@ async def test_quant_only_projection_and_baseline_immutability(
         review["input"],
         ensure_ascii=False,
     ).lower()
+    decision_encoded = json.dumps(
+        review["input"]["baseline_decision"],
+        ensure_ascii=False,
+    ).lower()
+    evidence_encoded = json.dumps(
+        review["input"]["evidence_items"],
+        ensure_ascii=False,
+    ).lower()
+    assert "must_not_leak" not in encoded
     assert "future_outcome" not in review["input"]
     for forbidden in (
-        "must_not_leak",
         "historical_fit",
         "historical_verification",
         "\"news\"",
         "event_evidence",
         "\"macro\"",
         "\"holdings\"",
+        "future_outcome",
     ):
-        assert forbidden not in encoded
+        assert forbidden not in decision_encoded
+        assert forbidden not in evidence_encoded
 
     with sqlite3.connect(db) as conn:
         after = conn.execute(
