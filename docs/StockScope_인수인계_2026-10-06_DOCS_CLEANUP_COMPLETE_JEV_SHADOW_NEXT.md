@@ -961,3 +961,147 @@ R5R actual evaluation은 계속 별도 작업이며 JEV evaluation과 혼동하�
 `Scanner → real JEV shadow review → Monitor UI → immutable review storage → 시간이 지난 후 local outcome → JEV evaluation snapshot/report`
 
 R5R Actual Evaluation은 계속 별도 작업으로 유지하며 JEV evaluation과 혼동하지 않는다.
+
+# 36. 2026-10-06 Correction Update — TypeSafe Jev Core Correction COMPLETE
+
+이 section은 §34/§35에 기록된 OpenAI/Terra 기반 JEV 후속 구현의 **현재 해석을 정정**한다. 기존 section은 당시 실제 구현/CI 이력으로 보존하지만, 더 이상 TypeSafe Jev의 올바른 provider/model 설계 authority로 사용하지 않는다.
+
+## 정정된 JEV 정의
+
+- JEV = **TypeSafe AI Jev / System One**
+- OpenAI Responses + `gpt-5.6-terra` binding = 잘못된 해석으로 만든 **LEGACY V1**
+- 실제 OpenAI/Terra provider call은 수행되지 않았고 실 trial data도 생성되지 않았다.
+- 기존 V1 frozen artifact/hash/history는 삭제·변조하지 않고 read-only history로 보존한다.
+- 신규 real V1 activation은 code-level에서 **`JEV_LEGACY_V1_ACTIVATION_BLOCKED`**로 차단한다.
+
+## TypeSafe Design Freeze
+
+문서:
+`docs/설계/StockScope_TypeSafe_Jev_설계동결_v1_2026-10-06.md`
+
+Commit:
+`f808c001825b8aa7b5e24e4acf4ab21925241c8a`
+
+Phase 1 frozen architecture:
+
+`canonical ENTRY_CANDIDATE → minimized semantic state → TypeSafe System One 3 Noul → StockScope deterministic disposition`
+
+3 Noul:
+
+1. `strategy_context_conflict`
+2. `entry_context_conflict`
+3. `review_evidence_insufficient`
+
+v3 초안의 `risk_context_caution`은 DROP했다. ENTRY_CANDIDATE는 이미 Strategy/Risk deterministic gate를 통과하고 price consistency도 기존 code owner가 계산하므로, Risk를 Jev가 다시 판정하지 않는다.
+
+Application disposition:
+
+- PASS_THROUGH
+- REVIEW_REQUIRED
+- ABSTAIN
+
+Operational status와 application disposition은 별도 축이다. ERROR/SKIPPED/LATE/INTERRUPTED에는 disposition을 만들지 않는다.
+
+## TypeSafe Core Correction
+
+Implementation baseline:
+
+- Core implementation commit: `dac7e948a2f88bcff2811e4de11d2861e56508ff`
+- Fresh setup dependency correction: `5ce2d3c444a5186aa0428acdeb7de5a35f2cdaf0`
+
+완료:
+
+- `TYPESAFE_SYSTEM_ONE` native provider boundary
+- `POST /v1/systemone` request shape: state + questions + model only
+- 3-Noul fixed question contract
+- minimized state projector
+- ticker/name/rank/stop/target/RR/future outcome external payload 제외
+- Risk fuzzy question 제거
+- deterministic disposition policy
+- threshold low/high slot architecture
+- strict native response/model/usage validator
+- request model / returned model 분리
+- invalid/missing model fallback 금지
+- real provider cost unknown-safe 처리
+- fake TypeSafe provider
+- retry 0 core
+- bounded core queue
+- additive TypeSafe V2 protocol/activation/recruitment/review storage
+- recruitment ledger idempotency
+- reserved/known/unknown cost accounting boundary
+- PENDING restart → INTERRUPTED startup recovery
+- additive migration `JEV-TYPESAFE-V2`
+- Local Sync order: VN-P2-S2 이후
+- backup manifest `jev_typesafe_v2`
+- restore 후 `enabled=0 / allow_network=0` 강제
+- Legacy V1 real activation 차단
+- V1 historical tables/artifacts 유지
+
+V2 schema identity:
+
+`JEV_TYPESAFE_STORAGE_V2`
+
+Core contracts:
+
+- state: `JEV_TYPESAFE_STATE_V1`
+- projector: `JEV_TYPESAFE_PROJECTOR_V1`
+- questions: `JEV_TYPESAFE_QUESTIONS_V1`
+- disposition policy: `JEV_TYPESAFE_DISPOSITION_POLICY_V1`
+- adapter: `JEV_TYPESAFE_SYSTEMONE_ADAPTER_V1`
+
+## 아직 동결/실행하지 않은 것
+
+다음은 Core Correction 완료와 별개다.
+
+- 실제 TypeSafe model discovery: NOT EXECUTED
+- 실제 `GET /v1/models`: 0
+- 실제 `POST /v1/systemone`: 0
+- 실제 TypeSafe token consumption: 0
+- 실제 TypeSafe API cost: 0
+- 실제 TypeSafe trial activation: OFF / NOT STARTED
+- Trial V2 machine-readable frozen JSON: NOT CREATED
+- threshold numeric final freeze: NOT DONE
+- real account model availability/returned identity: NOT VERIFIED
+- retention/ZDR/account billing binding: NOT VERIFIED
+- TypeSafe prospective efficacy evaluation: NOT EXECUTED
+- R5R Actual Evaluation: NOT EXECUTED
+- 자동 adoption: NOT EXECUTED
+- `JEV_API_KEY` actual secret value: NOT READ / NOT LOGGED / NOT STORED
+
+Threshold policy의 구조는 freeze됐지만 `0.15 / 0.85`는 여전히 candidate value다. actual prospective outcome을 보기 전에 승인된 synthetic/provider canary에서 behavior를 확인한 후 Trial V2 artifact에 final numeric value를 동결한다.
+
+## Core Correction CI
+
+최종 CI run:
+`37420771151`
+
+결과:
+
+- Frontend / Node 22: PASS
+- Backend / Python 3.11: PASS
+- Backend / Python 3.14: PASS
+- Fresh Clone / Windows: PASS
+
+첫 implementation run에서 fresh setup planner가 `JEV-TYPESAFE-V2`의 VN-P2-S2 dependency를 알지 못해 prerequisite block이 발생했다. `5ce2d3c...`에서 migration dependency/write-domain/runtime-required identity를 추가했고 두 번째 전체 CI가 PASS했다.
+
+## 다음 단계
+
+다음 작업은 **TYPE-JEV-MONITOR-EVALUATION-CORRECTION**이다.
+
+목적:
+
+- 기존 V1 중심 Monitor projection을 TypeSafe V2 status/disposition/uncertainty semantics로 교정
+- Legacy V1과 TypeSafe V2를 UI/API에서 혼합하지 않음
+- evaluator 모집 분모를 review row가 아니라 V2 recruitment ledger 기준으로 교정
+- ERROR/SKIPPED/LATE/INTERRUPTED와 semantic ABSTAIN 분리
+- TypeSafe model/state/question/policy cohort identity 반영
+- V2 evaluation denominator/coverage/performance plumbing 교정
+- 자동 adoption 없음
+- 실제 provider network/model call은 계속 0
+
+그 다음에만 **TYPE-JEV-APPROVED-CANARY-TRIAL**을 별도 명시 승인으로 진행한다.
+
+그리고 Phase 1 correction/canary/trial 작업이 모두 끝난 뒤 별도 **TYPE-JEV-EXPANSION-REVIEW** 문서를 작성해, Holdings/Watch/Recovery/Strategy Governance 등에서 TypeSafe Jev가 deterministic code보다 실제 추가 가치를 낼 수 있는 fuzzy decision 영역이 더 있는지 조사한다. “이미 Jev를 붙였으니 더 사용한다”가 아니라 추가 가치가 있는 경우에만 확장한다.
+
+잠긴 데이터 영역은 계속 **LOCKED / NOT ACCESSED**이며 검색·metadata·hash·존재 probe를 포함해 접근하지 않는다.
+
