@@ -50,6 +50,9 @@ from tools.data.migrate_prospective_vnp2s2 import migrate_prospective_store
 from tools.data.migrate_jev_shadow_v1 import migrate_jev_shadow_store
 from tools.data.migrate_jev_evaluation_v1 import migrate_jev_evaluation_store
 from tools.data.migrate_jev_typesafe_v2 import migrate_jev_typesafe
+from tools.data.migrate_jev_typesafe_evaluation_v2 import (
+    migrate_jev_typesafe_evaluation,
+)
 from tools.data.migrate_holdings_decision_vnp3s1 import (
     HOLDING_DECISION_POLICY_VERSION,
     HOLDING_PLAN_CONTEXT_VERSION,
@@ -1712,6 +1715,7 @@ def test_jev_shadow_store_roundtrip_is_declared_and_restored(tmp_path):
         enabled=True,
         allow_network=False,
     )
+    migrate_jev_typesafe_evaluation(simulation)
 
     backup = create_backup(
         destination=tmp_path / "jev-shadow-backup",
@@ -1734,6 +1738,10 @@ def test_jev_shadow_store_roundtrip_is_declared_and_restored(tmp_path):
     assert typesafe_extension["present"] is True
     assert typesafe_extension["restorable"] is True
     assert typesafe_extension["secret_values_included"] is False
+    typesafe_eval_extension = manifest["extensions"]["jev_typesafe_evaluation_v2"]
+    assert typesafe_eval_extension["present"] is True
+    assert typesafe_eval_extension["restorable"] is True
+    assert typesafe_eval_extension["secret_values_included"] is False
 
     restored_holdings = tmp_path / "restored-holdings-jev.db"
     restored_simulation = tmp_path / "restored-simulation-jev.db"
@@ -1754,6 +1762,9 @@ def test_jev_shadow_store_roundtrip_is_declared_and_restored(tmp_path):
     assert result["jev_typesafe"]["store_restored"] is True
     assert result["jev_typesafe"]["secret_values_restored"] is False
     assert result["jev_typesafe"]["network_forced_off"] is True
+    assert result["jev_typesafe_evaluation"]["store_present_in_backup"] is True
+    assert result["jev_typesafe_evaluation"]["store_restored"] is True
+    assert result["jev_typesafe_evaluation"]["secret_values_restored"] is False
     with sqlite3.connect(restored_simulation) as conn:
         assert conn.execute(
             "SELECT COUNT(*) FROM jev_shadow_protocol"
@@ -1766,6 +1777,12 @@ def test_jev_shadow_store_roundtrip_is_declared_and_restored(tmp_path):
         ).fetchone()[0] == 0
         assert conn.execute(
             "SELECT COUNT(*) FROM jev_evaluation_unit"
+        ).fetchone()[0] == 0
+        assert conn.execute(
+            "SELECT COUNT(*) FROM jev_typesafe_evaluation_run"
+        ).fetchone()[0] == 0
+        assert conn.execute(
+            "SELECT COUNT(*) FROM jev_typesafe_evaluation_unit"
         ).fetchone()[0] == 0
         activation = conn.execute(
             "SELECT enabled,allow_network FROM jev_typesafe_activation "

@@ -7,6 +7,7 @@ from app.api.feedback import router as feedback_router
 from app.api.event_evidence import router as event_evidence_router
 from app.api.prospective import router as prospective_router
 from app.api.health import router as health_router
+from app.api.jev import router as jev_router
 from app.api.jev_shadow import router as jev_shadow_router
 from app.api.market_session import router as market_session_router
 from app.api.macro import router as macro_router
@@ -35,5 +36,6 @@ api_router.include_router(strategy_governance_router)
 api_router.include_router(feedback_router)
 api_router.include_router(prospective_router)
 api_router.include_router(jev_shadow_router)
+api_router.include_router(jev_router)
 api_router.include_router(holdings_router)
 api_router.include_router(integrations_router)

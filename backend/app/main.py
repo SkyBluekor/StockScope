@@ -15,6 +15,8 @@ from app.jev import (
     JevEvaluationCatalogError,
     TypeSafeJevCatalog,
     TypeSafeJevCatalogError,
+    TypeSafeJevEvaluationCatalog,
+    TypeSafeJevEvaluationCatalogError,
 )
 from app.prospective import ProspectiveCatalogError, ProspectiveService
 from app.quotes.websocket_manager import quote_websocket_manager
@@ -74,6 +76,15 @@ async def lifespan(_app: FastAPI):
         if exc.code not in {
             "JEV_TYPESAFE_MIGRATION_REQUIRED",
             "JEV_TYPESAFE_SCHEMA_UNSUPPORTED",
+        }:
+            raise
+
+    try:
+        TypeSafeJevEvaluationCatalog(simulation_db).mark_running_interrupted()
+    except TypeSafeJevEvaluationCatalogError as exc:
+        if exc.code not in {
+            "JEV_TYPESAFE_EVALUATION_MIGRATION_REQUIRED",
+            "JEV_TYPESAFE_EVALUATION_SCHEMA_UNSUPPORTED",
         }:
             raise
 

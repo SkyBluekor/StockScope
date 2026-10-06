@@ -8,6 +8,12 @@ import httpx
 import pytest
 
 from app.jev.typesafe_catalog import TypeSafeJevCatalog
+from app.jev.typesafe_evaluation import (
+    build_typesafe_comparison_report,
+    build_typesafe_evaluation_summary,
+)
+from app.jev.typesafe_evaluation_catalog import TypeSafeJevEvaluationCatalog
+from app.jev.typesafe_evaluation_models import JEV_TYPESAFE_EVALUATION_POLICY_ID
 from app.jev.typesafe_models import TypeSafeJevTrialProtocolSpec
 from app.jev.typesafe_policy import (
     JEV_TYPESAFE_DISPOSITION_POLICY_HASH,
@@ -32,6 +38,9 @@ from app.jev.typesafe_state import (
 from app.prospective import ProspectiveCatalog
 from app.prospective.models import ProspectiveCaptureRequest
 from tools.data.migrate_jev_typesafe_v2 import migrate_jev_typesafe
+from tools.data.migrate_jev_typesafe_evaluation_v2 import (
+    migrate_jev_typesafe_evaluation,
+)
 from tools.data.migrate_prospective_vnp2s2 import migrate_prospective_store
 
 
@@ -349,3 +358,319 @@ def test_typesafe_migration_has_zero_external_side_effects(tmp_path: Path) -> No
     assert result["external_network_requests"] == 0
     assert result["model_calls_executed"] == 0
     assert result["secret_values_read"] is False
+
+
+
+def _typed_answers(
+    *,
+    strategy: float = 0.05,
+    entry: float = 0.05,
+    evidence: float = 0.05,
+) -> dict:
+    return {
+        "strategy_context_conflict": {"type": "noul", "noul": strategy},
+        "entry_context_conflict": {"type": "noul", "noul": entry},
+        "review_evidence_insufficient": {"type": "noul", "noul": evidence},
+    }
+
+
+def _active_recruitment(
+    db: Path,
+    *,
+    callable: bool = True,
+    skip_reason: str | None = None,
+) -> tuple[TypeSafeJevCatalog, dict, dict]:
+    capture_id, sample_index = _prospective_sample(db)
+    catalog = TypeSafeJevCatalog(db)
+    protocol = catalog.create_protocol(
+        client_request_id="monitor-v2",
+        spec=_protocol_spec(),
+    )
+    catalog.set_activation(protocol["id"], enabled=True, allow_network=False)
+    recruitment = catalog.reserve_recruitment(
+        protocol_id=protocol["id"],
+        capture_run_id=capture_id,
+        sample_index=sample_index,
+        analysis_unit_key="KOSPI|005930|2026-10-06|strategy-v1|SHORT",
+        candidate_snapshot_hash="snapshot-hash",
+        callable=callable,
+        skip_reason=skip_reason,
+        reserved_cost_usd=0.01 if callable else 0.0,
+    )
+    return catalog, protocol, recruitment
+
+
+def test_typesafe_monitor_keeps_skipped_separate_from_abstain(
+    tmp_path: Path,
+) -> None:
+    db = _db(tmp_path / "simulation.db")
+    catalog, _, recruitment = _active_recruitment(
+        db,
+        callable=False,
+        skip_reason="SEMANTIC_MAPPING_INCOMPLETE",
+    )
+    items = catalog.list_monitor_items(recruitment["capture_run_id"])
+    assert len(items) == 1
+    assert items[0]["operational_status"] == "SKIPPED"
+    assert items[0]["disposition"] is None
+    assert items[0]["skip_reason"] == "SEMANTIC_MAPPING_INCOMPLETE"
+
+    status = catalog.monitor_status()
+    assert status["engine"] == "TYPESAFE_V2"
+    assert status["recruitment"]["skipped"] == 1
+    assert status["disposition"]["abstain"] == 0
+
+
+def test_typesafe_monitor_projects_valid_abstain_from_typed_answers(
+    tmp_path: Path,
+) -> None:
+    db = _db(tmp_path / "simulation.db")
+    catalog, protocol, recruitment = _active_recruitment(db)
+    review = catalog.begin_review(
+        recruitment_id=recruitment["id"],
+        request_id="review-abstain",
+        state={"fixture": True},
+        protocol=protocol,
+        deadline_at=None,
+    )
+    catalog.complete_review(
+        review["id"],
+        status="VALID",
+        disposition="ABSTAIN",
+        uncertainty_reason="MODEL_UNCERTAIN",
+        failure_code=None,
+        model_returned="FAKE-JEV-V2",
+        model_identity_status="MATCHED",
+        typed_answers=_typed_answers(strategy=0.5),
+        raw_response_hash="raw-hash",
+        latency_ms=12,
+        usage={"input_tokens": 0, "output_tokens": 0},
+        cost_usd=0.0,
+        cost_unknown=False,
+    )
+    items = catalog.list_monitor_items(recruitment["capture_run_id"])
+    assert items[0]["operational_status"] == "VALID"
+    assert items[0]["disposition"] == "ABSTAIN"
+    assert items[0]["uncertainty_reason"] == "MODEL_UNCERTAIN"
+    assert items[0]["integrity_status"] == "MATCHED"
+
+
+def test_typesafe_monitor_detects_disposition_integrity_mismatch(
+    tmp_path: Path,
+) -> None:
+    db = _db(tmp_path / "simulation.db")
+    catalog, protocol, recruitment = _active_recruitment(db)
+    review = catalog.begin_review(
+        recruitment_id=recruitment["id"],
+        request_id="review-mismatch",
+        state={"fixture": True},
+        protocol=protocol,
+        deadline_at=None,
+    )
+    catalog.complete_review(
+        review["id"],
+        status="VALID",
+        disposition="PASS_THROUGH",
+        uncertainty_reason=None,
+        failure_code=None,
+        model_returned="FAKE-JEV-V2",
+        model_identity_status="MATCHED",
+        typed_answers=_typed_answers(strategy=0.95),
+        raw_response_hash="raw-hash",
+        latency_ms=12,
+        usage={"input_tokens": 0, "output_tokens": 0},
+        cost_usd=0.0,
+        cost_unknown=False,
+    )
+    item = catalog.list_monitor_items(recruitment["capture_run_id"])[0]
+    assert item["operational_status"] == "ERROR"
+    assert item["disposition"] is None
+    assert item["failure_code"] == "DISPOSITION_INTEGRITY_MISMATCH"
+    assert item["integrity_status"] == "MISMATCH"
+
+
+def test_typesafe_evaluation_uses_recruitment_denominators_and_only_review_defer() -> None:
+    recruitments = [
+        {
+            "id": "r1", "callable": 1, "review_id": "v1",
+            "reserved_cost_usd": 0.01, "known_cost_usd": 0.0,
+            "cost_unknown": 0,
+        },
+        {
+            "id": "r2", "callable": 1, "review_id": "v2",
+            "reserved_cost_usd": 0.01, "known_cost_usd": None,
+            "cost_unknown": 1,
+        },
+        {
+            "id": "r3", "callable": 0, "review_id": None,
+            "reserved_cost_usd": 0.0, "known_cost_usd": None,
+            "cost_unknown": 0,
+        },
+    ]
+    units = [
+        {
+            "recruitment_id": "r1", "operational_status": "VALID",
+            "disposition": "REVIEW_REQUIRED", "integrity_status": "MATCHED",
+            "model_identity_status": "MATCHED", "model_cohort_key": "cohort",
+            "maturity_status": "MATURE", "comparison_eligible": 1,
+            "execution_status": "CLOSED", "net_return_pct": -10.0,
+            "ticker": "AAA", "signal_date": "2026-10-01", "latency_ms": 10,
+        },
+        {
+            "recruitment_id": "r2", "operational_status": "ERROR",
+            "disposition": None, "integrity_status": "NOT_APPLICABLE",
+            "model_identity_status": None, "model_cohort_key": "",
+            "maturity_status": "MATURE", "comparison_eligible": 1,
+            "execution_status": "CLOSED", "net_return_pct": 5.0,
+            "ticker": "BBB", "signal_date": "2026-10-02", "latency_ms": 20,
+        },
+        {
+            "recruitment_id": "r3", "operational_status": "SKIPPED",
+            "disposition": None, "integrity_status": "NOT_APPLICABLE",
+            "model_identity_status": None, "model_cohort_key": "",
+            "maturity_status": "MATURE", "comparison_eligible": 1,
+            "execution_status": "CLOSED", "net_return_pct": 2.0,
+            "ticker": "CCC", "signal_date": "2026-10-03", "latency_ms": None,
+        },
+    ]
+    comparison = build_typesafe_comparison_report(units)
+    assert comparison["disagreement_count"] == 1
+    assert comparison["baseline_mean_return_pct"] == pytest.approx(-1.0)
+    assert comparison["shadow_mean_return_pct"] == pytest.approx(7 / 3)
+    assert comparison["incremental_return_per_opportunity_pct"] == pytest.approx(
+        10 / 3
+    )
+
+    gates = {
+        "min_mature_candidates": 1,
+        "min_closed_disagreements": 1,
+        "max_skip_rate": 1.0,
+        "min_attempt_coverage": 1.0,
+        "max_error_rate": 1.0,
+        "max_late_rate": 1.0,
+        "max_interrupted_rate": 1.0,
+        "max_abstain_rate": 1.0,
+        "max_review_rate": 1.0,
+        "max_single_ticker_share": 1.0,
+        "max_single_signal_date_share": 1.0,
+        "max_budget_exposure_usd": 10.0,
+    }
+    summary = build_typesafe_evaluation_summary(
+        gates=gates,
+        recruitments=recruitments,
+        units=units,
+        comparison=comparison,
+        evaluation_as_of="2026-10-06",
+        protocol_id="protocol-v2",
+        protocol_spec_hash="protocol-hash",
+        evaluation_policy_hash="policy-hash",
+        exit_policy_token="exit-token",
+    )
+    assert summary["funnel"]["recruited"] == 3
+    assert summary["funnel"]["callable"] == 2
+    assert summary["funnel"]["review_created"] == 2
+    assert summary["rates"]["skip_rate"] == pytest.approx(1 / 3)
+    assert summary["rates"]["error_rate"] == pytest.approx(1 / 2)
+    assert summary["cost"]["unknown_cost_count"] == 1
+    assert summary["cost"]["budget_exposure_usd"] == pytest.approx(0.01)
+    # Unknown cost is not silently converted into a PASS.
+    assert "API_COST_INCOMPLETE" in summary["gate_results"]["operational"]["reasons"]
+    assert summary["automatic_adoption_allowed"] is False
+
+
+def test_typesafe_evaluation_migration_is_local_only(tmp_path: Path) -> None:
+    db = _db(tmp_path / "simulation.db")
+    result = migrate_jev_typesafe_evaluation(db)
+    assert result["historical_backfill_performed"] is False
+    assert result["external_network_requests"] == 0
+    assert result["model_calls_executed"] == 0
+    assert result["secret_values_read"] is False
+
+
+def test_typesafe_evaluation_catalog_roundtrip(tmp_path: Path) -> None:
+    db = _db(tmp_path / "simulation.db")
+    migrate_jev_typesafe_evaluation(db)
+    catalog, protocol, recruitment = _active_recruitment(db, callable=False)
+    evaluation = TypeSafeJevEvaluationCatalog(db)
+    run = evaluation.create_run(
+        client_request_id="eval-v2-fixture",
+        protocol_id=protocol["id"],
+        protocol_spec_hash=protocol["spec_hash"],
+        evaluation_policy_id=JEV_TYPESAFE_EVALUATION_POLICY_ID,
+        evaluation_policy_hash="policy-hash",
+        evaluation_as_of="2026-10-06",
+        exit_policy_token="exit-token",
+    )
+    evaluation.begin_run(run["id"])
+    unit = {
+        "recruitment_id": recruitment["id"],
+        "capture_run_id": recruitment["capture_run_id"],
+        "sample_index": recruitment["sample_index"],
+        "review_id": None,
+        "market": "KOSPI",
+        "ticker": "005930",
+        "name": "fixture",
+        "signal_date": "2026-10-06",
+        "strategy": "TREND_FOLLOWING",
+        "horizon": "SHORT",
+        "callable": 0,
+        "skip_reason": recruitment["skip_reason"],
+        "operational_status": "SKIPPED",
+        "disposition": None,
+        "failure_code": None,
+        "integrity_status": "NOT_APPLICABLE",
+        "provider_id": None,
+        "model_requested": None,
+        "model_returned": None,
+        "model_identity_status": None,
+        "model_cohort_key": "",
+        "latency_ms": None,
+        "reserved_cost_usd": 0.0,
+        "known_cost_usd": None,
+        "cost_unknown": 0,
+        "maturity_status": "IMMATURE",
+        "available_trading_days": 0,
+        "evaluated_through": None,
+        "return_5d": None,
+        "return_10d": None,
+        "return_20d": None,
+        "mfe_pct": None,
+        "mae_pct": None,
+        "execution_status": "NOT_EVALUATED",
+        "execution_reason": None,
+        "entry_date": None,
+        "entry_price": None,
+        "exit_date": None,
+        "exit_price": None,
+        "exit_reason": None,
+        "holding_days": None,
+        "gross_return_pct": None,
+        "net_return_pct": None,
+        "mark_return_pct": None,
+        "comparison_eligible": 0,
+        "details": {},
+        "computed_at": "2026-10-06T00:00:00+00:00",
+    }
+    report = {
+        "funnel": {
+            "recruited": 1,
+            "callable": 0,
+            "review_created": 0,
+            "valid": 0,
+            "mature": 0,
+            "comparable_closed": 0,
+        },
+        "comparison": {"disagreement_count": 0},
+        "evaluation_state": "COLLECTING",
+        "automatic_adoption_allowed": False,
+    }
+    completed = evaluation.complete_run(
+        run_id=run["id"],
+        units=[unit],
+        report_summary=report,
+        source_set_hash="source-hash",
+    )
+    assert completed["status"] == "COMPLETED"
+    detail = evaluation.detail(run["id"])
+    assert detail["report"]["summary"]["automatic_adoption_allowed"] is False
+    assert detail["units"][0]["operational_status"] == "SKIPPED"

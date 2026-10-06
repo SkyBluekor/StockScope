@@ -522,6 +522,9 @@ def restore_backup(
         jev_typesafe_manifest = dict(
             extensions.get("jev_typesafe_v2") or {}
         )
+        jev_typesafe_evaluation_manifest = dict(
+            extensions.get("jev_typesafe_evaluation_v2") or {}
+        )
         holding_decision_manifest = dict(
             extensions.get("holding_decision_v1") or {}
         )
@@ -668,6 +671,20 @@ def restore_backup(
                 "network_forced_off": bool(
                     restore_simulation and typesafe_network_forced_off
                 ),
+            },
+            "jev_typesafe_evaluation": {
+                "schema_version": jev_typesafe_evaluation_manifest.get("schema_version"),
+                "store_present_in_backup": bool(
+                    jev_typesafe_evaluation_manifest.get("present")
+                ),
+                "store_restored": bool(
+                    restore_simulation
+                    and jev_typesafe_evaluation_manifest.get("restorable")
+                ),
+                "tables": list(
+                    jev_typesafe_evaluation_manifest.get("tables") or []
+                ),
+                "secret_values_restored": False,
             },
             "holding_decision": {
                 "schema_version": holding_decision_manifest.get("schema_version"),

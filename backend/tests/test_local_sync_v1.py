@@ -34,6 +34,7 @@ def test_registry_order_is_explicit_and_stable():
         "JEV-SHADOW-V1",
         "JEV-EVALUATION-V1",
         "JEV-TYPESAFE-V2",
+        "JEV-TYPESAFE-EVALUATION-V2",
     ]
 
 
