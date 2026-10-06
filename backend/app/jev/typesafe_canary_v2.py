@@ -684,14 +684,20 @@ def write_canary_v2_protocol(
     return path
 
 
-def classify_model_channel(model: dict[str, str]) -> str:
+def classify_model_channel(model: dict[str, Any]) -> str:
     name = str(model.get("name") or "").strip().lower()
-    description = str(model.get("description") or "").strip().lower()
     if "preview" in name:
         return PREVIEW_ALIAS
     if name == "jev-latest" or name.endswith("-latest"):
         return STABLE_ALIAS
-    if re.fullmatch(r"jev-\d+(?:\.\d+)+", name) and "immutable" in description:
+
+    # A version-looking name is not proof of immutability. Public discovery
+    # currently exposes name/description/release_date only, so immutable
+    # classification requires separate verified metadata bound later.
+    if (
+        re.fullmatch(r"jev-\\d+(?:\\.\\d+)+", name)
+        and model.get("immutable_verified") is True
+    ):
         return IMMUTABLE_VERSION_VERIFIED
     return UNKNOWN_CHANNEL
 
