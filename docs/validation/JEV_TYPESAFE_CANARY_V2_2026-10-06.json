@@ -1,0 +1,1540 @@
+{
+  "report_version": "JEV_TYPESAFE_CANARY_REPORT_V2",
+  "status": "FAIL",
+  "canary_protocol_id": "JEV-TYPESAFE-CANARY-V2",
+  "canary_protocol_hash": "e567606b949886a615ee9762c706daf75d1d8b9f194b487ca40e5c4cbc7ad0e3",
+  "question_contract_version": "JEV_TYPESAFE_QUESTIONS_V2",
+  "question_set_hash": "7a24ad5b280f6de9bc111efb822070fb9866b7537cf2d67813fce0822f85bc1f",
+  "disposition_policy_version": "JEV_TYPESAFE_DISPOSITION_POLICY_V2",
+  "disposition_policy_hash": "dfc05fcc22771fe8264160fe2d758ba3e533eb483066c593d846abf9c8566089",
+  "started_at": "2026-10-06T12:13:51.057023+00:00",
+  "completed_at": "2026-10-06T12:14:05.942074+00:00",
+  "model_binding": {
+    "artifact_version": "JEV_TYPESAFE_MODEL_BINDING_ARTIFACT_V2",
+    "status": "OBSERVED_CANARY_BINDING",
+    "checked_at": "2026-10-06T12:14:05.942074+00:00",
+    "provider_id": "TYPESAFE_SYSTEM_ONE",
+    "available_models": [
+      {
+        "name": "jev-latest",
+        "description": "The latest iteration of TypeSafe's System One Model: Jev",
+        "release_date": "2026-09-10T18:38:01.391457+00:00",
+        "request_channel_class": "STABLE_ALIAS"
+      },
+      {
+        "name": "jev-preview",
+        "description": "A preview version of `jev-latest`: should be better in most ways",
+        "release_date": "2026-09-10T18:39:06.057655+00:00",
+        "request_channel_class": "PREVIEW_ALIAS"
+      }
+    ],
+    "selected_request_model": "jev-latest",
+    "request_channel_class": "STABLE_ALIAS",
+    "selected_release_date": "2026-09-10T18:38:01.391457+00:00",
+    "observed_response_model": "jev-1.13.0",
+    "discovery_hash": "cc4c152d747bd139de424fe589e807c59f31dd411a90ff61e37a55e0ae892f8a",
+    "canary_protocol_hash": "e567606b949886a615ee9762c706daf75d1d8b9f194b487ca40e5c4cbc7ad0e3"
+  },
+  "api_attempts": {
+    "model_discovery": 1,
+    "systemone": 36,
+    "total": 37,
+    "hard_cap": 73
+  },
+  "systemone_counts": {
+    "planned": 72,
+    "attempted": 36,
+    "completed": 36,
+    "valid": 36,
+    "failed": 0
+  },
+  "budget": {
+    "hard_budget_usd": 0.25,
+    "per_call_reservation_usd": 0.001,
+    "reserved_exposure_usd": 0.036000000000000025,
+    "actual_provider_cost_usd": null,
+    "actual_provider_cost_status": "UNKNOWN"
+  },
+  "usage": {
+    "input_tokens": 41637,
+    "output_tokens": 2376
+  },
+  "selection_analysis": {
+    "candidates": [
+      {
+        "threshold_strategy": 0.5,
+        "threshold_entry": 0.5,
+        "threshold_evidence": 0.6,
+        "hard_proposition_checks": 99,
+        "hard_proposition_mismatches": 16,
+        "hard_disposition_checks": 33,
+        "hard_disposition_reason_errors": 12,
+        "false_escalation": 1,
+        "false_abstention": 11,
+        "missed_conflict": 3,
+        "missed_insufficiency": 0,
+        "wrong_reason": 3,
+        "cross_question_errors": 3,
+        "review_count": 13,
+        "abstain_count": 17,
+        "intervention_count": 30,
+        "soft_intervention_count": 0,
+        "soft_abstain_count": 0,
+        "d_crossing": 1,
+        "e_crossing": 1,
+        "a_crossing": 1,
+        "reason_crossing": 1,
+        "question_crossing": {
+          "strategy_context_conflict": 0,
+          "entry_context_conflict": 1,
+          "overall_semantic_review_insufficient": 0
+        },
+        "eligible": false
+      },
+      {
+        "threshold_strategy": 0.5,
+        "threshold_entry": 0.5,
+        "threshold_evidence": 0.75,
+        "hard_proposition_checks": 99,
+        "hard_proposition_mismatches": 10,
+        "hard_disposition_checks": 33,
+        "hard_disposition_reason_errors": 10,
+        "false_escalation": 1,
+        "false_abstention": 0,
+        "missed_conflict": 3,
+        "missed_insufficiency": 6,
+        "wrong_reason": 3,
+        "cross_question_errors": 3,
+        "review_count": 13,
+        "abstain_count": 0,
+        "intervention_count": 13,
+        "soft_intervention_count": 0,
+        "soft_abstain_count": 0,
+        "d_crossing": 1,
+        "e_crossing": 1,
+        "a_crossing": 0,
+        "reason_crossing": 1,
+        "question_crossing": {
+          "strategy_context_conflict": 0,
+          "entry_context_conflict": 1,
+          "overall_semantic_review_insufficient": 0
+        },
+        "eligible": false
+      },
+      {
+        "threshold_strategy": 0.5,
+        "threshold_entry": 0.5,
+        "threshold_evidence": 0.9,
+        "hard_proposition_checks": 99,
+        "hard_proposition_mismatches": 10,
+        "hard_disposition_checks": 33,
+        "hard_disposition_reason_errors": 10,
+        "false_escalation": 1,
+        "false_abstention": 0,
+        "missed_conflict": 3,
+        "missed_insufficiency": 6,
+        "wrong_reason": 3,
+        "cross_question_errors": 3,
+        "review_count": 13,
+        "abstain_count": 0,
+        "intervention_count": 13,
+        "soft_intervention_count": 0,
+        "soft_abstain_count": 0,
+        "d_crossing": 1,
+        "e_crossing": 1,
+        "a_crossing": 0,
+        "reason_crossing": 1,
+        "question_crossing": {
+          "strategy_context_conflict": 0,
+          "entry_context_conflict": 1,
+          "overall_semantic_review_insufficient": 0
+        },
+        "eligible": false
+      },
+      {
+        "threshold_strategy": 0.5,
+        "threshold_entry": 0.65,
+        "threshold_evidence": 0.6,
+        "hard_proposition_checks": 99,
+        "hard_proposition_mismatches": 15,
+        "hard_disposition_checks": 33,
+        "hard_disposition_reason_errors": 12,
+        "false_escalation": 0,
+        "false_abstention": 12,
+        "missed_conflict": 3,
+        "missed_insufficiency": 0,
+        "wrong_reason": 3,
+        "cross_question_errors": 3,
+        "review_count": 12,
+        "abstain_count": 18,
+        "intervention_count": 30,
+        "soft_intervention_count": 0,
+        "soft_abstain_count": 0,
+        "d_crossing": 0,
+        "e_crossing": 0,
+        "a_crossing": 0,
+        "reason_crossing": 0,
+        "question_crossing": {
+          "strategy_context_conflict": 0,
+          "entry_context_conflict": 0,
+          "overall_semantic_review_insufficient": 0
+        },
+        "eligible": false
+      },
+      {
+        "threshold_strategy": 0.5,
+        "threshold_entry": 0.65,
+        "threshold_evidence": 0.75,
+        "hard_proposition_checks": 99,
+        "hard_proposition_mismatches": 9,
+        "hard_disposition_checks": 33,
+        "hard_disposition_reason_errors": 9,
+        "false_escalation": 0,
+        "false_abstention": 0,
+        "missed_conflict": 3,
+        "missed_insufficiency": 6,
+        "wrong_reason": 3,
+        "cross_question_errors": 3,
+        "review_count": 12,
+        "abstain_count": 0,
+        "intervention_count": 12,
+        "soft_intervention_count": 0,
+        "soft_abstain_count": 0,
+        "d_crossing": 0,
+        "e_crossing": 0,
+        "a_crossing": 0,
+        "reason_crossing": 0,
+        "question_crossing": {
+          "strategy_context_conflict": 0,
+          "entry_context_conflict": 0,
+          "overall_semantic_review_insufficient": 0
+        },
+        "eligible": false
+      },
+      {
+        "threshold_strategy": 0.5,
+        "threshold_entry": 0.65,
+        "threshold_evidence": 0.9,
+        "hard_proposition_checks": 99,
+        "hard_proposition_mismatches": 9,
+        "hard_disposition_checks": 33,
+        "hard_disposition_reason_errors": 9,
+        "false_escalation": 0,
+        "false_abstention": 0,
+        "missed_conflict": 3,
+        "missed_insufficiency": 6,
+        "wrong_reason": 3,
+        "cross_question_errors": 3,
+        "review_count": 12,
+        "abstain_count": 0,
+        "intervention_count": 12,
+        "soft_intervention_count": 0,
+        "soft_abstain_count": 0,
+        "d_crossing": 0,
+        "e_crossing": 0,
+        "a_crossing": 0,
+        "reason_crossing": 0,
+        "question_crossing": {
+          "strategy_context_conflict": 0,
+          "entry_context_conflict": 0,
+          "overall_semantic_review_insufficient": 0
+        },
+        "eligible": false
+      },
+      {
+        "threshold_strategy": 0.5,
+        "threshold_entry": 0.8,
+        "threshold_evidence": 0.6,
+        "hard_proposition_checks": 99,
+        "hard_proposition_mismatches": 15,
+        "hard_disposition_checks": 33,
+        "hard_disposition_reason_errors": 12,
+        "false_escalation": 0,
+        "false_abstention": 12,
+        "missed_conflict": 3,
+        "missed_insufficiency": 0,
+        "wrong_reason": 3,
+        "cross_question_errors": 3,
+        "review_count": 12,
+        "abstain_count": 18,
+        "intervention_count": 30,
+        "soft_intervention_count": 0,
+        "soft_abstain_count": 0,
+        "d_crossing": 0,
+        "e_crossing": 0,
+        "a_crossing": 0,
+        "reason_crossing": 0,
+        "question_crossing": {
+          "strategy_context_conflict": 0,
+          "entry_context_conflict": 0,
+          "overall_semantic_review_insufficient": 0
+        },
+        "eligible": false
+      },
+      {
+        "threshold_strategy": 0.5,
+        "threshold_entry": 0.8,
+        "threshold_evidence": 0.75,
+        "hard_proposition_checks": 99,
+        "hard_proposition_mismatches": 9,
+        "hard_disposition_checks": 33,
+        "hard_disposition_reason_errors": 9,
+        "false_escalation": 0,
+        "false_abstention": 0,
+        "missed_conflict": 3,
+        "missed_insufficiency": 6,
+        "wrong_reason": 3,
+        "cross_question_errors": 3,
+        "review_count": 12,
+        "abstain_count": 0,
+        "intervention_count": 12,
+        "soft_intervention_count": 0,
+        "soft_abstain_count": 0,
+        "d_crossing": 0,
+        "e_crossing": 0,
+        "a_crossing": 0,
+        "reason_crossing": 0,
+        "question_crossing": {
+          "strategy_context_conflict": 0,
+          "entry_context_conflict": 0,
+          "overall_semantic_review_insufficient": 0
+        },
+        "eligible": false
+      },
+      {
+        "threshold_strategy": 0.5,
+        "threshold_entry": 0.8,
+        "threshold_evidence": 0.9,
+        "hard_proposition_checks": 99,
+        "hard_proposition_mismatches": 9,
+        "hard_disposition_checks": 33,
+        "hard_disposition_reason_errors": 9,
+        "false_escalation": 0,
+        "false_abstention": 0,
+        "missed_conflict": 3,
+        "missed_insufficiency": 6,
+        "wrong_reason": 3,
+        "cross_question_errors": 3,
+        "review_count": 12,
+        "abstain_count": 0,
+        "intervention_count": 12,
+        "soft_intervention_count": 0,
+        "soft_abstain_count": 0,
+        "d_crossing": 0,
+        "e_crossing": 0,
+        "a_crossing": 0,
+        "reason_crossing": 0,
+        "question_crossing": {
+          "strategy_context_conflict": 0,
+          "entry_context_conflict": 0,
+          "overall_semantic_review_insufficient": 0
+        },
+        "eligible": false
+      },
+      {
+        "threshold_strategy": 0.65,
+        "threshold_entry": 0.5,
+        "threshold_evidence": 0.6,
+        "hard_proposition_checks": 99,
+        "hard_proposition_mismatches": 16,
+        "hard_disposition_checks": 33,
+        "hard_disposition_reason_errors": 12,
+        "false_escalation": 1,
+        "false_abstention": 11,
+        "missed_conflict": 3,
+        "missed_insufficiency": 0,
+        "wrong_reason": 3,
+        "cross_question_errors": 3,
+        "review_count": 13,
+        "abstain_count": 17,
+        "intervention_count": 30,
+        "soft_intervention_count": 0,
+        "soft_abstain_count": 0,
+        "d_crossing": 1,
+        "e_crossing": 1,
+        "a_crossing": 1,
+        "reason_crossing": 1,
+        "question_crossing": {
+          "strategy_context_conflict": 0,
+          "entry_context_conflict": 1,
+          "overall_semantic_review_insufficient": 0
+        },
+        "eligible": false
+      },
+      {
+        "threshold_strategy": 0.65,
+        "threshold_entry": 0.5,
+        "threshold_evidence": 0.75,
+        "hard_proposition_checks": 99,
+        "hard_proposition_mismatches": 10,
+        "hard_disposition_checks": 33,
+        "hard_disposition_reason_errors": 10,
+        "false_escalation": 1,
+        "false_abstention": 0,
+        "missed_conflict": 3,
+        "missed_insufficiency": 6,
+        "wrong_reason": 3,
+        "cross_question_errors": 3,
+        "review_count": 13,
+        "abstain_count": 0,
+        "intervention_count": 13,
+        "soft_intervention_count": 0,
+        "soft_abstain_count": 0,
+        "d_crossing": 1,
+        "e_crossing": 1,
+        "a_crossing": 0,
+        "reason_crossing": 1,
+        "question_crossing": {
+          "strategy_context_conflict": 0,
+          "entry_context_conflict": 1,
+          "overall_semantic_review_insufficient": 0
+        },
+        "eligible": false
+      },
+      {
+        "threshold_strategy": 0.65,
+        "threshold_entry": 0.5,
+        "threshold_evidence": 0.9,
+        "hard_proposition_checks": 99,
+        "hard_proposition_mismatches": 10,
+        "hard_disposition_checks": 33,
+        "hard_disposition_reason_errors": 10,
+        "false_escalation": 1,
+        "false_abstention": 0,
+        "missed_conflict": 3,
+        "missed_insufficiency": 6,
+        "wrong_reason": 3,
+        "cross_question_errors": 3,
+        "review_count": 13,
+        "abstain_count": 0,
+        "intervention_count": 13,
+        "soft_intervention_count": 0,
+        "soft_abstain_count": 0,
+        "d_crossing": 1,
+        "e_crossing": 1,
+        "a_crossing": 0,
+        "reason_crossing": 1,
+        "question_crossing": {
+          "strategy_context_conflict": 0,
+          "entry_context_conflict": 1,
+          "overall_semantic_review_insufficient": 0
+        },
+        "eligible": false
+      },
+      {
+        "threshold_strategy": 0.65,
+        "threshold_entry": 0.65,
+        "threshold_evidence": 0.6,
+        "hard_proposition_checks": 99,
+        "hard_proposition_mismatches": 15,
+        "hard_disposition_checks": 33,
+        "hard_disposition_reason_errors": 12,
+        "false_escalation": 0,
+        "false_abstention": 12,
+        "missed_conflict": 3,
+        "missed_insufficiency": 0,
+        "wrong_reason": 3,
+        "cross_question_errors": 3,
+        "review_count": 12,
+        "abstain_count": 18,
+        "intervention_count": 30,
+        "soft_intervention_count": 0,
+        "soft_abstain_count": 0,
+        "d_crossing": 0,
+        "e_crossing": 0,
+        "a_crossing": 0,
+        "reason_crossing": 0,
+        "question_crossing": {
+          "strategy_context_conflict": 0,
+          "entry_context_conflict": 0,
+          "overall_semantic_review_insufficient": 0
+        },
+        "eligible": false
+      },
+      {
+        "threshold_strategy": 0.65,
+        "threshold_entry": 0.65,
+        "threshold_evidence": 0.75,
+        "hard_proposition_checks": 99,
+        "hard_proposition_mismatches": 9,
+        "hard_disposition_checks": 33,
+        "hard_disposition_reason_errors": 9,
+        "false_escalation": 0,
+        "false_abstention": 0,
+        "missed_conflict": 3,
+        "missed_insufficiency": 6,
+        "wrong_reason": 3,
+        "cross_question_errors": 3,
+        "review_count": 12,
+        "abstain_count": 0,
+        "intervention_count": 12,
+        "soft_intervention_count": 0,
+        "soft_abstain_count": 0,
+        "d_crossing": 0,
+        "e_crossing": 0,
+        "a_crossing": 0,
+        "reason_crossing": 0,
+        "question_crossing": {
+          "strategy_context_conflict": 0,
+          "entry_context_conflict": 0,
+          "overall_semantic_review_insufficient": 0
+        },
+        "eligible": false
+      },
+      {
+        "threshold_strategy": 0.65,
+        "threshold_entry": 0.65,
+        "threshold_evidence": 0.9,
+        "hard_proposition_checks": 99,
+        "hard_proposition_mismatches": 9,
+        "hard_disposition_checks": 33,
+        "hard_disposition_reason_errors": 9,
+        "false_escalation": 0,
+        "false_abstention": 0,
+        "missed_conflict": 3,
+        "missed_insufficiency": 6,
+        "wrong_reason": 3,
+        "cross_question_errors": 3,
+        "review_count": 12,
+        "abstain_count": 0,
+        "intervention_count": 12,
+        "soft_intervention_count": 0,
+        "soft_abstain_count": 0,
+        "d_crossing": 0,
+        "e_crossing": 0,
+        "a_crossing": 0,
+        "reason_crossing": 0,
+        "question_crossing": {
+          "strategy_context_conflict": 0,
+          "entry_context_conflict": 0,
+          "overall_semantic_review_insufficient": 0
+        },
+        "eligible": false
+      },
+      {
+        "threshold_strategy": 0.65,
+        "threshold_entry": 0.8,
+        "threshold_evidence": 0.6,
+        "hard_proposition_checks": 99,
+        "hard_proposition_mismatches": 15,
+        "hard_disposition_checks": 33,
+        "hard_disposition_reason_errors": 12,
+        "false_escalation": 0,
+        "false_abstention": 12,
+        "missed_conflict": 3,
+        "missed_insufficiency": 0,
+        "wrong_reason": 3,
+        "cross_question_errors": 3,
+        "review_count": 12,
+        "abstain_count": 18,
+        "intervention_count": 30,
+        "soft_intervention_count": 0,
+        "soft_abstain_count": 0,
+        "d_crossing": 0,
+        "e_crossing": 0,
+        "a_crossing": 0,
+        "reason_crossing": 0,
+        "question_crossing": {
+          "strategy_context_conflict": 0,
+          "entry_context_conflict": 0,
+          "overall_semantic_review_insufficient": 0
+        },
+        "eligible": false
+      },
+      {
+        "threshold_strategy": 0.65,
+        "threshold_entry": 0.8,
+        "threshold_evidence": 0.75,
+        "hard_proposition_checks": 99,
+        "hard_proposition_mismatches": 9,
+        "hard_disposition_checks": 33,
+        "hard_disposition_reason_errors": 9,
+        "false_escalation": 0,
+        "false_abstention": 0,
+        "missed_conflict": 3,
+        "missed_insufficiency": 6,
+        "wrong_reason": 3,
+        "cross_question_errors": 3,
+        "review_count": 12,
+        "abstain_count": 0,
+        "intervention_count": 12,
+        "soft_intervention_count": 0,
+        "soft_abstain_count": 0,
+        "d_crossing": 0,
+        "e_crossing": 0,
+        "a_crossing": 0,
+        "reason_crossing": 0,
+        "question_crossing": {
+          "strategy_context_conflict": 0,
+          "entry_context_conflict": 0,
+          "overall_semantic_review_insufficient": 0
+        },
+        "eligible": false
+      },
+      {
+        "threshold_strategy": 0.65,
+        "threshold_entry": 0.8,
+        "threshold_evidence": 0.9,
+        "hard_proposition_checks": 99,
+        "hard_proposition_mismatches": 9,
+        "hard_disposition_checks": 33,
+        "hard_disposition_reason_errors": 9,
+        "false_escalation": 0,
+        "false_abstention": 0,
+        "missed_conflict": 3,
+        "missed_insufficiency": 6,
+        "wrong_reason": 3,
+        "cross_question_errors": 3,
+        "review_count": 12,
+        "abstain_count": 0,
+        "intervention_count": 12,
+        "soft_intervention_count": 0,
+        "soft_abstain_count": 0,
+        "d_crossing": 0,
+        "e_crossing": 0,
+        "a_crossing": 0,
+        "reason_crossing": 0,
+        "question_crossing": {
+          "strategy_context_conflict": 0,
+          "entry_context_conflict": 0,
+          "overall_semantic_review_insufficient": 0
+        },
+        "eligible": false
+      },
+      {
+        "threshold_strategy": 0.8,
+        "threshold_entry": 0.5,
+        "threshold_evidence": 0.6,
+        "hard_proposition_checks": 99,
+        "hard_proposition_mismatches": 19,
+        "hard_disposition_checks": 33,
+        "hard_disposition_reason_errors": 15,
+        "false_escalation": 1,
+        "false_abstention": 11,
+        "missed_conflict": 6,
+        "missed_insufficiency": 0,
+        "wrong_reason": 6,
+        "cross_question_errors": 6,
+        "review_count": 10,
+        "abstain_count": 17,
+        "intervention_count": 27,
+        "soft_intervention_count": 0,
+        "soft_abstain_count": 0,
+        "d_crossing": 1,
+        "e_crossing": 1,
+        "a_crossing": 1,
+        "reason_crossing": 1,
+        "question_crossing": {
+          "strategy_context_conflict": 0,
+          "entry_context_conflict": 1,
+          "overall_semantic_review_insufficient": 0
+        },
+        "eligible": false
+      },
+      {
+        "threshold_strategy": 0.8,
+        "threshold_entry": 0.5,
+        "threshold_evidence": 0.75,
+        "hard_proposition_checks": 99,
+        "hard_proposition_mismatches": 13,
+        "hard_disposition_checks": 33,
+        "hard_disposition_reason_errors": 13,
+        "false_escalation": 1,
+        "false_abstention": 0,
+        "missed_conflict": 6,
+        "missed_insufficiency": 6,
+        "wrong_reason": 6,
+        "cross_question_errors": 6,
+        "review_count": 10,
+        "abstain_count": 0,
+        "intervention_count": 10,
+        "soft_intervention_count": 0,
+        "soft_abstain_count": 0,
+        "d_crossing": 1,
+        "e_crossing": 1,
+        "a_crossing": 0,
+        "reason_crossing": 1,
+        "question_crossing": {
+          "strategy_context_conflict": 0,
+          "entry_context_conflict": 1,
+          "overall_semantic_review_insufficient": 0
+        },
+        "eligible": false
+      },
+      {
+        "threshold_strategy": 0.8,
+        "threshold_entry": 0.5,
+        "threshold_evidence": 0.9,
+        "hard_proposition_checks": 99,
+        "hard_proposition_mismatches": 13,
+        "hard_disposition_checks": 33,
+        "hard_disposition_reason_errors": 13,
+        "false_escalation": 1,
+        "false_abstention": 0,
+        "missed_conflict": 6,
+        "missed_insufficiency": 6,
+        "wrong_reason": 6,
+        "cross_question_errors": 6,
+        "review_count": 10,
+        "abstain_count": 0,
+        "intervention_count": 10,
+        "soft_intervention_count": 0,
+        "soft_abstain_count": 0,
+        "d_crossing": 1,
+        "e_crossing": 1,
+        "a_crossing": 0,
+        "reason_crossing": 1,
+        "question_crossing": {
+          "strategy_context_conflict": 0,
+          "entry_context_conflict": 1,
+          "overall_semantic_review_insufficient": 0
+        },
+        "eligible": false
+      },
+      {
+        "threshold_strategy": 0.8,
+        "threshold_entry": 0.65,
+        "threshold_evidence": 0.6,
+        "hard_proposition_checks": 99,
+        "hard_proposition_mismatches": 18,
+        "hard_disposition_checks": 33,
+        "hard_disposition_reason_errors": 15,
+        "false_escalation": 0,
+        "false_abstention": 12,
+        "missed_conflict": 6,
+        "missed_insufficiency": 0,
+        "wrong_reason": 6,
+        "cross_question_errors": 6,
+        "review_count": 9,
+        "abstain_count": 18,
+        "intervention_count": 27,
+        "soft_intervention_count": 0,
+        "soft_abstain_count": 0,
+        "d_crossing": 0,
+        "e_crossing": 0,
+        "a_crossing": 0,
+        "reason_crossing": 0,
+        "question_crossing": {
+          "strategy_context_conflict": 0,
+          "entry_context_conflict": 0,
+          "overall_semantic_review_insufficient": 0
+        },
+        "eligible": false
+      },
+      {
+        "threshold_strategy": 0.8,
+        "threshold_entry": 0.65,
+        "threshold_evidence": 0.75,
+        "hard_proposition_checks": 99,
+        "hard_proposition_mismatches": 12,
+        "hard_disposition_checks": 33,
+        "hard_disposition_reason_errors": 12,
+        "false_escalation": 0,
+        "false_abstention": 0,
+        "missed_conflict": 6,
+        "missed_insufficiency": 6,
+        "wrong_reason": 6,
+        "cross_question_errors": 6,
+        "review_count": 9,
+        "abstain_count": 0,
+        "intervention_count": 9,
+        "soft_intervention_count": 0,
+        "soft_abstain_count": 0,
+        "d_crossing": 0,
+        "e_crossing": 0,
+        "a_crossing": 0,
+        "reason_crossing": 0,
+        "question_crossing": {
+          "strategy_context_conflict": 0,
+          "entry_context_conflict": 0,
+          "overall_semantic_review_insufficient": 0
+        },
+        "eligible": false
+      },
+      {
+        "threshold_strategy": 0.8,
+        "threshold_entry": 0.65,
+        "threshold_evidence": 0.9,
+        "hard_proposition_checks": 99,
+        "hard_proposition_mismatches": 12,
+        "hard_disposition_checks": 33,
+        "hard_disposition_reason_errors": 12,
+        "false_escalation": 0,
+        "false_abstention": 0,
+        "missed_conflict": 6,
+        "missed_insufficiency": 6,
+        "wrong_reason": 6,
+        "cross_question_errors": 6,
+        "review_count": 9,
+        "abstain_count": 0,
+        "intervention_count": 9,
+        "soft_intervention_count": 0,
+        "soft_abstain_count": 0,
+        "d_crossing": 0,
+        "e_crossing": 0,
+        "a_crossing": 0,
+        "reason_crossing": 0,
+        "question_crossing": {
+          "strategy_context_conflict": 0,
+          "entry_context_conflict": 0,
+          "overall_semantic_review_insufficient": 0
+        },
+        "eligible": false
+      },
+      {
+        "threshold_strategy": 0.8,
+        "threshold_entry": 0.8,
+        "threshold_evidence": 0.6,
+        "hard_proposition_checks": 99,
+        "hard_proposition_mismatches": 18,
+        "hard_disposition_checks": 33,
+        "hard_disposition_reason_errors": 15,
+        "false_escalation": 0,
+        "false_abstention": 12,
+        "missed_conflict": 6,
+        "missed_insufficiency": 0,
+        "wrong_reason": 6,
+        "cross_question_errors": 6,
+        "review_count": 9,
+        "abstain_count": 18,
+        "intervention_count": 27,
+        "soft_intervention_count": 0,
+        "soft_abstain_count": 0,
+        "d_crossing": 0,
+        "e_crossing": 0,
+        "a_crossing": 0,
+        "reason_crossing": 0,
+        "question_crossing": {
+          "strategy_context_conflict": 0,
+          "entry_context_conflict": 0,
+          "overall_semantic_review_insufficient": 0
+        },
+        "eligible": false
+      },
+      {
+        "threshold_strategy": 0.8,
+        "threshold_entry": 0.8,
+        "threshold_evidence": 0.75,
+        "hard_proposition_checks": 99,
+        "hard_proposition_mismatches": 12,
+        "hard_disposition_checks": 33,
+        "hard_disposition_reason_errors": 12,
+        "false_escalation": 0,
+        "false_abstention": 0,
+        "missed_conflict": 6,
+        "missed_insufficiency": 6,
+        "wrong_reason": 6,
+        "cross_question_errors": 6,
+        "review_count": 9,
+        "abstain_count": 0,
+        "intervention_count": 9,
+        "soft_intervention_count": 0,
+        "soft_abstain_count": 0,
+        "d_crossing": 0,
+        "e_crossing": 0,
+        "a_crossing": 0,
+        "reason_crossing": 0,
+        "question_crossing": {
+          "strategy_context_conflict": 0,
+          "entry_context_conflict": 0,
+          "overall_semantic_review_insufficient": 0
+        },
+        "eligible": false
+      },
+      {
+        "threshold_strategy": 0.8,
+        "threshold_entry": 0.8,
+        "threshold_evidence": 0.9,
+        "hard_proposition_checks": 99,
+        "hard_proposition_mismatches": 12,
+        "hard_disposition_checks": 33,
+        "hard_disposition_reason_errors": 12,
+        "false_escalation": 0,
+        "false_abstention": 0,
+        "missed_conflict": 6,
+        "missed_insufficiency": 6,
+        "wrong_reason": 6,
+        "cross_question_errors": 6,
+        "review_count": 9,
+        "abstain_count": 0,
+        "intervention_count": 9,
+        "soft_intervention_count": 0,
+        "soft_abstain_count": 0,
+        "d_crossing": 0,
+        "e_crossing": 0,
+        "a_crossing": 0,
+        "reason_crossing": 0,
+        "question_crossing": {
+          "strategy_context_conflict": 0,
+          "entry_context_conflict": 0,
+          "overall_semantic_review_insufficient": 0
+        },
+        "eligible": false
+      }
+    ],
+    "selected": null
+  },
+  "selected_threshold": null,
+  "validation_analysis": null,
+  "records": {
+    "selection": [
+      {
+        "fixture_id": "v2-s01",
+        "partition": "selection",
+        "fixture_hash": "10eed4eb68ceed1dc5d0470d3cffeb28519f7df532bc77b417d9dd2e56706f9f",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.1,
+          "entry_context_conflict": 0.2,
+          "overall_semantic_review_insufficient": 0.62
+        },
+        "usage": {
+          "input_tokens": 1155,
+          "output_tokens": 66
+        },
+        "latency_ms": 507
+      },
+      {
+        "fixture_id": "v2-s02",
+        "partition": "selection",
+        "fixture_hash": "c8aee13e896fd06dbd93d5edb4b0850d7f267a462c5a446897359ac1ab20018b",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.05,
+          "entry_context_conflict": 0.15,
+          "overall_semantic_review_insufficient": 0.68
+        },
+        "usage": {
+          "input_tokens": 1159,
+          "output_tokens": 66
+        },
+        "latency_ms": 453
+      },
+      {
+        "fixture_id": "v2-s03",
+        "partition": "selection",
+        "fixture_hash": "860233c64d0953098ed82d28e2a403cea3d2346e9c2eef5a454ad58b319ba8a4",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.2,
+          "entry_context_conflict": 0.5,
+          "overall_semantic_review_insufficient": 0.65
+        },
+        "usage": {
+          "input_tokens": 1161,
+          "output_tokens": 66
+        },
+        "latency_ms": 517
+      },
+      {
+        "fixture_id": "v2-s04",
+        "partition": "selection",
+        "fixture_hash": "4887952e356d04cb906f5b25059c462e362a8faee6861d65411f9f6e83d7ea7b",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.15,
+          "entry_context_conflict": 0.18,
+          "overall_semantic_review_insufficient": 0.56
+        },
+        "usage": {
+          "input_tokens": 1150,
+          "output_tokens": 66
+        },
+        "latency_ms": 390
+      },
+      {
+        "fixture_id": "v2-s05",
+        "partition": "selection",
+        "fixture_hash": "bea888b2381983c59520a38caebf5f4d7eafa52342efa740a7dc2f206d857c5c",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.91,
+          "entry_context_conflict": 0.2,
+          "overall_semantic_review_insufficient": 0.29
+        },
+        "usage": {
+          "input_tokens": 1158,
+          "output_tokens": 66
+        },
+        "latency_ms": 382
+      },
+      {
+        "fixture_id": "v2-s06",
+        "partition": "selection",
+        "fixture_hash": "c8a95f62cda6b0c8d7f5e6eb7d9c46af8719897e2a7ff0ab0b83d6b6c6b7e1dc",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.75,
+          "entry_context_conflict": 0.27,
+          "overall_semantic_review_insufficient": 0.35
+        },
+        "usage": {
+          "input_tokens": 1162,
+          "output_tokens": 66
+        },
+        "latency_ms": 399
+      },
+      {
+        "fixture_id": "v2-s07",
+        "partition": "selection",
+        "fixture_hash": "55a5ebfb34ac021fee6e2cc9420a3dcd4c7422277b6221bbb9e8046c8098f8b1",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.15,
+          "entry_context_conflict": 0.93,
+          "overall_semantic_review_insufficient": 0.32
+        },
+        "usage": {
+          "input_tokens": 1155,
+          "output_tokens": 66
+        },
+        "latency_ms": 367
+      },
+      {
+        "fixture_id": "v2-s08",
+        "partition": "selection",
+        "fixture_hash": "3a1a31cdc890e1470b00cb3130687d8ee3e125ebb6556385a5e75291d7317dd4",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.13,
+          "entry_context_conflict": 0.41,
+          "overall_semantic_review_insufficient": 0.7
+        },
+        "usage": {
+          "input_tokens": 1156,
+          "output_tokens": 66
+        },
+        "latency_ms": 388
+      },
+      {
+        "fixture_id": "v2-s09",
+        "partition": "selection",
+        "fixture_hash": "5430133bd93d7d3221c8ba9ea41a5ac91e6fe95bd342873f5c02ca1633f101d7",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.21,
+          "entry_context_conflict": 0.17,
+          "overall_semantic_review_insufficient": 0.72
+        },
+        "usage": {
+          "input_tokens": 1152,
+          "output_tokens": 66
+        },
+        "latency_ms": 403
+      },
+      {
+        "fixture_id": "v2-s10",
+        "partition": "selection",
+        "fixture_hash": "dced29d94add7e4223e3b2e185ec953c16a2b1d697fbc6fdcd69bab823633071",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.18,
+          "entry_context_conflict": 0.23,
+          "overall_semantic_review_insufficient": 0.65
+        },
+        "usage": {
+          "input_tokens": 1157,
+          "output_tokens": 66
+        },
+        "latency_ms": 390
+      },
+      {
+        "fixture_id": "v2-s11",
+        "partition": "selection",
+        "fixture_hash": "c398fa2854ee74219ec1b2b5003bbb3d08e714ee372364d8194c5f8f7e0cb1da",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.92,
+          "entry_context_conflict": 0.89,
+          "overall_semantic_review_insufficient": 0.26
+        },
+        "usage": {
+          "input_tokens": 1157,
+          "output_tokens": 66
+        },
+        "latency_ms": 406
+      },
+      {
+        "fixture_id": "v2-s12",
+        "partition": "selection",
+        "fixture_hash": "7349c4f7988f82c73f1d8ab021b945d270ee1028d1c78b73e1f7604bdb753384",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.14,
+          "entry_context_conflict": 0.16,
+          "overall_semantic_review_insufficient": 0.59
+        },
+        "usage": {
+          "input_tokens": 1157,
+          "output_tokens": 66
+        },
+        "latency_ms": 420
+      },
+      {
+        "fixture_id": "v2-s12",
+        "partition": "selection",
+        "fixture_hash": "7349c4f7988f82c73f1d8ab021b945d270ee1028d1c78b73e1f7604bdb753384",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.12,
+          "entry_context_conflict": 0.15,
+          "overall_semantic_review_insufficient": 0.58
+        },
+        "usage": {
+          "input_tokens": 1157,
+          "output_tokens": 66
+        },
+        "latency_ms": 395
+      },
+      {
+        "fixture_id": "v2-s11",
+        "partition": "selection",
+        "fixture_hash": "c398fa2854ee74219ec1b2b5003bbb3d08e714ee372364d8194c5f8f7e0cb1da",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.92,
+          "entry_context_conflict": 0.86,
+          "overall_semantic_review_insufficient": 0.26
+        },
+        "usage": {
+          "input_tokens": 1157,
+          "output_tokens": 66
+        },
+        "latency_ms": 375
+      },
+      {
+        "fixture_id": "v2-s10",
+        "partition": "selection",
+        "fixture_hash": "dced29d94add7e4223e3b2e185ec953c16a2b1d697fbc6fdcd69bab823633071",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.19,
+          "entry_context_conflict": 0.22,
+          "overall_semantic_review_insufficient": 0.67
+        },
+        "usage": {
+          "input_tokens": 1157,
+          "output_tokens": 66
+        },
+        "latency_ms": 378
+      },
+      {
+        "fixture_id": "v2-s09",
+        "partition": "selection",
+        "fixture_hash": "5430133bd93d7d3221c8ba9ea41a5ac91e6fe95bd342873f5c02ca1633f101d7",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.22,
+          "entry_context_conflict": 0.19,
+          "overall_semantic_review_insufficient": 0.7
+        },
+        "usage": {
+          "input_tokens": 1152,
+          "output_tokens": 66
+        },
+        "latency_ms": 405
+      },
+      {
+        "fixture_id": "v2-s08",
+        "partition": "selection",
+        "fixture_hash": "3a1a31cdc890e1470b00cb3130687d8ee3e125ebb6556385a5e75291d7317dd4",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.12,
+          "entry_context_conflict": 0.39,
+          "overall_semantic_review_insufficient": 0.71
+        },
+        "usage": {
+          "input_tokens": 1156,
+          "output_tokens": 66
+        },
+        "latency_ms": 379
+      },
+      {
+        "fixture_id": "v2-s07",
+        "partition": "selection",
+        "fixture_hash": "55a5ebfb34ac021fee6e2cc9420a3dcd4c7422277b6221bbb9e8046c8098f8b1",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.18,
+          "entry_context_conflict": 0.92,
+          "overall_semantic_review_insufficient": 0.35
+        },
+        "usage": {
+          "input_tokens": 1155,
+          "output_tokens": 66
+        },
+        "latency_ms": 401
+      },
+      {
+        "fixture_id": "v2-s06",
+        "partition": "selection",
+        "fixture_hash": "c8a95f62cda6b0c8d7f5e6eb7d9c46af8719897e2a7ff0ab0b83d6b6c6b7e1dc",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.79,
+          "entry_context_conflict": 0.31,
+          "overall_semantic_review_insufficient": 0.31
+        },
+        "usage": {
+          "input_tokens": 1162,
+          "output_tokens": 66
+        },
+        "latency_ms": 363
+      },
+      {
+        "fixture_id": "v2-s05",
+        "partition": "selection",
+        "fixture_hash": "bea888b2381983c59520a38caebf5f4d7eafa52342efa740a7dc2f206d857c5c",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.9,
+          "entry_context_conflict": 0.21,
+          "overall_semantic_review_insufficient": 0.3
+        },
+        "usage": {
+          "input_tokens": 1158,
+          "output_tokens": 66
+        },
+        "latency_ms": 375
+      },
+      {
+        "fixture_id": "v2-s04",
+        "partition": "selection",
+        "fixture_hash": "4887952e356d04cb906f5b25059c462e362a8faee6861d65411f9f6e83d7ea7b",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.14,
+          "entry_context_conflict": 0.18,
+          "overall_semantic_review_insufficient": 0.59
+        },
+        "usage": {
+          "input_tokens": 1150,
+          "output_tokens": 66
+        },
+        "latency_ms": 382
+      },
+      {
+        "fixture_id": "v2-s03",
+        "partition": "selection",
+        "fixture_hash": "860233c64d0953098ed82d28e2a403cea3d2346e9c2eef5a454ad58b319ba8a4",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.24,
+          "entry_context_conflict": 0.3,
+          "overall_semantic_review_insufficient": 0.67
+        },
+        "usage": {
+          "input_tokens": 1161,
+          "output_tokens": 66
+        },
+        "latency_ms": 373
+      },
+      {
+        "fixture_id": "v2-s02",
+        "partition": "selection",
+        "fixture_hash": "c8aee13e896fd06dbd93d5edb4b0850d7f267a462c5a446897359ac1ab20018b",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.05,
+          "entry_context_conflict": 0.15,
+          "overall_semantic_review_insufficient": 0.71
+        },
+        "usage": {
+          "input_tokens": 1159,
+          "output_tokens": 66
+        },
+        "latency_ms": 385
+      },
+      {
+        "fixture_id": "v2-s01",
+        "partition": "selection",
+        "fixture_hash": "10eed4eb68ceed1dc5d0470d3cffeb28519f7df532bc77b417d9dd2e56706f9f",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.12,
+          "entry_context_conflict": 0.22,
+          "overall_semantic_review_insufficient": 0.64
+        },
+        "usage": {
+          "input_tokens": 1155,
+          "output_tokens": 66
+        },
+        "latency_ms": 364
+      },
+      {
+        "fixture_id": "v2-s02",
+        "partition": "selection",
+        "fixture_hash": "c8aee13e896fd06dbd93d5edb4b0850d7f267a462c5a446897359ac1ab20018b",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.05,
+          "entry_context_conflict": 0.14,
+          "overall_semantic_review_insufficient": 0.7
+        },
+        "usage": {
+          "input_tokens": 1159,
+          "output_tokens": 66
+        },
+        "latency_ms": 402
+      },
+      {
+        "fixture_id": "v2-s03",
+        "partition": "selection",
+        "fixture_hash": "860233c64d0953098ed82d28e2a403cea3d2346e9c2eef5a454ad58b319ba8a4",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.21,
+          "entry_context_conflict": 0.39,
+          "overall_semantic_review_insufficient": 0.61
+        },
+        "usage": {
+          "input_tokens": 1161,
+          "output_tokens": 66
+        },
+        "latency_ms": 393
+      },
+      {
+        "fixture_id": "v2-s04",
+        "partition": "selection",
+        "fixture_hash": "4887952e356d04cb906f5b25059c462e362a8faee6861d65411f9f6e83d7ea7b",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.11,
+          "entry_context_conflict": 0.18,
+          "overall_semantic_review_insufficient": 0.57
+        },
+        "usage": {
+          "input_tokens": 1150,
+          "output_tokens": 66
+        },
+        "latency_ms": 372
+      },
+      {
+        "fixture_id": "v2-s05",
+        "partition": "selection",
+        "fixture_hash": "bea888b2381983c59520a38caebf5f4d7eafa52342efa740a7dc2f206d857c5c",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.91,
+          "entry_context_conflict": 0.19,
+          "overall_semantic_review_insufficient": 0.28
+        },
+        "usage": {
+          "input_tokens": 1158,
+          "output_tokens": 66
+        },
+        "latency_ms": 361
+      },
+      {
+        "fixture_id": "v2-s06",
+        "partition": "selection",
+        "fixture_hash": "c8a95f62cda6b0c8d7f5e6eb7d9c46af8719897e2a7ff0ab0b83d6b6c6b7e1dc",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.75,
+          "entry_context_conflict": 0.3,
+          "overall_semantic_review_insufficient": 0.31
+        },
+        "usage": {
+          "input_tokens": 1162,
+          "output_tokens": 66
+        },
+        "latency_ms": 505
+      },
+      {
+        "fixture_id": "v2-s07",
+        "partition": "selection",
+        "fixture_hash": "55a5ebfb34ac021fee6e2cc9420a3dcd4c7422277b6221bbb9e8046c8098f8b1",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.15,
+          "entry_context_conflict": 0.92,
+          "overall_semantic_review_insufficient": 0.37
+        },
+        "usage": {
+          "input_tokens": 1155,
+          "output_tokens": 66
+        },
+        "latency_ms": 408
+      },
+      {
+        "fixture_id": "v2-s08",
+        "partition": "selection",
+        "fixture_hash": "3a1a31cdc890e1470b00cb3130687d8ee3e125ebb6556385a5e75291d7317dd4",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.12,
+          "entry_context_conflict": 0.38,
+          "overall_semantic_review_insufficient": 0.71
+        },
+        "usage": {
+          "input_tokens": 1156,
+          "output_tokens": 66
+        },
+        "latency_ms": 416
+      },
+      {
+        "fixture_id": "v2-s09",
+        "partition": "selection",
+        "fixture_hash": "5430133bd93d7d3221c8ba9ea41a5ac91e6fe95bd342873f5c02ca1633f101d7",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.26,
+          "entry_context_conflict": 0.19,
+          "overall_semantic_review_insufficient": 0.67
+        },
+        "usage": {
+          "input_tokens": 1152,
+          "output_tokens": 66
+        },
+        "latency_ms": 353
+      },
+      {
+        "fixture_id": "v2-s10",
+        "partition": "selection",
+        "fixture_hash": "dced29d94add7e4223e3b2e185ec953c16a2b1d697fbc6fdcd69bab823633071",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.15,
+          "entry_context_conflict": 0.24,
+          "overall_semantic_review_insufficient": 0.66
+        },
+        "usage": {
+          "input_tokens": 1157,
+          "output_tokens": 66
+        },
+        "latency_ms": 361
+      },
+      {
+        "fixture_id": "v2-s11",
+        "partition": "selection",
+        "fixture_hash": "c398fa2854ee74219ec1b2b5003bbb3d08e714ee372364d8194c5f8f7e0cb1da",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.93,
+          "entry_context_conflict": 0.87,
+          "overall_semantic_review_insufficient": 0.26
+        },
+        "usage": {
+          "input_tokens": 1157,
+          "output_tokens": 66
+        },
+        "latency_ms": 433
+      },
+      {
+        "fixture_id": "v2-s12",
+        "partition": "selection",
+        "fixture_hash": "7349c4f7988f82c73f1d8ab021b945d270ee1028d1c78b73e1f7604bdb753384",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.13,
+          "entry_context_conflict": 0.15,
+          "overall_semantic_review_insufficient": 0.57
+        },
+        "usage": {
+          "input_tokens": 1157,
+          "output_tokens": 66
+        },
+        "latency_ms": 383
+      },
+      {
+        "fixture_id": "v2-s01",
+        "partition": "selection",
+        "fixture_hash": "10eed4eb68ceed1dc5d0470d3cffeb28519f7df532bc77b417d9dd2e56706f9f",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probabilities": {
+          "strategy_context_conflict": 0.11,
+          "entry_context_conflict": 0.21,
+          "overall_semantic_review_insufficient": 0.65
+        },
+        "usage": {
+          "input_tokens": 1155,
+          "output_tokens": 66
+        },
+        "latency_ms": 407
+      }
+    ],
+    "validation": []
+  },
+  "errors": [
+    "CANARY_V2_NO_ELIGIBLE_THRESHOLD"
+  ],
+  "real_stock_data_sent": false,
+  "actual_trial_activation": false,
+  "final_threshold_frozen": false,
+  "trial_freeze_readiness": "BLOCKED_CANARY_FAILED",
+  "account_policy_binding": "NOT_VERIFIED_BY_CANARY"
+}
