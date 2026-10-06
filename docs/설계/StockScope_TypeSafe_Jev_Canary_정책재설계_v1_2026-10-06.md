@@ -4,7 +4,9 @@
 
 작업 모드: **DESIGN / ANALYSIS ONLY**
 
-최초 설계 분석 기준 base HEAD: `8304781928f3e975c7abcd0f49701eeeade70ebf`\n\n후속 Q3 재검토 및 구현 시작 기준 원격 `main` HEAD: `7eb2f53945d7c024c176a7cddc885885ce482131`
+최초 설계 분석 기준 base HEAD: `8304781928f3e975c7abcd0f49701eeeade70ebf`
+
+후속 Q3 재검토 및 구현 시작 기준 원격 `main` HEAD: `7eb2f53945d7c024c176a7cddc885885ce482131`
 
 산출물: 이 설계 문서 1개. 코드·JSON contract·migration·frontend·기존 문서는 변경하지 않는다.
 
@@ -585,3 +587,4 @@ V2는 미리 정한 세 번을 수행한다. 실패가 난 fixture만 더 호출
 후속 구현에서는 새 question/policy version과 정확한 wire 문구·hash 및 V2 gold를 함께 고정해야 한다. §9 model binding 정책, §11의 후보 27개와 tie-break, 호출·예산 상한은 변경하지 않는다. **final threshold는 계속 NOT FROZEN**, Canary V2는 NOT EXECUTED, Trial V2는 기존 선행조건 충족 전 BLOCKED다. 교차 질문 신호 보존은 설계상 성질이며 모델이 이 의미를 안정적으로 출력한다는 실증 결과는 아직 없다.
 
 이번 수정 대상은 이 Markdown 문서 하나다. 문서의 정책표·fixture 구성·분모·교차 참조를 정적으로 확인하고, 지정 V1 protocol/report/model binding/설계동결 문서 4개의 수정 전후 SHA-256 일치로 보존을 확인했다. 코드 변경·프로젝트 코드 실행·테스트·API/provider 호출·외부 조회는 하지 않았다. 기존 V1 artifact/report와 다른 문서는 수정하지 않았다.
+
