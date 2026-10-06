@@ -28,6 +28,7 @@ from app.horizon_context import (
 from app.feedback.models import FEEDBACK_SCHEMA_VERSION
 from app.prospective.models import PROSPECTIVE_SCHEMA_VERSION
 from app.jev.models import JEV_SCHEMA_VERSION
+from app.jev.evaluation_models import JEV_EVALUATION_SCHEMA_VERSION
 from app.holdings.decision_support import HOLDING_DECISION_SCHEMA_VERSION
 from app.holdings.recovery import RECOVERY_SCHEMA_VERSION
 from app.watch.policy import WATCH_POLICY_CONTRACT_VERSION
@@ -235,6 +236,40 @@ def _jev_shadow_extension(
         "note": (
             "JEV shadow protocol/review/comparison records live in Simulation DB. "
             "JEV_API_KEY and authorization secrets are never stored in these tables."
+        ),
+    }
+
+
+JEV_EVALUATION_TABLES = (
+    "jev_evaluation_schema_meta",
+    "jev_evaluation_run",
+    "jev_evaluation_unit",
+)
+
+
+def _jev_evaluation_extension(
+    simulation_copy: Path | None,
+) -> dict[str, object]:
+    if simulation_copy is None or not simulation_copy.is_file():
+        return {
+            "schema_version": JEV_EVALUATION_SCHEMA_VERSION,
+            "present": False,
+            "tables": [],
+            "restorable": False,
+        }
+    present = [
+        table for table in JEV_EVALUATION_TABLES
+        if _table_exists(simulation_copy, table)
+    ]
+    return {
+        "schema_version": JEV_EVALUATION_SCHEMA_VERSION,
+        "present": bool(present),
+        "tables": present,
+        "restorable": len(present) == len(JEV_EVALUATION_TABLES),
+        "secret_values_included": False,
+        "note": (
+            "JEV reviewer evaluation run/unit snapshots live in Simulation DB. "
+            "Evaluation never stores JEV_API_KEY or other provider credentials."
         ),
     }
 
@@ -608,6 +643,9 @@ def create_backup(
                     simulation_copy,
                 ),
                 "jev_shadow_v1": _jev_shadow_extension(
+                    simulation_copy,
+                ),
+                "jev_evaluation_v1": _jev_evaluation_extension(
                     simulation_copy,
                 ),
                 "holding_decision_v1": _holding_decision_extension(
