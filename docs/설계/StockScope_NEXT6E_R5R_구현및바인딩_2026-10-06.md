@@ -656,10 +656,20 @@ AUTHORIZED / NOT EXECUTED
 
 ---
 
+
+## 명칭 분리 — 2026-10-06
+
+이 문서 작성 당시 다음 actual R5R 실행을 JEV라고 불렀던 표현은 더 이상 사용하지 않는다.
+
+- `NEXT-6E-R5R-EVALUATION`: deterministic R5R observed-path actual evaluation
+- `JEV-REVIEWER-EVALUATION`: AI Decision Reviewer incremental-value evaluation
+
+Frozen contract/stage identity는 바꾸지 않고 narrative 명칭만 분리한다.
+
 ## 16. Next task
 
 ~~~text
-NEXT-6E-R5R-JEV
+NEXT-6E-R5R-EVALUATION
 ~~~
 
 JEV will be the first stage that runs:
@@ -743,5 +753,5 @@ AUTHORIZED / NOT EXECUTED
 
 Next
 =
-NEXT-6E-R5R-JEV
+NEXT-6E-R5R-EVALUATION
 ~~~
