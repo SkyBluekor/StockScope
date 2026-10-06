@@ -10,8 +10,15 @@ JEV_TYPESAFE_SCHEMA_VERSION = "JEV_TYPESAFE_STORAGE_V2"
 JEV_TYPESAFE_PROTOCOL_VERSION = "JEV_TYPESAFE_TRIAL_PROTOCOL_V2"
 JEV_TYPESAFE_STATE_CONTRACT_VERSION = "JEV_TYPESAFE_STATE_V1"
 JEV_TYPESAFE_PROJECTOR_VERSION = "JEV_TYPESAFE_PROJECTOR_V1"
-JEV_TYPESAFE_QUESTION_CONTRACT_VERSION = "JEV_TYPESAFE_QUESTIONS_V1"
-JEV_TYPESAFE_DISPOSITION_POLICY_VERSION = "JEV_TYPESAFE_DISPOSITION_POLICY_V1"
+
+JEV_TYPESAFE_QUESTION_CONTRACT_VERSION_V1 = "JEV_TYPESAFE_QUESTIONS_V1"
+JEV_TYPESAFE_QUESTION_CONTRACT_VERSION_V2 = "JEV_TYPESAFE_QUESTIONS_V2"
+JEV_TYPESAFE_QUESTION_CONTRACT_VERSION = JEV_TYPESAFE_QUESTION_CONTRACT_VERSION_V1
+
+JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V1 = "JEV_TYPESAFE_DISPOSITION_POLICY_V1"
+JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V2 = "JEV_TYPESAFE_DISPOSITION_POLICY_V2"
+JEV_TYPESAFE_DISPOSITION_POLICY_VERSION = JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V1
+
 JEV_TYPESAFE_ADAPTER_VERSION = "JEV_TYPESAFE_SYSTEMONE_ADAPTER_V1"
 JEV_TYPESAFE_PROVIDER_ID = "TYPESAFE_SYSTEM_ONE"
 JEV_TYPESAFE_ALLOWED_PAYLOAD_CLASS = "MINIMIZED_DERIVED_SCANNER_SEMANTIC_STATE_V1"
@@ -31,6 +38,16 @@ def _unfrozen(value: Any) -> bool:
     return not str(value or "").strip() or str(value).strip().upper() == "UNFROZEN"
 
 
+def _valid_probability_threshold(value: Any) -> bool:
+    if isinstance(value, bool) or value is None:
+        return False
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return False
+    return number == number and 0.0 <= number <= 1.0
+
+
 @dataclass(frozen=True, slots=True)
 class TypeSafeJevTrialProtocolSpec:
     name: str
@@ -45,8 +62,16 @@ class TypeSafeJevTrialProtocolSpec:
     question_set_hash: str = "UNFROZEN"
     disposition_policy_version: str = JEV_TYPESAFE_DISPOSITION_POLICY_VERSION
     disposition_policy_hash: str = "UNFROZEN"
+
+    # Historical V1 threshold slots. Keep them readable for V1 protocols/reviews.
     threshold_low: float | None = None
     threshold_high: float | None = None
+
+    # V2 question-specific one-sided threshold slots.
+    threshold_strategy: float | None = None
+    threshold_entry: float | None = None
+    threshold_evidence: float | None = None
+
     market_scope: str = "ALL"
     horizon_intents: tuple[str, ...] = ("SHORT", "MEDIUM")
     recruitment_mode: str = "ACTIVATION_FORWARD"
@@ -90,15 +115,36 @@ class TypeSafeJevTrialProtocolSpec:
             if _unfrozen(getattr(self, name)):
                 missing.append(name)
 
-        if self.threshold_low is None:
-            missing.append("threshold_low")
-        if self.threshold_high is None:
-            missing.append("threshold_high")
-        if self.threshold_low is not None and self.threshold_high is not None:
-            low = float(self.threshold_low)
-            high = float(self.threshold_high)
-            if not (0.0 <= low < 0.5 < high <= 1.0):
-                missing.append("threshold_order")
+        question_version = str(self.question_contract_version or "")
+        policy_version = str(self.disposition_policy_version or "")
+        is_v1 = (
+            question_version == JEV_TYPESAFE_QUESTION_CONTRACT_VERSION_V1
+            and policy_version == JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V1
+        )
+        is_v2 = (
+            question_version == JEV_TYPESAFE_QUESTION_CONTRACT_VERSION_V2
+            and policy_version == JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V2
+        )
+        if not (is_v1 or is_v2):
+            missing.append("contract_version_pair")
+        elif is_v1:
+            if self.threshold_low is None:
+                missing.append("threshold_low")
+            if self.threshold_high is None:
+                missing.append("threshold_high")
+            if self.threshold_low is not None and self.threshold_high is not None:
+                low = float(self.threshold_low)
+                high = float(self.threshold_high)
+                if not (0.0 <= low < 0.5 < high <= 1.0):
+                    missing.append("threshold_order")
+        else:
+            for name in (
+                "threshold_strategy",
+                "threshold_entry",
+                "threshold_evidence",
+            ):
+                if not _valid_probability_threshold(getattr(self, name)):
+                    missing.append(name)
 
         if tuple(self.horizon_intents) != ("SHORT", "MEDIUM"):
             missing.append("horizon_intents")

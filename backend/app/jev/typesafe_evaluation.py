@@ -9,6 +9,7 @@ from .typesafe_evaluation_models import (
     JEV_TYPESAFE_EVALUATION_GATE_KEYS,
     JEV_TYPESAFE_EVALUATION_POLICY_ID,
 )
+from .typesafe_models import JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V2
 from .typesafe_projection import project_typesafe_review
 
 
@@ -67,10 +68,18 @@ def typesafe_model_cohort_key(
         "question_set_hash": review.get("question_set_hash"),
         "disposition_policy_version": review.get("disposition_policy_version"),
         "disposition_policy_hash": review.get("disposition_policy_hash"),
-        "threshold_low": protocol_spec.get("threshold_low"),
-        "threshold_high": protocol_spec.get("threshold_high"),
         "adapter_version": review.get("adapter_version"),
     }
+    if (
+        str(review.get("disposition_policy_version") or "")
+        == JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V2
+    ):
+        identity["threshold_strategy"] = protocol_spec.get("threshold_strategy")
+        identity["threshold_entry"] = protocol_spec.get("threshold_entry")
+        identity["threshold_evidence"] = protocol_spec.get("threshold_evidence")
+    else:
+        identity["threshold_low"] = protocol_spec.get("threshold_low")
+        identity["threshold_high"] = protocol_spec.get("threshold_high")
     return digest_json(identity)
 
 

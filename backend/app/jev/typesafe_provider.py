@@ -124,6 +124,7 @@ def validate_system_one_response(
     payload: Any,
     *,
     expected_model_returned: str | None = None,
+    expected_question_ids: tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise TypeSafeJevProviderError("TYPESAFE_RESPONSE_INVALID")
@@ -136,12 +137,15 @@ def validate_system_one_response(
     answers = payload.get("answers")
     if not isinstance(answers, dict):
         raise TypeSafeJevProviderError("TYPESAFE_ANSWERS_MISSING")
-    if set(answers) != set(JEV_TYPESAFE_QUESTION_IDS):
+    question_ids = tuple(expected_question_ids or JEV_TYPESAFE_QUESTION_IDS)
+    if not question_ids or len(set(question_ids)) != len(question_ids):
+        raise TypeSafeJevProviderError("TYPESAFE_QUESTION_SET_INVALID")
+    if set(answers) != set(question_ids):
         raise TypeSafeJevProviderError("TYPESAFE_ANSWER_SET_MISMATCH")
 
     probabilities: dict[str, float] = {}
     normalized_answers: dict[str, dict[str, Any]] = {}
-    for question_id in JEV_TYPESAFE_QUESTION_IDS:
+    for question_id in question_ids:
         answer = answers.get(question_id)
         if not isinstance(answer, dict) or answer.get("type") != "noul":
             raise TypeSafeJevProviderError("TYPESAFE_ANSWER_TYPE_INVALID")
@@ -229,7 +233,16 @@ class TypeSafeSystemOneProvider:
             payload = response.json()
         except json.JSONDecodeError as exc:
             raise TypeSafeJevProviderError("TYPESAFE_RESPONSE_INVALID_JSON") from exc
-        normalized = validate_system_one_response(payload)
+        questions = request.get("questions")
+        question_ids = (
+            tuple(questions)
+            if isinstance(questions, dict) and questions
+            else JEV_TYPESAFE_QUESTION_IDS
+        )
+        normalized = validate_system_one_response(
+            payload,
+            expected_question_ids=question_ids,
+        )
         return TypeSafeProviderResult(
             raw_response=dict(payload),
             usage=dict(normalized["usage"]),
@@ -276,18 +289,27 @@ class FakeTypeSafeJevProvider:
                 cost_usd=0.0,
                 cost_unknown=False,
             )
+        questions = request.get("questions")
+        question_ids = (
+            tuple(questions)
+            if isinstance(questions, dict) and questions
+            else JEV_TYPESAFE_QUESTION_IDS
+        )
         payload = {
             "model": self.returned_model,
             "answers": {
                 question_id: {
                     "type": "noul",
-                    "noul": self.probabilities[question_id],
+                    "noul": self.probabilities.get(question_id, 0.05),
                 }
-                for question_id in JEV_TYPESAFE_QUESTION_IDS
+                for question_id in question_ids
             },
             "usage": {"input_tokens": 0, "output_tokens": 0},
         }
-        normalized = validate_system_one_response(payload)
+        normalized = validate_system_one_response(
+            payload,
+            expected_question_ids=question_ids,
+        )
         return TypeSafeProviderResult(
             raw_response=payload,
             usage=dict(normalized["usage"]),
