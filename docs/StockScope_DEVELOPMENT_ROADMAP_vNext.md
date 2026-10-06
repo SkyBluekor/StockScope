@@ -2,6 +2,22 @@
 
 작성일: 2026-09-27 (Asia/Seoul) · 설계 버전: `vNext-2026-09-27`
 
+
+## 현재 실행 순서 — 2026-10-06
+
+이 절이 과거 문서의 오래된 NEXT 표현보다 우선한다.
+
+1. **Docs cleanup** — 본 정리 작업으로 완료.
+2. **JEV-SHADOW-IMPLEMENT** — provider adapter, `JEV_API_KEY` loader, quant allowlist projector, strict output validator, async shadow persistence, baseline fallback, comparison join/report, fake-provider tests.
+3. **JEV-REVIEWER-EVALUATION** — 사전 고정 protocol 아래 reviewer의 incremental value 평가. Shadow Implementation 완료 전 실행하지 않는다.
+4. **NEXT-6E-R5R-EVALUATION** — frozen R5R evaluator/Policy/DEV binding의 actual observed-path 평가. AI JEV와 별도 작업이다.
+5. 채택/제품화는 각 평가 결과와 프로젝트 소유자 승인 뒤에만 진행한다.
+
+조건부 backlog:
+- Capital-aware recommendation은 아직 미승인 설계 후보이며 구현 완료로 간주하지 않는다.
+- JEV Holdings/Recovery/Watch/Event 확장은 Phase 1 Scanner reviewer에서 가치가 입증된 뒤 별도 검토한다.
+- Macro/Event의 AI input 사용은 source capability 및 R5R/사용권 경계를 우회하지 않는다.
+
 ## 1. 범위와 단계 의미
 
 이 Roadmap은 [Handoff](StockScope_ASTRA_REDESIGN_HANDOFF_2026-09-27.md), 고정된 [Current State](StockScope_CURRENT_STATE_2026-09-26.md), [Recovery Context](StockScope_RECOVERY_CONTEXT_2026-09-26.md)에 근거해 **이번 설계에서 새로 만든 8 Phase·12 Stage**다. `VN-P1-S1` 등의 ID는 과거 작업 번호의 복원·후속 번호·별칭이 아니다. `REALTIME.5`, `HOLD.1-H`, `H.0~H.3`, `DEV.*`와 대응시키지 않는다.
