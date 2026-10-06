@@ -413,6 +413,100 @@ class JevCatalog:
             ).fetchall()
         return [self._review_from_row(row) for row in rows]
 
+    def list_monitor_reviews(
+        self,
+        capture_run_id: str,
+    ) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            self.require_ready(conn)
+            rows = conn.execute(
+                """
+                SELECT
+                    r.capture_run_id,
+                    r.sample_index,
+                    r.status,
+                    r.decision,
+                    r.failure_code,
+                    r.completed_at,
+                    r.latency_ms,
+                    r.normalized_response_json,
+                    s.market,
+                    s.ticker,
+                    s.name
+                FROM jev_shadow_review r
+                JOIN prospective_recommendation_sample s
+                  ON s.capture_run_id=r.capture_run_id
+                 AND s.sample_index=r.sample_index
+                WHERE r.capture_run_id=?
+                ORDER BY r.sample_index,r.requested_at,r.id
+                """,
+                (capture_run_id,),
+            ).fetchall()
+
+        result: list[dict[str, Any]] = []
+        seen: set[tuple[str, int]] = set()
+        for row in rows:
+            identity = (
+                str(row["capture_run_id"]),
+                int(row["sample_index"]),
+            )
+            if identity in seen:
+                continue
+            seen.add(identity)
+            normalized = (
+                json.loads(str(row["normalized_response_json"]))
+                if row["normalized_response_json"]
+                else {}
+            )
+            reason_codes: list[str] = []
+            if isinstance(normalized, dict):
+                for field in ("opposing_reasons", "supporting_reasons"):
+                    values = normalized.get(field)
+                    if not isinstance(values, list):
+                        continue
+                    for reason in values:
+                        if not isinstance(reason, dict):
+                            continue
+                        code = str(reason.get("code") or "").strip()
+                        if code and code not in reason_codes:
+                            reason_codes.append(code)
+                        if len(reason_codes) >= 2:
+                            break
+                    if len(reason_codes) >= 2:
+                        break
+            result.append(
+                {
+                    "capture_id": str(row["capture_run_id"]),
+                    "sample_index": int(row["sample_index"]),
+                    "market": str(row["market"] or ""),
+                    "ticker": str(row["ticker"] or ""),
+                    "name": str(row["name"] or ""),
+                    "status": str(row["status"] or ""),
+                    "decision": (
+                        str(row["decision"])
+                        if row["decision"] is not None
+                        else None
+                    ),
+                    "failure_code": (
+                        str(row["failure_code"])
+                        if row["failure_code"] is not None
+                        else None
+                    ),
+                    "completed_at": (
+                        str(row["completed_at"])
+                        if row["completed_at"] is not None
+                        else None
+                    ),
+                    "latency_ms": (
+                        int(row["latency_ms"])
+                        if row["latency_ms"] is not None
+                        else None
+                    ),
+                    "reason_codes": reason_codes,
+                }
+            )
+        return result
+
     def complete_review(
         self,
         review_id: str,
