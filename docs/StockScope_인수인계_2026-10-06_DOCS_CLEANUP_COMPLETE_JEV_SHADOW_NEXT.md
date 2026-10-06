@@ -793,3 +793,14 @@ JEV-SHADOW-IMPLEMENT 명세부터 작성한다.
 NEXT-6E-R5R-EVALUATION으로 진행한다.
 
 둘을 섞지 않는다.
+
+
+# 33. 다음 채팅에 그대로 붙여넣을 문장
+
+아래 문장을 새 채팅 첫 메시지로 그대로 사용한다.
+
+> StockScope 작업 이어서 진행하자. 먼저 `docs/StockScope_인수인계_2026-10-06_DOCS_CLEANUP_COMPLETE_JEV_SHADOW_NEXT.md`를 읽고 현재 `main` HEAD만 확인해. 이 문서를 authoritative handoff로 사용하고, 이미 끝난 R4/R5/R5R 설계와 docs cleanup은 다시 열지 마. 현재 상태는 **Docs Cleanup COMPLETE / JEV Design v2 FROZEN / R5R G0~G4 PASS / R5R evaluator·DEV binding COMPLETE / R5R actual evaluation NOT EXECUTED / JEV Shadow Implementation NEXT**다. R5R actual evaluation과 AI JEV evaluation은 반드시 분리해. 내가 **"다음 작업 명세해"**라고 하면 `JEV-SHADOW-IMPLEMENT` 명세만 작성하고 실제 GitHub 변경은 하지 마. 내가 **"작업 시작해/진행해"**라고 할 때만 실제 변경해. Holdout은 명시적 허가 전 검색·metadata·hash·존재 probe 포함 전부 접근 금지. `JEV_API_KEY` 실제 secret 값은 절대 읽거나 출력·로그·artifact·backup·Git에 남기지 마. StockScope의 목적은 AI나 JEV 자체가 아니라 사용자의 주식 판단을 더 잘 돕는 프로그램이라는 기준을 유지해.
+
+짧게 시작하고 싶다면:
+
+> StockScope 이어서 하자. `docs/StockScope_인수인계_2026-10-06_DOCS_CLEANUP_COMPLETE_JEV_SHADOW_NEXT.md` 먼저 읽고 main HEAD 확인해. 다음 작업은 JEV-SHADOW-IMPLEMENT이고, 명세/실행 분리·Holdout lock·JEV_API_KEY secret 비노출 원칙 그대로 유지해.
