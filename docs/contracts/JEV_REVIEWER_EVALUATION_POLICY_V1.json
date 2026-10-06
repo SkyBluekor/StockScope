@@ -2,7 +2,7 @@
   "artifact_version": "JEV_REVIEWER_EVALUATION_POLICY_ARTIFACT_V1",
   "policy_id": "JEV_REVIEWER_EVALUATION_POLICY_V1",
   "status": "FROZEN",
-  "policy_spec_hash": "0dcc0c931e7d624b748ac2c53f4a083206a86de56696c11bb840d14bd7e4abc8",
+  "policy_spec_hash": "2e31e99ace3b2760dfed1db06466d1f51c44b250e5143acf387de2dc05ae0edc",
   "trial_protocol_id": "JEV-REVIEWER-TRIAL-V1",
   "trial_spec_hash": "9f4e42fbd5cc957a9dc72ed7ce3f84c0dbf07c4a768b38695e4c90c16297b36b",
   "report_version": "JEV_REVIEWER_EVALUATION_REPORT_V1",
