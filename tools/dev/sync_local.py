@@ -43,6 +43,7 @@ from tools.data import migrate_strategy_governance_vnp5s1 as p5s1
 from tools.data import migrate_event_evidence_vnp6s1 as p6s1
 from tools.data import migrate_prospective_reference_next6e_s3 as next6e_s3
 from tools.data import migrate_jev_shadow_v1 as jev_shadow_v1
+from tools.data import migrate_jev_evaluation_v1 as jev_evaluation_v1
 
 
 SYNC_VERSION = "LOCAL_SYNC_V2"
@@ -96,6 +97,7 @@ MIGRATION_DEPENDENCIES: dict[str, tuple[str, ...]] = {
     "VN-P5-S1": ("VN-P2-S2",),
     "NEXT-6E-S3": ("VN-P2-S2",),
     "JEV-SHADOW-V1": ("VN-P2-S2",),
+    "JEV-EVALUATION-V1": ("JEV-SHADOW-V1",),
 }
 
 SIMULATION_REQUIRED_MIGRATIONS = frozenset(
@@ -106,6 +108,7 @@ SIMULATION_REQUIRED_MIGRATIONS = frozenset(
         "VN-P6-S1",
         "NEXT-6E-S3",
         "JEV-SHADOW-V1",
+        "JEV-EVALUATION-V1",
     }
 )
 
@@ -124,6 +127,7 @@ MIGRATION_WRITE_DOMAINS: dict[str, frozenset[str]] = {
     "VN-P6-S1": frozenset({"simulation"}),
     "NEXT-6E-S3": frozenset({"simulation"}),
     "JEV-SHADOW-V1": frozenset({"simulation"}),
+    "JEV-EVALUATION-V1": frozenset({"simulation"}),
 }
 
 
@@ -654,6 +658,25 @@ def _run_jev_shadow_v1(paths: RuntimePaths) -> dict[str, Any]:
     return result
 
 
+def _run_jev_evaluation_v1(paths: RuntimePaths) -> dict[str, Any]:
+    result = jev_evaluation_v1.migrate_jev_evaluation(
+        simulation_db=paths.simulation
+    )
+    if result.get("historical_backfill_performed") is not False:
+        raise DataToolError(
+            "JEV Evaluation migration이 historical backfill을 수행했습니다."
+        )
+    if int(result.get("external_network_requests", -1)) != 0:
+        raise DataToolError(
+            "JEV Evaluation migration에서 외부 network request가 발생했습니다."
+        )
+    if int(result.get("model_calls_executed", -1)) != 0:
+        raise DataToolError(
+            "JEV Evaluation migration에서 model call이 발생했습니다."
+        )
+    return result
+
+
 MIGRATIONS: tuple[MigrationSpec, ...] = (
     MigrationSpec("VN-P1-S1", "Input Identity", _detect_p1s1, _run_p1s1),
     MigrationSpec("VN-P1-S2", "Horizon Context", _detect_p1s2, _run_p1s2),
@@ -778,6 +801,23 @@ MIGRATIONS: tuple[MigrationSpec, ...] = (
             expected_version=jev_shadow_v1.JEV_SCHEMA_VERSION,
         ),
         _run_jev_shadow_v1,
+    ),
+    MigrationSpec(
+        "JEV-EVALUATION-V1",
+        "JEV Reviewer Evaluation",
+        _simple_detector(
+            "JEV-EVALUATION-V1",
+            "JEV Reviewer Evaluation",
+            db_attr="simulation",
+            expected_tables={
+                "jev_evaluation_schema_meta",
+                *jev_evaluation_v1.JEV_EVALUATION_TABLE_COLUMNS.keys(),
+            },
+            required_base=set(jev_evaluation_v1.REQUIRED_BASE_TABLES),
+            meta_table="jev_evaluation_schema_meta",
+            expected_version=jev_evaluation_v1.JEV_EVALUATION_SCHEMA_VERSION,
+        ),
+        _run_jev_evaluation_v1,
     ),
 )
 
