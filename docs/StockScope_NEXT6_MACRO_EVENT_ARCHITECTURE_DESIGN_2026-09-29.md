@@ -638,3 +638,24 @@ Jev는 동결된 Context를 읽는 미래 hook에만 남긴다. 이번 문서 �
 - 코드 사실, 설계 제안, 미결정 정책을 구분하고 공식 FRED/KIS 근거 링크를 해당 절에 남겼다.
 - 정적 소스 조사와 문서 구조/링크 검사를 수행했다. 실행 테스트·성능 평가·실 API 인증·로컬 DB 실데이터 감사는 수행하지 않았다.
 - 이 작업의 변경 파일은 **본 Markdown 문서 1개**다. 소스코드·DB·migration·UI·테스트·환경설정 변경은 **0건**이다. 시작 전에 존재한 `.env.example` 변경은 이 작업의 변경에 포함하지 않는다.
+
+
+## 2026-10-06 cleanup consolidation
+
+### Sector PIT source capability
+
+기존 sector source feasibility / KRX membership access proof의 현재 보존 결론:
+
+- public/current membership surface가 존재한다는 사실과 **historical PIT membership을 자동 ingestion할 권한·증거**는 다르다.
+- known-at / historical membership이 증명되지 않으면 세밀한 과거 업종 소속으로 과장하지 않는다.
+- source capability는 표시·저장·파생·AI 입력·prediction 용도를 각각 별도로 승인한다.
+- 추가 provider는 기존 KRX/OpenDART/KIS/FRED로 필요한 범위를 만들 수 없는 것이 확인될 때만 검토한다.
+
+과거 상세 조사 문서는 cleanup 기준 revision의 Git history에서 복원할 수 있다.
+
+### R5R / JEV 경계
+
+- R5R은 macro empirical reference reuse의 observed-path validation이다.
+- Phase-1 JEV Decision Reviewer는 macro/event payload를 입력하지 않는 quant-only Scanner reviewer다.
+- 따라서 R5R actual evaluation을 JEV shadow 착수의 불필요한 선행 gate로 만들지 않는다.
+- 향후 macro/event를 AI input으로 쓰려면 source capability와 AI_TRANSFORM/PREDICTION_INPUT 권한을 별도 확인한다.
