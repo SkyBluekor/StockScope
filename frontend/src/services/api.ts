@@ -2944,6 +2944,16 @@ export type ScannerResponse = {
     confirmation_policy: string | null;
   };
   scanner_cache_hit: boolean;
+  jev_shadow?: {
+    status: string;
+    capture_id: string | null;
+    review_count?: number;
+    pending_count?: number;
+    skipped_count?: number;
+    baseline_mutated?: boolean;
+    code?: string;
+    message?: string;
+  };
   generated_at: string;
   requested_as_of: string;
   market_scope: "ALL" | "KOSPI" | "KOSDAQ";
