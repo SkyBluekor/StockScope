@@ -87,3 +87,19 @@ http://127.0.0.1:8000/docs
 
 - 실제 API 키를 채팅, GitHub Issue, Screenshot에 노출하지 않습니다.
 - 키가 GitHub에 한 번이라도 Push됐다면 삭제만 하지 말고 해당 키를 폐기/재발급하는 것이 안전합니다.
+
+
+## JEV Decision Reviewer
+
+JEV Phase 1의 실제 provider adapter가 활성화될 때 사용하는 canonical credential 환경변수명은 다음으로 고정합니다.
+
+```env
+JEV_API_KEY=
+```
+
+현재 credential slot은 준비됐지만 **provider / model ID / revision / prompt는 아직 freeze되지 않았습니다.** 키가 존재한다는 사실을 특정 provider 채택으로 해석하지 않습니다.
+
+- 실제 secret 값은 로컬 `.env`에만 둡니다.
+- `.env.example`에는 빈 placeholder만 둡니다.
+- Git commit, 로그, report artifact, runtime backup에 key를 기록하지 않습니다.
+- provider adapter가 비활성인 동안 JEV_API_KEY가 없어도 기존 StockScope baseline은 정상 동작해야 합니다.
