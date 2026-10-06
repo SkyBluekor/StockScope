@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from app.jev.typesafe_evaluation import typesafe_model_cohort_key
 from app.jev.typesafe_models import (
     JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V3,
     JEV_TYPESAFE_QUESTION_CONTRACT_VERSION_V3,
@@ -17,6 +18,7 @@ from app.jev.typesafe_policy_v3 import (
     JEV_TYPESAFE_DISPOSITION_POLICY_HASH_V3,
     decide_typesafe_disposition_v3,
 )
+from app.jev.typesafe_projection import project_typesafe_review
 from app.jev.typesafe_provider import FakeTypeSafeJevProvider
 from app.jev.typesafe_questions_v3 import (
     JEV_TYPESAFE_QUESTION_IDS_V3,
@@ -392,3 +394,62 @@ def test_prospective_capture_v2_snapshots_semantic_source_without_schema_change(
             ).fetchall()
         }
     assert "semantic_source_json" not in columns
+
+
+def test_v3_stored_projection_and_cohort_identity_are_version_specific() -> None:
+    sample = _sample()
+    protocol = _v3_protocol_dict()
+    review = {
+        "status": "VALID",
+        "disposition": "REVIEW_REQUIRED",
+        "failure_code": None,
+        "model_identity_status": "MATCHED",
+        "provider_id": "FAKE",
+        "model_requested": "FAKE-JEV-V3",
+        "model_returned": "FAKE-JEV-V3",
+        "state_contract_version": JEV_TYPESAFE_STATE_CONTRACT_VERSION_V3,
+        "projector_version": JEV_TYPESAFE_PROJECTOR_VERSION_V3,
+        "projector_hash": JEV_TYPESAFE_PROJECTOR_HASH_V3,
+        "question_contract_version": JEV_TYPESAFE_QUESTION_CONTRACT_VERSION_V3,
+        "question_set_hash": JEV_TYPESAFE_QUESTION_SET_HASH_V3,
+        "disposition_policy_version": JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V3,
+        "disposition_policy_hash": JEV_TYPESAFE_DISPOSITION_POLICY_HASH_V3,
+        "adapter_version": "JEV_TYPESAFE_SYSTEMONE_ADAPTER_V1",
+        "typed_answers": {
+            "strategy_context_conflict": {"type": "noul", "noul": 0.81}
+        },
+    }
+    projected = project_typesafe_review(review, protocol)
+    assert projected.operational_status == "VALID"
+    assert projected.disposition == "REVIEW_REQUIRED"
+    assert projected.reason_codes == ("STRATEGY_CONTEXT_CONFLICT",)
+
+    first = typesafe_model_cohort_key(
+        protocol_spec_hash="protocol-hash",
+        protocol_spec=protocol,
+        review=review,
+        sample=sample,
+    )
+    same_contract_new_candidate = json.loads(json.dumps(sample))
+    same_contract_new_candidate["snapshot"]["semantic_source"][
+        "source_snapshot_hash"
+    ] = "different-candidate-specific-hash"
+    second = typesafe_model_cohort_key(
+        protocol_spec_hash="protocol-hash",
+        protocol_spec=protocol,
+        review=review,
+        sample=same_contract_new_candidate,
+    )
+    assert first == second
+
+    changed_contract = json.loads(json.dumps(sample))
+    changed_contract["snapshot"]["semantic_source"]["strategy"][
+        "semantic_contract_hash"
+    ] = "different-semantic-contract"
+    third = typesafe_model_cohort_key(
+        protocol_spec_hash="protocol-hash",
+        protocol_spec=protocol,
+        review=review,
+        sample=changed_contract,
+    )
+    assert third != first
