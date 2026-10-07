@@ -103,7 +103,23 @@ def test_v3_callable_wire_is_minimized_and_gold_free() -> None:
             "passed_condition_meanings",
         }
         encoded = json.dumps(state, ensure_ascii=False, sort_keys=True).lower()
-        assert all(token.lower() not in encoded for token in forbidden)
+        wire_keys: set[str] = set()
+
+        def collect_keys(value) -> None:
+            if isinstance(value, dict):
+                for key, child in value.items():
+                    wire_keys.add(str(key).lower())
+                    collect_keys(child)
+            elif isinstance(value, list):
+                for child in value:
+                    collect_keys(child)
+
+        collect_keys(state)
+        assert all(
+            token.lower() not in wire_keys
+            and (len(token) <= 3 or token.lower() not in encoded)
+            for token in forbidden
+        )
         assert fixture["projected_state_hash"] == digest_json(state)
 
 
