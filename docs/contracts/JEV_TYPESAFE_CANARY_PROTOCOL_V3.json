@@ -1,0 +1,4167 @@
+{
+  "artifact_version": "JEV_TYPESAFE_CANARY_PROTOCOL_ARTIFACT_V3",
+  "protocol_id": "JEV-TYPESAFE-CANARY-V3",
+  "status": "FROZEN_BEFORE_REAL_CALLS",
+  "frozen_at": "2026-10-07",
+  "protocol_hash": "3d1b711535e56931d9ba3e4e8d8db184e94f54f1f826d34478ad4bba8a09f356",
+  "spec": {
+    "provider_id": "TYPESAFE_SYSTEM_ONE",
+    "models_endpoint": "https://api.typesafe.ai/v1/models",
+    "systemone_endpoint": "https://api.typesafe.ai/v1/systemone",
+    "architecture": "ARCH_C_PLUS_D1_Q1_ONLY",
+    "model_request_rule": {
+      "default_request_model": "jev-latest",
+      "stable_alias_required": true,
+      "preview_forbidden": true,
+      "version_looking_name_is_not_immutable_without_verified_metadata": true,
+      "first_valid_concrete_response_binds_run": true,
+      "subsequent_concrete_response_must_match": true
+    },
+    "identities": {
+      "semantic_source_version": "JEV_SEMANTIC_SOURCE_V1",
+      "semantic_source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+      "strategy_semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+      "condition_semantic_mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+      "condition_semantic_mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+      "entry_rule_representation_version": "ENTRY_RULE_REPRESENTATION_V1",
+      "entry_rule_representation_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b",
+      "state_contract_version": "JEV_TYPESAFE_STATE_V3",
+      "state_contract_hash": "c9b73a11b85c282660ce6012eb18b5b3f2b609d220cad53cfa06ca83467ca01e",
+      "projector_version": "JEV_TYPESAFE_PROJECTOR_V3",
+      "projector_hash": "a2a00ee385db14f75dd68c186fdbf816b764f2808b038836ca13f2f81b8748b4",
+      "question_contract_version": "JEV_TYPESAFE_QUESTIONS_V3",
+      "question_set_hash": "7a9ac310413d1785bc061872f9773d2110ae02ace448bcaed0480b57d32b67ff",
+      "disposition_policy_version": "JEV_TYPESAFE_DISPOSITION_POLICY_V3",
+      "disposition_policy_hash": "42f6517cf0ec23d3a0ece73c99954caaf12d47f51dd1d6060adb4f4f5640117d",
+      "adapter_version": "JEV_TYPESAFE_SYSTEMONE_ADAPTER_V1"
+    },
+    "questions": {
+      "strategy_context_conflict": {
+        "type": "noul",
+        "instructions": "Using only strategy_intent, term_definitions, and passed_condition_meanings, judge whether the supplied meanings contain an explicit, material semantic conflict with the authored strategy intent that deserves a user re-check. The conditions have already been evaluated as passed by StockScope. Do not recalculate thresholds, infer prices, invent missing definitions, use outside market information, or treat ordinary future uncertainty as a conflict.",
+        "criteria": {
+          "true": "At least one supplied passed meaning, alone or in combination with the other supplied meanings and definitions, materially contradicts or excludes the authored strategy intent.",
+          "false": "The supplied passed meanings are compatible with or explicitly allowed by the authored intent. Missing semantic dependencies are handled locally before this question and must not be guessed here."
+        }
+      }
+    },
+    "fixtures": [
+      {
+        "fixture_id": "v3-s01",
+        "partition": "selection",
+        "family": "NEGATIVE_CLEAR",
+        "hard_expectation": true,
+        "route": "PROVIDER_CALL",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "4b9227a3eae36410104fd95c312b17ace1d4f00d918c119bb3491712c487cbf7",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "dc14e9c8ed09bae89e8726e2b0d0b13379e0ca3f499d311ab54279894ce9cc97",
+            "intent_text": "The setup permits modest short-term softness when the broader trend structure and relative strength remain supportive.",
+            "required_definition_ids": [
+              "strength",
+              "trend"
+            ],
+            "definitions": [
+              {
+                "id": "strength",
+                "text": "Relative strength means the comparative directional support explicitly described by the supplied condition meanings."
+              },
+              {
+                "id": "trend",
+                "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "short-term momentum is mildly soft"
+              },
+              {
+                "condition_id": "synthetic-02",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "the broader trend structure remains intact"
+              },
+              {
+                "condition_id": "synthetic-03",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "relative strength remains supportive"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "CONFIRMATION_ONLY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "CONFIRMATION_ONLY",
+            "executable_entry_range": false,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "COMPLETE",
+            "q1_reasons": [],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "MATCH",
+            "reason_code": null
+          },
+          "source_snapshot_hash": "853258a164cdf403e1d9bfad2c1618be317c6e7d0954b0ebb5fbdf202c6f1604"
+        },
+        "projected_state": {
+          "strategy_intent": {
+            "text": "The setup permits modest short-term softness when the broader trend structure and relative strength remain supportive."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Relative strength means the comparative directional support explicitly described by the supplied condition meanings."
+            },
+            {
+              "ref": "term-02",
+              "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "meaning": "short-term momentum is mildly soft"
+            },
+            {
+              "ref": "condition-02",
+              "meaning": "the broader trend structure remains intact"
+            },
+            {
+              "ref": "condition-03",
+              "meaning": "relative strength remains supportive"
+            }
+          ]
+        },
+        "projected_state_hash": "49bcb6f2ca9f2e50ebae2af87f4957294f6626c52ec4b7817b37283860d607e7",
+        "state_bytes": 692,
+        "expected_preflight_error": null,
+        "expected_q1_gold": false,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": null,
+        "expected_local_entry_result": {
+          "status": "MATCH",
+          "reason_code": null
+        },
+        "expected_jev_status": "VALID",
+        "expected_disposition": "PASS_THROUGH",
+        "expected_reason_codes": [
+          "NO_ADDITIONAL_CONTEXT_CONFLICT"
+        ],
+        "isolation_family_id": null,
+        "gold_rationale": "Allowed short-term softness is explicitly compatible with intact broader structure."
+      },
+      {
+        "fixture_id": "v3-s02",
+        "partition": "selection",
+        "family": "NEGATIVE_CLEAR",
+        "hard_expectation": true,
+        "route": "PROVIDER_CALL",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "f0469fdc66cd2bfcef0b507cf821267e4fe6c376d6b5f32b044eb75e475eb511",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "51af5ffdc240d5e6f0d491ee604cd91f262d2be460113e1d617573b89788a500",
+            "intent_text": "The setup is a bounded rebound and does not require proof that a durable long-term uptrend has resumed.",
+            "required_definition_ids": [
+              "recovery",
+              "support"
+            ],
+            "definitions": [
+              {
+                "id": "recovery",
+                "text": "Recovery structure means stabilization after weakness rather than continuing structural deterioration."
+              },
+              {
+                "id": "support",
+                "text": "Support integrity means the setup has not semantically lost the support structure required by the strategy."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "support integrity remains intact"
+              },
+              {
+                "condition_id": "synthetic-02",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "recovery structure is stabilizing"
+              },
+              {
+                "condition_id": "synthetic-03",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "the long-term trend is not yet fully established"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "CONFIRMATION_ONLY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "CONFIRMATION_ONLY",
+            "executable_entry_range": false,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "COMPLETE",
+            "q1_reasons": [],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "MATCH",
+            "reason_code": null
+          },
+          "source_snapshot_hash": "dd81e3b2043a98fb181312f8e8fd0dc2ad973bec4ca7a00c69bc5b93ce39a309"
+        },
+        "projected_state": {
+          "strategy_intent": {
+            "text": "The setup is a bounded rebound and does not require proof that a durable long-term uptrend has resumed."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Recovery structure means stabilization after weakness rather than continuing structural deterioration."
+            },
+            {
+              "ref": "term-02",
+              "text": "Support integrity means the setup has not semantically lost the support structure required by the strategy."
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "meaning": "support integrity remains intact"
+            },
+            {
+              "ref": "condition-02",
+              "meaning": "recovery structure is stabilizing"
+            },
+            {
+              "ref": "condition-03",
+              "meaning": "the long-term trend is not yet fully established"
+            }
+          ]
+        },
+        "projected_state_hash": "c9ceee32f5743dd5d8facd3ee424374ba42cbe26ed1c7dcc3ac9a43c574645bb",
+        "state_bytes": 671,
+        "expected_preflight_error": null,
+        "expected_q1_gold": false,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": null,
+        "expected_local_entry_result": {
+          "status": "MATCH",
+          "reason_code": null
+        },
+        "expected_jev_status": "VALID",
+        "expected_disposition": "PASS_THROUGH",
+        "expected_reason_codes": [
+          "NO_ADDITIONAL_CONTEXT_CONFLICT"
+        ],
+        "isolation_family_id": null,
+        "gold_rationale": "Lack of a fully established long-term trend is explicitly allowed."
+      },
+      {
+        "fixture_id": "v3-s03",
+        "partition": "selection",
+        "family": "NEGATIVE_TRAP",
+        "hard_expectation": true,
+        "route": "PROVIDER_CALL",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "23f8468a5cd9dde73e48bd25727ae2a3a766a3caae36e22f0688fa74ee7c4002",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "727f12ba6900ccaf9b3d564589a437ae328d3bc63f23c5cb425b9ebd34bd72dd",
+            "intent_text": "The setup accepts a range-bound market while support remains intact and directional breakout has not been established.",
+            "required_definition_ids": [
+              "range",
+              "support"
+            ],
+            "definitions": [
+              {
+                "id": "range",
+                "text": "Range structure means bounded non-trending behavior with support intact and no directional break."
+              },
+              {
+                "id": "support",
+                "text": "Support integrity means the setup has not semantically lost the support structure required by the strategy."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "the market remains range-bound"
+              },
+              {
+                "condition_id": "synthetic-02",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "support integrity remains intact"
+              },
+              {
+                "condition_id": "synthetic-03",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "no directional breakout has been established"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "CONFIRMATION_ONLY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "CONFIRMATION_ONLY",
+            "executable_entry_range": false,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "COMPLETE",
+            "q1_reasons": [],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "MATCH",
+            "reason_code": null
+          },
+          "source_snapshot_hash": "08d154d675887c447d6e715c094e54a87419bcbb0ddebbf1677f37069d71e0c0"
+        },
+        "projected_state": {
+          "strategy_intent": {
+            "text": "The setup accepts a range-bound market while support remains intact and directional breakout has not been established."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Range structure means bounded non-trending behavior with support intact and no directional break."
+            },
+            {
+              "ref": "term-02",
+              "text": "Support integrity means the setup has not semantically lost the support structure required by the strategy."
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "meaning": "the market remains range-bound"
+            },
+            {
+              "ref": "condition-02",
+              "meaning": "support integrity remains intact"
+            },
+            {
+              "ref": "condition-03",
+              "meaning": "no directional breakout has been established"
+            }
+          ]
+        },
+        "projected_state_hash": "4e49c136417b7343505ed23ac0076de87cde4d05cb6a6c73d6b387ee522e205f",
+        "state_bytes": 674,
+        "expected_preflight_error": null,
+        "expected_q1_gold": false,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": null,
+        "expected_local_entry_result": {
+          "status": "MATCH",
+          "reason_code": null
+        },
+        "expected_jev_status": "VALID",
+        "expected_disposition": "PASS_THROUGH",
+        "expected_reason_codes": [
+          "NO_ADDITIONAL_CONTEXT_CONFLICT"
+        ],
+        "isolation_family_id": null,
+        "gold_rationale": "Bearish-looking lack of breakout is compatible with range intent."
+      },
+      {
+        "fixture_id": "v3-s04",
+        "partition": "selection",
+        "family": "NEGATIVE_TRAP",
+        "hard_expectation": true,
+        "route": "PROVIDER_CALL",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "e07c8f353a95ce6b03afc3e84798ec8ceef3af93bf05ef4cc27dad05ec7c46ac",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "28ad1ce14933e1a7a033778203bdf37b1464dcbba765d4c12d26be9ee618f77d",
+            "intent_text": "The strategy requires compression while directional structure stays intact; missing future price outcomes do not alter this semantic review.",
+            "required_definition_ids": [
+              "compression",
+              "trend"
+            ],
+            "definitions": [
+              {
+                "id": "compression",
+                "text": "Compression means quiet volatility and participation without asserting that a directional breakout has already occurred."
+              },
+              {
+                "id": "trend",
+                "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "volatility remains compressed"
+              },
+              {
+                "condition_id": "synthetic-02",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "participation remains quiet"
+              },
+              {
+                "condition_id": "synthetic-03",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "directional structure remains intact"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "CONFIRMATION_ONLY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "CONFIRMATION_ONLY",
+            "executable_entry_range": false,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "COMPLETE",
+            "q1_reasons": [],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "MATCH",
+            "reason_code": null
+          },
+          "source_snapshot_hash": "aa106ccbe70a3554f7af5e43aa8607587df87140e56d36c0965d2892d78fe69f"
+        },
+        "projected_state": {
+          "strategy_intent": {
+            "text": "The strategy requires compression while directional structure stays intact; missing future price outcomes do not alter this semantic review."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Compression means quiet volatility and participation without asserting that a directional breakout has already occurred."
+            },
+            {
+              "ref": "term-02",
+              "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "meaning": "volatility remains compressed"
+            },
+            {
+              "ref": "condition-02",
+              "meaning": "participation remains quiet"
+            },
+            {
+              "ref": "condition-03",
+              "meaning": "directional structure remains intact"
+            }
+          ]
+        },
+        "projected_state_hash": "3c87c65ca7c87128dd04b4db7815c4e7d88915356ec9c5c8bae636c44b8522e3",
+        "state_bytes": 698,
+        "expected_preflight_error": null,
+        "expected_q1_gold": false,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": null,
+        "expected_local_entry_result": {
+          "status": "MATCH",
+          "reason_code": null
+        },
+        "expected_jev_status": "VALID",
+        "expected_disposition": "PASS_THROUGH",
+        "expected_reason_codes": [
+          "NO_ADDITIONAL_CONTEXT_CONFLICT"
+        ],
+        "isolation_family_id": null,
+        "gold_rationale": "Future outcome, company identity and news are irrelevant to the limited Q1 review."
+      },
+      {
+        "fixture_id": "v3-s05",
+        "partition": "selection",
+        "family": "POSITIVE_DIRECT",
+        "hard_expectation": true,
+        "route": "PROVIDER_CALL",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "e8f3948b84a48e1f8a4550dc4c2e821b6a0333968f91662b07094671cb7818be",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "3ddb0427890b1d396a31fd95ca31dc06f60b5446037d062e95927bc73d8f3fde",
+            "intent_text": "The setup requires support integrity to remain intact throughout the rebound context.",
+            "required_definition_ids": [
+              "support"
+            ],
+            "definitions": [
+              {
+                "id": "support",
+                "text": "Support integrity means the setup has not semantically lost the support structure required by the strategy."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "the supplied support meaning states that support integrity has been lost"
+              },
+              {
+                "condition_id": "synthetic-02",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "rebound participation remains ordinary"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "CONFIRMATION_ONLY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "CONFIRMATION_ONLY",
+            "executable_entry_range": false,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "COMPLETE",
+            "q1_reasons": [],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "MATCH",
+            "reason_code": null
+          },
+          "source_snapshot_hash": "499a74ef362d86e3d48d785924b1a846dd2186d864f5bae06f0187191464c6ea"
+        },
+        "projected_state": {
+          "strategy_intent": {
+            "text": "The setup requires support integrity to remain intact throughout the rebound context."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Support integrity means the setup has not semantically lost the support structure required by the strategy."
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "meaning": "the supplied support meaning states that support integrity has been lost"
+            },
+            {
+              "ref": "condition-02",
+              "meaning": "rebound participation remains ordinary"
+            }
+          ]
+        },
+        "projected_state_hash": "8ebfee3f122d7ed919f093b753c48c70201d894db951218a1d675b6a0d12dfd3",
+        "state_bytes": 484,
+        "expected_preflight_error": null,
+        "expected_q1_gold": true,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": null,
+        "expected_local_entry_result": {
+          "status": "MATCH",
+          "reason_code": null
+        },
+        "expected_jev_status": "VALID",
+        "expected_disposition": "REVIEW_REQUIRED",
+        "expected_reason_codes": [
+          "STRATEGY_CONTEXT_CONFLICT"
+        ],
+        "isolation_family_id": null,
+        "gold_rationale": "A supplied passed meaning explicitly contradicts the required intact-support intent."
+      },
+      {
+        "fixture_id": "v3-s06",
+        "partition": "selection",
+        "family": "POSITIVE_COMPOSITIONAL",
+        "hard_expectation": true,
+        "route": "PROVIDER_CALL",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "4bab236f3e059d69ca36a98c3ced29c39277edd26a494d11da95be2f2ffcd648",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "ff365e36b54df386914e5ad9216a719875ea6e8634c34f96577dd3121f5d01b0",
+            "intent_text": "Temporary short-term weakness is allowed only while the broader trend structure remains intact and relative strength stays supportive.",
+            "required_definition_ids": [
+              "strength",
+              "trend"
+            ],
+            "definitions": [
+              {
+                "id": "strength",
+                "text": "Relative strength means the comparative directional support explicitly described by the supplied condition meanings."
+              },
+              {
+                "id": "trend",
+                "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "short-term momentum is weak"
+              },
+              {
+                "condition_id": "synthetic-02",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "the broader directional structure is deteriorating"
+              },
+              {
+                "condition_id": "synthetic-03",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "relative strength is no longer supportive"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "CONFIRMATION_ONLY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "CONFIRMATION_ONLY",
+            "executable_entry_range": false,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "COMPLETE",
+            "q1_reasons": [],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "MATCH",
+            "reason_code": null
+          },
+          "source_snapshot_hash": "99ac63514437d38322d3b8a46b75c4aa91019b1a696ac63fd55e2cfade80e6e9"
+        },
+        "projected_state": {
+          "strategy_intent": {
+            "text": "Temporary short-term weakness is allowed only while the broader trend structure remains intact and relative strength stays supportive."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Relative strength means the comparative directional support explicitly described by the supplied condition meanings."
+            },
+            {
+              "ref": "term-02",
+              "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "meaning": "short-term momentum is weak"
+            },
+            {
+              "ref": "condition-02",
+              "meaning": "the broader directional structure is deteriorating"
+            },
+            {
+              "ref": "condition-03",
+              "meaning": "relative strength is no longer supportive"
+            }
+          ]
+        },
+        "projected_state_hash": "bdc7b4877d641a70abfc3ac5df6dfd8a07820b77ae6cf596ce660fa993281128",
+        "state_bytes": 714,
+        "expected_preflight_error": null,
+        "expected_q1_gold": true,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": null,
+        "expected_local_entry_result": {
+          "status": "MATCH",
+          "reason_code": null
+        },
+        "expected_jev_status": "VALID",
+        "expected_disposition": "REVIEW_REQUIRED",
+        "expected_reason_codes": [
+          "STRATEGY_CONTEXT_CONFLICT"
+        ],
+        "isolation_family_id": null,
+        "gold_rationale": "The allowed exception loses both conditions that make short-term weakness acceptable."
+      },
+      {
+        "fixture_id": "v3-s07",
+        "partition": "selection",
+        "family": "ISOLATION_A",
+        "hard_expectation": true,
+        "route": "PROVIDER_CALL",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "c82002c0311466f118c3b13eb3ca635af404d1abcda5a86304f3c45002e16682",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "d2320f9ba87c8b9ea1109f0f9217b56acbc5d7abd5e39ab17d6fc0b6b57ffebc",
+            "intent_text": "The continuation setup allows brief pauses only when momentum persistence and participation remain supportive.",
+            "required_definition_ids": [
+              "momentum",
+              "participation"
+            ],
+            "definitions": [
+              {
+                "id": "momentum",
+                "text": "Momentum persistence means the supplied meanings jointly preserve the strategy's directional continuation context."
+              },
+              {
+                "id": "participation",
+                "text": "Participation means the supplied condition meanings describe the kind of participation required by the strategy."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "momentum persistence is no longer present"
+              },
+              {
+                "condition_id": "synthetic-02",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "participation is fading rather than supporting continuation"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "CONFIRMATION_ONLY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "CONFIRMATION_ONLY",
+            "executable_entry_range": false,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "COMPLETE",
+            "q1_reasons": [],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "MATCH",
+            "reason_code": null
+          },
+          "source_snapshot_hash": "6debcd5dbd9c16b2f005c6ed2d2be1edd5f95e4f5c6a866c8b7886d02a8ed9cb"
+        },
+        "projected_state": {
+          "strategy_intent": {
+            "text": "The continuation setup allows brief pauses only when momentum persistence and participation remain supportive."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Momentum persistence means the supplied meanings jointly preserve the strategy's directional continuation context."
+            },
+            {
+              "ref": "term-02",
+              "text": "Participation means the supplied condition meanings describe the kind of participation required by the strategy."
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "meaning": "momentum persistence is no longer present"
+            },
+            {
+              "ref": "condition-02",
+              "meaning": "participation is fading rather than supporting continuation"
+            }
+          ]
+        },
+        "projected_state_hash": "708b0893b1ace83f1bb2a85a3533b9ee394bb4a580a3ababc4ce0d6d289e485d",
+        "state_bytes": 646,
+        "expected_preflight_error": null,
+        "expected_q1_gold": true,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": null,
+        "expected_local_entry_result": {
+          "status": "MATCH",
+          "reason_code": null
+        },
+        "expected_jev_status": "VALID",
+        "expected_disposition": "REVIEW_REQUIRED",
+        "expected_reason_codes": [
+          "STRATEGY_CONTEXT_CONFLICT"
+        ],
+        "isolation_family_id": "S-A",
+        "gold_rationale": "Q1 positive with local entry semantics complete."
+      },
+      {
+        "fixture_id": "v3-s08",
+        "partition": "selection",
+        "family": "ISOLATION_A",
+        "hard_expectation": true,
+        "route": "PROVIDER_CALL",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "c82002c0311466f118c3b13eb3ca635af404d1abcda5a86304f3c45002e16682",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "d2320f9ba87c8b9ea1109f0f9217b56acbc5d7abd5e39ab17d6fc0b6b57ffebc",
+            "intent_text": "The continuation setup allows brief pauses only when momentum persistence and participation remain supportive.",
+            "required_definition_ids": [
+              "momentum",
+              "participation"
+            ],
+            "definitions": [
+              {
+                "id": "momentum",
+                "text": "Momentum persistence means the supplied meanings jointly preserve the strategy's directional continuation context."
+              },
+              {
+                "id": "participation",
+                "text": "Participation means the supplied condition meanings describe the kind of participation required by the strategy."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "momentum persistence is no longer present"
+              },
+              {
+                "condition_id": "synthetic-02",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "participation is fading rather than supporting continuation"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": null,
+            "intent_role": null,
+            "represented_rule_id": null,
+            "represented_role": null,
+            "executable_entry_range": null,
+            "representation_contract_version": null,
+            "representation_contract_hash": null
+          },
+          "readiness": {
+            "q1_status": "COMPLETE",
+            "q1_reasons": [],
+            "q2_status": "MISSING",
+            "q2_reasons": [
+              "Q2_RULE_REFERENCE_MISSING",
+              "Q2_RULE_REFERENCE_MISSING"
+            ]
+          },
+          "local_entry_semantic_result": {
+            "status": "MISSING",
+            "reason_code": "Q2_RULE_REFERENCE_MISSING"
+          },
+          "source_snapshot_hash": "568f8bdd691fbde001d4b6b482e8f96336295d6b3183830050cda8de92f43f67"
+        },
+        "projected_state": {
+          "strategy_intent": {
+            "text": "The continuation setup allows brief pauses only when momentum persistence and participation remain supportive."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Momentum persistence means the supplied meanings jointly preserve the strategy's directional continuation context."
+            },
+            {
+              "ref": "term-02",
+              "text": "Participation means the supplied condition meanings describe the kind of participation required by the strategy."
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "meaning": "momentum persistence is no longer present"
+            },
+            {
+              "ref": "condition-02",
+              "meaning": "participation is fading rather than supporting continuation"
+            }
+          ]
+        },
+        "projected_state_hash": "708b0893b1ace83f1bb2a85a3533b9ee394bb4a580a3ababc4ce0d6d289e485d",
+        "state_bytes": 646,
+        "expected_preflight_error": null,
+        "expected_q1_gold": true,
+        "expected_q2_status": "MISSING",
+        "expected_q2_reason": "Q2_RULE_REFERENCE_MISSING",
+        "expected_local_entry_result": {
+          "status": "MISSING",
+          "reason_code": "Q2_RULE_REFERENCE_MISSING"
+        },
+        "expected_jev_status": "VALID",
+        "expected_disposition": "REVIEW_REQUIRED",
+        "expected_reason_codes": [
+          "STRATEGY_CONTEXT_CONFLICT"
+        ],
+        "isolation_family_id": "S-A",
+        "gold_rationale": "Same Q1 wire; local entry rule reference is missing."
+      },
+      {
+        "fixture_id": "v3-s09",
+        "partition": "selection",
+        "family": "ISOLATION_B",
+        "hard_expectation": true,
+        "route": "PROVIDER_CALL",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "42a4961d6839abe62695ec21446b3ee9855fe265ffb2a4cbeefe95277bcb30b8",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "a69aa5c932625afa17749b74a005c67e2939181a4d54152ce5cc8aa3b8239b0b",
+            "intent_text": "The recovery setup permits a still-flat short-term trend when recovery structure is improving and support integrity remains intact.",
+            "required_definition_ids": [
+              "recovery",
+              "support"
+            ],
+            "definitions": [
+              {
+                "id": "recovery",
+                "text": "Recovery structure means stabilization after weakness rather than continuing structural deterioration."
+              },
+              {
+                "id": "support",
+                "text": "Support integrity means the setup has not semantically lost the support structure required by the strategy."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "the short-term trend is still approximately flat"
+              },
+              {
+                "condition_id": "synthetic-02",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "recovery structure is improving"
+              },
+              {
+                "condition_id": "synthetic-03",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "support integrity remains intact"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "CONFIRMATION_ONLY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "CONFIRMATION_ONLY",
+            "executable_entry_range": false,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "COMPLETE",
+            "q1_reasons": [],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "MATCH",
+            "reason_code": null
+          },
+          "source_snapshot_hash": "63e440ac632cf46c349a2fac58b7da60fe3d6aef00481c3ed06c9b3aa7e3c802"
+        },
+        "projected_state": {
+          "strategy_intent": {
+            "text": "The recovery setup permits a still-flat short-term trend when recovery structure is improving and support integrity remains intact."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Recovery structure means stabilization after weakness rather than continuing structural deterioration."
+            },
+            {
+              "ref": "term-02",
+              "text": "Support integrity means the setup has not semantically lost the support structure required by the strategy."
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "meaning": "the short-term trend is still approximately flat"
+            },
+            {
+              "ref": "condition-02",
+              "meaning": "recovery structure is improving"
+            },
+            {
+              "ref": "condition-03",
+              "meaning": "support integrity remains intact"
+            }
+          ]
+        },
+        "projected_state_hash": "558483823d28f2218db822d8ca902382d9504108b94482dcc932037a90f20502",
+        "state_bytes": 697,
+        "expected_preflight_error": null,
+        "expected_q1_gold": false,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": null,
+        "expected_local_entry_result": {
+          "status": "MATCH",
+          "reason_code": null
+        },
+        "expected_jev_status": "VALID",
+        "expected_disposition": "PASS_THROUGH",
+        "expected_reason_codes": [
+          "NO_ADDITIONAL_CONTEXT_CONFLICT"
+        ],
+        "isolation_family_id": "S-B",
+        "gold_rationale": "Q1 negative with local entry match."
+      },
+      {
+        "fixture_id": "v3-s10",
+        "partition": "selection",
+        "family": "ISOLATION_B",
+        "hard_expectation": true,
+        "route": "PROVIDER_CALL",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "42a4961d6839abe62695ec21446b3ee9855fe265ffb2a4cbeefe95277bcb30b8",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "a69aa5c932625afa17749b74a005c67e2939181a4d54152ce5cc8aa3b8239b0b",
+            "intent_text": "The recovery setup permits a still-flat short-term trend when recovery structure is improving and support integrity remains intact.",
+            "required_definition_ids": [
+              "recovery",
+              "support"
+            ],
+            "definitions": [
+              {
+                "id": "recovery",
+                "text": "Recovery structure means stabilization after weakness rather than continuing structural deterioration."
+              },
+              {
+                "id": "support",
+                "text": "Support integrity means the setup has not semantically lost the support structure required by the strategy."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "the short-term trend is still approximately flat"
+              },
+              {
+                "condition_id": "synthetic-02",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "recovery structure is improving"
+              },
+              {
+                "condition_id": "synthetic-03",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "support integrity remains intact"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "CONFIRMATION_ONLY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "EXECUTABLE_ENTRY",
+            "executable_entry_range": true,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "COMPLETE",
+            "q1_reasons": [],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "CONFLICT",
+            "reason_code": "CONFLICT_CONFIRMATION_AS_EXECUTION"
+          },
+          "source_snapshot_hash": "d7f92bf6196d8d0bc7d36ce5bfd13525cb58a55de43061461f3cdbd7ba10ada7"
+        },
+        "projected_state": {
+          "strategy_intent": {
+            "text": "The recovery setup permits a still-flat short-term trend when recovery structure is improving and support integrity remains intact."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Recovery structure means stabilization after weakness rather than continuing structural deterioration."
+            },
+            {
+              "ref": "term-02",
+              "text": "Support integrity means the setup has not semantically lost the support structure required by the strategy."
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "meaning": "the short-term trend is still approximately flat"
+            },
+            {
+              "ref": "condition-02",
+              "meaning": "recovery structure is improving"
+            },
+            {
+              "ref": "condition-03",
+              "meaning": "support integrity remains intact"
+            }
+          ]
+        },
+        "projected_state_hash": "558483823d28f2218db822d8ca902382d9504108b94482dcc932037a90f20502",
+        "state_bytes": 697,
+        "expected_preflight_error": null,
+        "expected_q1_gold": false,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": "CONFLICT_CONFIRMATION_AS_EXECUTION",
+        "expected_local_entry_result": {
+          "status": "CONFLICT",
+          "reason_code": "CONFLICT_CONFIRMATION_AS_EXECUTION"
+        },
+        "expected_jev_status": "VALID",
+        "expected_disposition": "PASS_THROUGH",
+        "expected_reason_codes": [
+          "NO_ADDITIONAL_CONTEXT_CONFLICT"
+        ],
+        "isolation_family_id": "S-B",
+        "gold_rationale": "Same Q1 wire; local confirmation rule is misrepresented as executable."
+      },
+      {
+        "fixture_id": "v3-s11",
+        "partition": "selection",
+        "family": "SOFT",
+        "hard_expectation": false,
+        "route": "PROVIDER_CALL",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "0ef73daab0199c2dbe621e3c04648fa8c52e11f233ecd72b5c877e439ffc5a1c",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "cef48889958166f4c3e2e2c809e73e549fdbd232a1cfe1e62d4e093115aaae4a",
+            "intent_text": "The setup tolerates limited deterioration when the broader structure remains mostly supportive.",
+            "required_definition_ids": [
+              "trend"
+            ],
+            "definitions": [
+              {
+                "id": "trend",
+                "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "the broader structure is somewhat weaker but still partly intact"
+              },
+              {
+                "condition_id": "synthetic-02",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "short-term direction is mixed"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "CONFIRMATION_ONLY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "CONFIRMATION_ONLY",
+            "executable_entry_range": false,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "COMPLETE",
+            "q1_reasons": [],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "MATCH",
+            "reason_code": null
+          },
+          "source_snapshot_hash": "93af6529c7ae17bac3befd189ee42433bae4e6ab5d48dbeca0c4ad0cbacd340d"
+        },
+        "projected_state": {
+          "strategy_intent": {
+            "text": "The setup tolerates limited deterioration when the broader structure remains mostly supportive."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "meaning": "the broader structure is somewhat weaker but still partly intact"
+            },
+            {
+              "ref": "condition-02",
+              "meaning": "short-term direction is mixed"
+            }
+          ]
+        },
+        "projected_state_hash": "50e5fef3f63a95d5fed689c62e4efb2821c2f57b950034e8493fe8aa9bc48895",
+        "state_bytes": 470,
+        "expected_preflight_error": null,
+        "expected_q1_gold": null,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": null,
+        "expected_local_entry_result": {
+          "status": "MATCH",
+          "reason_code": null
+        },
+        "expected_jev_status": "VALID",
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "isolation_family_id": null,
+        "gold_rationale": "Degree terms permit more than one reasonable semantic reading."
+      },
+      {
+        "fixture_id": "v3-s12",
+        "partition": "selection",
+        "family": "SOFT",
+        "hard_expectation": false,
+        "route": "PROVIDER_CALL",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "bcbaa189bd63b4b31d5a8430e763074591a426cd0f965f04e3ec554483253381",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "3df9f59dedb00b216defd63b16550ac6ec64ce2047da1af0a683ff283837bdd6",
+            "intent_text": "The setup accepts temporary weakness unless deterioration becomes meaningfully persistent.",
+            "required_definition_ids": [
+              "recovery"
+            ],
+            "definitions": [
+              {
+                "id": "recovery",
+                "text": "Recovery structure means stabilization after weakness rather than continuing structural deterioration."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "weakness has lasted longer than usual but recovery signs remain present"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "CONFIRMATION_ONLY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "CONFIRMATION_ONLY",
+            "executable_entry_range": false,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "COMPLETE",
+            "q1_reasons": [],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "MATCH",
+            "reason_code": null
+          },
+          "source_snapshot_hash": "561e48372c6ff4fe6587cc8eb389dc7d8ef6dc57c5ac1603f0ecd079716fca83"
+        },
+        "projected_state": {
+          "strategy_intent": {
+            "text": "The setup accepts temporary weakness unless deterioration becomes meaningfully persistent."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Recovery structure means stabilization after weakness rather than continuing structural deterioration."
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "meaning": "weakness has lasted longer than usual but recovery signs remain present"
+            }
+          ]
+        },
+        "projected_state_hash": "e729f620fce5064dce2b6080e9803db2ec0eff3ab09c8ccba880b2010aaf7cb3",
+        "state_bytes": 409,
+        "expected_preflight_error": null,
+        "expected_q1_gold": null,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": null,
+        "expected_local_entry_result": {
+          "status": "MATCH",
+          "reason_code": null
+        },
+        "expected_jev_status": "VALID",
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "isolation_family_id": null,
+        "gold_rationale": "Meaningfully persistent is intentionally soft."
+      },
+      {
+        "fixture_id": "v3-s13",
+        "partition": "selection",
+        "family": "LOCAL_Q1_MISSING",
+        "hard_expectation": true,
+        "route": "LOCAL_ONLY",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "194b4d7ca1c41f2d3d79232239b8b616845103da553e28b3a0d9f9953de00452",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "4d8c97e76362c69a12e1e58bc9aff1417545815cbb94ae428cec1a21b8108176",
+            "intent_text": "The setup requires a defined trend term.",
+            "required_definition_ids": [
+              "trend"
+            ],
+            "definitions": [
+              {
+                "id": "trend",
+                "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "trend structure remains intact"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "CONFIRMATION_ONLY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "CONFIRMATION_ONLY",
+            "executable_entry_range": false,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "MISSING",
+            "q1_reasons": [
+              "Q1_REQUIRED_DEFINITION_ABSENT"
+            ],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "MATCH",
+            "reason_code": null
+          },
+          "source_snapshot_hash": "3c2f57f3aa9015fc86f3269b5c47a24ed7afdbdf9a288faf02713b5b8398f894"
+        },
+        "projected_state": null,
+        "projected_state_hash": null,
+        "state_bytes": 0,
+        "expected_preflight_error": "Q1_SEMANTIC_NOT_COMPLETE",
+        "expected_q1_gold": null,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": null,
+        "expected_local_entry_result": {
+          "status": "MATCH",
+          "reason_code": null
+        },
+        "expected_jev_status": "SKIPPED",
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "isolation_family_id": null,
+        "gold_rationale": "Required definition is registered as missing; no provider call."
+      },
+      {
+        "fixture_id": "v3-s14",
+        "partition": "selection",
+        "family": "LOCAL_Q1_INVALID",
+        "hard_expectation": true,
+        "route": "LOCAL_ONLY",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "f8fda0e2079f619bf74f4baee04faa903affa31d5f3b41627748fe6a160c1407",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "807fa87af91a801af844c9e22f6c29aff25d724bcbe2cb0ac816af5722cafa22",
+            "intent_text": "The setup requires a non-cyclic recovery definition.",
+            "required_definition_ids": [
+              "recovery"
+            ],
+            "definitions": [
+              {
+                "id": "recovery",
+                "text": "Recovery structure means recovery structure."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "recovery structure is improving"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "CONFIRMATION_ONLY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "CONFIRMATION_ONLY",
+            "executable_entry_range": false,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "INVALID_BINDING",
+            "q1_reasons": [
+              "Q1_DEFINITION_CYCLIC"
+            ],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "MATCH",
+            "reason_code": null
+          },
+          "source_snapshot_hash": "43d851f17487e9e732cedca0624d33642c105b4e6ca683773cac47ecc0485c22"
+        },
+        "projected_state": null,
+        "projected_state_hash": null,
+        "state_bytes": 0,
+        "expected_preflight_error": "Q1_SEMANTIC_NOT_COMPLETE",
+        "expected_q1_gold": null,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": null,
+        "expected_local_entry_result": {
+          "status": "MATCH",
+          "reason_code": null
+        },
+        "expected_jev_status": "SKIPPED",
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "isolation_family_id": null,
+        "gold_rationale": "Invalid/cyclic definition is rejected locally."
+      },
+      {
+        "fixture_id": "v3-s15",
+        "partition": "selection",
+        "family": "LOCAL_Q2_CONFLICT",
+        "hard_expectation": true,
+        "route": "LOCAL_ONLY",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "7490a8b2ebcf5007919005bc459cc8d5ef91c922b616b9b8094986758c5b2ab0",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "4d5baf503e03a23ab45f7639f92da4a5d38094be64f196c96544f556a0dee09d",
+            "intent_text": "Q1 context is intentionally unavailable.",
+            "required_definition_ids": [
+              "trend"
+            ],
+            "definitions": [
+              {
+                "id": "trend",
+                "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "trend structure remains intact"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "CONFIRMATION_ONLY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "EXECUTABLE_ENTRY",
+            "executable_entry_range": true,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "MISSING",
+            "q1_reasons": [
+              "Q1_CONTEXT_UNAVAILABLE"
+            ],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "CONFLICT",
+            "reason_code": "CONFLICT_CONFIRMATION_AS_EXECUTION"
+          },
+          "source_snapshot_hash": "cd289bff23e12a7c4c4f4302deef8aa403a8ef7361f6e8d81e88a78fff1476e2"
+        },
+        "projected_state": null,
+        "projected_state_hash": null,
+        "state_bytes": 0,
+        "expected_preflight_error": "Q1_SEMANTIC_NOT_COMPLETE",
+        "expected_q1_gold": null,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": "CONFLICT_CONFIRMATION_AS_EXECUTION",
+        "expected_local_entry_result": {
+          "status": "CONFLICT",
+          "reason_code": "CONFLICT_CONFIRMATION_AS_EXECUTION"
+        },
+        "expected_jev_status": "SKIPPED",
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "isolation_family_id": null,
+        "gold_rationale": "Confirmation-only intent is represented as executable; local conflict survives Q1 no-call."
+      },
+      {
+        "fixture_id": "v3-s16",
+        "partition": "selection",
+        "family": "LOCAL_Q2_CONFLICT",
+        "hard_expectation": true,
+        "route": "LOCAL_ONLY",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "7490a8b2ebcf5007919005bc459cc8d5ef91c922b616b9b8094986758c5b2ab0",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "05329edc8a421a3fe67590eb903e58f05f50ed8e958d40b6991fd3630501b19c",
+            "intent_text": "Q1 context is intentionally unavailable.",
+            "required_definition_ids": [
+              "trend"
+            ],
+            "definitions": [
+              {
+                "id": "trend",
+                "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "trend structure remains intact"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "EXECUTABLE_ENTRY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "CONFIRMATION_ONLY",
+            "executable_entry_range": false,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "MISSING",
+            "q1_reasons": [
+              "Q1_CONTEXT_UNAVAILABLE"
+            ],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "CONFLICT",
+            "reason_code": "CONFLICT_EXECUTION_AS_CONFIRMATION"
+          },
+          "source_snapshot_hash": "570ec1f7959b5d11b97c85ba8d5532da3a42e2eb0e1974d8dadddbdc735f9cbf"
+        },
+        "projected_state": null,
+        "projected_state_hash": null,
+        "state_bytes": 0,
+        "expected_preflight_error": "Q1_SEMANTIC_NOT_COMPLETE",
+        "expected_q1_gold": null,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": "CONFLICT_EXECUTION_AS_CONFIRMATION",
+        "expected_local_entry_result": {
+          "status": "CONFLICT",
+          "reason_code": "CONFLICT_EXECUTION_AS_CONFIRMATION"
+        },
+        "expected_jev_status": "SKIPPED",
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "isolation_family_id": null,
+        "gold_rationale": "Executable intent is represented as confirmation-only; local conflict survives Q1 no-call."
+      },
+      {
+        "fixture_id": "v3-s17",
+        "partition": "selection",
+        "family": "LOCAL_Q2_LINK",
+        "hard_expectation": true,
+        "route": "LOCAL_ONLY",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "bbc84975ae6d8b34bf88e18b8645583e4a3e0692c810abdbb04d3ec0afac7461",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "5533f4c6b810bb5c5c256397e925829962d09bc1feb7178754f89a2d1f0cf249",
+            "intent_text": "Q1 context is intentionally unavailable.",
+            "required_definition_ids": [
+              "trend"
+            ],
+            "definitions": [
+              {
+                "id": "trend",
+                "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "trend structure remains intact"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": null,
+            "intent_role": null,
+            "represented_rule_id": null,
+            "represented_role": null,
+            "executable_entry_range": null,
+            "representation_contract_version": null,
+            "representation_contract_hash": null
+          },
+          "readiness": {
+            "q1_status": "MISSING",
+            "q1_reasons": [
+              "Q1_CONTEXT_UNAVAILABLE"
+            ],
+            "q2_status": "MISSING",
+            "q2_reasons": [
+              "Q2_RULE_REFERENCE_MISSING",
+              "Q2_RULE_REFERENCE_MISSING"
+            ]
+          },
+          "local_entry_semantic_result": {
+            "status": "MISSING",
+            "reason_code": "Q2_RULE_REFERENCE_MISSING"
+          },
+          "source_snapshot_hash": "3b78a305f8965611b88b2af98b5fdad725b238e3ef7c84c6aca9bf4d6e8cc7a9"
+        },
+        "projected_state": null,
+        "projected_state_hash": null,
+        "state_bytes": 0,
+        "expected_preflight_error": "Q1_SEMANTIC_NOT_COMPLETE",
+        "expected_q1_gold": null,
+        "expected_q2_status": "MISSING",
+        "expected_q2_reason": "Q2_RULE_REFERENCE_MISSING",
+        "expected_local_entry_result": {
+          "status": "MISSING",
+          "reason_code": "Q2_RULE_REFERENCE_MISSING"
+        },
+        "expected_jev_status": "SKIPPED",
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "isolation_family_id": null,
+        "gold_rationale": "Missing same-rule reference is MISSING, not inferred conflict."
+      },
+      {
+        "fixture_id": "v3-s18",
+        "partition": "selection",
+        "family": "LOCAL_Q2_LINK",
+        "hard_expectation": true,
+        "route": "LOCAL_ONLY",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "bbc84975ae6d8b34bf88e18b8645583e4a3e0692c810abdbb04d3ec0afac7461",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "7b30b19aebbc2a6694c4910f447c3de7f5aeb4ab4bbfab0eda0a79cc668d80e5",
+            "intent_text": "Q1 context is intentionally unavailable.",
+            "required_definition_ids": [
+              "trend"
+            ],
+            "definitions": [
+              {
+                "id": "trend",
+                "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "trend structure remains intact"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": null,
+            "intent_role": null,
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "CONFIRMATION_ONLY",
+            "executable_entry_range": false,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "MISSING",
+            "q1_reasons": [
+              "Q1_CONTEXT_UNAVAILABLE"
+            ],
+            "q2_status": "AMBIGUOUS",
+            "q2_reasons": [
+              "Q2_RULE_REFERENCE_AMBIGUOUS"
+            ]
+          },
+          "local_entry_semantic_result": {
+            "status": "AMBIGUOUS",
+            "reason_code": "Q2_RULE_REFERENCE_AMBIGUOUS"
+          },
+          "source_snapshot_hash": "b189cad8d582b3677efe51aaebb89e5dc0ee6d9d3ec65915d87810f6ac80d9ea"
+        },
+        "projected_state": null,
+        "projected_state_hash": null,
+        "state_bytes": 0,
+        "expected_preflight_error": "Q1_SEMANTIC_NOT_COMPLETE",
+        "expected_q1_gold": null,
+        "expected_q2_status": "AMBIGUOUS",
+        "expected_q2_reason": "Q2_RULE_REFERENCE_AMBIGUOUS",
+        "expected_local_entry_result": {
+          "status": "AMBIGUOUS",
+          "reason_code": "Q2_RULE_REFERENCE_AMBIGUOUS"
+        },
+        "expected_jev_status": "SKIPPED",
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "isolation_family_id": null,
+        "gold_rationale": "Multiple same-rule candidates are AMBIGUOUS."
+      },
+      {
+        "fixture_id": "v3-s19",
+        "partition": "selection",
+        "family": "LOCAL_STALE",
+        "hard_expectation": true,
+        "route": "LOCAL_ONLY",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_STALE",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "0cea815e64eb9fcb161f24794ce2e9261730cf49f050b4ad93862a76785adf66",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "da3ff1ab90447681e67a2e9c6ae7b57f3760931af23dcbdb288b2efed1320050",
+            "intent_text": "Synthetic stale source.",
+            "required_definition_ids": [
+              "trend"
+            ],
+            "definitions": [
+              {
+                "id": "trend",
+                "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "trend structure remains intact"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "CONFIRMATION_ONLY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "CONFIRMATION_ONLY",
+            "executable_entry_range": false,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "COMPLETE",
+            "q1_reasons": [],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "MATCH",
+            "reason_code": null
+          },
+          "source_snapshot_hash": "10aa23bd6db1b0b2a6bb139329bf9285db7364c4d72e17ac7c07d284bd02f6d8"
+        },
+        "projected_state": null,
+        "projected_state_hash": null,
+        "state_bytes": 0,
+        "expected_preflight_error": "SEMANTIC_SOURCE_VERSION_UNSUPPORTED",
+        "expected_q1_gold": null,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": null,
+        "expected_local_entry_result": {
+          "status": "MATCH",
+          "reason_code": null
+        },
+        "expected_jev_status": "SKIPPED",
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "isolation_family_id": null,
+        "gold_rationale": "Stale/unsupported source contract cannot be backfilled."
+      },
+      {
+        "fixture_id": "v3-s20",
+        "partition": "selection",
+        "family": "LOCAL_BOTH_MISSING",
+        "hard_expectation": true,
+        "route": "LOCAL_ONLY",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "7f977c882f7568ac8916862391ce6980544ae2ed91491514cdca06df01f07c37",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "fb163cb7e1fc082759cf809c6038ffc7867537ed6c1ebbd262865140cfa702c6",
+            "intent_text": "Both semantic scopes are unavailable.",
+            "required_definition_ids": [
+              "trend"
+            ],
+            "definitions": [
+              {
+                "id": "trend",
+                "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "trend structure remains intact"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": null,
+            "intent_role": null,
+            "represented_rule_id": null,
+            "represented_role": null,
+            "executable_entry_range": null,
+            "representation_contract_version": null,
+            "representation_contract_hash": null
+          },
+          "readiness": {
+            "q1_status": "MISSING",
+            "q1_reasons": [
+              "Q1_CONTEXT_UNAVAILABLE"
+            ],
+            "q2_status": "MISSING",
+            "q2_reasons": [
+              "Q2_RULE_REFERENCE_MISSING",
+              "Q2_RULE_REFERENCE_MISSING"
+            ]
+          },
+          "local_entry_semantic_result": {
+            "status": "MISSING",
+            "reason_code": "Q2_RULE_REFERENCE_MISSING"
+          },
+          "source_snapshot_hash": "ef15d5136ee810e78a36bc4ba98e5cc07a42a877930930ef862213d958162eb1"
+        },
+        "projected_state": null,
+        "projected_state_hash": null,
+        "state_bytes": 0,
+        "expected_preflight_error": "Q1_SEMANTIC_NOT_COMPLETE",
+        "expected_q1_gold": null,
+        "expected_q2_status": "MISSING",
+        "expected_q2_reason": "Q2_RULE_REFERENCE_MISSING",
+        "expected_local_entry_result": {
+          "status": "MISSING",
+          "reason_code": "Q2_RULE_REFERENCE_MISSING"
+        },
+        "expected_jev_status": "SKIPPED",
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "isolation_family_id": null,
+        "gold_rationale": "Both scopes remain missing; no PASS or model ABSTAIN is fabricated."
+      },
+      {
+        "fixture_id": "v3-v01",
+        "partition": "validation",
+        "family": "NEGATIVE_CLEAR",
+        "hard_expectation": true,
+        "route": "PROVIDER_CALL",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "5e8581abae8baa5feff6c00b4bee598d70723d1528ab0fb97e8e11138ffc9fd3",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "a856a574b97f158d81f94fa436162794dfbe040045644693e731e0b82d8afcd3",
+            "intent_text": "The strategy permits a quiet pause after strength when medium-term structure remains constructive and participation does not collapse.",
+            "required_definition_ids": [
+              "participation",
+              "trend"
+            ],
+            "definitions": [
+              {
+                "id": "participation",
+                "text": "Participation means the supplied condition meanings describe the kind of participation required by the strategy."
+              },
+              {
+                "id": "trend",
+                "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "short-term direction is quiet"
+              },
+              {
+                "condition_id": "synthetic-02",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "medium-term structure remains constructive"
+              },
+              {
+                "condition_id": "synthetic-03",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "participation remains adequate"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "CONFIRMATION_ONLY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "CONFIRMATION_ONLY",
+            "executable_entry_range": false,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "COMPLETE",
+            "q1_reasons": [],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "MATCH",
+            "reason_code": null
+          },
+          "source_snapshot_hash": "51673412a22772b73c8302a63541b68d819e022cc39481cf90d1ca5acdff80b9"
+        },
+        "projected_state": {
+          "strategy_intent": {
+            "text": "The strategy permits a quiet pause after strength when medium-term structure remains constructive and participation does not collapse."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Participation means the supplied condition meanings describe the kind of participation required by the strategy."
+            },
+            {
+              "ref": "term-02",
+              "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "meaning": "short-term direction is quiet"
+            },
+            {
+              "ref": "condition-02",
+              "meaning": "medium-term structure remains constructive"
+            },
+            {
+              "ref": "condition-03",
+              "meaning": "participation remains adequate"
+            }
+          ]
+        },
+        "projected_state_hash": "1692eef57a52ef2ba9d7e0d6c01f029f9af4ae7b54fa919ea538ac60d8f064e9",
+        "state_bytes": 693,
+        "expected_preflight_error": null,
+        "expected_q1_gold": false,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": null,
+        "expected_local_entry_result": {
+          "status": "MATCH",
+          "reason_code": null
+        },
+        "expected_jev_status": "VALID",
+        "expected_disposition": "PASS_THROUGH",
+        "expected_reason_codes": [
+          "NO_ADDITIONAL_CONTEXT_CONFLICT"
+        ],
+        "isolation_family_id": null,
+        "gold_rationale": "Quiet pause is explicitly allowed when broader support remains."
+      },
+      {
+        "fixture_id": "v3-v02",
+        "partition": "validation",
+        "family": "NEGATIVE_CLEAR",
+        "hard_expectation": true,
+        "route": "PROVIDER_CALL",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "8b6e260e90f1932827ab793b6d0ef83c0d8a514de216f9ebdf7b082a49ec2f83",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "16f1774bb751c61030b74bfab25443b4465b7bd839446a05be3134c6e5319918",
+            "intent_text": "The rebound setup can operate before a full trend reversal as long as support remains intact and recovery evidence is improving.",
+            "required_definition_ids": [
+              "recovery",
+              "support"
+            ],
+            "definitions": [
+              {
+                "id": "recovery",
+                "text": "Recovery structure means stabilization after weakness rather than continuing structural deterioration."
+              },
+              {
+                "id": "support",
+                "text": "Support integrity means the setup has not semantically lost the support structure required by the strategy."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "support integrity remains intact"
+              },
+              {
+                "condition_id": "synthetic-02",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "recovery evidence is improving"
+              },
+              {
+                "condition_id": "synthetic-03",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "a full trend reversal is not yet established"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "CONFIRMATION_ONLY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "CONFIRMATION_ONLY",
+            "executable_entry_range": false,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "COMPLETE",
+            "q1_reasons": [],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "MATCH",
+            "reason_code": null
+          },
+          "source_snapshot_hash": "6b8190f943278f449024bc10184d78d2f127044f5b53717da542fd031e25eefa"
+        },
+        "projected_state": {
+          "strategy_intent": {
+            "text": "The rebound setup can operate before a full trend reversal as long as support remains intact and recovery evidence is improving."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Recovery structure means stabilization after weakness rather than continuing structural deterioration."
+            },
+            {
+              "ref": "term-02",
+              "text": "Support integrity means the setup has not semantically lost the support structure required by the strategy."
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "meaning": "support integrity remains intact"
+            },
+            {
+              "ref": "condition-02",
+              "meaning": "recovery evidence is improving"
+            },
+            {
+              "ref": "condition-03",
+              "meaning": "a full trend reversal is not yet established"
+            }
+          ]
+        },
+        "projected_state_hash": "83ef0d40d5ae836aa39258cea035871a9e424f8eff94b3f4d44f20dd8d897bfc",
+        "state_bytes": 689,
+        "expected_preflight_error": null,
+        "expected_q1_gold": false,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": null,
+        "expected_local_entry_result": {
+          "status": "MATCH",
+          "reason_code": null
+        },
+        "expected_jev_status": "VALID",
+        "expected_disposition": "PASS_THROUGH",
+        "expected_reason_codes": [
+          "NO_ADDITIONAL_CONTEXT_CONFLICT"
+        ],
+        "isolation_family_id": null,
+        "gold_rationale": "Incomplete long-term reversal is allowed by the authored rebound intent."
+      },
+      {
+        "fixture_id": "v3-v03",
+        "partition": "validation",
+        "family": "NEGATIVE_TRAP",
+        "hard_expectation": true,
+        "route": "PROVIDER_CALL",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "5668f4411d4f017e4a8ee72af929147298b3ce408caf346d06dfab7b18c3e682",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "aaafa65fba3fd73c6162544631870e7bc56fc5342f9f5dea59edfce1f9e193c2",
+            "intent_text": "The strategy is designed for bounded non-trending behavior and does not require sector leadership.",
+            "required_definition_ids": [
+              "range",
+              "strength"
+            ],
+            "definitions": [
+              {
+                "id": "range",
+                "text": "Range structure means bounded non-trending behavior with support intact and no directional break."
+              },
+              {
+                "id": "strength",
+                "text": "Relative strength means the comparative directional support explicitly described by the supplied condition meanings."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "the market remains bounded and non-trending"
+              },
+              {
+                "condition_id": "synthetic-02",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "sector relative strength is neutral rather than leading"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "CONFIRMATION_ONLY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "CONFIRMATION_ONLY",
+            "executable_entry_range": false,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "COMPLETE",
+            "q1_reasons": [],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "MATCH",
+            "reason_code": null
+          },
+          "source_snapshot_hash": "10eebb43e266fc78dd1aba9e817156da8f6d9d33513f224a7bd9c2c5c060be1f"
+        },
+        "projected_state": {
+          "strategy_intent": {
+            "text": "The strategy is designed for bounded non-trending behavior and does not require sector leadership."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Range structure means bounded non-trending behavior with support intact and no directional break."
+            },
+            {
+              "ref": "term-02",
+              "text": "Relative strength means the comparative directional support explicitly described by the supplied condition meanings."
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "meaning": "the market remains bounded and non-trending"
+            },
+            {
+              "ref": "condition-02",
+              "meaning": "sector relative strength is neutral rather than leading"
+            }
+          ]
+        },
+        "projected_state_hash": "a400f8921c4d0a7d6d5d6737116dc7148223d249f3237062d9541098d31edf25",
+        "state_bytes": 619,
+        "expected_preflight_error": null,
+        "expected_q1_gold": false,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": null,
+        "expected_local_entry_result": {
+          "status": "MATCH",
+          "reason_code": null
+        },
+        "expected_jev_status": "VALID",
+        "expected_disposition": "PASS_THROUGH",
+        "expected_reason_codes": [
+          "NO_ADDITIONAL_CONTEXT_CONFLICT"
+        ],
+        "isolation_family_id": null,
+        "gold_rationale": "Neutral relative strength is not a conflict where leadership is not required."
+      },
+      {
+        "fixture_id": "v3-v04",
+        "partition": "validation",
+        "family": "NEGATIVE_TRAP",
+        "hard_expectation": true,
+        "route": "PROVIDER_CALL",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "1dc7ef3699620d94fd2a501073b4f5b8f2ccbc871ee50fb255de1373c2d4dae7",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "aff06037265da57139ffa04739086251a360cf220f58077e7bdb9c131aaafd46",
+            "intent_text": "Compression remains valid while structure is intact even though no breakout direction has been confirmed.",
+            "required_definition_ids": [
+              "compression",
+              "trend"
+            ],
+            "definitions": [
+              {
+                "id": "compression",
+                "text": "Compression means quiet volatility and participation without asserting that a directional breakout has already occurred."
+              },
+              {
+                "id": "trend",
+                "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "compression remains present"
+              },
+              {
+                "condition_id": "synthetic-02",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "directional structure is intact"
+              },
+              {
+                "condition_id": "synthetic-03",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "no breakout direction is confirmed"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "CONFIRMATION_ONLY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "CONFIRMATION_ONLY",
+            "executable_entry_range": false,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "COMPLETE",
+            "q1_reasons": [],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "MATCH",
+            "reason_code": null
+          },
+          "source_snapshot_hash": "67bcef9bd6cfed230d438b6efd5344886ce8c4862566c8862915b7e3640a24a4"
+        },
+        "projected_state": {
+          "strategy_intent": {
+            "text": "Compression remains valid while structure is intact even though no breakout direction has been confirmed."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Compression means quiet volatility and participation without asserting that a directional breakout has already occurred."
+            },
+            {
+              "ref": "term-02",
+              "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "meaning": "compression remains present"
+            },
+            {
+              "ref": "condition-02",
+              "meaning": "directional structure is intact"
+            },
+            {
+              "ref": "condition-03",
+              "meaning": "no breakout direction is confirmed"
+            }
+          ]
+        },
+        "projected_state_hash": "309ebde45fd618c47ab84cd228ec36e1bffa3fb79d129fa84e556dceb875019c",
+        "state_bytes": 663,
+        "expected_preflight_error": null,
+        "expected_q1_gold": false,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": null,
+        "expected_local_entry_result": {
+          "status": "MATCH",
+          "reason_code": null
+        },
+        "expected_jev_status": "VALID",
+        "expected_disposition": "PASS_THROUGH",
+        "expected_reason_codes": [
+          "NO_ADDITIONAL_CONTEXT_CONFLICT"
+        ],
+        "isolation_family_id": null,
+        "gold_rationale": "Absence of a confirmed breakout is part of, not contrary to, compression."
+      },
+      {
+        "fixture_id": "v3-v05",
+        "partition": "validation",
+        "family": "POSITIVE_DIRECT",
+        "hard_expectation": true,
+        "route": "PROVIDER_CALL",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "f3c5b3bbe4176bb6c8ba0abdb66c9baa3d942f5e428dad2c2e9e3d00076440ab",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "ab87473b6af405ddc7b5640f1ad35e9591d4704d77ab3019126d97561a978500",
+            "intent_text": "The setup requires the broader recovery structure to be stabilizing rather than continuing to deteriorate.",
+            "required_definition_ids": [
+              "recovery"
+            ],
+            "definitions": [
+              {
+                "id": "recovery",
+                "text": "Recovery structure means stabilization after weakness rather than continuing structural deterioration."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "the supplied recovery meaning states that structural deterioration is continuing"
+              },
+              {
+                "condition_id": "synthetic-02",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "support location remains nearby"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "CONFIRMATION_ONLY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "CONFIRMATION_ONLY",
+            "executable_entry_range": false,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "COMPLETE",
+            "q1_reasons": [],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "MATCH",
+            "reason_code": null
+          },
+          "source_snapshot_hash": "05531e26a850c5fe56a796e233167ee9e300ab5df4e23ac74769e92ef5c3ebe1"
+        },
+        "projected_state": {
+          "strategy_intent": {
+            "text": "The setup requires the broader recovery structure to be stabilizing rather than continuing to deteriorate."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Recovery structure means stabilization after weakness rather than continuing structural deterioration."
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "meaning": "the supplied recovery meaning states that structural deterioration is continuing"
+            },
+            {
+              "ref": "condition-02",
+              "meaning": "support location remains nearby"
+            }
+          ]
+        },
+        "projected_state_hash": "0645ddeff04a0c95a928bf2a7ccc7e04b71e9b26ce96c6c6f14bf1d6eb9264d7",
+        "state_bytes": 501,
+        "expected_preflight_error": null,
+        "expected_q1_gold": true,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": null,
+        "expected_local_entry_result": {
+          "status": "MATCH",
+          "reason_code": null
+        },
+        "expected_jev_status": "VALID",
+        "expected_disposition": "REVIEW_REQUIRED",
+        "expected_reason_codes": [
+          "STRATEGY_CONTEXT_CONFLICT"
+        ],
+        "isolation_family_id": null,
+        "gold_rationale": "Continuing deterioration directly contradicts required stabilization."
+      },
+      {
+        "fixture_id": "v3-v06",
+        "partition": "validation",
+        "family": "POSITIVE_COMPOSITIONAL",
+        "hard_expectation": true,
+        "route": "PROVIDER_CALL",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "15109e4274cfeb10a76d24f4bc80a95de4848e90a0c0338bf1d4456b7d6dcee8",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "08a7887cdd515cfdb52ab4bcfbb5f3a869cec0859feea7941af1d64435980e0e",
+            "intent_text": "A range setup is acceptable only while support remains intact and volatility stays bounded without a directional break.",
+            "required_definition_ids": [
+              "range",
+              "support"
+            ],
+            "definitions": [
+              {
+                "id": "range",
+                "text": "Range structure means bounded non-trending behavior with support intact and no directional break."
+              },
+              {
+                "id": "support",
+                "text": "Support integrity means the setup has not semantically lost the support structure required by the strategy."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "support integrity has failed"
+              },
+              {
+                "condition_id": "synthetic-02",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "volatility is expanding beyond the bounded range context"
+              },
+              {
+                "condition_id": "synthetic-03",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "directional behavior is emerging"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "CONFIRMATION_ONLY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "CONFIRMATION_ONLY",
+            "executable_entry_range": false,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "COMPLETE",
+            "q1_reasons": [],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "MATCH",
+            "reason_code": null
+          },
+          "source_snapshot_hash": "1203b0707129f58c6675871d84c01f79572b2eb3f938b5c2d0ef02999fe0f97e"
+        },
+        "projected_state": {
+          "strategy_intent": {
+            "text": "A range setup is acceptable only while support remains intact and volatility stays bounded without a directional break."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Range structure means bounded non-trending behavior with support intact and no directional break."
+            },
+            {
+              "ref": "term-02",
+              "text": "Support integrity means the setup has not semantically lost the support structure required by the strategy."
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "meaning": "support integrity has failed"
+            },
+            {
+              "ref": "condition-02",
+              "meaning": "volatility is expanding beyond the bounded range context"
+            },
+            {
+              "ref": "condition-03",
+              "meaning": "directional behavior is emerging"
+            }
+          ]
+        },
+        "projected_state_hash": "b7308d2e23f7845691a37e55802fd6bffb378d04edf3ebad16cbf8ec08b0a057",
+        "state_bytes": 685,
+        "expected_preflight_error": null,
+        "expected_q1_gold": true,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": null,
+        "expected_local_entry_result": {
+          "status": "MATCH",
+          "reason_code": null
+        },
+        "expected_jev_status": "VALID",
+        "expected_disposition": "REVIEW_REQUIRED",
+        "expected_reason_codes": [
+          "STRATEGY_CONTEXT_CONFLICT"
+        ],
+        "isolation_family_id": null,
+        "gold_rationale": "The meanings jointly remove the conditions that define the permitted range."
+      },
+      {
+        "fixture_id": "v3-v07",
+        "partition": "validation",
+        "family": "ISOLATION_A",
+        "hard_expectation": true,
+        "route": "PROVIDER_CALL",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "66db9200740e33c23729acb7e43a5718f49638c7362ef031e4d899444e3ebc73",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "78aadae7d441981042ebf85fbd986db2b014cd89b9c001876c5c7ac4b2b7c55d",
+            "intent_text": "The breakout setup requires directional structure and participation to remain mutually supportive.",
+            "required_definition_ids": [
+              "participation",
+              "trend"
+            ],
+            "definitions": [
+              {
+                "id": "participation",
+                "text": "Participation means the supplied condition meanings describe the kind of participation required by the strategy."
+              },
+              {
+                "id": "trend",
+                "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "directional structure has weakened materially"
+              },
+              {
+                "condition_id": "synthetic-02",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "participation is contracting instead of supporting the move"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "CONFIRMATION_ONLY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "CONFIRMATION_ONLY",
+            "executable_entry_range": false,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "COMPLETE",
+            "q1_reasons": [],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "MATCH",
+            "reason_code": null
+          },
+          "source_snapshot_hash": "f012877074716b31fcbc53d850712469d7391703f645fd46776da6bed20e8041"
+        },
+        "projected_state": {
+          "strategy_intent": {
+            "text": "The breakout setup requires directional structure and participation to remain mutually supportive."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Participation means the supplied condition meanings describe the kind of participation required by the strategy."
+            },
+            {
+              "ref": "term-02",
+              "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "meaning": "directional structure has weakened materially"
+            },
+            {
+              "ref": "condition-02",
+              "meaning": "participation is contracting instead of supporting the move"
+            }
+          ]
+        },
+        "projected_state_hash": "aea510c5a2dd96796eb35fd526280d27a357bf05a4e922301cfa3631e575d5bb",
+        "state_bytes": 624,
+        "expected_preflight_error": null,
+        "expected_q1_gold": true,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": null,
+        "expected_local_entry_result": {
+          "status": "MATCH",
+          "reason_code": null
+        },
+        "expected_jev_status": "VALID",
+        "expected_disposition": "REVIEW_REQUIRED",
+        "expected_reason_codes": [
+          "STRATEGY_CONTEXT_CONFLICT"
+        ],
+        "isolation_family_id": "V-A",
+        "gold_rationale": "Positive Q1 wire with local entry match."
+      },
+      {
+        "fixture_id": "v3-v08",
+        "partition": "validation",
+        "family": "ISOLATION_A",
+        "hard_expectation": true,
+        "route": "PROVIDER_CALL",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "66db9200740e33c23729acb7e43a5718f49638c7362ef031e4d899444e3ebc73",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "78aadae7d441981042ebf85fbd986db2b014cd89b9c001876c5c7ac4b2b7c55d",
+            "intent_text": "The breakout setup requires directional structure and participation to remain mutually supportive.",
+            "required_definition_ids": [
+              "participation",
+              "trend"
+            ],
+            "definitions": [
+              {
+                "id": "participation",
+                "text": "Participation means the supplied condition meanings describe the kind of participation required by the strategy."
+              },
+              {
+                "id": "trend",
+                "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "directional structure has weakened materially"
+              },
+              {
+                "condition_id": "synthetic-02",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "participation is contracting instead of supporting the move"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": null,
+            "intent_role": null,
+            "represented_rule_id": null,
+            "represented_role": null,
+            "executable_entry_range": null,
+            "representation_contract_version": null,
+            "representation_contract_hash": null
+          },
+          "readiness": {
+            "q1_status": "COMPLETE",
+            "q1_reasons": [],
+            "q2_status": "MISSING",
+            "q2_reasons": [
+              "Q2_RULE_REFERENCE_MISSING",
+              "Q2_RULE_REFERENCE_MISSING"
+            ]
+          },
+          "local_entry_semantic_result": {
+            "status": "MISSING",
+            "reason_code": "Q2_RULE_REFERENCE_MISSING"
+          },
+          "source_snapshot_hash": "a690e0091fd54cc2c6f5a7b9e550f84f1991fea5fef9f9d2e9f0e1babef9b344"
+        },
+        "projected_state": {
+          "strategy_intent": {
+            "text": "The breakout setup requires directional structure and participation to remain mutually supportive."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Participation means the supplied condition meanings describe the kind of participation required by the strategy."
+            },
+            {
+              "ref": "term-02",
+              "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "meaning": "directional structure has weakened materially"
+            },
+            {
+              "ref": "condition-02",
+              "meaning": "participation is contracting instead of supporting the move"
+            }
+          ]
+        },
+        "projected_state_hash": "aea510c5a2dd96796eb35fd526280d27a357bf05a4e922301cfa3631e575d5bb",
+        "state_bytes": 624,
+        "expected_preflight_error": null,
+        "expected_q1_gold": true,
+        "expected_q2_status": "MISSING",
+        "expected_q2_reason": "Q2_RULE_REFERENCE_MISSING",
+        "expected_local_entry_result": {
+          "status": "MISSING",
+          "reason_code": "Q2_RULE_REFERENCE_MISSING"
+        },
+        "expected_jev_status": "VALID",
+        "expected_disposition": "REVIEW_REQUIRED",
+        "expected_reason_codes": [
+          "STRATEGY_CONTEXT_CONFLICT"
+        ],
+        "isolation_family_id": "V-A",
+        "gold_rationale": "Same positive Q1 wire while local entry reference is missing."
+      },
+      {
+        "fixture_id": "v3-v09",
+        "partition": "validation",
+        "family": "ISOLATION_B",
+        "hard_expectation": true,
+        "route": "PROVIDER_CALL",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "55c7535c8c23e20e84722aa6b390eabfcfd50becfd401bd0f19c750a5ff5819b",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "20beece23088c863f4f7e7983fe2f632a070d9b630898ca557677820a3149830",
+            "intent_text": "The pullback setup permits temporary momentum weakness while support integrity and the broader trend structure remain intact.",
+            "required_definition_ids": [
+              "support",
+              "trend"
+            ],
+            "definitions": [
+              {
+                "id": "support",
+                "text": "Support integrity means the setup has not semantically lost the support structure required by the strategy."
+              },
+              {
+                "id": "trend",
+                "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "momentum is temporarily weak"
+              },
+              {
+                "condition_id": "synthetic-02",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "support integrity remains intact"
+              },
+              {
+                "condition_id": "synthetic-03",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "the broader trend structure remains intact"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "CONFIRMATION_ONLY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "CONFIRMATION_ONLY",
+            "executable_entry_range": false,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "COMPLETE",
+            "q1_reasons": [],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "MATCH",
+            "reason_code": null
+          },
+          "source_snapshot_hash": "bfe3e159d39c6e09f703e7ff48313f099eee1a5721d256ae7a6c93c5880948e9"
+        },
+        "projected_state": {
+          "strategy_intent": {
+            "text": "The pullback setup permits temporary momentum weakness while support integrity and the broader trend structure remain intact."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Support integrity means the setup has not semantically lost the support structure required by the strategy."
+            },
+            {
+              "ref": "term-02",
+              "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "meaning": "momentum is temporarily weak"
+            },
+            {
+              "ref": "condition-02",
+              "meaning": "support integrity remains intact"
+            },
+            {
+              "ref": "condition-03",
+              "meaning": "the broader trend structure remains intact"
+            }
+          ]
+        },
+        "projected_state_hash": "bf7325abfd7ab8fa2eca369f78292a09ec8d4e92f6c18859fc2544fdf7b9654e",
+        "state_bytes": 680,
+        "expected_preflight_error": null,
+        "expected_q1_gold": false,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": null,
+        "expected_local_entry_result": {
+          "status": "MATCH",
+          "reason_code": null
+        },
+        "expected_jev_status": "VALID",
+        "expected_disposition": "PASS_THROUGH",
+        "expected_reason_codes": [
+          "NO_ADDITIONAL_CONTEXT_CONFLICT"
+        ],
+        "isolation_family_id": "V-B",
+        "gold_rationale": "Negative Q1 wire with local match."
+      },
+      {
+        "fixture_id": "v3-v10",
+        "partition": "validation",
+        "family": "ISOLATION_B",
+        "hard_expectation": true,
+        "route": "PROVIDER_CALL",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "55c7535c8c23e20e84722aa6b390eabfcfd50becfd401bd0f19c750a5ff5819b",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "20beece23088c863f4f7e7983fe2f632a070d9b630898ca557677820a3149830",
+            "intent_text": "The pullback setup permits temporary momentum weakness while support integrity and the broader trend structure remain intact.",
+            "required_definition_ids": [
+              "support",
+              "trend"
+            ],
+            "definitions": [
+              {
+                "id": "support",
+                "text": "Support integrity means the setup has not semantically lost the support structure required by the strategy."
+              },
+              {
+                "id": "trend",
+                "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "momentum is temporarily weak"
+              },
+              {
+                "condition_id": "synthetic-02",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "support integrity remains intact"
+              },
+              {
+                "condition_id": "synthetic-03",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "the broader trend structure remains intact"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "CONFIRMATION_ONLY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "EXECUTABLE_ENTRY",
+            "executable_entry_range": true,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "COMPLETE",
+            "q1_reasons": [],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "CONFLICT",
+            "reason_code": "CONFLICT_CONFIRMATION_AS_EXECUTION"
+          },
+          "source_snapshot_hash": "3b10e006282b16fb707d4c57391fa495e97b46312deb0c0306fc29c01cf913d3"
+        },
+        "projected_state": {
+          "strategy_intent": {
+            "text": "The pullback setup permits temporary momentum weakness while support integrity and the broader trend structure remain intact."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Support integrity means the setup has not semantically lost the support structure required by the strategy."
+            },
+            {
+              "ref": "term-02",
+              "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "meaning": "momentum is temporarily weak"
+            },
+            {
+              "ref": "condition-02",
+              "meaning": "support integrity remains intact"
+            },
+            {
+              "ref": "condition-03",
+              "meaning": "the broader trend structure remains intact"
+            }
+          ]
+        },
+        "projected_state_hash": "bf7325abfd7ab8fa2eca369f78292a09ec8d4e92f6c18859fc2544fdf7b9654e",
+        "state_bytes": 680,
+        "expected_preflight_error": null,
+        "expected_q1_gold": false,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": "CONFLICT_CONFIRMATION_AS_EXECUTION",
+        "expected_local_entry_result": {
+          "status": "CONFLICT",
+          "reason_code": "CONFLICT_CONFIRMATION_AS_EXECUTION"
+        },
+        "expected_jev_status": "VALID",
+        "expected_disposition": "PASS_THROUGH",
+        "expected_reason_codes": [
+          "NO_ADDITIONAL_CONTEXT_CONFLICT"
+        ],
+        "isolation_family_id": "V-B",
+        "gold_rationale": "Same negative Q1 wire while local representation conflicts."
+      },
+      {
+        "fixture_id": "v3-v11",
+        "partition": "validation",
+        "family": "SOFT",
+        "hard_expectation": false,
+        "route": "PROVIDER_CALL",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "f04c032d5a7bd2e2c4973c8b502532d378519b129ff68607dc9f2ac7fc9cc437",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "29819424749dae57774c07845b27c4da631b67fdee09ee3b75ca4180bcded9cd",
+            "intent_text": "The strategy accepts a modest loss of strength provided the broader structure remains reasonably supportive.",
+            "required_definition_ids": [
+              "strength",
+              "trend"
+            ],
+            "definitions": [
+              {
+                "id": "strength",
+                "text": "Relative strength means the comparative directional support explicitly described by the supplied condition meanings."
+              },
+              {
+                "id": "trend",
+                "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "relative strength is softer than normal"
+              },
+              {
+                "condition_id": "synthetic-02",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "the broader structure remains mostly intact"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "CONFIRMATION_ONLY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "CONFIRMATION_ONLY",
+            "executable_entry_range": false,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "COMPLETE",
+            "q1_reasons": [],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "MATCH",
+            "reason_code": null
+          },
+          "source_snapshot_hash": "2a3578d98dc4d776c8cdb6df57c06e3c863113b6cac4119bbfc684c7e8aeecda"
+        },
+        "projected_state": {
+          "strategy_intent": {
+            "text": "The strategy accepts a modest loss of strength provided the broader structure remains reasonably supportive."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Relative strength means the comparative directional support explicitly described by the supplied condition meanings."
+            },
+            {
+              "ref": "term-02",
+              "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "meaning": "relative strength is softer than normal"
+            },
+            {
+              "ref": "condition-02",
+              "meaning": "the broader structure remains mostly intact"
+            }
+          ]
+        },
+        "projected_state_hash": "914ee6c542c8bd1de8f395f73488f95ab93c5f1ed97c37499cb986a9737c6b62",
+        "state_bytes": 616,
+        "expected_preflight_error": null,
+        "expected_q1_gold": null,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": null,
+        "expected_local_entry_result": {
+          "status": "MATCH",
+          "reason_code": null
+        },
+        "expected_jev_status": "VALID",
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "isolation_family_id": null,
+        "gold_rationale": "Modest and reasonably supportive are intentionally soft boundaries."
+      },
+      {
+        "fixture_id": "v3-v12",
+        "partition": "validation",
+        "family": "SOFT",
+        "hard_expectation": false,
+        "route": "PROVIDER_CALL",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "b94c02615777db4f1941d4e70a93e6f9a8470674ddd0223fae9e8db8ac30c3b6",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "1e4a0c6ec30e62ed5e3e19d5713c4ea689147fff9cab55a1d64d377f5389b92f",
+            "intent_text": "The strategy tolerates temporary participation weakness unless it becomes substantial enough to undermine continuation.",
+            "required_definition_ids": [
+              "momentum",
+              "participation"
+            ],
+            "definitions": [
+              {
+                "id": "momentum",
+                "text": "Momentum persistence means the supplied meanings jointly preserve the strategy's directional continuation context."
+              },
+              {
+                "id": "participation",
+                "text": "Participation means the supplied condition meanings describe the kind of participation required by the strategy."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "participation is below its usual level but momentum persistence is still partly present"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "CONFIRMATION_ONLY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "CONFIRMATION_ONLY",
+            "executable_entry_range": false,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "COMPLETE",
+            "q1_reasons": [],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "MATCH",
+            "reason_code": null
+          },
+          "source_snapshot_hash": "8dff65a8654f5b3954d0ca2083fb111a9fa5d26e1187c670a149eb6e2bba0d99"
+        },
+        "projected_state": {
+          "strategy_intent": {
+            "text": "The strategy tolerates temporary participation weakness unless it becomes substantial enough to undermine continuation."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Momentum persistence means the supplied meanings jointly preserve the strategy's directional continuation context."
+            },
+            {
+              "ref": "term-02",
+              "text": "Participation means the supplied condition meanings describe the kind of participation required by the strategy."
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "meaning": "participation is below its usual level but momentum persistence is still partly present"
+            }
+          ]
+        },
+        "projected_state_hash": "76ddb1c2780db65feaa07f10c344fc741d36d155a8a0afa7c4a0502c9e22bfd7",
+        "state_bytes": 606,
+        "expected_preflight_error": null,
+        "expected_q1_gold": null,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": null,
+        "expected_local_entry_result": {
+          "status": "MATCH",
+          "reason_code": null
+        },
+        "expected_jev_status": "VALID",
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "isolation_family_id": null,
+        "gold_rationale": "Substantial enough is intentionally not a hard gold boundary."
+      },
+      {
+        "fixture_id": "v3-v13",
+        "partition": "validation",
+        "family": "LOCAL_Q1_MISSING",
+        "hard_expectation": true,
+        "route": "LOCAL_ONLY",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "634b14f4e4e69b13765806c8a957d2e2980ddb19833962f678acf30485efc812",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "3ca16966d4661e985ebb8006b49fffc36429fc0bd30f5a51f21d62aa0f90c78c",
+            "intent_text": "The setup references a definition that is absent.",
+            "required_definition_ids": [
+              "support"
+            ],
+            "definitions": [
+              {
+                "id": "support",
+                "text": "Support integrity means the setup has not semantically lost the support structure required by the strategy."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "support integrity remains intact"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "CONFIRMATION_ONLY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "CONFIRMATION_ONLY",
+            "executable_entry_range": false,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "MISSING",
+            "q1_reasons": [
+              "Q1_REQUIRED_DEFINITION_ABSENT"
+            ],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "MATCH",
+            "reason_code": null
+          },
+          "source_snapshot_hash": "8323503870e4428e2a5afa87e37a2bc54c2d61c0601ff3da11d0c9ed2ef51567"
+        },
+        "projected_state": null,
+        "projected_state_hash": null,
+        "state_bytes": 0,
+        "expected_preflight_error": "Q1_SEMANTIC_NOT_COMPLETE",
+        "expected_q1_gold": null,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": null,
+        "expected_local_entry_result": {
+          "status": "MATCH",
+          "reason_code": null
+        },
+        "expected_jev_status": "SKIPPED",
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "isolation_family_id": null,
+        "gold_rationale": "Absent definition is a local no-call."
+      },
+      {
+        "fixture_id": "v3-v14",
+        "partition": "validation",
+        "family": "LOCAL_Q1_INVALID",
+        "hard_expectation": true,
+        "route": "LOCAL_ONLY",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "79e913986167847201b7531fb8469ae7e41cac77f245491cc8fadf76ba96e2f4",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "2fe39fd9b84a0e5ec251a61711bf39140c44a7b4a788695a355dd06e63ccb0e0",
+            "intent_text": "The setup references an invalid empty semantic definition.",
+            "required_definition_ids": [
+              "recovery"
+            ],
+            "definitions": [
+              {
+                "id": "recovery",
+                "text": ""
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "recovery structure is improving"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "CONFIRMATION_ONLY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "CONFIRMATION_ONLY",
+            "executable_entry_range": false,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "INVALID_BINDING",
+            "q1_reasons": [
+              "Q1_DEFINITION_EMPTY"
+            ],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "MATCH",
+            "reason_code": null
+          },
+          "source_snapshot_hash": "8097ad0be9ecbc1f55387d41e2a150f4e7486782a33d597f3e9ce9f02a9aab79"
+        },
+        "projected_state": null,
+        "projected_state_hash": null,
+        "state_bytes": 0,
+        "expected_preflight_error": "Q1_SEMANTIC_NOT_COMPLETE",
+        "expected_q1_gold": null,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": null,
+        "expected_local_entry_result": {
+          "status": "MATCH",
+          "reason_code": null
+        },
+        "expected_jev_status": "SKIPPED",
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "isolation_family_id": null,
+        "gold_rationale": "Empty definition is rejected locally."
+      },
+      {
+        "fixture_id": "v3-v15",
+        "partition": "validation",
+        "family": "LOCAL_Q2_CONFLICT",
+        "hard_expectation": true,
+        "route": "LOCAL_ONLY",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "7490a8b2ebcf5007919005bc459cc8d5ef91c922b616b9b8094986758c5b2ab0",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "4d5baf503e03a23ab45f7639f92da4a5d38094be64f196c96544f556a0dee09d",
+            "intent_text": "Q1 context is intentionally unavailable.",
+            "required_definition_ids": [
+              "trend"
+            ],
+            "definitions": [
+              {
+                "id": "trend",
+                "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "trend structure remains intact"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "CONFIRMATION_ONLY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "EXECUTABLE_ENTRY",
+            "executable_entry_range": true,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "MISSING",
+            "q1_reasons": [
+              "Q1_CONTEXT_UNAVAILABLE"
+            ],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "CONFLICT",
+            "reason_code": "CONFLICT_CONFIRMATION_AS_EXECUTION"
+          },
+          "source_snapshot_hash": "cd289bff23e12a7c4c4f4302deef8aa403a8ef7361f6e8d81e88a78fff1476e2"
+        },
+        "projected_state": null,
+        "projected_state_hash": null,
+        "state_bytes": 0,
+        "expected_preflight_error": "Q1_SEMANTIC_NOT_COMPLETE",
+        "expected_q1_gold": null,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": "CONFLICT_CONFIRMATION_AS_EXECUTION",
+        "expected_local_entry_result": {
+          "status": "CONFLICT",
+          "reason_code": "CONFLICT_CONFIRMATION_AS_EXECUTION"
+        },
+        "expected_jev_status": "SKIPPED",
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "isolation_family_id": null,
+        "gold_rationale": "Confirmation intent versus executable representation remains a local conflict."
+      },
+      {
+        "fixture_id": "v3-v16",
+        "partition": "validation",
+        "family": "LOCAL_Q2_CONFLICT",
+        "hard_expectation": true,
+        "route": "LOCAL_ONLY",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "7490a8b2ebcf5007919005bc459cc8d5ef91c922b616b9b8094986758c5b2ab0",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "05329edc8a421a3fe67590eb903e58f05f50ed8e958d40b6991fd3630501b19c",
+            "intent_text": "Q1 context is intentionally unavailable.",
+            "required_definition_ids": [
+              "trend"
+            ],
+            "definitions": [
+              {
+                "id": "trend",
+                "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "trend structure remains intact"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "EXECUTABLE_ENTRY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "CONFIRMATION_ONLY",
+            "executable_entry_range": false,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "MISSING",
+            "q1_reasons": [
+              "Q1_CONTEXT_UNAVAILABLE"
+            ],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "CONFLICT",
+            "reason_code": "CONFLICT_EXECUTION_AS_CONFIRMATION"
+          },
+          "source_snapshot_hash": "570ec1f7959b5d11b97c85ba8d5532da3a42e2eb0e1974d8dadddbdc735f9cbf"
+        },
+        "projected_state": null,
+        "projected_state_hash": null,
+        "state_bytes": 0,
+        "expected_preflight_error": "Q1_SEMANTIC_NOT_COMPLETE",
+        "expected_q1_gold": null,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": "CONFLICT_EXECUTION_AS_CONFIRMATION",
+        "expected_local_entry_result": {
+          "status": "CONFLICT",
+          "reason_code": "CONFLICT_EXECUTION_AS_CONFIRMATION"
+        },
+        "expected_jev_status": "SKIPPED",
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "isolation_family_id": null,
+        "gold_rationale": "Executable intent versus confirmation representation remains a local conflict."
+      },
+      {
+        "fixture_id": "v3-v17",
+        "partition": "validation",
+        "family": "LOCAL_Q2_LINK",
+        "hard_expectation": true,
+        "route": "LOCAL_ONLY",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "bbc84975ae6d8b34bf88e18b8645583e4a3e0692c810abdbb04d3ec0afac7461",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "64c967248d7270e83ee31a569d4ed480af9a2ca17808120d1a777a1af8d93e94",
+            "intent_text": "Q1 context is intentionally unavailable.",
+            "required_definition_ids": [
+              "support"
+            ],
+            "definitions": [
+              {
+                "id": "support",
+                "text": "Support integrity means the setup has not semantically lost the support structure required by the strategy."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "support integrity remains intact"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": null,
+            "intent_role": null,
+            "represented_rule_id": null,
+            "represented_role": null,
+            "executable_entry_range": null,
+            "representation_contract_version": null,
+            "representation_contract_hash": null
+          },
+          "readiness": {
+            "q1_status": "MISSING",
+            "q1_reasons": [
+              "Q1_CONTEXT_UNAVAILABLE"
+            ],
+            "q2_status": "MISSING",
+            "q2_reasons": [
+              "Q2_RULE_REFERENCE_MISSING",
+              "Q2_RULE_REFERENCE_MISSING"
+            ]
+          },
+          "local_entry_semantic_result": {
+            "status": "MISSING",
+            "reason_code": "Q2_RULE_REFERENCE_MISSING"
+          },
+          "source_snapshot_hash": "0cae069572c5d4774746d609691365878a12db003cdcb99b949b4aad95cf2cad"
+        },
+        "projected_state": null,
+        "projected_state_hash": null,
+        "state_bytes": 0,
+        "expected_preflight_error": "Q1_SEMANTIC_NOT_COMPLETE",
+        "expected_q1_gold": null,
+        "expected_q2_status": "MISSING",
+        "expected_q2_reason": "Q2_RULE_REFERENCE_MISSING",
+        "expected_local_entry_result": {
+          "status": "MISSING",
+          "reason_code": "Q2_RULE_REFERENCE_MISSING"
+        },
+        "expected_jev_status": "SKIPPED",
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "isolation_family_id": null,
+        "gold_rationale": "Missing same-rule link remains missing."
+      },
+      {
+        "fixture_id": "v3-v18",
+        "partition": "validation",
+        "family": "LOCAL_Q2_LINK",
+        "hard_expectation": true,
+        "route": "LOCAL_ONLY",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "bbc84975ae6d8b34bf88e18b8645583e4a3e0692c810abdbb04d3ec0afac7461",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "c456cf661587759cf6482938e53000352eeeb90c31bf1553a0217e08211780ed",
+            "intent_text": "Q1 context is intentionally unavailable.",
+            "required_definition_ids": [
+              "support"
+            ],
+            "definitions": [
+              {
+                "id": "support",
+                "text": "Support integrity means the setup has not semantically lost the support structure required by the strategy."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "support integrity remains intact"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": null,
+            "intent_role": null,
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "CONFIRMATION_ONLY",
+            "executable_entry_range": false,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "MISSING",
+            "q1_reasons": [
+              "Q1_CONTEXT_UNAVAILABLE"
+            ],
+            "q2_status": "AMBIGUOUS",
+            "q2_reasons": [
+              "Q2_RULE_REFERENCE_AMBIGUOUS"
+            ]
+          },
+          "local_entry_semantic_result": {
+            "status": "AMBIGUOUS",
+            "reason_code": "Q2_RULE_REFERENCE_AMBIGUOUS"
+          },
+          "source_snapshot_hash": "71540d9d4e71f2637c0b860c5f3389e642ea0d1d00a2eeab2e5006f8ae31631e"
+        },
+        "projected_state": null,
+        "projected_state_hash": null,
+        "state_bytes": 0,
+        "expected_preflight_error": "Q1_SEMANTIC_NOT_COMPLETE",
+        "expected_q1_gold": null,
+        "expected_q2_status": "AMBIGUOUS",
+        "expected_q2_reason": "Q2_RULE_REFERENCE_AMBIGUOUS",
+        "expected_local_entry_result": {
+          "status": "AMBIGUOUS",
+          "reason_code": "Q2_RULE_REFERENCE_AMBIGUOUS"
+        },
+        "expected_jev_status": "SKIPPED",
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "isolation_family_id": null,
+        "gold_rationale": "Ambiguous same-rule link remains ambiguous."
+      },
+      {
+        "fixture_id": "v3-v19",
+        "partition": "validation",
+        "family": "LOCAL_STALE",
+        "hard_expectation": true,
+        "route": "LOCAL_ONLY",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_UNSUPPORTED",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "f20df88557e4dbbf26efec48f0ec3a71dc9910be644608e8f2d9dce77351e0e9",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "a7d46260f11f14b3a46818e4b4b08030f3a2624b1963e6fde8032e881ac754b8",
+            "intent_text": "Synthetic unsupported source contract.",
+            "required_definition_ids": [
+              "trend"
+            ],
+            "definitions": [
+              {
+                "id": "trend",
+                "text": "Trend structure means the broader directional structure that the strategy requires to remain intact."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "trend structure remains intact"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": "synthetic-rule",
+            "intent_role": "CONFIRMATION_ONLY",
+            "represented_rule_id": "synthetic-rule",
+            "represented_role": "CONFIRMATION_ONLY",
+            "executable_entry_range": false,
+            "representation_contract_version": "ENTRY_RULE_REPRESENTATION_V1",
+            "representation_contract_hash": "15e8cc5282fddbc833ac2ed762a082d605251c28b145d149eca49ef991d4e59b"
+          },
+          "readiness": {
+            "q1_status": "COMPLETE",
+            "q1_reasons": [],
+            "q2_status": "COMPLETE",
+            "q2_reasons": []
+          },
+          "local_entry_semantic_result": {
+            "status": "MATCH",
+            "reason_code": null
+          },
+          "source_snapshot_hash": "242b4db88572a855ce317eeb8c4d0a5bb20835b58e0ed1a4dc6bbfe641f44d98"
+        },
+        "projected_state": null,
+        "projected_state_hash": null,
+        "state_bytes": 0,
+        "expected_preflight_error": "SEMANTIC_SOURCE_VERSION_UNSUPPORTED",
+        "expected_q1_gold": null,
+        "expected_q2_status": "COMPLETE",
+        "expected_q2_reason": null,
+        "expected_local_entry_result": {
+          "status": "MATCH",
+          "reason_code": null
+        },
+        "expected_jev_status": "SKIPPED",
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "isolation_family_id": null,
+        "gold_rationale": "Unsupported source version blocks provider use."
+      },
+      {
+        "fixture_id": "v3-v20",
+        "partition": "validation",
+        "family": "LOCAL_BOTH_MISSING",
+        "hard_expectation": true,
+        "route": "LOCAL_ONLY",
+        "synthetic_source": {
+          "source_contract_version": "JEV_SEMANTIC_SOURCE_V1",
+          "source_contract_hash": "d272dc5adbf01e60870b07f1b33ecf269fef9df2a4a21f143dc2067d586e8a00",
+          "strategy": {
+            "strategy_version_id": "SYNTHETIC-V3",
+            "strategy_definition_hash": "7f977c882f7568ac8916862391ce6980544ae2ed91491514cdca06df01f07c37",
+            "semantic_contract_version": "STRATEGY_SEMANTIC_CONTRACT_V1",
+            "semantic_contract_hash": "f1ca9f8ec69791f8748c84ec44abf98b8bb0017aedb842ebd97b19fa481a3a0b",
+            "intent_text": "Both semantic scopes are unavailable.",
+            "required_definition_ids": [
+              "support"
+            ],
+            "definitions": [
+              {
+                "id": "support",
+                "text": "Support integrity means the setup has not semantically lost the support structure required by the strategy."
+              }
+            ]
+          },
+          "conditions": {
+            "mapping_version": "CONDITION_SEMANTIC_MAPPING_V1",
+            "mapping_hash": "4746c6b5df539055a762fbcae37a308d016057d380c0d3838451fe721ee8ab2b",
+            "items": [
+              {
+                "condition_id": "synthetic-01",
+                "source_condition": "synthetic",
+                "status": "PASS",
+                "observed_meaning": "support integrity remains intact"
+              }
+            ]
+          },
+          "entry_rule": {
+            "intended_rule_id": null,
+            "intent_role": null,
+            "represented_rule_id": null,
+            "represented_role": null,
+            "executable_entry_range": null,
+            "representation_contract_version": null,
+            "representation_contract_hash": null
+          },
+          "readiness": {
+            "q1_status": "MISSING",
+            "q1_reasons": [
+              "Q1_CONTEXT_UNAVAILABLE"
+            ],
+            "q2_status": "MISSING",
+            "q2_reasons": [
+              "Q2_RULE_REFERENCE_MISSING",
+              "Q2_RULE_REFERENCE_MISSING"
+            ]
+          },
+          "local_entry_semantic_result": {
+            "status": "MISSING",
+            "reason_code": "Q2_RULE_REFERENCE_MISSING"
+          },
+          "source_snapshot_hash": "bf8c679e1dec76b69f9e6152150e92e31b444c9364ffc8ebd33d162f47500bb8"
+        },
+        "projected_state": null,
+        "projected_state_hash": null,
+        "state_bytes": 0,
+        "expected_preflight_error": "Q1_SEMANTIC_NOT_COMPLETE",
+        "expected_q1_gold": null,
+        "expected_q2_status": "MISSING",
+        "expected_q2_reason": "Q2_RULE_REFERENCE_MISSING",
+        "expected_local_entry_result": {
+          "status": "MISSING",
+          "reason_code": "Q2_RULE_REFERENCE_MISSING"
+        },
+        "expected_jev_status": "SKIPPED",
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "isolation_family_id": null,
+        "gold_rationale": "Both missing scopes remain explicit and no provider disposition is fabricated."
+      }
+    ],
+    "partition_contract": {
+      "selection_contexts": 20,
+      "validation_contexts": 20,
+      "provider_callable_per_partition": 12,
+      "local_only_per_partition": 8,
+      "callable_hard_per_partition": 10,
+      "callable_soft_per_partition": 2,
+      "hard_negative_per_partition": 6,
+      "hard_positive_per_partition": 4
+    },
+    "threshold_candidates": [
+      0.5,
+      0.7,
+      0.9
+    ],
+    "threshold_rule": {
+      "comparison": "p >= T_strategy",
+      "round_before_compare": false,
+      "selection_partition": "selection",
+      "validation_partition": "validation",
+      "lock_before_validation": true,
+      "validation_fallback_forbidden": true,
+      "tie_break": [
+        "soft_review_required_count_asc",
+        "threshold_strategy_desc"
+      ]
+    },
+    "acceptance_gates": {
+      "hard_proposition_mismatches": 0,
+      "hard_false_reviews": 0,
+      "hard_missed_reviews": 0,
+      "hard_disposition_reason_errors": 0,
+      "callable_route_errors": 0,
+      "local_route_errors": 0,
+      "isolation_errors": 0,
+      "provider_errors": 0,
+      "hard_gate_crossing": 0,
+      "disposition_crossing_all_callable": 0,
+      "reason_crossing_all_callable": 0,
+      "review_required_max_per_partition": 18,
+      "abstain_max_per_partition": 0
+    },
+    "local_entry_truth_table": [
+      {
+        "intended": "CONFIRMATION_ONLY",
+        "represented": "CONFIRMATION_ONLY",
+        "result": "MATCH"
+      },
+      {
+        "intended": "CONFIRMATION_ONLY",
+        "represented": "EXECUTABLE_ENTRY",
+        "result": "CONFLICT_CONFIRMATION_AS_EXECUTION"
+      },
+      {
+        "intended": "EXECUTABLE_ENTRY",
+        "represented": "EXECUTABLE_ENTRY",
+        "result": "MATCH"
+      },
+      {
+        "intended": "EXECUTABLE_ENTRY",
+        "represented": "CONFIRMATION_ONLY",
+        "result": "CONFLICT_EXECUTION_AS_CONFIRMATION"
+      },
+      {
+        "reference": "MISSING",
+        "result": "MISSING"
+      },
+      {
+        "reference": "AMBIGUOUS",
+        "result": "AMBIGUOUS"
+      }
+    ],
+    "forbidden_wire_tokens": [
+      "ticker",
+      "name",
+      "rank",
+      "capture_id",
+      "current_price",
+      "entry_rule",
+      "intent_role",
+      "represented_role",
+      "local_entry_semantic_result",
+      "risk",
+      "stop",
+      "target",
+      "rr",
+      "fixture_id",
+      "partition",
+      "gold",
+      "expected",
+      "rationale",
+      "future_outcome",
+      "news",
+      "holdings",
+      "account",
+      "user_id"
+    ],
+    "repetitions": 3,
+    "model_discovery_attempts_max": 1,
+    "systemone_attempts_max": 72,
+    "total_api_attempts_max": 73,
+    "retry_count": 0,
+    "concurrency_cap": 1,
+    "deadline_seconds": 10,
+    "api_budget_usd": 0.25,
+    "per_call_reservation_required": true,
+    "reservation_must_be_verified_before_execute": true,
+    "real_stock_data_allowed": false,
+    "actual_trial_activation_allowed": false,
+    "execution_requires_separate_authorization": true,
+    "selected_threshold": null,
+    "final_threshold_frozen": false
+  }
+}
