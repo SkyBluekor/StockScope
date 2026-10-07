@@ -2944,9 +2944,25 @@ export type ScannerResponse = {
     confirmation_policy: string | null;
   };
   scanner_cache_hit: boolean;
+  execution_mode?: "BASELINE_ONLY" | "BASELINE_WITH_JEV" | string;
+  prospective_capture?: {
+    status: string;
+    capture_id?: string | null;
+    canonical_capture_id?: string | null;
+    returned_candidate_count?: number;
+    code?: string;
+    message?: string;
+  };
+  jev_review?: {
+    status: string;
+    reason: string;
+    capture_id: string | null;
+  };
   jev_shadow?: {
     status: string;
+    reason?: string;
     capture_id: string | null;
+    source_capture_id?: string | null;
     review_count?: number;
     pending_count?: number;
     skipped_count?: number;

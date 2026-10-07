@@ -132,3 +132,60 @@ export function getJevReviews(captureId: string) {
     "/api/simulation/jev/reviews?" + params.toString(),
   );
 }
+
+
+export type JevReviewFeature = {
+  execution_mode: "BASELINE_WITH_JEV" | string;
+  feature_status: "DISABLED_VALIDATION_PENDING" | "ACTIVE" | string;
+  available: boolean;
+  reason: string;
+};
+
+export type JevManualReviewRequest = {
+  capture_id: string;
+  sample_index: number;
+  review_epoch?: number;
+};
+
+export type JevManualReviewResult = {
+  status:
+    | "NOT_REQUESTED"
+    | "UNAVAILABLE"
+    | "NOT_READY"
+    | "QUEUED"
+    | "RUNNING"
+    | "PASS_THROUGH"
+    | "REVIEW_REQUIRED"
+    | "SKIPPED"
+    | "ERROR"
+    | string;
+  reason: string;
+  reused: boolean;
+  baseline_reference: {
+    requested_capture_id: string;
+    capture_id: string | null;
+    sample_index: number;
+    snapshot_hash: string | null;
+  };
+  review_id: string | null;
+  review_identity: string | null;
+  execution_mode: "BASELINE_WITH_JEV" | string;
+  feature_status: string;
+  reason_codes: string[];
+};
+
+export function getJevReviewFeature() {
+  return jevJson<JevReviewFeature>("/api/simulation/jev/review-feature");
+}
+
+export function requestJevReview(payload: JevManualReviewRequest) {
+  return jevJson<JevManualReviewResult>("/api/simulation/jev/reviews", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      capture_id: payload.capture_id,
+      sample_index: payload.sample_index,
+      review_epoch: payload.review_epoch ?? 0,
+    }),
+  });
+}

@@ -272,3 +272,212 @@
     white-space: normal;
   }
 }
+
+
+
+/* Scanner analysis origin + optional Jev review ------------------------- */
+.scanner-analysis-origin {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-bottom: 5px;
+  padding: 3px 7px;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.jev-additional-review {
+  position: relative;
+  display: grid;
+  grid-template-columns: 5px minmax(0, 1fr);
+  gap: 0;
+  margin: 14px 0;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: var(--bg-surface-soft);
+}
+
+.jev-additional-review-rail {
+  background: var(--border-strong);
+}
+
+.jev-additional-review.tone-ok .jev-additional-review-rail {
+  background: var(--status-positive);
+}
+
+.jev-additional-review.tone-review .jev-additional-review-rail {
+  background: var(--status-warning);
+}
+
+.jev-additional-review.tone-warning .jev-additional-review-rail {
+  background: var(--status-negative);
+}
+
+.jev-additional-review.tone-pending .jev-additional-review-rail {
+  background: var(--status-info);
+}
+
+.jev-additional-review-body {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 15px 16px 14px;
+}
+
+.jev-additional-review-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.jev-additional-review-head > div {
+  min-width: 0;
+}
+
+.jev-additional-review-kicker {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.jev-additional-review-head h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1rem;
+}
+
+.jev-additional-review-head p {
+  max-width: 690px;
+  margin: 5px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+
+.jev-additional-review-state {
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  font-size: 0.71rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.jev-additional-review-selected {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.7fr) minmax(0, 1.4fr);
+  gap: 8px;
+}
+
+.jev-additional-review-selected > div {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-surface);
+}
+
+.jev-additional-review-selected small {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.jev-additional-review-selected strong {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 0.86rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jev-additional-review-message,
+.jev-additional-review-reused {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+
+.jev-additional-review-reused {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+}
+
+.jev-additional-review-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.jev-additional-review-button {
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: 9px;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.jev-additional-review-button:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--bg-surface-soft);
+}
+
+.jev-additional-review-button:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.jev-additional-review-actions small {
+  color: var(--text-muted);
+  font-size: 0.73rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 760px) {
+  .jev-additional-review-head {
+    display: grid;
+    gap: 9px;
+  }
+
+  .jev-additional-review-state {
+    width: fit-content;
+  }
+
+  .jev-additional-review-selected {
+    grid-template-columns: 1fr;
+  }
+
+  .jev-additional-review-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .jev-additional-review-button {
+    width: 100%;
+  }
+}
