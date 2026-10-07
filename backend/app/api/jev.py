@@ -4,8 +4,14 @@ import os
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from app.core.config import PROJECT_ROOT
+from app.jev.review_models import (
+    BASELINE_WITH_JEV,
+    JEV_USER_FEATURE_DISABLED,
+)
+from app.jev.review_service import JevManualReviewService
 from app.jev.typesafe_catalog import (
     TypeSafeJevCatalog,
     TypeSafeJevCatalogError,
@@ -186,3 +192,32 @@ def get_jev_evaluation_run(run_id: str):
             status_code=status,
             detail={"code": error.code, "message": error.message},
         ) from error
+
+
+
+class JevManualReviewRequest(BaseModel):
+    capture_id: str = Field(..., min_length=1, max_length=200)
+    sample_index: int = Field(default=0, ge=0, le=100)
+    review_epoch: int = Field(default=0, ge=0, le=1_000_000)
+
+
+@router.get("/review-feature")
+def jev_review_feature_status() -> dict[str, object]:
+    return {
+        "execution_mode": BASELINE_WITH_JEV,
+        "feature_status": JEV_USER_FEATURE_DISABLED,
+        "available": False,
+        "reason": "FEATURE_NOT_ACTIVATED",
+    }
+
+
+@router.post("/reviews")
+async def request_jev_manual_review(
+    payload: JevManualReviewRequest,
+) -> dict[str, object]:
+    service = JevManualReviewService(_db())
+    return await service.request_review(
+        capture_id=payload.capture_id,
+        sample_index=payload.sample_index,
+        review_epoch=payload.review_epoch,
+    )

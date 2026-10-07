@@ -8,6 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.strategy.semantic_source import attach_semantic_source
+from app.strategy.semantic_source_v2 import attach_semantic_source_v2
 
 from .models import (
     PROSPECTIVE_CAPTURE_VERSION,
@@ -218,7 +219,8 @@ class ProspectiveCatalog:
 
     @staticmethod
     def _candidate_snapshot(item: dict[str, Any]) -> dict[str, Any]:
-        return attach_semantic_source(dict(item))
+        snapshot = attach_semantic_source(dict(item))
+        return attach_semantic_source_v2(snapshot)
 
     def finalize_capture(
         self,
@@ -511,6 +513,15 @@ class ProspectiveCatalog:
                 (reason, now, now),
             )
             return int(cursor.rowcount or 0)
+
+    def get_capture(self, capture_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            self.require_ready(conn)
+            row = conn.execute(
+                "SELECT * FROM prospective_capture_run WHERE id=?",
+                (capture_id,),
+            ).fetchone()
+        return self._capture_from_row(row) if row else None
 
     def get_capture_by_job(self, source_job_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:

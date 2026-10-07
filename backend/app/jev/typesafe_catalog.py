@@ -296,6 +296,38 @@ class TypeSafeJevCatalog:
         finally:
             conn.close()
 
+    def find_recruitment_by_analysis_unit_key(
+        self,
+        analysis_unit_key: str,
+    ) -> dict[str, Any] | None:
+        key = str(analysis_unit_key or "").strip()
+        if not key:
+            raise TypeSafeJevCatalogError("JEV_TYPESAFE_ANALYSIS_UNIT_KEY_REQUIRED")
+        with self.connect() as conn:
+            self.require_ready(conn)
+            row = conn.execute(
+                """
+                SELECT * FROM jev_typesafe_recruitment
+                WHERE analysis_unit_key=?
+                ORDER BY recruited_at,id
+                LIMIT 1
+                """,
+                (key,),
+            ).fetchone()
+        return dict(row) if row is not None else None
+
+    def get_review(self, review_id: str) -> dict[str, Any] | None:
+        clean = str(review_id or "").strip()
+        if not clean:
+            raise TypeSafeJevCatalogError("JEV_TYPESAFE_REVIEW_ID_REQUIRED")
+        with self.connect() as conn:
+            self.require_ready(conn)
+            row = conn.execute(
+                "SELECT * FROM jev_typesafe_review WHERE id=?",
+                (clean,),
+            ).fetchone()
+        return dict(row) if row is not None else None
+
     def begin_review(
         self,
         *,

@@ -23,7 +23,6 @@ from app.prospective import (
     ProspectiveReferenceCaptureService,
     ProspectiveService,
 )
-from app.jev import JevShadowService
 from app.horizon import (
     HorizonPolicyError,
     require_horizon_activatable,
@@ -49,14 +48,6 @@ def _prospective_service() -> ProspectiveService:
         or PROJECT_ROOT / "backend" / "runtime" / "market_history" / "market_history.db"
     )
     return ProspectiveService(simulation_db, market_db)
-
-
-def _jev_shadow_service() -> JevShadowService:
-    simulation_db = Path(
-        os.getenv("STOCKSCOPE_SIM_DB")
-        or PROJECT_ROOT / "backend" / "runtime" / "simulation" / "simulation.db"
-    )
-    return JevShadowService(simulation_db)
 
 
 def _prospective_reference_capture_service() -> ProspectiveReferenceCaptureService:
@@ -656,19 +647,19 @@ async def _run_scanner_job(
                 prospective_capture.get("canonical_capture_id")
                 or prospective_capture.get("capture_id")
             )
-            if (
-                prospective_capture.get("status") in {"COMPLETE", "DUPLICATE"}
-                and effective_capture_id
-            ):
-                result["jev_shadow"] = _jev_shadow_service().try_schedule_capture(
-                    str(effective_capture_id)
-                )
-            else:
-                result["jev_shadow"] = {
-                    "status": "SKIPPED_BASE_CAPTURE_NOT_COMPLETE",
-                    "capture_id": effective_capture_id,
-                    "baseline_mutated": False,
-                }
+            result["execution_mode"] = "BASELINE_ONLY"
+            result["jev_shadow"] = {
+                "status": "NOT_REQUESTED",
+                "reason": "BASELINE_ONLY",
+                "capture_id": None,
+                "source_capture_id": effective_capture_id,
+                "baseline_mutated": False,
+            }
+            result["jev_review"] = {
+                "status": "NOT_REQUESTED",
+                "reason": "FEATURE_NOT_REQUESTED",
+                "capture_id": effective_capture_id,
+            }
     except BacktestJobCancelled:
         prospective.try_mark_scanner_capture_terminal(
             source_job_id=job_id,
