@@ -1,0 +1,868 @@
+{
+  "artifact_version": "JEV_TYPESAFE_CANARY_PROTOCOL_ARTIFACT_V4",
+  "protocol_id": "JEV-TYPESAFE-CANARY-V4",
+  "status": "FROZEN_BEFORE_REAL_CALLS",
+  "frozen_at": "2026-10-07",
+  "canonicalization_version": "JEV_PROTOCOL_CANONICAL_JSON_V2",
+  "hash_algorithm": "SHA-256",
+  "protocol_hash": "382349e49549553af10c0469dac6d4f1b45fbcb938277fed2cda0c5bf01b69d4",
+  "spec": {
+    "provider_id": "TYPESAFE_SYSTEM_ONE",
+    "models_endpoint": "https://api.typesafe.ai/v1/models",
+    "systemone_endpoint": "https://api.typesafe.ai/v1/systemone",
+    "architecture": "LOCAL_RELATION_COMPOSITION_PLUS_RESIDUAL_Q1",
+    "canonicalization_version": "JEV_PROTOCOL_CANONICAL_JSON_V2",
+    "hash_algorithm": "SHA-256",
+    "model_request_rule": {
+      "default_request_model": "jev-latest",
+      "stable_alias_required": true,
+      "preview_forbidden": true,
+      "first_valid_concrete_response_binds_run": true,
+      "subsequent_concrete_response_must_match": true
+    },
+    "identities": {
+      "semantic_source_version": "JEV_SEMANTIC_SOURCE_V2",
+      "semantic_source_contract_hash": "d0a26be4561f0323ffc449436b33c300f88f4387964e9f5728541abaffc81f14",
+      "relation_contract_version": "STRATEGY_SEMANTIC_RELATION_CONTRACT_V1",
+      "assertion_mapping_version": "CONDITION_SEMANTIC_ASSERTION_MAPPING_V1",
+      "assertion_mapping_hash": "a03c9245bb7e5e741efe7f20f9ba19ceb2a655a5d60109ab1fe4ade10db33aa1",
+      "state_contract_version": "JEV_TYPESAFE_STATE_V4",
+      "state_contract_hash": "d5b305e4557ad552ecce835d91f2c4eeb72bfad6aa4aeffa925fd76cf2692541",
+      "projector_version": "JEV_TYPESAFE_PROJECTOR_V4",
+      "projector_hash": "7966fbd52326512b41d558a67b6d7371f9790fe831033668c8b39e7a55fba17c",
+      "question_contract_version": "JEV_TYPESAFE_QUESTIONS_V4",
+      "question_set_hash": "8e8a8a9f94bff843212b029ba30e46a8d0b8832ddf67fee2e1617d7bdcaaaace",
+      "disposition_policy_version": "JEV_TYPESAFE_DISPOSITION_POLICY_V4",
+      "disposition_policy_hash": "0de20ca6b50e1cb05209244a0225ce23beff83598f7402436ac19d490c3a0404",
+      "adapter_version": "JEV_TYPESAFE_SYSTEMONE_ADAPTER_V1"
+    },
+    "questions": {
+      "strategy_relation_conflict": {
+        "type": "noul",
+        "instructions": "Using only strategy_intent, term_definitions, authored_relations, and passed_condition_meanings, judge whether the supplied meanings contain an explicit, material semantic conflict with the authored strategy relations that deserves a user re-check. StockScope has already handled deterministic matches, conflicts, missing information, and internally ambiguous states before this question. Do not recalculate thresholds, infer prices, invent missing definitions or relations, use outside market information, or infer a local verdict that is not present in the wire.",
+        "criteria": {
+          "true": "The supplied meanings, interpreted with the authored definitions and relations, materially contradict or violate the authored strategy semantics and deserve a user re-check.",
+          "false": "The supplied meanings remain compatible with the authored strategy semantics, including explicitly allowed relationships and exceptions."
+        }
+      }
+    },
+    "fixtures": [
+      {
+        "fixture_id": "v4-s01",
+        "partition": "selection",
+        "failure_mode": "DIRECT_CONTRADICTION",
+        "semantic_scenario_id": "SEL_SUPPORT_DIRECT_LOSS",
+        "reachability": "ROBUSTNESS_ONLY",
+        "hard_expectation": true,
+        "route": "PROVIDER_CALL",
+        "expected_local_status": "RESIDUAL_SEMANTIC_REVIEW",
+        "expected_q1_gold": true,
+        "expected_disposition": "REVIEW_REQUIRED",
+        "expected_reason_codes": [
+          "STRATEGY_RELATION_CONFLICT"
+        ],
+        "isolation_family_id": null,
+        "q2_variant": "ENTRY_REFERENCE_A",
+        "projected_state": {
+          "strategy_intent": {
+            "text": "This continuation setup requires both directional structure and support integrity to remain materially intact."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Directional structure means the broader directional condition required by the strategy remains intact."
+            },
+            {
+              "ref": "term-02",
+              "text": "Support integrity means the strategy's required support structure has not been materially lost."
+            }
+          ],
+          "authored_relations": [
+            {
+              "ref": "relation-01",
+              "kind": "REQUIRES_ALL",
+              "member_refs": [
+                "term-01",
+                "term-02"
+              ],
+              "guard_refs": [],
+              "materiality": "HARD"
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "concept_refs": [
+                "term-01"
+              ],
+              "meaning": "the broader directional structure remains intact"
+            },
+            {
+              "ref": "condition-02",
+              "concept_refs": [
+                "term-02"
+              ],
+              "meaning": "the supplied support meaning explicitly says the required support structure has been lost"
+            }
+          ]
+        },
+        "projected_state_hash": "7902cc79161b0385da185137660d393523a52cde25308747f7232b67db847441",
+        "state_bytes": 848
+      },
+      {
+        "fixture_id": "v4-s02",
+        "partition": "selection",
+        "failure_mode": "ALLOWED_EXCEPTION",
+        "semantic_scenario_id": "SEL_ALLOWED_PULLBACK_SOFTNESS",
+        "reachability": "ROBUSTNESS_ONLY",
+        "hard_expectation": true,
+        "route": "PROVIDER_CALL",
+        "expected_local_status": "RESIDUAL_SEMANTIC_REVIEW",
+        "expected_q1_gold": false,
+        "expected_disposition": "PASS_THROUGH",
+        "expected_reason_codes": [
+          "NO_ADDITIONAL_RELATION_CONFLICT"
+        ],
+        "isolation_family_id": null,
+        "q2_variant": "ENTRY_REFERENCE_A",
+        "projected_state": {
+          "strategy_intent": {
+            "text": "A mild short-term pullback is allowed when the primary trend remains intact."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Primary trend means the broader trend condition that must remain intact for the exception to be allowed."
+            },
+            {
+              "ref": "term-02",
+              "text": "Short-term softness means a temporary pullback that is not by itself a failure of the broader setup."
+            }
+          ],
+          "authored_relations": [
+            {
+              "ref": "relation-01",
+              "kind": "ALLOWS_IF",
+              "member_refs": [
+                "term-02"
+              ],
+              "guard_refs": [
+                "term-01"
+              ],
+              "materiality": "HARD"
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "concept_refs": [
+                "term-02"
+              ],
+              "meaning": "short-term momentum is mildly soft during an ordinary pullback"
+            },
+            {
+              "ref": "condition-02",
+              "concept_refs": [
+                "term-01"
+              ],
+              "meaning": "the primary trend remains intact"
+            }
+          ]
+        },
+        "projected_state_hash": "0134ee4497e8a82e8000900b92a396b964906a3773e0fd847b54cc646851c464",
+        "state_bytes": 774
+      },
+      {
+        "fixture_id": "v4-s03",
+        "partition": "selection",
+        "failure_mode": "WEAK_SEMANTIC_PHRASING",
+        "semantic_scenario_id": "SEL_STRUCTURE_DEGREE_WORDING",
+        "reachability": "ROBUSTNESS_ONLY",
+        "hard_expectation": false,
+        "route": "PROVIDER_CALL",
+        "expected_local_status": "RESIDUAL_SEMANTIC_REVIEW",
+        "expected_q1_gold": null,
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "isolation_family_id": null,
+        "q2_variant": "ENTRY_REFERENCE_A",
+        "projected_state": {
+          "strategy_intent": {
+            "text": "The setup requires structure quality to remain materially supportive rather than clearly deteriorated."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Structure quality means the supplied condition meanings still support the strategy's required structural context."
+            }
+          ],
+          "authored_relations": [
+            {
+              "ref": "relation-01",
+              "kind": "REQUIRES_ALL",
+              "member_refs": [
+                "term-01"
+              ],
+              "guard_refs": [],
+              "materiality": "HARD"
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "concept_refs": [
+                "term-01"
+              ],
+              "meaning": "structure is somewhat weaker than before but remains partly supportive"
+            }
+          ]
+        },
+        "projected_state_hash": "2df30a71705919bba732ca6216286f1ec733a8f4160ad1e876ec6b37e9d8f92b",
+        "state_bytes": 588
+      },
+      {
+        "fixture_id": "v4-s04",
+        "partition": "selection",
+        "failure_mode": "Q1_Q2_ISOLATION",
+        "semantic_scenario_id": "SEL_Q1_Q2_ISOLATION_CONTINUATION",
+        "reachability": "ROBUSTNESS_ONLY",
+        "hard_expectation": true,
+        "route": "PROVIDER_CALL",
+        "expected_local_status": "RESIDUAL_SEMANTIC_REVIEW",
+        "expected_q1_gold": false,
+        "expected_disposition": "PASS_THROUGH",
+        "expected_reason_codes": [
+          "NO_ADDITIONAL_RELATION_CONFLICT"
+        ],
+        "isolation_family_id": "SEL-Q2",
+        "q2_variant": "ENTRY_REFERENCE_A",
+        "projected_state": {
+          "strategy_intent": {
+            "text": "The continuation setup remains compatible with a brief pause when the continuation core is intact and participation remains adequate."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Continuation core means the directional continuation structure required by the strategy remains intact."
+            },
+            {
+              "ref": "term-02",
+              "text": "Participation support means participation remains sufficient for the authored continuation relationship."
+            }
+          ],
+          "authored_relations": [
+            {
+              "ref": "relation-01",
+              "kind": "REQUIRES_ALL",
+              "member_refs": [
+                "term-01",
+                "term-02"
+              ],
+              "guard_refs": [],
+              "materiality": "HARD"
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "concept_refs": [
+                "term-01"
+              ],
+              "meaning": "the continuation structure remains intact during a brief pause"
+            },
+            {
+              "ref": "condition-02",
+              "concept_refs": [
+                "term-02"
+              ],
+              "meaning": "participation is quieter than the prior session but remains adequate for continuation"
+            }
+          ]
+        },
+        "projected_state_hash": "0fa4b1058f0a8b1e72069b87827e71d9b9e9c575ce08b5d46d5d23eae939d2d0",
+        "state_bytes": 891
+      },
+      {
+        "fixture_id": "v4-s05",
+        "partition": "selection",
+        "failure_mode": "Q1_Q2_ISOLATION",
+        "semantic_scenario_id": "SEL_Q1_Q2_ISOLATION_CONTINUATION",
+        "reachability": "ROBUSTNESS_ONLY",
+        "hard_expectation": true,
+        "route": "PROVIDER_CALL",
+        "expected_local_status": "RESIDUAL_SEMANTIC_REVIEW",
+        "expected_q1_gold": false,
+        "expected_disposition": "PASS_THROUGH",
+        "expected_reason_codes": [
+          "NO_ADDITIONAL_RELATION_CONFLICT"
+        ],
+        "isolation_family_id": "SEL-Q2",
+        "q2_variant": "ENTRY_REFERENCE_B",
+        "projected_state": {
+          "strategy_intent": {
+            "text": "The continuation setup remains compatible with a brief pause when the continuation core is intact and participation remains adequate."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Continuation core means the directional continuation structure required by the strategy remains intact."
+            },
+            {
+              "ref": "term-02",
+              "text": "Participation support means participation remains sufficient for the authored continuation relationship."
+            }
+          ],
+          "authored_relations": [
+            {
+              "ref": "relation-01",
+              "kind": "REQUIRES_ALL",
+              "member_refs": [
+                "term-01",
+                "term-02"
+              ],
+              "guard_refs": [],
+              "materiality": "HARD"
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "concept_refs": [
+                "term-01"
+              ],
+              "meaning": "the continuation structure remains intact during a brief pause"
+            },
+            {
+              "ref": "condition-02",
+              "concept_refs": [
+                "term-02"
+              ],
+              "meaning": "participation is quieter than the prior session but remains adequate for continuation"
+            }
+          ]
+        },
+        "projected_state_hash": "0fa4b1058f0a8b1e72069b87827e71d9b9e9c575ce08b5d46d5d23eae939d2d0",
+        "state_bytes": 891
+      },
+      {
+        "fixture_id": "v4-s06",
+        "partition": "selection",
+        "failure_mode": "LOCAL_DETERMINISTIC_CONFLICT",
+        "semantic_scenario_id": "SEL_LOCAL_SUPPORT_CONFLICT",
+        "reachability": "ROBUSTNESS_ONLY",
+        "hard_expectation": true,
+        "route": "LOCAL_ONLY",
+        "expected_local_status": "LOCAL_CONFLICT",
+        "expected_q1_gold": null,
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "isolation_family_id": null,
+        "q2_variant": "ENTRY_REFERENCE_A",
+        "projected_state": null,
+        "projected_state_hash": null,
+        "state_bytes": null
+      },
+      {
+        "fixture_id": "v4-s07",
+        "partition": "selection",
+        "failure_mode": "LOCAL_MISSING",
+        "semantic_scenario_id": "SEL_LOCAL_REQUIRED_BINDING_MISSING",
+        "reachability": "ROBUSTNESS_ONLY",
+        "hard_expectation": true,
+        "route": "LOCAL_ONLY",
+        "expected_local_status": "LOCAL_INCOMPLETE",
+        "expected_q1_gold": null,
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "isolation_family_id": null,
+        "q2_variant": "ENTRY_REFERENCE_A",
+        "projected_state": null,
+        "projected_state_hash": null,
+        "state_bytes": null
+      },
+      {
+        "fixture_id": "v4-s08",
+        "partition": "selection",
+        "failure_mode": "LOCAL_AMBIGUOUS",
+        "semantic_scenario_id": "SEL_LOCAL_SAME_CONCEPT_AMBIGUOUS",
+        "reachability": "ROBUSTNESS_ONLY",
+        "hard_expectation": true,
+        "route": "LOCAL_ONLY",
+        "expected_local_status": "LOCAL_AMBIGUOUS",
+        "expected_q1_gold": null,
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "isolation_family_id": null,
+        "q2_variant": "ENTRY_REFERENCE_A",
+        "projected_state": null,
+        "projected_state_hash": null,
+        "state_bytes": null
+      },
+      {
+        "fixture_id": "v4-s09",
+        "partition": "selection",
+        "failure_mode": "PRODUCTION_PASS_BASELINE",
+        "semantic_scenario_id": "SEL_PRODUCTION_BASELINE_MATCH",
+        "reachability": "PRODUCTION_REACHABLE",
+        "hard_expectation": true,
+        "route": "LOCAL_ONLY",
+        "expected_local_status": "LOCAL_MATCH",
+        "expected_q1_gold": null,
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "isolation_family_id": null,
+        "q2_variant": "ENTRY_REFERENCE_A",
+        "projected_state": null,
+        "projected_state_hash": null,
+        "state_bytes": null
+      },
+      {
+        "fixture_id": "v4-v01",
+        "partition": "validation",
+        "failure_mode": "REQUIRED_CONDITION_COLLAPSE",
+        "semantic_scenario_id": "VAL_RECOVERY_SUPPORT_COLLAPSE",
+        "reachability": "ROBUSTNESS_ONLY",
+        "hard_expectation": true,
+        "route": "PROVIDER_CALL",
+        "expected_local_status": "RESIDUAL_SEMANTIC_REVIEW",
+        "expected_q1_gold": true,
+        "expected_disposition": "REVIEW_REQUIRED",
+        "expected_reason_codes": [
+          "STRATEGY_RELATION_CONFLICT"
+        ],
+        "isolation_family_id": null,
+        "q2_variant": "ENTRY_REFERENCE_C",
+        "projected_state": {
+          "strategy_intent": {
+            "text": "A recovery setup requires both recovery structure and its support base to remain intact."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Recovery base means the support structure needed for recovery has not materially failed."
+            },
+            {
+              "ref": "term-02",
+              "text": "Recovery structure means stabilization and improvement after prior weakness."
+            }
+          ],
+          "authored_relations": [
+            {
+              "ref": "relation-01",
+              "kind": "REQUIRES_ALL",
+              "member_refs": [
+                "term-02",
+                "term-01"
+              ],
+              "guard_refs": [],
+              "materiality": "HARD"
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "concept_refs": [
+                "term-02"
+              ],
+              "meaning": "recovery structure is still improving"
+            },
+            {
+              "ref": "condition-02",
+              "concept_refs": [
+                "term-01"
+              ],
+              "meaning": "the supplied support meaning says the recovery base has materially failed"
+            }
+          ]
+        },
+        "projected_state_hash": "b02f7de3bd67115fc62312ead2a7ab1c266424cbbc25ca0fd15b19b81f79b9f8",
+        "state_bytes": 766
+      },
+      {
+        "fixture_id": "v4-v02",
+        "partition": "validation",
+        "failure_mode": "NEGATIVE_TRAP",
+        "semantic_scenario_id": "VAL_RANGE_NO_BREAKOUT_TRAP",
+        "reachability": "ROBUSTNESS_ONLY",
+        "hard_expectation": true,
+        "route": "PROVIDER_CALL",
+        "expected_local_status": "RESIDUAL_SEMANTIC_REVIEW",
+        "expected_q1_gold": false,
+        "expected_disposition": "PASS_THROUGH",
+        "expected_reason_codes": [
+          "NO_ADDITIONAL_RELATION_CONFLICT"
+        ],
+        "isolation_family_id": null,
+        "q2_variant": "ENTRY_REFERENCE_C",
+        "projected_state": {
+          "strategy_intent": {
+            "text": "This range setup requires bounded range structure and does not require a directional breakout."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Bounded range means price behavior remains contained without requiring a directional breakout."
+            }
+          ],
+          "authored_relations": [
+            {
+              "ref": "relation-01",
+              "kind": "REQUIRES_ALL",
+              "member_refs": [
+                "term-01"
+              ],
+              "guard_refs": [],
+              "materiality": "HARD"
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "concept_refs": [
+                "term-01"
+              ],
+              "meaning": "the market remains contained inside the range and no breakout has been confirmed"
+            }
+          ]
+        },
+        "projected_state_hash": "a37cce2183700a27703742474b09a4eecd17684debdbfbc56514c8dde924cbb7",
+        "state_bytes": 571
+      },
+      {
+        "fixture_id": "v4-v03",
+        "partition": "validation",
+        "failure_mode": "NEAR_BOUNDARY_AMBIGUITY",
+        "semantic_scenario_id": "VAL_MOMENTUM_BOUNDARY_WORDING",
+        "reachability": "ROBUSTNESS_ONLY",
+        "hard_expectation": false,
+        "route": "PROVIDER_CALL",
+        "expected_local_status": "RESIDUAL_SEMANTIC_REVIEW",
+        "expected_q1_gold": null,
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "isolation_family_id": null,
+        "q2_variant": "ENTRY_REFERENCE_C",
+        "projected_state": {
+          "strategy_intent": {
+            "text": "Momentum persistence must remain materially supportive, while minor fading can be tolerated."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Momentum persistence means directional continuation remains materially supportive rather than clearly exhausted."
+            }
+          ],
+          "authored_relations": [
+            {
+              "ref": "relation-01",
+              "kind": "REQUIRES_ALL",
+              "member_refs": [
+                "term-01"
+              ],
+              "guard_refs": [],
+              "materiality": "HARD"
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "concept_refs": [
+                "term-01"
+              ],
+              "meaning": "momentum has faded to the edge of what could still be considered supportive"
+            }
+          ]
+        },
+        "projected_state_hash": "5739d3baad45d91e92e6782d1e20bb1fd9a8fa4479be9d2346f922117e9c3761",
+        "state_bytes": 582
+      },
+      {
+        "fixture_id": "v4-v04",
+        "partition": "validation",
+        "failure_mode": "COMPOSITIONAL_CONFLICT",
+        "semantic_scenario_id": "VAL_TREND_PARTICIPATION_COMPOSITION",
+        "reachability": "ROBUSTNESS_ONLY",
+        "hard_expectation": true,
+        "route": "PROVIDER_CALL",
+        "expected_local_status": "RESIDUAL_SEMANTIC_REVIEW",
+        "expected_q1_gold": true,
+        "expected_disposition": "REVIEW_REQUIRED",
+        "expected_reason_codes": [
+          "STRATEGY_RELATION_CONFLICT"
+        ],
+        "isolation_family_id": "VAL-Q2",
+        "q2_variant": "ENTRY_REFERENCE_C",
+        "projected_state": {
+          "strategy_intent": {
+            "text": "The setup requires both directional structure and participation support; neither requirement is optional."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Participation quality means participation remains supportive of the authored setup."
+            },
+            {
+              "ref": "term-02",
+              "text": "Trend quality means directional structure remains materially supportive."
+            }
+          ],
+          "authored_relations": [
+            {
+              "ref": "relation-01",
+              "kind": "REQUIRES_ALL",
+              "member_refs": [
+                "term-02",
+                "term-01"
+              ],
+              "guard_refs": [],
+              "materiality": "HARD"
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "concept_refs": [
+                "term-02"
+              ],
+              "meaning": "directional structure has weakened enough that its support is doubtful"
+            },
+            {
+              "ref": "condition-02",
+              "concept_refs": [
+                "term-01"
+              ],
+              "meaning": "participation is also fading rather than supporting continuation"
+            }
+          ]
+        },
+        "projected_state_hash": "eea898d3f7558a40dc6ff456b25bb5efd788eaca4fa17b1469f596f70c5f5a37",
+        "state_bytes": 798
+      },
+      {
+        "fixture_id": "v4-v05",
+        "partition": "validation",
+        "failure_mode": "COMPOSITIONAL_CONFLICT",
+        "semantic_scenario_id": "VAL_TREND_PARTICIPATION_COMPOSITION",
+        "reachability": "ROBUSTNESS_ONLY",
+        "hard_expectation": true,
+        "route": "PROVIDER_CALL",
+        "expected_local_status": "RESIDUAL_SEMANTIC_REVIEW",
+        "expected_q1_gold": true,
+        "expected_disposition": "REVIEW_REQUIRED",
+        "expected_reason_codes": [
+          "STRATEGY_RELATION_CONFLICT"
+        ],
+        "isolation_family_id": "VAL-Q2",
+        "q2_variant": "ENTRY_REFERENCE_D",
+        "projected_state": {
+          "strategy_intent": {
+            "text": "The setup requires both directional structure and participation support; neither requirement is optional."
+          },
+          "term_definitions": [
+            {
+              "ref": "term-01",
+              "text": "Participation quality means participation remains supportive of the authored setup."
+            },
+            {
+              "ref": "term-02",
+              "text": "Trend quality means directional structure remains materially supportive."
+            }
+          ],
+          "authored_relations": [
+            {
+              "ref": "relation-01",
+              "kind": "REQUIRES_ALL",
+              "member_refs": [
+                "term-02",
+                "term-01"
+              ],
+              "guard_refs": [],
+              "materiality": "HARD"
+            }
+          ],
+          "passed_condition_meanings": [
+            {
+              "ref": "condition-01",
+              "concept_refs": [
+                "term-02"
+              ],
+              "meaning": "directional structure has weakened enough that its support is doubtful"
+            },
+            {
+              "ref": "condition-02",
+              "concept_refs": [
+                "term-01"
+              ],
+              "meaning": "participation is also fading rather than supporting continuation"
+            }
+          ]
+        },
+        "projected_state_hash": "eea898d3f7558a40dc6ff456b25bb5efd788eaca4fa17b1469f596f70c5f5a37",
+        "state_bytes": 798
+      },
+      {
+        "fixture_id": "v4-v06",
+        "partition": "validation",
+        "failure_mode": "LOCAL_DETERMINISTIC_CONFLICT",
+        "semantic_scenario_id": "VAL_LOCAL_COMPRESSION_CONFLICT",
+        "reachability": "ROBUSTNESS_ONLY",
+        "hard_expectation": true,
+        "route": "LOCAL_ONLY",
+        "expected_local_status": "LOCAL_CONFLICT",
+        "expected_q1_gold": null,
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "isolation_family_id": null,
+        "q2_variant": "ENTRY_REFERENCE_C",
+        "projected_state": null,
+        "projected_state_hash": null,
+        "state_bytes": null
+      },
+      {
+        "fixture_id": "v4-v07",
+        "partition": "validation",
+        "failure_mode": "LOCAL_MISSING",
+        "semantic_scenario_id": "VAL_LOCAL_RECOVERY_BINDING_MISSING",
+        "reachability": "ROBUSTNESS_ONLY",
+        "hard_expectation": true,
+        "route": "LOCAL_ONLY",
+        "expected_local_status": "LOCAL_INCOMPLETE",
+        "expected_q1_gold": null,
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "isolation_family_id": null,
+        "q2_variant": "ENTRY_REFERENCE_C",
+        "projected_state": null,
+        "projected_state_hash": null,
+        "state_bytes": null
+      },
+      {
+        "fixture_id": "v4-v08",
+        "partition": "validation",
+        "failure_mode": "LOCAL_AMBIGUOUS",
+        "semantic_scenario_id": "VAL_LOCAL_PARTICIPATION_AMBIGUOUS",
+        "reachability": "ROBUSTNESS_ONLY",
+        "hard_expectation": true,
+        "route": "LOCAL_ONLY",
+        "expected_local_status": "LOCAL_AMBIGUOUS",
+        "expected_q1_gold": null,
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "isolation_family_id": null,
+        "q2_variant": "ENTRY_REFERENCE_C",
+        "projected_state": null,
+        "projected_state_hash": null,
+        "state_bytes": null
+      },
+      {
+        "fixture_id": "v4-v09",
+        "partition": "validation",
+        "failure_mode": "PRODUCTION_PASS_BASELINE",
+        "semantic_scenario_id": "VAL_PRODUCTION_BASELINE_MATCH",
+        "reachability": "PRODUCTION_REACHABLE",
+        "hard_expectation": true,
+        "route": "LOCAL_ONLY",
+        "expected_local_status": "LOCAL_MATCH",
+        "expected_q1_gold": null,
+        "expected_disposition": null,
+        "expected_reason_codes": [],
+        "isolation_family_id": null,
+        "q2_variant": "ENTRY_REFERENCE_C",
+        "projected_state": null,
+        "projected_state_hash": null,
+        "state_bytes": null
+      }
+    ],
+    "partition_contract": {
+      "selection_fixture_rows": 9,
+      "validation_fixture_rows": 9,
+      "selection_unique_provider_wires": 4,
+      "validation_unique_provider_wires": 4,
+      "provider_reachable_positive_residual_count": 0
+    },
+    "threshold_candidates": [
+      0.5,
+      0.7,
+      0.9
+    ],
+    "threshold_rule": {
+      "comparison": "raw p >= T_strategy",
+      "round_before_compare": false,
+      "selection_partition": "selection",
+      "validation_partition": "validation",
+      "lock_before_validation": true,
+      "validation_fallback_forbidden": true,
+      "minimum_positive_margin": 0.1,
+      "minimum_negative_margin": 0.1,
+      "minimum_worst_class_margin": 0.1,
+      "tie_break": [
+        "worst_class_margin_desc",
+        "soft_review_required_count_asc",
+        "threshold_strategy_asc"
+      ]
+    },
+    "acceptance_gates": {
+      "hard_false_reviews": 0,
+      "hard_missed_reviews": 0,
+      "hard_disposition_reason_errors": 0,
+      "provider_errors": 0,
+      "route_errors": 0,
+      "isolation_errors": 0,
+      "hard_disposition_crossing": 0,
+      "positive_margin_min": 0.1,
+      "negative_margin_min": 0.1,
+      "worst_class_margin_min": 0.1,
+      "validation_rescue_allowed": false
+    },
+    "forbidden_wire_keys": [
+      "local_semantic_status",
+      "stance",
+      "gold",
+      "expected_disposition",
+      "ticker",
+      "name",
+      "rank",
+      "price",
+      "risk",
+      "entry",
+      "stop",
+      "target",
+      "rr",
+      "holdings",
+      "future_return",
+      "q2"
+    ],
+    "repetitions_per_unique_q1_wire": 5,
+    "duplicate_wire_rule": "SAME_PROJECTED_STATE_HASH_SHARED_RESPONSE_WITHIN_PARTITION_REPETITION",
+    "model_discovery_attempts_max": 1,
+    "planned_systemone_calls": 40,
+    "systemone_attempts_hard_cap": 40,
+    "total_api_attempts_hard_cap": 41,
+    "retry_count": 0,
+    "concurrency_cap": 1,
+    "deadline_seconds": 10,
+    "max_request_bytes": 1906,
+    "budget": {
+      "public_pricing_evidence": {
+        "input_price_usd_per_billion_tokens": 42,
+        "source_url": "https://typesafe.ai/",
+        "checked_at": "2026-10-07",
+        "account_terms_recheck_required_before_execute": true
+      },
+      "per_call_reservation_usd": 0.001,
+      "max_reserved_exposure_usd": 0.04,
+      "reserved_exposure_ceiling_usd": 0.05,
+      "project_absolute_ceiling_usd": 0.25,
+      "actual_cost_before_execution": null,
+      "actual_cost_status": "UNKNOWN"
+    },
+    "real_stock_data_allowed": false,
+    "actual_trial_activation_allowed": false,
+    "production_feature_activation_allowed": false,
+    "holdout_access_allowed": false,
+    "execution_requires_separate_authorization": true,
+    "selected_threshold": null,
+    "final_threshold_frozen": false
+  },
+  "artifact_hash": "eca1b77d4ac48a322d7b9123bc6c3e740990ddaadc9f4bbaa6ce4ee13206b260"
+}
