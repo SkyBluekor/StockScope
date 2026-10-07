@@ -496,4 +496,263 @@ def _local_only(fixtures: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [item for item in fixtures if item["route"] == "LOCAL_ONLY"]
 
 
-def validate_canary_v3_contract() -> dict[str, Any]:
+def validate_canary_v3_contract() -> dict[str, Any]:    artifact = build_canary_v3_protocol_artifact()
+    fixtures = artifact["spec"]["fixtures"]
+    if len(fixtures) != 40 or len({item["fixture_id"] for item in fixtures}) != 40:
+        raise TypeSafeCanaryV3Error("CANARY_V3_FIXTURE_COUNT_INVALID")
+    if threshold_candidate_grid() != [0.5, 0.7, 0.9]:
+        raise TypeSafeCanaryV3Error("CANARY_V3_THRESHOLD_GRID_INVALID")
+    if len(JEV_TYPESAFE_QUESTION_IDS_V3) != 1:
+        raise TypeSafeCanaryV3Error("CANARY_V3_QUESTION_COUNT_INVALID")
+    if 24 * CANARY_V3_REPETITIONS != MAX_SYSTEM_ONE_ATTEMPTS:
+        raise TypeSafeCanaryV3Error("CANARY_V3_CALL_CAP_INVALID")
+
+    forbidden = tuple(
+        str(item).lower() for item in artifact["spec"]["forbidden_wire_tokens"]
+    )
+    for partition_name in ("selection", "validation"):
+        rows = _partition(fixtures, partition_name)
+        callable_rows = _callable(rows)
+        local_rows = _local_only(rows)
+        hard_rows = [item for item in callable_rows if item["hard_expectation"]]
+        soft_rows = [item for item in callable_rows if not item["hard_expectation"]]
+        if len(rows) != 20 or len(callable_rows) != 12 or len(local_rows) != 8:
+            raise TypeSafeCanaryV3Error("CANARY_V3_PARTITION_COUNT_INVALID")
+        if len(hard_rows) != 10 or len(soft_rows) != 2:
+            raise TypeSafeCanaryV3Error("CANARY_V3_HARD_SOFT_COUNT_INVALID")
+        if sum(item["expected_q1_gold"] is False for item in hard_rows) != 6:
+            raise TypeSafeCanaryV3Error("CANARY_V3_NEGATIVE_COUNT_INVALID")
+        if sum(item["expected_q1_gold"] is True for item in hard_rows) != 4:
+            raise TypeSafeCanaryV3Error("CANARY_V3_POSITIVE_COUNT_INVALID")
+
+    for item in fixtures:
+        if item["route"] == "PROVIDER_CALL":
+            state = item["projected_state"]
+            if not isinstance(state, dict):
+                raise TypeSafeCanaryV3Error("CANARY_V3_PROJECTED_STATE_MISSING")
+            if item["projected_state_hash"] != digest_json(state):
+                raise TypeSafeCanaryV3Error("CANARY_V3_PROJECTED_STATE_HASH_INVALID")
+            if int(item["state_bytes"]) != len(canonical_json(state).encode("utf-8")):
+                raise TypeSafeCanaryV3Error("CANARY_V3_PROJECTED_STATE_BYTES_INVALID")
+            encoded = canonical_json(state).lower()
+            if any(token in encoded for token in forbidden):
+                raise TypeSafeCanaryV3Error(
+                    "CANARY_V3_FORBIDDEN_WIRE_FIELD",
+                    str(item["fixture_id"]),
+                )
+            if set(state) != {
+                "strategy_intent", "term_definitions", "passed_condition_meanings"
+            }:
+                raise TypeSafeCanaryV3Error("CANARY_V3_WIRE_SHAPE_INVALID")
+        else:
+            if item["projected_state"] is not None:
+                raise TypeSafeCanaryV3Error("CANARY_V3_LOCAL_ROUTE_STATE_PRESENT")
+            if not item["expected_preflight_error"]:
+                raise TypeSafeCanaryV3Error("CANARY_V3_LOCAL_ROUTE_REASON_MISSING")
+
+    isolation: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for item in fixtures:
+        family = item.get("isolation_family_id")
+        if family:
+            isolation[str(family)].append(item)
+    if set(isolation) != {"S-A", "S-B", "V-A", "V-B"}:
+        raise TypeSafeCanaryV3Error("CANARY_V3_ISOLATION_FAMILY_INVALID")
+    for family, rows in isolation.items():
+        if len(rows) != 2:
+            raise TypeSafeCanaryV3Error("CANARY_V3_ISOLATION_PAIR_INVALID", family)
+        if rows[0]["projected_state_hash"] != rows[1]["projected_state_hash"]:
+            raise TypeSafeCanaryV3Error("CANARY_V3_ISOLATION_HASH_MISMATCH", family)
+        if canonical_json(rows[0]["projected_state"]) != canonical_json(rows[1]["projected_state"]):
+            raise TypeSafeCanaryV3Error("CANARY_V3_ISOLATION_WIRE_MISMATCH", family)
+        if rows[0]["expected_local_entry_result"] == rows[1]["expected_local_entry_result"]:
+            raise TypeSafeCanaryV3Error("CANARY_V3_ISOLATION_LOCAL_RESULT_NOT_DIFFERENT", family)
+
+    if artifact["protocol_hash"] != digest_json(artifact["spec"]):
+        raise TypeSafeCanaryV3Error("CANARY_V3_PROTOCOL_HASH_INVALID")
+    return artifact
+
+
+def write_canary_v3_protocol(path: Path = CANARY_V3_PROTOCOL_PATH) -> Path:
+    artifact = validate_canary_v3_contract()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rendered = json.dumps(artifact, ensure_ascii=False, indent=2) + "\n"
+    if path.exists():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise TypeSafeCanaryV3Error("CANARY_V3_PROTOCOL_INVALID") from exc
+        if existing != artifact:
+            raise TypeSafeCanaryV3Error("CANARY_V3_PROTOCOL_DRIFT")
+        return path
+    path.write_text(rendered, encoding="utf-8")
+    return path
+
+
+def load_frozen_canary_v3_protocol(
+    path: Path = CANARY_V3_PROTOCOL_PATH,
+) -> dict[str, Any]:
+    expected = validate_canary_v3_contract()
+    if not path.is_file():
+        raise TypeSafeCanaryV3Error("CANARY_V3_PROTOCOL_NOT_FROZEN")
+    try:
+        stored = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise TypeSafeCanaryV3Error("CANARY_V3_PROTOCOL_INVALID") from exc
+    if stored != expected:
+        raise TypeSafeCanaryV3Error("CANARY_V3_PROTOCOL_DRIFT")
+    return stored
+
+
+def classify_model_channel(model: dict[str, Any]) -> str:
+    name = str(model.get("name") or "").strip().lower()
+    if "preview" in name:
+        return PREVIEW_ALIAS
+    if name == "jev-latest" or name.endswith("-latest"):
+        return STABLE_ALIAS
+    if (
+        re.fullmatch(r"jev-\d+(?:\.\d+)+", name)
+        and model.get("immutable_verified") is True
+    ):
+        return IMMUTABLE_VERSION_VERIFIED
+    return UNKNOWN_CHANNEL
+
+
+def select_canary_v3_model(
+    models: list[dict[str, str]],
+    *,
+    override: str | None = None,
+) -> dict[str, Any]:
+    by_name = {item["name"]: item for item in models}
+    requested = override or "jev-latest"
+    if requested not in by_name:
+        raise TypeSafeCanaryV3Error("CANARY_V3_STABLE_MODEL_UNAVAILABLE")
+    selected = by_name[requested]
+    channel = classify_model_channel(selected)
+    if channel == PREVIEW_ALIAS:
+        raise TypeSafeCanaryV3Error("CANARY_V3_PREVIEW_MODEL_FORBIDDEN")
+    if channel not in {STABLE_ALIAS, IMMUTABLE_VERSION_VERIFIED}:
+        raise TypeSafeCanaryV3Error("CANARY_V3_MODEL_CHANNEL_UNVERIFIED")
+    return {**selected, "request_channel_class": channel}
+
+
+def _fixture_map(artifact: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {
+        item["fixture_id"]: item
+        for item in artifact["spec"]["fixtures"]
+    }
+
+
+def _partition_order(
+    fixtures: list[dict[str, Any]],
+    repetition: int,
+) -> list[dict[str, Any]]:
+    ordered = sorted(fixtures, key=lambda item: item["fixture_id"])
+    if repetition == 1:
+        return ordered
+    if repetition == 2:
+        return list(reversed(ordered))
+    if repetition == 3:
+        return ordered[1:] + ordered[:1]
+    raise ValueError("CANARY_V3_REPETITION_INVALID")
+
+
+def _metrics_for_threshold(
+    records: list[dict[str, Any]],
+    artifact: dict[str, Any],
+    threshold: float,
+) -> dict[str, Any]:
+    fixtures = _fixture_map(artifact)
+    hard_checks = 0
+    hard_mismatches = 0
+    false_reviews = 0
+    missed_reviews = 0
+    disposition_reason_errors = 0
+    review_count = 0
+    soft_review_count = 0
+    by_fixture: dict[str, list[tuple[str, tuple[str, ...], bool]]] = defaultdict(list)
+
+    for record in records:
+        fixture = fixtures[record["fixture_id"]]
+        decision = decide_typesafe_disposition_v3(
+            {"strategy_context_conflict": record["probability"]},
+            threshold_strategy=threshold,
+        )
+        gate = bool(decision.gate_results["strategy_context_conflict"])
+        by_fixture[record["fixture_id"]].append(
+            (decision.disposition, decision.reason_codes, gate)
+        )
+        if decision.disposition == "REVIEW_REQUIRED":
+            review_count += 1
+        if not fixture["hard_expectation"]:
+            if decision.disposition == "REVIEW_REQUIRED":
+                soft_review_count += 1
+            continue
+
+        hard_checks += 1
+        gold = bool(fixture["expected_q1_gold"])
+        if gate != gold:
+            hard_mismatches += 1
+        if not gold and decision.disposition == "REVIEW_REQUIRED":
+            false_reviews += 1
+        if gold and decision.disposition != "REVIEW_REQUIRED":
+            missed_reviews += 1
+        if (
+            decision.disposition != fixture["expected_disposition"]
+            or list(decision.reason_codes) != fixture["expected_reason_codes"]
+        ):
+            disposition_reason_errors += 1
+
+    disposition_crossing = 0
+    reason_crossing = 0
+    hard_gate_crossing = 0
+    for fixture_id, items in by_fixture.items():
+        if len({row[0] for row in items}) > 1:
+            disposition_crossing += 1
+        if len({row[1] for row in items}) > 1:
+            reason_crossing += 1
+        if fixtures[fixture_id]["hard_expectation"] and len({row[2] for row in items}) > 1:
+            hard_gate_crossing += 1
+
+    eligible = (
+        len(records) == 36
+        and hard_checks == 30
+        and hard_mismatches == 0
+        and false_reviews == 0
+        and missed_reviews == 0
+        and disposition_reason_errors == 0
+        and disposition_crossing == 0
+        and reason_crossing == 0
+        and hard_gate_crossing == 0
+        and review_count <= 18
+    )
+    return {
+        "threshold_strategy": float(threshold),
+        "hard_proposition_checks": hard_checks,
+        "hard_proposition_mismatches": hard_mismatches,
+        "hard_false_reviews": false_reviews,
+        "hard_missed_reviews": missed_reviews,
+        "hard_disposition_reason_errors": disposition_reason_errors,
+        "review_required_count": review_count,
+        "soft_review_required_count": soft_review_count,
+        "abstain_count": 0,
+        "disposition_crossing": disposition_crossing,
+        "reason_crossing": reason_crossing,
+        "hard_gate_crossing": hard_gate_crossing,
+        "eligible": eligible,
+    }
+
+
+def select_threshold_from_selection(
+    records: list[dict[str, Any]],
+    artifact: dict[str, Any],
+) -> dict[str, Any]:
+    candidates = [
+        _metrics_for_threshold(records, artifact, threshold)
+        for threshold in artifact["spec"]["threshold_candidates"]
+    ]
+    eligible = [item for item in candidates if item["eligible"]]
+    selected = None
+    if eligible:
+        selected = sorted(
+            eligible,
+            key=lambda item: (
