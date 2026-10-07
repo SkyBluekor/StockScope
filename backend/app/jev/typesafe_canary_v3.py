@@ -755,4 +755,288 @@ def select_threshold_from_selection(
     if eligible:
         selected = sorted(
             eligible,
-            key=lambda item: (
+            key=lambda item: (                item["soft_review_required_count"],
+                -item["threshold_strategy"],
+            ),
+        )[0]
+    return {"candidates": candidates, "selected": selected}
+
+
+def evaluate_locked_threshold(
+    records: list[dict[str, Any]],
+    artifact: dict[str, Any],
+    selected: dict[str, Any],
+) -> dict[str, Any]:
+    return _metrics_for_threshold(
+        records,
+        artifact,
+        float(selected["threshold_strategy"]),
+    )
+
+
+def _blocked_report(artifact: dict[str, Any], code: str) -> dict[str, Any]:
+    now = datetime.now(timezone.utc).isoformat()
+    return {
+        "report_version": CANARY_V3_REPORT_VERSION,
+        "status": "BLOCKED",
+        "canary_protocol_id": CANARY_V3_PROTOCOL_ID,
+        "canary_protocol_hash": artifact["protocol_hash"],
+        "started_at": now,
+        "completed_at": now,
+        "api_attempts": {
+            "model_discovery": 0,
+            "systemone": 0,
+            "total": 0,
+            "hard_cap": MAX_TOTAL_API_ATTEMPTS,
+        },
+        "systemone_counts": {
+            "planned": MAX_SYSTEM_ONE_ATTEMPTS,
+            "attempted": 0,
+            "completed": 0,
+            "valid": 0,
+            "failed": 0,
+        },
+        "errors": [code],
+        "real_stock_data_sent": False,
+        "actual_trial_activation": False,
+        "final_threshold_frozen": False,
+        "trial_freeze_readiness": "BLOCKED_PREFLIGHT",
+    }
+
+
+async def run_real_canary_v3(
+    *,
+    per_call_reservation_usd: float | None,
+    model_override: str | None = None,
+    transport: httpx.AsyncBaseTransport | None = None,
+    deadline_seconds: float = CANARY_V3_DEADLINE_SECONDS,
+) -> dict[str, Any]:
+    artifact = load_frozen_canary_v3_protocol()
+    if (
+        per_call_reservation_usd is None
+        or isinstance(per_call_reservation_usd, bool)
+        or not math.isfinite(float(per_call_reservation_usd))
+        or float(per_call_reservation_usd) <= 0.0
+    ):
+        return _blocked_report(artifact, "BLOCKED_COST_RESERVATION_UNVERIFIED")
+    reservation = float(per_call_reservation_usd)
+    if reservation * MAX_SYSTEM_ONE_ATTEMPTS > CANARY_V3_API_BUDGET_USD:
+        return _blocked_report(artifact, "BLOCKED_COST_RESERVATION_EXCEEDS_BUDGET")
+
+    started = datetime.now(timezone.utc).isoformat()
+    errors: list[str] = []
+    attempts = {"model_discovery": 1, "systemone": 0}
+    counts = {
+        "planned": MAX_SYSTEM_ONE_ATTEMPTS,
+        "attempted": 0,
+        "completed": 0,
+        "valid": 0,
+        "failed": 0,
+    }
+    reserved_exposure = 0.0
+    try:
+        models = await discover_typesafe_models(
+            deadline_seconds=deadline_seconds,
+            transport=transport,
+        )
+        selected_model = select_canary_v3_model(models, override=model_override)
+    except (TypeSafeJevProviderError, TypeSafeCanaryV3Error) as exc:
+        code = exc.code if hasattr(exc, "code") else "CANARY_V3_MODEL_DISCOVERY_FAILED"
+        completed = datetime.now(timezone.utc).isoformat()
+        return {
+            **_blocked_report(artifact, code),
+            "status": "FAIL",
+            "started_at": started,
+            "completed_at": completed,
+            "api_attempts": {
+                "model_discovery": 1,
+                "systemone": 0,
+                "total": 1,
+                "hard_cap": MAX_TOTAL_API_ATTEMPTS,
+            },
+        }
+
+    provider = TypeSafeSystemOneProvider(
+        model_id=selected_model["name"],
+        transport=transport,
+    )
+    observed_model: str | None = None
+    records_by_partition: dict[str, list[dict[str, Any]]] = {
+        "selection": [],
+        "validation": [],
+    }
+
+    async def run_partition(partition: str) -> bool:
+        nonlocal observed_model, reserved_exposure
+        fixtures = _callable(_partition(artifact["spec"]["fixtures"], partition))
+        for repetition in range(1, CANARY_V3_REPETITIONS + 1):
+            for fixture in _partition_order(fixtures, repetition):
+                if counts["attempted"] >= MAX_SYSTEM_ONE_ATTEMPTS:
+                    errors.append("CANARY_V3_SYSTEMONE_ATTEMPT_CAP_REACHED")
+                    return False
+                if reserved_exposure + reservation > CANARY_V3_API_BUDGET_USD:
+                    errors.append("CANARY_V3_BUDGET_RESERVATION_BLOCKED")
+                    return False
+
+                reserved_exposure += reservation
+                counts["attempted"] += 1
+                attempts["systemone"] += 1
+                request = {
+                    "state": fixture["projected_state"],
+                    "questions": build_typesafe_questions_v3(),
+                    "model": selected_model["name"],
+                }
+                before = time.perf_counter()
+                try:
+                    result = await provider.review(
+                        request,
+                        deadline_seconds=deadline_seconds,
+                    )
+                    counts["completed"] += 1
+                    normalized = validate_system_one_response(
+                        result.raw_response,
+                        expected_model_returned=observed_model,
+                        expected_question_ids=JEV_TYPESAFE_QUESTION_IDS_V3,
+                    )
+                except TypeSafeJevProviderError as exc:
+                    counts["failed"] += 1
+                    if exc.code == "TYPESAFE_MODEL_IDENTITY_CHANGED":
+                        errors.append("CANARY_V3_MODEL_IDENTITY_CHANGED")
+                    else:
+                        errors.append(exc.code)
+                    return False
+                latency_ms = int(round((time.perf_counter() - before) * 1000))
+                if observed_model is None:
+                    observed_model = str(normalized["model"])
+                counts["valid"] += 1
+                records_by_partition[partition].append(
+                    {
+                        "fixture_id": fixture["fixture_id"],
+                        "partition": partition,
+                        "projected_state_hash": fixture["projected_state_hash"],
+                        "repetition": repetition,
+                        "model_requested": selected_model["name"],
+                        "model_returned": normalized["model"],
+                        "probability": normalized["probabilities"]["strategy_context_conflict"],
+                        "usage": normalized["usage"],
+                        "latency_ms": latency_ms,
+                    }
+                )
+        return True
+
+    selection_complete = await run_partition("selection")
+    selection_analysis = select_threshold_from_selection(
+        records_by_partition["selection"],
+        artifact,
+    )
+    selected_threshold = selection_analysis["selected"]
+    validation_analysis = None
+
+    if not selection_complete or len(records_by_partition["selection"]) != 36:
+        errors.append("CANARY_V3_SELECTION_INCOMPLETE")
+    elif selected_threshold is None:
+        errors.append("CANARY_V3_NO_ELIGIBLE_THRESHOLD")
+    else:
+        validation_complete = await run_partition("validation")
+        if not validation_complete or len(records_by_partition["validation"]) != 36:
+            errors.append("CANARY_V3_VALIDATION_INCOMPLETE")
+        else:
+            validation_analysis = evaluate_locked_threshold(
+                records_by_partition["validation"],
+                artifact,
+                selected_threshold,
+            )
+            if not validation_analysis["eligible"]:
+                errors.append("CANARY_V3_VALIDATION_FAILED")
+
+    all_records = records_by_partition["selection"] + records_by_partition["validation"]
+    input_tokens = sum(int(item["usage"]["input_tokens"]) for item in all_records)
+    output_tokens = sum(int(item["usage"]["output_tokens"]) for item in all_records)
+    status = "PASS" if not errors else "FAIL"
+    completed = datetime.now(timezone.utc).isoformat()
+    binding = {
+        "artifact_version": CANARY_V3_MODEL_BINDING_VERSION,
+        "status": "OBSERVED_CANARY_BINDING" if all_records else "DISCOVERY_ONLY",
+        "checked_at": completed,
+        "provider_id": JEV_TYPESAFE_PROVIDER_ID,
+        "available_models": [
+            {**item, "request_channel_class": classify_model_channel(item)}
+            for item in models
+        ],
+        "selected_request_model": selected_model["name"],
+        "request_channel_class": selected_model["request_channel_class"],
+        "selected_release_date": selected_model.get("release_date"),
+        "observed_response_model": observed_model,
+        "discovery_hash": digest_json(models),
+        "canary_protocol_hash": artifact["protocol_hash"],
+    }
+    return {
+        "report_version": CANARY_V3_REPORT_VERSION,
+        "status": status,
+        "canary_protocol_id": CANARY_V3_PROTOCOL_ID,
+        "canary_protocol_hash": artifact["protocol_hash"],
+        "started_at": started,
+        "completed_at": completed,
+        "model_binding": binding,
+        "api_attempts": {
+            "model_discovery": attempts["model_discovery"],
+            "systemone": attempts["systemone"],
+            "total": attempts["model_discovery"] + attempts["systemone"],
+            "hard_cap": MAX_TOTAL_API_ATTEMPTS,
+        },
+        "systemone_counts": counts,
+        "budget": {
+            "hard_budget_usd": CANARY_V3_API_BUDGET_USD,
+            "per_call_reservation_usd": reservation,
+            "reserved_exposure_usd": reserved_exposure,
+            "actual_provider_cost_usd": None,
+            "actual_provider_cost_status": "UNKNOWN",
+        },
+        "usage": {"input_tokens": input_tokens, "output_tokens": output_tokens},
+        "selection_analysis": selection_analysis,
+        "selected_threshold": (
+            {"threshold_strategy": selected_threshold["threshold_strategy"]}
+            if selected_threshold is not None
+            else None
+        ),
+        "validation_analysis": validation_analysis,
+        "records": records_by_partition,
+        "errors": sorted(set(errors)),
+        "real_stock_data_sent": False,
+        "actual_trial_activation": False,
+        "final_threshold_frozen": False,
+        "trial_freeze_readiness": (
+            "READY_FOR_TRIAL_POLICY_BINDING"
+            if status == "PASS"
+            else "BLOCKED_CANARY_FAILED"
+        ),
+        "account_policy_binding": "NOT_VERIFIED_BY_CANARY",
+    }
+
+
+def _safe_report_path() -> Path:
+    return (
+        CANARY_V3_VALIDATION_DIR
+        / f"JEV_TYPESAFE_CANARY_V3_{date.today().isoformat()}.json"
+    )
+
+
+def write_canary_v3_outputs(
+    report: dict[str, Any],
+    *,
+    report_path: Path | None = None,
+    binding_path: Path = CANARY_V3_MODEL_BINDING_PATH,
+) -> tuple[Path, Path]:
+    path = Path(report_path or _safe_report_path())
+    path.parent.mkdir(parents=True, exist_ok=True)
+    binding_path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    binding_path.write_text(
+        json.dumps(report.get("model_binding") or {}, ensure_ascii=False, indent=2)
+        + "\n",
+        encoding="utf-8",
+    )
+    return path, binding_path
