@@ -237,7 +237,9 @@ export default function App() {
   const [apiStatus, setApiStatus] = useState("확인 중");
   const [theme, setTheme] = useState<ThemeMode>(initialTheme);
   const [jevReviewFeature, setJevReviewFeature] = useState<JevReviewFeature | null>(null);
-  const [jevReviewEnabled, setJevReviewEnabled] = useState(false);
+  const [jevReviewEnabled, setJevReviewEnabled] = useState(
+    () => window.localStorage.getItem("stockscope-jev-review-enabled") === "on",
+  );
 
   useEffect(() => {
     const favicon = document.getElementById("stockscope-favicon") as HTMLLinkElement | null;
@@ -252,17 +254,10 @@ export default function App() {
       .then((feature) => {
         if (cancelled) return;
         setJevReviewFeature(feature);
-        const available = feature.available === true && feature.feature_status === "ACTIVE";
-        if (!available) {
-          setJevReviewEnabled(false);
-          return;
-        }
-        setJevReviewEnabled(window.localStorage.getItem("stockscope-jev-review-enabled") === "on");
       })
       .catch(() => {
         if (cancelled) return;
         setJevReviewFeature(null);
-        setJevReviewEnabled(false);
       });
     return () => {
       cancelled = true;
@@ -864,8 +859,6 @@ const strategyName: Record<string, string> = {
   }
 
   function toggleJevReview() {
-    const available = jevReviewFeature?.available === true && jevReviewFeature.feature_status === "ACTIVE";
-    if (!available) return;
     setJevReviewEnabled((current) => {
       const next = !current;
       window.localStorage.setItem("stockscope-jev-review-enabled", next ? "on" : "off");
@@ -931,17 +924,20 @@ const strategyName: Record<string, string> = {
           <button
             type="button"
             className={`jev-mode-toggle ${jevReviewEnabled ? "on" : "off"}`}
-            disabled={!(jevReviewFeature?.available === true && jevReviewFeature.feature_status === "ACTIVE")}
             onClick={toggleJevReview}
             aria-pressed={jevReviewEnabled}
-            aria-label={`Jev 검토 ${jevReviewEnabled ? "켜짐" : "꺼짐"}`}
+            aria-label={`AI 보조 검토 ${jevReviewEnabled ? "켜짐" : "꺼짐"}`}
             title={
               jevReviewFeature?.available === true && jevReviewFeature.feature_status === "ACTIVE"
-                ? "Jev 추가 검토 모드를 켜거나 끕니다."
-                : "검증 완료 후 사용할 수 있습니다."
+                ? jevReviewEnabled
+                  ? "AI가 전략 조건의 의미를 한 번 더 확인합니다. 기본 분석 결과는 변경하지 않습니다."
+                  : "StockScope 기본 분석만 사용합니다."
+                : jevReviewEnabled
+                  ? "AI 보조 검토 설정은 켜져 있습니다. 실제 AI 검토는 기능 검증 완료 후 적용됩니다."
+                  : "AI 보조 검토를 켜면 기능 검증 완료 후 전략 조건의 의미를 한 번 더 확인합니다."
             }
           >
-            <span className="jev-mode-label">Jev 검토</span>
+            <span className="jev-mode-label">AI 보조 검토</span>
             <b className="jev-mode-state">{jevReviewEnabled ? "ON" : "OFF"}</b>
             <span className="jev-mode-switch" aria-hidden="true"><i /></span>
           </button>

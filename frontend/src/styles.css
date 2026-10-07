@@ -10782,8 +10782,7 @@ th { font-size: 14px; }
   white-space: nowrap;
   cursor: pointer;
 }
-.jev-mode-toggle:hover:not(:disabled) { border-color: var(--primary); }
-.jev-mode-toggle:disabled { cursor: not-allowed; opacity: .68; }
+.jev-mode-toggle:hover { border-color: var(--primary); }
 .jev-mode-label { font-size: 14px; }
 .jev-mode-state {
   min-width: 26px;
