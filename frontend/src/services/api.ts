@@ -2248,7 +2248,6 @@ export type MultiStrategyRecommendation = {
   additional_warnings?: string[];
   change_conditions: string[];
   change_condition_details: MultiStrategyConditionDetail[];
-  ai_review_presentation?: ScannerAiReviewPresentation | null;
   user_action: {
     user_task: string;
     title: string;
@@ -2934,6 +2933,7 @@ export type ScannerCandidate = {
   historical_evidence?: ScannerHistoricalEvidence | null;
   priority?: ScannerCandidatePriority | null;
   entry_risk_guide?: ConcreteEntryRiskGuide | null;
+  ai_review_presentation?: ScannerAiReviewPresentation | null;
   user_action: {
     title: string | null;
     detail: string | null;
