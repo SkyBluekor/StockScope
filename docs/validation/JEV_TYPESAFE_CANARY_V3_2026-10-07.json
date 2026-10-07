@@ -1,0 +1,1162 @@
+{
+  "report_version": "JEV_TYPESAFE_CANARY_REPORT_V3",
+  "status": "FAIL",
+  "canary_protocol_id": "JEV-TYPESAFE-CANARY-V3",
+  "canary_protocol_hash": "3d1b711535e56931d9ba3e4e8d8db184e94f54f1f826d34478ad4bba8a09f356",
+  "started_at": "2026-10-07T01:10:12.393718+00:00",
+  "completed_at": "2026-10-07T01:10:45.337424+00:00",
+  "model_binding": {
+    "artifact_version": "JEV_TYPESAFE_MODEL_BINDING_ARTIFACT_V3",
+    "status": "OBSERVED_CANARY_BINDING",
+    "checked_at": "2026-10-07T01:10:45.337424+00:00",
+    "provider_id": "TYPESAFE_SYSTEM_ONE",
+    "available_models": [
+      {
+        "name": "jev-latest",
+        "description": "The latest iteration of TypeSafe's System One Model: Jev",
+        "release_date": "2026-09-10T18:38:01.391457+00:00",
+        "request_channel_class": "STABLE_ALIAS"
+      },
+      {
+        "name": "jev-preview",
+        "description": "A preview version of `jev-latest`: should be better in most ways",
+        "release_date": "2026-09-10T18:39:06.057655+00:00",
+        "request_channel_class": "PREVIEW_ALIAS"
+      }
+    ],
+    "selected_request_model": "jev-latest",
+    "request_channel_class": "STABLE_ALIAS",
+    "selected_release_date": "2026-09-10T18:38:01.391457+00:00",
+    "observed_response_model": "jev-1.13.0",
+    "discovery_hash": "cc4c152d747bd139de424fe589e807c59f31dd411a90ff61e37a55e0ae892f8a",
+    "canary_protocol_hash": "3d1b711535e56931d9ba3e4e8d8db184e94f54f1f826d34478ad4bba8a09f356"
+  },
+  "api_attempts": {
+    "model_discovery": 1,
+    "systemone": 72,
+    "total": 73,
+    "hard_cap": 73
+  },
+  "systemone_counts": {
+    "planned": 72,
+    "attempted": 72,
+    "completed": 72,
+    "valid": 72,
+    "failed": 0
+  },
+  "budget": {
+    "hard_budget_usd": 0.25,
+    "per_call_reservation_usd": 0.001,
+    "reserved_exposure_usd": 0.07200000000000005,
+    "actual_provider_cost_usd": null,
+    "actual_provider_cost_status": "UNKNOWN"
+  },
+  "usage": {
+    "input_tokens": 44043,
+    "output_tokens": 1656
+  },
+  "selection_analysis": {
+    "candidates": [
+      {
+        "threshold_strategy": 0.5,
+        "hard_proposition_checks": 30,
+        "hard_proposition_mismatches": 0,
+        "hard_false_reviews": 0,
+        "hard_missed_reviews": 0,
+        "hard_disposition_reason_errors": 0,
+        "review_required_count": 12,
+        "soft_review_required_count": 0,
+        "abstain_count": 0,
+        "disposition_crossing": 0,
+        "reason_crossing": 0,
+        "hard_gate_crossing": 0,
+        "eligible": true
+      },
+      {
+        "threshold_strategy": 0.7,
+        "hard_proposition_checks": 30,
+        "hard_proposition_mismatches": 0,
+        "hard_false_reviews": 0,
+        "hard_missed_reviews": 0,
+        "hard_disposition_reason_errors": 0,
+        "review_required_count": 12,
+        "soft_review_required_count": 0,
+        "abstain_count": 0,
+        "disposition_crossing": 0,
+        "reason_crossing": 0,
+        "hard_gate_crossing": 0,
+        "eligible": true
+      },
+      {
+        "threshold_strategy": 0.9,
+        "hard_proposition_checks": 30,
+        "hard_proposition_mismatches": 0,
+        "hard_false_reviews": 0,
+        "hard_missed_reviews": 0,
+        "hard_disposition_reason_errors": 0,
+        "review_required_count": 12,
+        "soft_review_required_count": 0,
+        "abstain_count": 0,
+        "disposition_crossing": 0,
+        "reason_crossing": 0,
+        "hard_gate_crossing": 0,
+        "eligible": true
+      }
+    ],
+    "selected": {
+      "threshold_strategy": 0.9,
+      "hard_proposition_checks": 30,
+      "hard_proposition_mismatches": 0,
+      "hard_false_reviews": 0,
+      "hard_missed_reviews": 0,
+      "hard_disposition_reason_errors": 0,
+      "review_required_count": 12,
+      "soft_review_required_count": 0,
+      "abstain_count": 0,
+      "disposition_crossing": 0,
+      "reason_crossing": 0,
+      "hard_gate_crossing": 0,
+      "eligible": true
+    }
+  },
+  "selected_threshold": {
+    "threshold_strategy": 0.9
+  },
+  "validation_analysis": {
+    "threshold_strategy": 0.9,
+    "hard_proposition_checks": 30,
+    "hard_proposition_mismatches": 12,
+    "hard_false_reviews": 0,
+    "hard_missed_reviews": 12,
+    "hard_disposition_reason_errors": 12,
+    "review_required_count": 0,
+    "soft_review_required_count": 0,
+    "abstain_count": 0,
+    "disposition_crossing": 0,
+    "reason_crossing": 0,
+    "hard_gate_crossing": 0,
+    "eligible": false
+  },
+  "records": {
+    "selection": [
+      {
+        "fixture_id": "v3-s01",
+        "partition": "selection",
+        "projected_state_hash": "49bcb6f2ca9f2e50ebae2af87f4957294f6626c52ec4b7817b37283860d607e7",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.05,
+        "usage": {
+          "input_tokens": 628,
+          "output_tokens": 23
+        },
+        "latency_ms": 390
+      },
+      {
+        "fixture_id": "v3-s02",
+        "partition": "selection",
+        "projected_state_hash": "c9ceee32f5743dd5d8facd3ee424374ba42cbe26ed1c7dcc3ac9a43c574645bb",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.11,
+        "usage": {
+          "input_tokens": 636,
+          "output_tokens": 23
+        },
+        "latency_ms": 423
+      },
+      {
+        "fixture_id": "v3-s03",
+        "partition": "selection",
+        "projected_state_hash": "4e49c136417b7343505ed23ac0076de87cde4d05cb6a6c73d6b387ee522e205f",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.05,
+        "usage": {
+          "input_tokens": 632,
+          "output_tokens": 23
+        },
+        "latency_ms": 391
+      },
+      {
+        "fixture_id": "v3-s04",
+        "partition": "selection",
+        "projected_state_hash": "3c87c65ca7c87128dd04b4db7815c4e7d88915356ec9c5c8bae636c44b8522e3",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.06,
+        "usage": {
+          "input_tokens": 630,
+          "output_tokens": 23
+        },
+        "latency_ms": 393
+      },
+      {
+        "fixture_id": "v3-s05",
+        "partition": "selection",
+        "projected_state_hash": "8ebfee3f122d7ed919f093b753c48c70201d894db951218a1d675b6a0d12dfd3",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.91,
+        "usage": {
+          "input_tokens": 570,
+          "output_tokens": 23
+        },
+        "latency_ms": 452
+      },
+      {
+        "fixture_id": "v3-s06",
+        "partition": "selection",
+        "projected_state_hash": "bdc7b4877d641a70abfc3ac5df6dfd8a07820b77ae6cf596ce660fa993281128",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.93,
+        "usage": {
+          "input_tokens": 632,
+          "output_tokens": 23
+        },
+        "latency_ms": 430
+      },
+      {
+        "fixture_id": "v3-s07",
+        "partition": "selection",
+        "projected_state_hash": "708b0893b1ace83f1bb2a85a3533b9ee394bb4a580a3ababc4ce0d6d289e485d",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.92,
+        "usage": {
+          "input_tokens": 608,
+          "output_tokens": 23
+        },
+        "latency_ms": 442
+      },
+      {
+        "fixture_id": "v3-s08",
+        "partition": "selection",
+        "projected_state_hash": "708b0893b1ace83f1bb2a85a3533b9ee394bb4a580a3ababc4ce0d6d289e485d",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.92,
+        "usage": {
+          "input_tokens": 608,
+          "output_tokens": 23
+        },
+        "latency_ms": 464
+      },
+      {
+        "fixture_id": "v3-s09",
+        "partition": "selection",
+        "projected_state_hash": "558483823d28f2218db822d8ca902382d9504108b94482dcc932037a90f20502",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.06,
+        "usage": {
+          "input_tokens": 633,
+          "output_tokens": 23
+        },
+        "latency_ms": 434
+      },
+      {
+        "fixture_id": "v3-s10",
+        "partition": "selection",
+        "projected_state_hash": "558483823d28f2218db822d8ca902382d9504108b94482dcc932037a90f20502",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.06,
+        "usage": {
+          "input_tokens": 633,
+          "output_tokens": 23
+        },
+        "latency_ms": 432
+      },
+      {
+        "fixture_id": "v3-s11",
+        "partition": "selection",
+        "projected_state_hash": "50e5fef3f63a95d5fed689c62e4efb2821c2f57b950034e8493fe8aa9bc48895",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.19,
+        "usage": {
+          "input_tokens": 567,
+          "output_tokens": 23
+        },
+        "latency_ms": 455
+      },
+      {
+        "fixture_id": "v3-s12",
+        "partition": "selection",
+        "projected_state_hash": "e729f620fce5064dce2b6080e9803db2ec0eff3ab09c8ccba880b2010aaf7cb3",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.1,
+        "usage": {
+          "input_tokens": 541,
+          "output_tokens": 23
+        },
+        "latency_ms": 443
+      },
+      {
+        "fixture_id": "v3-s12",
+        "partition": "selection",
+        "projected_state_hash": "e729f620fce5064dce2b6080e9803db2ec0eff3ab09c8ccba880b2010aaf7cb3",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.1,
+        "usage": {
+          "input_tokens": 541,
+          "output_tokens": 23
+        },
+        "latency_ms": 395
+      },
+      {
+        "fixture_id": "v3-s11",
+        "partition": "selection",
+        "projected_state_hash": "50e5fef3f63a95d5fed689c62e4efb2821c2f57b950034e8493fe8aa9bc48895",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.22,
+        "usage": {
+          "input_tokens": 567,
+          "output_tokens": 23
+        },
+        "latency_ms": 420
+      },
+      {
+        "fixture_id": "v3-s10",
+        "partition": "selection",
+        "projected_state_hash": "558483823d28f2218db822d8ca902382d9504108b94482dcc932037a90f20502",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.06,
+        "usage": {
+          "input_tokens": 633,
+          "output_tokens": 23
+        },
+        "latency_ms": 443
+      },
+      {
+        "fixture_id": "v3-s09",
+        "partition": "selection",
+        "projected_state_hash": "558483823d28f2218db822d8ca902382d9504108b94482dcc932037a90f20502",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.06,
+        "usage": {
+          "input_tokens": 633,
+          "output_tokens": 23
+        },
+        "latency_ms": 425
+      },
+      {
+        "fixture_id": "v3-s08",
+        "partition": "selection",
+        "projected_state_hash": "708b0893b1ace83f1bb2a85a3533b9ee394bb4a580a3ababc4ce0d6d289e485d",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.94,
+        "usage": {
+          "input_tokens": 608,
+          "output_tokens": 23
+        },
+        "latency_ms": 446
+      },
+      {
+        "fixture_id": "v3-s07",
+        "partition": "selection",
+        "projected_state_hash": "708b0893b1ace83f1bb2a85a3533b9ee394bb4a580a3ababc4ce0d6d289e485d",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.92,
+        "usage": {
+          "input_tokens": 608,
+          "output_tokens": 23
+        },
+        "latency_ms": 464
+      },
+      {
+        "fixture_id": "v3-s06",
+        "partition": "selection",
+        "projected_state_hash": "bdc7b4877d641a70abfc3ac5df6dfd8a07820b77ae6cf596ce660fa993281128",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.94,
+        "usage": {
+          "input_tokens": 632,
+          "output_tokens": 23
+        },
+        "latency_ms": 478
+      },
+      {
+        "fixture_id": "v3-s05",
+        "partition": "selection",
+        "projected_state_hash": "8ebfee3f122d7ed919f093b753c48c70201d894db951218a1d675b6a0d12dfd3",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.92,
+        "usage": {
+          "input_tokens": 570,
+          "output_tokens": 23
+        },
+        "latency_ms": 425
+      },
+      {
+        "fixture_id": "v3-s04",
+        "partition": "selection",
+        "projected_state_hash": "3c87c65ca7c87128dd04b4db7815c4e7d88915356ec9c5c8bae636c44b8522e3",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.06,
+        "usage": {
+          "input_tokens": 630,
+          "output_tokens": 23
+        },
+        "latency_ms": 446
+      },
+      {
+        "fixture_id": "v3-s03",
+        "partition": "selection",
+        "projected_state_hash": "4e49c136417b7343505ed23ac0076de87cde4d05cb6a6c73d6b387ee522e205f",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.05,
+        "usage": {
+          "input_tokens": 632,
+          "output_tokens": 23
+        },
+        "latency_ms": 437
+      },
+      {
+        "fixture_id": "v3-s02",
+        "partition": "selection",
+        "projected_state_hash": "c9ceee32f5743dd5d8facd3ee424374ba42cbe26ed1c7dcc3ac9a43c574645bb",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.11,
+        "usage": {
+          "input_tokens": 636,
+          "output_tokens": 23
+        },
+        "latency_ms": 417
+      },
+      {
+        "fixture_id": "v3-s01",
+        "partition": "selection",
+        "projected_state_hash": "49bcb6f2ca9f2e50ebae2af87f4957294f6626c52ec4b7817b37283860d607e7",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.05,
+        "usage": {
+          "input_tokens": 628,
+          "output_tokens": 23
+        },
+        "latency_ms": 490
+      },
+      {
+        "fixture_id": "v3-s02",
+        "partition": "selection",
+        "projected_state_hash": "c9ceee32f5743dd5d8facd3ee424374ba42cbe26ed1c7dcc3ac9a43c574645bb",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.1,
+        "usage": {
+          "input_tokens": 636,
+          "output_tokens": 23
+        },
+        "latency_ms": 409
+      },
+      {
+        "fixture_id": "v3-s03",
+        "partition": "selection",
+        "projected_state_hash": "4e49c136417b7343505ed23ac0076de87cde4d05cb6a6c73d6b387ee522e205f",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.05,
+        "usage": {
+          "input_tokens": 632,
+          "output_tokens": 23
+        },
+        "latency_ms": 515
+      },
+      {
+        "fixture_id": "v3-s04",
+        "partition": "selection",
+        "projected_state_hash": "3c87c65ca7c87128dd04b4db7815c4e7d88915356ec9c5c8bae636c44b8522e3",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.06,
+        "usage": {
+          "input_tokens": 630,
+          "output_tokens": 23
+        },
+        "latency_ms": 384
+      },
+      {
+        "fixture_id": "v3-s05",
+        "partition": "selection",
+        "projected_state_hash": "8ebfee3f122d7ed919f093b753c48c70201d894db951218a1d675b6a0d12dfd3",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.91,
+        "usage": {
+          "input_tokens": 570,
+          "output_tokens": 23
+        },
+        "latency_ms": 419
+      },
+      {
+        "fixture_id": "v3-s06",
+        "partition": "selection",
+        "projected_state_hash": "bdc7b4877d641a70abfc3ac5df6dfd8a07820b77ae6cf596ce660fa993281128",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.93,
+        "usage": {
+          "input_tokens": 632,
+          "output_tokens": 23
+        },
+        "latency_ms": 447
+      },
+      {
+        "fixture_id": "v3-s07",
+        "partition": "selection",
+        "projected_state_hash": "708b0893b1ace83f1bb2a85a3533b9ee394bb4a580a3ababc4ce0d6d289e485d",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.93,
+        "usage": {
+          "input_tokens": 608,
+          "output_tokens": 23
+        },
+        "latency_ms": 436
+      },
+      {
+        "fixture_id": "v3-s08",
+        "partition": "selection",
+        "projected_state_hash": "708b0893b1ace83f1bb2a85a3533b9ee394bb4a580a3ababc4ce0d6d289e485d",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.92,
+        "usage": {
+          "input_tokens": 608,
+          "output_tokens": 23
+        },
+        "latency_ms": 388
+      },
+      {
+        "fixture_id": "v3-s09",
+        "partition": "selection",
+        "projected_state_hash": "558483823d28f2218db822d8ca902382d9504108b94482dcc932037a90f20502",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.06,
+        "usage": {
+          "input_tokens": 633,
+          "output_tokens": 23
+        },
+        "latency_ms": 428
+      },
+      {
+        "fixture_id": "v3-s10",
+        "partition": "selection",
+        "projected_state_hash": "558483823d28f2218db822d8ca902382d9504108b94482dcc932037a90f20502",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.06,
+        "usage": {
+          "input_tokens": 633,
+          "output_tokens": 23
+        },
+        "latency_ms": 445
+      },
+      {
+        "fixture_id": "v3-s11",
+        "partition": "selection",
+        "projected_state_hash": "50e5fef3f63a95d5fed689c62e4efb2821c2f57b950034e8493fe8aa9bc48895",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.18,
+        "usage": {
+          "input_tokens": 567,
+          "output_tokens": 23
+        },
+        "latency_ms": 444
+      },
+      {
+        "fixture_id": "v3-s12",
+        "partition": "selection",
+        "projected_state_hash": "e729f620fce5064dce2b6080e9803db2ec0eff3ab09c8ccba880b2010aaf7cb3",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.1,
+        "usage": {
+          "input_tokens": 541,
+          "output_tokens": 23
+        },
+        "latency_ms": 410
+      },
+      {
+        "fixture_id": "v3-s01",
+        "partition": "selection",
+        "projected_state_hash": "49bcb6f2ca9f2e50ebae2af87f4957294f6626c52ec4b7817b37283860d607e7",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.06,
+        "usage": {
+          "input_tokens": 628,
+          "output_tokens": 23
+        },
+        "latency_ms": 451
+      }
+    ],
+    "validation": [
+      {
+        "fixture_id": "v3-v01",
+        "partition": "validation",
+        "projected_state_hash": "1692eef57a52ef2ba9d7e0d6c01f029f9af4ae7b54fa919ea538ac60d8f064e9",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.09,
+        "usage": {
+          "input_tokens": 630,
+          "output_tokens": 23
+        },
+        "latency_ms": 467
+      },
+      {
+        "fixture_id": "v3-v02",
+        "partition": "validation",
+        "projected_state_hash": "83ef0d40d5ae836aa39258cea035871a9e424f8eff94b3f4d44f20dd8d897bfc",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.06,
+        "usage": {
+          "input_tokens": 634,
+          "output_tokens": 23
+        },
+        "latency_ms": 521
+      },
+      {
+        "fixture_id": "v3-v03",
+        "partition": "validation",
+        "projected_state_hash": "a400f8921c4d0a7d6d5d6737116dc7148223d249f3237062d9541098d31edf25",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.07,
+        "usage": {
+          "input_tokens": 608,
+          "output_tokens": 23
+        },
+        "latency_ms": 462
+      },
+      {
+        "fixture_id": "v3-v04",
+        "partition": "validation",
+        "projected_state_hash": "309ebde45fd618c47ab84cd228ec36e1bffa3fb79d129fa84e556dceb875019c",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.06,
+        "usage": {
+          "input_tokens": 623,
+          "output_tokens": 23
+        },
+        "latency_ms": 545
+      },
+      {
+        "fixture_id": "v3-v05",
+        "partition": "validation",
+        "projected_state_hash": "0645ddeff04a0c95a928bf2a7ccc7e04b71e9b26ce96c6c6f14bf1d6eb9264d7",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.86,
+        "usage": {
+          "input_tokens": 569,
+          "output_tokens": 23
+        },
+        "latency_ms": 449
+      },
+      {
+        "fixture_id": "v3-v06",
+        "partition": "validation",
+        "projected_state_hash": "b7308d2e23f7845691a37e55802fd6bffb378d04edf3ebad16cbf8ec08b0a057",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.26,
+        "usage": {
+          "input_tokens": 637,
+          "output_tokens": 23
+        },
+        "latency_ms": 441
+      },
+      {
+        "fixture_id": "v3-v07",
+        "partition": "validation",
+        "projected_state_hash": "aea510c5a2dd96796eb35fd526280d27a357bf05a4e922301cfa3631e575d5bb",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.74,
+        "usage": {
+          "input_tokens": 605,
+          "output_tokens": 23
+        },
+        "latency_ms": 425
+      },
+      {
+        "fixture_id": "v3-v08",
+        "partition": "validation",
+        "projected_state_hash": "aea510c5a2dd96796eb35fd526280d27a357bf05a4e922301cfa3631e575d5bb",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.78,
+        "usage": {
+          "input_tokens": 605,
+          "output_tokens": 23
+        },
+        "latency_ms": 521
+      },
+      {
+        "fixture_id": "v3-v09",
+        "partition": "validation",
+        "projected_state_hash": "bf7325abfd7ab8fa2eca369f78292a09ec8d4e92f6c18859fc2544fdf7b9654e",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.05,
+        "usage": {
+          "input_tokens": 632,
+          "output_tokens": 23
+        },
+        "latency_ms": 442
+      },
+      {
+        "fixture_id": "v3-v10",
+        "partition": "validation",
+        "projected_state_hash": "bf7325abfd7ab8fa2eca369f78292a09ec8d4e92f6c18859fc2544fdf7b9654e",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.05,
+        "usage": {
+          "input_tokens": 632,
+          "output_tokens": 23
+        },
+        "latency_ms": 411
+      },
+      {
+        "fixture_id": "v3-v11",
+        "partition": "validation",
+        "projected_state_hash": "914ee6c542c8bd1de8f395f73488f95ab93c5f1ed97c37499cb986a9737c6b62",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.07,
+        "usage": {
+          "input_tokens": 600,
+          "output_tokens": 23
+        },
+        "latency_ms": 395
+      },
+      {
+        "fixture_id": "v3-v12",
+        "partition": "validation",
+        "projected_state_hash": "76ddb1c2780db65feaa07f10c344fc741d36d155a8a0afa7c4a0502c9e22bfd7",
+        "repetition": 1,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.07,
+        "usage": {
+          "input_tokens": 588,
+          "output_tokens": 23
+        },
+        "latency_ms": 496
+      },
+      {
+        "fixture_id": "v3-v12",
+        "partition": "validation",
+        "projected_state_hash": "76ddb1c2780db65feaa07f10c344fc741d36d155a8a0afa7c4a0502c9e22bfd7",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.07,
+        "usage": {
+          "input_tokens": 588,
+          "output_tokens": 23
+        },
+        "latency_ms": 461
+      },
+      {
+        "fixture_id": "v3-v11",
+        "partition": "validation",
+        "projected_state_hash": "914ee6c542c8bd1de8f395f73488f95ab93c5f1ed97c37499cb986a9737c6b62",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.06,
+        "usage": {
+          "input_tokens": 600,
+          "output_tokens": 23
+        },
+        "latency_ms": 407
+      },
+      {
+        "fixture_id": "v3-v10",
+        "partition": "validation",
+        "projected_state_hash": "bf7325abfd7ab8fa2eca369f78292a09ec8d4e92f6c18859fc2544fdf7b9654e",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.05,
+        "usage": {
+          "input_tokens": 632,
+          "output_tokens": 23
+        },
+        "latency_ms": 439
+      },
+      {
+        "fixture_id": "v3-v09",
+        "partition": "validation",
+        "projected_state_hash": "bf7325abfd7ab8fa2eca369f78292a09ec8d4e92f6c18859fc2544fdf7b9654e",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.05,
+        "usage": {
+          "input_tokens": 632,
+          "output_tokens": 23
+        },
+        "latency_ms": 407
+      },
+      {
+        "fixture_id": "v3-v08",
+        "partition": "validation",
+        "projected_state_hash": "aea510c5a2dd96796eb35fd526280d27a357bf05a4e922301cfa3631e575d5bb",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.78,
+        "usage": {
+          "input_tokens": 605,
+          "output_tokens": 23
+        },
+        "latency_ms": 474
+      },
+      {
+        "fixture_id": "v3-v07",
+        "partition": "validation",
+        "projected_state_hash": "aea510c5a2dd96796eb35fd526280d27a357bf05a4e922301cfa3631e575d5bb",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.77,
+        "usage": {
+          "input_tokens": 605,
+          "output_tokens": 23
+        },
+        "latency_ms": 447
+      },
+      {
+        "fixture_id": "v3-v06",
+        "partition": "validation",
+        "projected_state_hash": "b7308d2e23f7845691a37e55802fd6bffb378d04edf3ebad16cbf8ec08b0a057",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.29,
+        "usage": {
+          "input_tokens": 637,
+          "output_tokens": 23
+        },
+        "latency_ms": 438
+      },
+      {
+        "fixture_id": "v3-v05",
+        "partition": "validation",
+        "projected_state_hash": "0645ddeff04a0c95a928bf2a7ccc7e04b71e9b26ce96c6c6f14bf1d6eb9264d7",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.86,
+        "usage": {
+          "input_tokens": 569,
+          "output_tokens": 23
+        },
+        "latency_ms": 464
+      },
+      {
+        "fixture_id": "v3-v04",
+        "partition": "validation",
+        "projected_state_hash": "309ebde45fd618c47ab84cd228ec36e1bffa3fb79d129fa84e556dceb875019c",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.06,
+        "usage": {
+          "input_tokens": 623,
+          "output_tokens": 23
+        },
+        "latency_ms": 480
+      },
+      {
+        "fixture_id": "v3-v03",
+        "partition": "validation",
+        "projected_state_hash": "a400f8921c4d0a7d6d5d6737116dc7148223d249f3237062d9541098d31edf25",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.07,
+        "usage": {
+          "input_tokens": 608,
+          "output_tokens": 23
+        },
+        "latency_ms": 545
+      },
+      {
+        "fixture_id": "v3-v02",
+        "partition": "validation",
+        "projected_state_hash": "83ef0d40d5ae836aa39258cea035871a9e424f8eff94b3f4d44f20dd8d897bfc",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.05,
+        "usage": {
+          "input_tokens": 634,
+          "output_tokens": 23
+        },
+        "latency_ms": 477
+      },
+      {
+        "fixture_id": "v3-v01",
+        "partition": "validation",
+        "projected_state_hash": "1692eef57a52ef2ba9d7e0d6c01f029f9af4ae7b54fa919ea538ac60d8f064e9",
+        "repetition": 2,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.11,
+        "usage": {
+          "input_tokens": 630,
+          "output_tokens": 23
+        },
+        "latency_ms": 422
+      },
+      {
+        "fixture_id": "v3-v02",
+        "partition": "validation",
+        "projected_state_hash": "83ef0d40d5ae836aa39258cea035871a9e424f8eff94b3f4d44f20dd8d897bfc",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.06,
+        "usage": {
+          "input_tokens": 634,
+          "output_tokens": 23
+        },
+        "latency_ms": 475
+      },
+      {
+        "fixture_id": "v3-v03",
+        "partition": "validation",
+        "projected_state_hash": "a400f8921c4d0a7d6d5d6737116dc7148223d249f3237062d9541098d31edf25",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.07,
+        "usage": {
+          "input_tokens": 608,
+          "output_tokens": 23
+        },
+        "latency_ms": 472
+      },
+      {
+        "fixture_id": "v3-v04",
+        "partition": "validation",
+        "projected_state_hash": "309ebde45fd618c47ab84cd228ec36e1bffa3fb79d129fa84e556dceb875019c",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.06,
+        "usage": {
+          "input_tokens": 623,
+          "output_tokens": 23
+        },
+        "latency_ms": 468
+      },
+      {
+        "fixture_id": "v3-v05",
+        "partition": "validation",
+        "projected_state_hash": "0645ddeff04a0c95a928bf2a7ccc7e04b71e9b26ce96c6c6f14bf1d6eb9264d7",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.86,
+        "usage": {
+          "input_tokens": 569,
+          "output_tokens": 23
+        },
+        "latency_ms": 523
+      },
+      {
+        "fixture_id": "v3-v06",
+        "partition": "validation",
+        "projected_state_hash": "b7308d2e23f7845691a37e55802fd6bffb378d04edf3ebad16cbf8ec08b0a057",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.35,
+        "usage": {
+          "input_tokens": 637,
+          "output_tokens": 23
+        },
+        "latency_ms": 440
+      },
+      {
+        "fixture_id": "v3-v07",
+        "partition": "validation",
+        "projected_state_hash": "aea510c5a2dd96796eb35fd526280d27a357bf05a4e922301cfa3631e575d5bb",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.75,
+        "usage": {
+          "input_tokens": 605,
+          "output_tokens": 23
+        },
+        "latency_ms": 555
+      },
+      {
+        "fixture_id": "v3-v08",
+        "partition": "validation",
+        "projected_state_hash": "aea510c5a2dd96796eb35fd526280d27a357bf05a4e922301cfa3631e575d5bb",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.74,
+        "usage": {
+          "input_tokens": 605,
+          "output_tokens": 23
+        },
+        "latency_ms": 423
+      },
+      {
+        "fixture_id": "v3-v09",
+        "partition": "validation",
+        "projected_state_hash": "bf7325abfd7ab8fa2eca369f78292a09ec8d4e92f6c18859fc2544fdf7b9654e",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.05,
+        "usage": {
+          "input_tokens": 632,
+          "output_tokens": 23
+        },
+        "latency_ms": 470
+      },
+      {
+        "fixture_id": "v3-v10",
+        "partition": "validation",
+        "projected_state_hash": "bf7325abfd7ab8fa2eca369f78292a09ec8d4e92f6c18859fc2544fdf7b9654e",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.05,
+        "usage": {
+          "input_tokens": 632,
+          "output_tokens": 23
+        },
+        "latency_ms": 469
+      },
+      {
+        "fixture_id": "v3-v11",
+        "partition": "validation",
+        "projected_state_hash": "914ee6c542c8bd1de8f395f73488f95ab93c5f1ed97c37499cb986a9737c6b62",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.06,
+        "usage": {
+          "input_tokens": 600,
+          "output_tokens": 23
+        },
+        "latency_ms": 460
+      },
+      {
+        "fixture_id": "v3-v12",
+        "partition": "validation",
+        "projected_state_hash": "76ddb1c2780db65feaa07f10c344fc741d36d155a8a0afa7c4a0502c9e22bfd7",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.07,
+        "usage": {
+          "input_tokens": 588,
+          "output_tokens": 23
+        },
+        "latency_ms": 493
+      },
+      {
+        "fixture_id": "v3-v01",
+        "partition": "validation",
+        "projected_state_hash": "1692eef57a52ef2ba9d7e0d6c01f029f9af4ae7b54fa919ea538ac60d8f064e9",
+        "repetition": 3,
+        "model_requested": "jev-latest",
+        "model_returned": "jev-1.13.0",
+        "probability": 0.1,
+        "usage": {
+          "input_tokens": 630,
+          "output_tokens": 23
+        },
+        "latency_ms": 492
+      }
+    ]
+  },
+  "errors": [
+    "CANARY_V3_VALIDATION_FAILED"
+  ],
+  "real_stock_data_sent": false,
+  "actual_trial_activation": false,
+  "final_threshold_frozen": false,
+  "trial_freeze_readiness": "BLOCKED_CANARY_FAILED",
+  "account_policy_binding": "NOT_VERIFIED_BY_CANARY"
+}
