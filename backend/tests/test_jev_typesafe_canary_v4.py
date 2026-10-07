@@ -227,6 +227,7 @@ def test_v4_validation_uses_only_locked_threshold_no_rescue() -> None:
 
 def test_v4_protocol_file_is_v2_canonical_and_exactly_frozen() -> None:
     runtime = validate_canary_v4_contract()
+    print("V4_PROTOCOL_JSON::" + json.dumps(runtime, ensure_ascii=False, separators=(",", ":")))
     stored = load_frozen_canary_v4_protocol()
     assert CANARY_V4_PROTOCOL_PATH.is_file()
     assert stored == runtime
