@@ -166,7 +166,7 @@ def _v4_protocol(db: Path) -> dict:
     return protocol
 
 
-def _rewrite_as_residual(db: Path, capture_id: str) -> str:
+def _insert_residual_sample(db: Path, capture_id: str) -> str:
     catalog = ProspectiveCatalog(db)
     sample = catalog.list_samples(capture_run_id=capture_id)[0]
     snapshot = sample["snapshot"]
@@ -212,14 +212,27 @@ def _rewrite_as_residual(db: Path, capture_id: str) -> str:
     with sqlite3.connect(db) as conn:
         conn.execute(
             """
-            UPDATE prospective_recommendation_sample
-            SET snapshot_json=?,snapshot_hash=?
-            WHERE capture_run_id=? AND sample_index=0
+            INSERT INTO prospective_recommendation_sample(
+                capture_run_id,sample_index,market,ticker,name,rank,
+                strategy,decision_status,candidate_state,action,
+                signal_date,snapshot_json,snapshot_hash,created_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
+                capture_id,
+                1,
+                sample["market"],
+                sample["ticker"],
+                sample["name"],
+                sample["rank"],
+                sample["strategy"],
+                sample["decision_status"],
+                sample["candidate_state"],
+                sample["action"],
+                sample["signal_date"],
                 canonical_json(snapshot),
                 snapshot_hash,
-                capture_id,
+                sample["created_at"],
             ),
         )
     return snapshot_hash
@@ -283,7 +296,10 @@ async def test_local_match_skips_provider_call(
         provider_override=provider,
     )
 
-    result = await service.request_review(capture_id=capture["id"])
+    result = await service.request_review(
+        capture_id=capture["id"],
+        sample_index=1,
+    )
 
     assert result["status"] == REVIEW_SKIPPED
     assert result["reason"] == "NO_RESIDUAL_SEMANTIC_REVIEW"
@@ -311,7 +327,7 @@ async def test_same_residual_snapshot_calls_provider_once_and_reuses_result(
             "action",
         )
     }
-    residual_snapshot_hash = _rewrite_as_residual(db, capture["id"])
+    residual_snapshot_hash = _insert_residual_sample(db, capture["id"])
     protocol = _v4_protocol(db)
     provider = CountingFakeProvider(
         probabilities={STRATEGY_RELATION_CONFLICT: 0.82},
@@ -324,8 +340,14 @@ async def test_same_residual_snapshot_calls_provider_once_and_reuses_result(
         provider_override=provider,
     )
 
-    first = await service.request_review(capture_id=capture["id"])
-    second = await service.request_review(capture_id=capture["id"])
+    first = await service.request_review(
+        capture_id=capture["id"],
+        sample_index=1,
+    )
+    second = await service.request_review(
+        capture_id=capture["id"],
+        sample_index=1,
+    )
 
     assert first["status"] == REVIEW_REQUIRED
     assert first["reused"] is False
@@ -335,14 +357,21 @@ async def test_same_residual_snapshot_calls_provider_once_and_reuses_result(
     assert second["review_identity"] == first["review_identity"]
     assert provider.calls == 1
 
-    after = ProspectiveCatalog(db).list_samples(
+    samples_after = ProspectiveCatalog(db).list_samples(
         capture_run_id=capture["id"]
-    )[0]
+    )
+    baseline_after = next(
+        item for item in samples_after if int(item["sample_index"]) == 0
+    )
+    residual_after = next(
+        item for item in samples_after if int(item["sample_index"]) == 1
+    )
     assert {
-        key: after[key]
+        key: baseline_after[key]
         for key in original_baseline_fields
     } == original_baseline_fields
-    assert after["snapshot_hash"] == residual_snapshot_hash
+    assert baseline_after["snapshot_hash"] == original_sample["snapshot_hash"]
+    assert residual_after["snapshot_hash"] == residual_snapshot_hash
 
 
 @pytest.mark.asyncio
@@ -351,7 +380,7 @@ async def test_provider_error_does_not_mutate_baseline(
 ) -> None:
     db = _db(tmp_path / "simulation.db")
     capture = _capture(db)
-    residual_snapshot_hash = _rewrite_as_residual(db, capture["id"])
+    residual_snapshot_hash = _insert_residual_sample(db, capture["id"])
     protocol = _v4_protocol(db)
     provider = CountingFakeProvider(
         returned_model="fake-jev-v4",
@@ -368,7 +397,10 @@ async def test_provider_error_does_not_mutate_baseline(
     assert result["status"] == "ERROR"
     assert provider.calls == 1
 
-    after = ProspectiveCatalog(db).list_samples(
+    samples_after = ProspectiveCatalog(db).list_samples(
         capture_run_id=capture["id"]
-    )[0]
-    assert after["snapshot_hash"] == residual_snapshot_hash
+    )
+    residual_after = next(
+        item for item in samples_after if int(item["sample_index"]) == 1
+    )
+    assert residual_after["snapshot_hash"] == residual_snapshot_hash
