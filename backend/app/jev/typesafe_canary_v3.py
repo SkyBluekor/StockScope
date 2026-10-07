@@ -454,7 +454,7 @@ def build_canary_v3_protocol_artifact() -> dict[str, Any]:
         "forbidden_wire_tokens": [
             "ticker", "name", "rank", "capture_id", "current_price",
             "entry_rule", "intent_role", "represented_role",
-            "local_entry_semantic_result", "risk", "stop", "target", "rr",
+            "local_entry_semantic_result", "risk", "stop", "target", "risk_reward_ratio",
             "fixture_id", "partition", "gold", "expected", "rationale",
             "future_outcome", "news", "holdings", "account", "user_id",
         ],
