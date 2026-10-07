@@ -23,6 +23,7 @@ from app.prospective import (
     ProspectiveReferenceCaptureService,
     ProspectiveService,
 )
+from app.jev.review_presentation import enrich_scanner_result_with_ai_presentation
 from app.horizon import (
     HorizonPolicyError,
     require_horizon_activatable,
@@ -647,6 +648,7 @@ async def _run_scanner_job(
                 prospective_capture.get("canonical_capture_id")
                 or prospective_capture.get("capture_id")
             )
+            enrich_scanner_result_with_ai_presentation(result)
             result["execution_mode"] = "BASELINE_ONLY"
             result["jev_shadow"] = {
                 "status": "NOT_REQUESTED",
