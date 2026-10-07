@@ -296,10 +296,7 @@ async def test_local_match_skips_provider_call(
         provider_override=provider,
     )
 
-    result = await service.request_review(
-        capture_id=capture["id"],
-        sample_index=1,
-    )
+    result = await service.request_review(capture_id=capture["id"])
 
     assert result["status"] == REVIEW_SKIPPED
     assert result["reason"] == "NO_RESIDUAL_SEMANTIC_REVIEW"
@@ -393,7 +390,10 @@ async def test_provider_error_does_not_mutate_baseline(
         provider_override=provider,
     )
 
-    result = await service.request_review(capture_id=capture["id"])
+    result = await service.request_review(
+        capture_id=capture["id"],
+        sample_index=1,
+    )
     assert result["status"] == "ERROR"
     assert provider.calls == 1
 
