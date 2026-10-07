@@ -409,6 +409,7 @@ footer { max-width: 1320px; margin: 18px auto 0; padding-top: 14px; border-top: 
 @media (max-width: 760px) {
   .topbar { grid-template-columns: 1fr; padding: 0 16px; }
   .topnav { display: none; }
+  .header-actions { justify-content: flex-start; flex-wrap: wrap; }
   .layout { display: block; }
   .sidebar { display: none; }
   .content { padding: 24px 14px; }
@@ -10764,6 +10765,61 @@ th { font-size: 14px; }
 .theme-toggle:hover { border-color: var(--primary); }
 .theme-toggle span { font-size: 17px; line-height: 1; }
 .theme-toggle b { font-size: 14px; }
+
+.jev-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 10px 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface-muted);
+  color: var(--text);
+  font: inherit;
+  font-weight: 800;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.jev-mode-toggle:hover:not(:disabled) { border-color: var(--primary); }
+.jev-mode-toggle:disabled { cursor: not-allowed; opacity: .68; }
+.jev-mode-label { font-size: 14px; }
+.jev-mode-state {
+  min-width: 26px;
+  color: var(--text-subtle);
+  font-size: 12px;
+  letter-spacing: .04em;
+  text-align: center;
+}
+.jev-mode-switch {
+  position: relative;
+  width: 28px;
+  height: 16px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--line);
+  transition: background .16s ease;
+}
+.jev-mode-switch i {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .18);
+  transition: transform .16s ease;
+}
+.jev-mode-toggle.on {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--line));
+  background: var(--primary-soft);
+}
+.jev-mode-toggle.on .jev-mode-state { color: var(--primary); }
+.jev-mode-toggle.on .jev-mode-switch { background: var(--primary); }
+.jev-mode-toggle.on .jev-mode-switch i { transform: translateX(12px); }
+
 .dot-status { background: var(--surface-muted); color: var(--text-subtle); font-size: 14px; }
 
 .sidebar, .summary-card, .panel, .date-box, .loading-card, .error-card,

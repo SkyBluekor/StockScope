@@ -29,6 +29,10 @@ import {
   type MacroReferenceDiagnosticResponse,
 } from "./services/macroReferenceApi";
 import {
+  getJevReviewFeature,
+  type JevReviewFeature,
+} from "./services/jevApi";
+import {
   fetchHealth,
   fetchBacktestJob,
   fetchMarketDashboard,
@@ -232,6 +236,8 @@ function IndexCard({
 export default function App() {
   const [apiStatus, setApiStatus] = useState("확인 중");
   const [theme, setTheme] = useState<ThemeMode>(initialTheme);
+  const [jevReviewFeature, setJevReviewFeature] = useState<JevReviewFeature | null>(null);
+  const [jevReviewEnabled, setJevReviewEnabled] = useState(false);
 
   useEffect(() => {
     const favicon = document.getElementById("stockscope-favicon") as HTMLLinkElement | null;
@@ -239,6 +245,30 @@ export default function App() {
       favicon.href = stockScopeFavicon(theme);
     }
   }, [theme]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getJevReviewFeature()
+      .then((feature) => {
+        if (cancelled) return;
+        setJevReviewFeature(feature);
+        const available = feature.available === true && feature.feature_status === "ACTIVE";
+        if (!available) {
+          setJevReviewEnabled(false);
+          return;
+        }
+        setJevReviewEnabled(window.localStorage.getItem("stockscope-jev-review-enabled") === "on");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setJevReviewFeature(null);
+        setJevReviewEnabled(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const [providers, setProviders] = useState<ProviderStatus | null>(null);
   const [dataStatusOpen, setDataStatusOpen] = useState(false);
   const [providerRefreshing, setProviderRefreshing] = useState(false);
@@ -833,6 +863,16 @@ const strategyName: Record<string, string> = {
     window.localStorage.setItem("stockscope-theme", next);
   }
 
+  function toggleJevReview() {
+    const available = jevReviewFeature?.available === true && jevReviewFeature.feature_status === "ACTIVE";
+    if (!available) return;
+    setJevReviewEnabled((current) => {
+      const next = !current;
+      window.localStorage.setItem("stockscope-jev-review-enabled", next ? "on" : "off");
+      return next;
+    });
+  }
+
   function navigateApp(page: AppPage) {
     const pathname = `/${page}`;
     if (window.location.pathname !== pathname) window.history.pushState({}, "", pathname);
@@ -887,6 +927,23 @@ const strategyName: Record<string, string> = {
           >
             <span aria-hidden="true">{theme === "dark" ? "☀" : "🌙"}</span>
             <b>{theme === "dark" ? "라이트" : "다크"}</b>
+          </button>
+          <button
+            type="button"
+            className={`jev-mode-toggle ${jevReviewEnabled ? "on" : "off"}`}
+            disabled={!(jevReviewFeature?.available === true && jevReviewFeature.feature_status === "ACTIVE")}
+            onClick={toggleJevReview}
+            aria-pressed={jevReviewEnabled}
+            aria-label={`Jev 검토 ${jevReviewEnabled ? "켜짐" : "꺼짐"}`}
+            title={
+              jevReviewFeature?.available === true && jevReviewFeature.feature_status === "ACTIVE"
+                ? "Jev 추가 검토 모드를 켜거나 끕니다."
+                : "검증 완료 후 사용할 수 있습니다."
+            }
+          >
+            <span className="jev-mode-label">Jev 검토</span>
+            <b className="jev-mode-state">{jevReviewEnabled ? "ON" : "OFF"}</b>
+            <span className="jev-mode-switch" aria-hidden="true"><i /></span>
           </button>
           <div className="header-status">
             {activeDataTask && (

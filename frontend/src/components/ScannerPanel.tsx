@@ -36,7 +36,6 @@ import {
   writeActiveDataTask,
 } from "../services/dataTask";
 import StockNewsPanel from "./StockNewsPanel";
-import JevAdditionalReviewPanel from "./JevAdditionalReviewPanel";
 import "./scannerProgress.css";
 
 type MarketScope = "ALL" | "KOSPI" | "KOSDAQ";
@@ -461,7 +460,6 @@ function CandidateDetail({
     <article className={`scanner-selected-detail tone-${tone}`}>
       <header className="scanner-selected-head">
         <div>
-          <span className="scanner-analysis-origin">기본 분석 · StockScope</span>
           <span className="scanner-selected-kicker">선택한 후보 · 우선순위 {rank}</span>
           <div className="scanner-stock-line">
             <h3>{candidate.name}</h3>
@@ -1454,7 +1452,6 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
     ? allCandidates.findIndex((candidate) => candidateKey(candidate) === candidateKey(selectedCandidate))
     : -1;
   const selectedRank = selectedSampleIndex >= 0 ? selectedSampleIndex + 1 : 0;
-  const jevCaptureId = result?.prospective_capture?.capture_id ?? null;
 
   useEffect(() => {
     if (!result) {
@@ -1855,26 +1852,19 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
               </section>
 
               {selectedCandidate && (
-                <>
-                  <CandidateDetail
-                    candidate={selectedCandidate}
-                    rank={selectedRank}
-                    onAnalyze={() => analyzeCandidate(selectedCandidate)}
-                    onPrepareEvidence={() => void prepareCandidateEvidence(selectedCandidate)}
-                    evidenceBusy={busy}
-                    evidenceOpen={expandedEvidenceIds.includes(evidenceKey(selectedCandidate))}
-                    onEvidenceToggle={(open) => toggleEvidence(selectedCandidate, open)}
-                    managedStock={managedStockMap.get(candidateKey(selectedCandidate)) ?? null}
-                    holdingsLoading={holdingsLoading}
-                    holdingsReady={holdingsReady}
-                    onOpenHoldings={onOpenHoldings ? () => openCandidateInHoldings(selectedCandidate) : undefined}
-                  />
-                  <JevAdditionalReviewPanel
-                    captureId={jevCaptureId}
-                    sampleIndex={selectedSampleIndex >= 0 ? selectedSampleIndex : null}
-                    candidateName={selectedCandidate.name}
-                  />
-                </>
+                <CandidateDetail
+                  candidate={selectedCandidate}
+                  rank={selectedRank}
+                  onAnalyze={() => analyzeCandidate(selectedCandidate)}
+                  onPrepareEvidence={() => void prepareCandidateEvidence(selectedCandidate)}
+                  evidenceBusy={busy}
+                  evidenceOpen={expandedEvidenceIds.includes(evidenceKey(selectedCandidate))}
+                  onEvidenceToggle={(open) => toggleEvidence(selectedCandidate, open)}
+                  managedStock={managedStockMap.get(candidateKey(selectedCandidate)) ?? null}
+                  holdingsLoading={holdingsLoading}
+                  holdingsReady={holdingsReady}
+                  onOpenHoldings={onOpenHoldings ? () => openCandidateInHoldings(selectedCandidate) : undefined}
+                />
               )}
             </div>
           )}
