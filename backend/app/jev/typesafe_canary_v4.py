@@ -793,17 +793,17 @@ def _metrics_for_threshold_v4(
             hard_disposition_crossing += 1
 
     positive_margin = (
-        min(positive_probabilities) - threshold
+        round(min(positive_probabilities) - threshold, 12)
         if positive_probabilities
         else None
     )
     negative_margin = (
-        threshold - max(negative_probabilities)
+        round(threshold - max(negative_probabilities), 12)
         if negative_probabilities
         else None
     )
     worst_margin = (
-        min(positive_margin, negative_margin)
+        round(min(positive_margin, negative_margin), 12)
         if positive_margin is not None and negative_margin is not None
         else None
     )
