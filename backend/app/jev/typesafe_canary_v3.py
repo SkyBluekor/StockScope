@@ -496,7 +496,7 @@ def _local_only(fixtures: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [item for item in fixtures if item["route"] == "LOCAL_ONLY"]
 
 
-def validate_canary_v3_contract() -> dict[str, Any]:    artifact = build_canary_v3_protocol_artifact()
+def validate_canary_v3_contract() -> dict[str, Any]:\n    artifact = build_canary_v3_protocol_artifact()
     fixtures = artifact["spec"]["fixtures"]
     if len(fixtures) != 40 or len({item["fixture_id"] for item in fixtures}) != 40:
         raise TypeSafeCanaryV3Error("CANARY_V3_FIXTURE_COUNT_INVALID")
