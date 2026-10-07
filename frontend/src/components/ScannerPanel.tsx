@@ -36,11 +36,15 @@ import {
   writeActiveDataTask,
 } from "../services/dataTask";
 import StockNewsPanel from "./StockNewsPanel";
+import AiReviewProgress from "./AiReviewProgress";
 import "./scannerProgress.css";
 
 type MarketScope = "ALL" | "KOSPI" | "KOSDAQ";
 
 type Props = {
+  aiReviewEnabled: boolean;
+  aiReviewAvailable: boolean;
+  aiReviewFeatureStatus: string | null;
   onAnalyzeStock: (item: StockSearchItem) => void;
   onOpenHoldings?: (target: { market: "KOSPI" | "KOSDAQ"; ticker: string; name: string }) => void;
 };
@@ -304,6 +308,8 @@ function CandidateCompareRow({
   candidate,
   rank,
   selected,
+  aiReviewEnabled,
+  aiReviewAvailable,
   managedStock,
   holdingsLoading,
   holdingsReady,
@@ -315,6 +321,8 @@ function CandidateCompareRow({
   candidate: ScannerCandidate;
   rank: number;
   selected: boolean;
+  aiReviewEnabled: boolean;
+  aiReviewAvailable: boolean;
   managedStock: HoldingStock | null;
   holdingsLoading: boolean;
   holdingsReady: boolean;
@@ -353,6 +361,26 @@ function CandidateCompareRow({
       <span className="scanner-compare-judgement">
         <strong>{candidate.action_label}</strong>
         <small>{candidate.candidate_label} · {conditionStatusLabel(candidate)}</small>
+        {aiReviewEnabled && (
+          <span className={"scanner-ai-inline " + (candidate.ai_review_presentation?.state === "AI_REVIEW_CANDIDATE" ? "review" : "ready")}>
+            <i aria-hidden="true">✦</i>
+            <b>
+              {candidate.ai_review_presentation
+                ? candidate.ai_review_presentation.state === "AI_REVIEW_CANDIDATE"
+                  ? "AI 확인 대상"
+                  : aiReviewAvailable
+                    ? "AI 검토 준비"
+                    : "AI 준비"
+                : "AI 준비"}
+            </b>
+            <em>
+              {candidate.ai_review_presentation?.strengths?.[0]
+                ? "강점 · " + candidate.ai_review_presentation.strengths[0]
+                : candidate.ai_review_presentation?.review_points?.[0]
+                  ?? "새 분석에서 의미 요약을 확인합니다."}
+            </em>
+          </span>
+        )}
       </span>
       <span className="scanner-compare-metrics">
         <span className="scanner-compare-metric current">
@@ -421,6 +449,8 @@ function CandidateCompareRow({
 function CandidateDetail({
   candidate,
   rank,
+  aiReviewEnabled,
+  aiReviewAvailable,
   onAnalyze,
   onPrepareEvidence,
   evidenceBusy,
@@ -433,6 +463,8 @@ function CandidateDetail({
 }: {
   candidate: ScannerCandidate;
   rank: number;
+  aiReviewEnabled: boolean;
+  aiReviewAvailable: boolean;
   onAnalyze: () => void;
   onPrepareEvidence: () => void;
   evidenceBusy: boolean;
@@ -495,6 +527,46 @@ function CandidateDetail({
           <p>{changeSummary}</p>
         </div>
       </section>
+
+      {aiReviewEnabled && (
+        <section className={"scanner-ai-detail " + (candidate.ai_review_presentation?.state === "AI_REVIEW_CANDIDATE" ? "review" : "ready")}>
+          <header>
+            <div>
+              <small>{aiReviewAvailable ? "AI 보조 검토" : "AI 보조 검토 준비"}</small>
+              <strong>
+                {candidate.ai_review_presentation?.summary
+                  ?? "새 분석에서 전략 조건의 의미 관계를 AI 검토용으로 정리합니다."}
+              </strong>
+            </div>
+            <span>{aiReviewAvailable ? "AI 사용 가능" : "AI 검증 대기"}</span>
+          </header>
+          <div className="scanner-ai-detail-grid">
+            <div>
+              <small>확인된 강점</small>
+              {candidate.ai_review_presentation?.strengths?.length ? (
+                <ul>
+                  {candidate.ai_review_presentation.strengths.map((item) => <li key={item}>✓ {item}</li>)}
+                </ul>
+              ) : (
+                <p>의미 관계에서 표시할 강점을 준비 중입니다.</p>
+              )}
+            </div>
+            <div>
+              <small>다시 볼 점</small>
+              {candidate.ai_review_presentation?.review_points?.length ? (
+                <ul>
+                  {candidate.ai_review_presentation.review_points.map((item) => <li key={item}>△ {item}</li>)}
+                </ul>
+              ) : (
+                <p>현재 로컬 의미 확인에서는 별도 충돌이 보이지 않습니다.</p>
+              )}
+            </div>
+          </div>
+          {!aiReviewAvailable && (
+            <footer>실제 외부 AI 검토는 기능 검증 완료 후 적용됩니다. 지금 표시되는 강점은 StockScope가 저장된 전략 의미 관계에서 확인한 내용입니다.</footer>
+          )}
+        </section>
+      )}
 
       <section className="scanner-decision-price-band" aria-label="핵심 가격 기준">
         <div><small>현재가</small><strong>{priceText(candidate.current_price)}</strong></div>
@@ -724,7 +796,13 @@ function CandidateDetail({
   );
 }
 
-export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) {
+export default function ScannerPanel({
+  aiReviewEnabled,
+  aiReviewAvailable,
+  aiReviewFeatureStatus,
+  onAnalyzeStock,
+  onOpenHoldings,
+}: Props) {
   const initialSession = useMemo(() => readScannerSession(), []);
   const sharedSession = useScannerSession();
   const [scope, setScope] = useState<MarketScope>(initialSession?.scope ?? "ALL");
@@ -1669,6 +1747,14 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
         </section>
       )}
 
+      <AiReviewProgress
+        enabled={aiReviewEnabled}
+        available={aiReviewAvailable}
+        featureStatus={aiReviewFeatureStatus}
+        job={job}
+        result={jobBusy ? null : result}
+      />
+
       {error && (
         <section className="scanner-error-card">
           <strong>{result ? "새 분석을 완료하지 못했습니다. 기존 결과를 유지합니다." : "종목 찾기를 완료하지 못했습니다."}</strong>
@@ -1812,6 +1898,8 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
                       candidate={candidate}
                       rank={index + 1}
                       selected={selectedCandidate ? candidateKey(selectedCandidate) === candidateKey(candidate) : false}
+                      aiReviewEnabled={aiReviewEnabled}
+                      aiReviewAvailable={aiReviewAvailable}
                       managedStock={managedStockMap.get(candidateKey(candidate)) ?? null}
                       holdingsLoading={holdingsLoading}
                       holdingsReady={holdingsReady}
@@ -1836,6 +1924,8 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
                             candidate={candidate}
                             rank={result.candidates.length + index + 1}
                             selected={selectedCandidate ? candidateKey(selectedCandidate) === candidateKey(candidate) : false}
+                            aiReviewEnabled={aiReviewEnabled}
+                            aiReviewAvailable={aiReviewAvailable}
                             managedStock={managedStockMap.get(candidateKey(candidate)) ?? null}
                             holdingsLoading={holdingsLoading}
                             holdingsReady={holdingsReady}
@@ -1855,6 +1945,8 @@ export default function ScannerPanel({ onAnalyzeStock, onOpenHoldings }: Props) 
                 <CandidateDetail
                   candidate={selectedCandidate}
                   rank={selectedRank}
+                  aiReviewEnabled={aiReviewEnabled}
+                  aiReviewAvailable={aiReviewAvailable}
                   onAnalyze={() => analyzeCandidate(selectedCandidate)}
                   onPrepareEvidence={() => void prepareCandidateEvidence(selectedCandidate)}
                   evidenceBusy={busy}

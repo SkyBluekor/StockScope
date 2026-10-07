@@ -2229,6 +2229,9 @@ const strategyName: Record<string, string> = {
             />
           ) : appPage === "scanner" ? (
             <ScannerPanel
+              aiReviewEnabled={jevReviewEnabled}
+              aiReviewAvailable={jevReviewFeature?.available === true && jevReviewFeature.feature_status === "ACTIVE"}
+              aiReviewFeatureStatus={jevReviewFeature?.feature_status ?? null}
               onAnalyzeStock={(item) => {
                 chooseStock(item, { loadContext: true, origin: "scanner" });
                 navigateApp("analysis");

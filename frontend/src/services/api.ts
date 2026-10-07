@@ -2248,6 +2248,7 @@ export type MultiStrategyRecommendation = {
   additional_warnings?: string[];
   change_conditions: string[];
   change_condition_details: MultiStrategyConditionDetail[];
+  ai_review_presentation?: ScannerAiReviewPresentation | null;
   user_action: {
     user_task: string;
     title: string;
@@ -2885,6 +2886,16 @@ export type ScannerCandidatePriority = {
   rank_change: number;
 };
 
+export type ScannerAiReviewPresentation = {
+  version: string;
+  state: "LOCAL_COMPLETE" | "AI_REVIEW_CANDIDATE" | "LOCAL_CONFLICT" | "NOT_READY" | string;
+  summary: string;
+  strengths: string[];
+  review_points: string[];
+  provider_status: "NOT_REQUESTED" | "QUEUED" | "RUNNING" | "VALID" | "ERROR" | string;
+  provider_result: "PASS_THROUGH" | "REVIEW_REQUIRED" | null | string;
+};
+
 export type ScannerCandidate = {
   code: string;
   name: string;
@@ -2945,6 +2956,17 @@ export type ScannerResponse = {
   };
   scanner_cache_hit: boolean;
   execution_mode?: "BASELINE_ONLY" | "BASELINE_WITH_JEV" | string;
+  ai_review_progress?: {
+    version: string;
+    stage: string;
+    total_candidates: number;
+    local_checked: number;
+    provider_required: number;
+    provider_completed: number;
+    review_required_count: number;
+    not_ready: number;
+    completed: boolean;
+  };
   prospective_capture?: {
     status: string;
     capture_id?: string | null;
