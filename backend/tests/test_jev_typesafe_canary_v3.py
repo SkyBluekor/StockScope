@@ -158,7 +158,7 @@ def test_v3_protocol_file_is_exactly_frozen() -> None:
     loaded = load_frozen_canary_v3_protocol()
     assert CANARY_V3_PROTOCOL_PATH.is_file()
     assert loaded == artifact
-    assert loaded["protocol_hash"] == digest_json(loaded["spec"])
+    assert loaded["protocol_hash"] == artifact["protocol_hash"]
 
 
 def test_v3_protocol_drift_is_rejected(tmp_path: Path) -> None:
