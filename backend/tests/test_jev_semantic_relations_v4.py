@@ -20,9 +20,7 @@ from app.strategy.semantic_composition import (
     RESIDUAL_SEMANTIC_REVIEW,
     compose_semantics,
 )
-from app.strategy.semantic_contract import (
-    JEV_SEMANTIC_SOURCE_VERSION if False else SEMANTIC_STATUS_COMPLETE,
-)
+from app.strategy.semantic_contract import SEMANTIC_STATUS_COMPLETE
 from app.strategy.semantic_relations import (
     RELATION_ALLOWS_IF,
     RELATION_EXCLUDES,
