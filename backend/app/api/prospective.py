@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.core.config import PROJECT_ROOT
+from app.prospective.rank_comparison import compare_capture_candidates
 from app.prospective import (
     ProspectiveCatalogError,
     ProspectiveEvaluationError,
@@ -105,6 +106,30 @@ def list_prospective_captures(
         return _service().catalog.list_captures(limit=limit)
     except ProspectiveCatalogError as error:
         _raise(error)
+
+
+@router.get("/captures/{capture_id}/candidate-comparison")
+def compare_scanner_candidates(
+    capture_id: str,
+    left_sample_index: int = Query(ge=0),
+    right_sample_index: int = Query(ge=0),
+):
+    """Explain recorded Scanner order; never modify candidate rankings."""
+    result = compare_capture_candidates(
+        db_path=_service().catalog.db_path,
+        capture_id=capture_id,
+        left_sample_index=left_sample_index,
+        right_sample_index=right_sample_index,
+    )
+    if result["status"] in {"INVALID_COMPARISON_PAIR", "SAMPLE_NOT_FOUND"}:
+        raise HTTPException(status_code=422, detail={
+            "code": result["status"], "message": "유효한 서로 다른 두 후보를 선택하세요.",
+        })
+    if result["status"] == "CAPTURE_NOT_FOUND":
+        raise HTTPException(status_code=404, detail={
+            "code": result["status"], "message": "Scanner 캡처를 찾지 못했습니다.",
+        })
+    return result
 
 
 @router.get("/protocols")
