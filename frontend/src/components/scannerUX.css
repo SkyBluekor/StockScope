@@ -292,3 +292,31 @@
   .scanner-workspace .scanner-compare-head { align-items: flex-start; flex-direction: column; }
   .scanner-workspace .scanner-compare-head > small { max-width: none; text-align: left; }
 }
+
+/* SC-UX2-S1: one primary answer, supporting reason, and two compact follow-ups. */
+.scanner-ux2-decision-why {
+  display: grid;
+  gap: 3px;
+  margin: 0 0 10px;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.scanner-ux2-decision-why strong { font-size: 12px; color: var(--text-strong); }
+.scanner-workspace .scanner-ux-decision-facts.scanner-ux2-facts {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  border: 0;
+}
+.scanner-workspace .scanner-ux2-facts > div {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 4px;
+}
+.scanner-workspace .scanner-ux2-facts > div + div { padding: 10px; border: 1px solid var(--line-soft); }
+.scanner-workspace .scanner-ux2-facts strong { font-size: 12px; }
+.scanner-workspace .scanner-ux2-facts p { font-size: 12px; line-height: 1.5; margin: 5px 0 0; }
+@media (max-width: 450px) {
+  .scanner-workspace .scanner-ux-decision-facts.scanner-ux2-facts { grid-template-columns: minmax(0, 1fr); }
+}
