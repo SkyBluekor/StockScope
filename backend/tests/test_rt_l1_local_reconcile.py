@@ -145,7 +145,7 @@ def test_reconcile_blocks_unapproved_domains_and_domain_overreach(
     local, remote, _ = _diverged(tmp_path)
     with pytest.raises(DataToolError, match="NOT_ALLOWED"):
         reconcile_local(locations=local, domains=["tracking"], dry_run=True)
-    with pytest.raises(DataToolError, match="UNAPPROVED_DOMAIN_CONFLICT"):
+    with pytest.raises(DataToolError, match="SELECTED_DOMAIN_MISSING"):
         reconcile_local(locations=local, domains=["holdings"], dry_run=True)
 
 
