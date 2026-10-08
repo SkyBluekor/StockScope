@@ -1781,6 +1781,19 @@ export default function ScannerPanel({
           <section className="scanner-result-summary scanner-ux2-result-strip" aria-label="종목 찾기 결과 요약">
             <div className="scanner-ux2-result-identity">
               <strong>찾은 후보 <b>{result.candidates.length}개</b></strong>
+              <small className="scanner-ux3-global-ai-state">
+                {jobBusy ? "이전 기본 분석 결과 · 새 스캔 진행 중" : "기본 분석 완료"}
+                {" · "}
+                {selectedCandidate
+                  ? storedReviewLoading ? "AI 기록 확인 중"
+                    : storedReviewError ? "AI 기록 확인 실패"
+                    : scannerAiReviewStatus({
+                        candidate: selectedCandidate, result, enabled: aiReviewEnabled,
+                        available: aiReviewAvailable, featureStatus: aiReviewFeatureStatus,
+                        review: reviewFor(selectedCandidate, selectedRank - 1),
+                      }).label
+                  : "AI 검토 대상 없음"}
+              </small>
               <span>{analysisDataDate ? formatDate(analysisDataDate) + " 확정 일봉" : "분석 기준일 확인 필요"}</span>
               {analysisDateMismatch && <small className="scanner-ux2-result-alert">시장별 기준일이 달라요.</small>}
               {restoredFromSession && <small>이전 분석을 불러왔어요.</small>}
