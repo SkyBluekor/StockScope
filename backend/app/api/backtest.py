@@ -24,6 +24,7 @@ from app.prospective import (
     ProspectiveService,
 )
 from app.jev.review_presentation import enrich_scanner_result_with_ai_presentation
+from app.prospective.rank_audit_adapter import extract_rank_evidence_from_audit
 from app.prospective.rank_evidence import persist_rank_evidence
 from app.horizon import (
     HorizonPolicyError,
@@ -622,7 +623,7 @@ async def _run_scanner_job(
             selection_policy_pin=selection_policy_pin,
         )
         if isinstance(result, dict):
-            rank_evidence_rows = result.pop("_rank_evidence", None)
+            rank_evidence_rows = extract_rank_evidence_from_audit(result)
             result["horizon_context"] = resolve_horizon_context(
                 payload.horizon_intent
             ).to_dict()
