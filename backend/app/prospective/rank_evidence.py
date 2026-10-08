@@ -65,7 +65,11 @@ def persist_rank_evidence(
             if (
                 str(sample["market"]) != str(evidence.get("market") or "").upper()
                 or str(sample["ticker"]) != str(evidence.get("code") or "").upper()
-                or sample["rank"] != evidence.get("final_rank")
+                or int(evidence.get("final_rank") or 0) != index + 1
+                or (
+                    sample["rank"] is not None
+                    and int(sample["rank"]) != evidence.get("final_rank")
+                )
                 or str(sample["strategy"] or "") != str(evidence.get("strategy") or "")
                 or evidence.get("contract_version") != RANK_EVIDENCE_CONTRACT_VERSION
             ):
