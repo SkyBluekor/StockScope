@@ -727,6 +727,17 @@ def reconcile_remote(
     if not selected:
         raise DataToolError("정렬할 remote Runtime domain이 없습니다.")
 
+    # The old head must cover every published remote domain. For an explicit
+    # local-discard operation, adopt unchanged peers as NO_ACTION so the
+    # resulting head cannot fork tracking/macro lineage on the next post-sync.
+    approved = set(selected)
+    if replace_local_changes:
+        selected += [
+            domain for domain in allowed
+            if domain in dict(manifest.get("domains") or {})
+            and domain not in approved
+        ]
+
     plan = import_handoff(
         bundle,
         domains=selected,
@@ -745,6 +756,18 @@ def reconcile_remote(
                 for item in plan["conflicts"]
             )
         )
+
+    if replace_local_changes:
+        unapproved = [
+            item["domain"] for item in plan["plans"]
+            if item["domain"] not in approved
+            and item["action"] != "NO_ACTION"
+        ]
+        if unapproved:
+            raise DataToolError(
+                "REMOTE_RECONCILE_UNAPPROVED_DOMAIN_CHANGE: "
+                + ", ".join(unapproved)
+            )
 
     local_ahead = [
         item
