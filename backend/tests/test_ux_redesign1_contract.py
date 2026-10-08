@@ -130,9 +130,9 @@ def test_ux_redesign1d_scanner_can_add_candidates_to_holdings_without_reanalysis
     assert "managedStockMap" in scanner
     assert "holdingsReady" in scanner
     assert 'className="scanner-compare-manage"' in scanner
-    assert '"☆ 관심"' in scanner
+    assert '"관심 등록"' in scanner
     assert "★ 관심" in scanner
-    assert '"+ 기존 보유"' in scanner
+    assert '"보유 등록"' in scanner
     assert "보유 중" in scanner
     assert "event.stopPropagation()" in scanner
 
@@ -759,16 +759,17 @@ def test_ux_redesign1j5_scanner_defaults_to_reading_and_separates_explicit_work(
     scanner = Path("frontend/src/components/ScannerPanel.tsx").read_text(encoding="utf-8")
     styles = Path("frontend/src/styles.css").read_text(encoding="utf-8")
 
-    # Candidate rows remain the fast explicit mutation surface; nested buttons do not select rows.
+    # Selection is an explicit button separate from the management buttons.
+    # The buttons are siblings, not nested, so event.stopPropagation is unnecessary.
     row_start = scanner.index("function CandidateCompareRow")
     row_end = scanner.index("function CandidateDetail", row_start)
     row = scanner[row_start:row_end]
+    assert 'className="scanner-ux-row-select"' in row
     assert 'onClick={onSelect}' in row
-    assert "event.stopPropagation()" in row
-    assert '"☆ 관심"' in row
-    assert '"+ 기존 보유"' in row
-    assert "onAddWatch()" in row
-    assert "onRegisterHeld()" in row
+    assert '"관심 등록"' in row
+    assert '"보유 등록"' in row
+    assert "onClick={onAddWatch}" in row
+    assert "onClick={onRegisterHeld}" in row
 
     # Selected detail is now a reading surface, not a duplicate mutation toolbar.
     detail_start = scanner.index("function CandidateDetail")
