@@ -90,6 +90,41 @@ export function assessPriceRule(
   };
 }
 
+export type MissingConditionView = {
+  label: string;
+  detail: string | null;
+  current: string | null;
+  required: string | null;
+};
+
+function nonempty(value: string | null | undefined): string | null {
+  const trimmed = String(value ?? "").trim();
+  return trimmed || null;
+}
+
+// top_missing is an ordered explanation subset, not a substitute for the
+// authoritative missing count. Never invent a condition not present in data.
+export function missingConditionDetails(candidate: ScannerCandidate): MissingConditionView[] {
+  const count = Number(candidate.conditions?.missing ?? 0);
+  if (!Number.isFinite(count) || count <= 0) return [];
+  const raw = candidate.conditions?.top_missing ?? [];
+  const seen = new Set<string>();
+  const items: MissingConditionView[] = [];
+  for (const item of raw) {
+    const label = nonempty(item.label) ?? nonempty(item.raw);
+    if (!label || seen.has(label)) continue;
+    seen.add(label);
+    items.push({
+      label,
+      detail: nonempty(item.detail),
+      current: nonempty(item.current_value),
+      required: nonempty(item.required_value),
+    });
+    if (items.length >= 3) break;
+  }
+  return items;
+}
+
 export type BeginnerCandidatePresentation = {
   status: string;
   headline: string;
@@ -97,43 +132,82 @@ export type BeginnerCandidatePresentation = {
   caution: string;
   next: string;
   asOfPrice: PriceRuleAssessment;
+  missingConditions: MissingConditionView[];
+  missingCount: number;
+  nextActionLabel: string;
+  nextActionContext: string;
 };
 
 export function beginnerCandidatePresentation(candidate: ScannerCandidate): BeginnerCandidatePresentation {
-  const status = simpleConditionStatus(candidate);
   const passed = candidate.conditions?.passed ?? 0;
   const total = candidate.conditions?.total ?? 0;
   const missing = candidate.conditions?.missing ?? Math.max(0, total - passed);
-  const risk = candidate.risk?.warning === true
+  const hasConditionData = Number.isFinite(total) && total > 0
+    && Number.isFinite(passed) && passed >= 0 && passed <= total
+    && Number.isFinite(missing) && missing >= 0;
+  const missingConditions = missingConditionDetails(candidate);
+  const firstMissing = missingConditions[0];
+  const blocked = candidate.risk?.warning === true
     || candidate.priority?.tier === "RISK_HOLD"
     || candidate.entry_risk_guide?.action.status === "RISK_BLOCKED";
+  const lowPriority = candidate.priority?.tier === "LOW_PRIORITY" || candidate.action === "NO_TRADE";
   const price = assessPriceRule(candidate.entry_risk_guide?.price_rule, candidate.current_price);
-  const why = total > 0
-    ? "분석 당시 설정된 투자 조건 " + passed + "개 중 " + total + "개를 확인했어요."
-    : "현재 투자 조건이 충분히 계산되지 않았어요.";
-  const caution = risk
-    ? "현재 분석에서 위험 경고가 있어요. 가격이 맞더라도 이 경고를 먼저 확인해야 해요."
-    : missing > 0
-      ? "아직 " + missing + "개의 투자 조건이 충족되지 않았어요."
-      : price.state === "OUT_OF_RANGE"
-        ? "분석 당시 종가는 전략의 참고 가격 조건에서 벗어나 있었어요."
-        : price.state === "UNKNOWN"
-          ? "현재 자료만으로는 가격 조건을 확인하기 어려워요."
-          : "투자 조건과 가격이 맞아도 지금 매수하라는 뜻은 아니에요.";
-  const next = risk
-    ? "위험 경고가 사라졌는지 다시 분석한 뒤 확인하세요."
-    : missing > 0
-      ? "남은 투자 조건 " + missing + "개가 충족되는지 확인하세요."
-      : price.state === "OUT_OF_RANGE"
-        ? "새로운 가격을 확인하고, 전략 조건이 여전히 유효한지 다시 살펴보세요."
-        : "새 시세와 분석 기준일을 확인하고 실제 가격·위험 조건을 다시 살펴보세요.";
+  const status = simpleConditionStatus(candidate);
+  const why = hasConditionData
+    ? "전체 투자 조건 " + total + "개 중 " + passed + "개를 충족했어요."
+    : "분석 당시 투자 조건의 전체 개수 또는 계산 결과를 확인할 수 없어요.";
 
-  const headline = risk
-    ? "위험 신호가 있어 지금은 신중하게 살펴봐야 해요."
-    : missing > 0
-      ? "관심을 둘 만하지만 아직 기다려야 할 조건이 있어요."
-      : price.state === "OUT_OF_RANGE"
-        ? "투자 조건은 맞지만 분석 당시 가격은 참고 범위 밖이었어요."
-        : "투자 조건은 충족했지만 지금 매수해도 된다는 뜻은 아니에요.";
-  return { status, headline, why, caution, next, asOfPrice: price };
+  if (blocked) {
+    return {
+      status, why, asOfPrice: price, missingConditions, missingCount: missing,
+      headline: "위험 신호가 있어 진입 판단을 보류해야 해요.",
+      caution: candidate.risk?.warnings?.[0] || "현재 분석에서 위험 경고가 확인됐어요.",
+      next: "위험 경고의 원인을 확인하고, 새 분석에서도 해소됐는지 확인하세요.",
+      nextActionLabel: "위험 차단 이유 확인",
+      nextActionContext: candidate.risk?.warnings?.[0] || "전략·위험 정보 확인",
+    };
+  }
+  if (lowPriority || !hasConditionData) {
+    return {
+      status, why, asOfPrice: price, missingConditions, missingCount: missing,
+      headline: lowPriority ? "현재 우선 검토할 진입 후보는 아니에요." : "판단에 필요한 조건 자료가 부족해요.",
+      caution: lowPriority ? "기존 Scanner의 낮은 우선순위 판단을 유지합니다." : "확인되지 않은 조건을 충족으로 계산하지 않았어요.",
+      next: "전략·가격 탭에서 계산 근거를 확인하세요.",
+      nextActionLabel: "판단 근거 확인",
+      nextActionContext: "분석일 기준 자료 확인",
+    };
+  }
+  if (missing > 0) {
+    const missingLabel = firstMissing?.label ?? "부족한 조건의 상세 정보 없음";
+    return {
+      status, why, asOfPrice: price, missingConditions, missingCount: missing,
+      headline: "진입 조건이 " + missing + "개 부족해요. 충족될 때까지 기다려야 해요.",
+      caution: firstMissing ? "먼저 확인할 조건: " + missingLabel : "부족한 조건 " + missing + "개가 있지만 상세 근거가 제공되지 않았어요.",
+      next: firstMissing ? "‘" + missingLabel + "’ 조건이 충족되는지 확인하세요." : "전략·가격 탭에서 조건 근거를 확인하세요.",
+      nextActionLabel: firstMissing ? "부족: " + missingLabel : "부족한 조건 상세 없음",
+      nextActionContext: firstMissing
+        ? [firstMissing.current && "현재 " + firstMissing.current, firstMissing.required && "필요 " + firstMissing.required].filter(Boolean).join(" · ") || "조건 설명 확인"
+        : "조건 " + missing + "개 부족 · 근거 확인 필요",
+    };
+  }
+  if (price.state === "OUT_OF_RANGE") {
+    return {
+      status, why, asOfPrice: price, missingConditions, missingCount: missing,
+      headline: "분석일 기준 진입 조건은 충족했지만 참고 가격은 범위 밖이에요.",
+      caution: "분석 당시 가격이 전략 참고 가격에서 벗어나 있었어요.",
+      next: "새 시세와 현재 전략 조건·위험을 다시 검증하세요.",
+      nextActionLabel: "참고 가격 조건 확인",
+      nextActionContext: price.label,
+    };
+  }
+  return {
+    status, why, asOfPrice: price, missingConditions, missingCount: missing,
+    headline: "분석일 기준 진입 조건을 모두 충족했어요.",
+    caution: price.state === "IN_RANGE"
+      ? "분석 당시 참고 가격 조건도 충족했어요. 지금의 전략 유효성은 별개예요."
+      : "분석 당시 참고 가격을 판단할 수 없어요. 가격 기준을 확인하세요.",
+    next: "새 시세를 확인한 후 전략 조건과 위험이 지금도 유효한지 다시 검증하세요.",
+    nextActionLabel: price.state === "UNKNOWN" ? "가격 기준 확인" : "새 시세·전략 확인",
+    nextActionContext: price.label,
+  };
 }
