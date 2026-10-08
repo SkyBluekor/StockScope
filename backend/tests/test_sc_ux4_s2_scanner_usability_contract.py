@@ -26,6 +26,8 @@ def test_collapsing_more_candidates_does_not_reset_selection() -> None:
     assert "setSelectedCandidateKey" not in body
     assert "selectedIsExtra" in panel
     assert "scanner-ux5-pinned-extra" in panel
+    assert 'bounds.bottom < 85 || bounds.top >= window.innerHeight' in panel
+    assert 'detail.scrollIntoView({ behavior: "smooth", block: "start" })' in panel
     assert 'key={"pinned-" + candidateKey(selectedCandidate)}' in panel
     assert "reviewFor(selectedCandidate, selectedSampleIndex)" in panel
     assert 'onSelect={() => selectCandidateForReview(selectedCandidate)}' in panel
