@@ -333,14 +333,8 @@ function CandidateCompareRow({
           <small className="scanner-ai-list-status">{aiStatusLabel}</small>
         </span>
         <span className="scanner-ux2-row-next">
-          <strong>{candidate.risk.warning || candidate.priority?.tier === "RISK_HOLD"
-            ? "위험 먼저 확인"
-            : candidate.conditions.missing > 0
-              ? "부족한 조건 확인"
-              : view.asOfPrice.state === "OUT_OF_RANGE"
-                ? "가격 조건 확인"
-                : "새 시세 확인"}</strong>
-          <small>{view.asOfPrice.label}</small>
+          <strong>{view.nextActionLabel}</strong>
+          <small>{view.nextActionContext}</small>
         </span>
         <span className="scanner-compare-arrow" aria-hidden="true">›</span>
       </button>
@@ -489,7 +483,7 @@ function CandidateDetail({
               <div><small>분석 당시 종가</small><strong>{priceText(candidate.current_price)}</strong></div>
               <div><small>전략 참고 가격</small><strong>{interestPriceText(candidate)}</strong></div>
             </div>
-            <p className="scanner-ux3-guide">분석일 기준이며, 후보 순서는 매수 추천이 아니에요. 새 시세를 확인하려면 전략·가격 탭을 여세요.</p>
+            <p className="scanner-ux3-guide">이 순위는 분석일의 조건 평가 결과예요. 현재 진입 여부는 새 시세와 전략·위험의 재검증을 거쳐 판단해야 합니다.</p>
             <StockNewsPanel key={candidateKey(candidate) + "-preview"} code={candidate.code}
               market={candidate.market} companyLabel={candidate.name} variant="summary" />
           </div>
@@ -710,7 +704,7 @@ function CandidateDetail({
         <div>
           <small>지금 행동</small>
           <strong>더 알아보고 싶다면 전문 분석을 살펴보세요.</strong>
-          <p>분석 당시의 참고 정보입니다. 매수 여부는 최신 시세와 위험을 따로 확인하세요.</p>
+          <p>전문 분석에서 현재 시점의 전략·위험을 다시 확인할 수 있어요.</p>
         </div>
         <div className="scanner-selected-action-buttons simplified">
           <div className="scanner-selected-management-summary">
