@@ -2,7 +2,7 @@ import type { ScannerCandidate, ScannerResponse } from "../services/api";
 import type { JevMonitorItem } from "../services/jevApi";
 
 export type AiReviewState =
-  | "OFF" | "FEATURE_PENDING" | "NOT_REQUESTED" | "INPUT_MISSING"
+  | "OFF" | "FEATURE_PENDING" | "FEATURE_LOADING" | "FEATURE_ERROR" | "NOT_REQUESTED" | "INPUT_MISSING"
   | "QUEUED" | "RUNNING" | "COMPLETE" | "NEEDS_REVIEW" | "ABSTAIN"
   | "FAILED" | "UNKNOWN";
 
@@ -65,11 +65,20 @@ export function scannerAiReviewStatus({
     return { state: "QUEUED", label: "AI 검토 대기 중", detail: "실제 검토 요청이 대기 중이에요.", outcome: "결과 없음", next: "검토 처리가 끝난 뒤 다시 확인하세요.", source: "NONE" };
   }
 
-  if (!enabled) {
-    return { state: "OFF", label: "AI 검토 꺼짐", detail: "기본 Scanner 분석만 사용하고 있어요.", outcome: "AI 판단 없음", next: "AI 검토와 별개로 기본 분석 결과를 확인하세요.", source: "NONE" };
+  // Server capability takes precedence over the locally saved preference.
+  // Disabled feature never becomes a working AI switch even when the user
+  // previously saved "on" in localStorage.
+  if (featureStatus === "STATUS_LOADING") {
+    return { state: "FEATURE_LOADING", label: "AI 기능 상태 확인 중", detail: "서버가 제공하는 AI 검토 기능의 상태를 확인하고 있어요.", outcome: "AI 판단 확인 전", next: "현재는 기본 분석만 확인할 수 있어요.", source: "NONE" };
+  }
+  if (featureStatus === "STATUS_ERROR" || featureStatus === null) {
+    return { state: "FEATURE_ERROR", label: "AI 기능 상태 확인 실패", detail: "AI 기능 제공 여부를 확인하지 못했어요. 실제 모델 호출은 확인되지 않았어요.", outcome: "AI 판단 확인 불가", next: "서버 연결을 확인하고 새로고침하세요.", source: "NONE" };
   }
   if (!available || featureStatus !== "ACTIVE") {
-    return { state: "FEATURE_PENDING", label: "AI 검토 기능 준비 중", detail: "설정이 켜져 있어도 실제 Jev 검토 기능은 아직 제공되지 않아요.", outcome: "AI 판단 없음", next: "현재는 기본 분석과 로컬 의미 점검만 확인할 수 있어요.", source: "LOCAL" };
+    return { state: "FEATURE_PENDING", label: "AI 검토 미제공", detail: "AI 검토 기능 준비 중: 현재 서버에서 TypeSafe Jev 모델 검토 기능이 활성화되지 않았습니다. 기본 분석만 제공해요.", outcome: "AI 판단 없음", next: "기능 미활성 상태이며 기다려도 자동으로 검토가 시작되지 않아요.", source: "LOCAL" };
+  }
+  if (!enabled) {
+    return { state: "OFF", label: "AI 검토 꺼짐", detail: "기본 Scanner 분석만 사용하고 있어요.", outcome: "AI 판단 없음", next: "AI 검토와 별개로 기본 분석 결과를 확인하세요.", source: "NONE" };
   }
   if (review?.operational_status === "RUNNING" || candidate.ai_review_presentation?.provider_status === "RUNNING") {
     return { state: "RUNNING", label: "AI 검토 중", detail: "실제 검토 요청을 처리하고 있어요.", outcome: "결과 없음", next: "검토 완료 후 결과를 확인하세요.", source: "NONE" };
