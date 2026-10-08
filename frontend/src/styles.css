@@ -19107,3 +19107,18 @@ html[data-theme="dark"] .backtest-workspace.multi-strategy-workspace > .backtest
     top: 104px;
   }
 }
+
+/* SC-UX4-S1: unavailable AI feature is not an interactive ON toggle. */
+.jev-mode-toggle:disabled,
+.jev-mode-toggle.unavailable {
+  opacity: 1;
+  cursor: not-allowed;
+  background: var(--surface-muted);
+  border-color: var(--line);
+}
+.jev-mode-toggle:disabled:hover { border-color: var(--line); }
+.jev-mode-toggle.unavailable .jev-mode-state {
+  color: var(--text-subtle);
+  font-weight: 650;
+  letter-spacing: 0;
+}
