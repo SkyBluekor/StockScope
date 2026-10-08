@@ -46,6 +46,7 @@ def _capture(
     tmp_path: Path, candidates: list[dict], *,
     partial: bool = False, migrate: bool = True, store: bool = True,
 ) -> tuple[Path, str, list[dict], list[dict]]:
+    tmp_path.mkdir(parents=True, exist_ok=True)
     db = tmp_path / "simulation.db"
     with sqlite3.connect(db) as conn:
         conn.execute("CREATE TABLE placeholder(id INTEGER PRIMARY KEY)")
@@ -196,3 +197,41 @@ def test_migration_guard(tmp_path: Path) -> None:
     assert compare_capture_candidates(
         db_path=db, capture_id=capture_id, left_sample_index=0, right_sample_index=1,
     )["status"] == "RANK_EVIDENCE_MIGRATION_REQUIRED"
+
+
+def test_duplicate_resolves_canonical_evidence(tmp_path: Path) -> None:
+    db, original_id, ranked, _ = _capture(
+        tmp_path, [_candidate("000101"), _candidate("000102", missing=1)]
+    )
+    request = ProspectiveCaptureRequest(
+        market_scope="ALL", requested_as_of="2026-10-07",
+        candidate_limit=5, horizon_intent="SHORT", horizon_policy_version="test",
+    )
+    # Copy exact result fields required by the canonical identity.
+    # A duplicate request from a different job should never create new rank proof.
+    with sqlite3.connect(db) as conn:
+        first = conn.execute(
+            "SELECT request_json FROM prospective_capture_run WHERE id=?", (original_id,)
+        ).fetchone()
+    assert first is not None
+    original = compare_capture_candidates(
+        db_path=db, capture_id=original_id, left_sample_index=0, right_sample_index=1,
+    )
+    assert original["status"] == "AVAILABLE"
+    # Verify canonical duplicate read path without reranking or inserting evidence.
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "INSERT INTO prospective_capture_run("
+            "id,capture_version,source_job_id,status,request_json,market_scope,"
+            "requested_as_of,candidate_limit,canonical_capture_id,created_at,updated_at)"
+            " SELECT ?,capture_version,?, 'DUPLICATE',request_json,market_scope,"
+            "requested_as_of,candidate_limit,id,created_at,updated_at"
+            " FROM prospective_capture_run WHERE id=?",
+            ("synthetic-duplicate", "other-job", original_id),
+        )
+    duplicated = compare_capture_candidates(
+        db_path=db, capture_id="synthetic-duplicate",
+        left_sample_index=0, right_sample_index=1,
+    )
+    assert duplicated["status"] == "AVAILABLE"
+    assert duplicated["capture_id"] == original_id
