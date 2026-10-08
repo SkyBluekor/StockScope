@@ -44,7 +44,9 @@ def persist_rank_evidence(
             return _unavailable("RANK_EVIDENCE_MIGRATION_REQUIRED")
 
         frozen = conn.execute(
-            "SELECT status FROM prospective_capture_run WHERE id=?",
+            "SELECT status,scanner_version,market_scope,requested_as_of,"
+            "actual_data_date,source_snapshot_hash,request_json "
+            "FROM prospective_capture_run WHERE id=?",
             (capture_id,),
         ).fetchone()
         if frozen is None or str(frozen["status"]) != status:
@@ -58,6 +60,7 @@ def persist_rank_evidence(
         if len(samples) != len(evidence_rows):
             return _unavailable("EVIDENCE_SAMPLE_COUNT_MISMATCH")
 
+        request_context = json.loads(str(frozen["request_json"]))
         new_rows = []
         for index, (sample, evidence) in enumerate(zip(samples, evidence_rows)):
             if not isinstance(evidence, dict) or int(sample["sample_index"]) != index:
@@ -76,11 +79,13 @@ def persist_rank_evidence(
                 return _unavailable("EVIDENCE_SAMPLE_IDENTITY_MISMATCH")
             body = {
                 **evidence,
-                "scanner_version": capture.get("scanner_version"),
-                "market_scope": capture.get("market_scope"),
-                "requested_as_of": capture.get("requested_as_of"),
-                "data_date": capture.get("actual_data_date"),
-                "source_snapshot_hash": capture.get("source_snapshot_hash"),
+                "scanner_version": frozen["scanner_version"],
+                "market_scope": frozen["market_scope"],
+                "requested_as_of": frozen["requested_as_of"],
+                "data_date": frozen["actual_data_date"],
+                "source_snapshot_hash": frozen["source_snapshot_hash"],
+                "selection_policy_id": request_context.get("selection_policy_id"),
+                "selection_policy_hash": request_context.get("selection_policy_hash"),
                 "sample_snapshot_hash": sample["snapshot_hash"],
             }
             new_rows.append((
