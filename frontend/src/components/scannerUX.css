@@ -466,3 +466,156 @@
 @media (max-width: 800px) {
   .scanner-workspace .scanner-ux2-row-next strong { font-size: 13px; }
 }
+
+/* SC-UX4-S2: candidate-first compact list, genuine responsive decision width. */
+.scanner-workspace .scanner-compare-labels {
+  grid-template-columns: 24px minmax(74px, .9fr) minmax(125px, 1.8fr) 108px;
+  gap: 8px;
+}
+.scanner-workspace .scanner-ux-row-select {
+  grid-template-columns: 24px minmax(74px, .9fr) minmax(125px, 1.8fr) 10px;
+  gap: 8px;
+  padding: 12px 9px 12px 11px;
+  min-height: 66px;
+}
+.scanner-workspace .scanner-compare-judgement {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  align-content: center;
+}
+.scanner-workspace .scanner-compare-judgement > strong {
+  font-size: 13px;
+  line-height: 1.35;
+}
+.scanner-workspace .scanner-compare-judgement .scanner-ux2-row-next {
+  display: block;
+  min-width: 0;
+  color: var(--text-subtle);
+  line-height: 1.4;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.scanner-workspace .scanner-compare-judgement .scanner-ux2-row-next > span {
+  display: block;
+}
+.scanner-workspace .scanner-compare-stock small { font-size: 12px; }
+.scanner-workspace .scanner-compare-head .scanner-ux5-count {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-subtle);
+}
+.scanner-ux5-pinned-extra { border-top: 1px solid var(--line-soft); }
+.scanner-ux5-pinned-extra > small {
+  display: block;
+  padding: 8px 12px 5px;
+  font-size: 12px;
+  color: var(--text-subtle);
+}
+.scanner-workspace .scanner-ux3-summary { gap: 10px; }
+.scanner-ux5-caution,
+.scanner-ux5-next {
+  margin: 0;
+  padding: 10px 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+  border-top: 1px solid var(--line-soft);
+  word-break: keep-all;
+}
+.scanner-ux5-next { font-weight: 600; }
+.scanner-ux5-caution > strong,
+.scanner-ux5-next > strong {
+  color: var(--text-strong);
+  display: block;
+  margin-bottom: 2px;
+  font-size: 12px;
+}
+.scanner-workspace .scanner-selected-action.scanner-ux5-action {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  align-items: stretch;
+  padding-top: 12px;
+}
+.scanner-workspace .scanner-ux5-action .scanner-selected-management-summary {
+  min-width: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+.scanner-workspace .scanner-ux5-action .scanner-selected-management-summary strong {
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.scanner-workspace .scanner-ux5-action .scanner-selected-action-buttons.simplified {
+  display: grid;
+  width: 100%;
+  max-width: none;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  align-items: stretch;
+}
+.scanner-workspace .scanner-ux5-action .scanner-selected-action-buttons.simplified > :only-child {
+  grid-column: 1 / -1;
+}
+.scanner-workspace .scanner-ux5-action .scanner-selected-action-buttons button {
+  min-height: 44px;
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: 5px;
+  white-space: normal;
+  text-align: center;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+  font-weight: 750;
+  font-size: 13px;
+}
+.scanner-workspace .scanner-ux5-action .scanner-ux5-primary-action {
+  border: 1px solid var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+.scanner-workspace .scanner-ux5-action .scanner-ux5-secondary-action {
+  border: 1px solid var(--line);
+  background: var(--surface-muted);
+  color: var(--text);
+}
+@media (min-width: 1280px) and (min-height: 850px) {
+  .scanner-workspace .scanner-ux3-detail-shell.expanded-candidates {
+    position: sticky;
+    top: 82px;
+    align-self: start;
+  }
+}
+@media (max-width: 800px) {
+  .scanner-workspace .scanner-compare-labels { display: none; }
+  .scanner-workspace .scanner-ux-row-select {
+    grid-template-columns: 26px minmax(0, 1fr) 18px;
+    grid-template-areas: "rank stock arrow" "rank judgement arrow";
+    gap: 5px 9px;
+  }
+  .scanner-workspace .scanner-ux-row-select .scanner-compare-judgement {
+    grid-area: judgement;
+    padding-bottom: 1px;
+  }
+}
+@media (max-width: 520px) {
+  .scanner-workspace .scanner-ux5-action .scanner-selected-action-buttons.simplified {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .scanner-workspace .scanner-ux5-action .scanner-selected-action-buttons.simplified > :only-child {
+    grid-column: auto;
+  }
+}

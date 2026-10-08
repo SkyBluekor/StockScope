@@ -20,7 +20,7 @@ def test_sc_ux4_asof_decision_facts_and_no_fabricated_missing_conditions() -> No
     assert "{condition.required}" in summary
     assert 'view.missingConditions.length < view.missingCount' in summary
     assert "{view.nextActionLabel}" in scanner
-    assert "{view.nextActionContext}" in scanner
+    assert 'className="scanner-compare-judgement"' in scanner
     assert 'className="scanner-ux4-missing"' in summary
 
 

@@ -120,11 +120,6 @@ function candidateTone(candidate: ScannerCandidate) {
   return "muted";
 }
 
-function conditionStatusLabel(candidate: ScannerCandidate) {
-  const { passed, total, missing } = candidate.conditions;
-  return `${passed}/${total} 충족 · 부족 ${missing}개`;
-}
-
 function candidateKey(candidate: ScannerCandidate) {
   return evidenceKey(candidate);
 }
@@ -325,16 +320,19 @@ function CandidateCompareRow({
         <span className="scanner-compare-rank">{rank}</span>
         <span className="scanner-compare-stock">
           <strong>{candidate.name}</strong>
-          <small>{candidate.market} · {candidate.strategy_easy_name}</small>
+          <small>{candidate.market}</small>
         </span>
         <span className="scanner-compare-judgement">
-          <strong>{view.status}</strong>
-          <small>{conditionStatusLabel(candidate)}</small>
-          <small className="scanner-ai-list-status">{aiStatusLabel}</small>
-        </span>
-        <span className="scanner-ux2-row-next">
-          <strong>{view.nextActionLabel}</strong>
-          <small>{view.nextActionContext}</small>
+          <strong>{candidate.conditions.passed}/{candidate.conditions.total} 충족</strong>
+          <span className="scanner-ux2-row-next">
+            <span>{view.nextActionLabel}</span>
+          </span>
+          {aiStatusLabel && aiStatusLabel !== "AI 검토 미제공"
+            && aiStatusLabel !== "AI 검토 미실행"
+            && aiStatusLabel !== "AI 검토 꺼짐"
+            && aiStatusLabel !== "AI 기능 상태 확인 중"
+            && aiStatusLabel !== "AI 기능 상태 확인 실패"
+            && <small className="scanner-ai-list-status">{aiStatusLabel}</small>}
         </span>
         <span className="scanner-compare-arrow" aria-hidden="true">›</span>
       </button>
@@ -476,14 +474,10 @@ function CandidateDetail({
               <div><small>AI 보조 검토</small><strong>{storedReviewLoading ? "AI 기록 확인 중" : storedReviewError ? "AI 기록 확인 실패" : aiTruth.label}</strong></div>
               <div><small>과거 검증</small><strong>{historicalReviewStatus(candidate)}</strong></div>
             </div>
-            {candidate.risk.warning && candidate.risk.warnings.length > 0 && (
-              <p className="scanner-ux3-risk"><strong>핵심 위험</strong> {candidate.risk.warnings[0]}</p>
-            )}
             <div className="scanner-ux3-prices">
               <div><small>분석 당시 종가</small><strong>{priceText(candidate.current_price)}</strong></div>
               <div><small>전략 참고 가격</small><strong>{interestPriceText(candidate)}</strong></div>
             </div>
-            <p className="scanner-ux3-guide">이 순위는 분석일의 조건 평가 결과예요. 현재 진입 여부는 새 시세와 전략·위험의 재검증을 거쳐 판단해야 합니다.</p>
             <StockNewsPanel key={candidateKey(candidate) + "-preview"} code={candidate.code}
               market={candidate.market} companyLabel={candidate.name} variant="summary" />
           </div>
@@ -700,37 +694,26 @@ function CandidateDetail({
             market={candidate.market} companyLabel={candidate.name} variant="compact" />
         )}
       </div>
-      <footer className="scanner-selected-action">
-        <div>
-          <small>지금 행동</small>
-          <strong>더 알아보고 싶다면 전문 분석을 살펴보세요.</strong>
-          <p>전문 분석에서 현재 시점의 전략·위험을 다시 확인할 수 있어요.</p>
+      <footer className="scanner-selected-action scanner-ux5-action">
+        <div className="scanner-selected-management-summary">
+          <small>내 종목</small>
+          <strong>
+            {holdingsLoading ? "등록 상태 확인 중"
+              : !holdingsReady ? "등록 상태 확인 필요"
+              : isHeld && isWatched ? "보유 중 · 관심 종목"
+              : isHeld ? "보유 중"
+              : isWatched ? "★ 관심 등록됨" : "미등록"}
+          </strong>
         </div>
         <div className="scanner-selected-action-buttons simplified">
-          <div className="scanner-selected-management-summary">
-            <small>내 종목</small>
-            <strong>
-              {holdingsLoading
-                ? "등록 상태 확인 중"
-                : !holdingsReady
-                  ? "등록 상태 확인 필요"
-                  : isHeld && isWatched
-                    ? "보유 중 · 관심 종목"
-                    : isHeld
-                      ? "보유 중"
-                      : isWatched
-                        ? "★ 관심 등록됨"
-                        : "미등록"}
-            </strong>
-          </div>
+          <button type="button" className="scanner-ux5-primary-action" onClick={onAnalyze}>
+            전문 분석 보기 →
+          </button>
           {holdingsReady && (isWatched || isHeld) && onOpenHoldings && (
-            <button type="button" className="scanner-text-action" onClick={onOpenHoldings}>
+            <button type="button" className="scanner-ux5-secondary-action" onClick={onOpenHoldings}>
               내 종목 관리 →
             </button>
           )}
-          <button type="button" className="scanner-text-action" onClick={onAnalyze}>
-            전문 분석에서 더 보기 →
-          </button>
         </div>
       </footer>
 
@@ -1457,20 +1440,24 @@ export default function ScannerPanel({
 
   function selectCandidateForReview(candidate: ScannerCandidate) {
     setSelectedCandidateKey(candidateKey(candidate));
-    if (window.matchMedia("(max-width: 800px)").matches) {
-      window.requestAnimationFrame(() => {
-        document.getElementById("scanner-selected-details")?.scrollIntoView({
-          behavior: "smooth", block: "start",
-        });
-      });
-    }
+    // On mobile the detail follows the list. On shorter desktops it may be
+    // off-screen after expanding ten additional rows. Guide to it only then.
+    window.requestAnimationFrame(() => {
+      const detail = document.getElementById("scanner-selected-details");
+      if (!detail) return;
+      const bounds = detail.getBoundingClientRect();
+      const mobile = window.matchMedia("(max-width: 800px)").matches;
+      const offscreen = bounds.bottom < 85 || bounds.top >= window.innerHeight;
+      if (mobile || offscreen) {
+        detail.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
   }
 
   function toggleMoreCandidates() {
     const next = !showMore;
-    if (!next && result && selectedCandidateKey && result.more_candidates.some((candidate) => candidateKey(candidate) === selectedCandidateKey)) {
-      setSelectedCandidateKey(result.candidates[0] ? candidateKey(result.candidates[0]) : null);
-    }
+    // Preserve a selected additional candidate; keep it visible as a pinned row
+    // while the rest of the additional list is collapsed.
     setShowMore(next);
   }
 
@@ -1519,6 +1506,11 @@ export default function ScannerPanel({
   const selectedSampleIndex = selectedCandidate
     ? allCandidates.findIndex((candidate) => candidateKey(candidate) === candidateKey(selectedCandidate))
     : -1;
+  const selectedIsExtra = Boolean(
+    selectedCandidate && result?.more_candidates.some(
+      candidate => candidateKey(candidate) === candidateKey(selectedCandidate),
+    ),
+  );
   const selectedRank = selectedSampleIndex >= 0 ? selectedSampleIndex + 1 : 0;
   const [showAuxProgress, setShowAuxProgress] = useState(false);
 
@@ -1879,13 +1871,14 @@ export default function ScannerPanel({
                 <header className="scanner-compare-head">
                   <div>
                     <span>후보 목록</span>
-                    <strong>살펴볼 종목 {result.candidates.length}개</strong>
+                    <strong>우선 후보 {result.candidates.length}개</strong>
+                    <small className="scanner-ux5-count">전체 {result.candidates.length + result.more_candidates.length}개 후보</small>
                   </div>
-                  <small>순서는 살펴볼 순서이며 매수 추천이 아니에요.</small>
+                  <small>분석일 기준 검토 순서</small>
                 </header>
 
                 <div className="scanner-compare-labels" aria-hidden="true">
-                  <span>순서</span><span>종목</span><span>분석 당시 상태</span><span>다음 확인</span><span>내 종목</span>
+                  <span>순서</span><span>종목</span><span>조건 충족 · 핵심 확인</span><span>내 종목</span>
                 </div>
                 <div className="scanner-compare-list">
                   {result.candidates.map((candidate, index) => (
@@ -1912,11 +1905,38 @@ export default function ScannerPanel({
                   ))}
                 </div>
 
+                <ScannerRankComparison result={result} />
+
                 {result.more_candidates.length > 0 && (
                   <div className="scanner-compare-more">
                     <button type="button" onClick={toggleMoreCandidates}>
                       {showMore ? "다른 후보 숨기기 ▲" : `다른 후보 ${result.more_candidates.length}개 보기 ▼`}
                     </button>
+                    {!showMore && selectedIsExtra && selectedCandidate && (
+                      <div className="scanner-ux5-pinned-extra">
+                        <small>선택 중인 추가 후보 · 목록을 접어도 유지돼요</small>
+                        <CandidateCompareRow
+                          key={"pinned-" + candidateKey(selectedCandidate)}
+                          candidate={selectedCandidate}
+                          rank={selectedRank}
+                          selected
+                          aiReviewEnabled={aiReviewEnabled}
+                          aiReviewAvailable={aiReviewAvailable}
+                          managedStock={managedStockMap.get(candidateKey(selectedCandidate)) ?? null}
+                          holdingsLoading={holdingsLoading}
+                          holdingsReady={holdingsReady}
+                          actionBusyKey={holdingActionBusyKey}
+                          aiStatusLabel={storedReviewLoading ? "AI 기록 확인 중" : storedReviewError ? "AI 기록 확인 실패" : scannerAiReviewStatus({
+                            candidate: selectedCandidate, result, enabled: aiReviewEnabled,
+                            available: aiReviewAvailable, featureStatus: aiReviewFeatureStatus,
+                            review: reviewFor(selectedCandidate, selectedSampleIndex),
+                          }).label}
+                          onSelect={() => selectCandidateForReview(selectedCandidate)}
+                          onAddWatch={() => void addCandidateToWatch(selectedCandidate)}
+                          onRegisterHeld={() => openHoldingRegistration(selectedCandidate)}
+                        />
+                      </div>
+                    )}
                     {showMore && (
                       <div className="scanner-compare-list more">
                         {result.more_candidates.map((candidate, index) => (
@@ -1945,11 +1965,11 @@ export default function ScannerPanel({
                     )}
                   </div>
                 )}
-                <ScannerRankComparison result={result} />
+
               </section>
 
               {selectedCandidate && (
-                <div id="scanner-selected-details" className="scanner-ux3-detail-shell">
+                <div id="scanner-selected-details" className={"scanner-ux3-detail-shell" + (showMore ? " expanded-candidates" : "")}>
                 <CandidateDetail
                   key={candidateKey(selectedCandidate)}
                   candidate={selectedCandidate}
