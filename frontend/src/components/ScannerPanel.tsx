@@ -411,8 +411,7 @@ function CandidateDetail({
   const evidenceSummary = evidenceSummaryText(candidate);
   const canPrepareEvidence = evidencePreparationAvailable(candidate);
   const targetCap = targetCapExplanation(candidate);
-  const changeSummary = candidate.user_action.next_transition
-    || (topMissing.length > 0 ? topMissing.slice(0, 2).map((item) => item.label).join(" · ") : "현재 조건이 유지되는지 확인하세요.");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const isWatched = managedStock?.watch_enabled === true;
   const isHeld = managedStock?.is_held === true;
 
@@ -420,15 +419,15 @@ function CandidateDetail({
     <article className={`scanner-selected-detail tone-${tone}`}>
       <header className="scanner-selected-head">
         <div>
-          <span className="scanner-selected-kicker">선택한 후보 · 우선순위 {rank}</span>
+          <span className="scanner-selected-kicker">선택한 종목 · 살펴볼 순서 {rank}</span>
           <div className="scanner-stock-line">
             <h3>{candidate.name}</h3>
             <span>{candidate.market} · {candidate.code}</span>
           </div>
           <div className="scanner-selected-tags">
-            <span className={`scanner-state-badge ${tone}`}>{candidate.candidate_label}</span>
+            <span className={`scanner-state-badge ${tone}`}>{simpleConditionStatus(candidate)}</span>
             <span>{candidate.strategy_easy_name}</span>
-            <span>{evidenceCompactText(candidate)}</span>
+
           </div>
         </div>
         <div className="scanner-selected-price">
@@ -438,23 +437,14 @@ function CandidateDetail({
         </div>
       </header>
 
-      <section className="scanner-detail-summary-grid">
-        <div>
-          <small>현재 판단</small>
-          <strong>{candidate.action_label}</strong>
-          <p>{candidate.headline}</p>
-        </div>
-        <div>
-          <small>왜 후보인가</small>
-          <strong>{candidate.priority?.label ?? candidate.strategy_easy_name}</strong>
-          <p>{candidate.priority?.reason ?? candidate.reason}</p>
-        </div>
-        <div>
-          <small>판단이 바뀌는 조건</small>
-          <strong>{conditionStatusLabel(candidate)}</strong>
-          <p>{changeSummary}</p>
-        </div>
-      </section>
+      <ScannerDecisionSummary candidate={candidate} />
+      <ScannerPriceStatus key={candidateKey(candidate)} candidate={candidate} />
+
+      <details className="scanner-ux-advanced" onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}>
+        <summary>전략·과거 기록·목표 가격 자세히 보기</summary>
+        {advancedOpen && (
+          <div className="scanner-ux-advanced-body">
+            <p className="scanner-ux-advanced-note">{evidenceCompactText(candidate)}</p>
 
       {aiReviewEnabled && (
         <section className={"scanner-ai-detail " + (candidate.ai_review_presentation?.state === "AI_REVIEW_CANDIDATE" ? "review" : "ready")}>
@@ -680,11 +670,15 @@ function CandidateDetail({
         </details>
       )}
 
+          </div>
+        )}
+      </details>
+
       <footer className="scanner-selected-action">
         <div>
           <small>지금 행동</small>
-          <strong>{candidate.user_action.title || "현재 판단을 유지하세요."}</strong>
-          <p>{candidate.user_action.detail}</p>
+          <strong>더 알아보고 싶다면 전문 분석을 살펴보세요.</strong>
+          <p>현재 화면은 분석 당시 조건을 설명합니다. 가격이 맞더라도 매수하라는 뜻은 아니에요.</p>
         </div>
         <div className="scanner-selected-action-buttons simplified">
           <div className="scanner-selected-management-summary">
@@ -1718,7 +1712,7 @@ export default function ScannerPanel({
               {analysisDateMismatch && <small>시장별 분석 기준일이 일치하지 않습니다.</small>}
             </div>
             <div className="scanner-cache-note">
-              {result.scanner_cache_hit ? "오늘 계산한 결과를 바로 재사용했습니다." : `KRX 신규 요청 ${result.diagnostics.network_requests}회 · 시장 저장 데이터 재사용 ${result.diagnostics.market_store_reused_items}건`}
+              {result.scanner_cache_hit ? "이전에 계산한 분석 결과를 다시 보여주고 있어요." : "분석이 완료됐어요. 기준 날짜를 확인해 주세요."}
             </div>
             <div className={`scanner-session-note ${restoredFromSession ? "restored" : "current"}`}>
               <div>
@@ -1759,7 +1753,7 @@ export default function ScannerPanel({
             <div>
               <span>후보 결과</span>
               <h2>{result.candidates.length > 0 ? `${result.candidates.length}개를 먼저 확인하세요.` : noAnalyzedData ? "아직 후보를 판단하지 못했습니다." : "현재 조건에 맞는 후보가 없습니다."}</h2>
-              <p>순위는 상승 확률이 아닙니다. 현재 조건·Risk·진입 근접도·전략 적합도 기준으로 우선 검토 순서를 결정합니다. 3년 과거 근거는 순위에 반영되지 않는 별도 참고 정보입니다.</p>
+              <p>목록은 살펴볼 순서일 뿐, 지금 매수하라는 뜻이 아니에요. 분석 당시 조건과 새로 확인한 가격을 구분해 살펴보세요.</p>
             </div>
           </section>
 
@@ -1811,13 +1805,13 @@ export default function ScannerPanel({
                 <header className="scanner-compare-head">
                   <div>
                     <span>후보 빠른 비교</span>
-                    <strong>핵심 가격과 현재 판단만 먼저 비교하세요.</strong>
+                    <strong>왜 찾았는지, 무엇을 기다려야 할지 확인하세요.</strong>
                   </div>
                   <small>행을 선택하면 아래 상세 판단만 바뀝니다.</small>
                 </header>
 
                 <div className="scanner-compare-labels" aria-hidden="true">
-                  <span>순서</span><span>종목 / 전략</span><span>현재 판단</span><span>핵심 가격</span><span>내 종목</span><span />
+                  <span>순서</span><span>종목</span><span>투자 조건</span><span>분석일 가격 상태</span><span>내 종목</span>
                 </div>
                 <div className="scanner-compare-list">
                   {result.candidates.map((candidate, index) => (
@@ -1869,10 +1863,9 @@ export default function ScannerPanel({
                 )}
               </section>
 
-              <ScannerRankComparison result={result} />
-
               {selectedCandidate && (
                 <CandidateDetail
+                  key={candidateKey(selectedCandidate)}
                   candidate={selectedCandidate}
                   rank={selectedRank}
                   aiReviewEnabled={aiReviewEnabled}
@@ -1888,6 +1881,8 @@ export default function ScannerPanel({
                   onOpenHoldings={onOpenHoldings ? () => openCandidateInHoldings(selectedCandidate) : undefined}
                 />
               )}
+
+              <ScannerRankComparison result={result} />
             </div>
           )}
 
