@@ -168,3 +168,35 @@ test("SC-UX4 missing/invalid condition counts must not turn into a ready recomme
   assert.match(view.headline, /자료가 부족/);
   assert.doesNotMatch(view.headline, /모두 충족/);
 });
+
+test("SC-UX4-S2 rephrases only verified negative market condition", () => {
+  const view = beginnerCandidatePresentation(candidate({
+    priority: { tier: "NEAR_READY" },
+    conditions: {
+      passed: 8, total: 9, missing: 1,
+      top_missing: [{
+        label: "시장 환경이 급격한 하락 상태가 아님",
+        detail: "시장 상태가 조건에 맞지 않습니다.",
+        current_value: "하락장", required_value: "상승장 또는 횡보장",
+      }],
+    },
+  }));
+  assert.equal(view.missingConditions[0].label, "현재 하락장이라 진입 조건 미충족");
+  assert.equal(view.missingConditions[0].current, "하락장");
+  assert.equal(view.missingConditions[0].required, "상승장 또는 횡보장");
+  assert.match(view.nextActionLabel, /하락장/);
+});
+
+test("SC-UX4-S2 does not invent cause when market evidence differs", () => {
+  const view = beginnerCandidatePresentation(candidate({
+    priority: { tier: "NEAR_READY" },
+    conditions: {
+      passed: 8, total: 9, missing: 1,
+      top_missing: [{
+        label: "시장 환경이 급격한 하락 상태가 아님",
+        current_value: "불명", required_value: "상승장 또는 횡보장",
+      }],
+    },
+  }));
+  assert.equal(view.missingConditions[0].label, "시장 환경이 급격한 하락 상태가 아님");
+});
