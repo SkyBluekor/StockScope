@@ -1967,7 +1967,7 @@ export default function ScannerPanel({
               </section>
 
               {selectedCandidate && (
-                <div id="scanner-selected-details" className="scanner-ux3-detail-shell">
+                <div id="scanner-selected-details" className={"scanner-ux3-detail-shell" + (showMore ? " expanded-candidates" : "")}>
                 <CandidateDetail
                   key={candidateKey(selectedCandidate)}
                   candidate={selectedCandidate}
