@@ -343,10 +343,15 @@ function CandidateCompareRow({
           <strong>{view.status}</strong>
           <small>{conditionStatusLabel(candidate)}</small>
         </span>
-        <span className="scanner-ux-row-price">
-          <strong>{view.asOfPrice.label}</strong>
-          <small>분석일 종가 {priceText(candidate.current_price)} · 참고 가격 {priceReferenceText(candidate.entry_risk_guide?.price_rule)}</small>
-          <small>새 시세는 종목을 선택한 뒤 확인할 수 있어요.</small>
+        <span className="scanner-ux2-row-next">
+          <strong>{candidate.risk.warning || candidate.priority?.tier === "RISK_HOLD"
+            ? "위험 먼저 확인"
+            : candidate.conditions.missing > 0
+              ? "부족한 조건 확인"
+              : view.asOfPrice.state === "OUT_OF_RANGE"
+                ? "가격 조건 확인"
+                : "새 시세 확인"}</strong>
+          <small>{view.asOfPrice.label}</small>
         </span>
         <span className="scanner-compare-arrow" aria-hidden="true">›</span>
       </button>
@@ -419,7 +424,7 @@ function CandidateDetail({
     <article className={`scanner-selected-detail tone-${tone}`}>
       <header className="scanner-selected-head">
         <div>
-          <span className="scanner-selected-kicker">선택한 종목 · 살펴볼 순서 {rank}</span>
+          <span className="scanner-selected-kicker">선택한 후보 · 살펴볼 순서 {rank}</span>
           <div className="scanner-stock-line">
             <h3>{candidate.name}</h3>
             <span>{candidate.market} · {candidate.code}</span>
@@ -430,9 +435,8 @@ function CandidateDetail({
 
           </div>
         </div>
-        <div className="scanner-selected-price">
-          <small>기준 종가</small>
-          <strong>{priceText(candidate.current_price)}</strong>
+        <div className="scanner-ux2-detail-date">
+          <small>분석일</small>
           <span>{formatDate(candidate.data_date)} 확정 일봉</span>
         </div>
       </header>
@@ -1700,42 +1704,33 @@ export default function ScannerPanel({
 
       {result && (
         <>
-          <section className="scanner-result-summary">
-            <div>
-              <span>분석 당시 시장 상황</span>
-              <strong>{marketText}</strong>
-              <p>{result.methodology.meaning}</p>
+          <section className="scanner-result-summary scanner-ux2-result-strip" aria-label="종목 찾기 결과 요약">
+            <div className="scanner-ux2-result-identity">
+              <strong>찾은 후보 <b>{result.candidates.length}개</b></strong>
+              <span>{analysisDataDate ? formatDate(analysisDataDate) + " 확정 일봉" : "분석 기준일 확인 필요"}</span>
+              {analysisDateMismatch && <small className="scanner-ux2-result-alert">시장별 기준일이 달라요.</small>}
+              {restoredFromSession && <small>이전 분석을 불러왔어요.</small>}
             </div>
-            <div className="scanner-summary-numbers">
-              <span><small>살펴본 종목</small><b>{formatNumber(result.summary.universe_total)}개</b></span>
-              <span><small>자세히 확인한 종목</small><b>{formatNumber(result.summary.deep_analyzed)}개</b></span>
-              <span><small>찾아낸 후보</small><b>{formatNumber(result.summary.candidate_count)}개</b></span>
-              <span><small>먼저 볼 종목</small><b>{formatNumber(result.summary.shown_count)}개</b></span>
+            <div className="scanner-ux2-result-market">
+              <small>분석 당시 시장</small>
+              <span>{marketText}</span>
             </div>
-            <div className="scanner-analysis-date">
-              <span>분석 기준일</span>
-              <strong>{analysisDataDate ? `${formatDate(analysisDataDate)} 확정 일봉` : "확정 일봉 확인 필요"}</strong>
-              {analysisDateMismatch && <small>시장별 분석 기준일이 일치하지 않습니다.</small>}
-            </div>
-            <div className="scanner-cache-note">
-              {result.scanner_cache_hit ? "이전에 계산한 분석 결과를 다시 보여주고 있어요." : "분석이 완료됐어요. 기준 날짜를 확인해 주세요."}
-            </div>
-            <div className={`scanner-session-note ${restoredFromSession ? "restored" : "current"}`}>
-              <div>
-                <small>{analysisDataDate ? `${formatDate(analysisDataDate)} 확정 일봉 기준` : "확정 일봉 기준"}</small>
-                <strong>{restoredFromSession ? "이전 분석 결과를 그대로 불러왔습니다." : "현재 세션에서 이 결과를 유지합니다."}</strong>
-                <span>마지막 분석 {formatLocalTime(completedAt)}</span>
-              </div>
-              <p>
-                {restoredOnDifferentDay
-                  ? "브라우저 날짜가 바뀌었습니다. 새 확정 일봉이 있는지 확인할 수 있습니다."
-                  : "상세 분석 후 종목 찾기로 돌아와도 같은 결과를 다시 계산하지 않습니다."}
-              </p>
+            <div className="scanner-ux2-result-actions">
               {needsFreshnessCheck && (
                 <button type="button" className="scanner-freshness-check-button" onClick={() => void runScanner(false)} disabled={busy}>
-                  최신 확정 시세 확인
+                  최신 확정 자료 확인
                 </button>
               )}
+              <details className="scanner-ux2-analysis-details">
+                <summary>분석 정보</summary>
+                <div className="scanner-ux2-analysis-body">
+                  <p>{result.methodology.meaning}</p>
+                  <p>살펴본 종목 {formatNumber(result.summary.universe_total)}개 · 자세히 확인한 종목 {formatNumber(result.summary.deep_analyzed)}개</p>
+                  <p>화면에 보여준 후보 {formatNumber(result.summary.shown_count)}개 · 발견한 후보 {formatNumber(result.summary.candidate_count)}개</p>
+                  <p>{result.scanner_cache_hit ? "저장된 분석을 재사용했어요." : "분석을 완료했어요."} 마지막 결과 확인 {formatLocalTime(completedAt)}</p>
+                  <p>{restoredOnDifferentDay ? "날짜가 바뀌었다면 새 확정 자료를 확인하세요." : "종목 분석에서 돌아와도 같은 결과를 다시 계산하지 않아요."}</p>
+                </div>
+              </details>
             </div>
           </section>
 
@@ -1754,14 +1749,6 @@ export default function ScannerPanel({
               <button type="button" onClick={() => void runScanner(true, true)} disabled={busy}>누락 시장 데이터 준비 · 약 {formatNumber(preparationRequests)}회</button>
             </section>
           )}
-
-          <section className="scanner-section-head">
-            <div>
-              <span>찾은 종목</span>
-              <h2>{result.candidates.length > 0 ? `먼저 살펴볼 종목 ${result.candidates.length}개가 있어요.` : noAnalyzedData ? "자료가 부족해서 아직 종목을 찾지 못했어요." : "오늘 기준으로 조건에 맞는 종목이 없어요."}</h2>
-              <p>목록은 살펴볼 순서일 뿐, 지금 매수하라는 뜻이 아니에요. 분석 당시 조건과 새로 확인한 가격을 구분해 살펴보세요.</p>
-            </div>
-          </section>
 
           <details className="scanner-run-options">
             <summary>분석 실행 옵션</summary>
@@ -1810,14 +1797,14 @@ export default function ScannerPanel({
               <section className="scanner-compare-panel">
                 <header className="scanner-compare-head">
                   <div>
-                    <span>한눈에 살펴보기</span>
-                    <strong>왜 찾았는지, 무엇을 기다려야 할지 확인하세요.</strong>
+                    <span>후보 목록</span>
+                    <strong>살펴볼 종목 {result.candidates.length}개</strong>
                   </div>
-                  <small>종목을 선택하면 아래에서 더 쉽게 설명해 드려요.</small>
+                  <small>순서는 살펴볼 순서이며 매수 추천이 아니에요.</small>
                 </header>
 
                 <div className="scanner-compare-labels" aria-hidden="true">
-                  <span>순서</span><span>종목</span><span>투자 조건</span><span>분석일 가격 상태</span><span>내 종목</span>
+                  <span>순서</span><span>종목</span><span>분석 당시 상태</span><span>다음 확인</span><span>내 종목</span>
                 </div>
                 <div className="scanner-compare-list">
                   {result.candidates.map((candidate, index) => (
