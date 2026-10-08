@@ -403,3 +403,9 @@
   .scanner-ux3-tabs button { padding: 10px 3px; }
   .scanner-jev-review dl > div { grid-template-columns: minmax(0, 1fr); gap: 3px; }
 }
+
+.scanner-ux3-detail-shell { min-width: 0; scroll-margin-top: 16px; }
+.scanner-ux3-detail-shell > .scanner-selected-detail { width: 100%; }
+@media (max-width: 800px) {
+  .scanner-ux3-detail-shell { scroll-margin-top: 70px; }
+}
