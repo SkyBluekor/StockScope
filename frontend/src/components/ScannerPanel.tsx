@@ -38,7 +38,7 @@ import {
 import StockNewsPanel from "./StockNewsPanel";
 import ScannerDecisionSummary from "./ScannerDecisionSummary";
 import ScannerPriceStatus from "./ScannerPriceStatus";
-import { beginnerCandidatePresentation, simpleConditionStatus, priceReferenceText } from "./scannerDecisionPresentation";
+import { beginnerCandidatePresentation, simpleConditionStatus } from "./scannerDecisionPresentation";
 import ScannerRankComparison from "./ScannerRankComparison";
 import AiReviewProgress from "./AiReviewProgress";
 import ScannerAiReview from "./ScannerAiReview";
@@ -270,21 +270,6 @@ function evidencePreparationAvailable(candidate: ScannerCandidate) {
   return !evidence.warnings.some((warning) => warning.includes("지원하지 않는 전략"));
 }
 
-function evidenceCompactText(candidate: ScannerCandidate) {
-  const evidence = candidate.historical_evidence;
-  if (!evidence) return candidate.historical_fit.label;
-  if (!evidence.verified) {
-    return evidence.unavailable_reason === "INSUFFICIENT_AVAILABLE_HISTORY"
-      ? "3년 검증 제한 · 이력 부족"
-      : "3년 검증 미완료";
-  }
-  if (evidence.status === "GOOD") return "3년 검증 완료 · 근거 양호";
-  if (evidence.status === "FAIR") return "3년 검증 완료 · 근거 보통";
-  if (evidence.status === "WEAK") return "3년 검증 완료 · 근거 약함";
-  if (evidence.status === "INSUFFICIENT") return "3년 검증 완료 · 표본 부족";
-  if (evidence.status === "NO_CASES") return "3년 검증 완료 · 거래 사례 없음";
-  return "3년 검증 완료";
-}
 
 function emptyCandidateMessage(result: ScannerResponse, noAnalyzedData: boolean) {
   if (noAnalyzedData) {
@@ -617,6 +602,7 @@ function CandidateDetail({
         )}
         {activeTab === "history" && (
           <div className="scanner-ux3-history">
+            <p>{historicalReviewStatus(candidate)}</p>
             {!evidence && <p>과거 검증 자료가 아직 없어요. 기본 분석과 별개로 확인해 주세요.</p>}
       <section className={`scanner-evidence-compact ${evidence?.status ? `evidence-${evidence.status.toLowerCase()}` : ""}`}>
         <div className="scanner-evidence-compact-head">
@@ -715,7 +701,7 @@ function CandidateDetail({
         <div>
           <small>지금 행동</small>
           <strong>더 알아보고 싶다면 전문 분석을 살펴보세요.</strong>
-          <p>현재 화면은 분석 당시 조건을 설명합니다. 가격이 맞더라도 매수하라는 뜻은 아니에요.</p>
+          <p>분석 당시의 참고 정보입니다. 매수 여부는 최신 시세와 위험을 따로 확인하세요.</p>
         </div>
         <div className="scanner-selected-action-buttons simplified">
           <div className="scanner-selected-management-summary">
