@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from copy import deepcopy
 from pathlib import Path
 
 from app.backtest.candidate_priority import priority_sort_key, rank_candidates
+from app.backtest.reproducibility_audit import _candidate_snapshot
+from app.prospective.rank_audit_adapter import extract_rank_evidence_from_audit
 from tools.data.migrate_prospective_vnp2s2 import migrate_prospective_store
 from tools.dev import sync_local
 
@@ -27,30 +30,54 @@ def _candidate(code: str, structural: float) -> dict:
     }
 
 
-def test_rank_trace_matches_actual_sort_and_never_mutates_candidate() -> None:
+def test_reuse_existing_audit_without_changing_ranking(tmp_path: Path) -> None:
     candidates = [
         _candidate("000100", 110.0),
         _candidate("000200", 105.0),
         _candidate("000300", 120.0),
     ]
-    baseline, _ = rank_candidates(deepcopy(candidates))
-    evidence: list[dict] = []
-    ranked, _ = rank_candidates(candidates, evidence_sink=evidence)
-    assert [item["code"] for item in ranked] == [item["code"] for item in baseline]
-    assert [item["priority"] for item in ranked] == [item["priority"] for item in baseline]
-    assert [row["final_rank"] for row in evidence] == [1, 2, 3]
-    assert evidence[0]["code"] == "000200"
-    assert evidence[0]["tie_resolution"]["breaker"] == "STRUCTURAL_TARGET_NEAREST_PROMOTE"
-    for candidate, row in zip(ranked, evidence):
-        s = row["sort_components"]
+    expected, _ = rank_candidates(deepcopy(candidates))
+    ranked, _ = rank_candidates(candidates)
+    assert [c["code"] for c in ranked] == [c["code"] for c in expected]
+
+    audit = {
+        "scanner_version": "test",
+        "analysis_date": "2026-10-07",
+        "market_scope": "ALL",
+        "result_source": "fresh_analysis",
+        "candidate_count": len(ranked),
+        "candidates": [
+            _candidate_snapshot(candidate, i)
+            for i, candidate in enumerate(ranked, start=1)
+        ],
+    }
+    path = tmp_path / "scanner-repro_synthetic.json"
+    path.write_text(json.dumps(audit, ensure_ascii=False), encoding="utf-8")
+    result = {
+        "version": "test",
+        "requested_as_of": "2026-10-07",
+        "market_scope": "ALL",
+        "candidates": ranked,
+        "more_candidates": [],
+        "diagnostics": {"reproducibility_audit": {"written": True, "path": str(path)}},
+    }
+    rows = extract_rank_evidence_from_audit(result, audit_root=tmp_path)
+    assert rows is not None and len(rows) == 3
+    assert rows[0]["code"] == "000200"
+    assert rows[0]["tie_resolution"]["breaker"] == "STRUCTURAL_TARGET_NEAREST_PROMOTE"
+    for candidate, evidence in zip(ranked, rows):
+        s = evidence["sort_components"]
         actual = (
             s["tier_order"], s["missing"], s["risk_quality"],
             s["entry_gap_missing"], s["entry_gap_pct"],
             s["negative_strategy_fit"], s["tie_focus_order"], s["code"],
         )
         assert actual == priority_sort_key(candidate)
-        assert "_sort" not in candidate["priority"]
-        assert row["historical_evidence_used_in_rank"] is False
+
+    mismatch = deepcopy(result)
+    mismatch["candidates"][0]["code"] = "999999"
+    assert extract_rank_evidence_from_audit(mismatch, audit_root=tmp_path) is None
+    assert extract_rank_evidence_from_audit(result, audit_root=tmp_path / "wrong") is None
 
 
 def test_local_sync_migrates_sidecar_separately(tmp_path: Path) -> None:
@@ -65,6 +92,6 @@ def test_local_sync_migrates_sidecar_separately(tmp_path: Path) -> None:
     )
     spec = next(item for item in sync_local.MIGRATIONS if item.key == "JEV-X1")
     assert spec.detect(paths).state == sync_local.MigrationState.MISSING
-    migrated = spec.run(paths)
-    assert migrated["historical_backfill_performed"] is False
+    migration = spec.run(paths)
+    assert migration["historical_backfill_performed"] is False
     assert spec.detect(paths).state == sync_local.MigrationState.CURRENT
