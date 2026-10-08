@@ -69,7 +69,7 @@ export default function ScannerPriceStatus({ candidate }: Props) {
       <header className="scanner-ux-section-heading">
         <div>
           <span className="scanner-ux-eyebrow">가격 확인</span>
-          <h4>분석 당시의 가격과 새로 확인한 가격은 달라요.</h4>
+          <h4>분석일 가격과 새 시세</h4>
         </div>
       </header>
       <div className="scanner-ux-price-grid">
