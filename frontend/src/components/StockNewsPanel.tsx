@@ -161,7 +161,6 @@ export default function StockNewsPanel({ code, market, companyLabel, variant = "
   const requestLimit = compact ? 5 : 10;
   const collapsedLimit = compact ? 3 : 5;
   const expandedLimit = compact ? 5 : 10;
-  const summaryLimit = variant === "summary" ? 2 : requestLimit;
 
   useEffect(() => {
     if (!code) {
@@ -210,10 +209,7 @@ export default function StockNewsPanel({ code, market, companyLabel, variant = "
         });
     }
 
-    const newsRequest = variant === "summary"
-      ? fetchStockNews(code, market, { limit: summaryLimit, signal: controller.signal })
-      : fetchStockNews(code, market, { limit: requestLimit, signal: controller.signal });
-    void newsRequest
+    void fetchStockNews(code, market, { limit: requestLimit, signal: controller.signal })
       .then((result) => {
         if (requestId !== requestIdRef.current || controller.signal.aborted) return;
         setNews(result);
@@ -235,9 +231,11 @@ export default function StockNewsPanel({ code, market, companyLabel, variant = "
       });
 
     return () => controller.abort();
-  }, [code, market, refreshToken, requestLimit, summaryLimit, compact, variant]);
+  }, [code, market, refreshToken, requestLimit, compact]);
 
   const visibleItems = news?.items.slice(0, expanded ? expandedLimit : collapsedLimit) ?? [];
+  const summaryCount = variant === "summary" ? 2 : visibleItems.length;
+  const displayItems = visibleItems.slice(0, summaryCount);
   const title = news?.company_name || companyLabel || code;
 
   return (
@@ -273,7 +271,7 @@ export default function StockNewsPanel({ code, market, companyLabel, variant = "
       ) : (
         <>
           <div className="stock-news-list">
-            {visibleItems.map((item) => (
+            {displayItems.map((item) => (
               <article key={item.id} className="stock-news-item">
                 <div className="stock-news-item-copy">
                   <div className="stock-news-meta">
