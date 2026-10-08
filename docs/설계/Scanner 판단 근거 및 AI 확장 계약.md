@@ -16,22 +16,24 @@ Jev를 호출하거나 기존 순위·Risk·가격·전략 판단을 변경하�
 완전 동률일 때는 구조 목표 거리가 가장 가까운 후보 한 개를 먼저
 표시하고 나머지는 종목코드 순서를 유지한다.
 
-`rank_candidates`의 선택적 `evidence_sink`가 실제 정렬 값을
-순위 확정 시점에만 복사한다. 정렬 계약의 원본 숫자 및 방향과
-동률 그룹·처리 방식을 보존하며, 기존 내부 `_sort` 제거는 유지한다.
+기존 `write_scanner_reproducibility_audit`는 실제 순위 확정 직후
+내부 정렬값 및 `final_sort_key`를 이미 기록한다. 이 감사 기록을
+`rank_audit_adapter.py`에서 검증하고 필요한 필드만 추출한다.
+`scanner.py` 및 `candidate_priority.py`의 생산 코드와 고정 기준선은
+**변경하지 않는다.** 정렬 값의 원본·방향 및 동률 처리 근거가 유지된다.
 3년 과거 근거는 현행 순위에 관여하지 않으므로 순위 결정 요인으로
 표시하지 않는다.
 
 ## 격리·동일성
-1. 신규 Scanner 결과에는 비공개 `_rank_evidence`가 포함되며,
-   같은 날 Scanner 캐시에도 저장된다.
-2. API는 Prospective 캡처 생성 **전에** 이를 제거한다. 그러므로
-   `source_snapshot_hash`, `result_hash` 및 기존 후보 snapshot에
-   정렬 근거를 끼워 넣지 않는다.
+1. 기존 Scanner 감사 기록이 실제 로컬 파일로 존재하는 경우에만
+   그 내용과 현재 Scanner 결과의 버전·기준일·시장·후보·순위·정렬키를
+   대조해 근거를 추출한다. 경로는 전용 `scanner-repro` 경로로 제한한다.
+2. 추출된 내용은 기존 Scanner 후보나 Prospective 캡처 입력에 **추가하지
+   않는다.** `source_snapshot_hash` 및 `result_hash`를 변경하지 않는다.
 3. Prospective finalize 이후 샘플의 시장·종목코드·전략·순서·순위와
    근거가 일치하는 경우에만 새 테이블에 저장한다.
 4. 중복 캡처는 canonical 캡처에 실제 근거가 존재할 때만 재사용한다.
-5. 이전 Scanner 캐시나 과거 캡처에 정렬 근거가 없으면
+5. 이전 Scanner 캐시에 감사 파일이 없거나 과거 캡처에 근거가 없으면
    `NOT_AVAILABLE_LEGACY`다. 과거 기록을 현재 코드로 소급 계산하지 않는다.
 6. DB 마이그레이션이나 근거 저장이 실패하더라도 Scanner의 기존
    기본 분석은 계속 반환한다. 실패 상태는 `rank_evidence_recording`에 표시한다.
