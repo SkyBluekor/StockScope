@@ -487,14 +487,14 @@ function CandidateDetail({
       )}
 
       <section className="scanner-decision-price-band" aria-label="핵심 가격 기준">
-        <div><small>현재가</small><strong>{priceText(candidate.current_price)}</strong></div>
+        <div><small>분석일 종가</small><strong>{priceText(candidate.current_price)}</strong></div>
         <div><small>{strategyPriceLabel(candidate)}</small><strong>{interestPriceText(candidate)}</strong></div>
         <div className="stop"><small>손절 참고구간</small><strong>{stopPriceText(candidate)}</strong></div>
         <div className="target">
           <small>1차 목표 · {targetBasisLabel(candidate)}</small>
           <strong>{targetPriceText(candidate, 1)}</strong>
           <span>
-            {targetGainPct(candidate) == null ? "거리 계산 불가" : `현재가 대비 ${formatSignedPct(targetGainPct(candidate))}`}
+            {targetGainPct(candidate) == null ? "거리 계산 불가" : `분석 당시 종가 대비 ${formatSignedPct(targetGainPct(candidate))}`}
             {targetRMultiple(candidate) == null ? "" : ` · ${targetRMultiple(candidate)!.toFixed(2)}R`}
           </span>
           {targetCap && (
@@ -608,10 +608,10 @@ function CandidateDetail({
                 {evidence.target1_audit?.available && (
                   <div className="scanner-target1-audit">
                     <div><small>1차 목표 평균 거리</small><strong>{formatSignedPct(evidence.target1_audit.average_target_distance_pct)}</strong></div>
-                    <div><small>평균 Risk 배수</small><strong>{evidence.target1_audit.average_target_r_multiple == null ? "-" : `${evidence.target1_audit.average_target_r_multiple.toFixed(2)}R`}</strong></div>
+                    <div><small>과거 평균 위험 대비 수익 비율</small><strong>{evidence.target1_audit.average_target_r_multiple == null ? "-" : `${evidence.target1_audit.average_target_r_multiple.toFixed(2)}R`}</strong></div>
                     <div><small>20거래일 내 Target1 도달</small><strong>{evidence.target1_audit.target_hit_days?.within_20_days ?? 0} / {evidence.target1_audit.sample_count}</strong></div>
                     <div><small>Target1 도달 평균일</small><strong>{evidence.target1_audit.average_target_hit_days == null ? "-" : `${evidence.target1_audit.average_target_hit_days.toFixed(1)}일`}</strong></div>
-                    <p>과거 동일 진입점 기준 Target1 기록입니다. 미래 성공 확률을 뜻하지 않습니다.</p>
+                    <p>과거에 첫 목표 가격에 도달한 기록이에요. 앞으로도 같은 결과가 나온다는 뜻은 아니에요.</p>
                   </div>
                 )}
                 {evidence.market_regime_summary.length > 0 && (
@@ -632,7 +632,7 @@ function CandidateDetail({
                 <span>검증 기간 · {formatDate(evidence.period.start)} ~ {formatDate(evidence.period.end)}</span>
                 {evidence.warnings.length > 0 && <small>확인 내용 · {evidence.warnings.join(" · ")}</small>}
                 {evidence.unavailable_reason === "INSUFFICIENT_AVAILABLE_HISTORY" && (
-                  <small>현재 후보 판단·Risk·순위에는 영향을 주지 않습니다.</small>
+                  <small>이 과거 기록은 현재 후보 순서를 바꾸지 않아요.</small>
                 )}
                 {canPrepareEvidence && (
                   <p className="scanner-evidence-recovery-note">필요한 과거 데이터를 준비하면 같은 후보를 다시 검증할 수 있습니다.</p>
