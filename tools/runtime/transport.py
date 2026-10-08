@@ -675,6 +675,12 @@ def reconcile_remote(
         raise DataToolError(
             "기존 local Runtime을 remote 기준으로 정렬하려면 --confirm이 필요합니다."
         )
+    if replace_local_changes and (
+        not domains or set(domains) - {"holdings", "simulation"}
+    ):
+        raise DataToolError(
+            "REMOTE_RECONCILE_EXPLICIT_DOMAINS_REQUIRED: holdings,simulation"
+        )
 
     prepared = _prepare_enabled_transport(locations=runtime)
     if prepared is None:
