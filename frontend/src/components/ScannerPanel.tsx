@@ -41,6 +41,9 @@ import ScannerPriceStatus from "./ScannerPriceStatus";
 import { beginnerCandidatePresentation, simpleConditionStatus, priceReferenceText } from "./scannerDecisionPresentation";
 import ScannerRankComparison from "./ScannerRankComparison";
 import AiReviewProgress from "./AiReviewProgress";
+import ScannerAiReview from "./ScannerAiReview";
+import { historicalReviewStatus, matchStoredJevReview, scannerAiReviewStatus } from "./scannerAiReviewStatus";
+import { getJevReviews, type JevMonitorItem } from "../services/jevApi";
 import "./scannerProgress.css";
 import "./scannerUX.css";
 
@@ -311,13 +314,13 @@ function effectiveAtIso(value: string) {
 
 function CandidateCompareRow({
   candidate, rank, selected, managedStock, holdingsLoading, holdingsReady,
-  actionBusyKey, onSelect, onAddWatch, onRegisterHeld,
+  actionBusyKey, onSelect, onAddWatch, onRegisterHeld, aiStatusLabel,
 }: {
   candidate: ScannerCandidate; rank: number; selected: boolean;
   aiReviewEnabled: boolean; aiReviewAvailable: boolean;
   managedStock: HoldingStock | null; holdingsLoading: boolean; holdingsReady: boolean;
   actionBusyKey: string | null; onSelect: () => void; onAddWatch: () => void;
-  onRegisterHeld: () => void;
+  onRegisterHeld: () => void; aiStatusLabel: string;
 }) {
   const tone = candidateTone(candidate);
   const key = candidateKey(candidate);
@@ -342,6 +345,7 @@ function CandidateCompareRow({
         <span className="scanner-compare-judgement">
           <strong>{view.status}</strong>
           <small>{conditionStatusLabel(candidate)}</small>
+          <small className="scanner-ai-list-status">{aiStatusLabel}</small>
         </span>
         <span className="scanner-ux2-row-next">
           <strong>{candidate.risk.warning || candidate.priority?.tier === "RISK_HOLD"
@@ -756,6 +760,10 @@ export default function ScannerPanel({
   const [holdingQuantity, setHoldingQuantity] = useState("1");
   const [holdingAveragePrice, setHoldingAveragePrice] = useState("");
   const [holdingEffectiveAt, setHoldingEffectiveAt] = useState(localDateTimeInputValue());
+  const [storedReviews, setStoredReviews] = useState<JevMonitorItem[]>([]);
+  const [storedReviewLoading, setStoredReviewLoading] = useState(false);
+  const [storedReviewError, setStoredReviewError] = useState<string | null>(null);
+  const [reviewRefresh, setReviewRefresh] = useState(0);
   const pollRef = useRef<number | null>(null);
   const startedAtRef = useRef<number | null>(null);
   const lastProgressAtRef = useRef<number | null>(null);
@@ -770,6 +778,35 @@ export default function ScannerPanel({
   const mountedRef = useRef(true);
   const progressRef = useRef<HTMLElement | null>(null);
 
+  const captureId = result?.prospective_capture?.canonical_capture_id
+    || result?.prospective_capture?.capture_id || null;
+  const storedReviewKey = result?.generated_at || "";
+  useEffect(() => {
+    let active = true;
+    setStoredReviews([]);
+    setStoredReviewError(null);
+    if (!result || !captureId || !aiReviewEnabled || !aiReviewAvailable
+      || aiReviewFeatureStatus !== "ACTIVE") {
+      setStoredReviewLoading(false);
+      return () => { active = false; };
+    }
+    setStoredReviewLoading(true);
+    void getJevReviews(captureId)
+      .then(response => {
+        if (!active) return;
+        if (!response.available || response.capture_id !== captureId) {
+          setStoredReviewError("저장된 검토 자료가 현재 분석과 일치하지 않아요.");
+          return;
+        }
+        setStoredReviews(response.items);
+      })
+      .catch(() => {
+        if (active) setStoredReviewError("저장된 AI 검토 결과를 확인하지 못했어요.");
+      })
+      .finally(() => { if (active) setStoredReviewLoading(false); });
+    return () => { active = false; };
+  }, [captureId, storedReviewKey, aiReviewEnabled, aiReviewAvailable, aiReviewFeatureStatus, reviewRefresh]);
+
   const jobBusy = job?.status === "queued" || job?.status === "running";
   const busy = jobBusy;
   const progress = job?.progress;
@@ -777,6 +814,10 @@ export default function ScannerPanel({
     () => new Map(managedStocks.map((stock) => [managedStockKey(stock.market, stock.ticker), stock])),
     [managedStocks],
   );
+  const reviewFor = (candidate: ScannerCandidate, index: number): JevMonitorItem | null =>
+    storedReviews.find(item =>
+      matchStoredJevReview(item, candidate, captureId, index)
+    ) ?? null;
   const evidenceJobStage = Boolean(
     jobBusy
     && preferredCandidateKeyRef.current
@@ -1683,6 +1724,8 @@ export default function ScannerPanel({
             featureStatus={aiReviewFeatureStatus}
             job={job}
             result={jobBusy ? null : result}
+            selectedCandidate={selectedCandidate}
+            review={selectedCandidate ? reviewFor(selectedCandidate, selectedRank - 1) : null}
           />
         )}
       </details>
@@ -1819,6 +1862,11 @@ export default function ScannerPanel({
                       holdingsLoading={holdingsLoading}
                       holdingsReady={holdingsReady}
                       actionBusyKey={holdingActionBusyKey}
+                      aiStatusLabel={storedReviewLoading ? "AI 기록 확인 중" : storedReviewError ? "AI 기록 확인 실패" : scannerAiReviewStatus({
+                        candidate, result, enabled: aiReviewEnabled,
+                        available: aiReviewAvailable, featureStatus: aiReviewFeatureStatus,
+                        review: reviewFor(candidate, index),
+                      }).label}
                       onSelect={() => setSelectedCandidateKey(candidateKey(candidate))}
                       onAddWatch={() => void addCandidateToWatch(candidate)}
                       onRegisterHeld={() => openHoldingRegistration(candidate)}
@@ -1845,6 +1893,11 @@ export default function ScannerPanel({
                             holdingsLoading={holdingsLoading}
                             holdingsReady={holdingsReady}
                             actionBusyKey={holdingActionBusyKey}
+                      aiStatusLabel={storedReviewLoading ? "AI 기록 확인 중" : storedReviewError ? "AI 기록 확인 실패" : scannerAiReviewStatus({
+                        candidate, result, enabled: aiReviewEnabled,
+                        available: aiReviewAvailable, featureStatus: aiReviewFeatureStatus,
+                        review: reviewFor(candidate, result.candidates.length + index),
+                      }).label}
                             onSelect={() => setSelectedCandidateKey(candidateKey(candidate))}
                             onAddWatch={() => void addCandidateToWatch(candidate)}
                             onRegisterHeld={() => openHoldingRegistration(candidate)}
