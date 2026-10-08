@@ -1,0 +1,33 @@
+.scanner-rank-explain {
+  border-top: 1px solid var(--border, #d7d9d9);
+  border-bottom: 1px solid var(--border, #d7d9d9);
+  padding: 20px 0;
+  margin: 18px 0 22px;
+  color: inherit;
+}
+.scanner-rank-explain-heading { display: flex; justify-content: space-between; align-items: end; gap: 12px; margin-bottom: 16px; }
+.scanner-rank-explain-heading h3 { font-size: 1.1rem; font-weight: 700; margin: 3px 0 0; }
+.scanner-rank-explain-heading small { color: var(--text-muted, #6b7280); font-size: 0.8rem; }
+.scanner-rank-explain-kicker { font-size: 0.74rem; font-weight: 700; letter-spacing: 0.08em; color: var(--text-muted, #64748b); }
+.scanner-rank-explain-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.scanner-rank-explain-controls label { display: flex; flex-direction: column; gap: 7px; font-size: 0.78rem; font-weight: 600; min-width: 0; }
+.scanner-rank-explain-controls select { width: 100%; min-width: 0; padding: 9px 10px; font: inherit; color: inherit; background: var(--panel-bg, transparent); border: 1px solid var(--border, #b7bcc3); border-radius: 4px; }
+.scanner-rank-explain-result { margin-top: 14px; font-size: 0.87rem; line-height: 1.6; }
+.scanner-rank-explain-result p { margin: 8px 0; }
+.scanner-rank-explain-decisive { font-size: 0.94rem; }
+.scanner-rank-explain-decisive strong { display: block; margin-bottom: 4px; font-size: 0.82rem; }
+.scanner-rank-explain-unavailable { color: var(--text-muted, #6b7280); }
+.scanner-rank-explain-table-wrap { max-width: 100%; overflow-x: auto; margin-top: 16px; }
+.scanner-rank-explain-table { width: 100%; border-collapse: collapse; text-align: left; white-space: nowrap; }
+.scanner-rank-explain-table th,
+.scanner-rank-explain-table td { font-size: 0.8rem; padding: 9px 10px 9px 0; border-bottom: 1px solid var(--border, #e4e4e4); font-weight: 400; }
+.scanner-rank-explain-table th:first-child { font-weight: 600; }
+.scanner-rank-explain-table thead th { font-weight: 700; color: var(--text-muted, #6b7280); }
+.scanner-rank-explain-table tr.decisive { font-weight: 700; }
+.scanner-rank-explain-table tr.decisive th,
+.scanner-rank-explain-table tr.decisive td { font-weight: 700; }
+.scanner-rank-explain-note { font-size: 0.77rem; color: var(--text-muted, #64748b); }
+@media (max-width: 660px) {
+  .scanner-rank-explain-heading { align-items: start; flex-direction: column; }
+  .scanner-rank-explain-controls { grid-template-columns: minmax(0, 1fr); }
+}
