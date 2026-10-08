@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from copy import deepcopy
 from pathlib import Path
@@ -7,6 +8,8 @@ from pathlib import Path
 import pytest
 
 from app.backtest.candidate_priority import rank_candidates
+from app.backtest.reproducibility_audit import _candidate_snapshot
+from app.prospective.rank_audit_adapter import extract_rank_evidence_from_audit
 from app.prospective.catalog import ProspectiveCatalog
 from app.prospective.models import ProspectiveCaptureRequest, digest_json
 from app.prospective.rank_evidence import persist_rank_evidence, read_rank_evidence
@@ -21,7 +24,7 @@ def _setup(path: Path) -> Path:
     return path
 
 
-def _source() -> tuple[dict, list[dict]]:
+def _source(tmp_path: Path) -> tuple[dict, list[dict]]:
     candidate = {
         "market": "KOSPI", "code": "000123", "name": "synthetic",
         "strategy": "pullback", "candidate_state": "READY",
@@ -34,8 +37,16 @@ def _source() -> tuple[dict, list[dict]]:
         },
         "_strategy_fit_score": 100.0,
     }
-    traces: list[dict] = []
-    ranked, _ = rank_candidates([candidate], evidence_sink=traces)
+    ranked, _ = rank_candidates([candidate])
+    audit_path = tmp_path / "scanner-repro_synthetic.json"
+    audit_path.write_text(json.dumps({
+        "scanner_version": "test",
+        "analysis_date": "2026-10-07",
+        "market_scope": "ALL",
+        "result_source": "fresh_analysis",
+        "candidate_count": 1,
+        "candidates": [_candidate_snapshot(ranked[0], 1)],
+    }, ensure_ascii=False), encoding="utf-8")
     result = {
         "version": "test", "requested_as_of": "2026-10-07",
         "market_scope": "ALL", "data_dates": {"KOSPI": "2026-10-07"},
@@ -43,7 +54,12 @@ def _source() -> tuple[dict, list[dict]]:
         "partial_data": False, "summary": {"candidate_count": 1, "shown_count": 1},
         "candidates": ranked, "more_candidates": [],
         "horizon_context": {"intent": "SHORT"},
+        "diagnostics": {
+            "reproducibility_audit": {"written": True, "path": str(audit_path)}
+        },
     }
+    traces = extract_rank_evidence_from_audit(result, audit_root=tmp_path)
+    assert traces is not None
     return result, traces
 
 
@@ -58,7 +74,7 @@ def _request() -> ProspectiveCaptureRequest:
 def test_capture_hash_is_unchanged_and_evidence_is_append_only(tmp_path: Path) -> None:
     db = _setup(tmp_path / "simulation.db")
     catalog = ProspectiveCatalog(db)
-    result, traces = _source()
+    result, traces = _source(tmp_path)
     snapshots = [catalog._candidate_snapshot(x) for x in result["candidates"]]
     original = catalog._result_identity(request=_request(), result=result, candidates=snapshots)
     enriched = deepcopy(result)
@@ -106,7 +122,7 @@ def test_duplicate_reuses_canonical_and_no_historical_backfill(tmp_path: Path) -
     db = _setup(tmp_path / "simulation.db")
     migrate_scanner_rank_evidence_store(db)
     catalog = ProspectiveCatalog(db)
-    result, traces = _source()
+    result, traces = _source(tmp_path)
     first = catalog.finalize_capture(source_job_id="one", request=_request(), result=result)
     second = catalog.finalize_capture(source_job_id="two", request=_request(), result=result)
     assert first["status"] == "COMPLETE"
