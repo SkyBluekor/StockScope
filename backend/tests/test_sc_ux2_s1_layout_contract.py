@@ -18,10 +18,10 @@ def test_sc_ux2_s1_candidate_list_is_primary_and_summary_is_compact() -> None:
     assert 'className="scanner-decision-workspace"' in panel
     assert 'className="scanner-compare-panel"' in panel
     assert 'className="scanner-ux2-row-next"' in panel
-    assert "순서는 살펴볼 순서이며 매수 추천이 아니에요." in panel
+    assert "분석일 기준 검토 순서" in panel
     assert 'className="scanner-ux-decision scanner-ux2-decision"' in summary
     assert 'className="scanner-ux2-decision-why"' in summary
-    assert 'className="scanner-ux-decision-facts scanner-ux2-facts"' in summary
+    assert 'className="scanner-ux5-next"' in summary
 
     workspace = panel.index('className="scanner-decision-workspace"')
     list_start = panel.index('className="scanner-compare-panel"', workspace)
