@@ -57,3 +57,31 @@ holdings DB만 복원하면 근거는 복원되지 않으므로 사용자가
 
 현재 `rank_change`는 같은 실행의 **정렬 전후 변화**다.
 이전 날짜 대비 변화로 재사용하지 않는다.
+
+
+## JEV-X2 — Scanner 두 후보의 실제 순위 차이 설명
+
+`SCANNER_CANDIDATE_COMPARISON_V1`은 새 DB 테이블, Scanner 재계산 또는 AI 호출을 사용하지 않는다.
+하나의 canonical Prospective capture에 보존된 두 개의 `SCANNER_RANK_EVIDENCE_V1`
+불변 근거를 같은 읽기 트랜잭션에서 확인하고, 정렬키의 최초 차이만 순위 결정
+이유로 반환한다. 후속 차이는 참고 수치일 뿐 결정 요인으로 취급하지 않는다.
+
+- API: `GET /api/simulation/prospective/captures/{capture_id}/candidate-comparison?left_sample_index=0&right_sample_index=1`
+- 구현: `backend/app/prospective/rank_comparison.py`
+- UI: 기존 Scanner 후보 표 아래 두 후보 선택과 결론/8개 정렬항목 표
+- 비교 키: tier_order → missing → risk_quality → entry_gap_missing →
+  entry_gap_pct → negative_strategy_fit → tie_focus_order → code
+- 동률 구조 목표 승격은 저장된 같은 tie group / tie breaker 증거가 맞는 경우에만 설명한다.
+- 코드 정렬은 투자 우열이 아니라 표시 안정화를 위한 최종 정렬이다.
+- 캡처·샘플·해시·정책·버전·기준일 불일치 시 fail-closed; 근거 없는 오래된 캡처를
+  새 정렬 함수로 역산하지 않는다.
+- Duplicate는 canonical capture로 이동; Partial은 저장된 반환 후보의
+  비교만 허용하고 데이터 범위 제한을 고지한다.
+- 실시간 KIS 시세 변동이나 과거 검증 성과를 실제 순위 결정 근거로 표시하지 않는다.
+- 사용자가 이전 세션에서 복원한 Scanner 결과라도 서버가 기록을 다시 검증한다.
+- Production baseline, 전략 로직, Prospective snapshot/result 해시, 데이터베이스 원본은
+  변경하지 않는다.
+
+X1의 신규 근거 저장이 성공했는지 실제 PC에서 `rank_evidence_recording.status=STORED`
+여부를 확인해야만 사용자 환경 적용을 완료 처리한다. 마이그레이션 CURRENT만으로
+추가 근거가 생성됐다고 판단하지 않는다.
