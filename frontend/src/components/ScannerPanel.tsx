@@ -289,7 +289,7 @@ function emptyCandidateMessage(result: ScannerResponse, noAnalyzedData: boolean)
   }
   const raw = String(result.empty_message ?? "").trim();
   if (!raw || /\bNO[_ -]?TRADE\b/i.test(raw)) {
-    return "현재 확정 일봉 기준으로 10개 전략의 진입 조건을 충분히 만족한 종목이 없습니다. 조건을 억지로 완화하지 않고 다음 확정 일봉에서 다시 확인합니다.";
+    return "분석 기준일에 설정된 투자 조건을 충분히 만족하는 종목이 없었어요. 조건을 무리하게 바꾸지 않고 다음 거래일에 다시 확인할 수 있어요.";
   }
   return raw;
 }
@@ -1758,7 +1758,7 @@ export default function ScannerPanel({
           <section className="scanner-section-head">
             <div>
               <span>찾은 종목</span>
-              <h2>{result.candidates.length > 0 ? `${result.candidates.length}개를 먼저 확인하세요.` : noAnalyzedData ? "아직 후보를 판단하지 못했습니다." : "현재 조건에 맞는 후보가 없습니다."}</h2>
+              <h2>{result.candidates.length > 0 ? `먼저 살펴볼 종목 ${result.candidates.length}개가 있어요.` : noAnalyzedData ? "자료가 부족해서 아직 종목을 찾지 못했어요." : "오늘 기준으로 조건에 맞는 종목이 없어요."}</h2>
               <p>목록은 살펴볼 순서일 뿐, 지금 매수하라는 뜻이 아니에요. 분석 당시 조건과 새로 확인한 가격을 구분해 살펴보세요.</p>
             </div>
           </section>
