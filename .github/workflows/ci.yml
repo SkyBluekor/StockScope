@@ -71,6 +71,10 @@ jobs:
         working-directory: frontend
         run: npm run test:sc-ux1
 
+      - name: Test scanner AI status and identity
+        working-directory: frontend
+        run: npm run test:sc-ux3
+
       - name: Build frontend
         working-directory: frontend
         run: npm run build
