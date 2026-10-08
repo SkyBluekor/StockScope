@@ -1452,6 +1452,7 @@ export default function ScannerPanel({
     ? allCandidates.findIndex((candidate) => candidateKey(candidate) === candidateKey(selectedCandidate))
     : -1;
   const selectedRank = selectedSampleIndex >= 0 ? selectedSampleIndex + 1 : 0;
+  const [showAuxProgress, setShowAuxProgress] = useState(false);
 
   useEffect(() => {
     if (!result) {
@@ -1471,15 +1472,15 @@ export default function ScannerPanel({
     <div className="scanner-workspace">
       <section className="scanner-hero ux13-scanner-header">
         <div>
-          <h1>종목 후보 찾기</h1>
-          <p>현재 시장 조건에 맞는 후보를 찾습니다.</p>
+          <h1>살펴볼 종목 찾기</h1>
+          <p>최근 거래일에 확인된 자료로 살펴볼 종목을 찾습니다.</p>
         </div>
       </section>
 
       <section className="scanner-control-card">
         <div>
           <strong>시장 선택</strong>
-          <p>일반 상장주 중심 · ETF·ETN·SPAC 등은 기본 후보에서 제외합니다.</p>
+          <p>일반 주식을 중심으로 찾으며 일부 특수 상품은 기본 검색에서 제외합니다.</p>
         </div>
         <div className="scanner-market-tabs" role="group" aria-label="검색 시장 선택">
           {(["ALL", "KOSPI", "KOSDAQ"] as MarketScope[]).map((value) => (
@@ -1669,13 +1670,18 @@ export default function ScannerPanel({
         </section>
       )}
 
-      <AiReviewProgress
-        enabled={aiReviewEnabled}
-        available={aiReviewAvailable}
-        featureStatus={aiReviewFeatureStatus}
-        job={job}
-        result={jobBusy ? null : result}
-      />
+      <details className="scanner-ux-aux" onToggle={(event) => setShowAuxProgress(event.currentTarget.open)}>
+        <summary>추가 검토 과정 자세히 보기</summary>
+        {showAuxProgress && (
+          <AiReviewProgress
+            enabled={aiReviewEnabled}
+            available={aiReviewAvailable}
+            featureStatus={aiReviewFeatureStatus}
+            job={job}
+            result={jobBusy ? null : result}
+          />
+        )}
+      </details>
 
       {error && (
         <section className="scanner-error-card">
@@ -1696,15 +1702,15 @@ export default function ScannerPanel({
         <>
           <section className="scanner-result-summary">
             <div>
-              <span>현재 시장</span>
+              <span>분석 당시 시장 상황</span>
               <strong>{marketText}</strong>
               <p>{result.methodology.meaning}</p>
             </div>
             <div className="scanner-summary-numbers">
-              <span><small>전체 확인</small><b>{formatNumber(result.summary.universe_total)}개</b></span>
-              <span><small>상세 검증</small><b>{formatNumber(result.summary.deep_analyzed)}개</b></span>
-              <span><small>관심 후보</small><b>{formatNumber(result.summary.candidate_count)}개</b></span>
-              <span><small>먼저 표시</small><b>{formatNumber(result.summary.shown_count)}개</b></span>
+              <span><small>살펴본 종목</small><b>{formatNumber(result.summary.universe_total)}개</b></span>
+              <span><small>자세히 확인한 종목</small><b>{formatNumber(result.summary.deep_analyzed)}개</b></span>
+              <span><small>찾아낸 후보</small><b>{formatNumber(result.summary.candidate_count)}개</b></span>
+              <span><small>먼저 볼 종목</small><b>{formatNumber(result.summary.shown_count)}개</b></span>
             </div>
             <div className="scanner-analysis-date">
               <span>분석 기준일</span>
@@ -1751,7 +1757,7 @@ export default function ScannerPanel({
 
           <section className="scanner-section-head">
             <div>
-              <span>후보 결과</span>
+              <span>찾은 종목</span>
               <h2>{result.candidates.length > 0 ? `${result.candidates.length}개를 먼저 확인하세요.` : noAnalyzedData ? "아직 후보를 판단하지 못했습니다." : "현재 조건에 맞는 후보가 없습니다."}</h2>
               <p>목록은 살펴볼 순서일 뿐, 지금 매수하라는 뜻이 아니에요. 분석 당시 조건과 새로 확인한 가격을 구분해 살펴보세요.</p>
             </div>
@@ -1804,10 +1810,10 @@ export default function ScannerPanel({
               <section className="scanner-compare-panel">
                 <header className="scanner-compare-head">
                   <div>
-                    <span>후보 빠른 비교</span>
+                    <span>한눈에 살펴보기</span>
                     <strong>왜 찾았는지, 무엇을 기다려야 할지 확인하세요.</strong>
                   </div>
-                  <small>행을 선택하면 아래 상세 판단만 바뀝니다.</small>
+                  <small>종목을 선택하면 아래에서 더 쉽게 설명해 드려요.</small>
                 </header>
 
                 <div className="scanner-compare-labels" aria-hidden="true">
