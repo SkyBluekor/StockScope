@@ -661,6 +661,7 @@ def reconcile_remote(
     prefer_remote: bool,
     confirm: bool,
     domains: list[str] | None = None,
+    replace_local_changes: bool = False,
     locations: RuntimeLocations | None = None,
     retry_count: int = DEFAULT_RETRY_COUNT,
     retry_delay_seconds: float = DEFAULT_RETRY_DELAY_SECONDS,
@@ -681,6 +682,7 @@ def reconcile_remote(
     config, root, state = prepared
     machine_id = str(state["machine_id"])
     resolver = _ancestry_resolver(root, state=state)
+    head_fence = json.dumps(_heads(root), sort_keys=True, ensure_ascii=False)
     remote_heads = [
         item for item in _heads(root)
         if str(item.get("machine_id")) != machine_id
@@ -733,6 +735,7 @@ def reconcile_remote(
         dry_run=True,
         is_ancestor=resolver,
         allow_unknown_lineage_replace=True,
+        allow_known_local_replace=replace_local_changes,
     )
     if plan["status"] == "BLOCKED":
         raise DataToolError(
@@ -757,6 +760,27 @@ def reconcile_remote(
             )
         )
 
+    if replace_local_changes and any(
+        item["action"] == "REPLACE_LOCAL_CHANGES" for item in plan["plans"]
+    ):
+        from tools.data.backup_runtime import create_backup
+        backup = create_backup()
+        if not (Path(backup) / "backup_manifest.json").is_file():
+            raise DataToolError("REMOTE_RECONCILE_BACKUP_REQUIRED")
+    if json.dumps(_heads(root), sort_keys=True, ensure_ascii=False) != head_fence:
+        raise DataToolError("REMOTE_RECONCILE_HEAD_CHANGED")
+    recheck = import_handoff(
+        bundle,
+        domains=selected,
+        locations=runtime,
+        strict=True,
+        dry_run=True,
+        is_ancestor=resolver,
+        allow_unknown_lineage_replace=True,
+        allow_known_local_replace=replace_local_changes,
+    )
+    if recheck["status"] != plan["status"] or recheck["plans"] != plan["plans"]:
+        raise DataToolError("REMOTE_RECONCILE_LOCAL_DB_CHANGED")
     applied = import_handoff(
         bundle,
         domains=selected,
@@ -764,6 +788,7 @@ def reconcile_remote(
         strict=True,
         is_ancestor=resolver,
         allow_unknown_lineage_replace=True,
+        allow_known_local_replace=replace_local_changes,
     )
     if applied["status"] == "BLOCKED":
         raise DataToolError("RUNTIME_TRANSPORT_CONFLICT: 초기 정렬이 차단되었습니다.")
