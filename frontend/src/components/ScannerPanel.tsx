@@ -120,11 +120,6 @@ function candidateTone(candidate: ScannerCandidate) {
   return "muted";
 }
 
-function conditionStatusLabel(candidate: ScannerCandidate) {
-  const { passed, total, missing } = candidate.conditions;
-  return `${passed}/${total} 충족 · 부족 ${missing}개`;
-}
-
 function candidateKey(candidate: ScannerCandidate) {
   return evidenceKey(candidate);
 }
@@ -1445,13 +1440,18 @@ export default function ScannerPanel({
 
   function selectCandidateForReview(candidate: ScannerCandidate) {
     setSelectedCandidateKey(candidateKey(candidate));
-    if (window.matchMedia("(max-width: 800px)").matches) {
-      window.requestAnimationFrame(() => {
-        document.getElementById("scanner-selected-details")?.scrollIntoView({
-          behavior: "smooth", block: "start",
-        });
-      });
-    }
+    // On mobile the detail follows the list. On shorter desktops it may be
+    // off-screen after expanding ten additional rows. Guide to it only then.
+    window.requestAnimationFrame(() => {
+      const detail = document.getElementById("scanner-selected-details");
+      if (!detail) return;
+      const bounds = detail.getBoundingClientRect();
+      const mobile = window.matchMedia("(max-width: 800px)").matches;
+      const offscreen = bounds.bottom < 85 || bounds.top >= window.innerHeight;
+      if (mobile || offscreen) {
+        detail.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
   }
 
   function toggleMoreCandidates() {
