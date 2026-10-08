@@ -779,7 +779,8 @@ def test_ux_redesign1j5_scanner_defaults_to_reading_and_separates_explicit_work(
     assert "+ 보유 등록" not in detail
     assert "onAddWatch" not in detail
     assert "onRegisterHeld" not in detail
-    assert "전문 분석에서 더 보기 →" in detail
+    assert "전문 분석 보기 →" in detail
+    assert "onClick={onAnalyze}" in detail
     assert "내 종목 관리 →" in detail
     assert "scanner-selected-management-summary" in detail
 
