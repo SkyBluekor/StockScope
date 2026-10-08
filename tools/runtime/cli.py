@@ -18,6 +18,7 @@ from tools.data.common import (
     validate_market_db,
 )
 from tools.dev.sync_local import RuntimePaths, build_runtime_plan, sync_runtime
+from tools.runtime.local_reconcile import reconcile_local as transport_reconcile_local
 from tools.runtime.handoff import (
     DEFAULT_EXPORT_DOMAINS,
     RuntimeLocations,
@@ -74,6 +75,14 @@ def _print_transport(payload: dict) -> None:
         print(f"Bundle size             {size_mb:.2f} MB")
     if payload.get("reasons"):
         print("Publish reasons         " + ", ".join(payload["reasons"]))
+    if payload.get("prefer_local"):
+        print("Local authority         " + ", ".join(payload["prefer_local"]))
+    if payload.get("preserve_equal"):
+        print("Preserve equal          " + ", ".join(payload["preserve_equal"]))
+    if payload.get("backup"):
+        print("Backup                  " + str(payload["backup"]))
+    if payload.get("transport_enabled") is False:
+        print("Transport               DISABLED (enable after verification)")
     reconciled = list(payload.get("reconciled") or [])
     if reconciled:
         print("Reconciled domains      " + ", ".join(reconciled))
@@ -179,8 +188,12 @@ def build_parser() -> argparse.ArgumentParser:
     transport_sub.add_parser("post-sync")
 
     reconcile = transport_sub.add_parser("reconcile")
-    reconcile.add_argument("--prefer-remote", action="store_true")
+    choice = reconcile.add_mutually_exclusive_group(required=True)
+    choice.add_argument("--prefer-remote", action="store_true")
+    choice.add_argument("--prefer-local", action="store_true")
     reconcile.add_argument("--confirm", action="store_true")
+    reconcile.add_argument("--dry-run", action="store_true")
+    reconcile.add_argument("--replace-local-changes", action="store_true")
     reconcile.add_argument("--domains", help="쉼표 구분 domain 목록")
 
     checkpoint = transport_sub.add_parser("checkpoint")
@@ -248,11 +261,23 @@ def main() -> int:
             elif args.transport_command == "post-sync":
                 result = transport_post_sync()
             elif args.transport_command == "reconcile":
-                result = transport_reconcile_remote(
-                    prefer_remote=bool(args.prefer_remote),
-                    confirm=bool(args.confirm),
-                    domains=_domains(args.domains),
-                )
+                if args.prefer_local:
+                    if args.replace_local_changes:
+                        raise DataToolError("--replace-local-changes는 원격 우선에서만 사용합니다.")
+                    result = transport_reconcile_local(
+                        confirm=bool(args.confirm),
+                        dry_run=bool(args.dry_run),
+                        domains=_domains(args.domains),
+                    )
+                else:
+                    if args.dry_run:
+                        raise DataToolError("원격 우선의 --dry-run은 지원하지 않습니다.")
+                    result = transport_reconcile_remote(
+                        prefer_remote=True,
+                        confirm=bool(args.confirm),
+                        domains=_domains(args.domains),
+                        replace_local_changes=bool(args.replace_local_changes),
+                    )
             elif args.transport_command == "checkpoint":
                 if not args.confirm:
                     raise DataToolError(
