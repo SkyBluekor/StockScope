@@ -35,6 +35,7 @@ from tools.data import migrate_horizon_context_vnp1s2 as p1s2
 from tools.data import migrate_selection_policy_pin_vnp1s3 as p1s3
 from tools.data import migrate_feedback_vnp2s1 as p2s1
 from tools.data import migrate_prospective_vnp2s2 as p2s2
+from tools.data import migrate_scanner_rank_evidence_jevx1 as rank_x1
 from tools.data import migrate_holdings_decision_vnp3s1 as p3s1
 from tools.data import migrate_holdings_recovery_vnp3s2 as p3s2
 from tools.data import migrate_watch_vnp4s1 as p4s1
@@ -98,6 +99,7 @@ MIGRATION_DEPENDENCIES: dict[str, tuple[str, ...]] = {
     "VN-P4-S2": ("VN-P4-S1",),
     "VN-P5-S1": ("VN-P2-S2",),
     "NEXT-6E-S3": ("VN-P2-S2",),
+    "JEV-X1": ("VN-P2-S2",),
     "JEV-SHADOW-V1": ("VN-P2-S2",),
     "JEV-EVALUATION-V1": ("JEV-SHADOW-V1",),
     "JEV-TYPESAFE-V2": ("VN-P2-S2",),
@@ -111,6 +113,7 @@ SIMULATION_REQUIRED_MIGRATIONS = frozenset(
         "VN-P5-S1",
         "VN-P6-S1",
         "NEXT-6E-S3",
+        "JEV-X1",
         "JEV-SHADOW-V1",
         "JEV-EVALUATION-V1",
         "JEV-TYPESAFE-V2",
@@ -132,6 +135,7 @@ MIGRATION_WRITE_DOMAINS: dict[str, frozenset[str]] = {
     "VN-P5-S1": frozenset({"simulation"}),
     "VN-P6-S1": frozenset({"simulation"}),
     "NEXT-6E-S3": frozenset({"simulation"}),
+    "JEV-X1": frozenset({"simulation"}),
     "JEV-SHADOW-V1": frozenset({"simulation"}),
     "JEV-EVALUATION-V1": frozenset({"simulation"}),
     "JEV-TYPESAFE-V2": frozenset({"simulation"}),
@@ -840,6 +844,22 @@ MIGRATIONS: tuple[MigrationSpec, ...] = (
         "Prospective Reference",
         _detect_next6e_s3,
         _run_next6e_s3,
+    ),
+    MigrationSpec(
+        "JEV-X1",
+        "Scanner Rank Evidence",
+        _simple_detector(
+            "JEV-X1",
+            "Scanner Rank Evidence",
+            db_attr="simulation",
+            expected_tables=rank_x1.RANK_EVIDENCE_TABLES,
+            required_base=rank_x1.REQUIRED_BASE_TABLES,
+            meta_table=rank_x1.RANK_EVIDENCE_META_TABLE,
+            expected_version=rank_x1.RANK_EVIDENCE_SCHEMA_VERSION,
+        ),
+        lambda paths: rank_x1.migrate_scanner_rank_evidence(
+            simulation_db=paths.simulation
+        ),
     ),
     MigrationSpec(
         "JEV-SHADOW-V1",
