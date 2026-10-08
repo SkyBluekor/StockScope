@@ -32,7 +32,7 @@ test("base scan and local meaning checks are never Jev completion", () => {
   assert.equal(state.source, "LOCAL");
 });
 test("disabled, pending, not-requested and input-missing are separate", () => {
-  assert.equal(scannerAiReviewStatus({ ...args, enabled: false }).state, "OFF");
+  assert.equal(scannerAiReviewStatus({ ...args, enabled: false, available: true, featureStatus: "ACTIVE" }).state, "OFF");
   assert.equal(scannerAiReviewStatus({ ...args, available: true, featureStatus: "ACTIVE" }).state, "NOT_REQUESTED");
   assert.equal(scannerAiReviewStatus({
     ...args, available: true, featureStatus: "ACTIVE",
@@ -65,4 +65,18 @@ test("capture, ticker, market and sample index must match", () => {
 test("historical evidence is independent of AI state", () => {
   assert.match(historicalReviewStatus(candidate), /데이터 부족/);
   assert.match(historicalReviewStatus({ ...candidate, historical_evidence: { verified: true } }), /완료/);
+});
+
+
+test("SC-UX4 disabled feature wins over saved preference OFF or ON", () => {
+  for (const enabled of [true, false]) {
+    const state = scannerAiReviewStatus({ ...args, enabled });
+    assert.equal(state.state, "FEATURE_PENDING");
+    assert.equal(state.label, "AI 검토 미제공");
+  }
+});
+test("SC-UX4 server feature loading and failure never claim AI availability", () => {
+  assert.equal(scannerAiReviewStatus({ ...args, featureStatus: "STATUS_LOADING" }).state, "FEATURE_LOADING");
+  assert.equal(scannerAiReviewStatus({ ...args, featureStatus: "STATUS_ERROR" }).state, "FEATURE_ERROR");
+  assert.equal(scannerAiReviewStatus({ ...args, featureStatus: null }).state, "FEATURE_ERROR");
 });

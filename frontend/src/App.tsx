@@ -237,6 +237,8 @@ export default function App() {
   const [apiStatus, setApiStatus] = useState("확인 중");
   const [theme, setTheme] = useState<ThemeMode>(initialTheme);
   const [jevReviewFeature, setJevReviewFeature] = useState<JevReviewFeature | null>(null);
+  const [jevFeatureLoading, setJevFeatureLoading] = useState(true);
+  const [jevFeatureError, setJevFeatureError] = useState(false);
   const [jevReviewEnabled, setJevReviewEnabled] = useState(
     () => window.localStorage.getItem("stockscope-jev-review-enabled") === "on",
   );
@@ -254,10 +256,15 @@ export default function App() {
       .then((feature) => {
         if (cancelled) return;
         setJevReviewFeature(feature);
+        setJevFeatureError(false);
       })
       .catch(() => {
         if (cancelled) return;
         setJevReviewFeature(null);
+        setJevFeatureError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setJevFeatureLoading(false);
       });
     return () => {
       cancelled = true;
@@ -923,23 +930,30 @@ const strategyName: Record<string, string> = {
           </button>
           <button
             type="button"
-            className={`jev-mode-toggle ${jevReviewEnabled ? "on" : "off"}`}
+            className={`jev-mode-toggle ${jevReviewFeature?.available === true && jevReviewFeature.feature_status === "ACTIVE" ? (jevReviewEnabled ? "on" : "off") : "unavailable"}`}
             onClick={toggleJevReview}
-            aria-pressed={jevReviewEnabled}
-            aria-label={`AI 보조 검토 ${jevReviewEnabled ? "켜짐" : "꺼짐"}`}
-            title={
-              jevReviewFeature?.available === true && jevReviewFeature.feature_status === "ACTIVE"
-                ? jevReviewEnabled
-                  ? "AI가 전략 조건의 의미를 한 번 더 확인합니다. 기본 분석 결과는 변경하지 않습니다."
-                  : "StockScope 기본 분석만 사용합니다."
-                : jevReviewEnabled
-                  ? "AI 보조 검토 설정은 켜져 있습니다. 실제 AI 검토는 기능 검증 완료 후 적용됩니다."
-                  : "AI 보조 검토를 켜면 기능 검증 완료 후 전략 조건의 의미를 한 번 더 확인합니다."
-            }
+            disabled={jevFeatureLoading || jevFeatureError
+              || jevReviewFeature?.available !== true || jevReviewFeature.feature_status !== "ACTIVE"}
+            aria-pressed={jevReviewFeature?.available === true && jevReviewFeature.feature_status === "ACTIVE" ? jevReviewEnabled : false}
+            aria-label={jevFeatureLoading ? "AI 기능 상태 확인 중"
+              : jevFeatureError ? "AI 기능 상태 확인 실패"
+              : jevReviewFeature?.available !== true || jevReviewFeature.feature_status !== "ACTIVE"
+                ? "AI 검토 미제공 · TypeSafe Jev 미활성"
+                : `AI 보조 검토 설정 ${jevReviewEnabled ? "켜짐" : "꺼짐"}`}
+            title={jevFeatureLoading ? "서버의 AI 기능 제공 여부를 확인하고 있습니다."
+              : jevFeatureError ? "AI 기능 상태를 조회하지 못했습니다. 새로고침해서 다시 확인하세요."
+              : jevReviewFeature?.available !== true || jevReviewFeature.feature_status !== "ACTIVE"
+                ? "TypeSafe Jev 사용자 검토 기능은 서버에서 비활성화되어 있습니다. 이 버튼으로 모델을 실행할 수 없습니다."
+                : "AI 검토 사용자 설정입니다. 실제 모델 호출 여부는 종목의 AI 검토 상태에서 확인하세요."}
           >
             <span className="jev-mode-label">AI 보조 검토</span>
-            <b className="jev-mode-state">{jevReviewEnabled ? "설정 켜짐" : "설정 꺼짐"}</b>
-            <span className="jev-mode-switch" aria-hidden="true"><i /></span>
+            <b className="jev-mode-state">{jevFeatureLoading ? "확인 중"
+              : jevFeatureError ? "상태 확인 실패"
+              : jevReviewFeature?.available !== true || jevReviewFeature.feature_status !== "ACTIVE"
+                ? "미제공" : jevReviewEnabled ? "설정 켜짐" : "설정 꺼짐"}</b>
+            {jevReviewFeature?.available === true && jevReviewFeature.feature_status === "ACTIVE" && (
+              <span className="jev-mode-switch" aria-hidden="true"><i /></span>
+            )}
           </button>
           <div className="header-status">
             {activeDataTask && (
@@ -2231,7 +2245,7 @@ const strategyName: Record<string, string> = {
             <ScannerPanel
               aiReviewEnabled={jevReviewEnabled}
               aiReviewAvailable={jevReviewFeature?.available === true && jevReviewFeature.feature_status === "ACTIVE"}
-              aiReviewFeatureStatus={jevReviewFeature?.feature_status ?? null}
+              aiReviewFeatureStatus={jevFeatureLoading ? "STATUS_LOADING" : jevFeatureError ? "STATUS_ERROR" : jevReviewFeature?.feature_status ?? "STATUS_ERROR"}
               onAnalyzeStock={(item) => {
                 chooseStock(item, { loadContext: true, origin: "scanner" });
                 navigateApp("analysis");
