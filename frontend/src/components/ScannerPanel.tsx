@@ -388,6 +388,12 @@ function CandidateDetail({
   rank,
   aiReviewEnabled,
   aiReviewAvailable,
+  aiReviewFeatureStatus,
+  result,
+  storedReview,
+  storedReviewLoading,
+  storedReviewError,
+  onRefreshReviews,
   onAnalyze,
   onPrepareEvidence,
   evidenceBusy,
@@ -402,6 +408,12 @@ function CandidateDetail({
   rank: number;
   aiReviewEnabled: boolean;
   aiReviewAvailable: boolean;
+  aiReviewFeatureStatus: string | null;
+  result: ScannerResponse;
+  storedReview: JevMonitorItem | null;
+  storedReviewLoading: boolean;
+  storedReviewError: string | null;
+  onRefreshReviews: () => void;
   onAnalyze: () => void;
   onPrepareEvidence: () => void;
   evidenceBusy: boolean;
@@ -420,7 +432,18 @@ function CandidateDetail({
   const evidenceSummary = evidenceSummaryText(candidate);
   const canPrepareEvidence = evidencePreparationAvailable(candidate);
   const targetCap = targetCapExplanation(candidate);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"summary" | "strategy" | "ai" | "history" | "news">("summary");
+  const tabs = [
+    { id: "summary", label: "요약" },
+    { id: "strategy", label: "전략·가격" },
+    { id: "ai", label: "AI 검토" },
+    { id: "history", label: "과거 검증" },
+    { id: "news", label: "뉴스" },
+  ] as const;
+  const aiTruth = scannerAiReviewStatus({
+    candidate, result, enabled: aiReviewEnabled, available: aiReviewAvailable,
+    featureStatus: aiReviewFeatureStatus, review: storedReview,
+  });
   const isWatched = managedStock?.watch_enabled === true;
   const isHeld = managedStock?.is_held === true;
 
@@ -445,55 +468,50 @@ function CandidateDetail({
         </div>
       </header>
 
-      <ScannerDecisionSummary candidate={candidate} />
-      <ScannerPriceStatus key={candidateKey(candidate)} candidate={candidate} />
-
-      <details className="scanner-ux-advanced" onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}>
-        <summary>전략·과거 기록·목표 가격 자세히 보기</summary>
-        {advancedOpen && (
-          <div className="scanner-ux-advanced-body">
-            <p className="scanner-ux-advanced-note">{evidenceCompactText(candidate)}</p>
-
-      {aiReviewEnabled && (
-        <section className={"scanner-ai-detail " + (candidate.ai_review_presentation?.state === "AI_REVIEW_CANDIDATE" ? "review" : "ready")}>
-          <header>
-            <div>
-              <small>{aiReviewAvailable ? "AI 보조 검토" : "AI 보조 검토 준비"}</small>
-              <strong>
-                {candidate.ai_review_presentation?.summary
-                  ?? "새 분석에서 전략 조건의 의미 관계를 AI 검토용으로 정리합니다."}
-              </strong>
+      <div className="scanner-ux3-tabs" role="tablist" aria-label="종목 상세 메뉴">
+        {tabs.map((tab, index) => (
+          <button key={tab.id} type="button" role="tab" id={"scanner-tab-" + tab.id}
+            aria-controls={"scanner-tab-panel-" + tab.id} aria-selected={activeTab === tab.id}
+            tabIndex={activeTab === tab.id ? 0 : -1}
+            onClick={() => setActiveTab(tab.id)}
+            onKeyDown={(event) => {
+              if (!["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)) return;
+              event.preventDefault();
+              const next = event.key === "Home" ? 0
+                : event.key === "End" ? tabs.length - 1
+                : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+              setActiveTab(tabs[next].id);
+              const target = event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next];
+              target?.focus();
+            }}>
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      <div className="scanner-ux3-tab-panel" role="tabpanel" id={"scanner-tab-panel-" + activeTab}
+        aria-labelledby={"scanner-tab-" + activeTab} tabIndex={0}>
+        {activeTab === "summary" && (
+          <div className="scanner-ux3-summary">
+            <ScannerDecisionSummary candidate={candidate} />
+            <div className="scanner-ux3-statuses">
+              <div><small>AI 보조 검토</small><strong>{storedReviewLoading ? "AI 기록 확인 중" : storedReviewError ? "AI 기록 확인 실패" : aiTruth.label}</strong></div>
+              <div><small>과거 검증</small><strong>{historicalReviewStatus(candidate)}</strong></div>
             </div>
-            <span>{aiReviewAvailable ? "AI 사용 가능" : "AI 검증 대기"}</span>
-          </header>
-          <div className="scanner-ai-detail-grid">
-            <div>
-              <small>확인된 강점</small>
-              {candidate.ai_review_presentation?.strengths?.length ? (
-                <ul>
-                  {candidate.ai_review_presentation.strengths.map((item) => <li key={item}>✓ {item}</li>)}
-                </ul>
-              ) : (
-                <p>의미 관계에서 표시할 강점을 준비 중입니다.</p>
-              )}
+            {candidate.risk.warning && candidate.risk.warnings.length > 0 && (
+              <p className="scanner-ux3-risk"><strong>핵심 위험</strong> {candidate.risk.warnings[0]}</p>
+            )}
+            <div className="scanner-ux3-prices">
+              <div><small>분석 당시 종가</small><strong>{priceText(candidate.current_price)}</strong></div>
+              <div><small>전략 참고 가격</small><strong>{interestPriceText(candidate)}</strong></div>
             </div>
-            <div>
-              <small>다시 볼 점</small>
-              {candidate.ai_review_presentation?.review_points?.length ? (
-                <ul>
-                  {candidate.ai_review_presentation.review_points.map((item) => <li key={item}>△ {item}</li>)}
-                </ul>
-              ) : (
-                <p>현재 로컬 의미 확인에서는 별도 충돌이 보이지 않습니다.</p>
-              )}
-            </div>
+            <p className="scanner-ux3-guide">분석일 기준이며, 후보 순서는 매수 추천이 아니에요. 새 시세를 확인하려면 전략·가격 탭을 여세요.</p>
+            <StockNewsPanel key={candidateKey(candidate) + "-preview"} code={candidate.code}
+              market={candidate.market} companyLabel={candidate.name} variant="summary" />
           </div>
-          {!aiReviewAvailable && (
-            <footer>실제 외부 AI 검토는 기능 검증 완료 후 적용됩니다. 지금 표시되는 강점은 StockScope가 저장된 전략 의미 관계에서 확인한 내용입니다.</footer>
-          )}
-        </section>
-      )}
-
+        )}
+        {activeTab === "strategy" && (
+          <div className="scanner-ux3-strategy">
+            <ScannerPriceStatus key={candidateKey(candidate)} candidate={candidate} />
       <section className="scanner-decision-price-band" aria-label="핵심 가격 기준">
         <div><small>분석일 종가</small><strong>{priceText(candidate.current_price)}</strong></div>
         <div><small>{strategyPriceLabel(candidate)}</small><strong>{interestPriceText(candidate)}</strong></div>
@@ -566,6 +584,40 @@ function CandidateDetail({
         </section>
       )}
 
+
+      {topMissing.length > 0 && (
+        <details className="scanner-selected-secondary">
+          <summary>판단 변경 조건 자세히 보기 <b>{topMissing.length}개</b></summary>
+          <div className="scanner-missing-grid">
+            {topMissing.map((condition, index) => (
+              <div className="scanner-missing-item" key={`${condition.condition_id ?? condition.raw}-${index}`}>
+                <strong>{condition.label}</strong>
+                <p>{condition.detail}</p>
+                {(condition.current_value || condition.required_value) && (
+                  <div className="scanner-condition-values">
+                    {condition.current_value && <span><small>현재</small><b>{condition.current_value}</b></span>}
+                    {condition.required_value && <span><small>필요</small><b>{condition.required_value}</b></span>}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+
+
+          </div>
+        )}
+        {activeTab === "ai" && (
+          <ScannerAiReview candidate={candidate} result={result}
+            enabled={aiReviewEnabled} available={aiReviewAvailable}
+            featureStatus={aiReviewFeatureStatus} review={storedReview}
+            loading={storedReviewLoading} loadError={storedReviewError}
+            onRefresh={onRefreshReviews} />
+        )}
+        {activeTab === "history" && (
+          <div className="scanner-ux3-history">
+            {!evidence && <p>과거 검증 자료가 아직 없어요. 기본 분석과 별개로 확인해 주세요.</p>}
       <section className={`scanner-evidence-compact ${evidence?.status ? `evidence-${evidence.status.toLowerCase()}` : ""}`}>
         <div className="scanner-evidence-compact-head">
           <div>
@@ -651,37 +703,14 @@ function CandidateDetail({
         )}
       </section>
 
-      <StockNewsPanel
-        code={candidate.code}
-        market={candidate.market}
-        companyLabel={candidate.name}
-        variant="compact"
-      />
-
-      {topMissing.length > 0 && (
-        <details className="scanner-selected-secondary">
-          <summary>판단 변경 조건 자세히 보기 <b>{topMissing.length}개</b></summary>
-          <div className="scanner-missing-grid">
-            {topMissing.map((condition, index) => (
-              <div className="scanner-missing-item" key={`${condition.condition_id ?? condition.raw}-${index}`}>
-                <strong>{condition.label}</strong>
-                <p>{condition.detail}</p>
-                {(condition.current_value || condition.required_value) && (
-                  <div className="scanner-condition-values">
-                    {condition.current_value && <span><small>현재</small><b>{condition.current_value}</b></span>}
-                    {condition.required_value && <span><small>필요</small><b>{condition.required_value}</b></span>}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </details>
-      )}
 
           </div>
         )}
-      </details>
-
+        {activeTab === "news" && (
+          <StockNewsPanel key={candidateKey(candidate) + "-news"} code={candidate.code}
+            market={candidate.market} companyLabel={candidate.name} variant="compact" />
+        )}
+      </div>
       <footer className="scanner-selected-action">
         <div>
           <small>지금 행동</small>
@@ -716,12 +745,6 @@ function CandidateDetail({
         </div>
       </footer>
 
-      {candidate.risk.warning && candidate.risk.warnings.length > 0 && (
-        <div className="scanner-risk-note">
-          <strong>추가 주의</strong>
-          <span>{candidate.risk.warnings.join(" · ")}</span>
-        </div>
-      )}
     </article>
   );
 }
@@ -1907,6 +1930,7 @@ export default function ScannerPanel({
                     )}
                   </div>
                 )}
+                <ScannerRankComparison result={result} />
               </section>
 
               {selectedCandidate && (
@@ -1916,6 +1940,12 @@ export default function ScannerPanel({
                   rank={selectedRank}
                   aiReviewEnabled={aiReviewEnabled}
                   aiReviewAvailable={aiReviewAvailable}
+                  aiReviewFeatureStatus={aiReviewFeatureStatus}
+                  result={result}
+                  storedReview={reviewFor(selectedCandidate, selectedRank - 1)}
+                  storedReviewLoading={storedReviewLoading}
+                  storedReviewError={storedReviewError}
+                  onRefreshReviews={() => setReviewRefresh(value => value + 1)}
                   onAnalyze={() => analyzeCandidate(selectedCandidate)}
                   onPrepareEvidence={() => void prepareCandidateEvidence(selectedCandidate)}
                   evidenceBusy={busy}
@@ -1928,7 +1958,6 @@ export default function ScannerPanel({
                 />
               )}
 
-              <ScannerRankComparison result={result} />
             </div>
           )}
 
