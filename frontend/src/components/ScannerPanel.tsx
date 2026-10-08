@@ -1452,6 +1452,17 @@ export default function ScannerPanel({
     });
   }
 
+  function selectCandidateForReview(candidate: ScannerCandidate) {
+    setSelectedCandidateKey(candidateKey(candidate));
+    if (window.matchMedia("(max-width: 800px)").matches) {
+      window.requestAnimationFrame(() => {
+        document.getElementById("scanner-selected-details")?.scrollIntoView({
+          behavior: "smooth", block: "start",
+        });
+      });
+    }
+  }
+
   function toggleMoreCandidates() {
     const next = !showMore;
     if (!next && result && selectedCandidateKey && result.more_candidates.some((candidate) => candidateKey(candidate) === selectedCandidateKey)) {
@@ -1876,7 +1887,7 @@ export default function ScannerPanel({
                         available: aiReviewAvailable, featureStatus: aiReviewFeatureStatus,
                         review: reviewFor(candidate, index),
                       }).label}
-                      onSelect={() => setSelectedCandidateKey(candidateKey(candidate))}
+                      onSelect={() => selectCandidateForReview(candidate)}
                       onAddWatch={() => void addCandidateToWatch(candidate)}
                       onRegisterHeld={() => openHoldingRegistration(candidate)}
                     />
@@ -1907,7 +1918,7 @@ export default function ScannerPanel({
                         available: aiReviewAvailable, featureStatus: aiReviewFeatureStatus,
                         review: reviewFor(candidate, result.candidates.length + index),
                       }).label}
-                            onSelect={() => setSelectedCandidateKey(candidateKey(candidate))}
+                            onSelect={() => selectCandidateForReview(candidate)}
                             onAddWatch={() => void addCandidateToWatch(candidate)}
                             onRegisterHeld={() => openHoldingRegistration(candidate)}
                           />
@@ -1920,6 +1931,7 @@ export default function ScannerPanel({
               </section>
 
               {selectedCandidate && (
+                <div id="scanner-selected-details" className="scanner-ux3-detail-shell">
                 <CandidateDetail
                   key={candidateKey(selectedCandidate)}
                   candidate={selectedCandidate}
@@ -1942,6 +1954,7 @@ export default function ScannerPanel({
                   holdingsReady={holdingsReady}
                   onOpenHoldings={onOpenHoldings ? () => openCandidateInHoldings(selectedCandidate) : undefined}
                 />
+                </div>
               )}
 
             </div>
