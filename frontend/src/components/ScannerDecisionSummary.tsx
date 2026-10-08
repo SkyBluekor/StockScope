@@ -10,7 +10,7 @@ export default function ScannerDecisionSummary({ candidate }: Props) {
       <span className="scanner-ux-eyebrow">분석일 기준 판단 · 최신 전략 확인 전</span>
       <h4>{view.headline}</h4>
       <p className="scanner-ux2-decision-why">
-        <strong>어디까지 충족했나요?</strong>
+        <strong>조건 현황</strong>
         <span>{view.why}</span>
       </p>
       {view.missingCount > 0 && (
@@ -39,16 +39,10 @@ export default function ScannerDecisionSummary({ candidate }: Props) {
           )}
         </div>
       )}
-      <div className="scanner-ux-decision-facts scanner-ux2-facts">
-        <div>
-          <strong>위험·가격 확인</strong>
-          <p>{view.caution}</p>
-        </div>
-        <div>
-          <strong>지금 확인할 일</strong>
-          <p>{view.next}</p>
-        </div>
-      </div>
+      {(candidate.risk.warning || view.asOfPrice.state === "OUT_OF_RANGE") && (
+        <p className="scanner-ux5-caution"><strong>주의</strong> {view.caution}</p>
+      )}
+      <p className="scanner-ux5-next"><strong>다음 확인</strong> {view.next}</p>
     </section>
   );
 }
