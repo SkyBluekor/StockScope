@@ -145,3 +145,7 @@
   .scanner-ux-price-grid { grid-template-columns: minmax(0, 1fr); }
   .scanner-ux-price-live { flex-direction: column; align-items: stretch; }
 }
+
+.scanner-ux-aux { margin: 8px 0; border-bottom: 1px solid var(--line-soft); padding: 8px 0; }
+.scanner-ux-aux > summary { cursor: pointer; color: var(--text-subtle); font-size: 12px; font-weight: 600; }
+.scanner-ux-aux[open] > summary { margin-bottom: 12px; }
