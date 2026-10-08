@@ -1718,7 +1718,7 @@ export default function ScannerPanel({
             <div className="scanner-ux2-result-actions">
               {needsFreshnessCheck && (
                 <button type="button" className="scanner-freshness-check-button" onClick={() => void runScanner(false)} disabled={busy}>
-                  최신 확정 자료 확인
+                  최신 확정 시세 확인
                 </button>
               )}
               <details className="scanner-ux2-analysis-details">
