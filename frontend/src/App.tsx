@@ -938,7 +938,7 @@ const strategyName: Record<string, string> = {
             }
           >
             <span className="jev-mode-label">AI 보조 검토</span>
-            <b className="jev-mode-state">{jevReviewEnabled ? "ON" : "OFF"}</b>
+            <b className="jev-mode-state">{jevReviewEnabled ? "설정 켜짐" : "설정 꺼짐"}</b>
             <span className="jev-mode-switch" aria-hidden="true"><i /></span>
           </button>
           <div className="header-status">
