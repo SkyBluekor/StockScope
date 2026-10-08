@@ -36,9 +36,13 @@ import {
   writeActiveDataTask,
 } from "../services/dataTask";
 import StockNewsPanel from "./StockNewsPanel";
+import ScannerDecisionSummary from "./ScannerDecisionSummary";
+import ScannerPriceStatus from "./ScannerPriceStatus";
+import { beginnerCandidatePresentation, simpleConditionStatus, priceReferenceText } from "./scannerDecisionPresentation";
 import ScannerRankComparison from "./ScannerRankComparison";
 import AiReviewProgress from "./AiReviewProgress";
 import "./scannerProgress.css";
+import "./scannerUX.css";
 
 type MarketScope = "ALL" | "KOSPI" | "KOSDAQ";
 
@@ -306,107 +310,47 @@ function effectiveAtIso(value: string) {
 }
 
 function CandidateCompareRow({
-  candidate,
-  rank,
-  selected,
-  aiReviewEnabled,
-  aiReviewAvailable,
-  managedStock,
-  holdingsLoading,
-  holdingsReady,
-  actionBusyKey,
-  onSelect,
-  onAddWatch,
-  onRegisterHeld,
+  candidate, rank, selected, managedStock, holdingsLoading, holdingsReady,
+  actionBusyKey, onSelect, onAddWatch, onRegisterHeld,
 }: {
-  candidate: ScannerCandidate;
-  rank: number;
-  selected: boolean;
-  aiReviewEnabled: boolean;
-  aiReviewAvailable: boolean;
-  managedStock: HoldingStock | null;
-  holdingsLoading: boolean;
-  holdingsReady: boolean;
-  actionBusyKey: string | null;
-  onSelect: () => void;
-  onAddWatch: () => void;
+  candidate: ScannerCandidate; rank: number; selected: boolean;
+  aiReviewEnabled: boolean; aiReviewAvailable: boolean;
+  managedStock: HoldingStock | null; holdingsLoading: boolean; holdingsReady: boolean;
+  actionBusyKey: string | null; onSelect: () => void; onAddWatch: () => void;
   onRegisterHeld: () => void;
 }) {
   const tone = candidateTone(candidate);
   const key = candidateKey(candidate);
-  const watchBusy = actionBusyKey === `watch:${key}`;
-  const heldBusy = actionBusyKey === `held:${key}`;
+  const view = beginnerCandidatePresentation(candidate);
+  const watchBusy = actionBusyKey === "watch:" + key;
+  const heldBusy = actionBusyKey === "held:" + key;
   const isWatched = managedStock?.watch_enabled === true;
   const isHeld = managedStock?.is_held === true;
 
   return (
-    <div
-      className={`scanner-compare-row tone-${tone} ${selected ? "selected" : ""}`}
-      role="button"
-      tabIndex={0}
-      onClick={onSelect}
-      onKeyDown={(event) => {
-        if (event.currentTarget !== event.target) return;
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onSelect();
-        }
-      }}
-      aria-pressed={selected}
-    >
-      <span className="scanner-compare-rank" aria-label={`후보 우선순위 ${rank}`}>{rank}</span>
-      <span className="scanner-compare-stock">
-        <strong>{candidate.name}</strong>
-        <small>{candidate.market} · {candidate.strategy_easy_name}</small>
-      </span>
-      <span className="scanner-compare-judgement">
-        <strong>{candidate.action_label}</strong>
-        <small>{candidate.candidate_label} · {conditionStatusLabel(candidate)}</small>
-        {aiReviewEnabled && (
-          <span className={"scanner-ai-inline " + (candidate.ai_review_presentation?.state === "AI_REVIEW_CANDIDATE" ? "review" : "ready")}>
-            <i aria-hidden="true">✦</i>
-            <b>
-              {candidate.ai_review_presentation
-                ? candidate.ai_review_presentation.state === "AI_REVIEW_CANDIDATE"
-                  ? "AI 확인 대상"
-                  : aiReviewAvailable
-                    ? "AI 검토 준비"
-                    : "AI 준비"
-                : "AI 준비"}
-            </b>
-            <em>
-              {candidate.ai_review_presentation?.strengths?.[0]
-                ? "강점 · " + candidate.ai_review_presentation.strengths[0]
-                : candidate.ai_review_presentation?.review_points?.[0]
-                  ?? "새 분석에서 의미 요약을 확인합니다."}
-            </em>
-          </span>
-        )}
-      </span>
-      <span className="scanner-compare-metrics">
-        <span className="scanner-compare-metric current">
-          <small>현재가</small>
-          <strong>{priceText(candidate.current_price)}</strong>
-        </span>
-        <span className="scanner-compare-metric entry">
-          <small>{strategyPriceLabel(candidate)}</small>
-          <strong>{interestPriceText(candidate)}</strong>
-        </span>
-        <span className="scanner-compare-metric stop">
-          <small>손절 참고구간</small>
-          <strong>{stopPriceText(candidate)}</strong>
-        </span>
-        <span className="scanner-compare-metric target scanner-target-cell">
-          <small>1차 목표</small>
-          <strong>{targetPriceText(candidate, 1)}</strong>
-          <em>{targetGainPct(candidate) == null ? "-" : `현재가 대비 ${formatSignedPct(targetGainPct(candidate))}`}</em>
-        </span>
-      </span>
-      <span
-        className="scanner-compare-manage"
-        onClick={(event) => event.stopPropagation()}
-        onKeyDown={(event) => event.stopPropagation()}
+    <div className={"scanner-compare-row tone-" + tone + (selected ? " selected" : "")}>
+      <button
+        type="button" className="scanner-ux-row-select" onClick={onSelect}
+        aria-pressed={selected}
+        aria-label={candidate.name + " 선택, 먼저 살펴볼 순서 " + rank}
       >
+        <span className="scanner-compare-rank">{rank}</span>
+        <span className="scanner-compare-stock">
+          <strong>{candidate.name}</strong>
+          <small>{candidate.market} · {candidate.strategy_easy_name}</small>
+        </span>
+        <span className="scanner-compare-judgement">
+          <strong>{view.status}</strong>
+          <small>{conditionStatusLabel(candidate)}</small>
+        </span>
+        <span className="scanner-ux-row-price">
+          <strong>{view.asOfPrice.label}</strong>
+          <small>분석일 종가 {priceText(candidate.current_price)} · 참고 가격 {priceReferenceText(candidate.entry_risk_guide?.price_rule)}</small>
+          <small>새 시세는 종목을 선택한 뒤 확인할 수 있어요.</small>
+        </span>
+        <span className="scanner-compare-arrow" aria-hidden="true">›</span>
+      </button>
+      <div className="scanner-compare-manage" aria-label={candidate.name + " 내 종목 관리"}>
         {holdingsLoading ? (
           <span className="scanner-manage-state loading">확인 중</span>
         ) : !holdingsReady ? (
@@ -414,35 +358,18 @@ function CandidateCompareRow({
         ) : isWatched ? (
           <span className="scanner-manage-state watched">★ 관심</span>
         ) : (
-          <button
-            type="button"
-            className="scanner-manage-button watch"
-            disabled={Boolean(actionBusyKey)}
-            onClick={(event) => {
-              event.stopPropagation();
-              onAddWatch();
-            }}
-          >
-            {watchBusy ? "추가 중..." : "☆ 관심"}
-          </button>
+          <button type="button" className="scanner-manage-button watch"
+            disabled={Boolean(actionBusyKey)} onClick={onAddWatch}
+          >{watchBusy ? "추가 중…" : "관심 등록"}</button>
         )}
         {holdingsLoading || !holdingsReady ? null : isHeld ? (
           <span className="scanner-manage-state held">보유 중</span>
         ) : (
-          <button
-            type="button"
-            className="scanner-manage-button held"
-            disabled={Boolean(actionBusyKey)}
-            onClick={(event) => {
-              event.stopPropagation();
-              onRegisterHeld();
-            }}
-          >
-            {heldBusy ? "등록 중..." : "+ 기존 보유"}
-          </button>
+          <button type="button" className="scanner-manage-button held"
+            disabled={Boolean(actionBusyKey)} onClick={onRegisterHeld}
+          >{heldBusy ? "등록 중…" : "보유 등록"}</button>
         )}
-      </span>
-      <span className="scanner-compare-arrow" aria-hidden="true">›</span>
+      </div>
     </div>
   );
 }
