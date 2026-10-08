@@ -237,3 +237,41 @@ export function cancelProspectiveRun(runId: string) {
     post(),
   );
 }
+
+
+export type ScannerCandidateComparison = {
+  status: string;
+  comparison_version: string;
+  capture_id?: string;
+  capture_status?: "COMPLETE" | "PARTIAL" | string;
+  left?: {
+    sample_index: number; market: string; code: string;
+    name: string; strategy: string; final_rank: number;
+  };
+  right?: {
+    sample_index: number; market: string; code: string;
+    name: string; strategy: string; final_rank: number;
+  };
+  winner_sample_index?: number;
+  decisive_field?: string;
+  decisive_reason?: string;
+  factors?: Array<{
+    field: string; label: string;
+    left_value: string; right_value: string;
+    decisive: boolean; used_for_decision: boolean;
+  }>;
+  evidence_hashes?: Record<string, string>;
+  limitations?: string[];
+  ranking_changed: false;
+  provider_called: false;
+};
+
+export function compareScannerCandidates(captureId: string, leftIndex: number, rightIndex: number) {
+  const query = new URLSearchParams({
+    left_sample_index: String(leftIndex),
+    right_sample_index: String(rightIndex),
+  });
+  return prospectiveJson<ScannerCandidateComparison>(
+    `/api/simulation/prospective/captures/${encodeURIComponent(captureId)}/candidate-comparison?${query}`
+  );
+}
