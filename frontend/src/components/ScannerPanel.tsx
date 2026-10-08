@@ -1905,6 +1905,8 @@ export default function ScannerPanel({
                   ))}
                 </div>
 
+                <ScannerRankComparison result={result} />
+
                 {result.more_candidates.length > 0 && (
                   <div className="scanner-compare-more">
                     <button type="button" onClick={toggleMoreCandidates}>
@@ -1963,7 +1965,7 @@ export default function ScannerPanel({
                     )}
                   </div>
                 )}
-                <ScannerRankComparison result={result} />
+
               </section>
 
               {selectedCandidate && (
