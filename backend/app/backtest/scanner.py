@@ -2590,7 +2590,10 @@ class StockScannerService:
                 total=1,
                 details=self._progress_payload(overall_percent=99, started_at=started_at),
             )
-            ranked_actionable, ranking_changes = rank_candidates(actionable)
+            rank_evidence_rows: list[dict[str, Any]] = []
+            ranked_actionable, ranking_changes = rank_candidates(
+                actionable, evidence_sink=rank_evidence_rows
+            )
             top = ranked_actionable[:candidate_limit]
             more = ranked_actionable[candidate_limit : candidate_limit + self.EXTRA_RESULT_LIMIT]
 
@@ -2668,6 +2671,8 @@ class StockScannerService:
                 },
                 "candidates": top,
                 "more_candidates": more,
+                # Internal sidecar; removed before Prospective capture and API return.
+                "_rank_evidence": rank_evidence_rows[: len(top) + len(more)],
                 "empty_message": None if top else (
                     "시장 데이터가 부족해 아직 종목 검사를 충분히 시작하지 못했습니다. 시장 데이터를 준비한 뒤 다시 찾으면 후보 여부를 판단할 수 있습니다."
                     if preparation_required and len(universe_rows) == 0
