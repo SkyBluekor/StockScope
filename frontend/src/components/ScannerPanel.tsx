@@ -1755,6 +1755,8 @@ export default function ScannerPanel({
             result={jobBusy ? null : result}
             selectedCandidate={selectedCandidate}
             review={selectedCandidate ? reviewFor(selectedCandidate, selectedRank - 1) : null}
+            reviewLoading={storedReviewLoading}
+            reviewError={storedReviewError}
           />
         )}
       </details>
