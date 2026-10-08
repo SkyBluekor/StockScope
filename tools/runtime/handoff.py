@@ -229,9 +229,19 @@ def export_handoff(
     domains: Iterable[str] | None = None,
     destination: Path | None = None,
     locations: RuntimeLocations | None = None,
+    identity_overrides: dict[str, dict[str, Any]] | None = None,
+    defer_state_update: bool = False,
+    reconciliation_record: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     runtime = locations or RuntimeLocations.current()
     selected = _normalize_domains(domains)
+    overrides = dict(identity_overrides or {})
+    if set(overrides) - set(selected):
+        raise DataToolError("Handoff identity override includes unselected domain")
+    if overrides and not defer_state_update:
+        raise DataToolError("Explicit lineage override requires deferred state update")
+    if overrides and not reconciliation_record:
+        raise DataToolError("Explicit lineage override requires reconciliation provenance")
     if "strategy_selection" in selected and "simulation" not in selected:
         raise DataToolError(
             "Strategy Selection handoff는 Simulation domain과 함께 export해야 합니다."
@@ -337,7 +347,7 @@ def export_handoff(
             validation = validator(target)
             snapshot_sha = sha256_file(target)
             identity, receipt = _domain_identity(
-                previous=state["domains"].get(domain),
+                previous=overrides.get(domain, state["domains"].get(domain)),
                 local_content_sha256=snapshot_sha,
                 bundle_content_sha256=snapshot_sha,
                 bundle_id=bundle_id,
@@ -366,6 +376,8 @@ def export_handoff(
             "skipped": skipped,
             "secrets_included": False,
         }
+        if reconciliation_record:
+            manifest["reconciliation"] = dict(reconciliation_record)
         write_json_atomic(temp_dir / "runtime_manifest.json", manifest)
 
         blocked = secret_like_paths(temp_dir)
@@ -395,9 +407,10 @@ def export_handoff(
                 raise
             shutil.rmtree(temp_dir, ignore_errors=True)
 
-        state["domains"].update(state_updates)
-        _save_state(runtime.continuity_state, state)
-        return {
+        if not defer_state_update:
+            state["domains"].update(state_updates)
+            _save_state(runtime.continuity_state, state)
+        result = {
             "status": "COMPLETE",
             "bundle": str(final_dir),
             "bundle_id": bundle_id,
@@ -405,6 +418,9 @@ def export_handoff(
             "skipped": skipped,
             "secrets_included": False,
         }
+        if defer_state_update:
+            result["state_updates"] = state_updates
+        return result
     except Exception:
         shutil.rmtree(temp_dir, ignore_errors=True)
         raise
@@ -526,6 +542,7 @@ def _plan_db_import(
     is_ancestor: Callable[[str, str, str], bool] | None = None,
     allow_unknown_lineage_replace: bool = False,
     verified_fresh_bootstrap_hash: str | None = None,
+    allow_known_local_replace: bool = False,
 ) -> dict[str, Any]:
     if not target.is_file():
         return {"domain": domain, "action": "INSTALL", "reason": "TARGET_ABSENT"}
@@ -611,6 +628,13 @@ def _plan_db_import(
                 "reason": "LINEAGE_DESCENDANT",
                 "current_hash": current_hash,
             }
+        if allow_known_local_replace:
+            return {
+                "domain": domain,
+                "action": "REPLACE_LOCAL_CHANGES",
+                "reason": "EXPLICIT_REPLACE_LOCAL_CHANGED_REMOTE_DESCENDANT",
+                "current_hash": current_hash,
+            }
         return {
             "domain": domain,
             "action": "CONFLICT",
@@ -687,6 +711,7 @@ def import_handoff(
     dry_run: bool = False,
     is_ancestor: Callable[[str, str, str], bool] | None = None,
     allow_unknown_lineage_replace: bool = False,
+    allow_known_local_replace: bool = False,
 ) -> dict[str, Any]:
     runtime = locations or RuntimeLocations.current()
     manifest = inspect_handoff(bundle_dir)
@@ -720,6 +745,7 @@ def import_handoff(
                 receipt=state["domains"].get(domain),
                 is_ancestor=is_ancestor,
                 allow_unknown_lineage_replace=allow_unknown_lineage_replace,
+                allow_known_local_replace=allow_known_local_replace,
                 verified_fresh_bootstrap_hash=fresh_bootstrap_domain_hash(
                     runtime.continuity_state,
                     domain,
@@ -759,6 +785,7 @@ def import_handoff(
             "FAST_FORWARD",
             "REPLACE_UNKNOWN_LINEAGE",
             "REPLACE_FRESH_BOOTSTRAP",
+            "REPLACE_LOCAL_CHANGES",
         }:
             continue
         domain = str(item["domain"])
