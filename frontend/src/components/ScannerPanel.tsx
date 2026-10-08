@@ -36,6 +36,7 @@ import {
   writeActiveDataTask,
 } from "../services/dataTask";
 import StockNewsPanel from "./StockNewsPanel";
+import ScannerRankComparison from "./ScannerRankComparison";
 import AiReviewProgress from "./AiReviewProgress";
 import "./scannerProgress.css";
 
@@ -1831,7 +1832,7 @@ export default function ScannerPanel({
             <div>
               <span>후보 결과</span>
               <h2>{result.candidates.length > 0 ? `${result.candidates.length}개를 먼저 확인하세요.` : noAnalyzedData ? "아직 후보를 판단하지 못했습니다." : "현재 조건에 맞는 후보가 없습니다."}</h2>
-              <p>순위는 상승 확률이 아닙니다. 현재 조건을 먼저 보고 Risk, 실제 진입 기준까지의 거리, 같은 전략의 3년 과거 근거 순으로 비교해 먼저 확인할 순서를 정합니다.</p>
+              <p>순위는 상승 확률이 아닙니다. 현재 조건·Risk·진입 근접도·전략 적합도 기준으로 우선 검토 순서를 결정합니다. 3년 과거 근거는 순위에 반영되지 않는 별도 참고 정보입니다.</p>
             </div>
           </section>
 
@@ -1940,6 +1941,8 @@ export default function ScannerPanel({
                   </div>
                 )}
               </section>
+
+              <ScannerRankComparison result={result} />
 
               {selectedCandidate && (
                 <CandidateDetail
