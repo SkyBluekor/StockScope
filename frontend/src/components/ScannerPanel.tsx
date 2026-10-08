@@ -38,9 +38,12 @@ import {
 import StockNewsPanel from "./StockNewsPanel";
 import ScannerDecisionSummary from "./ScannerDecisionSummary";
 import ScannerPriceStatus from "./ScannerPriceStatus";
-import { beginnerCandidatePresentation, simpleConditionStatus, priceReferenceText } from "./scannerDecisionPresentation";
+import { beginnerCandidatePresentation, simpleConditionStatus } from "./scannerDecisionPresentation";
 import ScannerRankComparison from "./ScannerRankComparison";
 import AiReviewProgress from "./AiReviewProgress";
+import ScannerAiReview from "./ScannerAiReview";
+import { historicalReviewStatus, matchStoredJevReview, scannerAiReviewStatus } from "./scannerAiReviewStatus";
+import { getJevReviews, type JevMonitorItem } from "../services/jevApi";
 import "./scannerProgress.css";
 import "./scannerUX.css";
 
@@ -267,21 +270,6 @@ function evidencePreparationAvailable(candidate: ScannerCandidate) {
   return !evidence.warnings.some((warning) => warning.includes("지원하지 않는 전략"));
 }
 
-function evidenceCompactText(candidate: ScannerCandidate) {
-  const evidence = candidate.historical_evidence;
-  if (!evidence) return candidate.historical_fit.label;
-  if (!evidence.verified) {
-    return evidence.unavailable_reason === "INSUFFICIENT_AVAILABLE_HISTORY"
-      ? "3년 검증 제한 · 이력 부족"
-      : "3년 검증 미완료";
-  }
-  if (evidence.status === "GOOD") return "3년 검증 완료 · 근거 양호";
-  if (evidence.status === "FAIR") return "3년 검증 완료 · 근거 보통";
-  if (evidence.status === "WEAK") return "3년 검증 완료 · 근거 약함";
-  if (evidence.status === "INSUFFICIENT") return "3년 검증 완료 · 표본 부족";
-  if (evidence.status === "NO_CASES") return "3년 검증 완료 · 거래 사례 없음";
-  return "3년 검증 완료";
-}
 
 function emptyCandidateMessage(result: ScannerResponse, noAnalyzedData: boolean) {
   if (noAnalyzedData) {
@@ -311,13 +299,13 @@ function effectiveAtIso(value: string) {
 
 function CandidateCompareRow({
   candidate, rank, selected, managedStock, holdingsLoading, holdingsReady,
-  actionBusyKey, onSelect, onAddWatch, onRegisterHeld,
+  actionBusyKey, onSelect, onAddWatch, onRegisterHeld, aiStatusLabel,
 }: {
   candidate: ScannerCandidate; rank: number; selected: boolean;
   aiReviewEnabled: boolean; aiReviewAvailable: boolean;
   managedStock: HoldingStock | null; holdingsLoading: boolean; holdingsReady: boolean;
   actionBusyKey: string | null; onSelect: () => void; onAddWatch: () => void;
-  onRegisterHeld: () => void;
+  onRegisterHeld: () => void; aiStatusLabel: string;
 }) {
   const tone = candidateTone(candidate);
   const key = candidateKey(candidate);
@@ -342,6 +330,7 @@ function CandidateCompareRow({
         <span className="scanner-compare-judgement">
           <strong>{view.status}</strong>
           <small>{conditionStatusLabel(candidate)}</small>
+          <small className="scanner-ai-list-status">{aiStatusLabel}</small>
         </span>
         <span className="scanner-ux2-row-next">
           <strong>{candidate.risk.warning || candidate.priority?.tier === "RISK_HOLD"
@@ -384,6 +373,12 @@ function CandidateDetail({
   rank,
   aiReviewEnabled,
   aiReviewAvailable,
+  aiReviewFeatureStatus,
+  result,
+  storedReview,
+  storedReviewLoading,
+  storedReviewError,
+  onRefreshReviews,
   onAnalyze,
   onPrepareEvidence,
   evidenceBusy,
@@ -398,6 +393,12 @@ function CandidateDetail({
   rank: number;
   aiReviewEnabled: boolean;
   aiReviewAvailable: boolean;
+  aiReviewFeatureStatus: string | null;
+  result: ScannerResponse;
+  storedReview: JevMonitorItem | null;
+  storedReviewLoading: boolean;
+  storedReviewError: string | null;
+  onRefreshReviews: () => void;
   onAnalyze: () => void;
   onPrepareEvidence: () => void;
   evidenceBusy: boolean;
@@ -416,7 +417,18 @@ function CandidateDetail({
   const evidenceSummary = evidenceSummaryText(candidate);
   const canPrepareEvidence = evidencePreparationAvailable(candidate);
   const targetCap = targetCapExplanation(candidate);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"summary" | "strategy" | "ai" | "history" | "news">("summary");
+  const tabs = [
+    { id: "summary", label: "요약" },
+    { id: "strategy", label: "전략·가격" },
+    { id: "ai", label: "AI 검토" },
+    { id: "history", label: "과거 검증" },
+    { id: "news", label: "뉴스" },
+  ] as const;
+  const aiTruth = scannerAiReviewStatus({
+    candidate, result, enabled: aiReviewEnabled, available: aiReviewAvailable,
+    featureStatus: aiReviewFeatureStatus, review: storedReview,
+  });
   const isWatched = managedStock?.watch_enabled === true;
   const isHeld = managedStock?.is_held === true;
 
@@ -441,55 +453,50 @@ function CandidateDetail({
         </div>
       </header>
 
-      <ScannerDecisionSummary candidate={candidate} />
-      <ScannerPriceStatus key={candidateKey(candidate)} candidate={candidate} />
-
-      <details className="scanner-ux-advanced" onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}>
-        <summary>전략·과거 기록·목표 가격 자세히 보기</summary>
-        {advancedOpen && (
-          <div className="scanner-ux-advanced-body">
-            <p className="scanner-ux-advanced-note">{evidenceCompactText(candidate)}</p>
-
-      {aiReviewEnabled && (
-        <section className={"scanner-ai-detail " + (candidate.ai_review_presentation?.state === "AI_REVIEW_CANDIDATE" ? "review" : "ready")}>
-          <header>
-            <div>
-              <small>{aiReviewAvailable ? "AI 보조 검토" : "AI 보조 검토 준비"}</small>
-              <strong>
-                {candidate.ai_review_presentation?.summary
-                  ?? "새 분석에서 전략 조건의 의미 관계를 AI 검토용으로 정리합니다."}
-              </strong>
+      <div className="scanner-ux3-tabs" role="tablist" aria-label="종목 상세 메뉴">
+        {tabs.map((tab, index) => (
+          <button key={tab.id} type="button" role="tab" id={"scanner-tab-" + tab.id}
+            aria-controls={"scanner-tab-panel-" + tab.id} aria-selected={activeTab === tab.id}
+            tabIndex={activeTab === tab.id ? 0 : -1}
+            onClick={() => setActiveTab(tab.id)}
+            onKeyDown={(event) => {
+              if (!["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)) return;
+              event.preventDefault();
+              const next = event.key === "Home" ? 0
+                : event.key === "End" ? tabs.length - 1
+                : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+              setActiveTab(tabs[next].id);
+              const target = event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next];
+              target?.focus();
+            }}>
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      <div className="scanner-ux3-tab-panel" role="tabpanel" id={"scanner-tab-panel-" + activeTab}
+        aria-labelledby={"scanner-tab-" + activeTab} tabIndex={0}>
+        {activeTab === "summary" && (
+          <div className="scanner-ux3-summary">
+            <ScannerDecisionSummary candidate={candidate} />
+            <div className="scanner-ux3-statuses">
+              <div><small>AI 보조 검토</small><strong>{storedReviewLoading ? "AI 기록 확인 중" : storedReviewError ? "AI 기록 확인 실패" : aiTruth.label}</strong></div>
+              <div><small>과거 검증</small><strong>{historicalReviewStatus(candidate)}</strong></div>
             </div>
-            <span>{aiReviewAvailable ? "AI 사용 가능" : "AI 검증 대기"}</span>
-          </header>
-          <div className="scanner-ai-detail-grid">
-            <div>
-              <small>확인된 강점</small>
-              {candidate.ai_review_presentation?.strengths?.length ? (
-                <ul>
-                  {candidate.ai_review_presentation.strengths.map((item) => <li key={item}>✓ {item}</li>)}
-                </ul>
-              ) : (
-                <p>의미 관계에서 표시할 강점을 준비 중입니다.</p>
-              )}
+            {candidate.risk.warning && candidate.risk.warnings.length > 0 && (
+              <p className="scanner-ux3-risk"><strong>핵심 위험</strong> {candidate.risk.warnings[0]}</p>
+            )}
+            <div className="scanner-ux3-prices">
+              <div><small>분석 당시 종가</small><strong>{priceText(candidate.current_price)}</strong></div>
+              <div><small>전략 참고 가격</small><strong>{interestPriceText(candidate)}</strong></div>
             </div>
-            <div>
-              <small>다시 볼 점</small>
-              {candidate.ai_review_presentation?.review_points?.length ? (
-                <ul>
-                  {candidate.ai_review_presentation.review_points.map((item) => <li key={item}>△ {item}</li>)}
-                </ul>
-              ) : (
-                <p>현재 로컬 의미 확인에서는 별도 충돌이 보이지 않습니다.</p>
-              )}
-            </div>
+            <p className="scanner-ux3-guide">분석일 기준이며, 후보 순서는 매수 추천이 아니에요. 새 시세를 확인하려면 전략·가격 탭을 여세요.</p>
+            <StockNewsPanel key={candidateKey(candidate) + "-preview"} code={candidate.code}
+              market={candidate.market} companyLabel={candidate.name} variant="summary" />
           </div>
-          {!aiReviewAvailable && (
-            <footer>실제 외부 AI 검토는 기능 검증 완료 후 적용됩니다. 지금 표시되는 강점은 StockScope가 저장된 전략 의미 관계에서 확인한 내용입니다.</footer>
-          )}
-        </section>
-      )}
-
+        )}
+        {activeTab === "strategy" && (
+          <div className="scanner-ux3-strategy">
+            <ScannerPriceStatus key={candidateKey(candidate)} candidate={candidate} />
       <section className="scanner-decision-price-band" aria-label="핵심 가격 기준">
         <div><small>분석일 종가</small><strong>{priceText(candidate.current_price)}</strong></div>
         <div><small>{strategyPriceLabel(candidate)}</small><strong>{interestPriceText(candidate)}</strong></div>
@@ -562,6 +569,50 @@ function CandidateDetail({
         </section>
       )}
 
+
+      {topMissing.length > 0 && (
+        <details className="scanner-selected-secondary">
+          <summary>판단 변경 조건 자세히 보기 <b>{topMissing.length}개</b></summary>
+          <div className="scanner-missing-grid">
+            {topMissing.map((condition, index) => (
+              <div className="scanner-missing-item" key={`${condition.condition_id ?? condition.raw}-${index}`}>
+                <strong>{condition.label}</strong>
+                <p>{condition.detail}</p>
+                {(condition.current_value || condition.required_value) && (
+                  <div className="scanner-condition-values">
+                    {condition.current_value && <span><small>현재</small><b>{condition.current_value}</b></span>}
+                    {condition.required_value && <span><small>필요</small><b>{condition.required_value}</b></span>}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+
+
+          </div>
+        )}
+        {activeTab === "ai" && (
+          <ScannerAiReview candidate={candidate} result={result}
+            enabled={aiReviewEnabled} available={aiReviewAvailable}
+            featureStatus={aiReviewFeatureStatus} review={storedReview}
+            loading={storedReviewLoading} loadError={storedReviewError}
+            onRefresh={onRefreshReviews} />
+        )}
+        {activeTab === "history" && (
+          <div className="scanner-ux3-history">
+            {!evidence?.verified && (
+              <div className="scanner-ux3-history-missing scanner-evidence-recovery-inline">
+                <span>{historicalReviewStatus(candidate)} · 기본 분석과는 별개입니다.</span>
+                {canPrepareEvidence && (
+                  <button type="button" onClick={onPrepareEvidence} disabled={evidenceBusy}>
+                    {evidenceBusy ? "데이터 준비 중..." : "3년 근거 데이터 준비"}
+                  </button>
+                )}
+              </div>
+            )}
+            {evidence?.verified && (
       <section className={`scanner-evidence-compact ${evidence?.status ? `evidence-${evidence.status.toLowerCase()}` : ""}`}>
         <div className="scanner-evidence-compact-head">
           <div>
@@ -646,43 +697,20 @@ function CandidateDetail({
           </details>
         )}
       </section>
-
-      <StockNewsPanel
-        code={candidate.code}
-        market={candidate.market}
-        companyLabel={candidate.name}
-        variant="compact"
-      />
-
-      {topMissing.length > 0 && (
-        <details className="scanner-selected-secondary">
-          <summary>판단 변경 조건 자세히 보기 <b>{topMissing.length}개</b></summary>
-          <div className="scanner-missing-grid">
-            {topMissing.map((condition, index) => (
-              <div className="scanner-missing-item" key={`${condition.condition_id ?? condition.raw}-${index}`}>
-                <strong>{condition.label}</strong>
-                <p>{condition.detail}</p>
-                {(condition.current_value || condition.required_value) && (
-                  <div className="scanner-condition-values">
-                    {condition.current_value && <span><small>현재</small><b>{condition.current_value}</b></span>}
-                    {condition.required_value && <span><small>필요</small><b>{condition.required_value}</b></span>}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </details>
-      )}
+            )}
 
           </div>
         )}
-      </details>
-
+        {activeTab === "news" && (
+          <StockNewsPanel key={candidateKey(candidate) + "-news"} code={candidate.code}
+            market={candidate.market} companyLabel={candidate.name} variant="compact" />
+        )}
+      </div>
       <footer className="scanner-selected-action">
         <div>
           <small>지금 행동</small>
           <strong>더 알아보고 싶다면 전문 분석을 살펴보세요.</strong>
-          <p>현재 화면은 분석 당시 조건을 설명합니다. 가격이 맞더라도 매수하라는 뜻은 아니에요.</p>
+          <p>분석 당시의 참고 정보입니다. 매수 여부는 최신 시세와 위험을 따로 확인하세요.</p>
         </div>
         <div className="scanner-selected-action-buttons simplified">
           <div className="scanner-selected-management-summary">
@@ -712,12 +740,6 @@ function CandidateDetail({
         </div>
       </footer>
 
-      {candidate.risk.warning && candidate.risk.warnings.length > 0 && (
-        <div className="scanner-risk-note">
-          <strong>추가 주의</strong>
-          <span>{candidate.risk.warnings.join(" · ")}</span>
-        </div>
-      )}
     </article>
   );
 }
@@ -756,6 +778,10 @@ export default function ScannerPanel({
   const [holdingQuantity, setHoldingQuantity] = useState("1");
   const [holdingAveragePrice, setHoldingAveragePrice] = useState("");
   const [holdingEffectiveAt, setHoldingEffectiveAt] = useState(localDateTimeInputValue());
+  const [storedReviews, setStoredReviews] = useState<JevMonitorItem[]>([]);
+  const [storedReviewLoading, setStoredReviewLoading] = useState(false);
+  const [storedReviewError, setStoredReviewError] = useState<string | null>(null);
+  const [reviewRefresh, setReviewRefresh] = useState(0);
   const pollRef = useRef<number | null>(null);
   const startedAtRef = useRef<number | null>(null);
   const lastProgressAtRef = useRef<number | null>(null);
@@ -770,6 +796,35 @@ export default function ScannerPanel({
   const mountedRef = useRef(true);
   const progressRef = useRef<HTMLElement | null>(null);
 
+  const captureId = result?.prospective_capture?.canonical_capture_id
+    || result?.prospective_capture?.capture_id || null;
+  const storedReviewKey = result?.generated_at || "";
+  useEffect(() => {
+    let active = true;
+    setStoredReviews([]);
+    setStoredReviewError(null);
+    if (!result || !captureId || !aiReviewEnabled || !aiReviewAvailable
+      || aiReviewFeatureStatus !== "ACTIVE") {
+      setStoredReviewLoading(false);
+      return () => { active = false; };
+    }
+    setStoredReviewLoading(true);
+    void getJevReviews(captureId)
+      .then(response => {
+        if (!active) return;
+        if (!response.available || response.capture_id !== captureId) {
+          setStoredReviewError("저장된 검토 자료가 현재 분석과 일치하지 않아요.");
+          return;
+        }
+        setStoredReviews(response.items);
+      })
+      .catch(() => {
+        if (active) setStoredReviewError("저장된 AI 검토 결과를 확인하지 못했어요.");
+      })
+      .finally(() => { if (active) setStoredReviewLoading(false); });
+    return () => { active = false; };
+  }, [captureId, storedReviewKey, aiReviewEnabled, aiReviewAvailable, aiReviewFeatureStatus, reviewRefresh]);
+
   const jobBusy = job?.status === "queued" || job?.status === "running";
   const busy = jobBusy;
   const progress = job?.progress;
@@ -777,6 +832,10 @@ export default function ScannerPanel({
     () => new Map(managedStocks.map((stock) => [managedStockKey(stock.market, stock.ticker), stock])),
     [managedStocks],
   );
+  const reviewFor = (candidate: ScannerCandidate, index: number): JevMonitorItem | null =>
+    storedReviews.find(item =>
+      matchStoredJevReview(item, candidate, captureId, index)
+    ) ?? null;
   const evidenceJobStage = Boolean(
     jobBusy
     && preferredCandidateKeyRef.current
@@ -1402,6 +1461,17 @@ export default function ScannerPanel({
     });
   }
 
+  function selectCandidateForReview(candidate: ScannerCandidate) {
+    setSelectedCandidateKey(candidateKey(candidate));
+    if (window.matchMedia("(max-width: 800px)").matches) {
+      window.requestAnimationFrame(() => {
+        document.getElementById("scanner-selected-details")?.scrollIntoView({
+          behavior: "smooth", block: "start",
+        });
+      });
+    }
+  }
+
   function toggleMoreCandidates() {
     const next = !showMore;
     if (!next && result && selectedCandidateKey && result.more_candidates.some((candidate) => candidateKey(candidate) === selectedCandidateKey)) {
@@ -1683,6 +1753,10 @@ export default function ScannerPanel({
             featureStatus={aiReviewFeatureStatus}
             job={job}
             result={jobBusy ? null : result}
+            selectedCandidate={selectedCandidate}
+            review={selectedCandidate ? reviewFor(selectedCandidate, selectedRank - 1) : null}
+            reviewLoading={storedReviewLoading}
+            reviewError={storedReviewError}
           />
         )}
       </details>
@@ -1707,6 +1781,19 @@ export default function ScannerPanel({
           <section className="scanner-result-summary scanner-ux2-result-strip" aria-label="종목 찾기 결과 요약">
             <div className="scanner-ux2-result-identity">
               <strong>찾은 후보 <b>{result.candidates.length}개</b></strong>
+              <small className="scanner-ux3-global-ai-state">
+                {jobBusy ? "이전 기본 분석 결과 · 새 스캔 진행 중" : "기본 분석 완료"}
+                {" · "}
+                {selectedCandidate
+                  ? storedReviewLoading ? "AI 기록 확인 중"
+                    : storedReviewError ? "AI 기록 확인 실패"
+                    : scannerAiReviewStatus({
+                        candidate: selectedCandidate, result, enabled: aiReviewEnabled,
+                        available: aiReviewAvailable, featureStatus: aiReviewFeatureStatus,
+                        review: reviewFor(selectedCandidate, selectedRank - 1),
+                      }).label
+                  : "AI 검토 대상 없음"}
+              </small>
               <span>{analysisDataDate ? formatDate(analysisDataDate) + " 확정 일봉" : "분석 기준일 확인 필요"}</span>
               {analysisDateMismatch && <small className="scanner-ux2-result-alert">시장별 기준일이 달라요.</small>}
               {restoredFromSession && <small>이전 분석을 불러왔어요.</small>}
@@ -1819,7 +1906,12 @@ export default function ScannerPanel({
                       holdingsLoading={holdingsLoading}
                       holdingsReady={holdingsReady}
                       actionBusyKey={holdingActionBusyKey}
-                      onSelect={() => setSelectedCandidateKey(candidateKey(candidate))}
+                      aiStatusLabel={storedReviewLoading ? "AI 기록 확인 중" : storedReviewError ? "AI 기록 확인 실패" : scannerAiReviewStatus({
+                        candidate, result, enabled: aiReviewEnabled,
+                        available: aiReviewAvailable, featureStatus: aiReviewFeatureStatus,
+                        review: reviewFor(candidate, index),
+                      }).label}
+                      onSelect={() => selectCandidateForReview(candidate)}
                       onAddWatch={() => void addCandidateToWatch(candidate)}
                       onRegisterHeld={() => openHoldingRegistration(candidate)}
                     />
@@ -1845,7 +1937,12 @@ export default function ScannerPanel({
                             holdingsLoading={holdingsLoading}
                             holdingsReady={holdingsReady}
                             actionBusyKey={holdingActionBusyKey}
-                            onSelect={() => setSelectedCandidateKey(candidateKey(candidate))}
+                      aiStatusLabel={storedReviewLoading ? "AI 기록 확인 중" : storedReviewError ? "AI 기록 확인 실패" : scannerAiReviewStatus({
+                        candidate, result, enabled: aiReviewEnabled,
+                        available: aiReviewAvailable, featureStatus: aiReviewFeatureStatus,
+                        review: reviewFor(candidate, result.candidates.length + index),
+                      }).label}
+                            onSelect={() => selectCandidateForReview(candidate)}
                             onAddWatch={() => void addCandidateToWatch(candidate)}
                             onRegisterHeld={() => openHoldingRegistration(candidate)}
                           />
@@ -1854,15 +1951,23 @@ export default function ScannerPanel({
                     )}
                   </div>
                 )}
+                <ScannerRankComparison result={result} />
               </section>
 
               {selectedCandidate && (
+                <div id="scanner-selected-details" className="scanner-ux3-detail-shell">
                 <CandidateDetail
                   key={candidateKey(selectedCandidate)}
                   candidate={selectedCandidate}
                   rank={selectedRank}
                   aiReviewEnabled={aiReviewEnabled}
                   aiReviewAvailable={aiReviewAvailable}
+                  aiReviewFeatureStatus={aiReviewFeatureStatus}
+                  result={result}
+                  storedReview={reviewFor(selectedCandidate, selectedRank - 1)}
+                  storedReviewLoading={storedReviewLoading}
+                  storedReviewError={storedReviewError}
+                  onRefreshReviews={() => setReviewRefresh(value => value + 1)}
                   onAnalyze={() => analyzeCandidate(selectedCandidate)}
                   onPrepareEvidence={() => void prepareCandidateEvidence(selectedCandidate)}
                   evidenceBusy={busy}
@@ -1873,9 +1978,9 @@ export default function ScannerPanel({
                   holdingsReady={holdingsReady}
                   onOpenHoldings={onOpenHoldings ? () => openCandidateInHoldings(selectedCandidate) : undefined}
                 />
+                </div>
               )}
 
-              <ScannerRankComparison result={result} />
             </div>
           )}
 

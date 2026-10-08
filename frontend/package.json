@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "test:sc-ux1": "node --experimental-strip-types --test tests/scannerDecisionPresentation.test.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:sc-ux3": "node --experimental-strip-types --test tests/scannerAiReviewStatus.test.mjs"
   },
   "dependencies": {
     "react": "latest",

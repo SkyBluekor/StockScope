@@ -25,9 +25,9 @@ def test_sc_ux2_s1_candidate_list_is_primary_and_summary_is_compact() -> None:
 
     workspace = panel.index('className="scanner-decision-workspace"')
     list_start = panel.index('className="scanner-compare-panel"', workspace)
-    detail = panel.index("<CandidateDetail", list_start)
-    rank = panel.index("<ScannerRankComparison", detail)
-    assert workspace < list_start < detail < rank
+    rank = panel.index("<ScannerRankComparison", list_start)
+    detail = panel.index("<CandidateDetail", rank)
+    assert workspace < list_start < rank < detail
 
 
 def test_sc_ux2_s1_responsive_columns_and_explicit_quote_loading() -> None:

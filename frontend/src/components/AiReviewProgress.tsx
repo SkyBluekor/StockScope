@@ -3,7 +3,10 @@ import { useEffect, useMemo, useState } from "react";
 import type {
   BacktestJob,
   ScannerResponse,
+  ScannerCandidate,
 } from "../services/api";
+import type { JevMonitorItem } from "../services/jevApi";
+import { scannerAiReviewStatus } from "./scannerAiReviewStatus";
 
 type Props = {
   enabled: boolean;
@@ -11,6 +14,10 @@ type Props = {
   featureStatus: string | null;
   job: BacktestJob<ScannerResponse> | null;
   result: ScannerResponse | null;
+  selectedCandidate?: ScannerCandidate | null;
+  review?: JevMonitorItem | null;
+  reviewLoading?: boolean;
+  reviewError?: string | null;
 };
 
 type StepState = "done" | "active" | "waiting" | "blocked";
@@ -46,11 +53,23 @@ export default function AiReviewProgress({
   featureStatus,
   job,
   result,
+  selectedCandidate,
+  review,
+  reviewLoading = false,
+  reviewError = null,
 }: Props) {
   const [expanded, setExpanded] = useState(true);
   const busy = job?.status === "queued" || job?.status === "running";
   const stage = String(job?.stage || "");
   const progress = result?.ai_review_progress ?? null;
+  const focus = selectedCandidate ?? result?.candidates[0] ?? null;
+  const aiTruth = result && focus
+    ? scannerAiReviewStatus({ candidate: focus, result, enabled, available, featureStatus, review })
+    : null;
+
+  const displayAiStatus = reviewLoading ? "AI 기록 확인 중"
+    : reviewError ? "AI 기록 확인 실패"
+      : aiTruth?.label ?? "AI 검토 미실행";
 
   useEffect(() => {
     if (busy) setExpanded(true);
@@ -76,25 +95,18 @@ export default function AiReviewProgress({
         ? "active"
         : "waiting";
     const basicResultState: StepState = hasResult ? "done" : "waiting";
-    const semanticState: StepState = hasResult && progress ? "done" : "waiting";
+    const semanticState: StepState = hasResult && progress
+      ? progress.not_ready > 0 ? "blocked" : "done"
+      : "waiting";
 
-    let aiState: StepState = "waiting";
-    let aiDetail = "기본 분석 후 필요한 후보만 확인";
-    if (hasResult && progress) {
-      if (!available) {
-        aiState = "blocked";
-        aiDetail = "기능 검증 대기";
-      } else if (progress.provider_required === 0) {
-        aiState = "done";
-        aiDetail = "별도 AI 호출 불필요";
-      } else if (progress.provider_completed >= progress.provider_required) {
-        aiState = "done";
-        aiDetail = String(progress.provider_completed) + "/" + String(progress.provider_required) + " 확인";
-      } else {
-        aiState = "waiting";
-        aiDetail = String(progress.provider_required) + "개 후보 추가 확인 준비";
-      }
-    }
+    // The aggregate scanner step must not reinterpret local work or zero
+    // provider_required as a completed Jev call.
+    const aiState: StepState =
+      aiTruth?.state === "COMPLETE" || aiTruth?.state === "NEEDS_REVIEW" || aiTruth?.state === "ABSTAIN"
+        ? "done"
+        : aiTruth?.state === "FEATURE_PENDING" || aiTruth?.state === "INPUT_MISSING" || aiTruth?.state === "FAILED"
+          ? "blocked" : "waiting";
+    const aiDetail = displayAiStatus;
 
     let semanticDetail = "대기";
     if (hasResult && progress) {
@@ -145,7 +157,7 @@ export default function AiReviewProgress({
         state: aiState,
       },
     ];
-  }, [available, busy, progress, result, stage]);
+  }, [available, busy, progress, result, stage, aiTruth?.state, displayAiStatus]);
 
   if (!enabled || (!job && !result)) return null;
 
@@ -154,30 +166,24 @@ export default function AiReviewProgress({
     ?? steps.find((step) => step.state === "blocked")
     ?? steps[steps.length - 1];
 
-  let summary = current.detail;
-  if (result && progress) {
-    if (available) {
-      summary = progress.provider_required > 0
-        ? "의미 관계 " + String(progress.local_checked) + "개 확인 · AI 추가 확인 후보 " + String(progress.provider_required) + "개"
-        : "의미 관계 " + String(progress.local_checked) + "개 확인 · 별도 AI 호출이 필요한 후보 없음";
-    } else {
-      summary = "기본 분석 결과는 이미 표시되었습니다. 실제 AI 보조 검토는 기능 검증 완료 후 별도 적용됩니다.";
-    }
-  } else if (result && !progress) {
-    summary = "이전 분석 결과입니다. 새 분석부터 AI 의미 관계 진행 상태를 함께 표시합니다.";
-  }
+  const summary = busy
+    ? "기본 분석을 진행하고 있어요. 실제 AI 완료 여부는 별도로 확인해요."
+    : reviewLoading ? "저장된 AI 검토 결과를 확인 중이에요."
+    : reviewError ? reviewError
+    : result ? (aiTruth?.detail ?? "기본 분석은 완료됐지만 AI 검토 결과는 확인되지 않았어요.")
+      : current.detail;
 
   return (
     <section className="ai-review-flow" aria-live="polite">
       <header className="ai-review-flow-head">
         <div>
-          <span className="ai-review-flow-kicker">AI 보조 검토 ON</span>
-          <strong>{busy ? "StockScope 기본 분석을 진행하고 있습니다." : "기본 분석 완료 · AI 후속 검토 상태"}</strong>
+          <span className="ai-review-flow-kicker">AI 설정 켜짐 · 모델 호출과 별개</span>
+          <strong>{busy ? "기본 분석 진행 중 · AI 완료 전" : "기본 분석 완료 · " + displayAiStatus}</strong>
           <p>{summary}</p>
         </div>
         <div className="ai-review-flow-actions">
           <span className={"ai-review-feature-chip " + (available ? "ready" : "pending")}>
-            {available ? "AI 사용 가능" : featureStatus === "DISABLED_VALIDATION_PENDING" ? "AI 검증 대기" : "AI 상태 확인 중"}
+            {displayAiStatus}
           </span>
           {!busy && result && (
             <button type="button" onClick={() => setExpanded((value) => !value)}>

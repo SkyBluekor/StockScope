@@ -13,7 +13,7 @@ type Props = {
   code: string;
   market: "KOSPI" | "KOSDAQ";
   companyLabel?: string;
-  variant?: "full" | "compact";
+  variant?: "full" | "compact" | "summary";
 };
 
 function formatTimestamp(value: string | null | undefined) {
@@ -156,7 +156,8 @@ export default function StockNewsPanel({ code, market, companyLabel, variant = "
   const [expanded, setExpanded] = useState(false);
   const [refreshToken, setRefreshToken] = useState(0);
   const requestIdRef = useRef(0);
-  const compact = variant === "compact";
+  const compact = variant !== "full";
+  // Preserve the existing full/compact contracts; summary is a separate cap.
   const requestLimit = compact ? 5 : 10;
   const collapsedLimit = compact ? 3 : 5;
   const expandedLimit = compact ? 5 : 10;
@@ -233,6 +234,8 @@ export default function StockNewsPanel({ code, market, companyLabel, variant = "
   }, [code, market, refreshToken, requestLimit, compact]);
 
   const visibleItems = news?.items.slice(0, expanded ? expandedLimit : collapsedLimit) ?? [];
+  const summaryCount = variant === "summary" ? 2 : visibleItems.length;
+  const displayItems = visibleItems.slice(0, summaryCount);
   const title = news?.company_name || companyLabel || code;
 
   return (
@@ -268,7 +271,7 @@ export default function StockNewsPanel({ code, market, companyLabel, variant = "
       ) : (
         <>
           <div className="stock-news-list">
-            {visibleItems.map((item) => (
+            {displayItems.map((item) => (
               <article key={item.id} className="stock-news-item">
                 <div className="stock-news-item-copy">
                   <div className="stock-news-meta">
@@ -296,13 +299,13 @@ export default function StockNewsPanel({ code, market, companyLabel, variant = "
             ))}
           </div>
 
-          {(news?.count ?? 0) > collapsedLimit && (
+          {variant !== "summary" && (news?.count ?? 0) > collapsedLimit && (
             <button type="button" className="stock-news-more" onClick={() => setExpanded((value) => !value)}>
               {expanded ? "간단히 보기" : "최근 뉴스 더 보기 (" + Math.min(news?.count ?? 0, expandedLimit) + "건)"}
             </button>
           )}
 
-          {news && (
+          {news && variant !== "summary" && (
             <p className="stock-news-footnote">
               뉴스 검색 결과는 참고 정보이며 StockScope의 Strategy·Scanner·Ranking·Risk 계산을 변경하지 않습니다.
               현재 뉴스 목록은 기사 검색 결과이며 호재·악재 또는 주가 방향을 판정하지 않습니다.
