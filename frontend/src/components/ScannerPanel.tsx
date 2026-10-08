@@ -602,8 +602,17 @@ function CandidateDetail({
         )}
         {activeTab === "history" && (
           <div className="scanner-ux3-history">
-            <p>{historicalReviewStatus(candidate)}</p>
-            {!evidence && <p>과거 검증 자료가 아직 없어요. 기본 분석과 별개로 확인해 주세요.</p>}
+            {!evidence?.verified && (
+              <div className="scanner-ux3-history-missing scanner-evidence-recovery-inline">
+                <span>{historicalReviewStatus(candidate)} · 기본 분석과는 별개입니다.</span>
+                {canPrepareEvidence && (
+                  <button type="button" onClick={onPrepareEvidence} disabled={evidenceBusy}>
+                    {evidenceBusy ? "데이터 준비 중..." : "3년 근거 데이터 준비"}
+                  </button>
+                )}
+              </div>
+            )}
+            {evidence?.verified && (
       <section className={`scanner-evidence-compact ${evidence?.status ? `evidence-${evidence.status.toLowerCase()}` : ""}`}>
         <div className="scanner-evidence-compact-head">
           <div>
@@ -688,7 +697,7 @@ function CandidateDetail({
           </details>
         )}
       </section>
-
+            )}
 
           </div>
         )}
