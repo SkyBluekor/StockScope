@@ -87,7 +87,9 @@ export default function AiReviewProgress({
         ? "active"
         : "waiting";
     const basicResultState: StepState = hasResult ? "done" : "waiting";
-    const semanticState: StepState = hasResult && progress ? "done" : "waiting";
+    const semanticState: StepState = hasResult && progress
+      ? progress.not_ready > 0 ? "blocked" : "done"
+      : "waiting";
 
     // The aggregate scanner step must not reinterpret local work or zero
     // provider_required as a completed Jev call.
@@ -165,7 +167,7 @@ export default function AiReviewProgress({
     <section className="ai-review-flow" aria-live="polite">
       <header className="ai-review-flow-head">
         <div>
-          <span className="ai-review-flow-kicker">AI 보조 검토 ON</span>
+          <span className="ai-review-flow-kicker">AI 설정 켜짐 · 모델 호출과 별개</span>
           <strong>{busy ? "기본 분석 진행 중 · AI 완료 전" : "기본 분석 완료 · " + (aiTruth?.label ?? "AI 검토 미완료")}</strong>
           <p>{summary}</p>
         </div>
