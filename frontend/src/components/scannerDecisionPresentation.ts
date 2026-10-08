@@ -161,7 +161,7 @@ export function beginnerCandidatePresentation(candidate: ScannerCandidate): Begi
     return {
       status, why, asOfPrice: price, missingConditions, missingCount: missing,
       headline: "위험 신호가 있어 진입 판단을 보류해야 해요.",
-      caution: candidate.risk?.warnings?.[0] || "현재 분석에서 위험 경고가 확인됐어요.",
+      caution: candidate.risk?.warnings?.[0] ? "위험 경고: " + candidate.risk.warnings[0] : "현재 분석에서 위험 경고가 확인됐어요.",
       next: "위험 경고의 원인을 확인하고, 새 분석에서도 해소됐는지 확인하세요.",
       nextActionLabel: "위험 차단 이유 확인",
       nextActionContext: candidate.risk?.warnings?.[0] || "전략·위험 정보 확인",
@@ -193,7 +193,7 @@ export function beginnerCandidatePresentation(candidate: ScannerCandidate): Begi
   if (price.state === "OUT_OF_RANGE") {
     return {
       status, why, asOfPrice: price, missingConditions, missingCount: missing,
-      headline: "분석일 기준 진입 조건은 충족했지만 참고 가격은 범위 밖이에요.",
+      headline: "분석일 진입 조건은 충족했지만 분석 당시 가격은 참고 범위 밖이에요.",
       caution: "분석 당시 가격이 전략 참고 가격에서 벗어나 있었어요.",
       next: "새 시세와 현재 전략 조건·위험을 다시 검증하세요.",
       nextActionLabel: "참고 가격 조건 확인",
