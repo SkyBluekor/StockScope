@@ -111,14 +111,22 @@ export function missingConditionDetails(candidate: ScannerCandidate): MissingCon
   const seen = new Set<string>();
   const items: MissingConditionView[] = [];
   for (const item of raw) {
-    const label = nonempty(item.label) ?? nonempty(item.raw);
-    if (!label || seen.has(label)) continue;
-    seen.add(label);
+    const sourceLabel = nonempty(item.label) ?? nonempty(item.raw);
+    if (!sourceLabel || seen.has(sourceLabel)) continue;
+    seen.add(sourceLabel);
+    const current = nonempty(item.current_value);
+    const required = nonempty(item.required_value);
+    // Rephrase only a known negative-condition example, when the actual
+    // market and required states are provided. The original detail remains.
+    const label = sourceLabel === "시장 환경이 급격한 하락 상태가 아님"
+      && current === "하락장" && Boolean(required && /상승장|횡보장/.test(required))
+      ? "현재 하락장이라 진입 조건 미충족"
+      : sourceLabel;
     items.push({
       label,
       detail: nonempty(item.detail),
-      current: nonempty(item.current_value),
-      required: nonempty(item.required_value),
+      current,
+      required,
     });
     if (items.length >= 3) break;
   }
