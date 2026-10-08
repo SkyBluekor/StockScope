@@ -223,9 +223,11 @@ def test_duplicate_resolves_canonical_evidence(tmp_path: Path) -> None:
         conn.execute(
             "INSERT INTO prospective_capture_run("
             "id,capture_version,source_job_id,status,request_json,market_scope,"
-            "requested_as_of,candidate_limit,canonical_capture_id,created_at,updated_at)"
+            "requested_as_of,horizon_intent,horizon_policy_version,candidate_limit,"
+            "canonical_capture_id,created_at,updated_at)"
             " SELECT ?,capture_version,?, 'DUPLICATE',request_json,market_scope,"
-            "requested_as_of,candidate_limit,id,created_at,updated_at"
+            "requested_as_of,horizon_intent,horizon_policy_version,candidate_limit,"
+            "id,created_at,updated_at"
             " FROM prospective_capture_run WHERE id=?",
             ("synthetic-duplicate", "other-job", original_id),
         )
