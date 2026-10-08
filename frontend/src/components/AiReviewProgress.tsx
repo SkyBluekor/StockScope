@@ -16,6 +16,8 @@ type Props = {
   result: ScannerResponse | null;
   selectedCandidate?: ScannerCandidate | null;
   review?: JevMonitorItem | null;
+  reviewLoading?: boolean;
+  reviewError?: string | null;
 };
 
 type StepState = "done" | "active" | "waiting" | "blocked";
@@ -53,6 +55,8 @@ export default function AiReviewProgress({
   result,
   selectedCandidate,
   review,
+  reviewLoading = false,
+  reviewError = null,
 }: Props) {
   const [expanded, setExpanded] = useState(true);
   const busy = job?.status === "queued" || job?.status === "running";
@@ -62,6 +66,10 @@ export default function AiReviewProgress({
   const aiTruth = result && focus
     ? scannerAiReviewStatus({ candidate: focus, result, enabled, available, featureStatus, review })
     : null;
+
+  const displayAiStatus = reviewLoading ? "AI 기록 확인 중"
+    : reviewError ? "AI 기록 확인 실패"
+      : aiTruth?.label ?? "AI 검토 미실행";
 
   useEffect(() => {
     if (busy) setExpanded(true);
@@ -98,7 +106,7 @@ export default function AiReviewProgress({
         ? "done"
         : aiTruth?.state === "FEATURE_PENDING" || aiTruth?.state === "INPUT_MISSING" || aiTruth?.state === "FAILED"
           ? "blocked" : "waiting";
-    const aiDetail = aiTruth?.label ?? "AI 검토 미실행";
+    const aiDetail = displayAiStatus;
 
     let semanticDetail = "대기";
     if (hasResult && progress) {
@@ -149,7 +157,7 @@ export default function AiReviewProgress({
         state: aiState,
       },
     ];
-  }, [available, busy, progress, result, stage, aiTruth?.state, aiTruth?.label]);
+  }, [available, busy, progress, result, stage, aiTruth?.state, displayAiStatus]);
 
   if (!enabled || (!job && !result)) return null;
 
@@ -160,6 +168,8 @@ export default function AiReviewProgress({
 
   const summary = busy
     ? "기본 분석을 진행하고 있어요. 실제 AI 완료 여부는 별도로 확인해요."
+    : reviewLoading ? "저장된 AI 검토 결과를 확인 중이에요."
+    : reviewError ? reviewError
     : result ? (aiTruth?.detail ?? "기본 분석은 완료됐지만 AI 검토 결과는 확인되지 않았어요.")
       : current.detail;
 
@@ -168,12 +178,12 @@ export default function AiReviewProgress({
       <header className="ai-review-flow-head">
         <div>
           <span className="ai-review-flow-kicker">AI 설정 켜짐 · 모델 호출과 별개</span>
-          <strong>{busy ? "기본 분석 진행 중 · AI 완료 전" : "기본 분석 완료 · " + (aiTruth?.label ?? "AI 검토 미완료")}</strong>
+          <strong>{busy ? "기본 분석 진행 중 · AI 완료 전" : "기본 분석 완료 · " + displayAiStatus}</strong>
           <p>{summary}</p>
         </div>
         <div className="ai-review-flow-actions">
           <span className={"ai-review-feature-chip " + (available ? "ready" : "pending")}>
-            {aiTruth?.label ?? (available ? "AI 상태 확인 중" : "AI 검토 기능 준비 중")}
+            {displayAiStatus}
           </span>
           {!busy && result && (
             <button type="button" onClick={() => setExpanded((value) => !value)}>
