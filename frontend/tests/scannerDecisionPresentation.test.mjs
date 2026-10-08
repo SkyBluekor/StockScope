@@ -100,3 +100,71 @@ test("NO_TRADE / RISK_HOLD wording is never READY", () => {
   assert.match(simpleConditionStatus(candidate({ action: "NO_TRADE", priority: { tier: "LOW_PRIORITY" } })), /아니에요/);
   assert.match(simpleConditionStatus(candidate({ priority: { tier: "RISK_HOLD" } })), /위험/);
 });
+
+
+test("SC-UX4 READY says as-of entry conditions satisfied, not buy-now", () => {
+  const ready = candidate({
+    current_price: 89_400,
+    entry_risk_guide: { price_rule: { kind: "ABOVE", trigger_price: 88_200, executable_entry_range: true } },
+  });
+  const view = beginnerCandidatePresentation(ready);
+  assert.match(view.headline, /분석일 기준 진입 조건을 모두 충족/);
+  assert.equal(view.why, "전체 투자 조건 6개 중 6개를 충족했어요.");
+  assert.equal(view.asOfPrice.state, "IN_RANGE");
+  assert.match(view.next, /새 시세/);
+  assert.equal(view.nextActionLabel, "새 시세·전략 확인");
+  assert.doesNotMatch(view.headline, /지금 매수|매수하세요/);
+});
+
+test("SC-UX4 missing condition uses stored label and current/required values", () => {
+  const view = beginnerCandidatePresentation(candidate({
+    priority: { tier: "NEAR_READY" },
+    conditions: {
+      passed: 8, total: 9, missing: 1,
+      top_missing: [{ label: "거래량 회복", detail: "평균 거래량 대비 거래량이 부족합니다.", current_value: "80%", required_value: "120%" }],
+    },
+  }));
+  assert.equal(view.why, "전체 투자 조건 9개 중 8개를 충족했어요.");
+  assert.match(view.headline, /1개 부족/);
+  assert.equal(view.missingConditions.length, 1);
+  assert.deepEqual(view.missingConditions[0], {
+    label: "거래량 회복", detail: "평균 거래량 대비 거래량이 부족합니다.", current: "80%", required: "120%",
+  });
+  assert.equal(view.nextActionLabel, "부족: 거래량 회복");
+  assert.match(view.nextActionContext, /현재 80%.*필요 120%/);
+});
+
+test("SC-UX4 missing count survives absent or partial top_missing; no invented values", () => {
+  const view = beginnerCandidatePresentation(candidate({
+    priority: { tier: "NEAR_READY" },
+    conditions: { passed: 8, total: 9, missing: 1, top_missing: [] },
+  }));
+  assert.equal(view.missingCount, 1);
+  assert.equal(view.missingConditions.length, 0);
+  assert.match(view.nextActionLabel, /상세 없음/);
+  assert.doesNotMatch(view.nextActionContext, /현재.*필요/);
+});
+
+test("SC-UX4 risk block takes priority over missing conditions and price", () => {
+  const view = beginnerCandidatePresentation(candidate({
+    current_price: 89_400,
+    conditions: {
+      passed: 8, total: 9, missing: 1,
+      top_missing: [{ label: "실제 미충족 조건", detail: "위험과 별개", current_value: "5", required_value: "10" }],
+    },
+    priority: { tier: "RISK_HOLD" },
+    risk: { warning: true, warnings: ["변동성 경고"] },
+  }));
+  assert.match(view.headline, /위험 신호/);
+  assert.match(view.caution, /변동성 경고/);
+  assert.equal(view.nextActionLabel, "위험 차단 이유 확인");
+  assert.equal(view.missingConditions[0].label, "실제 미충족 조건");
+});
+
+test("SC-UX4 missing/invalid condition counts must not turn into a ready recommendation", () => {
+  const view = beginnerCandidatePresentation(candidate({
+    conditions: { passed: 0, total: 0, missing: 0 },
+  }));
+  assert.match(view.headline, /자료가 부족/);
+  assert.doesNotMatch(view.headline, /모두 충족/);
+});
