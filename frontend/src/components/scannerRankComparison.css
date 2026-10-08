@@ -31,3 +31,12 @@
   .scanner-rank-explain-heading { align-items: start; flex-direction: column; }
   .scanner-rank-explain-controls { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* SC-UX1: compare only when the user wants to inspect another candidate. */
+.scanner-ux-rank-summary { cursor: pointer; font-weight: 700; font-size: 14px; color: var(--text-strong); }
+.scanner-ux-rank-summary small { display: block; margin-top: 3px; font-weight: 400; color: var(--text-subtle); font-size: 12px; }
+.scanner-rank-explain[open] .scanner-rank-explain-controls { margin-top: 16px; }
+.scanner-ux-rank-method { border-top: 1px solid var(--line-soft); margin-top: 14px; padding-top: 10px; }
+.scanner-ux-rank-method > summary { color: var(--primary); cursor: pointer; font-weight: 600; font-size: 13px; }
+.scanner-rank-explain-table { white-space: normal; min-width: 530px; }
+.scanner-rank-explain-table th, .scanner-rank-explain-table td { overflow-wrap: anywhere; }
