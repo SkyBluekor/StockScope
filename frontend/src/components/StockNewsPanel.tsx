@@ -157,9 +157,11 @@ export default function StockNewsPanel({ code, market, companyLabel, variant = "
   const [refreshToken, setRefreshToken] = useState(0);
   const requestIdRef = useRef(0);
   const compact = variant !== "full";
-  const requestLimit = variant === "summary" ? 2 : compact ? 5 : 10;
-  const collapsedLimit = variant === "summary" ? 2 : compact ? 3 : 5;
-  const expandedLimit = variant === "summary" ? 2 : compact ? 5 : 10;
+  // Preserve the existing full/compact contracts; summary is a separate cap.
+  const requestLimit = compact ? 5 : 10;
+  const collapsedLimit = compact ? 3 : 5;
+  const expandedLimit = compact ? 5 : 10;
+  const summaryLimit = variant === "summary" ? 2 : requestLimit;
 
   useEffect(() => {
     if (!code) {
@@ -208,7 +210,10 @@ export default function StockNewsPanel({ code, market, companyLabel, variant = "
         });
     }
 
-    void fetchStockNews(code, market, { limit: requestLimit, signal: controller.signal })
+    const newsRequest = variant === "summary"
+      ? fetchStockNews(code, market, { limit: summaryLimit, signal: controller.signal })
+      : fetchStockNews(code, market, { limit: requestLimit, signal: controller.signal });
+    void newsRequest
       .then((result) => {
         if (requestId !== requestIdRef.current || controller.signal.aborted) return;
         setNews(result);
@@ -230,7 +235,7 @@ export default function StockNewsPanel({ code, market, companyLabel, variant = "
       });
 
     return () => controller.abort();
-  }, [code, market, refreshToken, requestLimit, compact]);
+  }, [code, market, refreshToken, requestLimit, summaryLimit, compact, variant]);
 
   const visibleItems = news?.items.slice(0, expanded ? expandedLimit : collapsedLimit) ?? [];
   const title = news?.company_name || companyLabel || code;
