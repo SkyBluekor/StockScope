@@ -276,7 +276,11 @@ def _promote_structural_focus(group: list[dict[str, Any]]) -> tuple[list[dict[st
     return promoted, focus
 
 
-def rank_candidates(candidates: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def rank_candidates(
+    candidates: list[dict[str, Any]],
+    *,
+    evidence_sink: list[dict[str, Any]] | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Rank by current deterministic inputs, then resolve *exact* ties narrowly.
 
     B.2.5-C does not replace the production priority model.  Candidates are first
@@ -338,6 +342,54 @@ def rank_candidates(candidates: list[dict[str, Any]]) -> tuple[list[dict[str, An
         priority["rank"] = new_rank
         priority["previous_rank"] = old_rank
         priority["rank_change"] = old_rank - new_rank
+        if evidence_sink is not None:
+            sort = dict(priority.get("_sort") or {})
+            risk = candidate.get("risk") or {}
+            conditions = candidate.get("conditions") or {}
+            evidence_sink.append({
+                "contract_version": "SCANNER_RANK_EVIDENCE_V1",
+                "market": str(candidate.get("market") or ""),
+                "code": str(candidate.get("code") or ""),
+                "final_rank": new_rank,
+                "strategy": str(candidate.get("strategy") or ""),
+                "strategy_version_id": candidate.get("strategy_version_id"),
+                "strategy_definition_hash": candidate.get("strategy_definition_hash"),
+                "priority_tier": priority.get("tier"),
+                "condition_counts": {
+                    "passed": conditions.get("passed"),
+                    "total": conditions.get("total"),
+                    "missing": sort.get("missing"),
+                },
+                "risk_status": risk.get("status") if isinstance(risk, dict) else None,
+                "entry_basis": priority.get("entry_gap_basis"),
+                "sort_components": {
+                    "tier_order": sort.get("tier_order"),
+                    "missing": sort.get("missing"),
+                    "risk_quality": sort.get("risk_quality"),
+                    "entry_gap_missing": sort.get("entry_gap_missing"),
+                    "entry_gap_pct": sort.get("entry_gap_pct"),
+                    "negative_strategy_fit": -float(sort.get("strategy_fit") or 0.0),
+                    "tie_focus_order": int(priority.get("tie_focus_order") or 0),
+                    "code": str(candidate.get("code") or ""),
+                },
+                "tie_resolution": {
+                    "group": priority.get("tie_group"),
+                    "size": priority.get("tie_size"),
+                    "focus": priority.get("tie_focus"),
+                    "focus_order": priority.get("tie_focus_order"),
+                    "breaker": priority.get("tie_breaker"),
+                    "structural_target_distance_pct": priority.get("structural_target_distance_pct"),
+                    "structural_target_basis": priority.get("structural_target_basis"),
+                },
+                "source_paths": {
+                    "conditions": "candidate.conditions",
+                    "risk": "candidate.risk",
+                    "entry": "candidate.entry_risk_guide",
+                    "strategy_fit": "candidate._strategy_fit_score",
+                    "policy": "scanner.strategy_selection_policy",
+                },
+                "historical_evidence_used_in_rank": False,
+            })
         candidate["candidate_label"] = str(priority.get("label") or candidate.get("candidate_label") or "")
         tier = str(priority.get("tier") or "")
         if tier == "READY":
