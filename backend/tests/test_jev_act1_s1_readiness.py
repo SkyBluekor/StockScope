@@ -57,7 +57,7 @@ def _db(path: Path, *, valid: bool = True) -> Path:
         conn.execute(
             "CREATE TABLE prospective_recommendation_sample("
             "capture_run_id TEXT,sample_index INTEGER,market TEXT,strategy TEXT,"
-            "action TEXT,snapshot_json TEXT)"
+            "action TEXT,snapshot_json TEXT,snapshot_hash TEXT)"
         )
     return path
 
@@ -76,8 +76,8 @@ def _sample(db: Path, *, index: int, horizon: str = "SHORT",
             ensure_ascii=False,
         )
         conn.execute(
-            "INSERT INTO prospective_recommendation_sample VALUES(?,?,?,?,?,?)",
-            (capture, index, market, "synthetic-trend", action, value),
+            "INSERT INTO prospective_recommendation_sample VALUES(?,?,?,?,?,?,?)",
+            (capture, index, market, "synthetic-trend", action, value, None),
         )
 
 
@@ -107,13 +107,14 @@ def test_readonly_audit_is_aggregate_and_does_not_change_original_db(tmp_path: P
     audit = result["audit"]
     assert audit["total_samples"] == 4
     assert audit["total_captures"] == 3
-    assert audit["categories"]["LEGACY_SOURCE_MISSING"] == 1
-    assert audit["categories"]["UNSUPPORTED_SCOPE"] == 1
-    assert audit["categories"]["INVALID_SEMANTIC_SOURCE"] == 1
+    assert audit["categories"]["SEMANTIC_SOURCE_MISSING"] == 1
+    assert audit["categories"]["EXPLICIT_HORIZON_UNSUPPORTED"] == 1
+    assert audit["categories"]["SEMANTIC_SOURCE_INVALID"] == 1
     assert audit["v4_compatible"] == 1
     assert audit["external_network_requests"] == audit["provider_calls"] == audit["db_writes"] == 0
     assert set(audit["by_market_strategy"][0]) == {
         "market", "strategy", "samples", "provider_eligible", "categories",
+        "legacy_local_inspection",
     }
     encoded = json.dumps(result, ensure_ascii=False)
     assert "000001" not in encoded and "synthetic-test" not in encoded
@@ -141,7 +142,7 @@ def test_provider_eligible_requires_usable_wire_and_is_not_created_for_local_sta
     )
     fail_closed = audit_stored_prospective(db)
     assert fail_closed["provider_eligible"] == 0
-    assert fail_closed["categories"]["INVALID_SEMANTIC_SOURCE"] == 1
+    assert fail_closed["categories"]["SEMANTIC_SOURCE_INVALID"] == 1
 
 
 def test_no_data_not_mistaken_for_provider_value(tmp_path: Path) -> None:
@@ -154,10 +155,10 @@ def test_no_data_not_mistaken_for_provider_value(tmp_path: Path) -> None:
 
 
 def test_legacy_and_unsupported_scope_are_not_counted_as_model_eligible() -> None:
-    assert _categorize({"action": "ENTRY_CANDIDATE", "horizon_intent": "SHORT", "snapshot": {}}) == "LEGACY_SOURCE_MISSING"
-    assert _categorize({"action": "ENTRY_CANDIDATE", "horizon_intent": "LONG", "snapshot": {}}) == "UNSUPPORTED_SCOPE"
-    assert _categorize({"action": "NO_TRADE", "horizon_intent": "SHORT", "snapshot": {}}) == "UNSUPPORTED_SCOPE"
-    assert _categorize({"action": "ENTRY_CANDIDATE", "horizon_intent": "SHORT", "snapshot": {"semantic_source_v2": {"bad": True}}}) == "INVALID_SEMANTIC_SOURCE"
+    assert _categorize({"action": "ENTRY_CANDIDATE", "horizon_intent": "SHORT", "snapshot": {}}) == "SEMANTIC_SOURCE_MISSING"
+    assert _categorize({"action": "ENTRY_CANDIDATE", "horizon_intent": "LONG", "snapshot": {}}) == "EXPLICIT_HORIZON_UNSUPPORTED"
+    assert _categorize({"action": "NO_TRADE", "horizon_intent": "SHORT", "snapshot": {}}) == "ACTION_OUT_OF_SCOPE"
+    assert _categorize({"action": "ENTRY_CANDIDATE", "horizon_intent": "SHORT", "snapshot": {"semantic_source_v2": {"bad": True}}}) == "SEMANTIC_SOURCE_INVALID"
 
 
 def test_unsupported_db_fails_without_creating_tables(tmp_path: Path) -> None:
