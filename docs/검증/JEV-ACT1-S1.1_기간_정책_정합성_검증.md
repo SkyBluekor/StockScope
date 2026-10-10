@@ -40,27 +40,15 @@ Scanner UI `ScannerPanel.tsx`는 `horizon_intent`를 보내지 않는다. 서버
 
 기존 `v4_compatible` / `provider_eligible`는 **정식 V4 범위만** 뜻하며 의미와 수치를 변경하지 않는다.
 
-신규 `legacy_local_inspection` 구조:
+신규 `legacy_local_inspection`에는 다음 내용이 들어간다.
 
-```json
-{
-  "total": 21,
-  "inspectable": 0,
-  "residual_observed": 0,
-  "categories": {
-    "LOCAL_MATCH": 0,
-    "LOCAL_CONFLICT": 0,
-    "LOCAL_INCOMPLETE": 0,
-    "LOCAL_AMBIGUOUS": 0,
-    "RESIDUAL_REVIEW_OBSERVED": 0,
-    "SEMANTIC_SOURCE_MISSING": 0,
-    "SEMANTIC_SOURCE_INVALID": 0
-  },
-  "provider_eligible": 0
-}
-```
+- `total`: 정식 V4 호출은 차단되지만 로컬 검사를 시도한 LEGACY 진입 후보 개수
+- `inspectable`: 로컬 검증에서 관계 결과가 확인된 개수
+- `residual_observed`: 로컬 관계만으로 해결되지 않은 사례 개수 (정식 AI 호출 승인과 무관)
+- `categories`: `LOCAL_MATCH`, `LOCAL_CONFLICT`, `LOCAL_INCOMPLETE`, `LOCAL_AMBIGUOUS`, `RESIDUAL_REVIEW_OBSERVED`, `SEMANTIC_SOURCE_MISSING`, `SEMANTIC_SOURCE_INVALID`별 개수
+- `provider_eligible`: LEGACY 진단에서는 항상 0
 
-위 값들은 **구조 설명용 샘플**이다. 합계 일치하는 실제 값은 반드시 PC에서 측정한다. 특별히 `RESIDUAL_REVIEW_OBSERVED`는 **로컬 후속 검토 필요성이 관측되었음을 뜻할 뿐, Jev 모델 호출 승인 또는 예측 정확도 향상이 아님**.
+사용자 PC에서 확인된 `LEGACY+ENTRY_CANDIDATE=21`건의 상세 결과는 아직 실행 전이므로 **미확정**이다. 위 분류는 `--json` 출력에 실제 집계로 표시된다. 특별히 `RESIDUAL_REVIEW_OBSERVED`는 로컬 후속 검토 필요성이 관측되었음을 뜻할 뿐, Jev 모델 호출 승인 또는 예측 정확도 향상이 아니다.
 
 ## 5. PC 검증 명령
 
