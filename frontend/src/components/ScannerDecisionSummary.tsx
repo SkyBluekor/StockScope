@@ -13,6 +13,12 @@ export default function ScannerDecisionSummary({ candidate, quoteSnapshot, onOpe
   const quote = scannerQuoteTruth(candidate, quoteSnapshot);
   const quoteAvailable = quoteSnapshot.quote !== null && !quoteSnapshot.loading
     && !quoteSnapshot.error && quote.state !== "ERROR";
+  const keepAsOfNextStep = candidate.risk.warning
+    || candidate.priority?.tier === "RISK_HOLD"
+    || candidate.entry_risk_guide?.action.status === "RISK_BLOCKED"
+    || candidate.action === "NO_TRADE"
+    || candidate.priority?.tier === "LOW_PRIORITY"
+    || candidate.conditions.missing > 0;
   return (
     <section className="scanner-ux-decision scanner-ux2-decision" aria-label="선택한 종목의 쉬운 판단">
       <span className="scanner-ux-eyebrow">분석일 기준 판단 · 최신 전략 확인 전</span>
@@ -65,7 +71,8 @@ export default function ScannerDecisionSummary({ candidate, quoteSnapshot, onOpe
       </section>
       <p className="scanner-ux5-next">
         <strong>다음 확인</strong>
-        {quote.state === "NOT_CHECKED" ? "전략·가격 탭에서 새 시세를 확인한 뒤 전략·위험을 재검증하세요."
+        {keepAsOfNextStep ? view.next
+          : quote.state === "NOT_CHECKED" ? "전략·가격 탭에서 새 시세를 확인한 뒤 전략·위험을 재검증하세요."
           : quote.state === "CHECKING" ? "시세 확인 중입니다. 분석일 판단만 참고하세요."
             : quote.state === "ERROR" ? "새 시세를 다시 확인한 뒤 전략·위험을 검증하세요."
               : quote.nextStep}
