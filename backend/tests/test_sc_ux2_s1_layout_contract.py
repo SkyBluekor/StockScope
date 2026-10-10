@@ -33,6 +33,7 @@ def test_sc_ux2_s1_candidate_list_is_primary_and_summary_is_compact() -> None:
 def test_sc_ux2_s1_responsive_columns_and_explicit_quote_loading() -> None:
     styles = (ROOT / "scannerUX.css").read_text(encoding="utf-8")
     price = (ROOT / "ScannerPriceStatus.tsx").read_text(encoding="utf-8")
+    quote_hook = (ROOT / "useScannerQuote.ts").read_text(encoding="utf-8")
 
     assert "SC-UX2-S1: candidate-first workspace" in styles
     assert "minmax(0, 1.16fr) minmax(390px, .84fr)" in styles
@@ -40,10 +41,10 @@ def test_sc_ux2_s1_responsive_columns_and_explicit_quote_loading() -> None:
     assert "grid-template-areas:" in styles
     assert "SC-UX2-S1: one primary answer" in styles
     assert "<h4>분석일 가격과 새 시세</h4>" in price
-    assert 'onClick={() => void checkPrice()}' in price
-    check_start = price.index("async function checkPrice()")
-    api_call = price.index("fetchStockQuote(candidate.code", check_start)
-    return_start = price.index("return (", check_start)
+    assert 'onClick={onCheckPrice}' in price
+    check_start = quote_hook.index("async function checkPrice()")
+    api_call = quote_hook.index("fetchStockQuote(candidate.code", check_start)
+    return_start = quote_hook.index("return { snapshot, checkPrice }", check_start)
     assert check_start < api_call < return_start
     assert "assessPriceRule(priceRule, candidate.current_price)" in price
 

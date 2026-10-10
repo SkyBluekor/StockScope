@@ -54,5 +54,6 @@ def test_sc_ux4_preserves_scanner_registration_recovery_and_jev_read_only_paths(
     assert "getJevReviews(captureId)" in scanner
     assert '<ScannerRankComparison result={result} />' in scanner
     assert "onPrepareEvidence={() => void prepareCandidateEvidence(selectedCandidate)}" in scanner
-    assert 'onClick={() => void checkPrice()}' in quote
+    assert 'onClick={onCheckPrice}' in quote
+    assert 'onCheckPrice={() => void checkPrice()}' in scanner
     assert "assessPriceRule(priceRule, candidate.current_price)" in quote
