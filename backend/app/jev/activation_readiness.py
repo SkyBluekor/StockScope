@@ -104,14 +104,35 @@ def assess_jev_act1_readiness(
 
     sample_total = int((audit or {}).get("total_samples") or 0)
     eligible = int((audit or {}).get("provider_eligible") or 0)
+    legacy = (audit or {}).get("legacy_local_inspection")
+    if not isinstance(legacy, dict):
+        legacy = {}
+    legacy_total = int(legacy.get("total") or 0)
+    legacy_inspected = int(legacy.get("inspectable") or 0)
+    legacy_residual = int(legacy.get("residual_observed") or 0)
+    if audit is None:
+        scope_reason = "RUN_LOCAL_READONLY_AUDIT"
+    elif legacy_total:
+        scope_reason = "LEGACY_HORIZON_REQUIRES_SEPARATE_POLICY_VALIDATION"
+    else:
+        scope_reason = "NO_LEGACY_SCOPE_OBSERVED"
+    checks.append(_check(
+        "HORIZON_SCOPE_COMPATIBILITY", "HOLD", scope_reason,
+    ))
     if audit is None:
         utility = "RUN_LOCAL_READONLY_AUDIT"
     elif sample_total == 0:
         utility = "NO_PROSPECTIVE_SAMPLES"
-    elif eligible == 0:
-        utility = "NO_PROVIDER_ELIGIBLE_SAMPLES_OBSERVED"
-    else:
+    elif eligible:
         utility = "ELIGIBLE_SAMPLES_OBSERVED_UTILITY_UNPROVEN"
+    elif legacy_total and legacy_inspected == 0:
+        utility = "LEGACY_LOCAL_INSPECTION_INVALID_OR_MISSING"
+    elif legacy_residual:
+        utility = "LEGACY_RESIDUAL_OBSERVED_PROVIDER_NOT_AUTHORIZED"
+    elif legacy_total:
+        utility = "LEGACY_LOCAL_REVIEW_ONLY_NO_PROVIDER_ELIGIBLE"
+    else:
+        utility = "NO_PROVIDER_ELIGIBLE_SAMPLES_OBSERVED"
     checks.append(_check("PRODUCTION_REACHABILITY", "HOLD", utility))
 
     verdict = (
