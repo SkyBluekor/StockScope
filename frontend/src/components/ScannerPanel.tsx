@@ -38,6 +38,8 @@ import {
 import StockNewsPanel from "./StockNewsPanel";
 import ScannerDecisionSummary from "./ScannerDecisionSummary";
 import ScannerPriceStatus from "./ScannerPriceStatus";
+import useScannerQuote from "./useScannerQuote";
+import { asOfPriorityLabel } from "./scannerQuoteTruth";
 import { beginnerCandidatePresentation, simpleConditionStatus } from "./scannerDecisionPresentation";
 import ScannerRankComparison from "./ScannerRankComparison";
 import AiReviewProgress from "./AiReviewProgress";
@@ -410,6 +412,8 @@ function CandidateDetail({
   const canPrepareEvidence = evidencePreparationAvailable(candidate);
   const targetCap = targetCapExplanation(candidate);
   const [activeTab, setActiveTab] = useState<"summary" | "strategy" | "ai" | "history" | "news">("summary");
+  // Lives above tab panels so a manual quote survives tab switches, never stock switches.
+  const { snapshot: quoteSnapshot, checkPrice } = useScannerQuote(candidate);
   const tabs = [
     { id: "summary", label: "요약" },
     { id: "strategy", label: "전략·가격" },
@@ -434,7 +438,7 @@ function CandidateDetail({
             <span>{candidate.market} · {candidate.code}</span>
           </div>
           <div className="scanner-selected-tags">
-            <span className={`scanner-state-badge ${tone}`}>{simpleConditionStatus(candidate)}</span>
+            <span className={`scanner-state-badge ${tone}`}>분석일 · {simpleConditionStatus(candidate)}</span>
             <span>{candidate.strategy_easy_name}</span>
 
           </div>
@@ -469,7 +473,11 @@ function CandidateDetail({
         aria-labelledby={"scanner-tab-" + activeTab} tabIndex={0}>
         {activeTab === "summary" && (
           <div className="scanner-ux3-summary">
-            <ScannerDecisionSummary candidate={candidate} />
+            <ScannerDecisionSummary
+              candidate={candidate}
+              quoteSnapshot={quoteSnapshot}
+              onOpenPriceTab={() => setActiveTab("strategy")}
+            />
             <div className="scanner-ux3-statuses">
               <div><small>AI 보조 검토</small><strong>{storedReviewLoading ? "AI 기록 확인 중" : storedReviewError ? "AI 기록 확인 실패" : aiTruth.label}</strong></div>
               <div><small>과거 검증</small><strong>{historicalReviewStatus(candidate)}</strong></div>
@@ -484,7 +492,7 @@ function CandidateDetail({
         )}
         {activeTab === "strategy" && (
           <div className="scanner-ux3-strategy">
-            <ScannerPriceStatus key={candidateKey(candidate)} candidate={candidate} />
+            <ScannerPriceStatus candidate={candidate} snapshot={quoteSnapshot} onCheckPrice={() => void checkPrice()} />
       <section className="scanner-decision-price-band" aria-label="핵심 가격 기준">
         <div><small>분석일 종가</small><strong>{priceText(candidate.current_price)}</strong></div>
         <div><small>{strategyPriceLabel(candidate)}</small><strong>{interestPriceText(candidate)}</strong></div>
@@ -530,7 +538,7 @@ function CandidateDetail({
 
       <section className="scanner-selected-strategy">
         <div>
-          <small>현재 가장 맞는 방법</small>
+          <small>분석일에 선택된 전략</small>
           <strong>{candidate.strategy_easy_name}</strong>
           <span>전문 용어 · {candidate.strategy_name}</span>
         </div>
@@ -541,8 +549,8 @@ function CandidateDetail({
         <section className={`scanner-priority-card priority-${candidate.priority.tier.toLowerCase()}`}>
           <div className="scanner-priority-head">
             <div>
-              <small>후보 우선순위 근거</small>
-              <strong>{candidate.priority.label}</strong>
+              <small>분석일 기준 후보 순위 · {rank}순위</small>
+              <strong>{asOfPriorityLabel(candidate)}</strong>
               <p>{candidate.priority.reason}</p>
             </div>
           </div>
@@ -1971,7 +1979,7 @@ export default function ScannerPanel({
               {selectedCandidate && (
                 <div id="scanner-selected-details" className={"scanner-ux3-detail-shell" + (showMore ? " expanded-candidates" : "")}>
                 <CandidateDetail
-                  key={candidateKey(selectedCandidate)}
+                  key={candidateKey(selectedCandidate) + ":" + selectedCandidate.data_date + ":" + String(completedAt ?? "unconfirmed")}
                   candidate={selectedCandidate}
                   rank={selectedRank}
                   aiReviewEnabled={aiReviewEnabled}
