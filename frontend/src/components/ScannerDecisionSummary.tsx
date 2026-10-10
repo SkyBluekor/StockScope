@@ -1,10 +1,18 @@
 import type { ScannerCandidate } from "../services/api";
 import { beginnerCandidatePresentation } from "./scannerDecisionPresentation";
+import { scannerQuoteTruth, type ScannerQuoteSnapshot } from "./scannerQuoteTruth";
 
-type Props = { candidate: ScannerCandidate };
+type Props = {
+  candidate: ScannerCandidate;
+  quoteSnapshot: ScannerQuoteSnapshot;
+  onOpenPriceTab: () => void;
+};
 
-export default function ScannerDecisionSummary({ candidate }: Props) {
+export default function ScannerDecisionSummary({ candidate, quoteSnapshot, onOpenPriceTab }: Props) {
   const view = beginnerCandidatePresentation(candidate);
+  const quote = scannerQuoteTruth(candidate, quoteSnapshot);
+  const quoteAvailable = quoteSnapshot.quote !== null && !quoteSnapshot.loading
+    && !quoteSnapshot.error && quote.state !== "ERROR";
   return (
     <section className="scanner-ux-decision scanner-ux2-decision" aria-label="선택한 종목의 쉬운 판단">
       <span className="scanner-ux-eyebrow">분석일 기준 판단 · 최신 전략 확인 전</span>
@@ -42,7 +50,26 @@ export default function ScannerDecisionSummary({ candidate }: Props) {
       {(candidate.risk.warning || view.asOfPrice.state === "OUT_OF_RANGE") && (
         <p className="scanner-ux5-caution"><strong>주의</strong> {view.caution}</p>
       )}
-      <p className="scanner-ux5-next"><strong>다음 확인</strong> {view.next}</p>
+      <section className="scanner-ux6-quote" aria-label="분석일 판정과 새 시세">
+        <div className="scanner-ux6-quote-top">
+          <strong>새 시세와 기존 참고 조건</strong>
+          <button type="button" onClick={onOpenPriceTab}>전략·가격에서 확인 →</button>
+        </div>
+        <div className="scanner-ux6-quote-values">
+          <span>{quote.stateLabel}</span>
+          <strong>{quoteAvailable ? quote.priceLabel : "새 가격 없음"}</strong>
+        </div>
+        {quoteAvailable && <small>{quote.freshnessLabel} · {quote.marketLabel}</small>}
+        <p>{quote.nextStep}</p>
+        <p className="scanner-ux6-validation">현재 전략·위험: 재검증 전 · 분석일 후보 순위는 변경되지 않았어요.</p>
+      </section>
+      <p className="scanner-ux5-next">
+        <strong>다음 확인</strong>
+        {quote.state === "NOT_CHECKED" ? "전략·가격 탭에서 새 시세를 확인한 뒤 전략·위험을 재검증하세요."
+          : quote.state === "CHECKING" ? "시세 확인 중입니다. 분석일 판단만 참고하세요."
+            : quote.state === "ERROR" ? "새 시세를 다시 확인한 뒤 전략·위험을 검증하세요."
+              : quote.nextStep}
+      </p>
     </section>
   );
 }
