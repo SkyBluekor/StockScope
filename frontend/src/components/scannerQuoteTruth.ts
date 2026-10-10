@@ -3,7 +3,7 @@ import type {
   ScannerCandidate,
   StockQuoteResponse,
 } from "../services/api";
-import { assessPriceRule, type PriceRuleAssessment, wonText } from "./scannerDecisionPresentation";
+import { assessPriceRule, type PriceRuleAssessment, wonText } from "./scannerDecisionPresentation.ts";
 
 /**
  * Snapshot quotes compare with the analysis-date price rule. They NEVER
