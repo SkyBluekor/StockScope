@@ -66,7 +66,6 @@ export default function ScannerDecisionSummary({ candidate, quoteSnapshot, onOpe
           <strong>{quoteAvailable ? quote.priceLabel : "새 가격 없음"}</strong>
         </div>
         {quoteAvailable && <small>{quote.freshnessLabel} · {quote.marketLabel}</small>}
-        <p>{quote.nextStep}</p>
         <p className="scanner-ux6-validation">현재 전략·위험: 재검증 전 · 분석일 후보 순위는 변경되지 않았어요.</p>
       </section>
       <p className="scanner-ux5-next">
