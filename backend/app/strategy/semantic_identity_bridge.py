@@ -100,11 +100,15 @@ def attest_scanner_passed_conditions(
         for item in rows
     ):
         return None
-    if (
-        int(condition_state.get("passed") or 0) != len(expected)
-        or int(condition_state.get("total") or 0) != len(expected)
-        or int(condition_state.get("missing") or 0) != 0
-    ):
+    try:
+        counts_match = (
+            int(condition_state.get("passed") or 0) == len(expected)
+            and int(condition_state.get("total") or 0) == len(expected)
+            and int(condition_state.get("missing") or 0) == 0
+        )
+    except (TypeError, ValueError):
+        return None
+    if not counts_match:
         return None
     return {
         "source": ENGINE_CONDITION_SOURCE,
@@ -146,16 +150,17 @@ def _valid_scanner_condition_proof(candidate: dict[str, Any], key: str) -> bool:
         for item in rows
     ):
         return False
-    return (
-        all(
-            evidence.get(name) == len(expected) if name != "missing"
-            else evidence.get(name) == 0
-            for name in ("passed", "total", "missing")
+    try:
+        return (
+            evidence.get("passed") == len(expected)
+            and evidence.get("total") == len(expected)
+            and evidence.get("missing") == 0
+            and int(conditions.get("passed") or 0) == len(expected)
+            and int(conditions.get("total") or 0) == len(expected)
+            and int(conditions.get("missing") or 0) == 0
         )
-        and int(conditions.get("passed") or 0) == len(expected)
-        and int(conditions.get("total") or 0) == len(expected)
-        and int(conditions.get("missing") or 0) == 0
-    )
+    except (TypeError, ValueError):
+        return False
 
 
 def semantic_projection_candidate(
