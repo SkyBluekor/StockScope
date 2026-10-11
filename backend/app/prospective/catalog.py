@@ -8,7 +8,10 @@ from typing import Any
 from uuid import uuid4
 
 from app.strategy.semantic_source import attach_semantic_source
-from app.strategy.semantic_identity_bridge import semantic_projection_candidate
+from app.strategy.semantic_identity_bridge import (
+    semantic_projection_candidate,
+    verified_scanner_repro_rows,
+)
 from app.strategy.semantic_source_v2 import attach_semantic_source_v2
 
 from .models import (
@@ -223,14 +226,18 @@ class ProspectiveCatalog:
         item: dict[str, Any],
         *,
         selection_policy: dict[str, Any] | None = None,
+        audited: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        # Semantic attestation is *only* a temporary projection input.
-        # Preserve the production candidate's original policy binding (which
-        # is None for the legacy fallback), rank, risk and action verbatim.
+        # Preserve production candidate and its legacy policy binding, rank and
+        # Risk. Only facts traced to the frozen Scanner's original audit may
+        # enrich a separate semantic-only projection.
         snapshot = dict(item)
         semantic_input = semantic_projection_candidate(
-            snapshot, selection_policy=selection_policy,
+            snapshot, selection_policy=selection_policy, audited=audited,
         )
+        for key in ("semantic_strategy_identity", "semantic_condition_evidence"):
+            if key in semantic_input and key not in snapshot:
+                snapshot[key] = semantic_input[key]
         enriched = attach_semantic_source_v2(attach_semantic_source(semantic_input))
         snapshot["semantic_source"] = enriched["semantic_source"]
         snapshot["semantic_source_v2"] = enriched["semantic_source_v2"]
@@ -252,8 +259,20 @@ class ProspectiveCatalog:
             if isinstance(result.get("strategy_selection_policy"), dict)
             else None
         )
+        audited_rows = verified_scanner_repro_rows(result)
+
+        def audit_for(item: dict[str, Any]) -> dict[str, Any] | None:
+            key = (
+                str(item.get("market") or ""),
+                str(item.get("code") or ""),
+                str(item.get("rank") or ""),
+            )
+            return audited_rows.get(key)
+
         candidates = [
-            self._candidate_snapshot(item, selection_policy=selection_policy)
+            self._candidate_snapshot(
+                item, selection_policy=selection_policy, audited=audit_for(item),
+            )
             for item in [*top, *more]
             if isinstance(item, dict)
         ]
@@ -415,7 +434,7 @@ class ProspectiveCatalog:
                 ),
             )
             for index, candidate in enumerate(candidates):
-                snapshot = self._candidate_snapshot(candidate, selection_policy=selection_policy)
+                snapshot = self._candidate_snapshot(candidate, selection_policy=selection_policy, audited=audit_for(candidate))
                 market = str(candidate.get("market") or "").upper()
                 ticker = str(candidate.get("code") or candidate.get("ticker") or "").strip().upper()
                 if not market or not ticker:
