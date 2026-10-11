@@ -1,207 +1,195 @@
-"""Attested, semantics-only bridge for Scanner's legacy selection fallback.
+"""Read-only semantic provenance from the already-written Scanner repro audit.
 
-The legacy policy intentionally contains no strategy version/hash. A *fresh
-Scanner evaluation* can nevertheless attest the selected production engine
-definition without changing that policy, the candidate's original identity,
-its rank or its risk decision. Cached and foreign results must carry matching
-attestation before they can be used.
+The production Scanner and its frozen baseline are never modified. For the
+legacy selection fallback, only the matching real engine PASS condition details
+from its immutable reproducibility artifact may justify semantic-only binding.
+No HTTP, raw market replay, provider call or policy activation is performed.
 """
 from __future__ import annotations
 
 from functools import lru_cache
+import json
+from pathlib import Path
 from typing import Any
 
+from app.simulation.strategy_governance import StrategyGovernanceError, strategy_definition
 from app.strategy.condition_semantics import condition_sources
-from app.simulation.strategy_governance import (
-    StrategyGovernanceError,
-    strategy_definition,
-)
 from app.strategy.models import StrategyName
 
 ENGINE_VERIFIED_SOURCE = "LEGACY_ENGINE_IDENTITY_VERIFIED"
+ENGINE_CONDITION_SOURCE = "SCANNER_REPRO_ENGINE_PASSED_CONDITIONS_V1"
 LEGACY_SELECTION_SOURCE = "LEGACY_CURRENT_10_FALLBACK"
-ENGINE_CONDITION_SOURCE = "SCANNER_ENGINE_PASSED_CONDITIONS_V1"
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+REPRO_ROOT = PROJECT_ROOT / "scanner-repro"
+MAX_REPRO_BYTES = 32 * 1024 * 1024
 
 
 @lru_cache(maxsize=16)
-def _engine_definition(key: str) -> tuple[str, str] | None:
+def _current_engine_identity(key: str) -> tuple[str, str] | None:
     try:
-        definition = strategy_definition(StrategyName(key))
+        version = strategy_definition(StrategyName(key))
     except (ValueError, StrategyGovernanceError):
         return None
-    if definition.operational_status != "OPERATING" or definition.strategy_key != key:
+    if version.strategy_key != key or version.operational_status != "OPERATING":
         return None
-    return definition.strategy_version_id, definition.definition_hash
+    return version.strategy_version_id, version.definition_hash
 
 
-def attest_legacy_scanner_identity(
-    *,
-    strategy_key: Any,
-    policy_binding_version: Any,
-    policy_binding_hash: Any,
-    selection_policy: dict[str, Any] | None,
-) -> dict[str, str] | None:
-    """Called only during actual Scanner strategy evaluation, never from DB."""
-    if not isinstance(selection_policy, dict):
-        return None
-    if (
-        selection_policy.get("policy_source") != LEGACY_SELECTION_SOURCE
-        or selection_policy.get("fallback_used") is not True
-        or policy_binding_version is not None
-        or policy_binding_hash is not None
-    ):
-        return None
-    policy_id = str(selection_policy.get("policy_id") or "")
-    policy_hash = str(selection_policy.get("policy_hash") or "")
-    key = str(strategy_key or "")
-    if not policy_id or not policy_hash or not key:
-        return None
-    current = _engine_definition(key)
-    if current is None:
-        return None
-    version, definition_hash = current
-    return {
-        "source": ENGINE_VERIFIED_SOURCE,
-        "strategy_key": key,
-        "strategy_version_id": version,
-        "strategy_definition_hash": definition_hash,
-        "selection_policy_id": policy_id,
-        "selection_policy_hash": policy_hash,
-    }
+def _row_key(candidate: dict[str, Any]) -> tuple[str, str, str]:
+    return (
+        str(candidate.get("market") or ""),
+        str(candidate.get("code") or ""),
+        str(candidate.get("rank") or ""),
+    )
 
-    
-def attest_scanner_passed_conditions(
-    *,
-    strategy_key: Any,
-    condition_state: dict[str, Any] | None,
+
+def verified_scanner_repro_rows(result: dict[str, Any]) -> dict[tuple[str, str, str], dict[str, Any]]:
+    """Admit only fresh local audit rows matching the delivered Scanner result.
+
+    Caller may safely pass malformed, cached or stale results: they yield no
+    attestation rather than an optimistic fallback or exception.
+    """
+    if result.get("scanner_cache_hit") is not False:
+        return {}
+    diagnostics = result.get("diagnostics")
+    meta = diagnostics.get("reproducibility_audit") if isinstance(diagnostics, dict) else None
+    if not isinstance(meta, dict) or meta.get("written") is not True:
+        return {}
+    if meta.get("result_source") != "fresh_analysis":
+        return {}
+    filename = str(meta.get("filename") or "")
+    location = str(meta.get("path") or "")
+    if not filename.startswith("scanner-repro_") or not filename.endswith(".json") or not location:
+        return {}
+    try:
+        trusted_root = REPRO_ROOT.resolve(strict=True)
+        path = Path(location).resolve(strict=True)
+        if path.parent != trusted_root or path.name != filename:
+            return {}
+        if path.stat().st_size > MAX_REPRO_BYTES:
+            return {}
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            return {}
+        if (
+            raw.get("result_source") != "fresh_analysis"
+            or raw.get("scanner_version") != result.get("version")
+            or raw.get("analysis_date") != result.get("requested_as_of")
+            or raw.get("market_scope") != result.get("market_scope")
+            or raw.get("existing_latest_day_fingerprint") != result.get("input_fingerprint")
+            or meta.get("analysis_date") != raw.get("analysis_date")
+            or raw.get("candidate_pool_complete") is not True
+        ):
+            return {}
+        rows = raw.get("candidates")
+        if not isinstance(rows, list) or raw.get("candidate_count") != len(rows):
+            return {}
+        if meta.get("candidate_count") != len(rows):
+            return {}
+        out = {}
+        for row in rows:
+            if not isinstance(row, dict):
+                return {}
+            key = _row_key(row)
+            if not all(key) or key in out:
+                return {}
+            out[key] = row
+        return out
+    except (OSError, ValueError, TypeError, UnicodeError, json.JSONDecodeError):
+        return {}
+
+
+def _actual_passed_conditions(
+    candidate: dict[str, Any], audited: dict[str, Any],
 ) -> dict[str, Any] | None:
-    """Retain proof of *observed engine PASS facts*, never synthesize from counts."""
-    if not isinstance(condition_state, dict):
-        return None
-    consistency = condition_state.get("consistency")
-    rows = condition_state.get("conditions")
-    key = str(strategy_key or "")
-    if (
-        not isinstance(consistency, dict)
-        or consistency.get("ok") is not True
-        or not isinstance(rows, list)
-        or not rows
-    ):
-        return None
+    key = str(candidate.get("strategy") or "")
     expected = condition_sources(key)
-    if not expected or len(rows) != len(expected):
+    if not expected:
         return None
-    raw = [str(item.get("raw") or "") for item in rows if isinstance(item, dict)]
-    if len(raw) != len(expected) or len(set(raw)) != len(expected) or set(raw) != set(expected):
+    for name in (
+        "market", "code", "rank", "strategy", "action",
+        "candidate_state", "data_date", "current_price", "conditions", "risk",
+    ):
+        if candidate.get(name) != audited.get(name):
+            return None
+    state = candidate.get("conditions")
+    details = audited.get("scanner_inputs")
+    details = details.get("condition_details") if isinstance(details, dict) else None
+    if not isinstance(state, dict) or not isinstance(details, list):
+        return None
+    if len(details) != len(expected):
+        return None
+    names = [str(x.get("raw") or "") for x in details if isinstance(x, dict)]
+    if len(names) != len(expected) or len(set(names)) != len(expected) or set(names) != set(expected):
         return None
     if any(
-        item.get("status") != "PASS"
-        or not str(item.get("condition_id") or "")
-        for item in rows
+        row.get("status") != "PASS"
+        or not str(row.get("condition_id") or "")
+        for row in details
     ):
         return None
     try:
-        counts_match = (
-            int(condition_state.get("passed") or 0) == len(expected)
-            and int(condition_state.get("total") or 0) == len(expected)
-            and int(condition_state.get("missing") or 0) == 0
-        )
+        if (
+            int(state.get("passed") or 0) != len(expected)
+            or int(state.get("total") or 0) != len(expected)
+            or int(state.get("missing") or 0) != 0
+        ):
+            return None
     except (TypeError, ValueError):
-        return None
-    if not counts_match:
         return None
     return {
         "source": ENGINE_CONDITION_SOURCE,
         "strategy_key": key,
+        "passed": len(details),
+        "total": len(details),
+        "missing": 0,
         "items": [
             {
-                "condition_id": str(item["condition_id"]),
-                "source_condition": str(item["raw"]),
+                "condition_id": str(row["condition_id"]),
+                "source_condition": str(row["raw"]),
                 "status": "PASS",
             }
-            for item in rows
+            for row in details
         ],
-        "passed": len(rows),
-        "total": len(rows),
-        "missing": 0,
     }
-
-
-def _valid_scanner_condition_proof(candidate: dict[str, Any], key: str) -> bool:
-    evidence = candidate.get("semantic_condition_evidence")
-    conditions = candidate.get("conditions")
-    if not isinstance(evidence, dict) or not isinstance(conditions, dict):
-        return False
-    if evidence.get("source") != ENGINE_CONDITION_SOURCE or evidence.get("strategy_key") != key:
-        return False
-    rows = evidence.get("items")
-    expected = condition_sources(key)
-    if not isinstance(rows, list) or not expected or len(rows) != len(expected):
-        return False
-    names = [
-        str(item.get("source_condition") or "")
-        for item in rows if isinstance(item, dict)
-    ]
-    if len(names) != len(expected) or len(set(names)) != len(expected) or set(names) != set(expected):
-        return False
-    if any(
-        item.get("status") != "PASS"
-        or not str(item.get("condition_id") or "")
-        for item in rows
-    ):
-        return False
-    try:
-        return (
-            evidence.get("passed") == len(expected)
-            and evidence.get("total") == len(expected)
-            and evidence.get("missing") == 0
-            and int(conditions.get("passed") or 0) == len(expected)
-            and int(conditions.get("total") or 0) == len(expected)
-            and int(conditions.get("missing") or 0) == 0
-        )
-    except (TypeError, ValueError):
-        return False
 
 
 def semantic_projection_candidate(
     candidate: dict[str, Any],
     *,
     selection_policy: dict[str, Any] | None,
+    audited: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Build a temporary semantic input; never mutate the Scanner result.
-
-    A matching engine attestation is necessary but is not a new Selection
-    Policy approval. Unsupported/stale/partial claims safely remain missing.
-    """
-    result = dict(candidate)
-    if result.get("strategy_version_id") is not None or result.get(
+    """Return a temporary semantic input; do NOT override Scanner identity."""
+    projected = dict(candidate)
+    if projected.get("strategy_version_id") is not None or projected.get(
         "strategy_definition_hash"
     ) is not None:
-        return result
-    if not isinstance(selection_policy, dict) or (
-        selection_policy.get("policy_source") != LEGACY_SELECTION_SOURCE
-        or selection_policy.get("fallback_used") is not True
-    ):
-        return result
-    claim = result.get("semantic_strategy_identity")
-    if not isinstance(claim, dict) or claim.get("source") != ENGINE_VERIFIED_SOURCE:
-        return result
-    key = str(result.get("strategy") or "")
-    if not key or claim.get("strategy_key") != key:
-        return result
-    if not _valid_scanner_condition_proof(result, key):
-        return result
+        return projected
     if (
-        claim.get("selection_policy_id") != selection_policy.get("policy_id")
-        or claim.get("selection_policy_hash") != selection_policy.get("policy_hash")
+        not isinstance(selection_policy, dict)
+        or selection_policy.get("policy_source") != LEGACY_SELECTION_SOURCE
+        or selection_policy.get("fallback_used") is not True
+        or not str(selection_policy.get("policy_id") or "")
+        or not str(selection_policy.get("policy_hash") or "")
+        or not isinstance(audited, dict)
     ):
-        return result
-    current = _engine_definition(key)
-    if current is None or (
-        claim.get("strategy_version_id"),
-        claim.get("strategy_definition_hash"),
-    ) != current:
-        return result
-    result["strategy_version_id"] = current[0]
-    result["strategy_definition_hash"] = current[1]
-    return result
+        return projected
+    evidence = _actual_passed_conditions(candidate, audited)
+    if evidence is None:
+        return projected
+    key = str(projected.get("strategy") or "")
+    version = _current_engine_identity(key)
+    if version is None:
+        return projected
+    projected["strategy_version_id"], projected["strategy_definition_hash"] = version
+    projected["semantic_strategy_identity"] = {
+        "source": ENGINE_VERIFIED_SOURCE,
+        "strategy_key": key,
+        "strategy_version_id": version[0],
+        "strategy_definition_hash": version[1],
+        "selection_policy_id": selection_policy["policy_id"],
+        "selection_policy_hash": selection_policy["policy_hash"],
+    }
+    projected["semantic_condition_evidence"] = evidence
+    return projected
