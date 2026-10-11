@@ -26,7 +26,10 @@ from app.market.providers import KrxProvider
 from app.market.providers.base import ProviderError
 from app.strategy.context import regime_from_index
 from app.strategy.models import StrategyName
-from app.strategy.semantic_identity_bridge import attest_legacy_scanner_identity
+from app.strategy.semantic_identity_bridge import (
+    attest_legacy_scanner_identity,
+    attest_scanner_passed_conditions,
+)
 from app.strategy.production_selection_policy import (
     ProductionStrategySelectionRegistry,
     SelectionPolicyPin,
@@ -1856,8 +1859,13 @@ class StockScannerService:
             policy_binding_hash=item.get("quick_strategy_definition_hash"),
             selection_policy=item.get("quick_selection_policy_identity"),
         )
+        semantic_conditions = attest_scanner_passed_conditions(
+            strategy_key=item.get("quick_strategy"),
+            condition_state=condition_state,
+        )
         return {
             **({"semantic_strategy_identity": semantic_identity} if semantic_identity else {}),
+            **({"semantic_condition_evidence": semantic_conditions} if semantic_conditions else {}),
             "code": item["code"],
             "name": item["name"],
             "market": item["market"],
