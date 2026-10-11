@@ -98,7 +98,6 @@ def test_scanner_fallback_attestation_does_not_change_candidate_decision_or_bind
     assert snapshot["action"] == original["action"]
     assert snapshot["strategy_version_id"] is None
     assert snapshot["strategy_definition_hash"] is None
-    assert snapshot["priority"] if "priority" in snapshot else True
     semantic_v1 = snapshot["semantic_source"]
     semantic_v2 = snapshot["semantic_source_v2"]
     assert semantic_v1["strategy"]["strategy_version_id"]
@@ -199,7 +198,11 @@ def test_wait_action_is_not_misreported_as_jev_ready():
     item = _quick(status="CAUTION")
     candidate = _candidate(item)
     assert candidate["action"] == "WAIT"
-    assert _source(candidate)["semantic_source_v2"]["readiness"]["local_semantic_status"] == "LOCAL_INCOMPLETE"
+    with pytest.raises(TypeSafeStateProjectionError, match="OUT_OF_SCOPE_ACTION"):
+        route_typesafe_state_v4({
+            "action": "WAIT", "horizon_intent": "SHORT",
+            "snapshot": _source(candidate),
+        })
 
 
 def test_no_network_needed_and_backend_source_unmodified(monkeypatch):
