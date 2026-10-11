@@ -7,11 +7,15 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import date
 import json
+import sqlite3
+from pathlib import Path
 
 import pytest
 
 from app.backtest.scanner import StockScannerService
 from app.prospective.catalog import ProspectiveCatalog
+from app.prospective.models import ProspectiveCaptureRequest
+from tools.data.migrate_prospective_vnp2s2 import migrate_prospective_store
 from app.prospective.models import digest_json
 from app.strategy.condition_semantics import condition_sources
 from app.strategy.models import StrategyName
@@ -213,3 +217,57 @@ def test_no_network_needed_and_backend_source_unmodified(monkeypatch):
     )
     candidate = _candidate()
     assert _source(candidate)["semantic_source_v2"]["readiness"]["local_semantic_status"] != "LOCAL_INCOMPLETE"
+
+
+def test_scanner_to_prospective_sqlite_roundtrip_and_repeatable_hash(tmp_path: Path) -> None:
+    db = tmp_path / "simulation.db"
+    with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TABLE simulation_placeholder(id INTEGER PRIMARY KEY)")
+    migrate_prospective_store(db)
+    catalog = ProspectiveCatalog(db)
+    request = ProspectiveCaptureRequest(
+        market_scope="ALL",
+        requested_as_of="2026-10-10",
+        candidate_limit=10,
+        horizon_intent="LEGACY_UNSPECIFIED",
+        horizon_policy_version=None,
+    )
+    original = _candidate()
+    original["rank"] = 1
+    capture_result = {
+        "version": "0.21.3.9",
+        "scanner_cache_hit": False,
+        "requested_as_of": "2026-10-10",
+        "market_scope": "ALL",
+        "data_dates": {"KOSPI": "2026-10-10"},
+        "input_fingerprint": "synthetic-input",
+        "summary": {"candidate_count": 1, "shown_count": 1},
+        "partial_data": False,
+        "strategy_selection_policy": dict(FALLBACK),
+        "candidates": [original],
+        "more_candidates": [],
+    }
+    catalog.begin_capture(source_job_id="fixture-1", request=request)
+    first = catalog.finalize_capture(
+        source_job_id="fixture-1", request=request, result=capture_result,
+    )
+    assert first["status"] == "COMPLETE"
+    samples = catalog.list_samples(capture_run_id=first["id"])
+    assert len(samples) == 1
+    stored = samples[0]["snapshot"]
+    assert stored["rank"] == original["rank"]
+    assert stored["action"] == original["action"]
+    assert stored["strategy_version_id"] is None
+    assert stored["strategy_definition_hash"] is None
+    assert samples[0]["snapshot_hash"] == digest_json(stored)
+    assert stored["semantic_source"]["strategy"]["strategy_version_id"]
+    assert stored["semantic_source_v2"]["readiness"]["local_semantic_status"] != "LOCAL_INCOMPLETE"
+    assert _source(original) == stored
+    assert _source(original) == stored  # idempotent projection
+    catalog.begin_capture(source_job_id="fixture-2", request=request)
+    second = catalog.finalize_capture(
+        source_job_id="fixture-2", request=request, result=capture_result,
+    )
+    assert second["status"] == "DUPLICATE"
+    assert second["canonical_capture_id"] == first["id"]
+    assert len(catalog.list_samples()) == 1
