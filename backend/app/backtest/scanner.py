@@ -26,6 +26,7 @@ from app.market.providers import KrxProvider
 from app.market.providers.base import ProviderError
 from app.strategy.context import regime_from_index
 from app.strategy.models import StrategyName
+from app.strategy.semantic_identity_bridge import attest_legacy_scanner_identity
 from app.strategy.production_selection_policy import (
     ProductionStrategySelectionRegistry,
     SelectionPolicyPin,
@@ -1776,6 +1777,7 @@ class StockScannerService:
             "market_cap": row.get("market_cap"),
             "history_points": len(rows),
             "quick_strategy": best["strategy"],
+            "quick_selection_policy_identity": run_policy.metadata(),
             "quick_strategy_version_id": (
                 strategy_ref.get("strategy_version_id")
                 if strategy_ref
@@ -1845,7 +1847,17 @@ class StockScannerService:
         if risk_warning:
             internal_rank -= 10.0
 
+        # Only the strategy actually evaluated by the production engine may
+        # carry an identity attestation. This never approves or modifies the
+        # legacy Selection Policy, production rank, strategy, or Risk gate.
+        semantic_identity = attest_legacy_scanner_identity(
+            strategy_key=item.get("quick_strategy"),
+            policy_binding_version=item.get("quick_strategy_version_id"),
+            policy_binding_hash=item.get("quick_strategy_definition_hash"),
+            selection_policy=item.get("quick_selection_policy_identity"),
+        )
         return {
+            **({"semantic_strategy_identity": semantic_identity} if semantic_identity else {}),
             "code": item["code"],
             "name": item["name"],
             "market": item["market"],
