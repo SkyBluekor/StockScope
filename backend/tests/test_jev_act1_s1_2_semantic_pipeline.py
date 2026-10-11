@@ -1,273 +1,245 @@
-"""ACT1-S1.2: semantic source can use only attested production-engine facts.
-
-No KRX, market mutations, TypeSafe API, held-out data, or strategy/risk rewrites.
-"""
+"""JEV ACT1-S1.2: read existing Scanner reproducibility evidence, not new Scanner code."""
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import date
 import json
-import sqlite3
 from pathlib import Path
+import sqlite3
 
 import pytest
 
-from app.backtest.scanner import StockScannerService
-from app.prospective.catalog import ProspectiveCatalog
-from app.prospective.models import ProspectiveCaptureRequest
-from tools.data.migrate_prospective_vnp2s2 import migrate_prospective_store
-from app.prospective.models import digest_json
-from app.strategy.condition_semantics import condition_sources
-from app.strategy.models import StrategyName
-from app.strategy.semantic_identity_bridge import (
-    ENGINE_CONDITION_SOURCE,
-    LEGACY_SELECTION_SOURCE,
-    attest_legacy_scanner_identity,
-    attest_scanner_passed_conditions,
-    semantic_projection_candidate,
-)
-from app.strategy.semantic_source_v2 import verify_semantic_source_v2
 from app.jev.semantic_scope_diagnostic import inspect_stored_semantic_source
 from app.jev.typesafe_state import TypeSafeStateProjectionError
 from app.jev.typesafe_state_v4 import route_typesafe_state_v4
+from app.prospective.catalog import ProspectiveCatalog
+from app.prospective.models import ProspectiveCaptureRequest, digest_json
+from app.strategy.condition_semantics import condition_sources
+from app.strategy.models import StrategyName
+from app.strategy.semantic_identity_bridge import (
+    LEGACY_SELECTION_SOURCE,
+    semantic_projection_candidate,
+    verified_scanner_repro_rows,
+)
+from app.strategy.semantic_source_v2 import verify_semantic_source_v2
+from tools.data.migrate_prospective_vnp2s2 import migrate_prospective_store
 
 
 STRATEGY = StrategyName.TREND_FOLLOWING.value
-FALLBACK = {
-    "policy_source": LEGACY_SELECTION_SOURCE,
-    "fallback_used": True,
+POLICY = {
     "policy_id": "LEGACY-CURRENT-TEST",
     "policy_hash": "test-policy-hash",
+    "policy_source": LEGACY_SELECTION_SOURCE,
+    "fallback_used": True,
 }
 
 
-def _quick(*, policy=None, status="READY", tamper_conditions=False):
-    conditions = list(condition_sources(STRATEGY))
-    rows = [
-        {"raw": raw, "status": "PASS", "condition_id": f"pass-{i}"}
-        for i, raw in enumerate(conditions, 1)
-    ]
-    if tamper_conditions:
-        rows[0]["raw"] = "unmapped false condition"
-    state = {
-        "passed": len(rows), "total": len(rows), "missing": 0,
-        "missing_details": [],
-        "conditions": rows,
-        "consistency": {"ok": True},
-    }
+def _candidate() -> dict:
+    n = len(condition_sources(STRATEGY))
     return {
-        "code": "000001", "name": "synthetic-only", "market": "KOSPI",
-        "latest_date": date(2026, 10, 10),
-        "quick_strategy": STRATEGY,
-        "quick_strategy_version_id": None,
-        "quick_strategy_definition_hash": None,
-        "quick_selection_policy_identity": dict(policy or FALLBACK),
-        "quick_current": {
-            "status": status, "total": len(rows), "passed": len(rows),
-            "missing": 0, "risk_warning": False,
-            "risk_status": "READY", "internal_score": 80,
-        },
-        "quick_condition_state": state,
-        "quick_score": 90,
-        "quick_guide": {"easy_name": "test", "professional_name": "test"},
-        "quick_entry_risk_guide": {},
+        "market": "KOSPI", "code": "000001", "name": "synthetic-only",
+        "rank": 1, "strategy": STRATEGY,
+        "strategy_version_id": None, "strategy_definition_hash": None,
+        "data_date": "2026-10-10", "current_price": 100,
+        "candidate_state": "READY", "action": "ENTRY_CANDIDATE",
+        "conditions": {"passed": n, "total": n, "missing": 0, "top_missing": []},
+        "risk": {"status": "READY", "warning": False},
+        "entry_risk_guide": {}, "priority": {"tier": "READY"},
     }
 
 
-def _candidate(quick=None):
-    return StockScannerService.__new__(StockScannerService)._current_candidate(
-        quick if quick is not None else _quick()
-    )
+def _audit_row(candidate: dict) -> dict:
+    row = {
+        key: deepcopy(candidate[key])
+        for key in (
+            "market", "code", "rank", "strategy", "action",
+            "candidate_state", "data_date", "current_price", "conditions", "risk",
+        )
+    }
+    row["scanner_inputs"] = {
+        "condition_details": [
+            {"raw": raw, "status": "PASS", "condition_id": f"pass-{i}"}
+            for i, raw in enumerate(condition_sources(STRATEGY), 1)
+        ],
+    }
+    return row
 
 
-def _source(candidate, policy=None):
-    return ProspectiveCatalog._candidate_snapshot(
-        candidate, selection_policy=dict(policy or FALLBACK)
-    )
+def _result(candidate: dict, *, path: Path, filename: str) -> dict:
+    return {
+        "version": "0.21.3.9",
+        "scanner_cache_hit": False,
+        "requested_as_of": "2026-10-10",
+        "market_scope": "ALL",
+        "data_dates": {"KOSPI": "2026-10-10"},
+        "input_fingerprint": {"synthetic": True},
+        "partial_data": False,
+        "summary": {"candidate_count": 1, "shown_count": 1},
+        "candidates": [candidate],
+        "more_candidates": [],
+        "strategy_selection_policy": dict(POLICY),
+        "diagnostics": {
+            "reproducibility_audit": {
+                "written": True, "path": str(path), "filename": filename,
+                "analysis_date": "2026-10-10",
+                "candidate_count": 1, "result_source": "fresh_analysis",
+            },
+        },
+    }
 
 
-def test_scanner_fallback_attestation_does_not_change_candidate_decision_or_binding():
+def _fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from app.strategy import semantic_identity_bridge as bridge
+    monkeypatch.setattr(bridge, "REPRO_ROOT", tmp_path)
     candidate = _candidate()
-    assert candidate["action"] == "ENTRY_CANDIDATE"
-    assert candidate["candidate_state"] == "READY"
-    assert candidate["strategy_version_id"] is None
-    assert candidate["strategy_definition_hash"] is None
-    assert candidate["semantic_strategy_identity"]["source"] == "LEGACY_ENGINE_IDENTITY_VERIFIED"
-    assert candidate["semantic_condition_evidence"]["source"] == ENGINE_CONDITION_SOURCE
-    assert all(x["status"] == "PASS" for x in candidate["semantic_condition_evidence"]["items"])
-    original = deepcopy(candidate)
+    filename = "scanner-repro_synthetic_20261010-100000_analysis-20261010.json"
+    path = tmp_path / filename
+    data = _result(candidate, path=path, filename=filename)
+    repro = {
+        "result_source": "fresh_analysis",
+        "scanner_version": data["version"],
+        "analysis_date": data["requested_as_of"],
+        "market_scope": data["market_scope"],
+        "existing_latest_day_fingerprint": data["input_fingerprint"],
+        "candidate_pool_complete": True,
+        "candidate_count": 1,
+        "candidates": [_audit_row(candidate)],
+    }
+    path.write_text(json.dumps(repro, ensure_ascii=False), encoding="utf-8")
+    return candidate, data, path
 
-    snapshot = _source(candidate)
-    assert candidate == original
-    assert snapshot["action"] == original["action"]
+
+def test_valid_repro_audit_enriches_only_semantic_source(tmp_path: Path, monkeypatch):
+    candidate, data, path = _fixture(tmp_path, monkeypatch)
+    rows = verified_scanner_repro_rows(data)
+    assert len(rows) == 1
+    audited = next(iter(rows.values()))
+    before = deepcopy(candidate)
+    projection = semantic_projection_candidate(candidate, selection_policy=POLICY, audited=audited)
+    assert projection["strategy_version_id"]
+    assert projection["strategy_definition_hash"]
+    assert candidate == before
+    snapshot = ProspectiveCatalog._candidate_snapshot(
+        candidate, selection_policy=POLICY, audited=audited,
+    )
     assert snapshot["strategy_version_id"] is None
     assert snapshot["strategy_definition_hash"] is None
-    semantic_v1 = snapshot["semantic_source"]
-    semantic_v2 = snapshot["semantic_source_v2"]
-    assert semantic_v1["strategy"]["strategy_version_id"]
-    assert semantic_v1["strategy"]["strategy_definition_hash"]
-    assert semantic_v2["readiness"]["local_semantic_status"] != "LOCAL_INCOMPLETE"
-    assert semantic_v2["readiness"]["local_semantic_status"] in {
-        "LOCAL_MATCH", "LOCAL_CONFLICT", "LOCAL_AMBIGUOUS",
-        "RESIDUAL_SEMANTIC_REVIEW",
+    assert snapshot["action"] == before["action"]
+    assert snapshot["rank"] == before["rank"]
+    assert snapshot["risk"] == before["risk"]
+    assert snapshot["semantic_condition_evidence"]["passed"] == len(condition_sources(STRATEGY))
+    v2 = snapshot["semantic_source_v2"]
+    assert v2["readiness"]["local_semantic_status"] != "LOCAL_INCOMPLETE"
+    assert verify_semantic_source_v2(v2) == (True, None)
+    assert inspect_stored_semantic_source(snapshot, stored_snapshot_hash=digest_json(snapshot)) not in {
+        "SEMANTIC_SOURCE_INVALID", "SEMANTIC_SOURCE_MISSING",
     }
-    valid, reason = verify_semantic_source_v2(semantic_v2)
-    assert valid, reason
-    assert (
-        inspect_stored_semantic_source(
-            snapshot, stored_snapshot_hash=digest_json(snapshot)
-        ) not in {"SEMANTIC_SOURCE_INVALID", "SEMANTIC_SOURCE_MISSING"}
-    )
 
 
-def test_repeatable_semantic_snapshot_and_missing_cached_attestation_stays_incomplete():
-    item = _candidate()
-    first = _source(item)
-    assert _source(item) == first
-    assert json.dumps(first, ensure_ascii=False, sort_keys=True) == json.dumps(
-        _source(item), ensure_ascii=False, sort_keys=True
-    )
-    no_claim = deepcopy(item)
-    no_claim.pop("semantic_strategy_identity")
-    assert _source(no_claim)["semantic_source_v2"]["readiness"]["local_semantic_status"] == "LOCAL_INCOMPLETE"
-    assert no_claim["strategy_version_id"] is None
-
-
-@pytest.mark.parametrize("mutate", [
-    lambda x: x["semantic_strategy_identity"].update({"strategy_key": "breakout"}),
-    lambda x: x["semantic_strategy_identity"].update({"strategy_definition_hash": "0" * 64}),
-    lambda x: x["semantic_strategy_identity"].update({"selection_policy_hash": "wrong"}),
-    lambda x: x["semantic_condition_evidence"]["items"][0].update({"status": "FAIL"}),
-    lambda x: x["semantic_condition_evidence"]["items"][0].update({"source_condition": "fake"}),
-    lambda x: x["semantic_condition_evidence"]["items"].append(
-        dict(x["semantic_condition_evidence"]["items"][0])
-    ),
-    lambda x: x["conditions"].update({"passed": 0}),
+@pytest.mark.parametrize("bad", [
+    "wrong_hash", "wrong_action", "condition_fail", "condition_duplicate",
+    "condition_missing", "condition_unmapped", "stale_version",
 ])
-def test_bad_or_stale_provenance_never_enables_semantic_binding(mutate):
-    candidate = deepcopy(_candidate())
-    mutate(candidate)
-    projected = semantic_projection_candidate(candidate, selection_policy=FALLBACK)
-    assert projected["strategy_version_id"] is None
-    assert projected["strategy_definition_hash"] is None
-    assert _source(candidate)["semantic_source_v2"]["readiness"]["local_semantic_status"] == "LOCAL_INCOMPLETE"
+def test_bad_audit_never_promotes_semantic_source(tmp_path: Path, monkeypatch, bad):
+    candidate, data, path = _fixture(tmp_path, monkeypatch)
+    repro = json.loads(path.read_text(encoding="utf-8"))
+    row = repro["candidates"][0]
+    if bad == "wrong_hash":
+        repro["existing_latest_day_fingerprint"] = {"wrong": True}
+    elif bad == "wrong_action":
+        row["action"] = "WAIT"
+    elif bad == "condition_fail":
+        row["scanner_inputs"]["condition_details"][0]["status"] = "FAIL"
+    elif bad == "condition_duplicate":
+        row["scanner_inputs"]["condition_details"][0] = deepcopy(
+            row["scanner_inputs"]["condition_details"][1]
+        )
+    elif bad == "condition_missing":
+        row["scanner_inputs"]["condition_details"].pop()
+    elif bad == "condition_unmapped":
+        row["scanner_inputs"]["condition_details"][0]["raw"] = "not an authored condition"
+    else:
+        repro["scanner_version"] = "old-version"
+    path.write_text(json.dumps(repro, ensure_ascii=False), encoding="utf-8")
+    rows = verified_scanner_repro_rows(data)
+    audited = rows.get(("KOSPI", "000001", "1"))
+    snapshot = ProspectiveCatalog._candidate_snapshot(
+        candidate, selection_policy=POLICY, audited=audited,
+    )
+    assert snapshot["semantic_source_v2"]["readiness"]["local_semantic_status"] == "LOCAL_INCOMPLETE"
+    assert "semantic_strategy_identity" not in snapshot
 
 
-def test_active_policy_or_wrong_policy_cannot_masquerade_as_legacy():
-    candidate = _candidate()
-    active = dict(FALLBACK, policy_source="ACTIVE_SELECTION_POLICY", fallback_used=False)
-    for policy in (active, dict(FALLBACK, policy_id="wrong")):
-        projected = semantic_projection_candidate(candidate, selection_policy=policy)
-        assert projected["strategy_version_id"] is None
-        assert _source(candidate, policy)["semantic_source_v2"]["readiness"]["local_semantic_status"] == "LOCAL_INCOMPLETE"
-    assert attest_legacy_scanner_identity(
-        strategy_key=STRATEGY,
-        policy_binding_version=None,
-        policy_binding_hash=None,
-        selection_policy=active,
-    ) is None
-
-
-def test_no_assertion_invented_from_counts_or_unmet_conditions():
-    bad = _quick(tamper_conditions=True)
-    candidate = _candidate(bad)
-    assert "semantic_condition_evidence" not in candidate
-    assert _source(candidate)["semantic_source_v2"]["readiness"]["local_semantic_status"] == "LOCAL_INCOMPLETE"
-    good = _quick()
-    good["quick_condition_state"]["conditions"][0]["status"] = "FAIL"
-    assert attest_scanner_passed_conditions(
-        strategy_key=STRATEGY, condition_state=good["quick_condition_state"]
-    ) is None
-    good["quick_condition_state"]["consistency"]["ok"] = False
-    assert attest_scanner_passed_conditions(
-        strategy_key=STRATEGY, condition_state=good["quick_condition_state"]
-    ) is None
-
-
-def test_active_binding_not_overwritten_and_v4_legacy_gate_stays_intact():
-    candidate = _candidate()
-    candidate["strategy_version_id"] = "intentionally-stale"
-    projected = semantic_projection_candidate(candidate, selection_policy=FALLBACK)
-    assert projected["strategy_version_id"] == "intentionally-stale"
-    assert _source(candidate)["semantic_source_v2"]["readiness"]["local_semantic_status"] == "LOCAL_INCOMPLETE"
+def test_cached_foreign_and_active_policy_do_not_backfill(tmp_path: Path, monkeypatch):
+    candidate, data, path = _fixture(tmp_path, monkeypatch)
+    data["scanner_cache_hit"] = True
+    assert verified_scanner_repro_rows(data) == {}
+    data["scanner_cache_hit"] = False
+    with pytest.raises(AssertionError):
+        assert verified_scanner_repro_rows(data) == {}
+    audited = next(iter(verified_scanner_repro_rows(data).values()))
+    active = dict(POLICY, policy_source="ACTIVE_SELECTION_POLICY", fallback_used=False)
+    assert semantic_projection_candidate(
+        candidate, selection_policy=active, audited=audited,
+    )["strategy_version_id"] is None
+    stale = deepcopy(candidate)
+    stale["strategy_version_id"] = "stale"
+    assert semantic_projection_candidate(
+        stale, selection_policy=POLICY, audited=audited,
+    )["strategy_version_id"] == "stale"
     with pytest.raises(TypeSafeStateProjectionError, match="OUT_OF_SCOPE_HORIZON"):
         route_typesafe_state_v4({
-            "action": "ENTRY_CANDIDATE",
-            "horizon_intent": "LEGACY_UNSPECIFIED",
-            "snapshot": _source(_candidate()),
+            "action": "ENTRY_CANDIDATE", "horizon_intent": "LEGACY_UNSPECIFIED",
+            "snapshot": ProspectiveCatalog._candidate_snapshot(
+                candidate, selection_policy=POLICY, audited=audited,
+            ),
         })
 
 
-def test_wait_action_is_not_misreported_as_jev_ready():
-    item = _quick(status="CAUTION")
-    candidate = _candidate(item)
-    assert candidate["action"] == "WAIT"
-    with pytest.raises(TypeSafeStateProjectionError, match="OUT_OF_SCOPE_ACTION"):
-        route_typesafe_state_v4({
-            "action": "WAIT", "horizon_intent": "SHORT",
-            "snapshot": _source(candidate),
-        })
+def test_traversal_audit_path_rejected(tmp_path: Path, monkeypatch):
+    candidate, data, path = _fixture(tmp_path, monkeypatch)
+    data["diagnostics"]["reproducibility_audit"]["path"] = str(tmp_path.parent / path.name)
+    assert verified_scanner_repro_rows(data) == {}
 
 
-def test_no_network_needed_and_backend_source_unmodified(monkeypatch):
-    import socket
-    monkeypatch.setattr(
-        socket, "create_connection",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network forbidden")),
-    )
-    candidate = _candidate()
-    assert _source(candidate)["semantic_source_v2"]["readiness"]["local_semantic_status"] != "LOCAL_INCOMPLETE"
-
-
-def test_scanner_to_prospective_sqlite_roundtrip_and_repeatable_hash(tmp_path: Path) -> None:
+def test_real_sqlite_prospective_capture_and_dedup(tmp_path: Path, monkeypatch):
+    candidate, data, path = _fixture(tmp_path, monkeypatch)
     db = tmp_path / "simulation.db"
     with sqlite3.connect(db) as conn:
         conn.execute("CREATE TABLE simulation_placeholder(id INTEGER PRIMARY KEY)")
     migrate_prospective_store(db)
     catalog = ProspectiveCatalog(db)
     request = ProspectiveCaptureRequest(
-        market_scope="ALL",
-        requested_as_of="2026-10-10",
-        candidate_limit=10,
-        horizon_intent="LEGACY_UNSPECIFIED",
-        horizon_policy_version=None,
+        market_scope="ALL", requested_as_of="2026-10-10", candidate_limit=5,
+        horizon_intent="LEGACY_UNSPECIFIED", horizon_policy_version=None,
     )
-    original = _candidate()
-    original["rank"] = 1
-    capture_result = {
-        "version": "0.21.3.9",
-        "scanner_cache_hit": False,
-        "requested_as_of": "2026-10-10",
-        "market_scope": "ALL",
-        "data_dates": {"KOSPI": "2026-10-10"},
-        "input_fingerprint": "synthetic-input",
-        "summary": {"candidate_count": 1, "shown_count": 1},
-        "partial_data": False,
-        "strategy_selection_policy": dict(FALLBACK),
-        "candidates": [original],
-        "more_candidates": [],
-    }
-    catalog.begin_capture(source_job_id="fixture-1", request=request)
+    catalog.begin_capture(source_job_id="test-1", request=request)
     first = catalog.finalize_capture(
-        source_job_id="fixture-1", request=request, result=capture_result,
+        source_job_id="test-1", request=request, result=data,
     )
     assert first["status"] == "COMPLETE"
     samples = catalog.list_samples(capture_run_id=first["id"])
     assert len(samples) == 1
     stored = samples[0]["snapshot"]
-    assert stored["rank"] == original["rank"]
-    assert stored["action"] == original["action"]
-    assert stored["strategy_version_id"] is None
-    assert stored["strategy_definition_hash"] is None
     assert samples[0]["snapshot_hash"] == digest_json(stored)
-    assert stored["semantic_source"]["strategy"]["strategy_version_id"]
+    assert stored["strategy_version_id"] is None
     assert stored["semantic_source_v2"]["readiness"]["local_semantic_status"] != "LOCAL_INCOMPLETE"
-    assert _source(original) == stored
-    assert _source(original) == stored  # idempotent projection
-    catalog.begin_capture(source_job_id="fixture-2", request=request)
+    assert stored["semantic_strategy_identity"]["source"] == "LEGACY_ENGINE_IDENTITY_VERIFIED"
+    original_risk = deepcopy(candidate["risk"])
+    assert stored["risk"] == original_risk
+    catalog.begin_capture(source_job_id="test-2", request=request)
     second = catalog.finalize_capture(
-        source_job_id="fixture-2", request=request, result=capture_result,
+        source_job_id="test-2", request=request, result=data,
     )
     assert second["status"] == "DUPLICATE"
     assert second["canonical_capture_id"] == first["id"]
     assert len(catalog.list_samples()) == 1
+
+
+def test_no_external_network_dependency(tmp_path: Path, monkeypatch):
+    import socket
+    monkeypatch.setattr(
+        socket, "create_connection",
+        lambda *a, **kw: (_ for _ in ()).throw(AssertionError("no external network")),
+    )
+    candidate, data, path = _fixture(tmp_path, monkeypatch)
+    assert len(verified_scanner_repro_rows(data)) == 1
