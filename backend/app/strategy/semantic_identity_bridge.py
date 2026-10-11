@@ -11,6 +11,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any
 
+from app.strategy.condition_semantics import condition_sources
 from app.simulation.strategy_governance import (
     StrategyGovernanceError,
     strategy_definition,
@@ -19,6 +20,7 @@ from app.strategy.models import StrategyName
 
 ENGINE_VERIFIED_SOURCE = "LEGACY_ENGINE_IDENTITY_VERIFIED"
 LEGACY_SELECTION_SOURCE = "LEGACY_CURRENT_10_FALLBACK"
+ENGINE_CONDITION_SOURCE = "SCANNER_ENGINE_PASSED_CONDITIONS_V1"
 
 
 @lru_cache(maxsize=16)
@@ -67,6 +69,94 @@ def attest_legacy_scanner_identity(
         "selection_policy_hash": policy_hash,
     }
 
+    
+def attest_scanner_passed_conditions(
+    *,
+    strategy_key: Any,
+    condition_state: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Retain proof of *observed engine PASS facts*, never synthesize from counts."""
+    if not isinstance(condition_state, dict):
+        return None
+    consistency = condition_state.get("consistency")
+    rows = condition_state.get("conditions")
+    key = str(strategy_key or "")
+    if (
+        not isinstance(consistency, dict)
+        or consistency.get("ok") is not True
+        or not isinstance(rows, list)
+        or not rows
+    ):
+        return None
+    expected = condition_sources(key)
+    if not expected or len(rows) != len(expected):
+        return None
+    raw = [str(item.get("raw") or "") for item in rows if isinstance(item, dict)]
+    if len(raw) != len(expected) or len(set(raw)) != len(expected) or set(raw) != set(expected):
+        return None
+    if any(
+        item.get("status") != "PASS"
+        or not str(item.get("condition_id") or "")
+        for item in rows
+    ):
+        return None
+    if (
+        int(condition_state.get("passed") or 0) != len(expected)
+        or int(condition_state.get("total") or 0) != len(expected)
+        or int(condition_state.get("missing") or 0) != 0
+    ):
+        return None
+    return {
+        "source": ENGINE_CONDITION_SOURCE,
+        "strategy_key": key,
+        "items": [
+            {
+                "condition_id": str(item["condition_id"]),
+                "source_condition": str(item["raw"]),
+                "status": "PASS",
+            }
+            for item in rows
+        ],
+        "passed": len(rows),
+        "total": len(rows),
+        "missing": 0,
+    }
+
+
+def _valid_scanner_condition_proof(candidate: dict[str, Any], key: str) -> bool:
+    evidence = candidate.get("semantic_condition_evidence")
+    conditions = candidate.get("conditions")
+    if not isinstance(evidence, dict) or not isinstance(conditions, dict):
+        return False
+    if evidence.get("source") != ENGINE_CONDITION_SOURCE or evidence.get("strategy_key") != key:
+        return False
+    rows = evidence.get("items")
+    expected = condition_sources(key)
+    if not isinstance(rows, list) or not expected or len(rows) != len(expected):
+        return False
+    names = [
+        str(item.get("source_condition") or "")
+        for item in rows if isinstance(item, dict)
+    ]
+    if len(names) != len(expected) or len(set(names)) != len(expected) or set(names) != set(expected):
+        return False
+    if any(
+        item.get("status") != "PASS"
+        or not str(item.get("condition_id") or "")
+        for item in rows
+    ):
+        return False
+    return (
+        all(
+            evidence.get(name) == len(expected) if name != "missing"
+            else evidence.get(name) == 0
+            for name in ("passed", "total", "missing")
+        )
+        and int(conditions.get("passed") or 0) == len(expected)
+        and int(conditions.get("total") or 0) == len(expected)
+        and int(conditions.get("missing") or 0) == 0
+    )
+
 
 def semantic_projection_candidate(
     candidate: dict[str, Any],
@@ -93,6 +183,8 @@ def semantic_projection_candidate(
         return result
     key = str(result.get("strategy") or "")
     if not key or claim.get("strategy_key") != key:
+        return result
+    if not _valid_scanner_condition_proof(result, key):
         return result
     if (
         claim.get("selection_policy_id") != selection_policy.get("policy_id")
