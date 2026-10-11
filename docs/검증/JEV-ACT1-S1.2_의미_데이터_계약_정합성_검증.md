@@ -17,35 +17,50 @@
 
 **중요:** 현재 PC의 기존 6건에서 Selection Policy provenance를 확인한 것은 아니다. 캡처 스냅샷에 출처가 별도로 보존되지 않았으면 `LEGACY_UNSPECIFIED` 투자 기간만으로 Selection Policy fallback 사용 여부를 유추해서는 안 된다. `tools/data/audit_jev_act1_s1_2_inputs.py`는 이 점을 명시하고 저장된 필드의 존재 여부만 집계한다.
 
-## 해결 설계 (fail closed)
+## 해결 설계 — 기존 Scanner Production Baseline을 그대로 유지
 
-### 1. 실제 Scanner 전략 평가 시에만 보조 신원 서명
+첫 PR CI에서 Scanner 코드에 보조 필드를 추가하자 고정된 Production Baseline 지문 불일치 테스트가 1개 실패했다. 이 방식은 폐기했고 **`backend/app/backtest/scanner.py`를 원본 그대로 복원**했다. Baseline manifest를 재생성하거나 검증을 완화하지 않는다.
 
-- `backend/app/backtest/scanner.py`에서 실제 엔진의 선택 전략을 사용한 뒤 fallback 정책 출처와 함께 `semantic_strategy_identity`를 생성한다.
-- 정책 키·버전·해시 필드는 **원래 그대로 유지**. 레거시 정책의 `None`을 정식 전략 정책 신원으로 소급 채우지 않는다.
-- 보조 신원에는 선택 전략 키, 현재 StrategyEngine AST로 계산한 정의 버전·해시, 선택 정책 ID·해시를 기록한다.
-- 정상 활성·롤백 정책 경로에는 이 fallback 보조 신원을 만들지 않는다.
+기존 Scanner는 `write_scanner_reproducibility_audit()`를 사용해 후보 정보를 정리하기 **전에** `scanner-repro/scanner-repro_*.json` 파일에 다음 원천 자료를 이미 기록한다.
 
-### 2. 실제 엔진 통과 조건의 별도 근거
+- 실제 엔진의 `_repro_condition_details`: PASS/FAIL, raw 조건명, condition ID
+- 선택된 전략·종목·순위·액션·Risk·조건 요약과 입력 fingerprint
+- 분석일, scanner version, 결과 출처, 전체 후보 수
 
-- `build_condition_state()`의 `conditions` 리스트를 사용한다. `passed=total`이라는 숫자만 보고 어떤 조건이 통과했는지 추정하지 않는다.
-- 상태는 모두 PASS, 중복 없음, 조건명 집합은 해당 전략의 의미 계약에 수록된 항목과 일치, 엔진·세부 항목의 조건 개수 일치(`consistency.ok`)일 때만 `semantic_condition_evidence`를 생성한다.
-- 하나라도 충족하지 못하면 보조 의미 신원은 사용하지 않고 `LOCAL_INCOMPLETE`로 보류한다.
+이 저장물은 Scanner의 기존 재현성 감사 자료이며, 신규 네트워크 요청이나 시장 데이터 재계산이 아니다.
 
-### 3. Prospective 저장 시 별도 재검증
+### 1. Prospective가 허용할 감사 파일
 
-- `backend/app/prospective/catalog.py`는 최종 Scanner result의 `strategy_selection_policy`를 candidate 보조 신원과 대조한다.
-- 신원에 적힌 정책 ID·해시·선택 전략·현재 엔진 정의 해시와, 실제 조건 근거를 모두 재검증해야 의미 자료 생성용 **임시 복사본**에만 버전/해시를 채운다.
-- 원본 Scanner 후보의 버전·해시는 None 그대로 저장된다. 전략·Risk·액션·순위·기간도 변경하지 않는다.
-- 계약은 기존 V1/V2 `semantic_source` 형식 그대로 생성되며, 동결된 V4 프로젝터나 Canary 계약은 수정하지 않는다.
-- 과거/캐시된 스냅샷에 보조 근거가 없다면 최신 엔진 정의를 억지로 뒤붙이지 않고 원래 `LOCAL_INCOMPLETE`로 남긴다.
-- 변조·중복·누락된 근거는 불완전 상태로 분류하며 생성·저장 경로를 중단시키지 않는다.
+`backend/app/strategy/semantic_identity_bridge.py`는 다음을 모두 충족한 경우에만 이 파일을 **읽기 전용**으로 사용한다.
 
-### 4. 정확히 바뀌는 것은 의미 자료뿐
+- `scanner_cache_hit=false`, `result_source=fresh_analysis`
+- `written=true`인 기존 감사 파일이 존재
+- 파일 위치가 프로젝트의 단일 `scanner-repro/` 폴더 바로 아래
+- 파일명·전체 후보 수·분석일·버전·입력 fingerprint·시장 범위가 Scanner 반환 결과와 일치
+- 실제 후보의 시장·코드·순위·전략·액션·상태·분석일·가격·조건 요약·Risk가 감사 행과 일치
+- 감사 조건이 **실제 전부 PASS**, 중복 없음, 전략별 사전 계약 목록과 정확히 일치
+- Scanner 후보의 `conditions` 통과/총개수/미충족 수와 항목이 정확히 일치
 
-프로덕션 Scanner 후보의 `action`, `candidate_state`, `strategy`, `priority`, `rank`, `risk`, `entry_risk_guide`, 정책 참조·fallback 결정은 변경하지 않는다.
+단 하나라도 다르면 추가 의미 신원을 생성하지 않는다. 최신 엔진 의미 정의에서 조건을 임의로 만들어내지 않는다.
 
-Jev 모델/가상 거래/시뮬레이션 평가·진입 가격·실시간 시세에는 아무 영향이 없다.
+### 2. 레거시 정책 보존 및 의미 분석만 강화
+
+`strategy_selection_policy.policy_source=LEGACY_CURRENT_10_FALLBACK` 및 `fallback_used=true` 조건에서만:
+
+- 실제 후보의 전략 키를 확인하고 현재 StrategyEngine의 정식 AST 기반 전략 정의 버전·해시와 연결
+- 정책 자체의 None 신원은 그대로 보존
+- **Prospective 의미 자료 생성용 임시 복사본**에만 위 검증된 신원을 사용
+- 별도의 `semantic_strategy_identity`, `semantic_condition_evidence` 출처를 저장 스냅샷에 남김
+
+이미 전략 버전/해시가 있으면 기존 코드를 우선하고, 스스로 다른 정책의 버전을 덮어쓰지 않는다.
+
+### 3. 지원 범위 및 실패 시 동작
+
+캐시 재사용, 과거 자료, 파일 유실, 다른 머신의 감사 파일, 미확인 신원·불완전한 조건의 경우에는 기존 `LOCAL_INCOMPLETE` 등 부족 판정을 보존한다.
+
+**감사 파일을 못 읽어도 Scanner 분석은 실패하지 않는다.** Prospective 의미 검토의 추가 보강만 보류된다.
+
+기존 V4의 `SHORT/MEDIUM` 한정 provider route, 유료 호출 금지, 원본 후보·순위·Risk·가격·기간 및 Selection Policy 동작은 전부 불변이다.
 
 ## 검증
 
