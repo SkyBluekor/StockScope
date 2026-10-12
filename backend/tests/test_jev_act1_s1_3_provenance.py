@@ -240,6 +240,29 @@ def test_unverified_active_policy_candidate_cannot_use_original_version(tmp_path
     assert stored["snapshot"]["strategy_definition_hash"] == "invalid"
 
 
+def test_read_only_diagnostic_distinguishes_historical_proof_and_policy(tmp_path, monkeypatch):
+    from tools.data.audit_jev_act1_s1_3_provenance import audit_policy_provenance
+
+    pin, _, result, request, _ = _fixture(tmp_path, monkeypatch)
+    catalog = _catalog(tmp_path)
+    _store(catalog, pin, result, request, "fresh")
+    output = audit_policy_provenance(catalog.db_path, tmp_path)
+    assert output["capture_statuses"] == {"COMPLETE": 1}
+    [group] = output["by_analysis_date"]
+    assert group["entry_candidates"] == 1
+    assert group["historical_engine_conditions_match"] == 1
+    assert group["policy_provenance_attested_new_record"] == 1
+    assert output["db_writes"] == 0
+    assert output["external_provider_calls"] == 0
+
+    # Same input without originating pin cannot be turned into a policy proof.
+    _store(catalog, None, result, request, "unattested")
+    after = audit_policy_provenance(catalog.db_path, tmp_path)
+    assert after["capture_statuses"]["COMPLETE"] == 2
+    assert after["by_analysis_date"][0]["policy_provenance_attested_new_record"] == 1
+    assert after["by_analysis_date"][0]["policy_provenance_unverified_or_mismatch"] == 1
+
+
 def test_no_pin_or_wrong_baseline_is_fail_closed():
     pin = _pin()
     assert not validate_pinned_selection_policy(
