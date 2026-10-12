@@ -188,6 +188,7 @@
 ### 응답과 Shadow
 - `validate_decision_review_response()`는 허용된 세 판단과 근거 코드·실제 입력 evidence ID, 응답 상한·유보 사유·근거 배열·금지 필드를 검증한다. 참조 근거에 없는 수치의 추가 주장은 보수적으로 거절한다. **정성적 문장의 사실성과 투자 효용까지 검증했다고 주장하지 않는다.**
 - `OfflineFakeShadowSession`은 FAKE 표시가 있는 로컬 프로젝션만 처리하고, 입력·출력 계약 해시에 따른 메모리 내 독립 일지를 만든다. 중복/alias 리뷰는 최초 결과를 재사용한다. 부적합 출력은 `ERROR`·`MODEL_ERROR`·baseline 불변으로 닫는다.
+- `audit_capture_review_scope_readonly()`는 단일 COMPLETE/canonical 캡처의 반환 후보를 전체 검사하고, 오프라인에서 검사 가능한 건수와 기존 LEGACY 검사 전용 건수·제외 사유를 익명 집계한다. 외부 호출·운영 DB 수정 없이 기술적 탈락 사유만 다룬다.
 - `shadow_action=DEFER_THIS_OPPORTUNITY`은 유효한 `REVIEW_REQUIRED`인 경우에만 별도 연구용 가상 의견이다. 원래 `ENTRY_CANDIDATE`는 그대로며, 수익률·손실 회피·AI 효용·실제 매매 결과는 `NOT_EVALUATED`/`null`이다.
 - Shadow 일지는 **오프라인 세션 메모리**에만 존재한다. Production Simulation DB 기록, 별도 review job/outbox, 장기 persistence, 사전 동결된 평가 protocol, 미래 검증 데이터 join은 S4 이후의 승인된 개발 대상이다. S3를 제품에 연결했다고 주장하지 않는다.
 
