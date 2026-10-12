@@ -16,7 +16,7 @@ from app.jev.decision_reviewer_canary import (
 )
 from app.jev.decision_reviewer_offline import DecisionReviewContractError
 from app.prospective.models import digest_json
-from test_jev_act2_s3_decision_reviewer import _projection, _response, _stored
+from backend.tests.test_jev_act2_s3_decision_reviewer import _projection, _response, _stored
 
 
 def _setup(tmp_path, handler, *, max_attempts=2):
