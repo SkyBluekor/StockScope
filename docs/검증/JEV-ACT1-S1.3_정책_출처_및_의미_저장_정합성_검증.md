@@ -196,3 +196,17 @@
 `backend/tests/test_jev_act2_s3_decision_reviewer.py`는 `tmp_path`에 생성한 Prospective schema/가짜 Scanner와 같은 필드·V2 의미 계약에서 정상 PASS_THROUGH/REVIEW_REQUIRED/ABSTAIN, 해시 불변, 중복 canonical, 레거시 차단, 입력·근거 위조/시점 변조, Fake Provider 실패, 금지 응답과 in-memory 재사용을 확인한다.
 
 S3 성공 판정은 **오프라인 계약을 완주하는 Fake 검토 및 CI**까지. 실제 JEV 호출·수익 개선·사용자 화면 기능의 완성 판정은 계속 `HOLD`다. 기존 S1/S2 회귀, Scanner/Rank/Risk, 데이터 이관·Runtime 동기화, Holdout은 건드리지 않는다.
+
+## JEV-ACT2-S4 — 실제 AI Canary 실행 사전 준비 / 격리 Mock Shadow 기록
+
+이 단계는 S3 Scanner Decision Reviewer(`JEV_SCANNER_REVIEW_INPUT_V1` / `OUTPUT_V1`)의 **모델 연결 구조를 격리된 테스트로 검증**하며, 동결된 TypeSafe V4 합성 Canary 정책/threshold를 수정하거나 제품 JEV를 활성화하지 않는다.
+
+- `backend/app/jev/decision_reviewer_canary.py`: `assess_actual_canary_preflight`는 입력 해시·원본 기간 정책·자료 사용 가능 시간·source 전송권한·공급자 모델·요금·예산·사용자 별도 실행 승인을 점검한다. **어떤 flag를 모두 True로 넘겨도 현재 S3의 `OFFLINE_INSPECTABLE_ONLY`, 미승인 Horizon 및 정확한 자료 공개시각 부재를 우회할 수 없다.** 진단은 항상 `can_call_actual_provider=false`, 실제 호출 0건을 반환하며 네트워크에 접속하지 않는다.
+- `build_mock_request`는 S3 INPUT_V1의 정량적 Scanner condition/Risk 근거만 전송용 형태로 제한한다. 종목 식별 코드·가격/진입 가이드 원문·NEWS·계좌 내용은 mock wire에 보내지 않고 빠진 근거의 제약을 명시한다. **정식 Provider payload로 승인한 출력이 아니다.**
+- `MockHttpReviewer`는 `httpx.MockTransport`만 허용한다. 실제 HTTP transport, API key, 공급자 URL 및 유료 모델 실행을 시작하는 경로는 없다. Mock 응답도 S3 `validate_decision_review_response`가 판정·근거 ID·금지 필드를 검증한다.
+- `TrialLimits`는 mock 호출 횟수·예약 예산·요청별 예약 한도·단일 동시 요청·재시도 0·deadline을 강제한다. 설정 오염 또는 quota 초과는 fail-closed. 실제 계정의 가격·사용량 증거라고 주장하지 않는다.
+- `MockShadowJournal`은 개발 테스트가 명시적으로 전달한 **격리된 임시 SQLite 연결**에서만 스키마를 설치한다. canonical source/sample 해시, protocol/request/prompt/모델 identity, 응답 상태·실패 코드·가상 defer 표시를 기록한다. 중복은 재호출하지 않고, 완료 레코드 수정·삭제를 차단하며, 재시작시 남은 PENDING은 명시적으로 INTERRUPTED 처리할 수 있다. 메모리 내 S3 로그와 달리 테스트 DB 재조회가 가능하다.
+- `tools/data/audit_jev_act1_readiness.py`의 기존 CLI/JSON 결과에 `s4_canary_preflight` 요약을 추가했다. 기존 읽기 전용 수집과 DB/Runtime 동기화 없음 원칙을 그대로 유지한다.
+- `backend/tests/test_jev_act2_s4_canary.py`: Mock HTTP 성공/유보/오류/timeout, 출처 없는 응답, 요청 예산·중복, 모델/전송 사전 HOLD, 임시 DB 불변성과 종전 Scanner 스냅샷 보호를 확인한다.
+
+**S4 완료의 정확한 의미:** Mock 연결·예약·실패 기록 및 실제 호출 사전 승인 누락을 탐지하는 구조가 준비됨. 실제 공급자 어댑터/모델 고정·source 사용권/보존 규정·Horizon 수치 정책 승인·시점 증명·운영 DB migration·진짜 Canary 실행은 여전히 **별도 사용자 승인 전의 HOLD**이다. `MOCK_HTTP`를 실제 모델 호출 실적으로 세거나 S3 가상 판단으로 효용을 주장하지 않는다. 실제 JEV가 Scanner 기존 판단 대비 좋은 결과를 내는지는 후속 prospective 검증이 필요하다.
