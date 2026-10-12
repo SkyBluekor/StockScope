@@ -444,8 +444,12 @@ class S7ShadowJournal:
         }
         # Old S7 journal rows survive untouched. Until a new capture has
         # written S7.1 diagnostics, category is explicitly NOT_DIAGNOSED.
+        # Baseline action, not a potentially missing/older diagnostic tag,
+        # establishes the entry vs reference denominator.
         groups = Counter(
-            (r.get("integrity") or {}).get("category", "NOT_DIAGNOSED")
+            "REFERENCE_ONLY"
+            if r.get("baseline_action") != "ENTRY_CANDIDATE"
+            else (r.get("integrity") or {}).get("category", "NOT_DIAGNOSED")
             for r in records
         )
         validated = [
