@@ -266,3 +266,24 @@ S3 성공 판정은 **오프라인 계약을 완주하는 Fake 검토 및 CI**�
 .\.venv\Scripts\python.exe -m pytest backend/tests/test_jev_act2_s6_1_alias.py -q
 ```
 `check-account --model jev-latest --authorize-model-lookup`은 사용자가 다시 승인할 경우 실제 계정 모델 목록 GET을 수행하며 추론하지 않는다. `run-approved`는 별도의 유료 호출 동의 단계이므로 사용자가 명시적으로 결정하기 전 실행하지 않는다. S6.1 Mock/CI 자동 테스트만으로 실제 Jev 성능·주식 수익 개선을 주장하지 않는다. Frozen TypeSafe V4, Scanner/Risk/Prospective/운영 DB, 자료 전송/Horizon 제한 및 JEV 기능 비활성 상태는 그대로다.
+
+## JEV-ACT2-S6.2 — 소액 합성 Canary 실험 실행 간소화 (2026-10-12)
+
+**이 절은 이전 S6·S6.1의 복잡한 계정 청구 페이지 승인 규칙을 대체한다.** 이번 단계는 TypeSafe 충전형 API를 위한 실용적인 첫 합성 실험 준비에 집중한다. `tools/data/jev_s6_micro_canary.py`의 실제 호출 대상은 사용자가 이미 계정 목록에서 확인한 **`jev-latest`**이며 `jev-preview`는 계속 비활성. 현재까지 **실제 유료 추론 요청 0건**, 연결·승인 테스트는 `httpx.MockTransport`에서만 실행되었다.
+
+- 기본 공개 표준 요금: **입력 $0.042/100만 토큰, 출력 $0**. 이는 **계정 계약 가격의 독립 확인이 아니라 표준 요금에 따른 추정**이다. `pricing_basis=PUBLIC_STANDARD_UNVERIFIED`와 `cost_status=ESTIMATED_FROM_PUBLIC_STANDARD_RATE`로 기록하며, S5의 기존 계정 요금 확인 기반 결과와 구분한다. 외부 요청 실패 시 실제 청구액을 알 수 없으므로 `UNKNOWN`을 유지한다.
+- 최초 대상 **기존 합성 사례 5건**과 고정 정답·질문 해시, 자동 재시도 0회, 동시 요청 1건, 건당 예약액 $0.01, 총 예약액 $0.05 및 실제 연구 DB 전체 예약 상한 $0.50를 그대로 유지한다. 예약액은 공급자 실제 청구액의 절대 상한이 아니다.
+- `run-approved --model jev-latest`는 **사용자 단 한 번의 대화형 실행 문구**를 요구하며 현재 protocol hash, 요청 건수, 예산, 가변 별칭 위험 및 공개 요금 추정 조건을 한 화면에 표시한다. 동의 전 네트워크·자격 증명 조회·연구 DB 쓰기는 없다. 승인 이후 인증된 모델 목록 GET으로 계정 접근을 확인하고, 허용된 합성 사례만 POST한다. 모델·스키마 문제나 첫 실패 시 즉시 중단한다.
+- 과거 필수였던 `--account-terms-ref`, `--account-price-ref`, `--account-price-source`, `--account-billing-checked-date`, 수동 `--input-price`, `--output-price` 인자는 실험 CLI에서 제거한다. 기존 S6·S6.1 기록과 불변 테이블은 지우거나 고치지 않는다. 현재의 간소화된 동의 내용은 `jev_s6_2_run_consent` 연구용 기록으로 남기되 실제 계정 가격 증명이라고 표시하지 않는다.
+- `report`의 기본 화면은 **실제 Provider 실행 건수 / 정상 응답 / 합성 정답 일치·오탐·미탐 / 평균 지연 / 공개 요금 기준 추정액**을 한국어로 우선 출력한다. 사례별 기대/실제 선택도 실제 Provider 기록만 표시하고 Mock 집계는 별도로 한 줄로 표시한다. `report --json`은 원본 전부를 유지한다.
+- 실제 수익률·손실 회피·Scanner 추천 효과는 평가하지 않는다. 모델 별칭 revision은 `REVISION_UNVERIFIED` 그대로 두고, 가시적인 모델/카탈로그 변경 감지, S5 합성 전송 제한 및 V4·Scanner/Risk/Prospective 불변을 유지한다.
+
+**로컬 검증 (실제 API 호출 없음):**
+```powershell
+git pull --ff-only origin main
+.\.venv\Scripts\python.exe -m pytest backend/tests/test_jev_act2_s6_2_practical.py -q
+.\.venv\Scripts\python.exe tools\data\jev_s6_micro_canary.py dry-run --model jev-latest
+.\.venv\Scripts\python.exe tools\data\jev_s6_micro_canary.py report
+```
+
+**별도 사용자 승인 이후에만 가능한 실제 유료 실험:** `.\.venv\Scripts\python.exe tools\data\jev_s6_micro_canary.py run-approved --model jev-latest`; CLI에서 호출 내용과 금액을 확인하고 한 번의 실행 문구를 정확히 입력해야 요청을 전송한다. 구현 완료와 실호출 5건 평가는 별개의 완료 상태다.
