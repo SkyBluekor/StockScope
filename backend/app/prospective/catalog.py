@@ -501,11 +501,11 @@ class ProspectiveCatalog:
                 if not market or not ticker:
                     continue
                 name = str(candidate.get("name") or ticker)
-                rank = candidate.get("rank")
-                try:
-                    rank_value = int(rank) if rank is not None else None
-                except (TypeError, ValueError):
-                    rank_value = None
+                # Scanner's public rank lives at priority.rank; its
+                # reproducibility audit supplies a separate top-level rank.
+                # Reuse the S1.2 canonical key, rejecting conflicting ranks.
+                rank_key = scanner_repro_candidate_key(candidate)
+                rank_value = int(rank_key[2]) if all(rank_key) else None
                 strategy = candidate.get("strategy")
                 if strategy is None:
                     strategy = candidate.get("quick_strategy")
