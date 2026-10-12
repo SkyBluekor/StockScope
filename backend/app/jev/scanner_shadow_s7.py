@@ -18,6 +18,7 @@ from typing import Any
 
 from app.prospective.evaluation import ProspectiveEvaluator, ProspectiveEvaluationError
 from app.prospective.models import digest_json
+from app.jev.scanner_integrity_s7_1 import assess_frozen_candidate
 from app.jev.decision_reviewer_offline import (
     DecisionReviewContractError, build_scanner_review_input,
 )
@@ -167,6 +168,7 @@ def inspect_candidate(
         "market": sample["market"],
         "ticker": sample["ticker"],
     }
+    integrity = assess_frozen_candidate(capture, sample)
     blockers: list[str] = []
     try:
         projected = build_scanner_review_input(
@@ -179,6 +181,8 @@ def inspect_candidate(
         blockers.append(exc.code)
     if sample.get("action") != "ENTRY_CANDIDATE":
         blockers.append("NOT_ENTRY_CANDIDATE")
+    else:
+        blockers.extend(integrity["codes"])
     # Neither capture completed_at nor EOD signal_date proves the exact time
     # when source facts became legally available to an outside model.
     blockers.extend([
@@ -207,6 +211,7 @@ def inspect_candidate(
         "capture_completed_at": capture.get("completed_at"),
         "baseline_action": sample.get("action"),
         "baseline_snapshot_hash": sample["snapshot_hash"],
+        "integrity": integrity,
         "review_status": "PROVIDER_HOLD",
         "blockers": blockers,
         "review_source": "NO_REAL_JEV_CALL",
@@ -228,11 +233,20 @@ def inspect_real_candidates(
     records = [inspect_candidate(c, s, evaluator) for c, s in rows]
     counts = Counter(reason for rec in records for reason in rec["blockers"])
     observed = sum(rec["observation"]["status"] == "OBSERVATION_ONLY" for rec in records)
+    groups = Counter(rec["integrity"]["category"] for rec in records)
     return {
         "version": VERSION,
         "source_scope": "REAL_PROSPECTIVE_READ_ONLY",
         "status": "LOCAL_OBSERVATION_READY_PROVIDER_HOLD",
-        "candidate_count": len(records),
+        "candidate_count": len(records),  # total inspected historical rows
+        "entry_candidate_count": sum(
+            rec["baseline_action"] == "ENTRY_CANDIDATE" for rec in records
+        ),
+        "reference_count": groups["REFERENCE_ONLY"],
+        "local_validated_count": groups["LOCAL_VALIDATED"],
+        "legacy_limited_count": groups["LEGACY_LIMITED"],
+        "integrity_invalid_count": groups["INVALID"],
+        "integrity_category_counts": dict(sorted(groups.items())),
         "observed_price_count": observed,
         "real_jev_review_count": 0,
         "model_requests": 0,
@@ -273,6 +287,23 @@ class S7ShadowJournal:
             CREATE TRIGGER IF NOT EXISTS jev_s7_immutable_delete
             BEFORE DELETE ON jev_s7_local_observation
             BEGIN SELECT RAISE(ABORT,'S7 observations immutable'); END;
+
+            -- S7.1 is a second immutable source of diagnostics so the
+            -- first 60 real S7 research records are not modified/re-written.
+            CREATE TABLE IF NOT EXISTS jev_s7_1_integrity_audit (
+                diagnostic_hash TEXT PRIMARY KEY,
+                capture_id TEXT NOT NULL,
+                sample_index INTEGER NOT NULL,
+                snapshot_hash TEXT NOT NULL,
+                diagnostic_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE TRIGGER IF NOT EXISTS jev_s7_1_audit_immutable_update
+            BEFORE UPDATE ON jev_s7_1_integrity_audit
+            BEGIN SELECT RAISE(ABORT,'S7.1 diagnostics immutable'); END;
+            CREATE TRIGGER IF NOT EXISTS jev_s7_1_audit_immutable_delete
+            BEFORE DELETE ON jev_s7_1_integrity_audit
+            BEGIN SELECT RAISE(ABORT,'S7.1 diagnostics immutable'); END;
             """)
 
     def capture(self, report: dict[str, Any]) -> dict[str, Any]:
@@ -284,6 +315,26 @@ class S7ShadowJournal:
             for item in report["records"]:
                 if item.get("review_source") != "NO_REAL_JEV_CALL":
                     raise DecisionReviewContractError("S7_PROVIDER_RESULT_FORGED")
+                integrity = item.get("integrity")
+                if isinstance(integrity, dict):
+                    audit_identity = {
+                        "capture_id": item["capture_id"],
+                        "sample_index": item["sample_index"],
+                        "snapshot_hash": item["snapshot_hash"],
+                        "diagnostic": integrity,
+                    }
+                    diagnostic_hash = digest_json(audit_identity)
+                    conn.execute(
+                        "INSERT OR IGNORE INTO jev_s7_1_integrity_audit "
+                        "(diagnostic_hash,capture_id,sample_index,snapshot_hash,"
+                        "diagnostic_json,created_at) VALUES(?,?,?,?,?,?)",
+                        (
+                            diagnostic_hash, item["capture_id"], item["sample_index"],
+                            item["snapshot_hash"], json.dumps(integrity, ensure_ascii=False,
+                                                              sort_keys=True),
+                            datetime.now(timezone.utc).isoformat(),
+                        ),
+                    )
                 identity = {
                     "capture_id": item["capture_id"],
                     "sample_index": item["sample_index"],
@@ -323,10 +374,25 @@ class S7ShadowJournal:
                 "SELECT payload_json FROM jev_s7_local_observation "
                 "ORDER BY created_at DESC,evidence_hash DESC"
             ).fetchall()
+            has_diagnostics = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' "
+                "AND name='jev_s7_1_integrity_audit'"
+            ).fetchone()
+            diag_rows = conn.execute(
+                "SELECT capture_id,sample_index,snapshot_hash,diagnostic_json "
+                "FROM jev_s7_1_integrity_audit "
+                "ORDER BY created_at DESC,diagnostic_hash DESC"
+            ).fetchall() if has_diagnostics else []
+        latest_diags: dict[tuple[str, int, str], dict[str, Any]] = {}
+        for row in diag_rows:
+            key = (row["capture_id"], row["sample_index"], row["snapshot_hash"])
+            latest_diags.setdefault(key, json.loads(row["diagnostic_json"]))
         by_candidate: dict[tuple[str, int, str], dict[str, Any]] = {}
         for row in rows:
             item = json.loads(row["payload_json"])
             key = (item["capture_id"], item["sample_index"], item["snapshot_hash"])
+            if key in latest_diags:
+                item["integrity"] = latest_diags[key]
             by_candidate.setdefault(key, item)
         return self._summary(list(by_candidate.values()))
 
@@ -347,10 +413,56 @@ class S7ShadowJournal:
                 ),
                 "not_yet_observed": len(records) - len(measured),
             }
+        # Old S7 journal rows survive untouched. Until a new capture has
+        # written S7.1 diagnostics, category is explicitly NOT_DIAGNOSED.
+        groups = Counter(
+            (r.get("integrity") or {}).get("category", "NOT_DIAGNOSED")
+            for r in records
+        )
+        entry = [r for r in records if r.get("baseline_action") == "ENTRY_CANDIDATE"]
+        validated = [
+            r for r in records
+            if (r.get("integrity") or {}).get("category") == "LOCAL_VALIDATED"
+        ]
+        errors = Counter(
+            code for r in records if isinstance(r.get("integrity"), dict)
+            and r["integrity"].get("category") != "REFERENCE_ONLY"
+            for code in r["integrity"].get("codes", [])
+        )
         return {
             "version": VERSION,
             "status": "LOCAL_PRICE_OBSERVATION_NOT_JEV_EFFICACY",
-            "candidate_count": len(records),
+            "candidate_count": len(records),  # total historical rows
+            "entry_candidate_count": len(entry),
+            "reference_count": groups["REFERENCE_ONLY"],
+            "local_validated_count": groups["LOCAL_VALIDATED"],
+            "legacy_limited_count": groups["LEGACY_LIMITED"],
+            "integrity_invalid_count": groups["INVALID"],
+            "not_diagnosed_count": groups["NOT_DIAGNOSED"],
+            "integrity_category_counts": dict(sorted(groups.items())),
+            "integrity_issue_counts": dict(sorted(errors.items())),
+            "validated_window_summaries": {
+                f"{window}d": {
+                    "observed": sum(
+                        r["observation"].get(f"return_{window}d") is not None
+                        for r in validated
+                    ),
+                    "average_signal_close_change_pct": (
+                        round(
+                            sum(float(r["observation"][f"return_{window}d"])
+                                for r in validated
+                                if r["observation"].get(f"return_{window}d") is not None)
+                            / sum(
+                                r["observation"].get(f"return_{window}d") is not None
+                                for r in validated
+                            ), 4
+                        )
+                        if any(r["observation"].get(f"return_{window}d") is not None
+                               for r in validated) else None
+                    ),
+                }
+                for window in WINDOWS
+            },
             "price_statuses": dict(counts),
             "window_summaries": per_window,
             "actual_jev_reviews": 0,
