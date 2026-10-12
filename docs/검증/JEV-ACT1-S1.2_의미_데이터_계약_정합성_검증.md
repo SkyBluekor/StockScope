@@ -92,3 +92,16 @@ git log -1 --oneline
 5. 실제 Jev 호출은 현행 `LEGACY_UNSPECIFIED` 차단과 V4 Canary PASS 부재 때문에 **계속 HOLD**, 별도 승인 없는 유료 API 호출 없음
 
 완료 정의는 코드+CI+현재 PC 읽기 전용 진단 검토이다. 실제 Scanner 새 캡처 검사는 별도 사용자 UAT 단계로 남는다.
+
+## S1.2 연결 정정 — Scanner 순위 필드 위치
+
+학교 PC의 과거 캡처·감사 파일을 확인하는 과정에서 S1.2 원래 구현의 **후보 연결 키 오류**를 코드 대조로 식별했다.
+
+- Scanner의 `rank_candidates()`는 실제 반환 후보의 순위를 `candidate["priority"]["rank"]`에 보관한다. 최상위 `candidate["rank"]`를 작성하지 않는다.
+- Scanner 재현성 감사의 `_candidate_snapshot(candidate, rank)`는 순위를 *감사 행의 최상위* `audit["rank"]`에 기록한다.
+- 기존 S1.2의 `ProspectiveCatalog.audit_for()`는 최상위 `candidate.get("rank")`를 조회했고, 뒤따르는 `_actual_passed_conditions()`도 최상위 rank를 비교했다. 따라서 **실제 Scanner 후보와 감사 행을 연결하지 못할 수 있었다**.
+- 수정은 두 쪽 모두 동일한 `scanner_repro_candidate_key()` 정규화 규칙을 사용한다. Scanner `priority.rank`, 감사 `rank`를 매칭하며 서로 다른 순위가 함께 있으면 보류한다.
+- 테스트 입력도 실제 Scanner 반환 형식(`priority.rank`만 존재)으로 교체하고, 최상위 순위 누락·순위 충돌·진짜 SQLite Prospective 연결을 검사한다.
+- Frozen Scanner 코드·Baseline·기존 Strategy/Risk 결정·과거 Prospective 스냅샷·DB 구조·실제 모델 호출은 수정하지 않는다.
+
+검증을 통과한 새 커밋이 적용되어도 **기존 캡처가 자동 보완되는 것은 아니다**. 새 Scanner 계산이 완료되고 감사 자료가 현재 결과와 검증되며, 기존 데이터와 구별되는 새 COMPLETE 저장이 발생할 때 의미 자료 보강을 관찰할 수 있다.
