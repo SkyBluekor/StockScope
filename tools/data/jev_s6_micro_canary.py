@@ -645,7 +645,7 @@ async def execute(
     result["model_catalog_snapshot_hash"] = catalog["snapshot_hash"]
     result["model_catalog_checked_at"] = catalog["checked_at"]
     result["model_revision_proven"] = False
-    result["account_pricing_state"] = "USER_ATTESTED_NOT_INDEPENDENTLY_VERIFIED"
+    result["account_pricing_state"] = "PUBLIC_STANDARD_RATE_NOT_ACCOUNT_VERIFIED"
     result["status"] = "EXPERIMENT_RECORDED_NOT_INVESTMENT_VALIDATED"
     return result
 
