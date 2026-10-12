@@ -218,6 +218,20 @@ def test_act2_readonly_user_explanation_keeps_legacy_match_non_callable(tmp_path
     result = run_readiness_audit(db)
     detail = result["user_jev_execution"]
     assert detail["user_model_review_available"] is False
+    assert result["horizon_gate"]["numeric_policy_approved"] is False
+    assert result["horizon_gate"]["legacy_capture_backfill_allowed"] is False
+    assert all(
+        item["scanner_request_allowed"] is False
+        for item in result["horizon_gate"]["explicit_scanner_intents"]
+    )
+    structure = result["semantic_reachability"]
+    assert structure["strategy_count"] == 10
+    assert structure["residual_routes"] == 0
+    assert structure["conclusion"] == "NO_RESIDUAL_FROM_CURRENT_COMPLETE_PASS_MAPPINGS"
+    assert result["candidate_path"]["entry_candidates"] == 2
+    assert result["candidate_path"]["legacy_horizon_entry_blocked"] == 1
+    assert result["candidate_path"]["technically_provider_eligible_not_approved"] == 0
+    assert "CURRENT_PASS_MAPPINGS_CANNOT_PRODUCE_RESIDUAL" in detail["reasons"]
     assert detail["legacy_horizon_blocked"] == 1
     assert detail["v4_scope_eligible_not_approved"] == 0
     assert detail["local_match_is_not_a_model_call"] >= 1
