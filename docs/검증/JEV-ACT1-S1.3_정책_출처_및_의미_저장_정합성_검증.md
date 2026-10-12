@@ -372,3 +372,22 @@ git pull --ff-only origin main
 ```
 
 **S7.3 구현 범위의 정확한 경계:** 실제 종목 **로컬 JEV 입력 준비·사전 차단·연구 기록**까지 가능하며, TypeSafe 유료 호출 및 실전 성과 비교는 0건이다. 공개 시각·외부 전송 권한·Horizon 수치·고정 모델/과금·개별 동의를 검증한 별도 승인형 실제 호출 어댑터가 마련되기 전까지 실제 provider 경로는 활성화되지 않는다. CI 성공은 실종목 검토 성공을 뜻하지 않는다.
+
+## JEV-ACT2-S7.3 핫픽스 — Scanner PASS와 의미 분석 조건 ID 네임스페이스 구분 (2026-10-12)
+
+사용자 실환경 신규 정본 Capture `a0f8f2cb-c1ab-4b3a-9488-b125e0369a2b`(대한항공 003490, 실제 진입 후보 1건, `LEGACY_LIMITED`)는 S7.3 로컬 테스트 9 PASS에도 불구하고 `prepare`와 `preflight`가 모두 `S7_3_ENGINE_PASS_PROOF_MISMATCH`를 반환했다. 이는 S7.3가 엔진 재현성 감사의 실제 `semantic_condition_evidence.items[].condition_id`와 의미 매핑에서 생성한 `semantic_source_v2.conditions.items[].condition_id`가 문자열까지 같을 것을 잘못 요구했기 때문이다. **이 둘은 같은 ID 공간이 아니다.** Scanner 감사의 `condition_id`는 엔진에서 온 원본이고, 의미 매핑 ID는 `condition-01`, `condition-02`처럼 별도로 생성된다.
+
+수정된 S7.3는 기존 S3/S7.1 계약처럼 두 계층 모두에 보존되는 **`source_condition`을 1:1 대조 키**로 사용한다. 원본 엔진 PASS 근거의 신원은 없애지 않으며, 다음을 모두 필수로 확인한다.
+
+- 실제 엔진 감사의 출처가 `SCANNER_REPRO_ENGINE_PASSED_CONDITIONS_V1`인지와 전략이 해당 `LEGACY_LIMITED` 후보와 일치하는지 검증
+- 양쪽의 `source_condition` 집합 동일, 조건별 중복 없음, 조건 증거 개수 정확히 동일
+- 엔진 PASS 상태 및 각 계층의 condition ID가 누락/공백/중복이 아닌지 검증
+- 조작된 Snapshot Hash, 정책, 유도 전략 출처, 실제 외부 전송 권한 미확인 시 기존 거부 로직 유지
+- 두 ID가 실제로 달라도 `source_condition`과 독립 엔진 PASS 근거가 대응되는 정상 케이스를 자동 회귀 테스트로 검증
+
+운영 기록을 재작성하지 않는다. **성공적으로 로컬 입력을 준비하더라도 실종목 TypeSafe 전송은 여전히 HOLD/0건**이다. 이 핫픽스 이후 아래 두 명령으로 실제 로컬 Capture를 재확인해야 한다.
+
+```powershell
+.\.venv\Scripts\python.exe tools\data\jev_s7_shadow.py prepare --capture-id a0f8f2cb-c1ab-4b3a-9488-b125e0369a2b
+.\.venv\Scripts\python.exe tools\data\jev_s7_shadow.py preflight --capture-id a0f8f2cb-c1ab-4b3a-9488-b125e0369a2b
+```
