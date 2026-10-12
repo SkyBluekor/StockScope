@@ -239,11 +239,22 @@ class ProspectiveCatalog:
         selection_policy_pin: SelectionPolicyPin | None = None,
         policy_verified: bool = False,
         policy_reason: str = "POLICY_PROVENANCE_MISSING",
+        require_policy_provenance: bool = True,
     ) -> dict[str, Any]:
         # Preserve production candidate and its legacy policy binding, rank and
         # Risk. Only facts traced to the frozen Scanner's original audit may
         # enrich a separate semantic-only projection.
         snapshot = dict(item)
+        if not require_policy_provenance:
+            # Explicit test/legacy-fixture compatibility only. Production
+            # Scanner/Prospective must keep provenance enforcement enabled.
+            semantic_input = semantic_projection_candidate(
+                snapshot, selection_policy=selection_policy, audited=audited,
+            )
+            enriched = attach_semantic_source_v2(attach_semantic_source(semantic_input))
+            snapshot["semantic_source"] = enriched["semantic_source"]
+            snapshot["semantic_source_v2"] = enriched["semantic_source_v2"]
+            return snapshot
         candidate_ok, candidate_reason = (
             verify_candidate_policy_binding(item, selection_policy_pin)
             if policy_verified else (False, policy_reason)
@@ -289,6 +300,7 @@ class ProspectiveCatalog:
         result: dict[str, Any],
         completed_at: str | None = None,
         selection_policy_pin: SelectionPolicyPin | None = None,
+        require_policy_provenance: bool = True,
     ) -> dict[str, Any]:
         now = completed_at or _now()
         top = result.get("candidates") if isinstance(result.get("candidates"), list) else []
@@ -315,6 +327,7 @@ class ProspectiveCatalog:
                 selection_policy_pin=selection_policy_pin,
                 policy_verified=policy_verified,
                 policy_reason=policy_reason,
+                require_policy_provenance=require_policy_provenance,
             )
             for item in [*top, *more]
             if isinstance(item, dict)
@@ -481,6 +494,7 @@ class ProspectiveCatalog:
                     candidate, selection_policy=selection_policy, audited=audit_for(candidate),
                     selection_policy_pin=selection_policy_pin,
                     policy_verified=policy_verified, policy_reason=policy_reason,
+                    require_policy_provenance=require_policy_provenance,
                 )
                 market = str(candidate.get("market") or "").upper()
                 ticker = str(candidate.get("code") or candidate.get("ticker") or "").strip().upper()
