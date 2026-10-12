@@ -154,7 +154,7 @@ def assess_frozen_candidate(
         rows = evidence.get("items")
         items = source.get("conditions", {}).get("items")
         if (
-            source.get("readiness", {}).get("q2_status") != "COMPLETE"
+            (source.get("readiness") or {}).get("q2_status") != "COMPLETE"
             or not isinstance(rows, list) or not rows
             or not isinstance(items, list) or len(rows) != len(items)
             or any(
@@ -262,10 +262,20 @@ def assess_frozen_candidate(
     if strict_code:
         issues.append(strict_code)
 
-    failures = any(item["status"] == "FAIL" for item in checks.values())
-    if not failures and checks["strategy"]["status"] == "LEGACY_DERIVED":
+    # A proven legacy-only derived strategy is diagnostically limited:
+    # S3 is *supposed* to reject its missing original version. Do not
+    # mark it as fully validated or bypass that strict contract.
+    independent_failures = any(
+        item["status"] == "FAIL"
+        for key, item in checks.items() if key != "strict_s3"
+    )
+    if (
+        not independent_failures
+        and strategy_status == "LEGACY_DERIVED"
+        and strict_code == "STRATEGY_IDENTITY_MISMATCH"
+    ):
         category = "LEGACY_LIMITED"
-    elif not failures and checks["strict_s3"]["status"] == "PASS":
+    elif not independent_failures and strict_code is None:
         category = "LOCAL_VALIDATED"
     else:
         category = "INVALID"
