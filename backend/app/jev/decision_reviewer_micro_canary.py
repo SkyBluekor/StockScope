@@ -165,6 +165,9 @@ class FrozenMicroProtocol:
     # A moving alias is permitted only in a labeled, synthetic, unverified
     # exploratory cohort. It is NEVER a pinned model version.
     alias_identity_policy: str = "FIXED_MODEL"
+    # S6.2 uses published standard rates, not independently verified
+    # account billing. Default retains S5's original verified-rate meaning.
+    pricing_basis: str = "ACCOUNT_VERIFIED"
 
     def validate(self) -> None:
         try:
@@ -180,6 +183,9 @@ class FrozenMicroProtocol:
             or not self.model_returned.strip()
             or self.alias_identity_policy not in {
                 "FIXED_MODEL", "SYNTHETIC_JEV_LATEST_V1"
+            }
+            or self.pricing_basis not in {
+                "ACCOUNT_VERIFIED", "PUBLIC_STANDARD_UNVERIFIED"
             }
             or (
                 self.alias_identity_policy == "FIXED_MODEL"
@@ -546,7 +552,11 @@ class MicroJournal:
                  Decimal(protocol.verified_output_usd_per_million)) /
                 Decimal(1_000_000)
             )
-            cost_status = "ESTIMATED_FROM_VERIFIED_ACCOUNT_RATE"
+            cost_status = (
+                "ESTIMATED_FROM_PUBLIC_STANDARD_RATE"
+                if protocol.pricing_basis == "PUBLIC_STANDARD_UNVERIFIED"
+                else "ESTIMATED_FROM_VERIFIED_ACCOUNT_RATE"
+            )
         cur = self.conn.execute(
             """UPDATE jev_s5_synthetic
                SET state=?,decision=?,output_json=?,typed_response_json=?,
