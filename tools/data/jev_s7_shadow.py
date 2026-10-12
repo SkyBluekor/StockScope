@@ -19,6 +19,7 @@ for p in (ROOT, BACKEND):
         sys.path.insert(0, str(p))
 
 from app.jev.decision_reviewer_offline import DecisionReviewContractError
+from app.jev.scanner_integrity_s7_1 import EXPLAIN
 from app.jev.scanner_shadow_s7 import (
     VERSION, S7ShadowJournal, inspect_real_candidates,
 )
@@ -89,10 +90,31 @@ def display(value: dict[str, Any], *, as_json: bool = False) -> None:
     print("=" * 63)
     print(f"상태: {value.get('status', 'UNKNOWN')}")
     if "candidate_count" in value:
-        print(f"추천 후보: {value['candidate_count']}건")
+        print(f"전체 조회 기록: {value['candidate_count']}건")
+        if "entry_candidate_count" in value:
+            print(
+                f"실제 진입 후보: {value['entry_candidate_count']}건"
+                f" | 비추천·참고 기록: {value.get('reference_count', 0)}건"
+            )
+        if "local_validated_count" in value:
+            print(
+                f"로컬 정합성 확인: {value['local_validated_count']}건"
+                f" | 제한적 레거시: {value.get('legacy_limited_count', 0)}건"
+                f" | 정합성 제외: {value.get('integrity_invalid_count', 0)}건"
+            )
+        if value.get("not_diagnosed_count"):
+            print(
+                f"이전 기록 미진단: {value['not_diagnosed_count']}건"
+                " (최신 코드로 capture 재실행 필요)"
+            )
+    if value.get("integrity_issue_counts"):
+        print("후보 정합성 진단 (한 후보에 복수 사유 가능):")
+        for code, count in value["integrity_issue_counts"].items():
+            print(f"  {EXPLAIN.get(code, code)} [{code}]: {count}건")
     if "observed_price_count" in value:
         print(f"가격 관찰 가능: {value['observed_price_count']}건")
     if "window_summaries" in value:
+        print("가격 관찰 (과거 진입 후보 전체이며 정합성 통과 성과가 아님):")
         for name, item in value["window_summaries"].items():
             average = item["average_signal_close_change_pct"]
             avg = f"{average:+.2f}%" if average is not None else "아직 없음"
@@ -107,8 +129,14 @@ def display(value: dict[str, Any], *, as_json: bool = False) -> None:
     )
     if "real_stock_provider_eligible" in value:
         print(f"외부 AI 전송 허용 후보: {value['real_stock_provider_eligible']}건")
+    if value.get("validated_window_summaries"):
+        print("정합성 통과 후보의 가격 관찰 (체결 수익률 아님):")
+        for name, item in value["validated_window_summaries"].items():
+            average = item["average_signal_close_change_pct"]
+            avg = f"{average:+.2f}%" if average is not None else "아직 없음"
+            print(f"  {name}: {item['observed']}건 / 평균 종가 변화 {avg}")
     if value.get("blocker_counts"):
-        print("전송 제한 사유별 후보 수:")
+        print("외부 전송 및 로컬 검증 제한 사유별 발생 수:")
         for key, count in value["blocker_counts"].items():
             print(f"  {key}: {count}건")
     if value.get("research_write"):
@@ -116,7 +144,11 @@ def display(value: dict[str, Any], *, as_json: bool = False) -> None:
         print(f"관찰 기록: 신규 {entry['inserted']}건 / 재사용 {entry['reused']}건")
     if value.get("records"):
         print("-" * 63)
-        for rec in value["records"][:10]:
+        eligible = [
+            rec for rec in value["records"]
+            if rec.get("baseline_action") == "ENTRY_CANDIDATE"
+        ]
+        for rec in eligible[:10]:
             ob = rec["observation"]
             vals = [
                 f"{i}일: " + (
@@ -127,7 +159,9 @@ def display(value: dict[str, Any], *, as_json: bool = False) -> None:
             ]
             print(
                 f"{rec['name'] or rec['ticker']} ({rec['ticker']})"
-                f" · 신호 {rec['signal_date']} · " + " / ".join(vals)
+                f" · 신호 {rec['signal_date']}"
+                f" · 정합성 {(rec.get('integrity') or {}).get('category', 'NOT_DIAGNOSED')}"
+                " · " + " / ".join(vals)
             )
     if value.get("status") == "HOLD":
         print(f"차단 사유: {value.get('reason')}")
