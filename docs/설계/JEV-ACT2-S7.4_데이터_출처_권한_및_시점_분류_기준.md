@@ -9,8 +9,9 @@
 - **A = 코드로 확인**, **B = 공식 외부 자료로 확인**, **C = 미확인 또는 설계 제안**. 표에서 `A → C`는 입력·구조는 코드 사실이고 분류·조치는 제안이라는 뜻이다. 권한에 관한 적용 해석은 B 원문과 별도로 C로 표시한다.
 - 코드 연결 여부는 확인했지만 사용자 계정의 API 가입·승인 내역, 실행 로그, 원본 응답 또는 Runtime DB를 감사하지 않았다. 따라서 “연결된 경로”는 실제 이번 계정에서 호출했다는 뜻이 아니다.
 - 사용자 제공 실환경 보고: Capture `a0f8f2cb-c1ab-4b3a-9488-b125e0369a2b`, 15건 중 진입 1건·참고 14건, 대한항공 `003490`, 신호일 `2026-10-08`, `LEGACY_LIMITED`, `LOCAL_PACKET_READY`, `RETROSPECTIVE_CAPTURE`, `PROVIDER_HOLD`, TypeSafe 0회. **C: 본 조사에서 원본을 재검증하지 않은 사용자 보고**이며 저장소 문서의 과거 기록도 DB 원본을 대신하지 않는다.
-- 이번 작업은 Markdown 한 파일만 추가한다. Scanner/JEV 수정, DB 생성·마이그레이션·동기화, Capture 변경, 시장/API 실조회, TypeSafe 호출, 승인 플래그 변경은 수행하지 않는다. 공식 웹 문서 열람과 GitHub 조회·문서 PR은 조사 범위다.
+- 최초 S7.4 조사에서는 Markdown 한 파일만 추가했고, DOC-R1은 같은 파일만 보완한다. Scanner/JEV 수정, DB 접근·생성·마이그레이션·동기화, Capture 변경, 시장/API 실조회, TypeSafe 호출, 승인 플래그 변경은 수행하지 않는다. 공식 웹 문서 열람과 GitHub 조회·문서 PR은 조사 범위다.
 - 기존 [S1.3 검증 문서의 S7.3 기록](../검증/JEV-ACT1-S1.3_정책_출처_및_의미_저장_정합성_검증.md), [JEV 통합 설계](StockScope_JEV_통합설계_v2_2026-10-06.md), [Semantic Source 계약](StockScope_TypeSafe_Jev_V3_Semantic_Source_Contract_v1_2026-10-07.md)과 역할을 구분한다. 이 문서는 **원천 권한·시간·전송 적격성의 단일 기준**이다.
+- **DOC-R1 보완(2026-10-12):** [PR #115](https://github.com/SkyBluekor/StockScope/pull/115)의 open/미병합 상태와 당시 head `327a2fc2e5d234012b0436b30dbd5f2575386c23`을 확인한 뒤 같은 브랜치의 이 문서만 수정한다. 기존 A/B 조사 기준은 그대로 두고 §6·8~12의 C 계약을 보완한다. 신규 권한 승인·시점 증거를 확보했다는 의미가 아니다. Runtime DB에는 접근하지 않는다.
 
 ### 1.1 코드 근거 색인 — 모두 A
 
@@ -198,9 +199,47 @@ pykrx, FinanceDataReader, yfinance, data.go.kr을 기본 Scanner 수집원이라
 - **KRX 공개 시간:** 이번에 읽은 해당 OPEN API 공식 상품 본문에서 각 거래일의 정확한 공개 시각은 확보하지 못했다. 다른 분배상품의 EOD 안내(B03), 타 제공처의 갱신 시각, 장마감 시간을 대입하지 않는다. 공식 갱신 일정이 확보되어도 개별 지연·정정·최초 확보를 증명하는 로그는 별도로 필요하다.
 - **과거 EOD 재현:** 날짜 절단(A04)은 미래 날짜 사용을 제한하지만, 최근에 수정된 과거 행의 이전 revision·공개 시각·당시 확보 이력을 복원하지 못한다. A02 upsert/replace는 행을 갱신할 수 있다. 현재 DB로 계산이 재현된다는 사실을 과거 시점 재현 증명으로 승격하지 않는다.
 - **최신 정보 혼입:** S7은 동결 Snapshot을 읽는다. 보충한다고 최신 KIS 현재가, OpenDART 현재 회사정보, 최신 선택 정책/의미 매핑을 끼워 넣지 않는다. A20의 `STATIC_CURRENT` 차단을 유지한다. 별도 `MarketDataService.stock_context`는 공시 기간을 `date.today()` 기준으로 잡는 경로이므로 과거 입력 대용으로 사용 금지(A19).
-- **시간 순서:** 같은 데이터 revision에서 검증된 값만 비교한다. 공개시각 ≤ 해당 상품 가용시각 ≤ 수집완료 ≤ 시스템 원천확보 ≤ 파생 계산완료 ≤ Capture commit 기록 ≤ 실제 JEV 판단완료. 네트워크 요청 시작은 수집완료와 분리한다. unknown은 순서 통과가 아니다. 과거 캐시 재조회는 최초 확보를 덮어쓰지 않는다. 정정 revision은 새 node로 새 시각을 갖는다.
+- **시간 순서:** 원천 수집·Scanner 계산·Capture·JEV 후처리는 서로 다른 이벤트다. Scanner 판단에 쓰인 원천 확보는 해당 입력 고정 이전이어야 하지만, 동결 Capture를 읽는 로컬 패킷 생성은 Capture 이후여도 정상이다. 모든 계산을 Capture 이전으로 강제하지 않는다. 이벤트별 부분 순서와 모드별 gate는 §6.3~6.4를 따른다. unknown은 순서 통과가 아니다.
 - **TZ:** 순간 비교는 aware 시각을 UTC로 정규화하고 원래 offset/의미를 보존한다. 한국 거래일과 비교할 때는 Asia/Seoul로 변환한다. A13 `_historical_capture_status`는 현재 `completed.date() > signal`만 비교하며 KST 변환이 없다. UTC 날짜 경계 오분류와 당일 Capture의 순서 미확인을 회귀 시험에 포함한다.
-- **사전/사후:** `FORWARD_ASOF`는 별도 사전 고정 cutoff와 입력확보 증거가 모두 필요하다. `signal_date`와 같은 날이라고 사전 판단이 아니다. 뒤늦게 실행한 실제 JEV는 `RETROSPECTIVE_CAPTURE/RETROSPECTIVE_REVIEW` 계열로 분리하며 당시 실시간 성능에 넣지 않는다. 사후 연구도 전송 권한·시점 gate를 면제하지 않는다.
+- **사전/사후:** 평가 모드는 `RETROSPECTIVE_RESEARCH`와 `FORWARD_ASOF`로 구분한다. A13의 `RETROSPECTIVE_CAPTURE`는 현재 코드의 시간 진단 라벨이며 평가 모드/실제 모델 판단 시각과 다르다. `signal_date`와 같은 날이라는 이유로 사전 판단으로 승격하지 않는다. 사후 연구도 권한 검증을 면제하지 않으며, 시점 미입증은 보고서에 남긴다.
+
+### 6.3 R1-B 단계별 시간 이벤트 계약 — 현재 필드는 A, 요구 증거·판정은 C
+
+아래 신규 시각은 S7.4 제안이며 이미 저장되는 필드로 간주하지 않는다. §9.1의 `TimeEvidence.events[]`에 이벤트 종류·대상 hash/revision·시각·quality·증거 참조를 함께 기록한다. 정확한 값이 없으면 null이며, 이벤트 종류나 로그의 존재만으로 `EXACT`가 되지 않는다.
+
+| 이벤트 / 의미 | 현재 필드·코드 근거(A) | 필요한 증거와 신뢰 수준(C) |
+|---|---|---|
+| 원천 공개 / 발행자가 처음 공개한 순간 | KRX 경로 없음; A23에만 `source_published_at` 계약 존재 | 해당 원문·revision에 결합된 발행 기록. 확보 전 UNKNOWN/DATE_ONLY; 제공자 시각은 PROVIDER_TIME, 의미·진위까지 검증한 경우만 그 범위에서 EXACT |
+| 특정 revision 가용 / 해당 API 제품·이용 목적에서 제공되기 시작한 순간 | A13 `source_available_at=null` | 제품·revision·승인 범위에 결합된 가용 기록. 원천 첫 공개와 이후 수정본 공개를 혼동하지 않음 |
+| 원천 요청·응답 / 네트워크 요청 시작과 유효 응답 수신 완료 | KRX에는 영속 이벤트 필드 없음; KIS REST `received_at`은 별도 경로(A17) | `request_started_at` ≤ `retrieved_at`, 요청/응답 식별·상태·payload hash. 오류/빈 응답을 시장 행 확보로 기록하지 않음 |
+| StockScope 최초 확보 / 동일 revision을 이 시스템이 처음 유효하게 확보한 순간 | A13 `known_to_system_at`은 Capture 완료값의 별칭이며 이 이벤트를 증명하지 못함 | 해당 시스템·revision의 최초 성공 수집/검증 로그. 최초 수신과 검증완료가 다르면 후자를 `known_to_system_at`, 전자를 `retrieved_at`으로 보존. 재수집과 분리 |
+| Scanner 입력 고정 / 정확히 어떤 행·정책을 사용할지 고정 | A03 `_build_input_fingerprint`, A09 `input_fingerprint`는 있지만 고정 순간을 입증하는 전용 시각 없음 | `scanner_input_frozen_at`, 입력 manifest/hash, 정책 pin 및 실제 소비 revision. 사후 계산한 fingerprint만으로 당시 고정 입증 불가 |
+| Scanner 판단 / 고정 입력으로 전략·Risk·추천 결과 계산 | A03 결과 `generated_at`은 naive; capture `started_at`은 Scanner 판단 시작의 대체값 아님 | `scanner_decision_started_at/finished_at`, input/result hash와 실행 버전. 원래 TZ 근거 없는 generated_at은 UNKNOWN으로 유지 |
+| Prospective Capture 기록 / 결과·의미 투영의 저장 시도와 commit | A09 `completed_at`은 최종화 시작 시 기본 생성, sample `created_at`도 같은 now; `conn.commit()` 뒤 별도 실측 시각 없음 | 기존값은 `capture_recorded_at` 의미로만 참조. 원래 필드명·생성 위치도 보존. 향후 `capture_commit_observed_at`은 commit 성공 뒤 실제 관측한 경우만 기록; 미측정이면 null |
+| JEV 로컬 패킷 생성 / 동결 Snapshot의 허용된 후처리 | A13 `_local_packet`의 `input_hash`는 존재, 패킷 생성 시각 없음; preflight journal `created_at`은 다른 이벤트 | `local_packet_built_at`, 원본 snapshot hash·adapter 버전·packet hash. Capture를 읽은 뒤 생성 가능하며 원본 Scanner 판단 시각을 변경하지 않음 |
+| 실제 JEV 요청·응답 / 전송 시작과 응답 수신, 응답 검증 | A13 실제 시장 호출 없음. A15 HTTP 구현 존재가 이 이벤트의 실측 증거는 아님 | 향후 `jev_request_started_at`, `jev_response_received_at`, `jev_response_validated_at`, body/response hash·provider/model 신원. 타임아웃은 응답 시각/판단 성공을 만들지 않음. `jev_decision_at`은 유효 응답을 확보·검증한 마지막 이벤트에만 대응 |
+| 후속 시장 결과 관찰 / 결과 거래일과 시스템이 결과를 본 순간 | A12 `_observation`(121)의 `evaluated_through`, S7 journal `observed_through/created_at`은 범위·연구 저장값 | `outcome_event_at`(또는 DATE_ONLY), `outcome_first_observed_at`, 관찰 구간/revision·결과 hash를 별도 기록. 저장/보고 시각은 최초 관찰의 대체가 아님 |
+
+**C: revision별 증거 결합 조건.** 원천 node는 `(source_id, product, record_key, revision_id, payload_hash)`와 성공 acquisition을 결합한다. 제공자 revision ID가 없으면 로컬 관측 버전을 발급하되 `revision_id_kind=LOCAL_OBSERVATION`으로 표시하고 제공자 발행 순서/정정 시점을 안다고 주장하지 않는다. 서로 다른 payload는 거래일이 같아도 다른 버전이며, 늦게 받은 수정본에 예전 확보 시각을 상속하지 않는다. Cache hit는 기존 acquisition을 참조할 뿐 최초 확보를 갱신하지 않는다. 최초 로그가 없는 legacy cache는 UNKNOWN을 유지한다. 빈 응답·실패·동일 payload 재수집은 요청 이벤트만 추가하며 허위 최초확보를 생성하지 않는다.
+
+시간 순서는 **같은 revision의 첫 유효 획득**에 대해 `published ≤ available ≤ retrieved ≤ known`을 검증하고, Scanner의 모든 소비 부모에 대해 `known ≤ scanner_input_frozen ≤ scanner_decision_started ≤ scanner_decision_finished`를 검증한다. 재수집의 retrieved는 최초 known보다 늦을 수 있다. 동결 결과 저장/읽기와 패킷 생성의 인과관계는 별도 이벤트로 검증한다. `completed_at`을 commit 관측값으로 넣어 이 순서를 억지로 만족시키지 않는다.
+
+### 6.4 R1-B 평가 모드별 시간 gate — C
+
+`evaluation_mode`는 실행 전에 프로토콜에 명시하며 현재 라벨로 추론하지 않는다. 데이터 cutoff는 **정보 사용 경계**, decision deadline은 **모델 판단 완료 경계**로 구별한다. 아래 조건은 향후 검증기의 계약이며 현재 실제 전송은 어느 모드에서도 비활성이다.
+
+| 검사 | `RETROSPECTIVE_RESEARCH` | `FORWARD_ASOF` |
+|---|---|---|
+| 목적·분모 | 과거 동결 후보를 현재 검토. 과거 시점 JEV 성능 분모에 절대 포함하지 않음 | 사전 등록한 입력/판단/관찰 구간의 cohort만 포함. 사후 라벨 변경으로 편입 금지 |
+| 프로토콜 경계 | 원본 신호 거래일과 현재 연구·패킷·판단 시각을 별도 기록. 옛 평가 cutoff를 사후 생성하지 않음 | `protocol_frozen_at`, `data_cutoff_at`, `decision_deadline_at`, `outcome_window_start_at`을 사전 고정. `protocol_frozen ≤ data_cutoff ≤ decision_deadline < outcome_window_start` |
+| 원천 revision | Snapshot에 결합된 원래 입력만 사용. 과거 공개/확보가 입증되지 않으면 `REVISION_ASOF_UNPROVEN` 유지. 로컬 진단은 가능하나 그 상태로 외부 ELIGIBLE 판정 불가 | 사용한 모든 revision의 공개/가용/최초 확보가 입증되고 `known ≤ scanner_input_frozen ≤ data_cutoff`. cutoff 뒤 수정본·현재가·외부 검색·새 시장 사실 유입은 거부 |
+| Capture 이후 계산 | Capture 읽기 → 고정 의미/정책 참조에 의한 packet projection은 정상. 미래 정보가 들어간 새 의미 진술·정책으로 원본을 재해석하면 별도 연구 input/version이며 기존 승인 재사용 금지 | 고정 입력으로 Scanner 계산·Capture·packet 생성이 cutoff 뒤라도 decision deadline 이전이면 가능. 모든 변환/질문 버전은 프로토콜에 고정하고 시장 정보 재조회 금지 |
+| 실제 판단 | 현재 요청/유효 응답 시각을 기록. 과거 신호일에 판단했다고 표시하지 않음 | `capture commit 증거 → 동결 Capture 읽기 → packet 생성 ≤ request 시작 ≤ response 수신 ≤ response 검증 ≤ decision_deadline`. 현재 completed_at만으로 commit 시각 증명 불가 |
+| 결과 관찰 | 기존 S7 관찰 결과는 별도 outcome channel. 입력/정답에 섞인 경우 오염을 표시하고 독립 성능 주장 금지 | 실제 판단 고정 전 결과 관찰 접근 차단. `response 검증 < outcome_first_observed_at`과 사전 outcome 구간을 모두 입증. “나중에 DB에 기록”만으로 미관찰 증명 불가 |
+| 변경·재시도 | input/질문/권한/변환 변경은 새 연구 revision·report 필요 | 결과를 본 후 선택·재시도·판단 변경 금지. deadline 초과/응답 실패는 실패 cohort로 보존, 유리한 응답만 선택 금지 |
+| 미확인 시간·권한 | 사후 로컬 보고에 누락 사유 표시; 권한·필요 시각 증거를 면제하지 않고 provider HOLD | 미입증은 forward 부적격/HOLD. 실제 clock 오차·순서 불확실도 거부 |
+
+두 모드 모두 naive datetime은 비교 전에 차단한다. UTC `2026-10-08T15:30:00Z`가 KST `2026-10-09`라는 날짜 경계, 장마감 이후 지연 공개, 첫 확보와 재수집, 과거 EOD 정정, Cache hit, 요청 시작/응답 완료를 각각 검증한다. `source_available_at`이 데이터 공개를 뜻하는지 계약상 이용 가능을 뜻하는지도 evidence에 명시하고, 어느 하나가 충족됐다고 다른 조건까지 승인하지 않는다. 누락된 실제 이벤트는 정밀 시각 대신 검증 가능한 인과 로그를 기록할 수 있지만, 그것으로 알 수 없는 cutoff 전후 관계를 통과시키지 않는다.
 
 ## 7. JEV 입력 필드별 외부 전송 적격성
 
@@ -264,7 +303,24 @@ pykrx, FinanceDataReader, yfinance, data.go.kr을 기본 Scanner 수집원이라
 
 **A:** 실제 일반 TypeSafe transport는 `POST https://api.typesafe.ai/v1/systemone`에 `{state, questions, model}`만 구성하며 Authorization은 header에 둔다(A15). 합성 micro 경로는 등록 fixture 전체 일치, 질문/모델/별도 승인을 검증하고 `state={synthetic_only, strategy_intent, evidence}`를 보낸다. **S7.3 packet을 이 body로 연결하는 승인된 실제 시장 어댑터는 없다.** S3 `baseline_decision.entry_risk_guide` 등이 S7.3에도 전송된다고 기술하면 틀린다.
 
-**C:** S7.4의 첫 연결점은 `prepare_shadow_candidate` 결과를 읽는 **별도 로컬 eligibility report/sidecar**다. 기존 Snapshot·S7.3 hash는 유지한다. 새로운 계약 버전에서 필드 allowlist와 별도 adapter hash를 정의하고, 오래된 `VERIFIED_GRANTED` 문자열을 무조건 새 허가로 매핑하지 않는다. 권한 원장 검증을 거친 경우에만 명시적 호환 projection을 허용한다. 이번 문서 PR은 어떤 차단도 바꾸지 않는다.
+**C:** S7.4의 첫 코드 연결점은 `prepare_shadow_candidate` 결과를 읽는 **별도 로컬 진단 report/sidecar**다. 착수 순서는 §11의 P0 권한 확인이 먼저다. 기존 Snapshot·S7.3 hash는 유지한다. 새로운 계약 버전에서 필드 allowlist와 별도 outbound hash를 정의하고, 오래된 `VERIFIED_GRANTED` 문자열을 무조건 새 허가로 매핑하지 않는다. 검증된 증거를 참조한 경우에만 명시적 호환 projection을 허용한다. 이번 문서 PR은 어떤 차단도 바꾸지 않는다.
+
+### 8.1 R1-C 로컬 packet과 미래 전송 전용 body의 경계 — C
+
+로컬 packet은 원본 대조·계보 진단용이고 외부 전송 허가서가 아니다. 미래 전송 body는 정확히 `{state, questions, model}`의 세 최상위 키만 갖는 별도 projection이다. `prepared`, `prepared.identity`, `source`, 로컬 진단/권한 문서 전체를 직렬화하지 않는다. §7의 필드 표는 현재 packet의 전수 목록이며 전송 allowlist 자체는 아니다.
+
+최소 검토 목적은 **조건 PASS 의미와 Risk 설명의 일관성**으로 한정한다. 그 목적에 대한 최초 allowlist 후보는 아래와 같다. 실제 채택에는 §9의 권한·시점·충분성 검증과 계약 버전 고정이 필요하며, 아래 목록에 있다는 이유로 현재 허용된 것은 아니다.
+
+| 최종 body 경로 | 허용 후보·제약 | 로컬에만 남길 정보 |
+|---|---|---|
+| `/state/baseline` | `strategy`, `entry_action`, `conditions.{passed,total,missing}`, `risk.{status,warning}`, `horizon_intent`, `horizon_policy_version`만. 각각 타입/enum/nullable 여부를 고정하고 시장 파생 여부는 §7대로 심사 | rank·모집단, 전략 정본 식별/hash, policy ID/hash 등 검증용 연결. 순위 비교나 원본 전략 재현이 질문에 필요하면 이 최소 목적에는 불충분으로 HOLD |
+| `/state/evidence/*` | `id`, `statement`만. 각 원소와 문자열의 원천 부모·정해진 생성 규칙을 확인. 임의 문자열 덧붙임 금지 | 원문, 원천 endpoint, 시각/권한 증거 참조와 조사 주석 |
+| `/questions` | 해당 목적의 질문 계약에 정의된 키·배열·타입·문자열을 재귀적으로 열거하고 정확한 내용/버전/hash 고정. 자유 확장 키 없음 | 다른 실험의 질문·추가 시장 맥락 |
+| `/model` | 승인된 정확한 model ID 문자열. transport에 설정된 실제 ID와 동일해야 함 | 계정/API 키/과금 증거 |
+
+위 중첩 키 이외의 `state` 필드, 모든 객체의 미등록 키, 배열 원소의 추가 필드, 알 수 없는 타입은 차단한다. 질문의 구체적 전체 스키마가 고정되지 않은 초안은 아직 전송 적격이 아니다. 누락 허용과 null 허용도 별도로 고정하며, 필수 근거를 삭제해서 통과시키지 않는다. 제거 후 동일한 질문이 성립하지 않으면 `EVIDENCE_INSUFFICIENT`다.
+
+종목명·종목코드는 기본 전송 제외이며 식별용 hash/별칭으로 자동 치환하여 보내지 않는다. **KIS 개인 계좌, 잔고, 보유 수량, 계좌 식별자 및 토큰·키·인증 정보는 명시적 전송 금지**다. 이는 향후 경로 결합에 대한 제외 규칙이며 현재 S7.3 packet에 계좌정보가 있다는 주장이 아니다. 입력 선택부터 시장 데이터 경로와 개인 계좌 경로를 분리하고 값의 계보를 검사한다. 허용 키의 `statement`, 질문 문자열 등에 포함된 식별자·민감 값도 금지하며 키 이름 필터만으로 통과시키지 않는다. 출처가 불명한 자유 문장/인코딩 값은 HOLD, 민감 원천을 가진 값은 제외 후 충분성을 재검사한다. 금지어/패턴 검사는 보조 수단이며 allowlist·계보 검사를 대체하지 않는다.
 
 ## 9. S7.4에 필요한 최소 코드 계약 — 전체 C
 
@@ -275,75 +331,178 @@ pykrx, FinanceDataReader, yfinance, data.go.kr을 기본 Scanner 수집원이라
 | 재사용 | capture/sample identity, snapshot hash, S7.3 input hash, 선택 정책 pin, 엔진 PASS↔source_condition 검증(A09~A13) | 새로운 ID로 원본을 덮지 않고 참조. 값/버전 변경 시 eligibility 무효화 |
 | 제한적 재사용 | A23 `EvidenceTimeQuality`, aware 파싱, 시간 순서 규칙 | 시간 enum을 새로 중복 정의하지 않음. `TemporalEvidence.available_at/fetched_at`은 필수이므로 모르는 과거 시각을 채워 객체를 억지로 생성하지 말고 nullable 조사 record를 앞에 둠 |
 | 제한적 재사용 | A23 `EventEvidenceSourcePolicy` capability와 `policy_basis` | 원본/파생 보관·AI 용도 분리를 참고. bool `ai_transform_allowed` 하나를 외부 AI 전송·처리·보관 허가로 대체하지 않음 |
-| 신규 | `SourceArtifact`, `LineageNode`, `RightsEvidence`, `TimeEvidence`, `EligibilityReport` | 아래 최소 필드와 불변 증거 참조를 갖는 로컬 계약부터 구현 |
+| 논리 계약 후보 | `SourceArtifact`, `LineageNode`, `RightsEvidence`, `TimeEvidence`, `EligibilityReport` | 다섯 개 DB/서비스의 선행 구축 요구가 아님. §11의 단계에서 필요한 참조/부분 record만 로컬 진단 결과에 담고, 증거 없는 필드는 null+사유. 기존 원본 불변 |
 | 추가 불필요 | 기존 hash의 단순 별명 hash, 새 `selection_policy`와 중복되는 데이터 이용권 이름, 실제 종목 이름이 든 또 다른 패킷 복사본 | `selection_policy_id`와 `rights_policy/evidence_ref` namespace만 구분. 인용 전문/원본 응답을 모든 node에 복제하지 않음 |
 
 | 객체 | 최소 필드 및 의미 |
 |---|---|
 | `SourceArtifact` | `artifact_id`, `source_id`(제공자+제품 식별), `source_product`, `source_endpoint`(키 제거), `origin_type`, `record_key`(시장/거래일/종목/지수), `payload_hash`, `revision_id`, `acquisition_ref`, `source_time_ref`, `rights_evidence_refs[]`. endpoint/product를 모르면 null+UNKNOWN, provider 추측 금지 |
 | `LineageNode` | `node_id`, `origin_type`, `derived_from[]`, `transform_id/version/hash`, `value_hash`, `calculated_at`, `field_paths[]`. 시장 leaf 없는 POL/SYNTHETIC도 작성 근거 참조 필요. rank는 모집단 manifest hash 및 부모 node 포함 |
-| `RightsEvidence` | `evidence_id`, `provider`, `source_product`, `document_url`, `clause`, `document_version/hash_or_archive_ref`, `checked_at`, `rights_verified_at`, `verifier_ref`, `effective_from/to`, `revocation_ref`, `scope`, `transmission_rights_status`, `conditions[]`, `evidence_status`. scope는 원본/파생·필드·목적·수신자·지역·보관기간·재위탁·재배포를 특정 |
-| `TimeEvidence` | `time_evidence_id`, `artifact/revision_ref`, `source_published_at`, `source_available_at`, `request_started_at`, `retrieved_at`(수집완료), `known_to_system_at`(최초 원천 확보), 필드별 `quality/evidence_ref`, `original_timezone`, `correction_ref`. 기존 capture `completed_at`은 `capture_recorded_at` 의미로 참조, 향후 commit 완료 관측은 별도 기록 |
-| `EligibilityReport` | `contract_version`, `input_hash`, `outbound_projection_hash`, `lineage_manifest_hash`, `rights_manifest_hash`, `time_manifest_hash`, `checked_at`, `evaluation_mode/cutoff`, `field_verdicts[]`, `eligibility_status`, `eligibility_reason_codes[]`, `execution_status/reason_codes[]`. 아직 wire projection이 없으면 hash=null, 전송 적격 불가 |
+| `RightsEvidence` | 기존 `evidence_id`, `provider`, `source_product`, `document_url`, `clause`, `document_version/hash_or_archive_ref`, `checked_at`, `rights_verified_at`, `verifier_ref`, `effective_from/to`, `revocation_ref`, `scope`, `transmission_rights_status`, `conditions[]`, `evidence_status` 재사용. `roles.{rightsholder_ref,issuer_ref,collector_ref,verifier_ref,consumer_ref}`, `authority_basis_ref`, `authenticity_checks[]`, `applicable_party_ref`, `supersedes/conflict_refs[]`, `decision_basis_refs[]`, `bound_subject_hash`를 같은 record에 추가하는 C안. scope는 행위·제품·원본/파생·필드·목적·수신자·지역·보관/로그·재위탁·재배포 특정; 역할/진위/검증 결과를 모르면 미확인 |
+| `TimeEvidence` | `time_evidence_id`, `artifact/revision_ref`, `source_published_at`, `source_available_at`, `request_started_at`, `retrieved_at`(수집완료), `known_to_system_at`(최초 원천 확보), 필드별 `quality/evidence_ref`, `original_timezone`, `correction_ref`; §6.3의 `events[]`로 Scanner·Capture·packet·요청/응답·결과 이벤트를 구분. 기존 `completed_at`은 생성 위치의 의미만 보존하고 commit 관측이나 최초 확보로 승격 금지 |
+| `EligibilityReport` | `contract_version`, `input_hash`, `outbound_projection_hash`, `lineage_manifest_hash`, `rights_manifest_hash`, `time_manifest_hash`, `checked_at`, `evaluation_mode/cutoff`, `field_verdicts[]`, `eligibility_status/reason_codes[]`, `execution_status/reason_codes[]` 재사용. `canonicalization_version`, `allowlist_version/hash`, `request_purpose`, `recipient/processing_scope`, `question_hash`, `model_id`, `protocol_hash`, `decision_deadline`, `bound_subject_hash`, `execution_approval_ref`, `invalidated_at/reasons[]`를 필요 단계에 추가. 아직 최종 body가 없으면 outbound hash=null, 전송 적격 불가 |
 
 권한 evidence 파일/계약서의 위치는 공개 Git 문서일 필요가 없다. 비공개 승인서는 접근 통제된 로컬/조직 보관소 참조와 digest로 결합하고, provider payload에는 evidence 원문·API 키·계약 개인정보를 넣지 않는다. 이 문서의 B URL은 조사 참조이며 immutable 원문 snapshot을 확보했다고 주장하지 않는다.
 
 ### 9.2 권한 검증·전파·충돌 규칙
 
+§5·§7에 보존한 `CONDITIONAL/CND`는 조사 단계의 조건부 검토 대상으로, 실제 계정의 증거 검증 완료 상태가 아니다. 실행용 RightsEvidence로 옮길 때에는 아래 기준으로 다시 판정하며, 진위·적용 범위가 미확인인 기존 항목은 UNVERIFIED에서 시작한다. §12의 CONDITIONAL은 사업/구현 단계의 진행 조건이지 데이터 권한 상태가 아니다.
+
 1. 권한을 검사하는 행위를 최소 `LOCAL_READ`, `PERSONAL_ANALYSIS`, `LOCAL_STORE`, `DERIVE`, `DERIVED_DISCLOSURE`, `AI_TRANSMIT`, `AI_PROCESS`, `AI_STORE`, `USER_REDISTRIBUTE`로 나눈다. 각 scope별 네 상태를 평가한다.
 2. `VERIFIED_ALLOWED`는 적용 제품·자료 유형·목적·수신자·지역·보관/재위탁이 명시된 유효 근거와 검증 책임자 기록이 있는 경우만. 신청 승인·출처 표기·사용자 동의·API 성공·유료 구매 사실만으로 AI 권한을 만들지 않는다.
-3. `VERIFIED_PROHIBITED`는 명시된 제한의 **해당 행위/범위**에만 부여한다. `CONDITIONAL`은 조건 확인 전 호출 차단, `UNVERIFIED`는 자료 부족/범위 불명으로 차단한다. 조건이 충족돼도 승인 원장을 검증한 새 record를 만들어야 하며 자동 bool 전환하지 않는다.
+3. `VERIFIED_PROHIBITED`는 명시된 제한의 **해당 행위/범위**에만 부여한다. `CONDITIONAL`은 진위·적용 범위를 확인한 근거에 명시된 조건이 아직 미충족인 경우다. `UNVERIFIED`는 자료 부족/진위·범위 불명이다. 둘 다 호출 차단이며 계약 체결 가능성만 있는 대안은 검증된 조건부 권한이 아니다. 조건이 충족돼도 새 검증 이력을 기록하며 자동 bool 전환하지 않는다.
 4. 모든 전송 필드의 부모 closure를 검사한다. applicable 금지가 하나라도 있으면 DENIED, 그 외 미확인/미충족 조건이면 HOLD. 상태를 하나로 합쳐 나머지 원천 사유를 잃지 않는다. 원본 금지의 파생 결과 적용 범위가 불명하면 파생 결과를 합법 허용 또는 법적 금지로 단정하지 않고 UNVERIFIED로 둔다.
 5. 서로 상충하는 약관/승인서는 우선순위·적용기간·서명 주체를 확인할 때까지 HOLD. 날짜가 최신이라는 이유만으로 자동 승리시키지 않는다. 만료·철회·목적/수신자/모델 처리조건 변경 시 report 무효화 후 재평가한다.
 6. hash·숫자 제거·요약·번역·문장화·익명화는 계보 단절 사유가 아니다. 자체 내부 규칙만 남겨 시장 부모가 실제로 없어졌더라도 질문의 평가 목적이 유지되는지 별도 점검한다.
 
+### 9.2.1 R1-A 역할과 신뢰 경계
+
+| 역할 | 확인할 근거와 책임 | 확인되지 않은 경우 |
+|---|---|---|
+| 권리자/계약상 부여 권한자 | 원천 권리 및 해당 파생·AI 행위를 허가할 권한의 근거. 중개 제공자는 원권리자의 위임/재허가 범위까지 확인 | API 운영자라는 이유로 권한을 추정하지 않음 |
+| 실제 발급 주체 | 약관 공표 주체, 계약 상대/서명자, 서면 허가 발급자; 공식 경로·서명/발급 기록 및 필요한 위임 관계 | 출처 불명 첨부 파일·이메일 텍스트만으로 진위 확정 불가 |
+| 증거 수집 주체 | 누가 언제 어디서 어떤 원문/버전을 확보했는지와 보관 참조를 기록 | 수집자에게 이용권을 부여하는 권한이 생기지 않음 |
+| 진위·적용 범위 검증 주체 | 확인된 검증 책임/권한, 검증 방법·근거·시점과 RA01~RA10 결과를 기록. 데이터 권한자는 아니며 근거를 적용해 판정 | 실제 지정/신원이 없으면 `verifier_ref=null`, 승인 불가 |
+| 검증 결과 사용 시스템 | 신뢰된 보관소/resolver에서 증거 버전·검증자 권한·현재 유효 상태를 확인하고 대상 요청과 대조 | caller가 보낸 status·verifier 이름·hash를 신뢰 경계 안으로 자동 수용하지 않음 |
+
+동일 주체가 여러 역할을 맡을 수는 있으나 각 역할의 근거를 별도로 남긴다. 이 문서는 특정 개인/조직을 실제 검증자로 지정하지 않으며 현재 사용자 계약·별도 승인서의 진위 검증이 끝났다는 뜻도 아니다. 신뢰된 보관소는 별도 대규모 서비스가 필수라는 뜻이 아니다. 초기에는 접근 통제된 증거 파일과 검증 이력으로 시작할 수 있으나, caller의 임의 JSON으로 그 내용을 교체할 수 없어야 한다.
+
+### 9.2.2 R1-A `VERIFIED_ALLOWED` 검증 조건표
+
+각 적용 행위별로 아래 10개를 모두 통과해야 한다. 해당 없음은 검증된 근거와 사유가 있을 때만 인정하며 빈 값이나 조사자의 추측은 통과가 아니다.
+
+| ID | 검증 조건 | 남길 증거 / 실패 판정 |
+|---|---|---|
+| RA01 | 공식 원문·계약·권한 있는 주체의 승인 존재 및 진위 | 공식 발급 경로/원문 보관 참조, 문서 버전·조항, 서명/위임 확인 방법. 파일 hash만 있으면 UNVERIFIED |
+| RA02 | 출처와 적용 주체 일치 | 권리자→발급자 권한 관계 및 계약 적용 계정/법인/사용자 확인. 타 계정 계약을 가져오면 UNVERIFIED·scope mismatch |
+| RA03 | 현재 API 제품·자료 유형 일치 | 실제 source_product/endpoint와 약관 상품 범위 대조. KRX 다른 상품이나 KIS REST/WS를 무조건 동일시하지 않음 |
+| RA04 | 원본·파생 및 부모 closure의 범위 일치 | OHLCV 원본, 조건 문장, Risk, rank, hash 각각의 해당 조항/답변. 파생 미명시는 UNVERIFIED; 명시적 적용 금지는 VERIFIED_PROHIBITED |
+| RA05 | 외부 AI 수신자·처리 목적 일치 | TypeSafe 수신 주체/서비스와 일관성 검토 목적을 특정. 개인 조회/로컬 분석 허가만이면 AI 행위는 UNVERIFIED |
+| RA06 | 처리지역·저장·로깅·재위탁 등 실제 조건 일치 | 적용 MCA/주문서/처리조건을 원천 허용 범위와 대조. 확정된 허가 조건 미충족은 CONDITIONAL, 실제 조건을 모르면 UNVERIFIED |
+| RA07 | 유효 기간·적용 시점 확인 | effective_from/to와 전송 및 보관 행위 시점 확인. 명시적 무기한과 기한 미확인을 구별. 만료 시 이전 허용 재사용 금지 |
+| RA08 | 철회·변경·충돌 확인 | 공식 확인 경로, 확인 시각, revocation/supersedes/conflict 참조. 확인 불가·미해결 충돌은 UNVERIFIED/HOLD; 최신 문서 자동 우선 금지 |
+| RA09 | 증거와 대상 요청의 불변 결합 | 원문 digest+검증 이력+field/parent scope를 §9.4의 `bound_subject_hash`에 결합. 대상이 바뀌면 이전 판정 불일치 |
+| RA10 | 판정 책임·근거·시점 기록 | 권한이 확인된 verifier_ref, RA별 결과, decision_basis_refs, rights_verified_at와 상태를 보존. 판정 문자열만 제출하면 거부 |
+
+사용자 실행 동의는 제공처 이용권을 대신하지 않는다. 과거 승인, 유료 이용, 내부 파생 표시, 재해싱은 RA01~RA10의 대체 증거가 아니다. `VERIFIED_ALLOWED`는 확인된 **그 행위와 요청 범위**의 판정이며 무제한 사용권 표시가 아니다.
+
+### 9.2.3 R1-A 상태 전이·만료·철회·충돌
+
+| 현재 → 다음 | 전이 조건 | report/승인 처리 |
+|---|---|---|
+| 신규 → UNVERIFIED | 진위·범위·역할·시간 근거 중 하나라도 미확인 | HOLD, 미확인 이유 유지 |
+| UNVERIFIED → CONDITIONAL | 권한 근거의 진위/범위 확인, 명시된 미충족 조건 존재 | HOLD; 조건과 충족 증거 요구 |
+| UNVERIFIED/CONDITIONAL → VERIFIED_ALLOWED | RA01~RA10 통과 및 모든 조건 충족 | 새 검증 버전으로 대상 요청을 재평가. 실행 승인은 별도 |
+| 어느 상태 → VERIFIED_PROHIBITED | 진위·적용 범위를 확인한 명시적 금지 | 해당 행위/부모 closure DENIED. 파생까지 적용되는지 모르면 그 파생 범위는 UNVERIFIED |
+| VERIFIED_ALLOWED → UNVERIFIED 또는 CONDITIONAL | 만료·진위 훼손·철회·미해결 충돌·scope 변경이면 UNVERIFIED; 여전히 유효한 근거의 명시 조건 미충족만 CONDITIONAL | 관련 field verdict, data eligibility, 대기 중 실행 승인과 미전송 요청을 즉시 무효화. 명시적 금지가 확인되면 VERIFIED_PROHIBITED |
+| VERIFIED_PROHIBITED/무효화 상태 → VERIFIED_ALLOWED | 기존 제한을 정당하게 대체하는 권한 있는 근거와 우선순위/유효기간 확인 후 RA 전체 재검증 | 최신 날짜/수동 status 변경만으로 복구 불가 |
+
+원문과 과거 판정은 감사 이력으로 보존하고 현재 허용 상태로 덮어쓰지 않는다. 증거 버전·scope·부모 closure에 의존하는 report 및 아직 사용하지 않은 실행 승인을 추적해 무효화한다. 캐시된 성공 판정도 전송 직전에 현재 유효성을 다시 확인하며, 오래된 `checked_at`만으로 철회 없음이라고 추정하지 않는다. 공식 변경 확인이 불가능하면 HOLD다. 이미 보낸 요청은 소급해 취소됐다고 주장할 수 없다. 향후 그런 경우에는 신규/재시도 호출을 차단하고 영향 요청을 기록하며, 이미 보관된 자료는 적용 계약의 삭제·보관 의무를 별도로 확인한다. 이번 작업에서는 조회·삭제·전송을 수행하지 않는다.
+
 ### 9.3 최종 적격성 결정 흐름
 
 ```text
-동결 원본·hash·S7.1 정합성
-  → 전송 후보 JSON Pointer 전수 분류 + 모든 leaf의 실제 origin 증거
-  → field × purpose × recipient 권한 증거 + 부모 closure
-  → revision별 공개/확보시각 + 평가 cutoff + timezone 검증
-  → 남은 조건·Risk 근거의 충분성/Legacy 제한 확인
-  → data eligibility (ELIGIBLE / HOLD / DENIED)
-별도: Horizon + 모델 고정 + 계정 요금/예산 + 명시적 실행 승인 + 실제 adapter 승인
-  → execution status (READY / HOLD)
-최종: ELIGIBLE ∧ READY ∧ 현재 payload/증거 hash 일치인 경우만 호출 검토 가능
+1. 동결 Capture·Snapshot hash·S7.1 정합성 확인
+2. 전송 후보 JSON Pointer 재귀 분류 + 모든 leaf/부모 closure의 실제 origin 확인
+3. field × action × purpose × recipient 권한(RA01~10) 및 평가 모드별 시간(§6) 검증
+4. 남은 조건·Risk·기간 맥락의 충분성/Legacy 제한 확인
+5. 검증된 필드만으로 전송 전용 최소 body {state, questions, model} 생성
+6. 엄격한 타입/allowlist 검사 → 전체 body canonicalization → outbound_projection_hash
+7. 최종 body와 증거를 결합한 data eligibility 결정 + 독립 실행 승인 범위 대조
+8. 미래 전송 직전 전체 body·증거 유효성·실제 모델/질문/목적·승인 재검증
+9. ELIGIBLE ∧ execution READY ∧ 현재 검증/승인 결합 일치일 때만 향후 호출 가능
+   현재 S7.4: 8~9의 호출 구현/활성화 없음. 기존 PROVIDER_HOLD 유지
 ```
 
 `data eligibility=ELIGIBLE`이어도 실행을 허가하지 않는다. `LEGACY_LIMITED`의 원본 전략 신원 부재는 검증 목적이 그것을 허용하는 별도 사후 프로토콜 없이는 근거 충분성 HOLD다. `RETROSPECTIVE_CAPTURE`를 사전 성과 집계에 넣지 않는다. 최소 조건은 조건별 실제 PASS와 의미 대응, Risk status/warning 및 그 판단 범위, 실행 정책/기간 맥락이다. 필드 제거로 조건 일관성 검토 자체가 성립하지 않으면 `EVIDENCE_INSUFFICIENT`로 로컬 종료한다.
 
-누락·순환 계보, 미분류 필드, 패킷 hash 불일치, 원천 모순, timezone 없음은 예외를 허용 방향으로 삼키지 않는다. 기존 `SOURCE_RIGHTS_UNVERIFIED`, `SOURCE_RELEASE_TIME_UNVERIFIED`를 유지하고, 세부 사유로 `SOURCE_ORIGIN_UNVERIFIED`, `SOURCE_RIGHTS_PROHIBITED`, `RIGHTS_CONDITION_UNMET`, `RIGHTS_SCOPE_MISMATCH`, `RIGHTS_EVIDENCE_EXPIRED`, `LINEAGE_INCOMPLETE`, `LINEAGE_CYCLE`, `UNCLASSIFIED_OUTBOUND_FIELD`, `SOURCE_TIME_INCONSISTENT`, `TIMEZONE_UNVERIFIED`, `REVISION_ASOF_UNPROVEN`, `EVIDENCE_INSUFFICIENT`를 제안한다. 동일 hash 재계산으로 승인되지 않도록 trusted evidence resolver와 전송 직전 결합 검증이 필요하다.
+시간 검증은 모든 계산을 Capture 이전으로 강제하지 않는다. §6.4의 `RETROSPECTIVE_RESEARCH`는 동결 Snapshot의 현재 후처리를 허용하되 과거 사전 성능 분모에 넣지 않는다. `FORWARD_ASOF`는 사전 고정한 cutoff의 입력 revision과 판단 deadline·결과 관측의 순서를 입증해야 한다. 두 모드 모두 외부 전송 권한을 요구한다.
+
+누락·순환 계보, 미분류 필드, 패킷 hash 불일치, 원천 모순, timezone 없음은 예외를 허용 방향으로 삼키지 않는다. 기존 `SOURCE_RIGHTS_UNVERIFIED`, `SOURCE_RELEASE_TIME_UNVERIFIED`를 유지하고, 세부 사유로 `SOURCE_ORIGIN_UNVERIFIED`, `SOURCE_RIGHTS_PROHIBITED`, `RIGHTS_CONDITION_UNMET`, `RIGHTS_SCOPE_MISMATCH`, `RIGHTS_EVIDENCE_EXPIRED`, `RIGHTS_EVIDENCE_REVOKED`, `RIGHTS_EVIDENCE_CONFLICT`, `RIGHTS_AUTHENTICITY_UNVERIFIED`, `LINEAGE_INCOMPLETE`, `LINEAGE_CYCLE`, `UNCLASSIFIED_OUTBOUND_FIELD`, `SENSITIVE_OUTBOUND_DATA`, `OUTBOUND_APPROVAL_MISMATCH`, `SOURCE_TIME_INCONSISTENT`, `TIMEZONE_UNVERIFIED`, `REVISION_ASOF_UNPROVEN`, `EVIDENCE_INSUFFICIENT`를 제안한다. 동일 hash 재계산으로 승인되지 않도록 trusted evidence resolver와 전송 직전 결합 검증이 필요하다.
+
+### 9.4 R1-C 최종 HTTP 본문·증거·실행 승인 결합
+
+`input_hash`/Snapshot hash는 기존 로컬 원본을 식별한다. `outbound_projection_hash`는 **최종 `{state, questions, model}` 전체**를 아래 방식으로 정규화한 UTF-8 bytes의 SHA-256이며 `state`만의 hash가 아니다. 기존 원본 hash의 의미/알고리즘은 바꾸지 않는다.
+
+1. **정규화 계약:** body는 JSON 값만 허용하고 키 중복, NaN/Infinity, 알 수 없는 타입, 문자열로의 임의 강제 변환을 거부한다. 객체 키 정렬·공백 없는 구분자·UTF-8·문자열 그대로 보존을 버전으로 고정한다. 배열 순서, null과 키 생략, 숫자 타입은 임의로 합치지 않는다. A09가 사용하는 [prospective/models.py:24의 canonical_json](https://github.com/SkyBluekor/StockScope/blob/12532ac3b6b35758ac4a471157d3e32fab812368/backend/app/prospective/models.py#L24)은 `default=str`를 사용하므로 무검증 입력에 그대로 재사용하지 않는다. 엄격한 사전 타입 검사 후 검증된 범위에서 재사용하거나 별도 버전의 outbound 정규화를 사용한다.
+2. **증거 결합:** `bound_subject_hash`는 원본 identity/hash, outbound hash, lineage/rights/time manifest hash, contract/allowlist/canonicalization 버전, 질문 hash, model ID, 목적, 수신자/처리조건, 평가 모드·cutoff·deadline·protocol hash를 결합한 대상 식별값이다. rights manifest의 hash 대상은 원문 참조/검증 버전·scope·RA01~08의 검증 이력이며, 뒤에 생성되는 `bound_subject_hash`, RA09~10의 요청 결합 판정, 실행 승인 참조는 제외하여 순환을 막는다. RA09~10은 이 manifest와 대상 hash를 참조하는 불변 후속 판정 이력으로 같은 RightsEvidence 계약 안에 기록한다. 모든 실제 허용 판정은 후속 이력까지 resolver로 검증해야 하며 hash에서 제외됐다는 이유로 검사를 생략하지 않는다.
+3. **독립 실행 승인:** 신원이 확인된 실행 승인자의 승인 참조가 이 대상 식별값 및 모델·요금/예산·유효기간·요청 횟수/재시도 범위를 명시해야 한다. Horizon 정책과 실제 adapter 승인도 필요하다. 사용자 실행 동의만으로 원천 권한을 만들 수 없으며 데이터 적격성만으로 실행을 승인하지 않는다. 실행 승인자 지정과 실제 승인 증거는 현재 미확정이다.
+4. **전송 직전 재검증:** 미래 wrapper는 자격 증명 로딩/네트워크 접근 전에 실제 transport가 쓸 전체 body를 만들고 승인 대상과 대조한다. A15 transport는 `request`의 model 값을 그대로 쓰지 않고 설정된 `self.model_id`로 body를 구성하므로 그 **실제 모델**을 검사해야 한다. 원본·질문·모델·처리조건·권한 원문/검증 이력·기간·철회 상태·시점 증거 중 하나라도 달라지면 기존 report/승인을 무효화하고 1단계부터 재평가한다. 질문 변경 후 같은 state hash를 재사용하는 것도 차단한다.
+5. **검사와 사용의 일치:** 검사한 canonical bytes를 불변으로 고정하여 바로 전송하도록 미래 adapter 계약을 정한다. 승인 후 필드 추가, SDK의 다른 직렬화, model 교체, 재시도 시 재구성으로 다른 body가 나가면 안 된다. 현 A15의 `json=body` 전송이 이 bytes 결합을 이미 보장한다고 주장하지 않는다. 전송 직전 증거/승인 상태 버전 확인과 요청 소비를 결합하고, 그 사이 변경이 감지되면 보내지 않는다. 최종 body hash·승인/증거 버전·요청/응답 시각을 기록하되 키/Authorization은 body·진단 로그에 넣지 않는다.
+
+`outbound_projection_hash` 및 대상 hash는 **필요하지만 충분조건이 아니다**. 누구나 같은 내용의 hash를 계산할 수 있으므로 제공처 허가의 진위나 실행 승인자의 권한을 증명하지 못한다. trusted resolver가 확인한 증거와 승인 기록을 각각 검증해야 한다. 현재는 이 계약만 설계하며 실제 wrapper·HTTP 호출·승인 플래그 변경은 구현하지 않는다.
 
 ## 10. 미확인 사항 및 추가 확인 대상
 
 | 우선순위·대상 | 확보할 정확한 증거/답변 | 완료 판정 |
 |---|---|---|
 | P0 KRX 데이터 담당 | 현재 계정의 OPEN API 상품 승인·적용 약관; 조건 PASS 문장, Risk boolean, 후보 순위, 가격 포함 Snapshot hash를 미국 TypeSafe에 보내 처리·저장·telemetry에 사용하는 범위의 서면 답변 | 항목/목적/수신자/기간별 allow/deny 명시. “개인 연구 가능”만으로 완료 아님 |
-| P0 수집·DB 관리 | 원천 endpoint·행/revision·응답 digest·실제 수집/확보 로그; 외부 반입 DB의 원본 manifest | 기존 행별 재결합이 가능한 것만 분류. 불가능한 과거 자료는 UNKNOWN/DATE_ONLY 유지 |
+| P1 수집 증거 확인 | 허가된 소수 동결 입력에 연결된 원천 endpoint·행/revision·응답 digest·실제 수집/확보 로그; 외부 반입 자료의 제공된 manifest | 기존 자료에 재결합 가능한 증거만 분류. 불가능한 과거 자료는 UNKNOWN/DATE_ONLY 유지. 이번 작업의 Runtime DB 접근 또는 과거 전체 DB 조사 요청이 아님 |
 | P0 KRX 시점 담당 | 해당 OPEN API별 공개/갱신·정정 정책과 원본 행에 연결 가능한 시각 증거 | EOD 제공 스케줄과 개별 공개·확보 증거를 분리 |
-| P1 TypeSafe 계정 담당 | 적용 MCA/주문서, input/output/log/hash/backup의 보관·처리지역·하위처리자·삭제, 계정별 조건 | KRX가 허용한 범위와 모순 없음. 모델/요금 승인은 별도 |
-| P1 KIS | 개인 Open API 약관 원문, 거래소 시세 조건, 외부 AI 처리 허용 범위; 실제 연결된 REST/WS별 데이터 권리 | 향후 KIS를 추가할 때 검증. 구형 일봉 경로 존재로 사용권을 주장하지 않음 |
-| P2 OpenDART/FRED/NAVER | 데이터 유형/계열/검색 제품별 AI·재제공·보관 근거 | 현재 S7.3 데이터 적격성과 분리. “공공/무료/공개”라는 이유로 대체 허가 불가 |
+| P0 TypeSafe 계정 담당 | 적용 MCA/주문서, input/output/log/hash/backup의 보관·처리지역·하위처리자·삭제, 계정별 조건 | KRX가 허용한 범위와 모순 없음. 모델/요금 승인은 별도 |
+| 대체/확장 시 KIS | 개인 Open API 약관 원문, 거래소 시세 조건, 외부 AI 처리 허용 범위; 실제 연결된 REST/WS별 데이터 권리 | 향후 KIS를 추가할 때 검증. 구형 일봉 경로 존재로 사용권을 주장하지 않음 |
+| 대체/확장 시 OpenDART/FRED/NAVER | 데이터 유형/계열/검색 제품별 AI·재제공·보관 근거 | 현재 S7.3 데이터 적격성과 분리. “공공/무료/공개”라는 이유로 대체 허가 불가 |
 
 ### 10.1 대체 경로 — C
 
 | 선택지 | 가능한 평가 목적 | 필요한 선행조건 / 현재 판정 |
 |---|---|---|
-| KRX 별도 데이터 구입·분배 계약(B03) | 기존 OHLCV 기반 Scanner 평가 유지 가능성 | 외부 AI 처리·파생/순위·저장/재위탁 범위를 계약에 명시. **CONDITIONAL**, 체결·데이터 구매 안 함 |
+| KRX 별도 데이터 구입·분배 계약(B03) | 기존 OHLCV 기반 Scanner 평가 유지 가능성 | 외부 AI 처리·파생/순위·저장/재위탁 범위를 계약에 명시해야 하는 조건부 대안. 체결·데이터 구매 안 함. 실제 권한 상태는 **UNVERIFIED**이며 §9.2의 검증된 CONDITIONAL 권한을 확보했다는 뜻이 아님 |
 | KIS 또는 다른 시세 제공자 | 동일 지표 계산 가능성은 기술적으로 별개 | 해당 거래소 권리와 처리 계약, point-in-time revision 증거, 지표/종목 coverage 검증까지 필요. KIS로 바꾸기만 하면 허용되는 것은 아님 |
 | OpenDART 또는 FRED | 공시/거시 데이터 자체의 별도 질문 | OHLCV·Scanner 조건/Risk를 동등하게 대체하지 못함. 질문·평가 cohort 재설계 및 권리 검증 필요 |
 | 자체 규칙/순수 합성 자료 | 질문 스키마·응답 타입·충돌/ABSTAIN·차단 규칙 시험 | 실제 시장 판단 성능 증거가 아님. 실제 데이터 변형을 SYNTHETIC으로 표시 금지. 외부 유료 실행은 별도 승인 |
 | 필요한 필드 제외 | 허가된 나머지 증거로 동일한 질문이 성립할 때만 | 모든 남은 부모 권한과 충분성 재검증. 종목코드·가격만 제거하는 우회 불가 |
 | 로컬 규칙/로컬 모델 검토 | 외부 전송 없는 정합성·의미 충돌 검사 | 원천의 로컬 이용조건 안에서 수행. 로컬 모델도 외부 telemetry·업로드가 없는 경계 확인; 경제적 유효성은 별도 |
 
-## 11. 구현 우선순위와 검증 테스트
+## 11. R1-D 단계별 최소 구현 범위와 검증 테스트
 
 **C: 앞으로의 구현 순서. 이번 PR에서는 테스트 코드를 만들거나 Runtime 실행하지 않는다.**
 
-1. **출처와 계보 결합:** 신규 수집 manifest와 변환 DAG부터 설계·구현하고, 동결 Capture에는 외부 sidecar로만 연결한다. 기존 불명 자료는 실패 상태로 보존한다.
-2. **권한 증거 원장:** KRX 파생 데이터 및 TypeSafe 처리 범위의 공식 답변을 받아 scope별 fail-closed 검증을 구현한다. 답변이 금지/미확인인 동안 실제 adapter 구현·활성화는 진행하지 않는다.
-3. **시점 증거와 별도 승인 상태:** 신규 수집의 실제 확보 기록·revision을 보존하고 KST/UTC·사전/사후를 분리한다. 데이터 적격성이 검증된 뒤에도 Horizon·모델·계정요금·실행 승인 gate는 독립적으로 남긴다.
+목표는 **JEV 실종목 평가가 가능한지 소수 입력으로 판별**하는 것이다. P0를 먼저 진행하고 P1은 제한된 로컬 진단으로 묶는다. 다섯 논리 객체를 모두 영속화하거나 과거 시장 DB 전체의 DAG를 구축하는 일을 선행조건으로 삼지 않는다. 아래 수정 대상은 향후 별도 구현 작업의 후보이며 이번 PR은 문서만 수정한다.
+
+| 항목 | S7.4-P0 실제 원천 권한 확인 |
+|---|---|
+| 목표 | 현재 사용 KRX 제품·적용 계약과 원본/파생 외부 AI 행위의 가능 여부를 먼저 확인 |
+| 선행조건 | 실제 계정/상품 확인 자료와 공식 약관·계약·서면 답변에 대한 정당한 열람. 없으면 미확인 유지 |
+| 수정 대상 | 이 문서 §10의 질문·근거 및 기존 RightsEvidence 논리 계약의 확인 항목. 실행 코드·DB 추가 없음 |
+| 재사용 | §3 제품 구분, §5 공식 근거, §7 필드 표, §9.2의 역할·RA 검사 |
+| 필수 검증 | 타 상품/계정 계약, 출처 불명 승인서, 개인 조회 허가만 제시, 파생 scope 누락을 허용으로 판정하지 않는 사례 검토 |
+| 완료 조건 | 필요한 행위마다 확인된 허용/금지/조건/미확인과 원문·조항·담당 역할의 확인 여부를 기록. 답변 미수신은 조사 공백으로 남기며 권한 확보 완료가 아님 |
+| 진행/중단 | 허용 가능한 경로 또는 해소할 명확한 조건이 있으면 P1 및 제한적 P2를 검토. 미확인 동안 전송 HOLD. 권한 확보 불가가 확인되면 그 원천의 외부 JEV adapter, 외부 평가용 수집 확장·전면 계보 구축·P3 허용 경로를 중단. 합법적 로컬 진단/별도 합성 목적만 독립 검토 |
+
+| 항목 | S7.4-P1 읽기 전용 패킷 계보 진단 |
+|---|---|
+| 목표 | 제공된 소수 동결 Capture/fixture의 S7.3 필드를 따라가며 원천·부모·누락 증거를 표시 |
+| 선행조건 | P0의 제품/권한 공백 목록 및 해당 입력의 로컬 열람 권한. Runtime 접근은 향후 별도 작업 범위가 허용하는 경우에만; 이번 PR에서는 접근 없음 |
+| 수정 대상 | S7.3 prepare 결과를 소비하는 별도 진단 함수/기존 report 확장과 그 테스트. Snapshot/catalog/시장 DB 정본 수정 없음 |
+| 재사용 | prepare 무결성 검사, input_hash, 조건 신원 검증, §7 경로 표. SourceArtifact/LineageNode를 필요한 필드 참조로만 사용 |
+| 필수 테스트 | 원본 bytes/hash 불변, 부모 누락/순환/혼합 원천/미분류 필드 표시, prepared.identity 전송 금지, provider 0건 |
+| 완료 조건 | 선택 입력의 모든 leaf에 원천 확인 또는 UNKNOWN 사유가 있고 별도 진단 결과로 저장 가능. 계보 미확인은 실패를 숨기지 않는 정상 진단 결과이며 외부 적격이 아님 |
+| 진행/중단 | P0에서 수집·이용 가능한 경로가 확인되고 실제 시점 공백 해소가 필요할 때만 P2. 과거 UNKNOWN을 해소하려고 DB 전면 역추적/재작성으로 확장하지 않음 |
+
+| 항목 | S7.4-P2 신규 데이터 수집 증거 축적 |
+|---|---|
+| 목표 | 확인된 제품의 제한된 신규 수집에서 출처·응답/revision·최초 확보와 실패/캐시 의미를 입증 |
+| 선행조건 | P0에서 해당 수집·로컬 보관 권한 확인 및 외부 평가 가능성에 대한 근거/구체적 조건, P1에서 필요한 공백 특정. API 호출·보관 범위는 향후 작업에서 명시적으로 확정 |
+| 수정 대상 | 해당 수집 경계의 선택적 증거 기록과 read-only 연결만. 기존 DB 전체 migration, 과거 행 일괄 수정, Capture 재생성 없음 |
+| 재사용 | 기존 수집 응답/캐시 경계, digest, 시간 품질 enum/aware 파싱, SourceArtifact/TimeEvidence 부분 record. 최소 sidecar 우선 |
+| 필수 테스트 | 오류/타임아웃/부분 응답을 정상 확보 증거로 만들지 않음; cache hit는 원래 receipt 참조, 없으면 최초 확보 UNKNOWN; 같은 revision 재수집은 최초 시각 보존; EOD 수정은 새 revision; UTC/KST·naive·시작/수신 역전 검사 |
+| 완료 조건 | 제한된 신규 성공 응답의 payload/revision과 실제 측정된 시간 이벤트가 불변 결합되고, 오류/캐시/정정 사례가 검증됨. 시각을 제공하지 않는 원천의 공개시각은 여전히 UNKNOWN일 수 있음 |
+| 진행/중단 | P0 권한과 필요한 시간 증거가 검증 가능하면 P3. 정확한 revision/시점 입증이 불가능하면 해당 모드는 HOLD; 시각을 역산·생성하지 않음. 권한 확보 불가이면 외부 평가 목적의 확장 중단 |
+
+| 항목 | S7.4-P3 권한 및 시점 적격성 판정 |
+|---|---|
+| 목표 | 선택 입력과 최소 body에 대해 검증된 권한·시점·충분성을 결합한 로컬 EligibilityReport 생성 |
+| 선행조건 | 진위·적용 범위가 확인된 권한 증거와 모드별 시간 증거, 완전한 후보 필드 분류. 권한 없는 fixture로는 HOLD/거부 테스트만 수행 |
+| 수정 대상 | 기존 preflight와 분리된 report validator/순수 projection·hash 검증 및 테스트. 기존 무조건 PROVIDER_HOLD·비활성 provider 유지; 실제 transport 연결 없음 |
+| 재사용 | RightsEvidence·TimeEvidence 참조, prepare/기존 hash, 질문 계약/모델 pin 구조, §9.3~9.4 순서. 별도 승인 서비스·통합 원장 DB 구축 불필요 |
+| 필수 테스트 | RA01~RA10 위조/범위 불일치, 권한 만료·철회·충돌, 두 모드 시간 규칙, 전체 body 변경·민감 값, hash 재계산, 실행 승인 분리 |
+| 완료 조건 | 허용 fixture는 근거를 추적할 수 있고 모든 미확인/금지/불충분 사례는 HOLD/DENIED. 실제 증거가 없으면 실제 결과도 PROVIDER_HOLD가 정답이며 “전송 가능 검증 완료”로 보고하지 않음 |
+| 진행/중단 | 모든 데이터 조건이 충족돼도 실제 호출은 별도 adapter 구현 검토, Horizon·모델·요금/예산·정확한 요청 실행 승인 이후의 별도 작업. P3 완료는 호출 활성화 승인이 아님 |
+
+위 완료 조건은 향후 검증 기준이며 P0~P3 구현이 완료됐다는 선언이 아니다. 이번 작업에서 외부 문의 발송이나 신규 수집도 수행하지 않는다. 권한 문의를 위한 정확한 질문을 준비하는 것과 제공처가 실제 허가하는 것은 구분한다.
+
+### 11.1 구현 시 필수 회귀 테스트 계약
 
 | 단계 | 회귀 검증 항목 | 기대 결과 |
 |---|---|---|
@@ -358,6 +517,16 @@ pykrx, FinanceDataReader, yfinance, data.go.kr을 기본 Scanner 수집원이라
 | 사후·충분성 | 신호일 이후 Capture/판단, 원본 전략 ID 부재, 필수 Risk/조건 제거 | 사전 성과 제외, 허용된 사후 프로토콜 없으면 HOLD/불충분 |
 | 실행 독립성 | 데이터 증거만 완비, Horizon/모델/요금/동의 중 하나 누락; 승인 후 payload 변경 | 자격 증명/네트워크 접근 전 HOLD. 승인 hash 불일치 거부 |
 | 합성 분리 | 실제 후보에 `synthetic_only=True`, 변경된 fixture, 합성 결과를 실제 cohort로 합산 | S5/S6 거부 및 실제 평가 분모 오염 방지 |
+| R1-A 진위 | status/verifier_ref/hash를 함께 위조; 실제 공식 문서와 다른 bytes; 발급자 위임 불명; 다른 계정/제품의 진짜 계약 | RA01/02/03/10 실패. caller 재해싱으로 통과 불가; 적용 scope별 UNVERIFIED/HOLD |
+| R1-A 범위 | 원본 허용이나 파생 미명시, AI 처리 허용이나 로그/미국 지역/하위처리자 불명, 확정된 조건 미충족 | RA04~06 결과를 각각 UNVERIFIED 또는 CONDITIONAL로 구분; 명시 금지만 VERIFIED_PROHIBITED |
+| R1-A 무효화 | 승인 이후 만료/철회/충돌 발견, evidence 버전 변경, 오래된 성공 report 재사용 | RA07~09 재검사, 의존 report·대기 실행 승인 무효화; 이력 보존, 자동 최신 우선/복구 금지 |
+| R1-B 정상 후처리 | 동결 Capture 뒤 현재 packet 생성; cutoff 입력만 사용해 deadline 전에 정상 응답 | 사후 모드는 후처리 시각만으로 거부하지 않음; 사전 모드도 후처리 자체는 허용하되 각 증거/권한 gate 필수 |
+| R1-B 미래 혼입 | cutoff 뒤 revision/재수집을 당시 확보로 표시; 최신 가격을 과거 snapshot에 주입; outcome 확인 후 질문·판단 수정 | FORWARD_ASOF 거부. 사후 분석으로 명시한 새 revision도 과거 사전 분모에 포함 불가 |
+| R1-B 이벤트 의미 | completed_at을 최초 확보/commit으로 대체; 요청 시작만 deadline 이전이고 검증 응답은 이후; 결과 관측 이력 누락 | 거짓 증거 승격 금지; 사전 모드 HOLD/기한 실패. 기록이 늦다는 이유로 최초 관측이 늦었다고 추정하지 않음 |
+| R1-C 전체 body | 같은 state에서 questions/model 교체; transport의 self.model_id 불일치; 추가 중첩 키; canonical 이후 body 수정 | 전체 outbound hash/승인 결합 불일치로 credential/network 접근 전 차단 |
+| R1-C 엄격한 JSON | 중복 키·NaN/Infinity·datetime 객체 강제 문자열화·배열 재정렬·필수 키 누락 | 정규화 전 거부 또는 승인 대상 불일치. input_hash가 같아도 최종 body 검사 생략 불가 |
+| R1-C 민감 정보 | 허용 키 statement/questions에 종목명·코드·계좌·잔고·수량·인증 정보 삽입; 별칭/인코딩한 계좌 원천 값 | 값의 계보/고정 생성 규칙으로 제외·차단, 불명 자유 텍스트 HOLD. 현재 packet에 계좌정보가 있다는 전제 없이 음성 fixture 사용 |
+| R1-D 범위 제한 | 기존 DB 전체 migration 없이 소수 fixture 진단; P0 권한 불가/응답 미수신 | 전자는 원본 불변·UNKNOWN 표시 가능; 후자는 HOLD 및 외부 평가 목적 구현 확장 중단, 시간 증거 조작으로 우회 불가 |
 
 문서 검증은 기준 커밋·코드 경로/줄 링크·S7.3 leaf 필드 전수 대조·Markdown 표 구조·문서 한 파일만 변경 여부로 수행한다. 이 검증을 실제 Capture 재현 성공이나 S7.4 구현 테스트 PASS라고 보고하지 않는다.
 
@@ -365,9 +534,27 @@ pykrx, FinanceDataReader, yfinance, data.go.kr을 기본 Scanner 수집원이라
 
 | 범위 | 판정 | 사실 수준·이유 |
 |---|---|---|
-| 로컬 분류/계보/증거 계약 및 차단 검증 구현 | **GO** | C: 이 문서의 신규 설계 범위. 원천 조회·저장 자체의 계약 문제를 면제하는 승인은 아님 |
+| P0 권한 확인 및 P1 소수 입력의 읽기 전용 진단 | **GO** | C: 착수 가능한 최소 범위. 로컬 열람 권한과 실제 입력 확보는 별도 조건이며 원천 조회·저장 자체의 계약 문제를 면제하는 승인은 아님 |
+| P2 신규 수집 증거 및 P3 적격성 판정 구현 | **CONDITIONAL** | C: §11의 선행조건을 충족하는 범위에서 단계적으로 착수. 현재 조사만으로 권한/시간 확보 또는 구현 완료를 주장하지 않음 |
 | 별도 허가를 받은 미래 데이터·수신 조건으로 외부 평가 | **CONDITIONAL** | C: field별 권리·원천/revision·시간·충분성 및 독립 실행 승인이 모두 필요 |
 | 현재 S7.3 실제 시장 packet 외부 TypeSafe 호출 | **NO-GO** | A: 실제 adapter 비활성·항상 HOLD. B01: 원본 제3자 제공 제한. C: 파생정보 AI 범위·개별 계보/공개시각 미확인 |
 | 기존 사용자 Capture를 당시 사전 JEV 성과로 평가 | **NO-GO** | C: 사용자 보고가 사후 Capture이며 본 조사에서 원본 미재검증. A: 실제 시장 JEV 호출 경로 없음 |
 
 **S7.4가 우선 해결할 세 문제는 (1) 행·필드별 제품/계보 증거의 부재, (2) 파생정보와 TypeSafe 처리·보관까지 포괄하는 권한 증거의 부재, (3) 원천 공개·최초 확보·수정 revision 시각 증거의 부재다.** 이를 해결해도 `LEGACY_HORIZON_UNDEFINED` 또는 수치 기간 정책, `PINNED_MODEL_AND_BILLING_NOT_VERIFIED`, `EXPLICIT_EXECUTION_APPROVAL_MISSING`, `REAL_MARKET_PROVIDER_NOT_AUTHORIZED`는 별도의 차단이다. 현재 시장 데이터 중 외부 AI 전송을 검증 완료한 자료는 **없다**.
+
+### 12.1 DOC-R1 계약 완결성 확인
+
+| 질문 | 답변과 연결 절 | 남은 미확정 사항 |
+|---|---|---|
+| 1. 어떤 데이터가 KRX 원본/내부 계산인가? | §2~4·§7: 가격/거래량 등 원본과 조건 PASS·Risk·rank·hash 등 파생/내부 판단을 필드별 구분 | 개별 사용자 자료의 실제 원천은 제공된 증거로 별도 확인 필요 |
+| 2. 내부 계산의 외부 부모는 무엇인가? | §2·§7·§9.2: KRX 가격/지표·모집단 등 closure를 유지; 문장화/해싱으로 단절되지 않음 | 기존 자료의 행/revision 연결 공백은 UNKNOWN |
+| 3. 제품 약관은 어떤 행위에 적용되는가? | §3·§5·§9.2/RA03~06: 제품과 LOCAL_READ/DERIVE/AI_TRANSMIT/PROCESS/STORE 등 개별 행위를 대응 | 실제 계정 계약 및 파생 AI·보관 범위 미확인 |
+| 4. 누가 무엇으로 VERIFIED_ALLOWED를 판정하는가? | §9.2.1~9.2.2: 권한자/발급자와 검증자를 구분, 진위·scope 등 RA01~10 통과 후 검증 책임자가 근거·시점 기록 | 실제 검증자 지정 및 사용자 승인서 진위 확인 미완료 |
+| 5. 사후/사전 시점 증거는 무엇인가? | §6.3~6.4·§9.3: 이벤트별 revision 증거, 사후 표시/분모 분리, 사전 cutoff·deadline·결과 관측 분리 | 실제 공개/최초 확보·commit/판단 증거 누락은 보충 없이 HOLD |
+| 6. 전송 body와 검증 입력의 일치는? | §8.1·§9.4: 원본→allowlist projection 연결, 전체 body canonical bytes/hash와 증거/모델/질문/실행 승인 결합, 직전 재검사 | 미래 adapter 미구현; 실제 일치 검증 완료가 아님 |
+| 7. 만료·철회는 무엇을 무효화하는가? | §9.2.3·§9.4: 의존 field verdict/report·대기 실행 승인·미전송 요청, 캐시된 성공 판정 재사용 차단 | 실제 증거 변경 확인 경로/운영 책임은 P0에서 확인 |
+| 8. 최소 구현 범위는? | §9.1·§11: P0 우선, P1 소수 read-only 진단, P2/P3는 필요 증거·판정만 단계적으로 | 신규 5개 DB/과거 전체 DAG는 요구하지 않음 |
+| 9. 권한 확보 불가이면 무엇을 중단하는가? | §11 P0/P2/P3: 해당 원천의 외부 adapter·외부 평가용 수집/계보 확장·허용 경로 중단 | 대체 원천도 자동 허가되지 않으며 별도 권한/목적 검토 |
+| 10. TypeSafe를 왜 계속 비활성화하는가? | §8·§12: 원본 제3자 제공 제한, 파생 AI 권한·시점 증거 부족, 실제 adapter 및 독립 실행 승인 부재 | 실제 시장 호출 **NO-GO / PROVIDER_HOLD**, 본 문서 보완으로 해제되지 않음 |
+
+설계 규칙을 구체화한 것과 실제 사용자 계약/허가·시점 증거를 확보한 것은 별개다. 따라서 DOC-R1 문서 보완은 검토 가능하지만 실제 데이터의 권한 확보나 S7.4 구현 완료를 뜻하지 않는다.
