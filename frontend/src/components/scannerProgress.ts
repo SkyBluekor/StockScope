@@ -110,16 +110,22 @@ export function scannerMotionSteps(
   const stopStatus: ScannerMotionStatus = jobStatus === "cancelled" ? "cancelled" : "failed";
   const analysisStarted = view.analysisStarted;
   const resultStage = stage === "scanner_priority_rank" || stage === "scanner_complete";
-  const stoppedAtPrep = Boolean(
-    !analysisStarted || String(details.failed_stage ?? "").startsWith("scanner_prepare"),
+  // Backend terminal events can replace the stage with 'failed'/'cancelled'.
+  // Unless a concrete previous stage is available, don't invent which phase failed.
+  const stopStage = typeof details.failed_stage === "string" ? details.failed_stage : stage;
+  const stoppedAtPrep = stopped && Boolean(
+    stopStage && (stopStage.startsWith("scanner_prepare") || stopStage === "queued"),
+  );
+  const stoppedAtAnalysis = stopped && Boolean(
+    stopStage && (ANALYSIS_ALIAS[stopStage] || stopStage === "scanner_history_prepare"),
   );
 
   const data: ScannerMotionStatus = complete || analysisStarted
     ? "done"
-    : stopped && stoppedAtPrep ? stopStatus : running ? "active" : "waiting";
+    : stoppedAtPrep ? stopStatus : running ? "active" : "waiting";
   const analysis: ScannerMotionStatus = complete || (running && resultStage)
     ? "done"
-    : stopped && !stoppedAtPrep ? stopStatus
+    : stoppedAtAnalysis ? stopStatus
       : running && analysisStarted ? "active" : "waiting";
   const result: ScannerMotionStatus = complete ? "done"
     : running && resultStage ? "active" : "waiting";
