@@ -198,12 +198,16 @@ def build_scanner_review_input(
             isinstance(item, dict) and item.get("status") == "PASS"
             for item in proof_items
         )
-        or {
-            (item.get("condition_id"), item.get("source_condition"))
+        or any(
+            not isinstance(item.get("condition_id"), str)
+            or not item["condition_id"]
+            or not isinstance(item.get("source_condition"), str)
+            or not item["source_condition"]
             for item in proof_items
-        } != {
-            (item.get("condition_id"), item.get("source_condition"))
-            for item in items
+        )
+        or len({item["source_condition"] for item in proof_items}) != len(proof_items)
+        or {item["source_condition"] for item in proof_items} != {
+            item.get("source_condition") for item in items
         }
     ):
         raise DecisionReviewContractError("ENGINE_PASS_PROOF_MISMATCH")
