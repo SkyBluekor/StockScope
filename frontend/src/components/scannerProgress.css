@@ -615,3 +615,147 @@
   .ai-review-flow-step small { white-space: normal; }
   .scanner-ai-detail-grid { grid-template-columns: 1fr; }
 }
+
+/* SC-UX-MOTION-S1: a compact public-facing rail; raw technical stages stay in details. */
+.scanner-motion-progress {
+  padding: 13px 14px 10px;
+  background: var(--bg-surface, var(--surface-muted));
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+}
+
+.scanner-motion-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.scanner-motion-step {
+  min-width: 0;
+  padding: 0 5px 0 0;
+  opacity: .68;
+}
+
+.scanner-motion-step-track {
+  display: flex;
+  align-items: center;
+  position: relative;
+  height: 28px;
+  margin-bottom: 5px;
+}
+
+.scanner-motion-step-dot {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 25px;
+  height: 25px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 50%;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.scanner-motion-step-line {
+  height: 2px;
+  position: absolute;
+  left: 25px;
+  right: 0;
+  top: 13px;
+  background: var(--border-subtle);
+}
+
+.scanner-motion-step strong,
+.scanner-motion-step small {
+  display: block;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.scanner-motion-step strong { font-size: 12px; color: var(--text-primary); }
+.scanner-motion-step small { font-size: 11px; color: var(--text-muted); }
+
+.scanner-motion-step.done,
+.scanner-motion-step.active,
+.scanner-motion-step.failed,
+.scanner-motion-step.cancelled { opacity: 1; }
+
+.scanner-motion-step.done .scanner-motion-step-dot {
+  color: var(--status-positive);
+  border-color: var(--status-positive);
+  background: color-mix(in srgb, var(--status-positive) 12%, var(--bg-surface));
+}
+
+.scanner-motion-step.done .scanner-motion-step-line {
+  background: color-mix(in srgb, var(--status-positive) 60%, var(--border-subtle));
+}
+
+.scanner-motion-step.active .scanner-motion-step-dot {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.scanner-motion-step.active .scanner-motion-step-dot::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: -6px;
+  border: 1px solid var(--primary);
+  border-radius: 50%;
+  animation: scanner-motion-ring 1.6s ease-out infinite;
+}
+
+.scanner-motion-step.active .scanner-motion-step-line {
+  background: linear-gradient(90deg, var(--primary), var(--border-subtle), var(--primary));
+  background-size: 200% 100%;
+  animation: scanner-motion-line 1.6s linear infinite;
+}
+
+.scanner-motion-step.failed .scanner-motion-step-dot {
+  color: var(--status-warning);
+  border-color: var(--status-warning);
+}
+
+.scanner-motion-step.cancelled .scanner-motion-step-dot { color: var(--text-muted); }
+
+@keyframes scanner-motion-ring {
+  0% { opacity: .56; transform: scale(.72); }
+  100% { opacity: 0; transform: scale(1.25); }
+}
+
+@keyframes scanner-motion-line {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+.scanner-motion-details { min-width: 0; border-top: 1px solid var(--border-subtle); padding-top: 8px; }
+.scanner-motion-details > summary {
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  width: fit-content;
+}
+.scanner-motion-details > .scanner-progress-stages { margin-top: 11px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .scanner-motion-step.active .scanner-motion-step-dot::after,
+  .scanner-motion-step.active .scanner-motion-step-line,
+  .ai-review-flow-step.active .ai-review-flow-dot::after,
+  .ai-review-flow-step.active .ai-review-flow-line {
+    animation: none !important;
+  }
+  .scanner-motion-step.active .scanner-motion-step-dot::after { content: none; }
+}
+
+@media (max-width: 540px) {
+  .scanner-motion-progress { padding: 10px 9px; }
+  .scanner-motion-step strong { font-size: 11px; }
+  .scanner-motion-step small { font-size: 10px; }
+}
