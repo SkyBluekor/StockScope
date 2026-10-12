@@ -156,6 +156,13 @@ def display(value: dict[str, Any], *, as_json: bool = False) -> None:
                       f" | 실제 원천: {field['actual_source']}"
                       f" | 전송권한: {field['rights_status']}"
                       f" | 시각: {field['time_quality']}")
+                if field.get("local_source_ref"):
+                    print(f"    로컬 근거: {field['local_source_ref']}")
+                if field.get("producer_ref") and (
+                    field["path"].endswith(".statement")
+                    or field["path"] in ("baseline.rank", "baseline.risk.status")
+                ):
+                    print(f"    생성 함수: {field['producer_ref']}")
             for code in record["reason_codes"]:
                 print(f"  보류 사유: {LINEAGE_REASONS_KO.get(code, code)} [{code}]")
         print("※ 코드상 예상 출처는 개별 자료의 실제 출처/이용권 증명이 아닙니다.")
