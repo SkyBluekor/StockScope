@@ -21,6 +21,8 @@ for candidate in (ROOT, BACKEND):
         sys.path.insert(0, str(candidate))
 
 from app.jev.activation_readiness import assess_jev_act1_readiness
+from app.jev.semantic_reachability import audit_current_pass_mapping_reachability
+from app.horizon import horizon_policy_catalog, resolve_horizon_context
 from app.jev.semantic_scope_diagnostic import (
     LOCAL_INSPECTION_CATEGORIES,
     RESIDUAL_REVIEW_OBSERVED,
@@ -206,6 +208,8 @@ def audit_stored_prospective(db_path: Path) -> dict[str, Any]:
 def explain_user_jev_blockers(
     audit: dict[str, Any],
     readiness: dict[str, Any],
+    *,
+    reachability: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Plain aggregate reasons, never a request to activate provider.
 
@@ -227,11 +231,13 @@ def explain_user_jev_blockers(
         reasons.append("EXPLICIT_HORIZON_UNSUPPORTED")
     # The numeric horizon rules remain EVALUATION_PENDING, including when
     # callers pass "SHORT"/"MEDIUM" strings. No synthetic fake test approves them.
-    from app.horizon import resolve_horizon_context
     if any(not resolve_horizon_context(h).is_activatable for h in ("SHORT", "MEDIUM")):
         reasons.append("HORIZON_NUMERIC_POLICY_NOT_APPROVED")
     if v4_ready == 0:
         reasons.append("NO_V4_RESIDUAL_PROVIDER_ELIGIBLE_CANDIDATES")
+    if (v4_ready == 0 and isinstance(reachability, dict) and
+        reachability.get("conclusion") == "NO_RESIDUAL_FROM_CURRENT_COMPLETE_PASS_MAPPINGS"):
+        reasons.append("CURRENT_PASS_MAPPINGS_CANNOT_PRODUCE_RESIDUAL")
     for item in readiness.get("checks") or []:
         if item.get("status") != "PASS" and item.get("code") in {
             "V4_ACTUAL_CANARY", "V4_THRESHOLD_MODEL_BINDING",
@@ -247,6 +253,7 @@ def explain_user_jev_blockers(
         "legacy_horizon_blocked": horizon_blocked,
         "v4_scope_eligible_not_approved": v4_ready,
         "local_match_is_not_a_model_call": local_matches,
+        "semantic_mapping_probe_not_real_market_data": True,
         "external_network_requests": 0,
         "provider_calls": 0,
         "db_writes": 0,
@@ -256,10 +263,43 @@ def explain_user_jev_blockers(
 def run_readiness_audit(db_path: Path) -> dict[str, Any]:
     audit = audit_stored_prospective(db_path)
     gate = assess_jev_act1_readiness(audit=audit)
+    reachability = audit_current_pass_mapping_reachability()
+    horizon = horizon_policy_catalog()
+    explicit = [resolve_horizon_context(intent) for intent in ("SHORT", "MEDIUM")]
+    categories = audit["categories"]
     return {
         "audit": audit,
         "activation_readiness": gate,
-        "user_jev_execution": explain_user_jev_blockers(audit, gate),
+        "horizon_gate": {
+            "policy_version": horizon["policy_version"],
+            "numeric_policy_approved": horizon["numeric_policy_approved"],
+            "explicit_scanner_intents": [
+                {
+                    "intent": item.intent,
+                    "status": item.support_status,
+                    "reason_code": item.reason_code,
+                    "scanner_request_allowed": item.is_activatable,
+                }
+                for item in explicit
+            ],
+            "legacy_scanner_request_allowed": True,
+            "legacy_capture_backfill_allowed": False,
+            "production_policy_unchanged": True,
+        },
+        "semantic_reachability": reachability,
+        "candidate_path": {
+            "stored_samples": audit["total_samples"],
+            "entry_candidates": (
+                audit["total_samples"] - categories["ACTION_OUT_OF_SCOPE"]
+            ),
+            "legacy_horizon_entry_blocked": categories["LEGACY_HORIZON_BLOCKED"],
+            "v4_compatible_local_routes": audit["v4_compatible"],
+            "technically_provider_eligible_not_approved": audit["provider_eligible"],
+            "product_model_review_activated": False,
+        },
+        "user_jev_execution": explain_user_jev_blockers(
+            audit, gate, reachability=reachability
+        ),
     }
 
 
@@ -284,7 +324,7 @@ def main() -> int:
     print("=" * 70)
     print(f"분석 캡처 {audit['total_captures']}개 / 저장 후보 {audit['total_samples']}개")
     print(f"정식 V4 검사 가능 {audit['v4_compatible']}개")
-    print(f"정식 AI 호출 승인 후보 {audit['provider_eligible']}개")
+    print(f"V4 모델 추가 검토 기술적 적격 {audit['provider_eligible']}개 (호출 승인 아님)")
     for key in CATEGORIES:
         print(f"  {key:29s} {audit['categories'][key]}")
     legacy = audit["legacy_local_inspection"]
@@ -292,6 +332,17 @@ def main() -> int:
     for key in LOCAL_INSPECTION_CATEGORIES:
         print(f"    {key:27s} {legacy['categories'][key]}")
     print("기간 미지정 로컬 의미 진단은 정식 Jev 모델 검토 승인이 아닙니다.")
+    horizon = result["horizon_gate"]
+    print(f"투자 기간 수치 정책 승인: {'예' if horizon['numeric_policy_approved'] else '아니요'}")
+    for option in horizon["explicit_scanner_intents"]:
+        print(f"  {option['intent']}: {option['status']} · {option['reason_code']}")
+    structural = result["semantic_reachability"]
+    print(
+        f"현재 의미 규칙 구조 점검: {structural['strategy_count']}개 전략 / "
+        f"정상 PASS 근거로 residual 발생 {structural['residual_routes']}개 / "
+        f"계약 불확정 {structural['undetermined_contracts']}개"
+    )
+    print("※ 구조 점검은 합성 PASS 계약 확인이며 실시장 후보 또는 AI 호출 실적이 아닙니다.")
     print(f"제품 AI 활성화 판정: {gate['activation_verdict']} (활성화하지 않음)")
     execution = result["user_jev_execution"]
     print(f"실제 JEV 호출 가능: 아니요 · V4 추가검토 기술적 적격 {execution['v4_scope_eligible_not_approved']}건")
