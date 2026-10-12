@@ -17,6 +17,7 @@ from app.strategy.condition_semantics import condition_sources
 from app.strategy.models import StrategyName
 from app.strategy.semantic_identity_bridge import (
     LEGACY_SELECTION_SOURCE,
+    scanner_repro_candidate_key,
     semantic_projection_candidate,
     verified_scanner_repro_rows,
 )
@@ -37,13 +38,13 @@ def _candidate() -> dict:
     n = len(condition_sources(STRATEGY))
     return {
         "market": "KOSPI", "code": "000001", "name": "synthetic-only",
-        "rank": 1, "strategy": STRATEGY,
+        "strategy": STRATEGY,
         "strategy_version_id": None, "strategy_definition_hash": None,
         "data_date": "2026-10-10", "current_price": 100,
         "candidate_state": "READY", "action": "ENTRY_CANDIDATE",
         "conditions": {"passed": n, "total": n, "missing": 0, "top_missing": []},
         "risk": {"status": "READY", "warning": False},
-        "entry_risk_guide": {}, "priority": {"tier": "READY"},
+        "entry_risk_guide": {}, "priority": {"tier": "READY", "rank": 1},
     }
 
 
@@ -51,10 +52,11 @@ def _audit_row(candidate: dict) -> dict:
     row = {
         key: deepcopy(candidate[key])
         for key in (
-            "market", "code", "rank", "strategy", "action",
+            "market", "code", "strategy", "action",
             "candidate_state", "data_date", "current_price", "conditions", "risk",
         )
     }
+    row["rank"] = candidate["priority"]["rank"]
     row["scanner_inputs"] = {
         "condition_details": [
             {"raw": raw, "status": "PASS", "condition_id": f"pass-{i}"}
@@ -108,6 +110,24 @@ def _fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     return candidate, data, path
 
 
+def test_real_scanner_rank_location_and_conflicting_rank_fail_closed():
+    candidate = _candidate()
+    audit = _audit_row(candidate)
+    assert "rank" not in candidate  # Actual Scanner ranks in priority, not at top level.
+    assert candidate["priority"]["rank"] == 1
+    assert audit["rank"] == 1
+    assert scanner_repro_candidate_key(candidate) == ("KOSPI", "000001", "1")
+    assert scanner_repro_candidate_key(audit) == ("KOSPI", "000001", "1")
+    tampered = deepcopy(candidate)
+    tampered["rank"] = 2
+    assert scanner_repro_candidate_key(tampered) == ("", "", "")
+    tampered = deepcopy(candidate)
+    tampered["priority"]["rank"] = 2
+    assert semantic_projection_candidate(
+        tampered, selection_policy=POLICY, audited=audit,
+    )["strategy_version_id"] is None
+
+
 def test_valid_repro_audit_enriches_only_semantic_source(tmp_path: Path, monkeypatch):
     candidate, data, path = _fixture(tmp_path, monkeypatch)
     rows = verified_scanner_repro_rows(data)
@@ -124,7 +144,8 @@ def test_valid_repro_audit_enriches_only_semantic_source(tmp_path: Path, monkeyp
     assert snapshot["strategy_version_id"] is None
     assert snapshot["strategy_definition_hash"] is None
     assert snapshot["action"] == before["action"]
-    assert snapshot["rank"] == before["rank"]
+    assert snapshot["priority"]["rank"] == before["priority"]["rank"]
+    assert "rank" not in snapshot
     assert snapshot["risk"] == before["risk"]
     assert snapshot["semantic_condition_evidence"]["passed"] == len(condition_sources(STRATEGY))
     v2 = snapshot["semantic_source_v2"]
@@ -174,8 +195,7 @@ def test_cached_foreign_and_active_policy_do_not_backfill(tmp_path: Path, monkey
     data["scanner_cache_hit"] = True
     assert verified_scanner_repro_rows(data) == {}
     data["scanner_cache_hit"] = False
-    with pytest.raises(AssertionError):
-        assert verified_scanner_repro_rows(data) == {}
+    assert len(verified_scanner_repro_rows(data)) == 1
     audited = next(iter(verified_scanner_repro_rows(data).values()))
     active = dict(POLICY, policy_source="ACTIVE_SELECTION_POLICY", fallback_used=False)
     assert semantic_projection_candidate(
@@ -222,6 +242,8 @@ def test_real_sqlite_prospective_capture_and_dedup(tmp_path: Path, monkeypatch):
     stored = samples[0]["snapshot"]
     assert samples[0]["snapshot_hash"] == digest_json(stored)
     assert stored["strategy_version_id"] is None
+    assert stored["priority"]["rank"] == 1
+    assert "rank" not in stored
     assert stored["semantic_source_v2"]["readiness"]["local_semantic_status"] != "LOCAL_INCOMPLETE"
     assert stored["semantic_strategy_identity"]["source"] == "LEGACY_ENGINE_IDENTITY_VERIFIED"
     original_risk = deepcopy(candidate["risk"])
