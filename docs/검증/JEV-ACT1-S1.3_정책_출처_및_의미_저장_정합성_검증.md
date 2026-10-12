@@ -287,3 +287,27 @@ git pull --ff-only origin main
 ```
 
 **별도 사용자 승인 이후에만 가능한 실제 유료 실험:** `.\.venv\Scripts\python.exe tools\data\jev_s6_micro_canary.py run-approved --model jev-latest`; CLI에서 호출 내용과 금액을 확인하고 한 번의 실행 문구를 정확히 입력해야 요청을 전송한다. 구현 완료와 실호출 5건 평가는 별개의 완료 상태다.
+
+## JEV-ACT2-S7 — 실제 Scanner 후보 추적 기반 Shadow 관찰 1차 (2026-10-12)
+
+**S7 1차는 로컬에서 사용 가능한 실제 후보/후속 가격 확보 기능이다.** S6.2의 실제 Jev 합성 실험 5건 중 정답 일치 4건, 마지막 모순 사례는 `REVIEW_REQUIRED` 0.85 및 `ABSTAIN` 0.15였다는 사용자 실제 로그는 그대로 보존한다. 그러나 이는 **실제 종목 대상 Jev 성과 검증이 아니다.**
+
+새 `backend/app/jev/scanner_shadow_s7.py`는 Prospective `prospective_capture_run`의 정본 `COMPLETE` 기록 및 `prospective_recommendation_sample`을 SQLite 쿼리 전용으로 읽는다. Snapshot Hash 불일치/정본 불명확/잘못된 스키마는 차단한다. 동일한 종목이 여러 시점에 추천된 기록은 별개의 후보-시점으로 취급한다. KRX Market Store의 `day_status`/종목 일별 `stock_daily`를 기존 `ProspectiveEvaluator`의 **OBSERVATION_ONLY** 모드로 관찰하여 5·10·20거래일 후 종가 변화와 MFE/MAE 정보를 붙인다. **추천일 종가를 체결 가능한 매수가로 가정하지 않고**, 정본 추천 이후 시장 데이터를 추천 당시 모델 입력에 혼합하지 않는다. 단순 가격 관찰을 투자 성과로 광고하지 않는다.
+
+현실적 차단 사유: 기존 S3 실제 후보 Projection은 `available_at=None`, `EOD_DATE_ONLY_EXACT_RELEASE_TIME_UNPROVEN`, `NOT_AUTHORIZED_FOR_PROVIDER_TRANSMISSION`, `HORIZON_NUMERIC_POLICY_NOT_APPROVED`를 명시한다. 현재 KRX/KIS 원천 데이터 및 가공 파생 신호의 외부 TypeSafe 전송 권한과 정확한 당시 가용 시간이 검증되지 않았다. 그러므로 S7은 **실제 시장 후보를 AI에 보내는 네트워크 호출을 0건으로 명시적으로 강제**한다. S6.2 합성 전송 제한을 없애거나 CLI 승인 플래그만으로 실제 정보 전송을 허용하지 않는다. `run-approved`는 차단 원인을 표시하고 호출하지 않는다. 향후 원천 자료 권한/가용 시간/투자 기간/실제 호출 승인 근거를 확보하기 전까지 **JEV 실종목 Shadow 판단, 손실 회피 및 기회 손실의 수치 평가는 미실행·미검증**으로 유지한다.
+
+사용 명령 (기존 DB 원본 변경 없음):
+```powershell
+git pull --ff-only origin main
+.\.venv\Scripts\python.exe -m pytest backend/tests/test_jev_act2_s7_real_scanner_shadow.py -q
+.\.venv\Scripts\python.exe tools\data\jev_s7_shadow.py status
+.\.venv\Scripts\python.exe tools\data\jev_s7_shadow.py inspect --limit 60
+.\.venv\Scripts\python.exe tools\data\jev_s7_shadow.py capture --limit 60
+.\.venv\Scripts\python.exe tools\data\jev_s7_shadow.py report
+.\.venv\Scripts\python.exe tools\data\jev_s7_shadow.py report --json
+```
+
+- `inspect`: 후보 및 관찰 자료 **조회만**; 실패 사유 표시. 후보 데이터가 존재해야 함.
+- `capture`: 원본 운영 DB에는 쓰지 않고, `data/jev_research/s7_shadow.sqlite3`(Git 추적 제외) 연구 DB에 시간별 변화를 불변 방식으로 기록한다. 같은 후보·관찰 입력 재실행 시 중복 저장 방지. 이 과정도 외부 TypeSafe 호출 0건.
+- `report`: 최신 후보별 5/10/20일 관찰 및 미관측 건수, 원본 Scanner 기반 변화율만 제시한다. `actual_jev_reviews=0`, `economic_uplift_proven=False` 상태를 실제 JEV 판단이 수집되기 전까지 유지한다.
+- 구현 및 CI 통과가 **S7 실제 Jev 모델 가치 검증 완료를 뜻하지 않으며**, 합법적인 외부 전송 시각 및 권한 자료 확보와 이후의 진입 가능 가격·거래비용 정책을 통과해야 실질적 비교가 가능하다.
