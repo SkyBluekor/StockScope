@@ -88,3 +88,50 @@ export function progressStatusMark(status: ScannerProgressStatus) {
   if (status === "failed") return "!";
   return "○";
 }
+
+/** Three user-facing phases derived from actual Scanner job/progress events.
+ * AI/Jev is deliberately excluded: Scanner completion is not AI completion. */
+export type ScannerMotionStatus = "waiting" | "active" | "done" | "failed" | "cancelled";
+export type ScannerMotionStep = {
+  id: "data" | "analysis" | "result";
+  label: string;
+  status: ScannerMotionStatus;
+};
+
+export function scannerMotionSteps(
+  jobStatus: string | undefined,
+  stage: string | undefined,
+  details: Record<string, unknown>,
+): ScannerMotionStep[] {
+  const view = scannerProgressView(stage, details);
+  const running = jobStatus === "queued" || jobStatus === "running";
+  const complete = jobStatus === "completed";
+  const stopped = jobStatus === "failed" || jobStatus === "cancelled";
+  const stopStatus: ScannerMotionStatus = jobStatus === "cancelled" ? "cancelled" : "failed";
+  const analysisStarted = view.analysisStarted;
+  const resultStage = stage === "scanner_priority_rank" || stage === "scanner_complete";
+  // Backend terminal events can replace the stage with 'failed'/'cancelled'.
+  // Unless a concrete previous stage is available, don't invent which phase failed.
+  const stopStage = typeof details.failed_stage === "string" ? details.failed_stage : stage;
+  const stoppedAtPrep = stopped && Boolean(
+    stopStage && (stopStage.startsWith("scanner_prepare") || stopStage === "queued"),
+  );
+  const stoppedAtAnalysis = stopped && Boolean(
+    stopStage && (ANALYSIS_ALIAS[stopStage] || stopStage === "scanner_history_prepare"),
+  );
+
+  const data: ScannerMotionStatus = complete || analysisStarted
+    ? "done"
+    : stoppedAtPrep ? stopStatus : running ? "active" : "waiting";
+  const analysis: ScannerMotionStatus = complete || (running && resultStage)
+    ? "done"
+    : stoppedAtAnalysis ? stopStatus
+      : running && analysisStarted ? "active" : "waiting";
+  const result: ScannerMotionStatus = complete ? "done"
+    : running && resultStage ? "active" : "waiting";
+  return [
+    { id: "data", label: "시장 데이터 확인", status: data },
+    { id: "analysis", label: "종목 분석", status: analysis },
+    { id: "result", label: "결과 정리", status: result },
+  ];
+}

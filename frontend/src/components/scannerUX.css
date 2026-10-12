@@ -690,3 +690,87 @@
   .scanner-ux6-quote-values { align-items: flex-start; }
   .scanner-ux6-quote-values { flex-direction: column; }
 }
+
+/* SC-UX-MOTION-S1: stable one-shot reveal for a newly completed foreground job. */
+.scanner-workspace .scanner-compare-list.scanner-motion-reveal > .scanner-compare-row {
+  animation: scanner-motion-candidate-in 220ms cubic-bezier(.22,.78,.26,1) both;
+}
+.scanner-workspace .scanner-motion-reveal > .scanner-compare-row:nth-child(2) { animation-delay: 65ms; }
+.scanner-workspace .scanner-motion-reveal > .scanner-compare-row:nth-child(3) { animation-delay: 130ms; }
+.scanner-workspace .scanner-motion-reveal > .scanner-compare-row:nth-child(4) { animation-delay: 195ms; }
+.scanner-workspace .scanner-motion-reveal > .scanner-compare-row:nth-child(5) { animation-delay: 260ms; }
+
+@keyframes scanner-motion-candidate-in {
+  from { opacity: 0; transform: translateY(7px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* AI truth first: this banner never implies model execution without a verified result. */
+.scanner-jev-motion-status {
+  display: grid;
+  grid-template-columns: 32px minmax(0,1fr);
+  gap: 11px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid var(--line-soft);
+  border-left: 3px solid var(--text-subtle);
+  border-radius: 9px;
+  background: var(--surface-muted);
+}
+
+.scanner-jev-motion-status .scanner-jev-motion-icon {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  color: var(--text-strong);
+  font-size: 17px;
+  font-weight: 800;
+  font-style: normal;
+}
+
+.scanner-jev-motion-status small { display: block; font-size: 11px; color: var(--text-subtle); }
+.scanner-jev-motion-status strong { display: block; font-size: 16px; line-height: 1.45; margin-top: 2px; }
+.scanner-jev-motion-status p { margin-top: 5px; color: var(--text-subtle); }
+.scanner-jev-motion-status.verified { border-left-color: var(--status-positive); }
+.scanner-jev-motion-status.verified .scanner-jev-motion-icon { color: var(--status-positive); border-color: var(--status-positive); }
+.scanner-jev-motion-status.working { border-left-color: var(--primary); }
+.scanner-jev-motion-status.working .scanner-jev-motion-icon { color: var(--primary); border-color: var(--primary); }
+.scanner-jev-motion-status.review { border-left-color: var(--status-warning); }
+.scanner-jev-motion-status.error { border-left-color: var(--status-warning); }
+
+.scanner-jev-motion-status.is-running .scanner-jev-motion-icon::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  pointer-events: none;
+  border: 1px solid var(--primary);
+  border-radius: 50%;
+  animation: scanner-motion-model-working 1.65s ease-out infinite;
+}
+
+@keyframes scanner-motion-model-working {
+  0% { opacity: .6; transform: scale(.8); }
+  100% { opacity: 0; transform: scale(1.22); }
+}
+
+.scanner-jev-motion-details > summary {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-subtle);
+  cursor: pointer;
+  width: fit-content;
+  margin: 3px 0 8px;
+}
+.scanner-jev-motion-details dl { margin-top: 7px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .scanner-workspace .scanner-motion-reveal > .scanner-compare-row,
+  .scanner-jev-motion-status.is-running .scanner-jev-motion-icon::after {
+    animation: none !important;
+  }
+  .scanner-jev-motion-status.is-running .scanner-jev-motion-icon::after { content: none; }
+}
