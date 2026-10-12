@@ -35,11 +35,35 @@ def _current_engine_identity(key: str) -> tuple[str, str] | None:
     return version.strategy_version_id, version.definition_hash
 
 
-def _row_key(candidate: dict[str, Any]) -> tuple[str, str, str]:
+def scanner_repro_candidate_key(candidate: dict[str, Any]) -> tuple[str, str, str]:
+    """Match Scanner's public priority.rank to the repro audit's top-level rank.
+
+    Ranking is frozen production logic: ranked Scanner candidates carry the
+    rank in priority, while the audit writer adds it to its *own* rows.
+    Reject conflicting representations instead of guessing the rank.
+    """
+    priority = candidate.get("priority")
+    priority_rank = priority.get("rank") if isinstance(priority, dict) else None
+    direct_rank = candidate.get("rank")
+    if (
+        priority_rank is not None
+        and direct_rank is not None
+        and str(priority_rank) != str(direct_rank)
+    ):
+        return ("", "", "")
+    rank = priority_rank if priority_rank is not None else direct_rank
+    if isinstance(rank, bool):
+        return ("", "", "")
+    try:
+        number = int(rank)
+    except (TypeError, ValueError, OverflowError):
+        return ("", "", "")
+    if number < 1 or str(rank) != str(number):
+        return ("", "", "")
     return (
         str(candidate.get("market") or ""),
         str(candidate.get("code") or ""),
-        str(candidate.get("rank") or ""),
+        str(number),
     )
 
 
@@ -90,7 +114,7 @@ def verified_scanner_repro_rows(result: dict[str, Any]) -> dict[tuple[str, str, 
         for row in rows:
             if not isinstance(row, dict):
                 return {}
-            key = _row_key(row)
+            key = scanner_repro_candidate_key(row)
             if not all(key) or key in out:
                 return {}
             out[key] = row
@@ -106,9 +130,13 @@ def _actual_passed_conditions(
     expected = condition_sources(key)
     if not expected:
         return None
+    candidate_key = scanner_repro_candidate_key(candidate)
+    audited_key = scanner_repro_candidate_key(audited)
+    if not all(candidate_key) or candidate_key != audited_key:
+        return None
     for name in (
-        "market", "code", "rank", "strategy", "action",
-        "candidate_state", "data_date", "current_price", "conditions", "risk",
+        "strategy", "action", "candidate_state", "data_date",
+        "current_price", "conditions", "risk",
     ):
         if candidate.get(name) != audited.get(name):
             return None
