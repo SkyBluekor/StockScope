@@ -155,6 +155,7 @@ def test_pinned_policy_and_actual_condition_proof_complete_offline(
     assert first["status"] == "COMPLETE"
     [stored] = catalog.list_samples(capture_run_id=first["id"])
     snapshot = stored["snapshot"]
+    assert stored["rank"] == original["priority"]["rank"]
     assert snapshot["semantic_policy_provenance"]["status"] == "VERIFIED_PINNED_EXECUTION"
     assert snapshot["semantic_policy_provenance"]["policy_id"] == pin.policy_id
     assert snapshot["semantic_condition_evidence"]["passed"] == len(condition_sources(STRATEGY))
@@ -265,6 +266,127 @@ def test_read_only_diagnostic_distinguishes_historical_proof_and_policy(tmp_path
     assert after["capture_statuses"]["COMPLETE"] == 1
     assert after["by_analysis_date"][0]["policy_provenance_unverified_or_mismatch"] == 1
     assert after["by_analysis_date"][0]["historical_engine_conditions_match"] == 1
+
+
+def test_uat_inspector_passes_only_with_full_original_proof_and_before_state(
+    tmp_path, monkeypatch,
+):
+    from tools.data.audit_jev_act1_s1_3_uat import baseline, inspect
+
+    pin, candidate, result, request, _ = _fixture(tmp_path, monkeypatch)
+    catalog = _catalog(tmp_path)
+    before = baseline(catalog.db_path)
+    capture = _store(catalog, pin, result, request, "uat-one")
+    original = deepcopy(result)
+    original["prospective_capture"] = {
+        "capture_id": capture["id"], "status": "COMPLETE",
+    }
+    db_mtime = catalog.db_path.stat().st_mtime_ns
+    verdict = inspect(
+        db=catalog.db_path, repro_root=tmp_path,
+        capture_id=capture["id"], before=before, scanner_result=original,
+    )
+    assert verdict["status"] == "PASS", verdict
+    assert verdict["rank_column_match"] == 1
+    assert verdict["policy_attested"] == 1
+    assert verdict["engine_evidence_stored"] == 1
+    assert verdict["semantic_v2_complete"] == 1
+    assert verdict["preexisting_captures_unchanged"] is True
+    assert catalog.db_path.stat().st_mtime_ns == db_mtime
+
+    no_proof = inspect(db=catalog.db_path, repro_root=tmp_path, capture_id=capture["id"])
+    assert no_proof["status"] == "INCONCLUSIVE"
+    assert "ORIGINAL_SCANNER_RESULT_NOT_SUPPLIED" in no_proof["inconclusive_reasons"]
+
+    altered = deepcopy(original)
+    altered["input_fingerprint"] = {"mismatch": True}
+    mismatch = inspect(
+        db=catalog.db_path, repro_root=tmp_path,
+        capture_id=capture["id"], before=before, scanner_result=altered,
+    )
+    assert mismatch["status"] != "PASS"
+    assert "ORIGINAL_REPRO_FULL_ATTESTATION_MISSING" in mismatch["inconclusive_reasons"]
+
+
+def test_uat_inspector_rejects_duplicate_and_detects_old_capture_changes(tmp_path, monkeypatch):
+    from tools.data.audit_jev_act1_s1_3_uat import baseline, inspect
+
+    pin, _, result, request, _ = _fixture(tmp_path, monkeypatch)
+    catalog = _catalog(tmp_path)
+    first = _store(catalog, pin, result, request, "first")
+    before = baseline(catalog.db_path)
+    second = _store(catalog, pin, result, request, "duplicate")
+    assert second["status"] == "DUPLICATE"
+    outcome = inspect(db=catalog.db_path, repro_root=tmp_path, capture_id=second["id"], before=before)
+    assert outcome["status"] == "INCONCLUSIVE"
+    assert "NEW_COMPLETE_CAPTURE_REQUIRED" in outcome["inconclusive_reasons"]
+    assert outcome["preexisting_captures_unchanged"] is True
+
+    # An earlier canonical COMPLETE may never be silently mutated.
+    with sqlite3.connect(catalog.db_path) as conn:
+        conn.execute(
+            "UPDATE prospective_recommendation_sample SET rank=? WHERE capture_run_id=?",
+            (99, first["id"]),
+        )
+    corrupted = inspect(
+        db=catalog.db_path, repro_root=tmp_path,
+        capture_id=second["id"], before=before,
+    )
+    assert "PRE_EXISTING_CAPTURES_MUTATED" in corrupted["reasons"]
+
+
+def test_uat_preflight_uses_existing_market_rows_without_network(
+    tmp_path, monkeypatch,
+):
+    from datetime import date as Date, timedelta
+    from tools.data.audit_jev_act1_s1_3_uat import preflight
+
+    pin = _pin()
+    catalog = _catalog(tmp_path)
+    market_db = tmp_path / "market.db"
+    with sqlite3.connect(market_db) as conn:
+        conn.executescript("""
+            CREATE TABLE day_status(market TEXT, bas_dd TEXT, kind TEXT, status TEXT);
+            CREATE TABLE stock_daily(market TEXT, bas_dd TEXT, stock_code TEXT, row_json TEXT);
+            CREATE TABLE main_index_daily(market TEXT, bas_dd TEXT, row_json TEXT);
+        """)
+        end = Date(2026, 10, 9)
+        start = end - timedelta(days=220)
+        rows = []
+        for i in range((end - start).days + 1):
+            d = start + timedelta(days=i)
+            if d.weekday() < 5:
+                key = d.strftime("%Y%m%d")
+                for market in ("KOSPI", "KOSDAQ"):
+                    rows += [(market, key, "stock", "data"), (market, key, "index", "data")]
+        conn.executemany("INSERT INTO day_status VALUES(?,?,?,?)", rows)
+        for market in ("KOSPI", "KOSDAQ"):
+            conn.execute("INSERT INTO stock_daily VALUES(?,?,?,?)", (market, "20261009", "synthetic", "{}"))
+            conn.execute("INSERT INTO main_index_daily VALUES(?,?,?)", (market, "20261009", "{}"))
+    previous_market_mtime = market_db.stat().st_mtime_ns
+    previous_sim_mtime = catalog.db_path.stat().st_mtime_ns
+    pre = preflight(
+        db=catalog.db_path, market_db=market_db,
+        analysis_date="2026-10-09", today=Date(2026, 10, 12),
+        pin_resolver=lambda: pin, check_git=False,
+        repro_root=tmp_path / "no-repro", cache_root=tmp_path / "no-cache",
+    )
+    assert pre["status"] == "READY_FOR_APPROVAL_NOT_EXECUTION", pre
+    assert pre["missing_market_store_slots_total"] == 0
+    assert pre["requested_date_complete"] == {"KOSPI": True, "KOSDAQ": True}
+    assert market_db.stat().st_mtime_ns == previous_market_mtime
+    assert catalog.db_path.stat().st_mtime_ns == previous_sim_mtime
+
+    with sqlite3.connect(market_db) as conn:
+        conn.execute("DELETE FROM day_status WHERE market='KOSPI' AND bas_dd='20261009'")
+    blocked = preflight(
+        db=catalog.db_path, market_db=market_db,
+        analysis_date="2026-10-09", today=Date(2026, 10, 12),
+        pin_resolver=lambda: pin, check_git=False,
+        repro_root=tmp_path / "no-repro", cache_root=tmp_path / "no-cache",
+    )
+    assert blocked["status"] == "BLOCKED"
+    assert "REQUESTED_DATE_MISSING_KOSPI" in blocked["reasons"]
 
 
 def test_no_pin_or_wrong_baseline_is_fail_closed():
