@@ -187,6 +187,26 @@ def build_scanner_review_input(
         or not isinstance(strategy, dict)
     ):
         raise DecisionReviewContractError("ENGINE_EVIDENCE_INCOMPLETE")
+    engine_proof = snapshot.get("semantic_condition_evidence")
+    proof_items = (
+        engine_proof.get("items") if isinstance(engine_proof, dict) else None
+    )
+    if (
+        not isinstance(proof_items, list)
+        or len(proof_items) != len(items)
+        or not all(
+            isinstance(item, dict) and item.get("status") == "PASS"
+            for item in proof_items
+        )
+        or {
+            (item.get("condition_id"), item.get("source_condition"))
+            for item in proof_items
+        } != {
+            (item.get("condition_id"), item.get("source_condition"))
+            for item in items
+        }
+    ):
+        raise DecisionReviewContractError("ENGINE_PASS_PROOF_MISMATCH")
     if (
         str(strategy.get("strategy_version_id") or "")
         != str(snapshot.get("strategy_version_id") or "")
@@ -321,7 +341,7 @@ def validate_decision_review_response(
     }:
         raise DecisionReviewContractError("RESPONSE_SCHEMA_INVALID")
     decision = response["decision"]
-    if decision not in ALLOWED_DECISIONS:
+    if not isinstance(decision, str) or decision not in ALLOWED_DECISIONS:
         raise DecisionReviewContractError("REVIEW_DECISION_INVALID")
     if (decision == "ABSTAIN") != (response["abstain_reason"] in ABSTAIN_REASONS):
         raise DecisionReviewContractError("ABSTAIN_REASON_INVALID")
@@ -345,6 +365,7 @@ def validate_decision_review_response(
             explanation = reason["explanation"]
             if (
                 not isinstance(refs, list) or not refs
+                or not all(isinstance(ref, str) for ref in refs)
                 or len(set(refs)) != len(refs)
                 or not all(isinstance(ref, str) and ref in evidence for ref in refs)
                 or not isinstance(explanation, str)
