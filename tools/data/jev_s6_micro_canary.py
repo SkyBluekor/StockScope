@@ -108,7 +108,7 @@ def _protocol(args: argparse.Namespace, cases: tuple[str, ...]) -> FrozenMicroPr
 
 def _upper_bound_check(protocol: FrozenMicroProtocol, cases: tuple[str, ...]) -> dict[str, Any]:
     """Conservative local planning only; provider cannot promise token maxima."""
-     input_rate = _decimal(protocol.verified_input_usd_per_million, "S6_ACCOUNT_PRICE_REQUIRED")
+    input_rate = _decimal(protocol.verified_input_usd_per_million, "S6_ACCOUNT_PRICE_REQUIRED")
     output_rate = _decimal(protocol.verified_output_usd_per_million, "S6_ACCOUNT_PRICE_REQUIRED")
     max_request_bytes = max(
         len(json.dumps(
@@ -184,16 +184,16 @@ def _approved(
     )
     _prompt_exact(
         input_fn,
-        "\\nTypeSafe 합성 데이터 실험 (최대 "
+        "\nTypeSafe 합성 데이터 실험 (최대 "
         + str(proto.max_attempts) + "회, 예약 총액 $"
-        + proto.total_budget_usd + ")\\n"
+        + proto.total_budget_usd + ")\n"
         "모델: " + proto.model_requested
-        + " (jev-latest는 변경 가능한 별칭이며 내부 버전 변경을 모두 감지할 수 없음)\\n"
+        + " (jev-latest는 변경 가능한 별칭이며 내부 버전 변경을 모두 감지할 수 없음)\n"
         "공개 입력 요금: $0.042/100만 토큰, 출력 무료 "
-        "(실제 계정 청구액 보증 아님).\\n"
-        "실제 시장·종목 정보는 전송하지 않습니다.\\n"
-        "유료 실행과 별칭 위험을 승인하면 다음 문구를 정확히 입력하세요:\\n"
-        + phrase + "\\n> ",
+        "(실제 계정 청구액 보증 아님).\n"
+        "실제 시장·종목 정보는 전송하지 않습니다.\n"
+        "유료 실행과 별칭 위험을 승인하면 다음 문구를 정확히 입력하세요:\n"
+        + phrase + "\n> ",
         phrase,
     )
     return ActualTrialApproval(
@@ -360,9 +360,77 @@ def _catalog_snapshots_readonly(conn: sqlite3.Connection) -> list[dict[str, Any]
     ]
 
 
+_CASE_KOREAN = {
+    "s5-consistent": "정상 전략",
+    "s5-condition-contradiction": "전략 조건 충돌",
+    "s5-risk-contradiction": "위험 판단 충돌",
+    "s5-insufficient-evidence": "근거 부족",
+    "s5-unresolved-ambiguity": "해결되지 않는 모순",
+}
+_DECISION_KOREAN = {
+    "PASS_THROUGH": "문제 없음",
+    "REVIEW_REQUIRED": "재검토 필요",
+    "ABSTAIN": "판단 보류",
+}
+
+
+def _display_report(report: dict[str, Any]) -> None:
+    """Plain-language output; raw journal remains accessible with --json."""
+    actual = report["by_origin"]["ACTUAL_PROVIDER"]
+    mock = report["by_origin"]["MOCK_TEST"]
+    print("=" * 63)
+    print("StockScope Jev · 합성 실험 결과")
+    print("=" * 63)
+    print(
+        f"실제 Jev 호출: {actual['attempts']}건 | 정상 응답 {actual['valid']}건"
+        f" | 오류 {actual['errors']}건 | 중단 {actual['interrupted']}건"
+    )
+    print(
+        f"합성 정답 일치: {actual['correct']}건 / {actual['valid']}건"
+        f" | 불일치 {actual['incorrect']}건"
+    )
+    print(
+        f"정상 사례 오탐: {actual['normal_false_reviews']}건"
+        f" | 조건 충돌 미탐: {actual['contradiction_misses']}건"
+        f" | 적절한 판단 보류: {actual['proper_abstentions']}건"
+    )
+    mean = actual["average_latency_ms"]
+    print(f"평균 응답 지연: {mean if mean is not None else '측정 안 됨'} ms")
+    print(
+        f"API 비용 추정: ${actual['known_estimated_cost_usd']}"
+        f" (공개 표준 요금 기준, 계정 청구액 아님)"
+    )
+    if actual["unknown_cost_attempts"]:
+        print(f"청구액 확인 불가 요청: {actual['unknown_cost_attempts']}건")
+    if actual["records"]:
+        print("-" * 63)
+        for record in actual["records"]:
+            gold = _DECISION_KOREAN.get(record["gold"], record["gold"])
+            got = _DECISION_KOREAN.get(record["choice"], record["choice"] or "응답 없음")
+            verdict = (
+                "일치" if record["state"] == "VALID" and record["choice"] == record["gold"]
+                else "불일치" if record["state"] == "VALID"
+                else f"응답 오류 ({record['reason'] or record['state']})"
+            )
+            print(
+                f"{_CASE_KOREAN.get(record['case'], record['case'])}: "
+                f"기대 {gold} → 실제 {got} · {verdict}"
+            )
+    else:
+        print("아직 실제 Jev 실험 결과가 없습니다.")
+    print(
+        f"Mock 테스트 기록: {mock['attempts']}건"
+        " (실제 모델 성능 집계에서 제외)"
+    )
+    print("※ 합성 판단 테스트이며 실전 투자 수익·손실 개선을 증명하지 않습니다.")
+
+
 def _display(value: dict[str, Any], *, as_json: bool) -> None:
     if as_json:
         print(json.dumps(value, ensure_ascii=False, indent=2))
+        return
+    if "by_origin" in value:
+        _display_report(value)
         return
     print("=" * 65)
     print("StockScope JEV S6 · 합성 Micro-Canary 연구 전용")
