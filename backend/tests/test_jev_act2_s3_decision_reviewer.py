@@ -10,6 +10,7 @@ import pytest
 
 from app.jev.decision_reviewer_offline import (
     DecisionReviewContractError, OfflineFakeShadowSession,
+    audit_capture_review_scope_readonly,
     build_scanner_review_input, load_canonical_candidate_readonly,
     validate_decision_review_response,
 )
@@ -285,3 +286,32 @@ def test_fake_shadow_records_are_copy_isolated(tmp_path):
     row = session.inspect(projection, _response("PASS_THROUGH"))
     row["decision"] = "REVIEW_REQUIRED"
     assert session.list_records()[0]["decision"] == "PASS_THROUGH"
+
+
+def test_readonly_capture_scope_reports_exclusions_without_fake_calls(tmp_path):
+    db, capture_id = _stored(tmp_path)
+    report = audit_capture_review_scope_readonly(
+        db, capture_id=capture_id, protocol_id="FAKE-ONLY-S3"
+    )
+    assert report["total_returned_samples"] == 1
+    assert report["offline_inspectable"] == 1
+    assert report["excluded"] == 0
+    assert report["actual_provider_eligible"] == 0
+    assert report["provider_calls"] == report["db_writes"] == 0
+
+    _replace_snapshot(db, lambda item: item["risk"].update(status="BLOCK"))
+    result = audit_capture_review_scope_readonly(
+        db, capture_id=capture_id, protocol_id="FAKE-ONLY-S3"
+    )
+    assert result["excluded"] == 1
+    assert result["reasons"]["RISK_BLOCKED_OUT_OF_SCOPE"] == 1
+
+
+def test_malformed_abstain_reason_is_rejected_not_executed(tmp_path):
+    db, capture_id = _stored(tmp_path)
+    projection = _projection(db, capture_id)
+    invalid = _response("ABSTAIN")
+    invalid["abstain_reason"] = ["INSUFFICIENT_EVIDENCE"]
+    record = OfflineFakeShadowSession().inspect(projection, invalid)
+    assert record["status"] == "ERROR"
+    assert record["failure_code"] == "ABSTAIN_REASON_INVALID"
