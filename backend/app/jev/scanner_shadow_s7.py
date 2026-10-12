@@ -234,6 +234,12 @@ def inspect_real_candidates(
     counts = Counter(reason for rec in records for reason in rec["blockers"])
     observed = sum(rec["observation"]["status"] == "OBSERVATION_ONLY" for rec in records)
     groups = Counter(rec["integrity"]["category"] for rec in records)
+    issue_counts = Counter(
+        code
+        for rec in records
+        if rec["integrity"]["category"] != "REFERENCE_ONLY"
+        for code in rec["integrity"]["codes"]
+    )
     return {
         "version": VERSION,
         "source_scope": "REAL_PROSPECTIVE_READ_ONLY",
@@ -247,6 +253,7 @@ def inspect_real_candidates(
         "legacy_limited_count": groups["LEGACY_LIMITED"],
         "integrity_invalid_count": groups["INVALID"],
         "integrity_category_counts": dict(sorted(groups.items())),
+        "integrity_issue_counts": dict(sorted(issue_counts.items())),
         "observed_price_count": observed,
         "real_jev_review_count": 0,
         "model_requests": 0,
