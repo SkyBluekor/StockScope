@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from app.strategy.semantic_source import attach_semantic_source
 from app.strategy.semantic_identity_bridge import (
+    scanner_repro_candidate_key,
     semantic_projection_candidate,
     verified_scanner_repro_rows,
 )
@@ -262,12 +263,7 @@ class ProspectiveCatalog:
         audited_rows = verified_scanner_repro_rows(result)
 
         def audit_for(item: dict[str, Any]) -> dict[str, Any] | None:
-            key = (
-                str(item.get("market") or ""),
-                str(item.get("code") or ""),
-                str(item.get("rank") or ""),
-            )
-            return audited_rows.get(key)
+            return audited_rows.get(scanner_repro_candidate_key(item))
 
         candidates = [
             self._candidate_snapshot(
