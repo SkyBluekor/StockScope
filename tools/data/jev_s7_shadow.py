@@ -20,6 +20,9 @@ for p in (ROOT, BACKEND):
 
 from app.jev.decision_reviewer_offline import DecisionReviewContractError
 from app.jev.scanner_integrity_s7_1 import EXPLAIN
+from app.jev.scanner_shadow_s7_3 import (
+    S73PreflightJournal, REASONS_KO, prepare_capture,
+)
 from app.jev.scanner_shadow_s7 import (
     VERSION, S7ShadowJournal, inspect_real_candidates,
 )
@@ -34,9 +37,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "mode", nargs="?", default="status",
-        choices=("status", "inspect", "capture", "report", "run-approved"),
+        choices=(
+            "status", "inspect", "capture", "report", "run-approved",
+            "prepare", "preflight",
+        ),
     )
     parser.add_argument("--capture-id", default=None)
+    parser.add_argument("--sample-index", type=int, default=None)
+    parser.add_argument(
+        "--save-preflight", action="store_true",
+        help="Append unchanged preflight verdicts to isolated research DB.",
+    )
     parser.add_argument("--limit", type=int, default=60)
     parser.add_argument("--simulation-db", type=Path, default=None)
     parser.add_argument("--market-db", type=Path, default=None)
@@ -67,6 +78,20 @@ def execute(
         }
     if args.mode == "report":
         return S7ShadowJournal(research_db).report()
+    if args.mode in ("prepare", "preflight"):
+        if args.save_preflight and args.mode != "preflight":
+            raise DecisionReviewContractError("S7_3_SAVE_PREFLIGHT_MODE_INVALID")
+        result = prepare_capture(
+            args.simulation_db or simulation_db_path(),
+            capture_id=args.capture_id,
+            limit=args.limit, sample_index=args.sample_index,
+            include_preflight=args.mode == "preflight",
+        )
+        if args.save_preflight:
+            result["research_write"] = S73PreflightJournal(research_db).record(result)
+        return result
+    if args.save_preflight or args.sample_index is not None:
+        raise DecisionReviewContractError("S7_3_OPTION_REQUIRES_PREPARE_OR_PREFLIGHT")
     if args.mode not in ("inspect", "capture"):
         raise DecisionReviewContractError("S7_MODE_INVALID")
     report = inspect_real_candidates(
@@ -89,6 +114,34 @@ def display(value: dict[str, Any], *, as_json: bool = False) -> None:
     print("StockScope S7 · 실제 추천 후보 관찰")
     print("=" * 63)
     print(f"상태: {value.get('status', 'UNKNOWN')}")
+    if "local_packets_ready" in value:
+        print(
+            f"실제 조회 {value['total_records']}건"
+            f" | 진입 {value['entry_candidates']}건"
+            f" | 로컬 JEV 입력 준비 {value['local_packets_ready']}건"
+        )
+        print(
+            f"완전 검증 {value['local_validated']}건"
+            f" | 제한적 레거시 {value['legacy_limited']}건"
+            f" | 제외 {value['invalid']}건"
+            f" | 참고 {value['references']}건"
+        )
+        print("실제 종목 TypeSafe 전송 허용: 0건 / 유료 호출: 0건")
+        print("-" * 63)
+        for item in value.get("records", []):
+            ident = item["identity"]
+            if item["category"] == "REFERENCE_ONLY":
+                continue
+            print(f"{ident['name'] or ident['ticker']} ({ident['ticker']})"
+                  f" · {item['category']} · {item['status']}"
+                  f" · {item['temporal_status']}")
+            for code in item.get("blocking_reasons", item.get("reason_codes", [])):
+                print(f"  제한: {REASONS_KO.get(code, code)} [{code}]")
+        if value.get("research_write"):
+            print(f"사전 점검 기록: 신규 {value['research_write']['inserted']}건"
+                  f" / 재사용 {value['research_write']['reused']}건")
+        print("※ 로컬 준비 성공은 외부 AI 전송 승인이나 수익률 개선을 의미하지 않습니다.")
+        return
     if "candidate_count" in value:
         print(f"전체 조회 기록: {value['candidate_count']}건")
         if "entry_candidate_count" in value:
