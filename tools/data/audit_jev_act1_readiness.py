@@ -22,6 +22,7 @@ for candidate in (ROOT, BACKEND):
 
 from app.jev.activation_readiness import assess_jev_act1_readiness
 from app.jev.semantic_reachability import audit_current_pass_mapping_reachability
+from app.jev.decision_reviewer_canary import assess_actual_canary_preflight
 from app.horizon import horizon_policy_catalog, resolve_horizon_context
 from app.jev.semantic_scope_diagnostic import (
     LOCAL_INSPECTION_CATEGORIES,
@@ -287,6 +288,11 @@ def run_readiness_audit(db_path: Path) -> dict[str, Any]:
             "production_policy_unchanged": True,
         },
         "semantic_reachability": reachability,
+        "s4_canary_preflight": {
+            **assess_actual_canary_preflight({}),
+            "scope": "READONLY_NO_CANDIDATE_SELECTED",
+            "message": "실제 후보·모델·자료 전송·호출 승인 전까지 S4 Canary는 차단됩니다.",
+        },
         "candidate_path": {
             "stored_samples": audit["total_samples"],
             "entry_candidates": (
@@ -343,6 +349,10 @@ def main() -> int:
         f"계약 불확정 {structural['undetermined_contracts']}개"
     )
     print("※ 구조 점검은 합성 PASS 계약 확인이며 실시장 후보 또는 AI 호출 실적이 아닙니다.")
+    s4 = result["s4_canary_preflight"]
+    print(f"S4 실제 Canary 사전 점검: {s4['status']} · 실제 모델 호출 불가")
+    print("  미충족: " + ", ".join(s4["blocking_reasons"]))
+    print("  S4 Mock 시험은 운영 AI 호출 및 투자 효과 검증이 아닙니다.")
     print(f"제품 AI 활성화 판정: {gate['activation_verdict']} (활성화하지 않음)")
     execution = result["user_jev_execution"]
     print(f"실제 JEV 호출 가능: 아니요 · V4 추가검토 기술적 적격 {execution['v4_scope_eligible_not_approved']}건")
