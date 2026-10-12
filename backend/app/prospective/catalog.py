@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from app.strategy.semantic_source import attach_semantic_source
 from app.strategy.semantic_identity_bridge import (
+    _actual_passed_conditions,
     scanner_repro_candidate_key,
     semantic_projection_candidate,
     verified_scanner_repro_rows,
@@ -247,14 +248,22 @@ class ProspectiveCatalog:
             verify_candidate_policy_binding(item, selection_policy_pin)
             if policy_verified else (False, policy_reason)
         )
+        condition_evidence = (
+            _actual_passed_conditions(item, audited)
+            if candidate_ok and isinstance(audited, dict)
+            else None
+        )
         semantic_input = semantic_projection_candidate(
             snapshot,
             selection_policy=selection_policy if candidate_ok else None,
-            audited=audited if candidate_ok else None,
+            audited=audited if candidate_ok and condition_evidence is not None else None,
         )
-        if not candidate_ok:
-            # Original Scanner identity remains unchanged; only semantic input
-            # loses unverified evidence, ensuring an INCOMPLETE result.
+        if candidate_ok and condition_evidence is not None:
+            semantic_input["semantic_condition_evidence"] = condition_evidence
+        else:
+            # Without real engine PASS evidence (or an authentic policy pin),
+            # never complete V1/V2 semantics, even for an ACTIVE/ROLLBACK
+            # candidate that already has an original strategy version.
             semantic_input["strategy_version_id"] = None
             semantic_input["strategy_definition_hash"] = None
             semantic_input.pop("semantic_strategy_identity", None)
