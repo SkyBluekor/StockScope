@@ -173,7 +173,7 @@ def test_alias_execution_mock_records_catalog_and_reported_model(
     assert row["reported_model"] == returned
     assert row["revision_status"] == "REVISION_UNVERIFIED"
     assert result["model_revision_proven"] is False
-    assert result["account_pricing_state"] == "USER_ATTESTED_NOT_INDEPENDENTLY_VERIFIED"
+    assert result["account_pricing_state"] == "PUBLIC_STANDARD_RATE_NOT_ACCOUNT_VERIFIED"
     assert len(result["model_catalog_snapshots"]) == 1
     snap = result["model_catalog_snapshots"][0]
     assert snap["model_revision_status"] == "REVISION_UNVERIFIED"
