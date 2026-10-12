@@ -30,35 +30,20 @@ def _args(mode, *, model="jev-latest", cases=None, extra=None):
         "--max-calls", str(len(chosen)),
         "--budget-usd", f"{len(chosen)*0.01:.2f}",
         "--reserve-usd", "0.01",
-        "--input-price", "0.042", "--output-price", "0",
     ]
     params += extra or []
     return build_parser().parse_args(params)
 
 
 def _approved_args(*, model="jev-latest", cases=None):
-    today = datetime.now(timezone.utc).date().isoformat()
-    return _args(
-        "run-approved", model=model, cases=cases,
-        extra=[
-            "--account-terms-ref", "https://typesafe.ai/terms",
-            "--account-price-ref", "https://console.typesafe.ai/billing",
-            "--account-price-source", "ACCOUNT_BILLING_USER_ATTESTED",
-            "--account-billing-checked-date", today,
-            "--authorize-model-lookup",
-        ],
-    )
+    return _args("run-approved", model=model, cases=cases)
 
 
 def _approval_answers(args):
     proto, _, _ = _manifest(args)
-    phrases = [
-        f"RUN S6 {proto.identity_hash[:12]} {proto.max_attempts} USD {proto.total_budget_usd}",
-        "I CONFIRM ACCOUNT TERMS AND PRICING",
-    ]
-    if args.model == "jev-latest":
-        phrases.append(f"I ACCEPT MOVING ALIAS {proto.identity_hash[:12]}")
-    return iter(phrases)
+    return iter([
+        f"RUN JEV MICRO {proto.identity_hash[:12]} {proto.max_attempts} USD {proto.total_budget_usd}"
+    ])
 
 
 def _catalog(variant=0):
@@ -146,22 +131,19 @@ def test_dry_run_alias_no_network_or_db(tmp_path, monkeypatch):
     assert result["status"] == "AWAITING_SEPARATE_EXECUTION_CONSENT"
     assert result["model_identity_policy"] == "SYNTHETIC_JEV_LATEST_V1"
     assert result["model_revision_status"] == "REVISION_UNVERIFIED"
-    assert result["account_price_state"] == "ACCOUNT_PRICING_UNVERIFIED"
+    assert result["account_price_state"] == "PUBLIC_STANDARD_RATE_NOT_ACCOUNT_VERIFIED"
     assert result["actual_requests_executed_by_dry_run"] == 0
     assert not location.exists()
 
 
-def test_alias_requires_third_consent_before_get_or_post(tmp_path, monkeypatch):
+def test_alias_single_consent_rejection_before_get_or_post(tmp_path, monkeypatch):
     monkeypatch.setenv("JEV_API_KEY", "ci-fake")
     args = _approved_args()
-    # Supply ONLY the first two phrases: the missing third alias consent
-    # must be rejected before authenticated discovery and paid POST.
-    answers = iter(list(_approval_answers(args))[:2])
     called = []
     with pytest.raises(DecisionReviewContractError, match="S6_CONSENT_PHRASE_MISMATCH"):
         asyncio.run(execute(
             args,
-            input_fn=lambda p: next(answers, "no third authorization"),
+            input_fn=lambda p: "NO",
             transport=httpx.MockTransport(_handler(calls=called)),
             journal_path=tmp_path/"missing.sqlite3",
         ))
@@ -191,16 +173,17 @@ def test_alias_execution_mock_records_catalog_and_reported_model(
     assert row["reported_model"] == returned
     assert row["revision_status"] == "REVISION_UNVERIFIED"
     assert result["model_revision_proven"] is False
-    assert result["account_pricing_state"] == "USER_ATTESTED_NOT_INDEPENDENTLY_VERIFIED"
+    assert result["account_pricing_state"] == "PUBLIC_STANDARD_RATE_NOT_ACCOUNT_VERIFIED"
     assert len(result["model_catalog_snapshots"]) == 1
     snap = result["model_catalog_snapshots"][0]
     assert snap["model_revision_status"] == "REVISION_UNVERIFIED"
     assert [m["name"] for m in snap["models_at_check"]] == ["jev-latest", "jev-preview"]
     assert snap["catalog_hash"] == result["model_catalog_snapshot_hash"]
     with sqlite3.connect(target) as conn:
-        old = conn.execute("SELECT source_type,model_identity_policy "
-                           "FROM jev_s6_owner_attestation").fetchone()
-        assert old == ("USER_ATTESTED", "SYNTHETIC_JEV_LATEST_V1")
+        old = conn.execute(
+            "SELECT model_requested,pricing_basis FROM jev_s6_2_run_consent"
+        ).fetchone()
+        assert old == ("jev-latest", "PUBLIC_STANDARD_UNVERIFIED")
 
 
 def test_alias_catalog_changed_no_second_paid_request(tmp_path, monkeypatch):
@@ -268,26 +251,14 @@ def test_alias_preview_response_rejected(tmp_path, monkeypatch):
     assert record["cost_status"] == "UNKNOWN"
 
 
-@pytest.mark.parametrize("modify", [
-    lambda p: setattr(p, "account_price_source", None),
-    lambda p: setattr(p, "account_billing_checked_date", "2020-01-01"),
-    lambda p: setattr(p, "account_price_ref", "https://typesafe.ai/"),
-])
-def test_unverified_billing_blocks_before_user_network_and_writes(
-    tmp_path, monkeypatch, modify,
-):
-    monkeypatch.setenv("JEV_API_KEY", "ci-fake")
+def test_s6_2_no_billing_url_required_and_no_price_override():
     args = _approved_args()
-    modify(args)
-    called = []
-    with pytest.raises(DecisionReviewContractError, match="S6_ACCOUNT_"):
-        asyncio.run(execute(
-            args, input_fn=lambda p: "anything",
-            transport=httpx.MockTransport(_handler(calls=called)),
-            journal_path=tmp_path/"no.sqlite3",
-        ))
-    assert called == []
-    assert not (tmp_path/"no.sqlite3").exists()
+    proto, _, preview = _manifest(args)
+    assert proto.pricing_basis == "PUBLIC_STANDARD_UNVERIFIED"
+    assert preview["pricing_basis"] == "PUBLIC_STANDARD_RATE_NOT_ACCOUNT_VERIFIED"
+    with pytest.raises(SystemExit):
+        _args("dry-run", extra=["--account-price-ref", "https://typesafe.ai/billing"])
+
 
 
 def test_no_s5_legacy_case_mutation_or_feature_enablement():

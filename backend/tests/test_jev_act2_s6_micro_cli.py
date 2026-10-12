@@ -71,25 +71,14 @@ def _trial_args(case="s5-consistent"):
         "--max-calls", "1",
         "--reserve-usd", "0.01",
         "--budget-usd", "0.01",
-        "--input-price", "0.042",
-        "--output-price", "0",
-        "--account-terms-ref", "https://typesafe.ai/terms",
-        "--account-price-ref", "https://console.typesafe.ai/billing",
-        "--account-price-source", "ACCOUNT_BILLING_USER_ATTESTED",
-        "--account-billing-checked-date", datetime.now(timezone.utc).date().isoformat(),
-        "--authorize-model-lookup",
     )
 
 
 def _consent_for(args):
     proto, _, _ = _manifest(args)
-    approvals = [
-        f"RUN S6 {proto.identity_hash[:12]} {proto.max_attempts} USD {proto.total_budget_usd}",
-        "I CONFIRM ACCOUNT TERMS AND PRICING",
-    ]
-    if proto.alias_identity_policy == "SYNTHETIC_JEV_LATEST_V1":
-        approvals.append(f"I ACCEPT MOVING ALIAS {proto.identity_hash[:12]}")
-    return iter(approvals)
+    return iter([
+        f"RUN JEV MICRO {proto.identity_hash[:12]} {proto.max_attempts} USD {proto.total_budget_usd}"
+    ])
 
 
 def test_status_offline_no_key_no_db(tmp_path, monkeypatch):
@@ -110,7 +99,9 @@ def test_dry_run_without_price_still_no_network_or_write(tmp_path, monkeypatch):
     )
     result = asyncio.run(execute(args, journal_path=tmp_path/"none.sqlite3"))
     assert result["status"] == "AWAITING_SEPARATE_EXECUTION_CONSENT"
-    assert result["worst_case_reservation"]["status"] == "PRICE_UNKNOWN"
+    assert Decimal(result["worst_case_reservation"]["upper_bound_cost_usd"]) >= 0
+    assert result["public_input_usd_per_million"] == "0.042"
+    assert result["public_output_usd_per_million"] == "0"
     assert result["actual_requests_executed_by_dry_run"] == 0
     assert not (tmp_path/"none.sqlite3").exists()
 
@@ -176,17 +167,20 @@ def test_run_approved_with_mock_transport_distinct_origin_and_report(tmp_path, m
     assert result["by_origin"]["ACTUAL_PROVIDER"]["attempts"] == 0
     assert result["by_origin"]["MOCK_TEST"]["records"][0]["choice"] == "PASS_THROUGH"
     assert result["by_origin"]["MOCK_TEST"]["records"][0]["latency_ms"] is not None
-    assert result["owner_attestation"] == "USER_ATTESTED_NOT_PROVIDER_INDEPENDENTLY_VERIFIED"
+    assert result["owner_attestation"] == "ONE_EXPLICIT_RUN_CONSENT"
+    assert result["pricing_basis"] == "PUBLIC_STANDARD_RATE_NOT_ACCOUNT_VERIFIED"
     assert seen == [TYPESAFE_MODELS_URL, TYPESAFE_SYSTEM_ONE_URL]
     readback = asyncio.run(execute(_args("report"), journal_path=target))
     assert readback["by_origin"]["ACTUAL_PROVIDER"]["attempts"] == 0
     assert readback["by_origin"]["MOCK_TEST"]["valid"] == 1
     with sqlite3.connect(target) as conn:
-        row = conn.execute("SELECT source_type,model_id,account_price_ref "
-                           "FROM jev_s6_owner_attestation").fetchone()
-        assert row == ("USER_ATTESTED", "jev-1.13.0", "https://console.typesafe.ai/billing")
+        row = conn.execute(
+            "SELECT model_requested,pricing_basis,input_price_usd_per_million "
+            "FROM jev_s6_2_run_consent"
+        ).fetchone()
+        assert row == ("jev-1.13.0", "PUBLIC_STANDARD_UNVERIFIED", "0.042")
         with pytest.raises(sqlite3.IntegrityError):
-            conn.execute("DELETE FROM jev_s6_owner_attestation")
+            conn.execute("DELETE FROM jev_s6_2_run_consent")
     assert result["scanner_uplift_proven"] is False
 
 
@@ -204,18 +198,17 @@ def test_run_approval_cannot_be_reduced_to_cli_boolean(tmp_path, monkeypatch):
     assert not (tmp_path/"none.db").exists()
 
 
-def test_run_missing_account_evidence_fails_before_http(tmp_path, monkeypatch):
-    monkeypatch.setenv("JEV_API_KEY", "ci-mock-secret")
+def test_no_account_billing_pages_required_and_public_rate_is_fixed():
     args = _trial_args()
-    args.account_price_ref = "unknown"
-    seen = []
-    transport = httpx.MockTransport(lambda req: (seen.append(req), _handler(req))[1])
-    with pytest.raises(DecisionReviewContractError, match="S6_ACCOUNT_EVIDENCE_REF_REQUIRED"):
-        asyncio.run(execute(
-            args, input_fn=lambda prompt: "yes",
-            transport=transport, journal_path=tmp_path/"none.db",
-        ))
-    assert seen == []
+    proto, cases, preview = _manifest(args)
+    assert proto.pricing_basis == "PUBLIC_STANDARD_UNVERIFIED"
+    assert proto.verified_input_usd_per_million == "0.042"
+    assert proto.verified_output_usd_per_million == "0"
+    assert preview["pricing_basis"] == "PUBLIC_STANDARD_RATE_NOT_ACCOUNT_VERIFIED"
+    assert cases == ("s5-consistent",)
+    # CLI no longer accepts user-forged rates or billing-page ceremony.
+    with pytest.raises(SystemExit):
+        _args("dry-run", "--model", "jev-latest", "--input-price", "0")
 
 
 def test_run_missing_api_key_fails_without_get_or_post(tmp_path, monkeypatch):
