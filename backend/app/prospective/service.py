@@ -96,6 +96,7 @@ class ProspectiveService:
                 source_job_id=source_job_id,
                 request=request,
                 result=result,
+                selection_policy_pin=selection_policy_pin,
             )
         except ProspectiveCatalogError as exc:
             if exc.code in {

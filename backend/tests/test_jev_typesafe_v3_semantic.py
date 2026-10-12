@@ -377,6 +377,7 @@ def test_prospective_capture_v2_snapshots_semantic_source_without_schema_change(
         source_job_id="semantic-v3",
         request=request,
         result=result,
+        require_policy_provenance=False,  # Synthetic V3-only semantic fixture
     )
     assert capture["capture_version"] == PROSPECTIVE_CAPTURE_VERSION
     assert PROSPECTIVE_CAPTURE_VERSION == "VN_P2_S2_CAPTURE_V2"
