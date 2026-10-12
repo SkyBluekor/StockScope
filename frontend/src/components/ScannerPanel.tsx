@@ -44,6 +44,7 @@ import useScannerQuote from "./useScannerQuote";
 import { asOfPriorityLabel } from "./scannerQuoteTruth";
 import { beginnerCandidatePresentation, simpleConditionStatus } from "./scannerDecisionPresentation";
 import ScannerRankComparison from "./ScannerRankComparison";
+import ScannerMotionProgress from "./ScannerMotionProgress";
 import AiReviewProgress from "./AiReviewProgress";
 import ScannerAiReview from "./ScannerAiReview";
 import { historicalReviewStatus, matchStoredJevReview, scannerAiReviewStatus } from "./scannerAiReviewStatus";
@@ -743,6 +744,8 @@ export default function ScannerPanel({
   const [scope, setScope] = useState<MarketScope>(initialSession?.scope ?? "ALL");
   const [job, setJob] = useState<BacktestJob<ScannerResponse> | null>(null);
   const [result, setResult] = useState<ScannerResponse | null>(initialSession?.result ?? null);
+  // Only a newly completed foreground job animates. Restored results stay still.
+  const [revealJobId, setRevealJobId] = useState<string | null>(null);
   const [selectedCandidateKey, setSelectedCandidateKey] = useState<string | null>(
     initialSession?.selectedCandidateKey
       ?? (initialSession?.result?.candidates?.[0] ? candidateKey(initialSession.result.candidates[0]) : null),
@@ -1107,6 +1110,7 @@ export default function ScannerPanel({
         });
         setScope(jobScope);
         setResult(latest.result);
+        setRevealJobId(latest.job_id);
         setSelectedCandidateKey(nextSelectedKey);
         setShowMore(false);
         setExpandedEvidenceIds(nextExpandedEvidenceIds);
@@ -1198,6 +1202,7 @@ export default function ScannerPanel({
       }
     }
     setPendingDataPlan(null);
+    setRevealJobId(null);
     const observerGeneration = ++pollObserverGenerationRef.current;
     scannerSelectionToPreserveRef.current = result && selectedCandidateKey ? selectedCandidateKey : null;
     preferredCandidateKeyRef.current = null;
@@ -1464,6 +1469,7 @@ export default function ScannerPanel({
     clearScannerSession();
     setScope(value);
     setJob(null);
+    setRevealJobId(null);
     setResult(null);
     setSelectedCandidateKey(null);
     setError(null);
@@ -1727,6 +1733,7 @@ export default function ScannerPanel({
             </div>
             <span className="scanner-progress-stage-count">{stageCountText}</span>
           </div>
+          <ScannerMotionProgress status={job?.status} stage={job?.stage} details={progressDetails} />
 
           <div className="scanner-progress-current">
             <span>현재 작업</span>
@@ -1736,7 +1743,9 @@ export default function ScannerPanel({
               : null}
           </div>
 
-          <div className="scanner-progress-stages">
+          <details className="scanner-motion-details">
+            <summary>세부 진행 단계 보기</summary>
+            <div className="scanner-progress-stages">
             {progressView.analysisStarted && (
               <div className="scanner-progress-prepared-summary">
                 <i>✓</i><span>최신 확정 시세 준비 완료</span>
@@ -1752,7 +1761,8 @@ export default function ScannerPanel({
                 )}
               </div>
             ))}
-          </div>
+            </div>
+          </details>
 
           <div className="scanner-progress-meta">
             <span>경과 <b>{formatElapsed(elapsedSeconds)}</b></span>
@@ -1943,7 +1953,7 @@ export default function ScannerPanel({
                 <div className="scanner-compare-labels" aria-hidden="true">
                   <span>순서</span><span>종목</span><span>조건 충족 · 핵심 확인</span><span>내 종목</span>
                 </div>
-                <div className="scanner-compare-list">
+                <div className={"scanner-compare-list" + (revealJobId && job?.job_id === revealJobId ? " scanner-motion-reveal" : "")}>
                   {result.candidates.map((candidate, index) => (
                     <CandidateCompareRow
                       key={candidateKey(candidate)}
