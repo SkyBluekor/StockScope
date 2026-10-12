@@ -322,15 +322,19 @@ def test_uat_inspector_rejects_duplicate_and_detects_old_capture_changes(tmp_pat
     assert "NEW_COMPLETE_CAPTURE_REQUIRED" in outcome["inconclusive_reasons"]
     assert outcome["preexisting_captures_unchanged"] is True
 
-    # An earlier canonical COMPLETE may never be silently mutated.
+    # The existing SQLite immutability trigger must reject real mutations.
     with sqlite3.connect(catalog.db_path) as conn:
-        conn.execute(
-            "UPDATE prospective_recommendation_sample SET rank=? WHERE capture_run_id=?",
-            (99, first["id"]),
-        )
+        with pytest.raises(sqlite3.IntegrityError, match="immutable"):
+            conn.execute(
+                "UPDATE prospective_recommendation_sample SET rank=? WHERE capture_run_id=?",
+                (99, first["id"]),
+            )
+    # Simulate a mismatched prior-state fingerprint without disabling triggers.
+    forged_before = deepcopy(before)
+    forged_before["captures"][first["id"]] = "incorrect-historical-digest"
     corrupted = inspect(
         db=catalog.db_path, repro_root=tmp_path,
-        capture_id=second["id"], before=before,
+        capture_id=second["id"], before=forged_before,
     )
     assert "PRE_EXISTING_CAPTURES_MUTATED" in corrupted["reasons"]
 
