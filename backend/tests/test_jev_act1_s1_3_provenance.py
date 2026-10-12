@@ -255,12 +255,16 @@ def test_read_only_diagnostic_distinguishes_historical_proof_and_policy(tmp_path
     assert output["db_writes"] == 0
     assert output["external_provider_calls"] == 0
 
-    # Same input without originating pin cannot be turned into a policy proof.
-    _store(catalog, None, result, request, "unattested")
-    after = audit_policy_provenance(catalog.db_path, tmp_path)
-    assert after["capture_statuses"]["COMPLETE"] == 2
-    assert after["by_analysis_date"][0]["policy_provenance_attested_new_record"] == 1
+    # A separate historical/unattested database must remain UNKNOWN even when
+    # exactly the same condition evidence exists in the local audit directory.
+    old_dir = tmp_path / "unattested"
+    old_dir.mkdir()
+    old_catalog = _catalog(old_dir)
+    _store(old_catalog, None, result, request, "unattested")
+    after = audit_policy_provenance(old_catalog.db_path, tmp_path)
+    assert after["capture_statuses"]["COMPLETE"] == 1
     assert after["by_analysis_date"][0]["policy_provenance_unverified_or_mismatch"] == 1
+    assert after["by_analysis_date"][0]["historical_engine_conditions_match"] == 1
 
 
 def test_no_pin_or_wrong_baseline_is_fail_closed():
