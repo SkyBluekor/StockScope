@@ -167,6 +167,8 @@ class FrozenMicroProtocol:
             total = Decimal(self.total_budget_usd)
         except (ValueError, ArithmeticError) as exc:
             raise DecisionReviewContractError("S5_PROTOCOL_LIMIT_INVALID") from exc
+        if not single.is_finite() or not total.is_finite():
+            raise DecisionReviewContractError("S5_PROTOCOL_LIMIT_INVALID")
         if (
             not self.protocol_id.strip()
             or not self.model_requested.strip()
@@ -181,8 +183,6 @@ class FrozenMicroProtocol:
             or self.protocol_case_set_hash != CASE_SET_HASH
             or self.question_hash != QUESTION_HASH
         ):
-            raise DecisionReviewContractError("S5_PROTOCOL_LIMIT_INVALID")
-        if single.is_nan() or total.is_nan():
             raise DecisionReviewContractError("S5_PROTOCOL_LIMIT_INVALID")
 
     @property
@@ -340,6 +340,13 @@ class SystemOneMicroProvider:
             or packet["state"].get("synthetic_only") is not True
         ):
             raise DecisionReviewContractError("S5_REQUEST_INVALID")
+        # A simple synthetic_only marker is insufficient: require the exact
+        # frozen, code-authored fixture packet before any credentials or I/O.
+        if not any(
+            packet == micro_packet(synthetic_projection(case_id), protocol)
+            for case_id in synthetic_case_ids()
+        ):
+            raise DecisionReviewContractError("S5_SYNTHETIC_PACKET_FORGED")
         key = api_key or load_typesafe_jev_api_key()
         if not key:
             raise DecisionReviewContractError("S5_API_KEY_MISSING")
