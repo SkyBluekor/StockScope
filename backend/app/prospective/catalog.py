@@ -14,6 +14,13 @@ from app.strategy.semantic_identity_bridge import (
     verified_scanner_repro_rows,
 )
 from app.strategy.semantic_source_v2 import attach_semantic_source_v2
+from app.strategy.semantic_policy_provenance import (
+    UNVERIFIED_POLICY,
+    semantic_policy_record,
+    validate_pinned_selection_policy,
+    verify_candidate_policy_binding,
+)
+from app.strategy.production_selection_policy import SelectionPolicyPin
 
 from .models import (
     PROSPECTIVE_CAPTURE_VERSION,
@@ -228,13 +235,34 @@ class ProspectiveCatalog:
         *,
         selection_policy: dict[str, Any] | None = None,
         audited: dict[str, Any] | None = None,
+        selection_policy_pin: SelectionPolicyPin | None = None,
+        policy_verified: bool = False,
+        policy_reason: str = "POLICY_PROVENANCE_MISSING",
     ) -> dict[str, Any]:
         # Preserve production candidate and its legacy policy binding, rank and
         # Risk. Only facts traced to the frozen Scanner's original audit may
         # enrich a separate semantic-only projection.
         snapshot = dict(item)
+        candidate_ok, candidate_reason = (
+            verify_candidate_policy_binding(item, selection_policy_pin)
+            if policy_verified else (False, policy_reason)
+        )
         semantic_input = semantic_projection_candidate(
-            snapshot, selection_policy=selection_policy, audited=audited,
+            snapshot,
+            selection_policy=selection_policy if candidate_ok else None,
+            audited=audited if candidate_ok else None,
+        )
+        if not candidate_ok:
+            # Original Scanner identity remains unchanged; only semantic input
+            # loses unverified evidence, ensuring an INCOMPLETE result.
+            semantic_input["strategy_version_id"] = None
+            semantic_input["strategy_definition_hash"] = None
+            semantic_input.pop("semantic_strategy_identity", None)
+            semantic_input.pop("semantic_condition_evidence", None)
+        snapshot["semantic_policy_provenance"] = (
+            semantic_policy_record(selection_policy_pin, reason=candidate_reason)
+            if selection_policy_pin is not None
+            else {"status": UNVERIFIED_POLICY, "reason": candidate_reason}
         )
         for key in ("semantic_strategy_identity", "semantic_condition_evidence"):
             if key in semantic_input and key not in snapshot:
@@ -251,6 +279,7 @@ class ProspectiveCatalog:
         request: ProspectiveCaptureRequest,
         result: dict[str, Any],
         completed_at: str | None = None,
+        selection_policy_pin: SelectionPolicyPin | None = None,
     ) -> dict[str, Any]:
         now = completed_at or _now()
         top = result.get("candidates") if isinstance(result.get("candidates"), list) else []
@@ -260,6 +289,12 @@ class ProspectiveCatalog:
             if isinstance(result.get("strategy_selection_policy"), dict)
             else None
         )
+        policy_verified, policy_reason = validate_pinned_selection_policy(
+            scanner_policy=selection_policy,
+            request_policy_id=request.selection_policy_id,
+            request_policy_hash=request.selection_policy_hash,
+            pin=selection_policy_pin,
+        )
         audited_rows = verified_scanner_repro_rows(result)
 
         def audit_for(item: dict[str, Any]) -> dict[str, Any] | None:
@@ -268,6 +303,9 @@ class ProspectiveCatalog:
         candidates = [
             self._candidate_snapshot(
                 item, selection_policy=selection_policy, audited=audit_for(item),
+                selection_policy_pin=selection_policy_pin,
+                policy_verified=policy_verified,
+                policy_reason=policy_reason,
             )
             for item in [*top, *more]
             if isinstance(item, dict)
@@ -430,7 +468,11 @@ class ProspectiveCatalog:
                 ),
             )
             for index, candidate in enumerate(candidates):
-                snapshot = self._candidate_snapshot(candidate, selection_policy=selection_policy, audited=audit_for(candidate))
+                snapshot = self._candidate_snapshot(
+                    candidate, selection_policy=selection_policy, audited=audit_for(candidate),
+                    selection_policy_pin=selection_policy_pin,
+                    policy_verified=policy_verified, policy_reason=policy_reason,
+                )
                 market = str(candidate.get("market") or "").upper()
                 ticker = str(candidate.get("code") or candidate.get("ticker") or "").strip().upper()
                 if not market or not ticker:
