@@ -65,3 +65,30 @@
 5. 독립된 `LEGACY_UNSPECIFIED` Horizon과 TypeSafe V4/provider 활성화 HOLD 유지
 
 실데이터를 강제로 변경해서 UAT 성공을 만들지 않는다.
+
+## S1.3-UAT 사전 진단 및 실사용 승인 경계
+
+**구현 기준:** Scanner/Production Baseline 및 전략·순위 계산은 변경하지 않고, Prospective 저장 컬럼 `rank`를 실제 Scanner의 `priority.rank`로부터 읽도록 수정했다. 원본 JSON 후보의 우선순위·Action·Risk는 그대로다. 구 저장 기록은 변경하지 않는다.
+
+### 순위 저장 버그
+
+기존 `ProspectiveCatalog.finalize_capture()`는 `candidate.get("rank")`로 별도 `prospective_recommendation_sample.rank` 컬럼을 채웠다. 실제 Scanner는 순위를 `candidate["priority"]["rank"]`에 기록하므로 이 컬럼이 NULL인 경우가 발생할 수 있다. S1.2의 `scanner_repro_candidate_key()`를 재사용해 검증된 정수 rank만 저장한다. 회귀 테스트에서 실제 Scanner 모양의 샘플로 **스냅샷 priority.rank와 DB rank의 일치**를 확인한다. 과거 NULL을 소급 수정하지 않는다.
+
+### 읽기 전용 도구
+
+`tools/data/audit_jev_act1_s1_3_uat.py`은 세 가지 동작을 제공한다.
+
+1. `preflight --as-of YYYY-MM-DD --scope ALL --limit 5`: 현재 DB/시장별 확정일·최근 220일 평일 `day_status`·정책 Pin·기존 캡처·캐시 파일 존재 가능성을 조회한다. Provider 인스턴스를 생성하지 않으며 `_history_plan()`이나 `Scanner.run()`을 호출하지 않는다. 시장 슬롯 부족은 **KRX 호출량 추정치가 아니다**. `READY_FOR_APPROVAL_NOT_EXECUTION`도 0 네트워크 보증이 아니며, 사용자 별도 승인 전 Scanner를 실행하지 않는다.
+2. `baseline`: **UAT 실행 이전** 최종 상태의 기존 캡처/샘플 스냅샷을 전체 읽어 캡처 ID별 Digest를 JSON으로 표준출력한다. 실제 시세/종목명/종목코드는 출력하지 않는다. 사용자가 별도 저장한 JSON은 `inspect --before`에 입력할 수 있다.
+3. `inspect --capture-id <ID> --before <JSON파일> --scanner-result <원본Scanner결과JSON>`: 1건의 캡처 상태·정책 provenance·조건 근거·V2 무결성·DB rank·원본 Scanner 후보 불변성·전체 감사 출처·기존 캡처 Digest를 재검증한다. **원본 Scanner 결과 또는 UAT 이전 Baseline이 없으면 PASS 불가**; 불충분은 INCONCLUSIVE, 모순·원본 훼손은 FAIL로 구분한다.
+
+### 실사용 UAT 전 사용자 승인
+
+실제 UAT는 코드 작업에 포함되지 않는다. 사용자가 승인하지 않았다면 Scanner 실행, 최신 EOD 조회, `force_refresh`, `allow_large_sync`, 데이터 다운로드, DB 마이그레이션, Runtime 동기화를 수행하지 않는다. 날짜 없는 UI Scanner 요청은 최신 확정 EOD 준비를 시도하므로 **아무 요청 없이 로컬만 쓰는 검증으로 간주하면 안 된다**. 같은 날짜 기존 COMPLETE 또는 캐시가 있으면 신규 COMPLETE 대신 DUPLICATE/캐시 재사용이 될 수 있다.
+
+### 현단계 완료 조건
+
+- 읽기 전용 preflight/Baseline/inspect 테스트와 전체 CI PASS
+- 순위 저장 컬럼 회귀 테스트 PASS
+- 기존 Scanner/Rank/Risk·시장 데이터·기존 Prospective 기록 무수정
+- 실제 신규 캡처 테스트는 **미실행**. 따라서 S1.3 실사용 UAT 결과는 PASS라고 선언하지 않음
