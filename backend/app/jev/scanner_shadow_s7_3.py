@@ -23,7 +23,9 @@ from app.jev.decision_reviewer_offline import (
 )
 from app.jev.scanner_integrity_s7_1 import assess_frozen_candidate
 from app.prospective.models import digest_json
-from app.strategy.semantic_identity_bridge import ENGINE_VERIFIED_SOURCE
+from app.strategy.semantic_identity_bridge import (
+    ENGINE_CONDITION_SOURCE, ENGINE_VERIFIED_SOURCE,
+)
 
 VERSION = "JEV_ACT2_S7_3_REAL_SHADOW_PREP_V1"
 PACKET_VERSION = "JEV_S7_3_REAL_LOCAL_PACKET_V1"
@@ -127,18 +129,62 @@ def _local_packet(capture: dict[str, Any], sample: dict[str, Any],
     proofs = engine.get("items")
     if not isinstance(proofs, list) or len(proofs) != len(items):
         raise DecisionReviewContractError("S7_3_ENGINE_PASS_PROOF_MISSING")
-    proof_by_source = {
-        p.get("source_condition"): p for p in proofs if isinstance(p, dict)
-    }
-    for n, item in enumerate(items):
+    if (
+        category == "LEGACY_LIMITED"
+        and (
+            engine.get("source") != ENGINE_CONDITION_SOURCE
+            or engine.get("strategy_key") != sample["strategy"]
+        )
+    ):
+        raise DecisionReviewContractError("S7_3_ENGINE_PASS_PROOF_MISMATCH")
+    # The semantic mapper issues *its own* condition-01/condition-02 IDs,
+    # whereas the Scanner repro audit carries original engine condition IDs.
+    # They represent distinct ID namespaces; source_condition is the shared
+    # contract key. Require a strict one-to-one bijection, a separate unique
+    # nonempty ID in each namespace and actual PASS for each source.
+    semantic_sources: list[str] = []
+    semantic_ids: list[str] = []
+    for item in items:
         if not isinstance(item, dict):
             raise DecisionReviewContractError("S7_3_ENGINE_ITEM_INVALID")
-        proof = proof_by_source.get(item.get("source_condition"))
-        if (not isinstance(proof, dict) or proof.get("status") != "PASS"
-            or proof.get("condition_id") != item.get("condition_id")
+        source = item.get("source_condition")
+        cid = item.get("condition_id")
+        if (
+            not isinstance(source, str) or not source.strip()
+            or not isinstance(cid, str) or not cid.strip()
             or not isinstance(item.get("observed_meaning"), str)
-            or not item["observed_meaning"].strip()):
+            or not item["observed_meaning"].strip()
+        ):
+            raise DecisionReviewContractError("S7_3_ENGINE_ITEM_INVALID")
+        semantic_sources.append(source)
+        semantic_ids.append(cid)
+    if (
+        len(set(semantic_sources)) != len(items)
+        or len(set(semantic_ids)) != len(items)
+    ):
+        raise DecisionReviewContractError("S7_3_ENGINE_PASS_PROOF_MISMATCH")
+    proof_by_source: dict[str, dict[str, Any]] = {}
+    proof_ids: set[str] = set()
+    for proof in proofs:
+        if not isinstance(proof, dict):
             raise DecisionReviewContractError("S7_3_ENGINE_PASS_PROOF_MISMATCH")
+        source = proof.get("source_condition")
+        cid = proof.get("condition_id")
+        if (
+            proof.get("status") != "PASS"
+            or not isinstance(source, str) or not source.strip()
+            or not isinstance(cid, str) or not cid.strip()
+            or source in proof_by_source or cid in proof_ids
+        ):
+            raise DecisionReviewContractError("S7_3_ENGINE_PASS_PROOF_MISMATCH")
+        proof_by_source[source] = proof
+        proof_ids.add(cid)
+    if set(proof_by_source) != set(semantic_sources):
+        raise DecisionReviewContractError("S7_3_ENGINE_PASS_PROOF_MISMATCH")
+    for n, item in enumerate(items):
+        # Engine PASS is associated by the verified original condition name,
+        # never by assuming two independently generated IDs are identical.
+        proof = proof_by_source[item["source_condition"]]
         evidence.append({
             "id": f"condition-{n+1}", "source": "SCANNER_ENGINE_DERIVED",
             "statement": item["observed_meaning"],
