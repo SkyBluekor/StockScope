@@ -1,0 +1,427 @@
+"""JEV-ACT2-S6 consent-gated synthetic Micro-Canary command.
+
+Default is offline status; dry-run and report never read API credentials.
+check-account performs an authenticated GET only after an explicit opt-in.
+run-approved additionally requires interactive, run-specific consent, current
+account terms/pricing evidence supplied by the owner, and a pinned model
+listed by the account. Tests inject MockTransport; CI never makes real calls.
+No StockScope Scanner, portfolio, validation, or production DB is used.
+"""
+from __future__ import annotations
+
+import argparse
+import asyncio
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
+import json
+from pathlib import Path
+import re
+import sqlite3
+import sys
+from typing import Any, Callable
+
+# Standalone PowerShell entry from repository root; no backend import via cwd.
+ROOT = Path(__file__).resolve().parents[2]
+BACKEND = ROOT / "backend"
+if str(BACKEND) not in sys.path:
+    sys.path.insert(0, str(BACKEND))
+
+import httpx
+from app.jev.decision_reviewer_offline import DecisionReviewContractError
+from app.jev.decision_reviewer_micro_canary import (
+    ActualTrialApproval, FrozenMicroProtocol, MicroCanaryRunner,
+    MicroJournal, SystemOneMicroProvider, CASE_SET_HASH, QUESTION_HASH,
+    synthetic_case_ids, synthetic_projection, micro_packet,
+)
+from app.jev.typesafe_provider import (
+    TypeSafeJevProviderError, discover_typesafe_models,
+    load_typesafe_jev_api_key,
+)
+
+VERSION = "JEV_ACT2_S6_MICRO_EXECUTION_V1"
+# Stored only in gitignored data/, never any existing runtime, simulation or
+# Prospective DB. CLI accepts no --db override for a live run.
+RESEARCH_DB = ROOT / "data" / "jev_research" / "s6_micro_canary.sqlite3"
+MAX_INPUT_TOKEN_UPPER_BYTES = True
+OUTPUT_TOKEN_RESERVATION = 8192
+
+
+def _decimal(value: str, code: str) -> Decimal:
+    try:
+        result = Decimal(value)
+    except (InvalidOperation, ValueError, TypeError) as exc:
+        raise DecisionReviewContractError(code) from exc
+    if not result.is_finite() or result < 0:
+        raise DecisionReviewContractError(code)
+    return result
+
+
+def _fixed_model(model: str | None) -> str:
+    value = (model or "").strip()
+    if not value or "latest" in value.lower() or "unfrozen" in value.lower():
+        raise DecisionReviewContractError("S6_PINNED_MODEL_REQUIRED")
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{2,100}", value):
+        raise DecisionReviewContractError("S6_MODEL_ID_INVALID")
+    return value
+
+
+def _cases(selected: list[str] | None) -> tuple[str, ...]:
+    available = set(synthetic_case_ids())
+    values = selected or list(synthetic_case_ids())
+    if len(set(values)) != len(values) or not set(values) <= available:
+        raise DecisionReviewContractError("S6_CASE_SCOPE_INVALID")
+    return tuple(values)
+
+
+def _protocol(args: argparse.Namespace, cases: tuple[str, ...]) -> FrozenMicroProtocol:
+    model = _fixed_model(args.model)
+    if args.max_calls != len(cases):
+        raise DecisionReviewContractError("S6_MAX_CALLS_MUST_EQUAL_CASES")
+    proto = FrozenMicroProtocol(
+        protocol_id="JEV-ACT2-S6-SYNTHETIC-" + ",".join(cases),
+        model_requested=model,
+        model_returned=model,
+        max_attempts=args.max_calls,
+        per_attempt_reservation_usd=args.reserve_usd,
+        total_budget_usd=args.budget_usd,
+        verified_input_usd_per_million=args.input_price,
+        verified_output_usd_per_million=args.output_price,
+        deadline_seconds=args.deadline_seconds,
+    )
+    proto.validate()
+    return proto
+
+
+def _upper_bound_check(protocol: FrozenMicroProtocol, cases: tuple[str, ...]) -> dict[str, Any]:
+    """Conservative local planning only; provider cannot promise token maxima."""
+    input_rate = _decimal(protocol.verified_input_usd_per_million, "S6_ACCOUNT_PRICE_REQUIRED")
+    output_rate = _decimal(protocol.verified_output_usd_per_million, "S6_ACCOUNT_PRICE_REQUIRED")
+    max_request_bytes = max(
+        len(json.dumps(
+            micro_packet(synthetic_projection(case), protocol),
+            ensure_ascii=False, separators=(",", ":"),
+        ).encode("utf-8"))
+        for case in cases
+    )
+    bound = (
+        Decimal(max_request_bytes) * input_rate
+        + Decimal(OUTPUT_TOKEN_RESERVATION) * output_rate
+    ) / Decimal(1_000_000)
+    if bound > _decimal(protocol.per_attempt_reservation_usd, "S6_BUDGET_INVALID"):
+        raise DecisionReviewContractError("S6_PESSIMISTIC_RESERVATION_EXCEEDS_LIMIT")
+    return {
+        "max_synthetic_request_bytes": max_request_bytes,
+        "planning_output_tokens": OUTPUT_TOKEN_RESERVATION,
+        "upper_bound_cost_usd": str(bound),
+        "note": "보수적인 사전 추정치. 공급자 청구액의 절대 상한 보증이 아닙니다.",
+    }
+
+
+def _manifest(args: argparse.Namespace) -> tuple[FrozenMicroProtocol, tuple[str, ...], dict[str, Any]]:
+    cases = _cases(args.case)
+    proto = _protocol(args, cases)
+    return proto, cases, {
+        "version": VERSION,
+        "scope": "SYNTHETIC_ONLY",
+        "status": "AWAITING_SEPARATE_EXECUTION_CONSENT",
+        "protocol_hash": proto.identity_hash,
+        "model_requested": proto.model_requested,
+        "case_set_hash": CASE_SET_HASH,
+        "question_hash": QUESTION_HASH,
+        "selected_cases": list(cases),
+        "attempt_cap": proto.max_attempts,
+        "budget_usd": proto.total_budget_usd,
+        "reservation_per_call_usd": proto.per_attempt_reservation_usd,
+        "retry_count": 0,
+        "max_concurrency": 1,
+        "actual_requests_executed_by_dry_run": 0,
+        "market_data_included": False,
+    }
+
+
+def _prompt_exact(input_fn: Callable[[str], str], message: str, phrase: str) -> None:
+    try:
+        supplied = input_fn(message)
+    except (KeyboardInterrupt, EOFError) as exc:
+        raise DecisionReviewContractError("S6_CONSENT_INTERACTIVE_REQUIRED") from exc
+    if supplied != phrase:
+        raise DecisionReviewContractError("S6_CONSENT_PHRASE_MISMATCH")
+
+
+def _attestations(args: argparse.Namespace) -> None:
+    for name in ("account_terms_ref", "account_price_ref"):
+        value = getattr(args, name) or ""
+        # Free-form claims are NOT provider-side proof. Require traceable,
+        # owner-entered references, while labeling them as USER_ATTESTED.
+        if not value.startswith("https://") or len(value) < 16:
+            raise DecisionReviewContractError("S6_ACCOUNT_EVIDENCE_REF_REQUIRED")
+    for key in (args.input_price, args.output_price):
+        _decimal(key, "S6_ACCOUNT_PRICE_REQUIRED")
+
+
+def _approved(
+    proto: FrozenMicroProtocol, args: argparse.Namespace,
+    input_fn: Callable[[str], str],
+) -> ActualTrialApproval:
+    _attestations(args)
+    text = f"RUN S6 {proto.identity_hash[:12]} {proto.max_attempts} USD {proto.total_budget_usd}"
+    _prompt_exact(
+        input_fn,
+        "\n실제 계정에서 합성 데이터만 전송합니다. 모델, 요청 수, 최대 예약액을 검토했으면 아래 문장을 그대로 입력하세요:\n"
+        + text + "\n> ",
+        text,
+    )
+    _prompt_exact(
+        input_fn,
+        "계정 약관과 실제 적용 가격을 본인이 확인했고, 유료 호출을 승인하면 입력하세요:\n"
+        "I CONFIRM ACCOUNT TERMS AND PRICING\n> ",
+        "I CONFIRM ACCOUNT TERMS AND PRICING",
+    )
+    return ActualTrialApproval(
+        approved_protocol_hash=proto.identity_hash,
+        approved_case_set_hash=CASE_SET_HASH,
+        approved_model=proto.model_returned,
+        approved_budget_usd=proto.total_budget_usd,
+        owner_approved=True,
+        provider_terms_confirmed=True,
+        account_pricing_confirmed=True,
+        model_catalog_confirmed=True,
+        explicit_trial_scope="S5_APPROVED_SYNTHETIC_MICRO_CANARY",
+    )
+
+
+def _display(value: dict[str, Any], *, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(value, ensure_ascii=False, indent=2))
+        return
+    print("=" * 65)
+    print("StockScope JEV S6 · 합성 Micro-Canary 연구 전용")
+    print("=" * 65)
+    for key, value_ in value.items():
+        if isinstance(value_, (list, dict)):
+            print(f"{key}: {json.dumps(value_, ensure_ascii=False)}")
+        else:
+            print(f"{key}: {value_}")
+
+
+def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    sources = ("ACTUAL_PROVIDER", "MOCK_TEST")
+    groups: dict[str, Any] = {}
+    for origin in sources:
+        subset = [r for r in rows if r.get("execution_origin") == origin]
+        valid = [r for r in subset if r["state"] == "VALID"]
+        # Gold is local-only. Wrong model decisions include every synthetic
+        # case, and do not constitute an investment-performance comparison.
+        misses = [r for r in valid if r["decision"] != r["expected_gold"]]
+        normal_false_reviews = sum(
+            r["expected_gold"] == "PASS_THROUGH" and r["decision"] == "REVIEW_REQUIRED"
+            for r in valid
+        )
+        contradiction_misses = sum(
+            r["expected_gold"] == "REVIEW_REQUIRED" and r["decision"] != "REVIEW_REQUIRED"
+            for r in valid
+        )
+        avoidable_abstains = sum(
+            r["expected_gold"] != "ABSTAIN" and r["decision"] == "ABSTAIN"
+            for r in valid
+        )
+        proper_abstains = sum(
+            r["expected_gold"] == "ABSTAIN" and r["decision"] == "ABSTAIN"
+            for r in valid
+        )
+        cost_known = sum(
+            (_decimal(r["computed_cost_usd"], "S6_STORED_COST_INVALID")
+             for r in subset if r["computed_cost_usd"] is not None),
+            Decimal("0"),
+        )
+        durations = [
+            float(r["duration_ms"]) for r in subset
+            if r.get("duration_ms") is not None
+        ]
+        groups[origin] = {
+            "attempts": len(subset),
+            "valid": len(valid),
+            "incorrect": len(misses),
+            "correct": len(valid) - len(misses),
+            "normal_false_reviews": normal_false_reviews,
+            "contradiction_misses": contradiction_misses,
+            "proper_abstentions": proper_abstains,
+            "avoidable_abstentions": avoidable_abstains,
+            "errors": sum(r["state"] == "ERROR" for r in subset),
+            "interrupted": sum(r["state"] == "INTERRUPTED" for r in subset),
+            "known_estimated_cost_usd": str(cost_known),
+            "unknown_cost_attempts": sum(r["cost_status"] == "UNKNOWN" for r in subset),
+            "average_latency_ms": round(sum(durations)/len(durations), 2)
+            if durations else None,
+            "records": [
+                {
+                    "case": r["case_id"], "gold": r["expected_gold"],
+                    "choice": r["decision"], "state": r["state"],
+                    "probabilities": (
+                        r["typed_response"]["probabilities"]
+                        if r["typed_response"] else None
+                    ),
+                    "reason": r["reason_code"],
+                    "estimated_cost_usd": r["computed_cost_usd"],
+                    "cost_status": r["cost_status"],
+                    "latency_ms": r.get("duration_ms"),
+                }
+                for r in subset
+            ],
+        }
+    return {
+        "version": VERSION,
+        "status": "SYNTHETIC_DIAGNOSTIC_ONLY",
+        "by_origin": groups,
+        "total_records": len(rows),
+        "investment_outcomes": "NOT_EVALUATED",
+        "scanner_uplift_proven": False,
+        "message": "합성 사례 정답 비교일 뿐 실제 투자 수익·손실 개선을 의미하지 않습니다.",
+    }
+
+
+def _read_report(db: Path) -> dict[str, Any]:
+    if not db.is_file():
+        return _aggregate([])
+    connection = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
+    try:
+        journal = MicroJournal(connection)
+        return _aggregate(journal.list_records())
+    finally:
+        connection.close()
+
+
+async def _lookup_models(*, transport: httpx.AsyncBaseTransport | None = None) -> list[dict[str, str]]:
+    return await discover_typesafe_models(
+        deadline_seconds=10.0, transport=transport,
+    )
+
+
+def _check_model(models: list[dict[str, str]], name: str) -> None:
+    if name not in {m["name"] for m in models}:
+        raise DecisionReviewContractError("S6_PINNED_MODEL_NOT_AVAILABLE_TO_ACCOUNT")
+
+
+async def execute(
+    args: argparse.Namespace, *,
+    input_fn: Callable[[str], str] = input,
+    transport: httpx.AsyncBaseTransport | None = None,
+    journal_path: Path = RESEARCH_DB,
+) -> dict[str, Any]:
+    """Tests may inject MockTransport and temp DB; CLI never accepts those args."""
+    mode = args.mode
+    if mode == "status":
+        return {
+            "version": VERSION, "scope": "SYNTHETIC_ONLY",
+            "status": "HOLD_UNTIL_SEPARATE_AUTHORIZATION",
+            "available_modes": ["status", "dry-run", "check-account", "run-approved", "report"],
+            "provider_calls": 0, "db_writes": 0,
+            "real_stock_eligible": False,
+        }
+    if mode == "report":
+        return _read_report(journal_path)
+    if mode == "check-account":
+        if not args.authorize_model_lookup:
+            raise DecisionReviewContractError("S6_MODEL_LOOKUP_NOT_AUTHORIZED")
+        _prompt_exact(input_fn, "인증된 계정 모델 목록을 외부 조회하려면 TYPE S6 MODEL LOOKUP 입력: ",
+                      "TYPE S6 MODEL LOOKUP")
+        models = await _lookup_models(transport=transport)
+        result: dict[str, Any] = {
+            "version": VERSION, "status": "MODEL_CATALOG_READ_ONLY",
+            "models": models, "model_lookup_requests": 1,
+            "price_verified": False, "account_terms_verified": False,
+            "micro_canary_calls": 0,
+        }
+        if args.model:
+            fixed = _fixed_model(args.model)
+            result["requested_model"] = fixed
+            result["available"] = fixed in {m["name"] for m in models}
+        return result
+    if mode not in ("dry-run", "run-approved"):
+        raise DecisionReviewContractError("S6_MODE_INVALID")
+    proto, cases, report = _manifest(args)
+    report["worst_case_reservation"] = _upper_bound_check(proto, cases)
+    if mode == "dry-run":
+        return report
+    if not args.authorize_model_lookup:
+        raise DecisionReviewContractError("S6_MODEL_LOOKUP_NOT_AUTHORIZED")
+    # Real user must retype this run's exact protocol fingerprint, count and
+    # maximum reserved budget; flags or a reusable JSON boolean are insufficient.
+    approval = _approved(proto, args, input_fn)
+    approval.validate(proto)
+    # No credential is inspected before the two interactive approvals.
+    api_key = load_typesafe_jev_api_key()
+    if not api_key:
+        raise DecisionReviewContractError("S6_API_KEY_MISSING")
+    models = await _lookup_models(transport=transport)
+    _check_model(models, proto.model_requested)
+    # Make sure test approval cannot be mislabeled ACTUAL_PROVIDER. The normal
+    # CLI has no transport injection, so only a real network path can get tag.
+    origin = "MOCK_TEST" if transport is not None else "ACTUAL_PROVIDER"
+    journal_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(journal_path) as conn:
+        journal = MicroJournal(conn)
+        journal.initialize()
+        journal.interrupt_pending()  # Never silently re-send a crashed request.
+        provider = SystemOneMicroProvider(transport=transport)
+        runner = MicroCanaryRunner(journal, provider, execution_origin=origin)
+        for case in cases:
+            row = await runner.run_case(case, proto, approval, api_key=api_key)
+            if row["state"] != "VALID":
+                break  # First provider failure stops remaining billable attempts.
+            estimated = row["computed_cost_usd"]
+            if (estimated is None or
+                _decimal(estimated, "S6_STORED_COST_INVALID") >
+                _decimal(proto.per_attempt_reservation_usd, "S6_BUDGET_INVALID")):
+                break  # Reservation budget is NOT a billing guarantee.
+    result = _read_report(journal_path)
+    result["protocol_hash"] = proto.identity_hash
+    result["account_model_lookup_requests"] = 1
+    result["owner_attestation"] = "USER_ATTESTED_NOT_PROVIDER_INDEPENDENTLY_VERIFIED"
+    result["pricing_reference"] = args.account_price_ref
+    result["terms_reference"] = args.account_terms_ref
+    result["status"] = "EXPERIMENT_RECORDED_NOT_INVESTMENT_VALIDATED"
+    return result
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        description="StockScope JEV S6 synthetic-only micro Canary. Default is offline status."
+    )
+    p.add_argument(
+        "mode", nargs="?", default="status",
+        choices=("status", "dry-run", "check-account", "run-approved", "report"),
+    )
+    p.add_argument("--model", default=None, help="Explicit pinned model, not latest alias")
+    p.add_argument("--case", action="append", default=None, help="Registered synthetic case; repeat to select")
+    p.add_argument("--max-calls", type=int, default=5)
+    p.add_argument("--budget-usd", default="0.05")
+    p.add_argument("--reserve-usd", default="0.01")
+    p.add_argument("--input-price", default=None, help="USER-confirmed USD per million input tokens")
+    p.add_argument("--output-price", default=None, help="USER-confirmed USD per million output tokens")
+    p.add_argument("--account-terms-ref", default=None, help="Owner-reviewed HTTPS terms evidence")
+    p.add_argument("--account-price-ref", default=None, help="Owner-reviewed HTTPS account pricing evidence")
+    p.add_argument("--deadline-seconds", type=float, default=5.0)
+    p.add_argument("--authorize-model-lookup", action="store_true")
+    p.add_argument("--json", action="store_true")
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    try:
+        result = asyncio.run(execute(args))
+    except (DecisionReviewContractError, TypeSafeJevProviderError) as exc:
+        # Do not print sensitive upstream HTTP details, API keys or payload.
+        print(f"JEV S6 HOLD: {exc.code}", file=sys.stderr)
+        return 2
+    except (sqlite3.Error, OSError):
+        print("JEV S6 HOLD: LOCAL_RESEARCH_STORE_UNAVAILABLE", file=sys.stderr)
+        return 2
+    _display(result, as_json=args.json)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
