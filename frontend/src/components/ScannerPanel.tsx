@@ -12,10 +12,12 @@ import {
   cancelBacktestJob,
   createScannerEvidenceJob,
   createScannerJob,
+  planScannerData,
   fetchBacktestJob,
   type BacktestJob,
   type ScannerCandidate,
   type ScannerFreshnessResponse,
+  type ScannerDataPlan,
   type ScannerResponse,
   type StockSearchItem,
 } from "../services/api";
@@ -752,6 +754,8 @@ export default function ScannerPanel({
   const [restoredFromSession, setRestoredFromSession] = useState(Boolean(initialSession));
   const [clock, setClock] = useState(Date.now());
   const [freshnessFailure, setFreshnessFailure] = useState<ScannerFreshnessResponse | null>(null);
+  const [dataPlanBusy, setDataPlanBusy] = useState(false);
+  const [pendingDataPlan, setPendingDataPlan] = useState<{ plan: ScannerDataPlan; pinnedAsOfDate: string | null } | null>(null);
   const [dateNotice, setDateNotice] = useState<string | null>(null);
   const [managedStocks, setManagedStocks] = useState<HoldingStock[]>([]);
   const [holdingsLoading, setHoldingsLoading] = useState(false);
@@ -768,6 +772,7 @@ export default function ScannerPanel({
   const [storedReviewError, setStoredReviewError] = useState<string | null>(null);
   const [reviewRefresh, setReviewRefresh] = useState(0);
   const pollRef = useRef<number | null>(null);
+  const dataPlanInFlightRef = useRef(false);
   const startedAtRef = useRef<number | null>(null);
   const lastProgressAtRef = useRef<number | null>(null);
   const lastProgressSignatureRef = useRef("");
@@ -811,7 +816,7 @@ export default function ScannerPanel({
   }, [captureId, storedReviewKey, aiReviewEnabled, aiReviewAvailable, aiReviewFeatureStatus, reviewRefresh]);
 
   const jobBusy = job?.status === "queued" || job?.status === "running";
-  const busy = jobBusy;
+  const busy = jobBusy || dataPlanBusy;
   const progress = job?.progress;
   const managedStockMap = useMemo(
     () => new Map(managedStocks.map((stock) => [managedStockKey(stock.market, stock.ticker), stock])),
@@ -1158,7 +1163,41 @@ export default function ScannerPanel({
     allowLargeSync = false,
     pinnedAsOfDate: string | null = null,
   ) {
-    if (busy) return;
+    if (busy || dataPlanInFlightRef.current) return;
+    // Large transfer is explicit consent. Small requests proceed automatically.
+    if (!allowLargeSync && !forceRefresh) {
+      dataPlanInFlightRef.current = true;
+      setDataPlanBusy(true);
+      try {
+        const plan = await planScannerData({
+          market_scope: scope,
+          as_of_date: pinnedAsOfDate,
+          candidate_limit: 5,
+        });
+        if (!mountedRef.current) return;
+        if (plan.status === "APPROVAL_REQUIRED") {
+          setPendingDataPlan({ plan, pinnedAsOfDate });
+          setError(null);
+          return;
+        }
+        if (plan.status !== "AUTO_ALLOWED") {
+          setPendingDataPlan(null);
+          setError(plan.status === "REVIEW_BUDGET"
+            ? "오늘 사용할 수 있는 시장 데이터 요청량을 먼저 확인해야 해요. 이미 준비된 데이터는 유지돼요."
+            : "시장 데이터 저장 상태를 확인할 수 없어요. 데이터 준비 상태를 점검해 주세요.");
+          return;
+        }
+      } catch (error) {
+        if (mountedRef.current) {
+          setError(error instanceof Error ? error.message : "시장 데이터 상태를 확인하지 못했어요.");
+        }
+        return;
+      } finally {
+        dataPlanInFlightRef.current = false;
+        if (mountedRef.current) setDataPlanBusy(false);
+      }
+    }
+    setPendingDataPlan(null);
     const observerGeneration = ++pollObserverGenerationRef.current;
     scannerSelectionToPreserveRef.current = result && selectedCandidateKey ? selectedCandidateKey : null;
     preferredCandidateKeyRef.current = null;
@@ -1433,6 +1472,7 @@ export default function ScannerPanel({
     setCompletedAt(null);
     setRestoredFromSession(false);
     setFreshnessFailure(null);
+    setPendingDataPlan(null);
     setDateNotice(null);
     savedScrollRef.current = 0;
     didRestoreScrollRef.current = true;
@@ -1565,12 +1605,27 @@ export default function ScannerPanel({
             </div>
           ) : (
             <button type="button" className="scanner-run-button" onClick={() => void runScanner(false)} disabled={busy}>
-              {evidenceJobStage ? "3년 검증 데이터 준비 중..." : jobBusy && String(job?.stage || "").startsWith("scanner_prepare") ? "최신 시세 확인 중..." : jobBusy ? "후보 찾는 중..." : "후보 찾기"}
+              {dataPlanBusy ? "시장 데이터 확인 중..." : evidenceJobStage ? "3년 검증 데이터 준비 중..." : jobBusy && String(job?.stage || "").startsWith("scanner_prepare") ? "최신 시세 확인 중..." : jobBusy ? "후보 찾는 중..." : "후보 찾기"}
             </button>
           )}
           {jobBusy && <button type="button" className="scanner-cancel-button" onClick={() => void cancel()}>중지</button>}
         </div>
       </section>
+
+      {pendingDataPlan && !jobBusy && (
+        <section className="scanner-preparation-card" role="status">
+          <div>
+            <span>처음 필요한 시장 데이터 준비</span>
+            <strong>종목을 찾기 전에 시장 데이터를 준비해야 해요.</strong>
+            <p>현재 컴퓨터에 없는 자료를 준비할게요. 예상 기본 요청은 약 {formatNumber(pendingDataPlan.plan.estimated_missing_krx_slots ?? 0)}회예요. 거래일 확인이나 오류 재시도로 요청이 더 발생할 수 있어요.</p>
+            <p>준비한 자료는 이 컴퓨터에 저장돼 다음 분석부터 재사용하고, 완료되면 종목 찾기를 자동으로 이어갈게요.</p>
+          </div>
+          <button type="button" disabled={busy} onClick={() => void runScanner(false, true, pendingDataPlan.pinnedAsOfDate)}>
+            데이터 준비하고 종목 찾기
+          </button>
+          <button type="button" disabled={busy} onClick={() => setPendingDataPlan(null)}>취소</button>
+        </section>
+      )}
 
       {dateNotice && (
         <aside className="scanner-date-toast" role="status" aria-live="polite">

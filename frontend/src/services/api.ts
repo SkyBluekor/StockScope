@@ -3114,6 +3114,36 @@ export async function prepareScannerLatestData(payload: {
   );
 }
 
+export type ScannerDataPlan = {
+  version: string;
+  status: "AUTO_ALLOWED" | "APPROVAL_REQUIRED" | "REVIEW_BUDGET" | "BLOCKED_SCHEMA";
+  market_scope?: "ALL" | "KOSPI" | "KOSDAQ";
+  planning_date?: string;
+  date_is_confirmed?: boolean;
+  estimated_missing_krx_slots?: number;
+  raw_cache_slots_reusable?: number;
+  fast_request_limit?: number;
+  daily_budget_remaining?: number | null;
+  warnings?: string[];
+  reason?: string;
+  provider_calls: number;
+  db_writes: number;
+};
+
+export async function planScannerData(payload: {
+  market_scope: "ALL" | "KOSPI" | "KOSDAQ";
+  as_of_date?: string | null;
+  candidate_limit: number;
+}): Promise<ScannerDataPlan> {
+  return asJson<ScannerDataPlan>(
+    await fetch("/api/backtest/scanner/data-plan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  );
+}
+
 export async function createScannerJob(payload: ScannerRequest): Promise<BacktestJob<ScannerResponse>> {
   return asJson<BacktestJob<ScannerResponse>>(
     await fetch("/api/backtest/scanner/jobs", {

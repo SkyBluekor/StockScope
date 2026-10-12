@@ -17,6 +17,7 @@ from app.backtest.exit_policy_validation_runner import (
 )
 from app.backtest.risk_validation import RiskPolicyValidationService
 from app.backtest.scanner import StockScannerService
+from app.backtest.data_preparation_plan import plan_scanner_data
 from app.backtest.production_exit_policy import ProductionExitPolicyRegistry
 from app.core.config import PROJECT_ROOT, get_settings
 from app.prospective import (
@@ -96,6 +97,12 @@ class ScannerEvidencePrepareRequest(BaseModel):
 class ScannerFreshnessRequest(BaseModel):
     market_scope: Literal["ALL", "KOSPI", "KOSDAQ"] = "ALL"
     known_data_date: str | None = None
+
+
+class ScannerDataPlanRequest(BaseModel):
+    market_scope: Literal["ALL", "KOSPI", "KOSDAQ"] = "ALL"
+    as_of_date: str | None = None
+    candidate_limit: int = Field(default=5, ge=1, le=10)
 
 
 class ScannerDataIntegrityAuditRequest(BaseModel):
@@ -705,6 +712,19 @@ async def _run_scanner_job(
         backtest_jobs.fail(job_id, f"종목 찾기 처리 중 예상하지 못한 오류가 발생했습니다: {exc}")
     else:
         backtest_jobs.complete(job_id, result)
+
+
+@router.post("/scanner/data-plan")
+def scanner_data_plan(payload: ScannerDataPlanRequest) -> dict:
+    """Read-only estimate; does not instantiate providers or write runtime files."""
+    try:
+        return plan_scanner_data(
+            market_scope=payload.market_scope,
+            as_of_date=payload.as_of_date,
+            candidate_limit=payload.candidate_limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/scanner/freshness")
