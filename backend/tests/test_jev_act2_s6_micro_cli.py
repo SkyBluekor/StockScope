@@ -5,6 +5,7 @@ import asyncio
 from copy import deepcopy
 from dataclasses import replace
 from decimal import Decimal
+from datetime import datetime, timezone
 import json
 import sqlite3
 
@@ -72,18 +73,23 @@ def _trial_args(case="s5-consistent"):
         "--budget-usd", "0.01",
         "--input-price", "0.042",
         "--output-price", "0",
-        "--account-terms-ref", "https://typesafe.ai/",
-        "--account-price-ref", "https://console.typesafe.ai/",
+        "--account-terms-ref", "https://typesafe.ai/terms",
+        "--account-price-ref", "https://console.typesafe.ai/billing",
+        "--account-price-source", "ACCOUNT_BILLING_USER_ATTESTED",
+        "--account-billing-checked-date", datetime.now(timezone.utc).date().isoformat(),
         "--authorize-model-lookup",
     )
 
 
 def _consent_for(args):
     proto, _, _ = _manifest(args)
-    return iter([
+    approvals = [
         f"RUN S6 {proto.identity_hash[:12]} {proto.max_attempts} USD {proto.total_budget_usd}",
         "I CONFIRM ACCOUNT TERMS AND PRICING",
-    ])
+    ]
+    if proto.alias_identity_policy == "SYNTHETIC_JEV_LATEST_V1":
+        approvals.append(f"I ACCEPT MOVING ALIAS {proto.identity_hash[:12]}")
+    return iter(approvals)
 
 
 def test_status_offline_no_key_no_db(tmp_path, monkeypatch):
@@ -118,7 +124,7 @@ def test_report_missing_store_is_read_only(tmp_path):
 
 
 @pytest.mark.parametrize("bad", [
-    ["--model", "jev-latest"], ["--model", "UNFROZEN"],
+    ["--model", "jev-preview"], ["--model", "UNFROZEN"],
     ["--model", "jev-1.13.0", "--case", "live-capture"],
     ["--model", "jev-1.13.0", "--case", "s5-consistent"],
 ])
@@ -178,7 +184,7 @@ def test_run_approved_with_mock_transport_distinct_origin_and_report(tmp_path, m
     with sqlite3.connect(target) as conn:
         row = conn.execute("SELECT source_type,model_id,account_price_ref "
                            "FROM jev_s6_owner_attestation").fetchone()
-        assert row == ("USER_ATTESTED", "jev-1.13.0", "https://console.typesafe.ai/")
+        assert row == ("USER_ATTESTED", "jev-1.13.0", "https://console.typesafe.ai/billing")
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute("DELETE FROM jev_s6_owner_attestation")
     assert result["scanner_uplift_proven"] is False
