@@ -111,7 +111,12 @@ def test_budget_gate_takes_priority_over_bulk_approval(tmp_path):
 
 def test_invalid_date_and_malformed_existing_database_are_fail_closed(tmp_path):
     with pytest.raises(ValueError):
-        _plan(tmp_path, tmp_path / "missing.db", market_scope="ILLEGAL")
+        plan_scanner_data(
+            market_scope="ILLEGAL",
+            as_of_date="2026-10-09",
+            market_db=tmp_path / "missing.db",
+            today=TODAY,
+        )
     malformed = tmp_path / "malformed.db"
     with sqlite3.connect(malformed) as conn:
         conn.execute("CREATE TABLE unrelated(id INT)")
