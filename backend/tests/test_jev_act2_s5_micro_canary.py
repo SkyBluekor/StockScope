@@ -109,7 +109,8 @@ def test_all_authored_cases_real_schema_mock_http(tmp_path, case):
     assert row["cost_status"] == "ESTIMATED_FROM_VERIFIED_ACCOUNT_RATE"
     assert Decimal(row["computed_cost_usd"]) == Decimal("123") * Decimal("0.042") / 1000000
     assert row["investment_outcome"] == "NOT_EVALUATED"
-    assert "model" in row["output"]["supporting_reasons"][0]["explanation"] if row["decision"] == "PASS_THROUGH" else True
+    if row["decision"] == "PASS_THROUGH":
+        assert "개별 근거를 인용하지 않았습니다" in row["output"]["supporting_reasons"][0]["explanation"]
     assert len(seen) == 1
     repeat = asyncio.run(runner.run_case(
         case["id"], protocol, approval, api_key="only-mock"
