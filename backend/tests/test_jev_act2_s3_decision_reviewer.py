@@ -25,7 +25,7 @@ STRATEGY = "trend_following"
 DATE = "2026-10-08"
 
 
-def _stored(tmp_path: Path, *, horizon: str = "SHORT") -> tuple[Path, str]:
+def _stored(tmp_path: Path, *, horizon: str = "SHORT", mutate_snapshot=None) -> tuple[Path, str]:
     db = tmp_path / "isolated_s3.db"
     with sqlite3.connect(db) as conn:
         conn.execute("CREATE TABLE synthetic_placeholder(id INTEGER PRIMARY KEY)")
@@ -67,6 +67,8 @@ def _stored(tmp_path: Path, *, horizon: str = "SHORT") -> tuple[Path, str]:
     candidate["semantic_source_v2"] = build_semantic_source_v2(candidate)
     assert candidate["semantic_source_v2"]["readiness"]["q2_status"] == "COMPLETE"
     assert candidate["semantic_source_v2"]["readiness"]["local_semantic_status"] == "LOCAL_MATCH"
+    if mutate_snapshot is not None:
+        mutate_snapshot(candidate)  # Fixture construction only, before immutable INSERT.
     capture_id = "s3-complete"
     request = {
         "selection_policy_id": "synthetic-policy",
@@ -132,19 +134,13 @@ def _response(decision: str):
     }
 
 
-def _replace_snapshot(db: Path, change):
-    with sqlite3.connect(db) as conn:
-        row = conn.execute(
-            "SELECT snapshot_json FROM prospective_recommendation_sample "
-            "WHERE capture_run_id='s3-complete'"
-        ).fetchone()
-        sample = json.loads(row[0])
-        change(sample)
-        conn.execute(
-            "UPDATE prospective_recommendation_sample "
-            "SET snapshot_json=?,snapshot_hash=? WHERE capture_run_id='s3-complete'",
-            (json.dumps(sample, ensure_ascii=False), digest_json(sample)),
-        )
+def _modified_copy(db: Path, capture_id: str, change):
+    capture, sample = load_canonical_candidate_readonly(
+        db, capture_id=capture_id, sample_index=0
+    )
+    change(sample["snapshot"])
+    sample["snapshot_hash"] = digest_json(sample["snapshot"])
+    return capture, sample
 
 
 @pytest.mark.parametrize("decision,shadow", [
@@ -227,23 +223,36 @@ def test_external_provider_fails_without_use_or_credentials(tmp_path):
 ])
 def test_scope_evidence_temporal_and_policy_fail_closed(tmp_path, change, reason):
     db, capture_id = _stored(tmp_path)
-    _replace_snapshot(db, change)
+    capture, modified_sample = _modified_copy(db, capture_id, change)
     with pytest.raises(DecisionReviewContractError, match=reason):
-        _projection(db, capture_id)
+        build_scanner_review_input(
+            capture, modified_sample, protocol_id="FAKE-ONLY-S3"
+        )
 
 
 def test_source_hash_tampering_and_non_complete_capture_fail_closed(tmp_path):
     db, capture_id = _stored(tmp_path)
+    capture, sample = load_canonical_candidate_readonly(
+        db, capture_id=capture_id, sample_index=0
+    )
+    sample["snapshot_hash"] = "forged"
+    with pytest.raises(DecisionReviewContractError, match="SNAPSHOT_HASH_MISMATCH"):
+        build_scanner_review_input(capture, sample, protocol_id="FAKE-ONLY-S3")
+    # A separate never-completed capture is inserted, not an UPDATE to the
+    # protected COMPLETE capture (immutable history remains untouched).
     with sqlite3.connect(db) as conn:
         conn.execute(
-            "UPDATE prospective_recommendation_sample SET snapshot_hash='forged'"
+            """INSERT INTO prospective_capture_run(
+                id,capture_version,source_job_id,status,request_json,
+                market_scope,candidate_limit,created_at,updated_at
+            ) VALUES(?,?,?,?,?,?,?,?,?)""",
+            ("s3-partial", "SYNTHETIC_ONLY", "partial-job", "PARTIAL",
+             "{}", "ALL", 5, "2026-10-09T00:00:00Z", "2026-10-09T00:00:00Z"),
         )
-    with pytest.raises(DecisionReviewContractError, match="SNAPSHOT_HASH_MISMATCH"):
-        _projection(db, capture_id)
-    with sqlite3.connect(db) as conn:
-        conn.execute("UPDATE prospective_capture_run SET status='PARTIAL'")
     with pytest.raises(DecisionReviewContractError, match="CAPTURE_NOT_COMPLETE"):
-        _projection(db, capture_id)
+        load_canonical_candidate_readonly(
+            db, capture_id="s3-partial", sample_index=0
+        )
 
 
 @pytest.mark.parametrize("tamper,reason", [
@@ -299,9 +308,13 @@ def test_readonly_capture_scope_reports_exclusions_without_fake_calls(tmp_path):
     assert report["actual_provider_eligible"] == 0
     assert report["provider_calls"] == report["db_writes"] == 0
 
-    _replace_snapshot(db, lambda item: item["risk"].update(status="BLOCK"))
+    blocked_dir = tmp_path / "blocked"
+    blocked_dir.mkdir()
+    blocked_db, blocked_id = _stored(
+        blocked_dir, mutate_snapshot=lambda item: item["risk"].update(status="BLOCK")
+    )
     result = audit_capture_review_scope_readonly(
-        db, capture_id=capture_id, protocol_id="FAKE-ONLY-S3"
+        blocked_db, capture_id=blocked_id, protocol_id="FAKE-ONLY-S3"
     )
     assert result["excluded"] == 1
     assert result["reasons"]["RISK_BLOCKED_OUT_OF_SCOPE"] == 1
