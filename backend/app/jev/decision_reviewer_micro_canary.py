@@ -260,7 +260,7 @@ def _clean_choice_response(raw: dict[str, Any], protocol: FrozenMicroProtocol) -
         accepted = (
             returned_model == "jev-latest"
             or (isinstance(returned_model, str) and bool(re.fullmatch(
-                r"jev-[0-9]+\\.[0-9]+\\.[0-9]+(?:[-.][A-Za-z0-9]+)*",
+                r"jev-[0-9]+\.[0-9]+\.[0-9]+(?:[-.][A-Za-z0-9]+)*",
                 returned_model,
             )))
         )
