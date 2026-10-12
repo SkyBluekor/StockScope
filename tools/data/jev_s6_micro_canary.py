@@ -30,6 +30,7 @@ if str(BACKEND) not in sys.path:
 
 import httpx
 from app.jev.decision_reviewer_offline import DecisionReviewContractError
+from app.prospective.models import digest_json
 from app.jev.decision_reviewer_micro_canary import (
     ActualTrialApproval, FrozenMicroProtocol, MicroCanaryRunner,
     MicroJournal, SystemOneMicroProvider, CASE_SET_HASH, QUESTION_HASH,
@@ -306,6 +307,100 @@ def _record_owner_attestation(
     conn.commit()
 
 
+def _catalog_summary(models: list[dict[str, str]]) -> dict[str, Any]:
+    """Provider catalog metadata is NOT a signed immutable model revision."""
+    safe = sorted(
+        [
+            {key: record[key] for key in ("name", "description", "release_date")}
+            for record in models
+        ],
+        key=lambda record: record["name"],
+    )
+    if len({m["name"] for m in safe}) != len(safe):
+        raise DecisionReviewContractError("S6_MODEL_CATALOG_DUPLICATE")
+    return {
+        "snapshot_hash": digest_json(safe),
+        "catalog": safe,
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "revision_proven": False,
+    }
+
+
+def _record_model_catalog(
+    conn: sqlite3.Connection, proto: FrozenMicroProtocol,
+    catalog: dict[str, Any],
+) -> None:
+    """Immutable first-known snapshot; visible drift => hard hold before POST."""
+    conn.executescript("""
+    CREATE TABLE IF NOT EXISTS jev_s6_model_catalog_snapshot (
+        protocol_hash TEXT PRIMARY KEY,
+        requested_model TEXT NOT NULL,
+        catalog_json TEXT NOT NULL,
+        catalog_hash TEXT NOT NULL,
+        queried_at TEXT NOT NULL,
+        alias_policy TEXT NOT NULL,
+        revision_status TEXT NOT NULL CHECK(revision_status='REVISION_UNVERIFIED')
+    );
+    CREATE TRIGGER IF NOT EXISTS jev_s6_catalog_no_update
+    BEFORE UPDATE ON jev_s6_model_catalog_snapshot BEGIN
+        SELECT RAISE(ABORT,'S6 provider catalog immutable');
+    END;
+    CREATE TRIGGER IF NOT EXISTS jev_s6_catalog_no_delete
+    BEFORE DELETE ON jev_s6_model_catalog_snapshot BEGIN
+        SELECT RAISE(ABORT,'S6 provider catalog immutable');
+    END;
+    """)
+    existing = conn.execute(
+        "SELECT catalog_hash,requested_model,alias_policy FROM "
+        "jev_s6_model_catalog_snapshot WHERE protocol_hash=?",
+        (proto.identity_hash,),
+    ).fetchone()
+    expected = (
+        catalog["snapshot_hash"], proto.model_requested,
+        proto.alias_identity_policy,
+    )
+    if existing is not None:
+        if tuple(existing) != expected:
+            raise DecisionReviewContractError("S6_CATALOG_CHANGED_NEW_PROTOCOL_REQUIRED")
+        return
+    conn.execute(
+        """INSERT INTO jev_s6_model_catalog_snapshot(
+            protocol_hash,requested_model,catalog_json,catalog_hash,
+            queried_at,alias_policy,revision_status
+        ) VALUES(?,?,?,?,?,?,?)""",
+        (
+            proto.identity_hash, proto.model_requested,
+            json.dumps(catalog["catalog"], ensure_ascii=False, sort_keys=True),
+            catalog["snapshot_hash"], catalog["checked_at"],
+            proto.alias_identity_policy, "REVISION_UNVERIFIED",
+        ),
+    )
+    conn.commit()
+
+
+def _catalog_snapshots_readonly(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' "
+        "AND name='jev_s6_model_catalog_snapshot'"
+    ).fetchone()
+    if not exists:
+        return []
+    return [
+        {
+            "protocol_hash": row["protocol_hash"],
+            "requested_model": row["requested_model"],
+            "catalog_hash": row["catalog_hash"],
+            "catalog_checked_at": row["queried_at"],
+            "identity_policy": row["alias_policy"],
+            "model_revision_status": row["revision_status"],
+            "models_at_check": json.loads(row["catalog_json"]),
+        }
+        for row in conn.execute(
+            "SELECT * FROM jev_s6_model_catalog_snapshot ORDER BY queried_at"
+        )
+    ]
+
+
 def _display(value: dict[str, Any], *, as_json: bool) -> None:
     if as_json:
         print(json.dumps(value, ensure_ascii=False, indent=2))
@@ -376,6 +471,18 @@ def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 {
                     "case": r["case_id"], "gold": r["expected_gold"],
                     "choice": r["decision"], "state": r["state"],
+                    "requested_model": (
+                        r["typed_response"].get("requested_model")
+                        if r["typed_response"] else r["model_id"]
+                    ),
+                    "reported_model": (
+                        r["typed_response"].get("model")
+                        if r["typed_response"] else None
+                    ),
+                    "revision_status": (
+                        r["typed_response"].get("model_identity_status")
+                        if r["typed_response"] else "UNKNOWN"
+                    ),
                     "probabilities": (
                         r["typed_response"]["probabilities"]
                         if r["typed_response"] else None
@@ -405,7 +512,9 @@ def _read_report(db: Path) -> dict[str, Any]:
     connection = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
     try:
         journal = MicroJournal(connection)
-        return _aggregate(journal.list_records())
+        result = _aggregate(journal.list_records())
+        result["model_catalog_snapshots"] = _catalog_snapshots_readonly(connection)
+        return result
     finally:
         connection.close()
 
@@ -448,6 +557,7 @@ async def execute(
         result: dict[str, Any] = {
             "version": VERSION, "status": "MODEL_CATALOG_READ_ONLY",
             "models": models, "model_lookup_requests": 1,
+            "model_catalog_snapshot": _catalog_summary(models),
             "price_verified": False, "account_terms_verified": False,
             "micro_canary_calls": 0,
         }
@@ -455,11 +565,22 @@ async def execute(
             fixed = _fixed_model(args.model)
             result["requested_model"] = fixed
             result["available"] = fixed in {m["name"] for m in models}
+            result["model_kind"] = (
+                "MOVING_ALIAS_SYNTHETIC_ONLY" if fixed == "jev-latest"
+                else "NAMED_MODEL"
+            )
+            result["model_revision_status"] = "REVISION_UNVERIFIED"
         return result
     if mode not in ("dry-run", "run-approved"):
         raise DecisionReviewContractError("S6_MODE_INVALID")
     proto, cases, report = _manifest(args)
     report["worst_case_reservation"] = _upper_bound_check(proto, cases)
+    report["account_price_state"] = (
+        "USER_ATTESTED_NOT_PROVIDER_INDEPENDENTLY_VERIFIED"
+        if args.account_price_source == "ACCOUNT_BILLING_USER_ATTESTED"
+        and args.account_billing_checked_date
+        else "ACCOUNT_PRICING_UNVERIFIED"
+    )
     if mode == "dry-run":
         return report
     if not args.authorize_model_lookup:
@@ -474,6 +595,7 @@ async def execute(
         raise DecisionReviewContractError("S6_API_KEY_MISSING")
     models = await _lookup_models(transport=transport)
     _check_model(models, proto.model_requested)
+    catalog = _catalog_summary(models)
     # Make sure test approval cannot be mislabeled ACTUAL_PROVIDER. The normal
     # CLI has no transport injection, so only a real network path can get tag.
     origin = "MOCK_TEST" if transport is not None else "ACTUAL_PROVIDER"
@@ -483,6 +605,7 @@ async def execute(
         journal.initialize()
         journal.interrupt_pending()  # Never silently re-send a crashed request.
         _record_owner_attestation(conn, proto, cases, args)
+        _record_model_catalog(conn, proto, catalog)
         provider = SystemOneMicroProvider(transport=transport)
         runner = MicroCanaryRunner(journal, provider, execution_origin=origin)
         for case in cases:
@@ -500,6 +623,10 @@ async def execute(
     result["owner_attestation"] = "USER_ATTESTED_NOT_PROVIDER_INDEPENDENTLY_VERIFIED"
     result["pricing_reference"] = args.account_price_ref
     result["terms_reference"] = args.account_terms_ref
+    result["model_catalog_snapshot_hash"] = catalog["snapshot_hash"]
+    result["model_catalog_checked_at"] = catalog["checked_at"]
+    result["model_revision_proven"] = False
+    result["account_pricing_state"] = "USER_ATTESTED_NOT_INDEPENDENTLY_VERIFIED"
     result["status"] = "EXPERIMENT_RECORDED_NOT_INVESTMENT_VALIDATED"
     return result
 
@@ -512,7 +639,7 @@ def build_parser() -> argparse.ArgumentParser:
         "mode", nargs="?", default="status",
         choices=("status", "dry-run", "check-account", "run-approved", "report"),
     )
-    p.add_argument("--model", default=None, help="Explicit pinned model, not latest alias")
+    p.add_argument("--model", default=None, help="Named model or jev-latest (synthetic-only unpinned alias); preview denied")
     p.add_argument("--case", action="append", default=None, help="Registered synthetic case; repeat to select")
     p.add_argument("--max-calls", type=int, default=5)
     p.add_argument("--budget-usd", default="0.05")
