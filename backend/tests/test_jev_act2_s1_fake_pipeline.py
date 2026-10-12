@@ -233,3 +233,43 @@ def test_abstain_from_valid_existing_storage_is_never_pass_through(tmp_path):
     )
     assert result["status"] == "ABSTAIN"
     assert result["status"] != "PASS_THROUGH"
+
+
+
+def test_abstain_post_review_mapping_remains_abstain_in_storage_and_response(
+    tmp_path, monkeypatch,
+):
+    """Synthetic core outcome injection tests the ABSTAIN response boundary.
+
+    The current V4 Q1 threshold policy itself emits PASS_THROUGH/REVIEW_REQUIRED;
+    this tests the independent storage contract for an eligible VALID ABSTAIN.
+    """
+    from types import SimpleNamespace
+    from app.jev import review_service as module
+
+    db = _db(tmp_path)
+    capture = _insert_capture(db, sample=_synthetic_residual())
+    service = _service(db, provider=FakeTypeSafeJevProvider(returned_model="FAKE-ACT2-S1"))
+
+    async def synthetic_abstain(sample, spec, provider):
+        return SimpleNamespace(
+            disposition="ABSTAIN",
+            uncertainty_reason="INSUFFICIENT_EVIDENCE",
+            reason_codes=("INSUFFICIENT_EVIDENCE",),
+            normalized_response={
+                "model": "FAKE-ACT2-S1", "answers": {},
+                "usage": {"input_tokens": 0, "output_tokens": 0},
+            },
+            cost_usd=0.0,
+            cost_unknown=False,
+        )
+
+    monkeypatch.setattr(module, "review_once", synthetic_abstain)
+    first = asyncio.run(service.request_review(capture_id=capture))
+    assert first["status"] == "ABSTAIN", first
+    stored = service.typesafe.get_review(first["review_id"])
+    assert stored["status"] == "VALID"
+    assert stored["disposition"] == "ABSTAIN"
+    repeat = asyncio.run(service.request_review(capture_id=capture))
+    assert repeat["status"] == "ABSTAIN"
+    assert repeat["reused"] is True
