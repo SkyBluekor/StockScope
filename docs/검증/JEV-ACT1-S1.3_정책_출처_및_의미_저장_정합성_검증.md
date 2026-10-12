@@ -210,3 +210,17 @@ S3 성공 판정은 **오프라인 계약을 완주하는 Fake 검토 및 CI**�
 - `backend/tests/test_jev_act2_s4_canary.py`: Mock HTTP 성공/유보/오류/timeout, 출처 없는 응답, 요청 예산·중복, 모델/전송 사전 HOLD, 임시 DB 불변성과 종전 Scanner 스냅샷 보호를 확인한다.
 
 **S4 완료의 정확한 의미:** Mock 연결·예약·실패 기록 및 실제 호출 사전 승인 누락을 탐지하는 구조가 준비됨. 실제 공급자 어댑터/모델 고정·source 사용권/보존 규정·Horizon 수치 정책 승인·시점 증명·운영 DB migration·진짜 Canary 실행은 여전히 **별도 사용자 승인 전의 HOLD**이다. `MOCK_HTTP`를 실제 모델 호출 실적으로 세거나 S3 가상 판단으로 효용을 주장하지 않는다. 실제 JEV가 Scanner 기존 판단 대비 좋은 결과를 내는지는 후속 prospective 검증이 필요하다.
+
+## JEV-ACT2-S5 — TypeSafe 실제 API 형식 기반 합성 Micro-Canary (2026-10-12)
+
+**확인한 공식 공급자 계약:** `https://api.typesafe.ai/openapi.json` (0.2.0) 기준 POST `/v1/systemone`은 `state, questions, model`을 받고, `choice` 질문에 `choice, confidence, probabilities`라는 **형식이 고정된 선택형 응답**을 반환한다. 자유형 텍스트 설명·근거 인용 ID를 반환하는 계약이 **아니다**. 실제 모델 계정의 사용 가능 모델은 인증된 GET `/v1/models`에서 별도로 확인해야 한다. 공급자 사이트에 공개된 $42/10억 input tokens 및 output free는 **공개 단가**일 뿐 현재 사용자 계정 청구율·사용권·승인 예산 증명이 아니며 해당 확인 없이 유료 호출하지 않는다.
+
+구현: `backend/app/jev/decision_reviewer_micro_canary.py`는 **소스코드 안에 고정된 다섯 가지 합성 케이스**에서만 요청 패킷을 생성한다. 모델에 보낼 `state`에는 전략 의도와 합성 condition/risk 문장만 들어가며, 합성 정답 `gold`, 종목/계좌/가격/날짜/시장 캡처는 전송하지 않는다. 바깥에서 `synthetic_only=true`를 달아 입력을 위조해도 실제 승인 전에 요청 전체가 등록된 케이스의 패킷과 동일해야 한다. 실제 DB·Scanner·Holdout 연동 없음.
+
+**실제 AI 형식과 S3 출력 간 접점:** 타입 안전 선택 응답 한 건으로 `PASS_THROUGH / REVIEW_REQUIRED / ABSTAIN`을 결정한다. 공급자가 개별 증거를 인용하지 않으므로 서버가 **합성 입력 전체 evidence IDs**를 붙이고, 설명은 "모델은 개별 근거를 인용하지 않았다"는 고정 텍스트다. 이 근거 표시는 개별 조건에 대한 모델의 원인 추적 또는 금융 판단의 유효성을 증명하지 않는다. S3의 출력 검증기로 금지 필드, 근거 ID와 상태를 검증한다. 모델의 확률과 confidence는 합성 평가에만 보존하며 Risk Gate 또는 투자 승격 기준으로 쓰지 않는다.
+
+**차단과 재현:** `FrozenMicroProtocol`은 model requested/returned pin, 요청 cap, 예약 예산, deadline, 질문/합성 케이스 해시, retry 0, concurrency 1을 보존한다. `ActualTrialApproval`의 protocol hash, case-set hash, 예산, 실제 사용자 승인, 약관·모델·계정 가격 확인이 모두 없으면 **키 조회·HTTP 전에 거절**한다. 이는 실제 승인 증거를 새로 만들어주거나 대신 사용자 동의를 요청하는 기능이 아니다. 라이브 실행을 호출하는 일반 CLI/API나 자동 백그라운드 경로는 추가하지 않았다. GitHub CI는 오직 `httpx.MockTransport`와 테스트용 승인 fixture/가짜 키로 같은 HTTP 패킷을 검증하며 외부 네트워크에 접속하지 않는다.
+
+**기록과 보고:** 실제 시스템/Simulation DB schema 변경 없이, 명시적으로 생성한 격리 SQLite의 `jev_s5_synthetic`에 protocol/model/입력/질문 hash, case ID, 기대 답, 선택 응답, 사용량, 입력/출력 토큰 기준 **계정 단가로 추정한 비용**, 실패/중단/중복을 별도 기록한다. 계정 단가 미확인 시 유료 호출 불가; 실패 또는 중단의 실제 청구액을 0으로 단정하지 않는다. 결과는 `NOT_EVALUATED`이며 Shadow 투자성과를 주장하지 않는다. 테스트 파일: `backend/tests/test_jev_act2_s5_micro_canary.py`.
+
+**아직 HOLD:** 현재 승인받은 실제 공급자 계정/모델 revision, 계정 청구/보존·권한 조건, 유료 호출 예산·사용자 특정 실행 승인 없음. 실제 호출 **0건**, 실제 모델 성능 검증 **0건**. TypeSafe V4 frozen Canary·S3/S4 Mock·Horizon 원칙·시장 데이터 전송 차단·비활성 사용자 기능 모두 유지. 합성 정답과 비교한 품질은 승인된 호출을 실행한 **이후에만** 기록할 수 있고 그때도 실제 Scanner 순증분 효용의 근거는 아니다.
