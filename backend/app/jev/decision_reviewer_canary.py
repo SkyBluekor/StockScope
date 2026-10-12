@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 import sqlite3
-from typing import Any, Protocol
+from typing import Any
 
 import httpx
 
@@ -243,6 +243,11 @@ class MockShadowJournal:
         BEFORE DELETE ON jev_s4_mock_trial BEGIN
            SELECT RAISE(ABORT,'JEV mock review is immutable');
         END;
+        CREATE TRIGGER IF NOT EXISTS jev_s4_mock_no_terminal_change
+        BEFORE UPDATE ON jev_s4_mock_trial
+        WHEN OLD.state <> 'PENDING' BEGIN
+           SELECT RAISE(ABORT,'JEV completed mock review is immutable');
+        END;
         """)
 
     def _ready(self) -> None:
@@ -348,6 +353,17 @@ class MockShadowJournal:
             raise DecisionReviewContractError("S4_MOCK_FINISH_NOT_PENDING")
         return self.get(identity)
 
+    def interrupt_one(self, identity: str) -> dict[str, Any]:
+        self._ready()
+        self.conn.execute(
+            """UPDATE jev_s4_mock_trial SET state='INTERRUPTED',
+            reason_code='S4_PROCESS_INTERRUPTED',completed_at=?
+            WHERE identity=? AND state='PENDING'""",
+            (datetime.now(timezone.utc).isoformat(), identity),
+        )
+        self.conn.commit()
+        return self.get(identity)
+
     def get(self, identity: str) -> dict[str, Any]:
         self._ready()
         row = self.conn.execute(
@@ -393,8 +409,10 @@ class MockCanaryRunner:
                 # only the four output fields validated in S3 can be accepted.
                 validated = validate_decision_review_response(projection["input"], raw)
                 failure = None
-            except (DecisionReviewContractError, httpx.HTTPError,
-                    ValueError, TypeError, asyncio.TimeoutError) as exc:
+            except asyncio.CancelledError:
+                self.journal.interrupt_one(record["identity"])
+                raise
+            except Exception as exc:  # Mock errors must never become baseline decisions.
                 validated = None
                 failure = exc.code if isinstance(exc, DecisionReviewContractError) else (
                     "S4_MOCK_TIMEOUT" if isinstance(exc, asyncio.TimeoutError)
