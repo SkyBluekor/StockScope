@@ -330,3 +330,22 @@ git pull --ff-only origin main
 .\.venv\Scripts\python.exe tools\data\jev_s7_shadow.py capture --limit 60
 .\.venv\Scripts\python.exe tools\data\jev_s7_shadow.py report
 ```
+
+## JEV-ACT2-S7.2 — 신규 Capture 단일 Snapshot 확정 및 가격 관찰 분모 수정 (2026-10-12)
+
+- 신규 Scanner의 `rank_candidates`는 이미 `priority.rank`를 생성하며 Prospective writer는 `scanner_repro_candidate_key()`를 통해 그 **원본 순위**만 기록한다. 순위가 누락되거나 다른 표현과 충돌하면 이를 리스트 순번이나 현재 정책으로 채우지 않는다. 과거 사용자의 실제 데이터에서 발견된 `RANK_MISSING 24`, `POLICY_PROVENANCE_UNVERIFIED 24`, `STRATEGY_IDENTITY_MISSING 24`, `LEGACY_LIMITED 6` 기록은 **과거 원본 기록으로 유지**한다. 이 오류들이 모두 코드상 단일 원인에서 비롯됐다는 증거는 없다.
+- `ProspectiveCatalog.finalize_capture()`가 이미 가공한 후보에 `_candidate_snapshot()`을 **두 번째로 재호출**하던 중복 확정 경로를 수정한다. 한 번만 만든 후보 Projection으로 원본 Capture 해시를 계산하고 그 **동일한 Snapshot**을 저장한다. S3/S7 검증 계약이나 실제 Scanner 선별·Risk·Policy 판정은 바꾸지 않는다.
+- 신규 Scanner / Prospective 연계 테스트는 진짜 `rank_candidates()`, SelectionPolicyPin, 신선한 일치형 `scanner-repro` 감사 파일과 PASS 조건 증거를 사용하여 해시·순위·정책 정보·엔진 증거가 저장을 통과하는지 검증한다. 캐시 결과와 순위 누락 사례는 근거를 임의 만들어내지 않고 fail-closed로 처리한다. 코드/CI 검증은 **사용자의 실제 로컬 신규 Scanner 실행을 대신하지 않는다.**
+- S7 연구 DB의 **기존 60건은 변경하지 않는다.** `report`의 5·10·20거래일 관찰 분모는 전체 조회 기록 수가 아니라 `ENTRY_CANDIDATE` 수다. 가격 관찰 완료, 아직 충분한 후속 거래일 데이터가 없는 경우, 시세 부족·불명확을 따로 표시한다. `LOCAL_VALIDATED`, `LEGACY_LIMITED`, `INVALID`, `NOT_DIAGNOSED`별 집계도 별도로 제공한다. 과거 추천일 종가 변화는 체결 수익률이 아니다.
+- TypeSafe 실종목 요청은 **계속 HOLD**이며 신규 코드 작성·검증은 유료 호출을 수행하지 않는다. 운영 Scanner/Selection Policy/Horizon/주문 경로 변경도 없다.
+
+로컬 신규 결과 확인:
+```powershell
+git pull --ff-only origin main
+.\.venv\Scripts\python.exe -m pytest backend/tests/test_jev_act2_s7_2_fresh_capture.py backend/tests/test_jev_act2_s7_real_scanner_shadow.py -q
+.\.venv\Scripts\python.exe tools\data\jev_s7_shadow.py inspect --limit 60
+.\.venv\Scripts\python.exe tools\data\jev_s7_shadow.py capture --limit 60
+.\.venv\Scripts\python.exe tools\data\jev_s7_shadow.py report
+```
+
+**신규 Scanner Capture 확인은 별도의 로컬 작업이다.** 과거 저장된 60건을 재조회/재캡처하는 명령은 신규 Scanner 실행을 만들지 않으므로, 기존 24/6건의 분류가 바뀌지 않아도 코드 수정을 실패했다고 보거나 새 증거가 생겼다고 보지 않는다. 새 Scanner 실행 이후 해당 신규 Capture ID로 `inspect --capture-id <실제 ID>`를 실행하여 결과를 확인해야 실제 end-to-end 검증이 완료된다.

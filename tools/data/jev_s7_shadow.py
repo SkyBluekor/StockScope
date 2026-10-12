@@ -114,14 +114,16 @@ def display(value: dict[str, Any], *, as_json: bool = False) -> None:
     if "observed_price_count" in value:
         print(f"가격 관찰 가능: {value['observed_price_count']}건")
     if "window_summaries" in value:
-        print("가격 관찰 (과거 진입 후보 전체이며 정합성 통과 성과가 아님):")
+        print("가격 관찰 (진입 후보만 집계, 실제 체결 성과 아님):")
         for name, item in value["window_summaries"].items():
             average = item["average_signal_close_change_pct"]
             avg = f"{average:+.2f}%" if average is not None else "아직 없음"
             print(
                 f"{name} 관찰: {item['observed']}건, "
                 f"추천일 종가 대비 평균 변화 {avg}, "
-                f"미확정 {item['not_yet_observed']}건"
+                f"관찰 미완료 {item['not_yet_observed']}건"
+                f" (거래일 데이터 부족 {item.get('awaiting_future_trading_days', 0)}건,"
+                f" 가격 자료 부족·불명확 {item.get('price_unavailable_or_incomplete', 0)}건)"
             )
     print(
         f"실제 JEV 검토: "
@@ -129,12 +131,24 @@ def display(value: dict[str, Any], *, as_json: bool = False) -> None:
     )
     if "real_stock_provider_eligible" in value:
         print(f"외부 AI 전송 허용 후보: {value['real_stock_provider_eligible']}건")
-    if value.get("validated_window_summaries"):
-        print("정합성 통과 후보의 가격 관찰 (체결 수익률 아님):")
-        for name, item in value["validated_window_summaries"].items():
-            average = item["average_signal_close_change_pct"]
-            avg = f"{average:+.2f}%" if average is not None else "아직 없음"
-            print(f"  {name}: {item['observed']}건 / 평균 종가 변화 {avg}")
+    if value.get("entry_window_summaries_by_integrity"):
+        category_labels = {
+            "LOCAL_VALIDATED": "로컬 정합성 통과",
+            "LEGACY_LIMITED": "레거시 제한",
+            "INVALID": "정합성 제외",
+            "NOT_DIAGNOSED": "진단 전 기록",
+        }
+        for category, windows in value["entry_window_summaries_by_integrity"].items():
+            denominator = windows["5d"]["entry_candidate_denominator"]
+            if denominator == 0:
+                continue
+            print(f"{category_labels.get(category, category)} {denominator}건의 가격 관찰:")
+            for name, item in windows.items():
+                average = item["average_signal_close_change_pct"]
+                avg = f"{average:+.2f}%" if average is not None else "아직 없음"
+                print(f"  {name}: 완료 {item['observed']}건"
+                      f" / 미완료 {item['not_yet_observed']}건"
+                      f" / 평균 종가 변화 {avg}")
     if value.get("blocker_counts"):
         print("외부 전송 및 로컬 검증 제한 사유별 발생 수:")
         for key, count in value["blocker_counts"].items():

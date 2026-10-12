@@ -406,31 +406,70 @@ class S7ShadowJournal:
     @staticmethod
     def _summary(records: list[dict[str, Any]]) -> dict[str, Any]:
         counts = Counter(r["observation"]["status"] for r in records)
-        per_window: dict[str, Any] = {}
-        for window in WINDOWS:
+        # The 5/10/20d denominator is ENTRY_CANDIDATE only, never all saved
+        # references. Distinguish missing prices from insufficient future bars.
+        entry = [r for r in records if r.get("baseline_action") == "ENTRY_CANDIDATE"]
+
+        def window_summary(group: list[dict[str, Any]], window: int) -> dict[str, Any]:
             key = f"return_{window}d"
-            measured = [
-                float(r["observation"][key]) for r in records
-                if r["observation"].get(key) is not None
-            ]
-            per_window[f"{window}d"] = {
+            measured: list[float] = []
+            pending = unavailable = 0
+            for row in group:
+                observation = row["observation"]
+                value = observation.get(key)
+                if value is not None:
+                    measured.append(float(value))
+                    continue
+                available = observation.get("available_trading_days")
+                if (
+                    observation.get("status") == "OBSERVATION_ONLY"
+                    and type(available) is int and available < window
+                ):
+                    pending += 1
+                else:
+                    unavailable += 1
+            return {
                 "observed": len(measured),
                 "average_signal_close_change_pct": (
                     round(sum(measured) / len(measured), 4) if measured else None
                 ),
-                "not_yet_observed": len(records) - len(measured),
+                "not_yet_observed": len(group) - len(measured),
+                "awaiting_future_trading_days": pending,
+                "price_unavailable_or_incomplete": unavailable,
+                "entry_candidate_denominator": len(group),
             }
+
+        per_window = {
+            f"{window}d": window_summary(entry, window) for window in WINDOWS
+        }
         # Old S7 journal rows survive untouched. Until a new capture has
         # written S7.1 diagnostics, category is explicitly NOT_DIAGNOSED.
+        # Baseline action, not a potentially missing/older diagnostic tag,
+        # establishes the entry vs reference denominator.
         groups = Counter(
-            (r.get("integrity") or {}).get("category", "NOT_DIAGNOSED")
+            "REFERENCE_ONLY"
+            if r.get("baseline_action") != "ENTRY_CANDIDATE"
+            else (r.get("integrity") or {}).get("category", "NOT_DIAGNOSED")
             for r in records
         )
-        entry = [r for r in records if r.get("baseline_action") == "ENTRY_CANDIDATE"]
         validated = [
-            r for r in records
+            r for r in entry
             if (r.get("integrity") or {}).get("category") == "LOCAL_VALIDATED"
         ]
+        by_category = {
+            category: {
+                f"{window}d": window_summary(
+                    [
+                        r for r in entry
+                        if (r.get("integrity") or {}).get(
+                            "category", "NOT_DIAGNOSED"
+                        ) == category
+                    ],
+                    window,
+                ) for window in WINDOWS
+            }
+            for category in ("LOCAL_VALIDATED", "LEGACY_LIMITED", "INVALID", "NOT_DIAGNOSED")
+        }
         errors = Counter(
             code for r in records if isinstance(r.get("integrity"), dict)
             and r["integrity"].get("category") != "REFERENCE_ONLY"
@@ -448,28 +487,8 @@ class S7ShadowJournal:
             "not_diagnosed_count": groups["NOT_DIAGNOSED"],
             "integrity_category_counts": dict(sorted(groups.items())),
             "integrity_issue_counts": dict(sorted(errors.items())),
-            "validated_window_summaries": {
-                f"{window}d": {
-                    "observed": sum(
-                        r["observation"].get(f"return_{window}d") is not None
-                        for r in validated
-                    ),
-                    "average_signal_close_change_pct": (
-                        round(
-                            sum(float(r["observation"][f"return_{window}d"])
-                                for r in validated
-                                if r["observation"].get(f"return_{window}d") is not None)
-                            / sum(
-                                r["observation"].get(f"return_{window}d") is not None
-                                for r in validated
-                            ), 4
-                        )
-                        if any(r["observation"].get(f"return_{window}d") is not None
-                               for r in validated) else None
-                    ),
-                }
-                for window in WINDOWS
-            },
+            "validated_window_summaries": by_category["LOCAL_VALIDATED"],
+            "entry_window_summaries_by_integrity": by_category,
             "price_statuses": dict(counts),
             "window_summaries": per_window,
             "actual_jev_reviews": 0,

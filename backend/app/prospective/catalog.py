@@ -321,6 +321,13 @@ class ProspectiveCatalog:
         def audit_for(item: dict[str, Any]) -> dict[str, Any] | None:
             return audited_rows.get(scanner_repro_candidate_key(item))
 
+        # Finalize each immutable Scanner candidate exactly once. Previously
+        # the already enriched candidate was passed through _candidate_snapshot
+        # a second time on INSERT, so source_snapshot_hash was computed from a
+        # different projection than the one actually persisted.
+        raw_candidates = [
+            item for item in [*top, *more] if isinstance(item, dict)
+        ]
         candidates = [
             self._candidate_snapshot(
                 item, selection_policy=selection_policy, audited=audit_for(item),
@@ -329,8 +336,7 @@ class ProspectiveCatalog:
                 policy_reason=policy_reason,
                 require_policy_provenance=require_policy_provenance,
             )
-            for item in [*top, *more]
-            if isinstance(item, dict)
+            for item in raw_candidates
         ]
         execution_key, source_snapshot_hash, result_hash = self._result_identity(
             request=request,
@@ -489,13 +495,11 @@ class ProspectiveCatalog:
                     capture_id,
                 ),
             )
-            for index, candidate in enumerate(candidates):
-                snapshot = self._candidate_snapshot(
-                    candidate, selection_policy=selection_policy, audited=audit_for(candidate),
-                    selection_policy_pin=selection_policy_pin,
-                    policy_verified=policy_verified, policy_reason=policy_reason,
-                    require_policy_provenance=require_policy_provenance,
-                )
+            for index, snapshot in enumerate(candidates):
+                # The exact projection included in the capture result hash
+                # must be the exact snapshot we save, never re-enriched or
+                # silently backfilled from today's strategy definitions.
+                candidate = raw_candidates[index]
                 market = str(candidate.get("market") or "").upper()
                 ticker = str(candidate.get("code") or candidate.get("ticker") or "").strip().upper()
                 if not market or not ticker:
@@ -506,6 +510,9 @@ class ProspectiveCatalog:
                 # Reuse the S1.2 canonical key, rejecting conflicting ranks.
                 rank_key = scanner_repro_candidate_key(candidate)
                 rank_value = int(rank_key[2]) if all(rank_key) else None
+                # Only the originally ranked Scanner candidate is authoritative.
+                # Conflicting/missing ranking must remain NULL for diagnostics;
+                # never substitute its list index or a recomputed preference.
                 strategy = candidate.get("strategy")
                 if strategy is None:
                     strategy = candidate.get("quick_strategy")
