@@ -244,10 +244,12 @@ def test_source_hash_tampering_and_non_complete_capture_fail_closed(tmp_path):
         conn.execute(
             """INSERT INTO prospective_capture_run(
                 id,capture_version,source_job_id,status,request_json,
-                market_scope,candidate_limit,created_at,updated_at
-            ) VALUES(?,?,?,?,?,?,?,?,?)""",
+                market_scope,candidate_limit,horizon_intent,
+                created_at,updated_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
             ("s3-partial", "SYNTHETIC_ONLY", "partial-job", "PARTIAL",
-             "{}", "ALL", 5, "2026-10-09T00:00:00Z", "2026-10-09T00:00:00Z"),
+             "{}", "ALL", 5, "LEGACY_UNSPECIFIED",
+             "2026-10-09T00:00:00Z", "2026-10-09T00:00:00Z"),
         )
     with pytest.raises(DecisionReviewContractError, match="CAPTURE_NOT_COMPLETE"):
         load_canonical_candidate_readonly(
