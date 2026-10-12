@@ -29,7 +29,7 @@ def _readonly(path: Path) -> sqlite3.Connection:
     return sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
 
 
-def _valid_raw_cache(root: Path, market: str, day: date, kind: str) -> bool:
+def _valid_raw_cache(root: Path, market: str, day: date, kind: str, *, today: date) -> bool:
     """Inspect gzip without the provider's legacy cleanup side effects."""
     endpoint = KrxProvider._endpoint_for_kind(market, kind)
     stamp = day.strftime("%Y%m%d")
@@ -51,7 +51,7 @@ def _valid_raw_cache(root: Path, market: str, day: date, kind: str) -> bool:
             return False
     # A verified historical empty marker avoids querying valid exchange holidays.
     marker = root / (name + ".empty")
-    return marker.is_file() and day <= date.today() - timedelta(days=3)
+    return marker.is_file() and day <= today - timedelta(days=3)
 
 
 def plan_scanner_data(
@@ -82,19 +82,24 @@ def plan_scanner_data(
         try:
             with _readonly(db) as conn:
                 names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-                if "day_status" not in names:
+                if "day_status" not in names and names:
                     return {
                         "version": SCHEMA, "status": "BLOCKED_SCHEMA",
                         "reason": "MARKET_SCHEMA_MISSING", "provider_calls": 0, "db_writes": 0,
                     }
-                first = start.strftime("%Y%m%d")
-                last = end.strftime("%Y%m%d")
-                for market, dd, kind in conn.execute(
-                    "SELECT market,bas_dd,kind FROM day_status "
-                    "WHERE market IN ('KOSPI','KOSDAQ') AND bas_dd>=? AND bas_dd<=?",
-                    (first, last),
-                ):
-                    status[(str(market), str(dd), str(kind))] = True
+                if not names:
+                    # An empty DB from first startup is recoverable. The existing
+                    # MarketStore constructor will initialize it when Scanner runs.
+                    warnings.append("NEW_DEVICE_MARKET_SCHEMA_NOT_INITIALIZED")
+                else:
+                    first = start.strftime("%Y%m%d")
+                    last = end.strftime("%Y%m%d")
+                    for market, dd, kind in conn.execute(
+                        "SELECT market,bas_dd,kind FROM day_status "
+                        "WHERE market IN ('KOSPI','KOSDAQ') AND bas_dd>=? AND bas_dd<=?",
+                        (first, last),
+                    ):
+                        status[(str(market), str(dd), str(kind))] = True
         except sqlite3.Error:
             return {
                 "version": SCHEMA, "status": "BLOCKED_SCHEMA",
@@ -113,7 +118,7 @@ def plan_scanner_data(
                 if status.get((market, day.strftime("%Y%m%d"), kind)):
                     continue
                 slots += 1
-                if _valid_raw_cache(cache, market, day, kind):
+                if _valid_raw_cache(cache, market, day, kind, today=current):
                     raw_hits += 1
                 else:
                     requested += 1
