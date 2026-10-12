@@ -182,7 +182,7 @@ def test_only_registered_cases_may_be_sent():
     (lambda x: x["answers"][CHOICE_NAME].update(probabilities={"ABSTAIN": 1.0}),
      "S5_CHOICE_PROBABILITIES_INVALID"),
     (lambda x: x["answers"][CHOICE_NAME].update(confidence=float("nan")),
-     "S5_CHOICE_PROBABILITIES_INVALID"),
+     "S5_PROVIDER_RESPONSE_INVALID"),
     (lambda x: x["usage"].update(input_tokens=-1), "S5_USAGE_INVALID"),
     (lambda x: x["answers"].update(unrequested={"type": "noul", "noul": 0.9}),
      "S5_ANSWER_SET_INVALID"),
