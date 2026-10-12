@@ -154,7 +154,9 @@ def test_dry_run_alias_no_network_or_db(tmp_path, monkeypatch):
 def test_alias_requires_third_consent_before_get_or_post(tmp_path, monkeypatch):
     monkeypatch.setenv("JEV_API_KEY", "ci-fake")
     args = _approved_args()
-    answers = _approval_answers(args)
+    # Supply ONLY the first two phrases: the missing third alias consent
+    # must be rejected before authenticated discovery and paid POST.
+    answers = iter(list(_approval_answers(args))[:2])
     called = []
     with pytest.raises(DecisionReviewContractError, match="S6_CONSENT_PHRASE_MISMATCH"):
         asyncio.run(execute(
