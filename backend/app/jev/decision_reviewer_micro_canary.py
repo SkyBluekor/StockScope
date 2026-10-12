@@ -457,6 +457,20 @@ class MicroJournal:
                    > Decimal(protocol.total_budget_usd)
             ):
                 raise DecisionReviewContractError("S5_TRIAL_BUDGET_EXHAUSTED")
+            # Independent hard cap across ALL actual research protocols in
+            # this SQLite catalog, not just the current protocol hash.
+            # Exact reserved amounts stay booked even after API errors.
+            if origin == "ACTUAL_PROVIDER":
+                globally_reserved = self.conn.execute(
+                    "SELECT reserved_usd FROM jev_s5_synthetic "
+                    "WHERE execution_origin='ACTUAL_PROVIDER'"
+                ).fetchall()
+                total_reserved = sum(
+                    (Decimal(r["reserved_usd"]) for r in globally_reserved),
+                    Decimal("0"),
+                )
+                if total_reserved + Decimal(protocol.per_attempt_reservation_usd) > Decimal("0.50"):
+                    raise DecisionReviewContractError("S6_PROJECT_TOTAL_RESERVATION_EXCEEDED")
             self.conn.execute(
                 """INSERT INTO jev_s5_synthetic(
                   review_id,protocol_hash,case_id,input_hash,request_hash,expected_gold,
