@@ -148,3 +148,29 @@
 - `--json`에는 `user_jev_execution`이 추가되어 차단 이유·LOCAL_MATCH 수·기술적 잔여 검토 적격 건수를 익명 집계하고, 실제 AI 호출 수 0건을 명시함
 
 **최종 판정:** ACT2-S1 오프라인 실행 경로와 조회 회귀 통과 후에도, 실제 외부 모델 호출 및 사용자 기능 제공은 별도 승인·UAT 이전까지 완료가 아니다. V4 모델 호출 후보가 없는 경우 가짜 호출을 만들지 않는다.
+
+## JEV-ACT2-S2 — Horizon 차단 및 실제 의미 검토 도달성 진단
+
+**범위:** 2026-10-12 `01d0b7c` 이후 안전한 오프라인 검증 단계. 현재 Scanner 규칙과 의미 계약의 *구조적* 도달성을 구분한다. 운영 Scanner/DB 쓰기, KRX, 외부 모델, 정책 승인, Holdout, Runtime sync, 기존 기록 수정은 모두 제외한다.
+
+### 정책 경계 (승인하지 않음)
+
+- `ScannerRequest.horizon_intent`가 명시된 경우 `POST /scanner/jobs`의 `require_horizon_activatable()`에서 실행 전에 거절한다. `resolve_horizon_context("SHORT"/"MEDIUM")`은 모두 `EVALUATION_PENDING`/`HORIZON_NUMERIC_POLICY_NOT_APPROVED` 상태다.
+- Prospective의 `capture_request_from_scanner_payload()`는 그 기간 문자열 및 정책 버전을 **기록**할 수 있지만, 그 자체가 신규 Scanner 실행 승인을 의미하지 않는다. 정식 실행은 API entry gate가 선행되어야 한다.
+- `LEGACY_UNSPECIFIED`의 과거 캡처는 소급 편집하지 않는다. 5/10/20일 관찰창을 승인된 SHORT/MEDIUM 기간으로 전환하지 않는다.
+- 투자 기간 숫자 정책(기간 정의·재검토·타임스톱·지원 전략·필수 입력·확인 규칙)은 동결 계약에 충분한 승인 근거가 확보되기 전까지 미승인이다.
+
+### 기존 의미 계약의 구조적 차단
+
+현재 `semantic_relations.py`의 10개 등록 전략 관계는 전부 `REQUIRES_ALL` / `HARD`이며, `condition_assertions.py`의 *통과한 조건* 매핑은 전부 `SUPPORTS`다. `project_passed_condition_assertions()`는 정확한 전체 PASS 조건 집합을 요구하므로, 해당 계약을 그대로 재조합하면 10개 모두 `LOCAL_MATCH`, `RESIDUAL_SEMANTIC_REVIEW`는 0개다.
+
+추가한 `audit_current_pass_mapping_reachability()`는 실제 전략 정의 버전·관계·조건 매핑을 재사용하여 임시 합성 PASS 입력으로 이를 오프라인 증명한다. 실제 시장 데이터, 실제 후보, 실제 모델 성공을 재현한 것이 아니다. 정의/매핑이 누락되면 `UNDETERMINED_CONTRACTS`를 반환하여 'residual 없음'으로 잘못 단정하지 않는다.
+
+실제 저장된 후보의 집계 결과와 합성 구조 진단은 `audit_jev_act1_readiness.py --json`의 독립 필드(`audit`, `horizon_gate`, `semantic_reachability`, `candidate_path`)로 분리한다. `PROVIDER_ELIGIBLE`은 기술적 V4 자격만 나타내며 외부 호출 승인이나 제품 활성화를 의미하지 않는다.
+
+### 테스트·운영상 한계
+
+- `backend/tests/test_jev_act2_s2_reachability.py`: 실제 등록된 10개 전략의 PASS 매핑 및 0 residual, 합성 UNRESOLVED 입력의 composer 도달성, 매핑 누락 시 fail-closed, 미승인 SHORT/MEDIUM 거절 및 LEGACY 보존.
+- `backend/tests/test_jev_act1_s1_readiness.py`: 임시 SQLite 읽기 전용 진단 통합 결과와 원본 불변 검증을 확장했다.
+- 기존 `test_jev_act2_s1_fake_pipeline.py`와 전체 backend/frontend/fresh-clone CI 회귀를 유지한다.
+- **실사용 승인은 계속 HOLD**. 실사용 도달성 확보에 필요한 의미 소스/검토 역할 확장은 독립 계약과 사용자 승인 후 별도 과제로 취급한다. `LOCAL_MATCH`를 억지 residual로 바꾸거나 통과한 조건에 조작된 의미를 삽입하지 않는다.
