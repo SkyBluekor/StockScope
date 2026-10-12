@@ -336,6 +336,63 @@ def build_scanner_review_input(
     }
 
 
+def audit_capture_review_scope_readonly(
+    simulation_db: Path, *, capture_id: str, protocol_id: str,
+) -> dict[str, Any]:
+    """Summarize source candidates without changing them or transmitting data."""
+    path = Path(simulation_db).resolve()
+    if not path.is_file():
+        raise DecisionReviewContractError("CAPTURE_DB_NOT_FOUND")
+    try:
+        with sqlite3.connect(path.as_uri() + "?mode=ro", uri=True) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA query_only=ON")
+            row = conn.execute(
+                "SELECT id,status,canonical_capture_id FROM prospective_capture_run "
+                "WHERE id=?", (capture_id,)
+            ).fetchone()
+            if row is None or row["status"] not in {"COMPLETE", "DUPLICATE"}:
+                raise DecisionReviewContractError("CAPTURE_NOT_COMPLETE")
+            canonical = (
+                row["canonical_capture_id"]
+                if row["status"] == "DUPLICATE" else row["id"]
+            )
+            rows = conn.execute(
+                "SELECT sample_index FROM prospective_recommendation_sample "
+                "WHERE capture_run_id=? ORDER BY sample_index", (canonical,)
+            ).fetchall()
+    except sqlite3.Error as exc:
+        raise DecisionReviewContractError("CAPTURE_READ_FAILED") from exc
+    counts: dict[str, int] = {}
+    for row in rows:
+        try:
+            cap, sample = load_canonical_candidate_readonly(
+                path, capture_id=capture_id, sample_index=int(row["sample_index"])
+            )
+            key = build_scanner_review_input(
+                cap, sample, protocol_id=protocol_id
+            )["status"]
+        except DecisionReviewContractError as exc:
+            key = exc.code
+        counts[key] = counts.get(key, 0) + 1
+    return {
+        "version": "JEV_ACT2_S3_READONLY_CAPTURE_SCOPE_V1",
+        "source_capture_id": str(canonical),
+        "total_returned_samples": len(rows),
+        "offline_inspectable": counts.get("OFFLINE_INSPECTABLE_ONLY", 0),
+        "legacy_inspection_only": counts.get("LEGACY_INSPECTION_ONLY", 0),
+        "excluded": len(rows) - sum(
+            counts.get(key, 0) for key in (
+                "OFFLINE_INSPECTABLE_ONLY", "LEGACY_INSPECTION_ONLY"
+            )
+        ),
+        "reasons": dict(sorted(counts.items())),
+        "actual_provider_eligible": 0,
+        "provider_calls": 0,
+        "db_writes": 0,
+    }
+
+
 def validate_decision_review_response(
     review_input: dict[str, Any], response: dict[str, Any],
 ) -> dict[str, Any]:
@@ -347,7 +404,10 @@ def validate_decision_review_response(
     decision = response["decision"]
     if not isinstance(decision, str) or decision not in ALLOWED_DECISIONS:
         raise DecisionReviewContractError("REVIEW_DECISION_INVALID")
-    if (decision == "ABSTAIN") != (response["abstain_reason"] in ABSTAIN_REASONS):
+    abstain_reason = response["abstain_reason"]
+    if abstain_reason is not None and not isinstance(abstain_reason, str):
+        raise DecisionReviewContractError("ABSTAIN_REASON_INVALID")
+    if (decision == "ABSTAIN") != (abstain_reason in ABSTAIN_REASONS):
         raise DecisionReviewContractError("ABSTAIN_REASON_INVALID")
     if decision != "ABSTAIN" and response["abstain_reason"] is not None:
         raise DecisionReviewContractError("ABSTAIN_REASON_INVALID")
