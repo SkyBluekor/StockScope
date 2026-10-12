@@ -29,6 +29,8 @@ test("finished or cached Scanner is not a Jev result", () => {
 test("cancelled and failed jobs never animate later unfinished phases", () => {
   assert.deepEqual(states("cancelled", "scanner_deep_analysis"), ["done", "cancelled", "waiting"]);
   assert.deepEqual(states("failed", "scanner_prepare_failed", { failed_stage: "scanner_prepare_probe" }), ["failed", "waiting", "waiting"]);
+  // The server can replace stage with 'failed'; never guess an invisible phase.
+  assert.deepEqual(states("failed", "failed"), ["waiting", "waiting", "waiting"]);
 });
 
 test("scope-specific background progress stays as one stable customer rail", () => {
