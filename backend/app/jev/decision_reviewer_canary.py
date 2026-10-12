@@ -225,6 +225,8 @@ class MockShadowJournal:
             protocol_hash TEXT NOT NULL,
             input_hash TEXT NOT NULL,
             request_hash TEXT NOT NULL,
+            prompt_version TEXT NOT NULL,
+            prompt_hash TEXT NOT NULL,
             source_ref_json TEXT NOT NULL,
             candidate_ref_json TEXT NOT NULL,
             baseline_action TEXT NOT NULL,
@@ -272,6 +274,13 @@ class MockShadowJournal:
             "output": json.loads(row["output_json"]) if row["output_json"] else None,
             "fake_only": True,
             "actual_provider_calls": 0,
+            "shadow_action": (
+                "DEFER_THIS_OPPORTUNITY"
+                if row["state"] == "VALID" and row["disposition"] == "REVIEW_REQUIRED"
+                else "BASELINE_UNCHANGED"
+            ),
+            "outcome_status": "NOT_EVALUATED",
+            "outcome_return": None,
         }
 
     def reserve(
@@ -306,13 +315,14 @@ class MockShadowJournal:
                 raise DecisionReviewContractError("S4_MOCK_BUDGET_OR_ATTEMPTS_EXCEEDED")
             self.conn.execute(
                 """INSERT INTO jev_s4_mock_trial(
-                identity,protocol_hash,input_hash,request_hash,source_ref_json,
+                identity,protocol_hash,input_hash,request_hash,
+                prompt_version,prompt_hash,source_ref_json,
                 candidate_ref_json,baseline_action,provider_id,model_id,
                 state,reservation_usd,created_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     identity, limits.protocol_hash, projection["input_hash"],
-                    digest_json(packet),
+                    digest_json(packet), packet["prompt_version"], packet["prompt_hash"],
                     canonical_json(projection["input"]["source_ref"]),
                     canonical_json(projection["input"]["candidate_ref"]),
                     projection["input"]["baseline_decision"]["action"],
