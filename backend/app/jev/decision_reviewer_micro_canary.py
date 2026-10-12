@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 import json
 import math
+import re
 import time
 import sqlite3
 from typing import Any
@@ -161,6 +162,9 @@ class FrozenMicroProtocol:
     question_hash: str = QUESTION_HASH
     retry_count: int = 0
     concurrency_cap: int = 1
+    # A moving alias is permitted only in a labeled, synthetic, unverified
+    # exploratory cohort. It is NEVER a pinned model version.
+    alias_identity_policy: str = "FIXED_MODEL"
 
     def validate(self) -> None:
         try:
@@ -174,7 +178,20 @@ class FrozenMicroProtocol:
             not self.protocol_id.strip()
             or not self.model_requested.strip()
             or not self.model_returned.strip()
-            or self.model_returned.upper() in {"UNFROZEN", "JEV-LATEST"}
+            or self.alias_identity_policy not in {
+                "FIXED_MODEL", "SYNTHETIC_JEV_LATEST_V1"
+            }
+            or (
+                self.alias_identity_policy == "FIXED_MODEL"
+                and self.model_returned.upper() in {"UNFROZEN", "JEV-LATEST", "JEV-PREVIEW"}
+            )
+            or (
+                self.alias_identity_policy == "SYNTHETIC_JEV_LATEST_V1"
+                and (
+                    self.model_requested != "jev-latest"
+                    or self.model_returned != "jev-latest"
+                )
+            )
             or not (1 <= self.max_attempts <= 10)
             or not (Decimal("0") < single <= Decimal("0.05"))
             or not (Decimal("0") < total <= Decimal("0.50"))
@@ -233,7 +250,23 @@ class ActualTrialApproval:
 
 def _clean_choice_response(raw: dict[str, Any], protocol: FrozenMicroProtocol) -> dict[str, Any]:
     """Uses the vendor's actual typed CHOICE schema, not free-text JSON."""
-    if not isinstance(raw, dict) or raw.get("model") != protocol.model_returned:
+    if not isinstance(raw, dict):
+        raise DecisionReviewContractError("S5_RETURNED_MODEL_MISMATCH")
+    returned_model = raw.get("model")
+    if protocol.alias_identity_policy == "SYNTHETIC_JEV_LATEST_V1":
+        # Alias responses may report either the alias or a concrete-looking
+        # version. Neither provides proof that the underlying revision is pinned.
+        # A preview alias or arbitrary claimed model must be rejected.
+        accepted = (
+            returned_model == "jev-latest"
+            or (isinstance(returned_model, str) and bool(re.fullmatch(
+                r"jev-[0-9]+\.[0-9]+\.[0-9]+(?:[-.][A-Za-z0-9]+)*",
+                returned_model,
+            )))
+        )
+        if not accepted:
+            raise DecisionReviewContractError("S6_ALIAS_RETURNED_MODEL_UNEXPECTED")
+    elif returned_model != protocol.model_returned:
         raise DecisionReviewContractError("S5_RETURNED_MODEL_MISMATCH")
     answers = raw.get("answers")
     if not isinstance(answers, dict) or set(answers) != {CHOICE_NAME}:
@@ -265,6 +298,12 @@ def _clean_choice_response(raw: dict[str, Any], protocol: FrozenMicroProtocol) -
     return {
         "decision": answer["choice"],
         "model": raw["model"],
+        "requested_model": protocol.model_requested,
+        "model_identity_status": (
+            "REVISION_UNVERIFIED"
+            if protocol.alias_identity_policy == "SYNTHETIC_JEV_LATEST_V1"
+            else "PINNED_NAME_ONLY"
+        ),
         "confidence": float(conf),
         "probabilities": {k: float(v) for k, v in sorted(probs.items())},
         "usage": dict(usage),
@@ -589,13 +628,32 @@ class MicroCanaryRunner:
                     ),
                     timeout=protocol.deadline_seconds,
                 )
+                if protocol.alias_identity_policy == "SYNTHETIC_JEV_LATEST_V1":
+                    # A previous valid response in this protocol sets the
+                    # observable returned-model cohort identity. Detect a
+                    # visible change across restarts and stop before trusting
+                    # the new result. An invisible alias drift is unknowable.
+                    prior_models = {
+                        record["typed_response"]["model"]
+                        for record in self.journal.list_records()
+                        if record["protocol_hash"] == protocol.identity_hash
+                        and record["state"] == "VALID"
+                        and record["typed_response"] is not None
+                    }
+                    if prior_models and prior_models != {typed["model"]}:
+                        raise DecisionReviewContractError("S6_ALIAS_MODEL_CHANGED")
                 output = _model_to_review(projection, typed["decision"])
                 error = None
             except asyncio.CancelledError:
                 self.journal.interrupt_pending()
                 raise
             except Exception as exc:
-                typed, output = None, None
+                if not (
+                    isinstance(exc, DecisionReviewContractError)
+                    and exc.code == "S6_ALIAS_MODEL_CHANGED"
+                ):
+                    typed = None
+                output = None
                 error = (
                     exc.code if isinstance(exc, DecisionReviewContractError)
                     else "S5_PROVIDER_OR_VALIDATION_ERROR"

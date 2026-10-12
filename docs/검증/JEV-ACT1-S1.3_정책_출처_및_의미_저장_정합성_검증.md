@@ -247,3 +247,22 @@ S3 성공 판정은 **오프라인 계약을 완주하는 Fake 검토 및 CI**�
 ```
 
 본 문서의 `jev-1.13.0`은 CLI 예시이지 계정에서 해당 모델이 확인됐다는 뜻이 아니다. 공식 API 스키마 `https://api.typesafe.ai/openapi.json`의 `/v1/systemone` 요청 및 `/v1/models` 응답 계약을 사용했다. 실제 계정 모델·실제 요금·이용권·보존 정책은 사용자 계정에서 별도 검증해야 한다. **S6 코드 구현과 Micro-Canary 실호출은 별도 완료 상태**: 실제 유료 실험 승인 없이 S6 코드를 작성/테스트·병합하는 행위는 외부 API 실행 승인이 아니다. 실거래 시장 데이터/실제 종목과의 JEV 성능, Scanner 수익·손실 개선, 활성화는 계속 HOLD.
+
+## JEV-ACT2-S6.1 — 실계정 모델 목록과 가변 별칭 정합성 (2026-10-12)
+
+**실제 조회 증거 (사용자 로컬 출력, 유료 추론 아님):** `check-account` 성공. 해당 계정의 `GET /v1/models`는 `jev-latest` (release_date `2026-09-10T18:38:01.391457+00:00`)와 `jev-preview` (release_date `2026-09-10T18:39:06.057655+00:00`)만 반환했고 `jev-1.13.0`은 목록에 없음. 이 출력은 현재 시점의 **계정 모델 목록**이지 내부 revision이 고정됐다는 확인이 아님. 모델 ID를 임의로 `jev-1.13.0`으로 치환하지 않는다.
+
+**보정 정책:** 기존 S6 `check-account`과 `dry-run`은 `jev-latest` 별칭을 인식하며 상태 `MOVING_ALIAS_SYNTHETIC_ONLY / REVISION_UNVERIFIED`를 명시한다. 계정 목록에서 없는 모델은 계속 차단한다. `jev-preview` 최초 시험은 여전히 승인되지 않았으므로 `run-approved` 경로에서 차단. `jev-latest` 합성 Micro-Canary를 실제 실행하려면 원래 두 동의 문구 외에 **특정 protocol hash를 포함한 세 번째 별칭 변경 위험 승인**이 필요하다. 일반 모델 활성화나 실주식 데이터 전송 범위는 확대하지 않는다.
+
+모델 목록 조회 후 `name,description,release_date`와 UTC 조회 시각, canonical catalog hash, 요청 모델 및 별칭 정책을 격리 SQLite의 **추가 불변 스냅샷**으로 기록한다. 같은 protocol 아래 관찰 가능한 목록 메타데이터가 달라지면 `S6_CATALOG_CHANGED_NEW_PROTOCOL_REQUIRED`로 유료 POST 이전 HOLD. 응답은 `requested_model`과 `reported_model`을 따로 보존하고 `REVISION_UNVERIFIED` 상태로 표시한다. 응답 모델은 같은 별칭 또는 구체적 버전 형식만 받아들이며, 기존 유효 응답의 반환 모델과 달라지면 오류 기록 후 이후 요청 중단. **공급자가 alias 내부 모델을 변경하고 해당 사실을 표면에 노출하지 않으면 검출 불가능**하므로 동일 문자열만으로 재현성·버전 고정·투자효과를 입증하지 않는다.
+
+**가격·동의 HOLD 강화:** 기존처럼 임의의 HTTPS 홈페이지 URL과 단가 두 개만 입력해서 유료 추론을 실행할 수 없게 했다. 계정 청구 화면을 본 사실을 나타내는 `--account-price-source ACCOUNT_BILLING_USER_ATTESTED`, 최근 확인 날짜 `--account-billing-checked-date YYYY-MM-DD`, 일반 홈페이지가 아닌 TypeSafe 약관/청구 출처 주소, 단가, 실행별 사용자 동의가 모두 필요하다. 단, 이는 **사용자 확인 진술(USER_ATTESTED)** 로서 모델 공급자가 독립적으로 검증한 실제 청구율 증명이 아니며, 콘솔/공식 제공 정보가 없으면 `S6_ACCOUNT_PRICING_UNVERIFIED`로 HOLD한다. 암호, 인증 토큰, 결제 카드번호, 계좌 ID는 URL·로그·Git에 저장하지 않는다. 요청 건수·비용 예약액과 합성 데이터 한정 조건은 S6 규칙 그대로다.
+
+**유료 호출 없이 가능한 로컬 확인:**
+```powershell
+.\.venv\Scripts\python.exe tools\data\jev_s6_micro_canary.py status
+.\.venv\Scripts\python.exe tools\data\jev_s6_micro_canary.py dry-run --model jev-latest
+.\.venv\Scripts\python.exe tools\data\jev_s6_micro_canary.py report
+.\.venv\Scripts\python.exe -m pytest backend/tests/test_jev_act2_s6_1_alias.py -q
+```
+`check-account --model jev-latest --authorize-model-lookup`은 사용자가 다시 승인할 경우 실제 계정 모델 목록 GET을 수행하며 추론하지 않는다. `run-approved`는 별도의 유료 호출 동의 단계이므로 사용자가 명시적으로 결정하기 전 실행하지 않는다. S6.1 Mock/CI 자동 테스트만으로 실제 Jev 성능·주식 수익 개선을 주장하지 않는다. Frozen TypeSafe V4, Scanner/Risk/Prospective/운영 DB, 자료 전송/Horizon 제한 및 JEV 기능 비활성 상태는 그대로다.
