@@ -311,3 +311,22 @@ git pull --ff-only origin main
 - `capture`: 원본 운영 DB에는 쓰지 않고, `data/jev_research/s7_shadow.sqlite3`(Git 추적 제외) 연구 DB에 시간별 변화를 불변 방식으로 기록한다. 같은 후보·관찰 입력 재실행 시 중복 저장 방지. 이 과정도 외부 TypeSafe 호출 0건.
 - `report`: 최신 후보별 5/10/20일 관찰 및 미관측 건수, 원본 Scanner 기반 변화율만 제시한다. `actual_jev_reviews=0`, `economic_uplift_proven=False` 상태를 실제 JEV 판단이 수집되기 전까지 유지한다.
 - 구현 및 CI 통과가 **S7 실제 Jev 모델 가치 검증 완료를 뜻하지 않으며**, 합법적인 외부 전송 시각 및 권한 자료 확보와 이후의 진입 가능 가격·거래비용 정책을 통과해야 실질적 비교가 가능하다.
+
+## JEV-ACT2-S7.1 — 진입 후보 정합성 원인 분리와 로컬 평가 집계 (2026-10-12)
+
+사용자 S7 로컬 로그는 **전체 조회 60건, 실제 `ENTRY_CANDIDATE` 30건, 참고/비진입 30건, 기존 S3 첫 오류 `BASELINE_RANK_MISMATCH` 24건 및 `STRATEGY_IDENTITY_MISMATCH` 6건**, 5거래일 후 종가 관찰 완료 15건(평균 +1.55%)을 보여 주었다. 이 숫자는 **각 후보별 첫 발견 오류만 집계한 값으로 모든 독립 오류를 의미하지 않는다.** S7.1 구현 작업 환경에서는 사용자의 실제 로컬 DB 파일을 열 수 없으므로 **각 24건/6건의 구체적 원인은 아직 미확인**이다. 정상 판정 건수나 오류 수정 성과는 사용자 로컬 `inspect` 실행 후에만 사실로 보고한다.
+
+- `backend/app/prospective/catalog.py`의 기존 `scanner_repro_candidate_key`는 원본 `priority.rank`와 최상위 `rank`가 충돌하거나 랭킹 값이 빠진 경우 빈 key를 반환하며, 그에 따라 과거 Prospective DB `sample.rank`가 NULL일 수 있다. **데이터가 없는 후보를 순위가 있다고 고쳐 쓰지 않는다.** 신규 캡처 writer도 실제 24건 원인을 검증하기 전까지 임의로 수정하지 않는다.
+- `backend/app/jev/scanner_integrity_s7_1.py`는 기존 S3 엄격한 JEV 입력 변환은 그대로 호출하면서 순위 저장값/원본 priority/직접 rank, 정책 pin, 엔진 증거, 전략 정의, 위험 제한 및 날짜를 **독립적으로 진단**한다. `LOCAL_VALIDATED`는 기존 S3 입력 계약까지 통과한 경우에 한정한다. `LEGACY_LIMITED`는 원본 최상위 식별값이 없고 증명된 레거시 유도 전략 식별값이 확인된 경우에만 부여하되, 원본 식별 일치나 TypeSafe 외부 전송 승인을 주장하지 않는다. 그 외 충돌·누락은 `INVALID`, 비진입은 `REFERENCE_ONLY`로 구분한다.
+- `tools/data/jev_s7_shadow.py`의 `inspect/capture/report`는 조회된 전체 기록 수와 **실제 진입 후보 수**, 참고 기록 수, 정합성 완전 통과/레거시 제한/실패 수를 구분하여 한국어로 표시한다. 정합성 원인을 복수로 집계하며 한 후보에 두 가지 이상의 오류가 있을 수 있음을 안내한다. 기록된 과거 5/10/20일 가격 관찰은 유지하지만 정합성 통과 대상에 대한 별도 관찰 수치와 진입 후보 전체 수치를 구분한다.
+- 기존 연구 DB `jev_s7_local_observation` 행은 수정/삭제하지 않는다. `capture` 시 독립 불변 테이블 `jev_s7_1_integrity_audit`에 진단 판정만 추가한다. 이전 진단 데이터가 없는 레거시 행은 `NOT_DIAGNOSED`로 남아 재 `capture`가 필요하다고 출력한다. 재실행 시 이미 기록된 가격 관찰은 중복 저장하지 않는다.
+- 진입 후보에 대한 TypeSafe 실제 요청은 **여전히 0건/HOLD**. S5/S6.2 합성 호출 제약 및 기존 투자 기간 숫자 정책, 외부 정보 가용 시각·권리 검증 기준을 변경하지 않는다. 최초 데이터 60건을 오직 30건으로 억지 통과시켜 실전 성능 개선이라고 보고하는 작업이 아니다.
+
+로컬 검증:
+```powershell
+git pull --ff-only origin main
+.\.venv\Scripts\python.exe -m pytest backend/tests/test_jev_act2_s7_real_scanner_shadow.py -q
+.\.venv\Scripts\python.exe tools\data\jev_s7_shadow.py inspect --limit 60
+.\.venv\Scripts\python.exe tools\data\jev_s7_shadow.py capture --limit 60
+.\.venv\Scripts\python.exe tools\data\jev_s7_shadow.py report
+```
