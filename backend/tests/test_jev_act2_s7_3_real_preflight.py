@@ -53,12 +53,20 @@ def _actual_shaped_sample(*, action="ENTRY_CANDIDATE"):
             "readiness": {"q2_status": "COMPLETE"},
             "conditions": {"items": source},
         },
-        "semantic_condition_evidence": {"items": [
-            {
-                "status": "PASS", "source_condition": it["source_condition"],
-                "condition_id": it["condition_id"],
-            } for it in source
-        ]},
+        # Real repro audit IDs belong to the engine namespace, while
+        # semantic_source_v2 issues its own condition-01 etc. They are NOT
+        # required to be equal: the common identity is source_condition.
+        "semantic_condition_evidence": {
+            "source": s73.ENGINE_CONDITION_SOURCE,
+            "strategy_key": "trend_following",
+            "passed": len(source), "total": len(source), "missing": 0,
+            "items": [
+                {
+                    "status": "PASS", "source_condition": it["source_condition"],
+                    "condition_id": f"repro-engine-pass-{n+1}",
+                } for n, it in enumerate(source)
+            ],
+        },
         "semantic_strategy_identity": {
             "source": s73.ENGINE_VERIFIED_SOURCE,
             "strategy_key": "trend_following",
@@ -124,6 +132,58 @@ def test_s7_3_legacy_real_packet_has_explicit_derived_provenance(monkeypatch):
         k: v for k, v in state.items() if k != "input_hash"
     })
     assert sample["snapshot"] == original
+
+
+def test_s7_3_real_engine_ids_differ_from_semantic_ids_but_sources_match(monkeypatch):
+    """Real producer emits unrelated per-layer IDs; strong source bijection works."""
+    _validated_legacy(monkeypatch)
+    capture, sample = _actual_shaped_sample()
+    original = deepcopy(sample["snapshot"])
+    semantic = original["semantic_source_v2"]["conditions"]["items"]
+    repro = original["semantic_condition_evidence"]["items"]
+    assert all(a["condition_id"] != b["condition_id"]
+               for a, b in zip(semantic, repro))
+    prepared = s73.prepare_shadow_candidate(capture, sample)
+    assert prepared["status"] == "LOCAL_PACKET_READY"
+    assert prepared["category"] == "LEGACY_LIMITED"
+    assert len(prepared["packet"]["evidence"]) == len(semantic) + 1
+    assert prepared["packet"]["input_hash"] == digest_json({
+        k: v for k, v in prepared["packet"].items() if k != "input_hash"
+    })
+    assert sample["snapshot"] == original
+    hold = s73.preflight_shadow_candidate(prepared)
+    assert hold["status"] == "PROVIDER_HOLD"
+    assert hold["actual_provider_calls"] == 0
+
+
+@pytest.mark.parametrize("mutation", (
+    "duplicate_source", "duplicate_engine_id", "engine_not_passed",
+    "unknown_source", "blank_id", "unverified_engine_source",
+))
+def test_s7_3_engine_proof_bijection_rejects_bad_source_or_fake_pass(
+    monkeypatch, mutation,
+):
+    _validated_legacy(monkeypatch)
+    capture, sample = _actual_shaped_sample()
+    evidence = sample["snapshot"]["semantic_condition_evidence"]
+    items = evidence["items"]
+    if mutation == "duplicate_source":
+        items[1]["source_condition"] = items[0]["source_condition"]
+    elif mutation == "duplicate_engine_id":
+        items[1]["condition_id"] = items[0]["condition_id"]
+    elif mutation == "engine_not_passed":
+        items[0]["status"] = "FAIL"
+    elif mutation == "unknown_source":
+        items[0]["source_condition"] = "UNKNOWN_UNSUPPORTED_CONDITION"
+    elif mutation == "blank_id":
+        items[0]["condition_id"] = ""
+    elif mutation == "unverified_engine_source":
+        evidence["source"] = "NOT_SCANNER_REPRO"
+    sample["snapshot_hash"] = digest_json(sample["snapshot"])
+    with pytest.raises(
+        DecisionReviewContractError, match="S7_3_ENGINE_PASS_PROOF_MISMATCH"
+    ):
+        s73.prepare_shadow_candidate(capture, sample)
 
 
 def test_s7_3_preflight_is_hold_with_complete_blocker_explanations(monkeypatch):
