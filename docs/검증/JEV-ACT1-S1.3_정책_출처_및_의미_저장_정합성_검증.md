@@ -174,3 +174,24 @@
 - `backend/tests/test_jev_act1_s1_readiness.py`: 임시 SQLite 읽기 전용 진단 통합 결과와 원본 불변 검증을 확장했다.
 - 기존 `test_jev_act2_s1_fake_pipeline.py`와 전체 backend/frontend/fresh-clone CI 회귀를 유지한다.
 - **실사용 승인은 계속 HOLD**. 실사용 도달성 확보에 필요한 의미 소스/검토 역할 확장은 독립 계약과 사용자 승인 후 별도 과제로 취급한다. `LOCAL_MATCH`를 억지 residual로 바꾸거나 통과한 조건에 조작된 의미를 삽입하지 않는다.
+
+## JEV-ACT2-S3 — Decision Reviewer 독립 오프라인 입력·Fake Shadow 검증
+
+**범위:** 기존 TypeSafe V4(잔여 의미 전용)는 변경하지 않는다. 이미 동결된 `JEV_SCANNER_REVIEW_INPUT_V1` / `OUTPUT_V1` 통합 설계의 기능 일부를 **외부 호출 없는 별도 오프라인 계약 검증**으로 만든다. 실제 운영 모델 호출·Horizon 숫자 승인·전송 동의·미래 성과 평가를 대신하지 않는다.
+
+### 연결 경로와 근거
+- `backend/app/jev/decision_reviewer_offline.py`는 원래 Simulation DB의 canonical COMPLETE 및 그에 귀속된 sample을 `SQLite mode=ro`로만 읽는다. DUPLICATE는 canonical 식별자로 재지정하며 PARTIAL·FAILED·없는 캡처는 거절한다. 별도 Scanner 실행은 없다.
+- 원본 candidate snapshot 해시·행 ID(action/rank/strategy/ticker)·정책 Pin 출처·기존 TypeSafe 의미 소스 V2 서명·실제 PASS 조건의 원본 식별자와 출처·Risk 및 필수 entry guide 구조를 검사한다. 불완전·위조·미지원 입력은 fail-closed이며 최신 데이터로 소급 채우지 않는다.
+- 입력 `as_of`는 기준일과 캡처 시각을 분리하며 EOD 자료의 정확한 외부 공개 시간은 증명되지 않았으므로 `EOD_DATE_ONLY_EXACT_RELEASE_TIME_UNPROVEN`을 표시한다. 미래 날짜로 바뀐 필드는 차단하며, 독립적인 cutoff/외부 소스 보존·전송 권한이 없으므로 실제 모델 적격 또는 성과 모집으로 계산하지 않는다.
+- LEGACY_UNSPECIFIED는 `LEGACY_INSPECTION_ONLY`이고 Fake 경로에서도 거절한다. 합성 SHORT/MEDIUM은 `OFFLINE_INSPECTABLE_ONLY`이며 숫자 Horizon 미승인 사유를 유지한다. 운영 Scanner가 SHORT/MEDIUM을 받아들이도록 바꾸지 않는다.
+
+### 응답과 Shadow
+- `validate_decision_review_response()`는 허용된 세 판단과 근거 코드·실제 입력 evidence ID, 응답 상한·유보 사유·근거 배열·금지 필드를 검증한다. 참조 근거에 없는 수치의 추가 주장은 보수적으로 거절한다. **정성적 문장의 사실성과 투자 효용까지 검증했다고 주장하지 않는다.**
+- `OfflineFakeShadowSession`은 FAKE 표시가 있는 로컬 프로젝션만 처리하고, 입력·출력 계약 해시에 따른 메모리 내 독립 일지를 만든다. 중복/alias 리뷰는 최초 결과를 재사용한다. 부적합 출력은 `ERROR`·`MODEL_ERROR`·baseline 불변으로 닫는다.
+- `shadow_action=DEFER_THIS_OPPORTUNITY`은 유효한 `REVIEW_REQUIRED`인 경우에만 별도 연구용 가상 의견이다. 원래 `ENTRY_CANDIDATE`는 그대로며, 수익률·손실 회피·AI 효용·실제 매매 결과는 `NOT_EVALUATED`/`null`이다.
+- Shadow 일지는 **오프라인 세션 메모리**에만 존재한다. Production Simulation DB 기록, 별도 review job/outbox, 장기 persistence, 사전 동결된 평가 protocol, 미래 검증 데이터 join은 S4 이후의 승인된 개발 대상이다. S3를 제품에 연결했다고 주장하지 않는다.
+
+### 검증
+`backend/tests/test_jev_act2_s3_decision_reviewer.py`는 `tmp_path`에 생성한 Prospective schema/가짜 Scanner와 같은 필드·V2 의미 계약에서 정상 PASS_THROUGH/REVIEW_REQUIRED/ABSTAIN, 해시 불변, 중복 canonical, 레거시 차단, 입력·근거 위조/시점 변조, Fake Provider 실패, 금지 응답과 in-memory 재사용을 확인한다.
+
+S3 성공 판정은 **오프라인 계약을 완주하는 Fake 검토 및 CI**까지. 실제 JEV 호출·수익 개선·사용자 화면 기능의 완성 판정은 계속 `HOLD`다. 기존 S1/S2 회귀, Scanner/Rank/Risk, 데이터 이관·Runtime 동기화, Holdout은 건드리지 않는다.
