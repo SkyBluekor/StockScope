@@ -19,6 +19,7 @@ for p in (ROOT, BACKEND):
         sys.path.insert(0, str(p))
 
 from app.jev.decision_reviewer_offline import DecisionReviewContractError
+from app.jev.scanner_lineage_s7_4 import diagnose_capture, source_audit, REASONS_KO as LINEAGE_REASONS_KO
 from app.jev.scanner_integrity_s7_1 import EXPLAIN
 from app.jev.scanner_shadow_s7_3 import (
     S73PreflightJournal, REASONS_KO, prepare_capture,
@@ -39,7 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
         "mode", nargs="?", default="status",
         choices=(
             "status", "inspect", "capture", "report", "run-approved",
-            "prepare", "preflight",
+            "prepare", "preflight", "source-audit", "lineage",
         ),
     )
     parser.add_argument("--capture-id", default=None)
@@ -76,6 +77,18 @@ def execute(
             "actual_provider_calls": 0,
             "db_writes": 0,
         }
+    if args.mode in ("source-audit", "lineage"):
+        if args.save_preflight:
+            raise DecisionReviewContractError("S7_4_DIAGNOSTIC_READ_ONLY")
+        if args.mode == "source-audit":
+            if args.capture_id or args.sample_index is not None:
+                raise DecisionReviewContractError("S7_4_SOURCE_AUDIT_ARGUMENT_INVALID")
+            return source_audit()
+        return diagnose_capture(
+            args.simulation_db or simulation_db_path(),
+            capture_id=args.capture_id, limit=args.limit,
+            sample_index=args.sample_index,
+        )
     if args.mode == "report":
         return S7ShadowJournal(research_db).report()
     if args.mode in ("prepare", "preflight"):
@@ -114,6 +127,40 @@ def display(value: dict[str, Any], *, as_json: bool = False) -> None:
     print("StockScope S7 · 실제 추천 후보 관찰")
     print("=" * 63)
     print(f"상태: {value.get('status', 'UNKNOWN')}")
+    if value.get("status") == "SOURCE_AUDIT_PROVIDER_HOLD":
+        print("KRX OPEN API 기본 Scanner 경로 (코드 기준, 실제 개별 행 인증 아님):")
+        for item in value["products"]:
+            print(f"  {item['name']} · {item['expected_endpoint']}")
+            print("    원본 제3자 제공: 공개 약관상 제한"
+                  " | 파생정보의 외부 AI 처리: 미확인"
+                  " | 실제 계정 허가: 미확인")
+        print("별도 경로: KIS / OpenDART / FRED / NAVER (기본 S7.3 입력 아님)")
+        print("추가 확인 필요:")
+        for item in value["next_evidence"]:
+            print(f"  - {item}")
+        print("실제 시장 데이터 외부 TypeSafe 호출: 0건 (계속 보류)")
+        return
+    if value.get("status") == "LINEAGE_DIAGNOSTIC_PROVIDER_HOLD":
+        print(f"조회 {value['total_records']}건"
+              f" | 로컬 패킷 {value['local_packets_ready']}건"
+              f" | 미분류 필드 {value['unclassified_fields']}건")
+        for record in value["records"]:
+            ident = record["identity"]
+            print(f"{ident.get('name') or ident.get('ticker') or '후보'}"
+                  f" ({ident.get('ticker') or '식별자 없음'})"
+                  f" · {record['category']} · {record['integrity_status']}")
+            for field in record["field_diagnostics"]:
+                parents = ", ".join(field.get("expected_parents", [])) or "내부 정의/기록"
+                print(f"  {field['path']}: {field['origin_type']}"
+                      f" | 예상 의존: {parents}"
+                      f" | 실제 원천: {field['actual_source']}"
+                      f" | 전송권한: {field['rights_status']}"
+                      f" | 시각: {field['time_quality']}")
+            for code in record["reason_codes"]:
+                print(f"  보류 사유: {LINEAGE_REASONS_KO.get(code, code)} [{code}]")
+        print("※ 코드상 예상 출처는 개별 자료의 실제 출처/이용권 증명이 아닙니다.")
+        print("※ 원본과 Runtime은 변경되지 않았으며 외부 호출은 0건입니다.")
+        return
     if "local_packets_ready" in value:
         print(
             f"실제 조회 {value['total_records']}건"
