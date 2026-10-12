@@ -166,7 +166,11 @@ def test_real_fake_provider_request_storage_monitor_and_idempotency(
     assert review["model_returned"] == "FAKE-ACT2-S1"
     assert review["cost_usd"] == 0.0
     assert review["model_identity_status"] == "MATCHED"
-    assert service.typesafe.list_monitor_items(capture)
+    monitored = service.typesafe.list_monitor_items(capture)
+    assert len(monitored) == 1
+    assert monitored[0]["operational_status"] == "VALID", monitored
+    assert monitored[0]["integrity_status"] == "MATCHED", monitored
+    assert monitored[0]["disposition"] == expected
     again = asyncio.run(service.request_review(capture_id=capture))
     assert again["status"] == expected
     assert again["reused"] is True
