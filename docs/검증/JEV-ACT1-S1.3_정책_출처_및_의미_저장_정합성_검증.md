@@ -349,3 +349,26 @@ git pull --ff-only origin main
 ```
 
 **신규 Scanner Capture 확인은 별도의 로컬 작업이다.** 과거 저장된 60건을 재조회/재캡처하는 명령은 신규 Scanner 실행을 만들지 않으므로, 기존 24/6건의 분류가 바뀌지 않아도 코드 수정을 실패했다고 보거나 새 증거가 생겼다고 보지 않는다. 새 Scanner 실행 이후 해당 신규 Capture ID로 `inspect --capture-id <실제 ID>`를 실행하여 결과를 확인해야 실제 end-to-end 검증이 완료된다.
+
+## JEV-ACT2-S7.3 — 실제 Scanner 후보의 로컬 JEV 입력 및 안전 사전검사 (2026-10-12)
+
+현장 실측 기준: 사용자는 KOSPI 신규 Scanner job `9114461f669349e186c1a02ae65028f3`, 정본 Capture `a0f8f2cb-c1ab-4b3a-9488-b125e0369a2b`를 생성했다. 상태 COMPLETE, 기록 15건(진입 1·참고 14), 진입 대한항공 003490 신호 2026-10-08은 `LEGACY_LIMITED`이고 다른 로컬 정합성 오류는 없었다. 해당 후보는 **원본 전략 버전/정의 Hash가 비어 있고 실제 엔진에서 유도된 별도 전략 ID만 확인되는 레거시 상태**다. 완전 검증 원본이라고 주장하거나 저장값을 수정하면 안 된다.
+
+새 `backend/app/jev/scanner_shadow_s7_3.py`는 기존 S7 정본 읽기·S7.1 독립 정합성 검사 경로를 활용해 `LOCAL_VALIDATED` 및 `LEGACY_LIMITED` 후보를 별도의 **LOCAL_PACKET_READY** 로 변환한다. 패킷에는 원본 필드 값이 없는 점과 검증된 유도 출처, 엔진에서 확인된 조건 의미, Scanner Risk, 기존 Selection Policy, Source Hash, 기준 시점, TypeSafe 선택지의 고정 질문 Hash가 포함된다. Snapshot을 재작성하지 않으며 가격·기업명·종목코드는 전송 후보 패킷에 원본 그대로 싣지 않는다. 그러나 가공된 조건 문장도 **실제 시장 파생 정보이므로 권리 검증 없이는 외부 전송 불가**다.
+
+입력·시점 단위: `signal_date`와 `known_to_system_at`(Capture 완료 시간)을 분리한다. 현재 `source_available_at` 및 실제 원천 공개 시간은 검증되지 않았으므로 NULL/HOLD다. 신호 날짜보다 늦게 생성된 과거 Capture는 `RETROSPECTIVE_CAPTURE`로 표시하고 이후 가격 평가에서 당시 JEV 사전 판단으로 취급하지 않는다. 비추천과 INVALID 후보는 실제 패킷 생성 대상에서 제외한다.
+
+독립 사전검사 `preflight_shadow_candidate`는 입력 Hash, source release time, KRX/KIS 및 파생 자료의 외부 전송 권한, 승인된 Horizon 수치, 고정 모델·실제 과금 요금, 구체적인 사용자 실행 승인을 검사한다. 현재 본 프로젝트에는 **권한 승인 근거·source 공개 시점 검증·승인된 Horizon 숫자 정책이 없음**. 따라서 결과는 항상 `PROVIDER_HOLD`로 종료한다. CLI/환경변수에 임의 승인 값을 설정해도 미승인 실제 종목 요청이 가능해지지 않는다. 별도의 `S73DisabledActualProvider`는 자격 증명이나 네트워크를 사용하기 전에 요청을 거부한다. 기존 S5/S6.2 **합성 전용** TypeSafe 실제 호출 경로는 변함없다. 모델 선택 응답의 타입·확률·고정 모델 검증기는 미래 별도 허가된 실제 실행 경로용 순수 검증으로 제공되나, 호출 활성화를 뜻하지 않는다.
+
+연구 저장: 기존 `data/jev_research/s7_shadow.sqlite3`의 이전 관찰 및 S7.1 진단 행은 변경하지 않는다. 사용자 요청으로 `--save-preflight`를 명시하면 별도 불변 `jev_s7_3_preflight` 테이블에 HOLD 판정의 Hash를 중복 없이 저장한다. 모의 또는 사후 진단을 실제 JEV Choice/투자 성과로 집계하지 않는다.
+
+로컬 실행(이 명령은 실제 유료 API 호출을 하지 않음):
+```powershell
+git pull --ff-only origin main
+.\.venv\Scripts\python.exe -m pytest backend/tests/test_jev_act2_s7_3_real_preflight.py -q
+.\.venv\Scripts\python.exe tools\data\jev_s7_shadow.py prepare --capture-id a0f8f2cb-c1ab-4b3a-9488-b125e0369a2b
+.\.venv\Scripts\python.exe tools\data\jev_s7_shadow.py preflight --capture-id a0f8f2cb-c1ab-4b3a-9488-b125e0369a2b
+.\.venv\Scripts\python.exe tools\data\jev_s7_shadow.py preflight --capture-id a0f8f2cb-c1ab-4b3a-9488-b125e0369a2b --save-preflight
+```
+
+**S7.3 구현 범위의 정확한 경계:** 실제 종목 **로컬 JEV 입력 준비·사전 차단·연구 기록**까지 가능하며, TypeSafe 유료 호출 및 실전 성과 비교는 0건이다. 공개 시각·외부 전송 권한·Horizon 수치·고정 모델/과금·개별 동의를 검증한 별도 승인형 실제 호출 어댑터가 마련되기 전까지 실제 provider 경로는 활성화되지 않는다. CI 성공은 실종목 검토 성공을 뜻하지 않는다.
