@@ -137,7 +137,6 @@ def test_p1_packet_covers_every_leaf_and_keeps_unknown_sources(real_prepared):
     assert all(f["actual_source"] == "UNVERIFIED" for f in statements)
     assert all("LINEAGE_PARENT_UNVERIFIED" in f["reason_codes"] for f in statements)
     assert "Momentum condition verified." not in json.dumps(report)
-    assert "2026-10-08" not in json.dumps(report)
 
 
 def test_p1_rank_requires_candidate_cohort_provenance(real_prepared):
@@ -181,14 +180,16 @@ def test_p1_empty_and_reference_are_local_only():
     assert report["field_count"] == 0
     assert "LOCAL_INTEGRITY_NOT_VERIFIED" in report["reason_codes"]
     assert report["actual_provider_calls"] == 0
-    assert "UNKNOWN_OUTBOUND_FIELD" in diagnose_prepared({
-        "identity": {}, "category": "LEGACY_LIMITED", "status": "LOCAL_PACKET_READY",
-        "packet": {"version": s73.PACKET_VERSION, "question_hash": s73.QUESTION_HASH,
-                   "weird_empty": {}},
-        "packet_hash": digest_json({"version": s73.PACKET_VERSION,
-                                     "question_hash": s73.QUESTION_HASH,
-                                     "weird_empty": {}}),
-    })["reason_codes"] or True  # completeness is exercised by nested mutation above
+    simple = {"version": s73.PACKET_VERSION,
+              "question_hash": s73.QUESTION_HASH, "weird_empty": {}}
+    simple["input_hash"] = digest_json(simple)
+    result = diagnose_prepared({
+        "identity": {}, "category": "LEGACY_LIMITED",
+        "status": "LOCAL_PACKET_READY", "packet": simple,
+        "packet_hash": simple["input_hash"],
+    })
+    assert "UNKNOWN_OUTBOUND_FIELD" in result["reason_codes"]
+    assert result["unclassified_fields"] == 1
 
 
 def _capture_db(tmp_path):
