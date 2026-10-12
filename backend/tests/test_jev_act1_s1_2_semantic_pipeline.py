@@ -15,6 +15,11 @@ from app.prospective.catalog import ProspectiveCatalog
 from app.prospective.models import ProspectiveCaptureRequest, digest_json
 from app.strategy.condition_semantics import condition_sources
 from app.strategy.models import StrategyName
+from app.strategy.production_selection_policy import (
+    ProductionStrategySelectionRegistry,
+    SelectionPolicyResolution,
+    legacy_selection_policy,
+)
 from app.strategy.semantic_identity_bridge import (
     LEGACY_SELECTION_SOURCE,
     scanner_repro_candidate_key,
@@ -26,12 +31,15 @@ from tools.data.migrate_prospective_vnp2s2 import migrate_prospective_store
 
 
 STRATEGY = StrategyName.TREND_FOLLOWING.value
-POLICY = {
-    "policy_id": "LEGACY-CURRENT-TEST",
-    "policy_hash": "test-policy-hash",
-    "policy_source": LEGACY_SELECTION_SOURCE,
-    "fallback_used": True,
-}
+_LEGACY = legacy_selection_policy()
+PIN = ProductionStrategySelectionRegistry._pin_from_resolution(
+    SelectionPolicyResolution(
+        policy=_LEGACY, policy_source=LEGACY_SELECTION_SOURCE,
+        fallback_used=True, fallback_reason=None,
+        active_reference_valid=False, policy_hash_valid=True,
+    )
+)
+POLICY = PIN.metadata()
 
 
 def _candidate() -> dict:
@@ -140,11 +148,13 @@ def test_valid_repro_audit_enriches_only_semantic_source(tmp_path: Path, monkeyp
     assert candidate == before
     snapshot = ProspectiveCatalog._candidate_snapshot(
         candidate, selection_policy=POLICY, audited=audited,
+        selection_policy_pin=PIN, policy_verified=True,
     )
     assert snapshot["strategy_version_id"] is None
     assert snapshot["strategy_definition_hash"] is None
     assert snapshot["action"] == before["action"]
     assert snapshot["priority"]["rank"] == before["priority"]["rank"]
+    assert snapshot["semantic_policy_provenance"]["status"] == "VERIFIED_PINNED_EXECUTION"
     assert "rank" not in snapshot
     assert snapshot["risk"] == before["risk"]
     assert snapshot["semantic_condition_evidence"]["passed"] == len(condition_sources(STRATEGY))
@@ -185,6 +195,7 @@ def test_bad_audit_never_promotes_semantic_source(tmp_path: Path, monkeypatch, b
     audited = rows.get(("KOSPI", "000001", "1"))
     snapshot = ProspectiveCatalog._candidate_snapshot(
         candidate, selection_policy=POLICY, audited=audited,
+        selection_policy_pin=PIN, policy_verified=True,
     )
     assert snapshot["semantic_source_v2"]["readiness"]["local_semantic_status"] == "LOCAL_INCOMPLETE"
     assert "semantic_strategy_identity" not in snapshot
@@ -211,6 +222,7 @@ def test_cached_foreign_and_active_policy_do_not_backfill(tmp_path: Path, monkey
             "action": "ENTRY_CANDIDATE", "horizon_intent": "LEGACY_UNSPECIFIED",
             "snapshot": ProspectiveCatalog._candidate_snapshot(
                 candidate, selection_policy=POLICY, audited=audited,
+                selection_policy_pin=PIN, policy_verified=True,
             ),
         })
 
@@ -231,10 +243,12 @@ def test_real_sqlite_prospective_capture_and_dedup(tmp_path: Path, monkeypatch):
     request = ProspectiveCaptureRequest(
         market_scope="ALL", requested_as_of="2026-10-10", candidate_limit=5,
         horizon_intent="LEGACY_UNSPECIFIED", horizon_policy_version=None,
+        selection_policy_id=PIN.policy_id, selection_policy_hash=PIN.policy_hash,
     )
     catalog.begin_capture(source_job_id="test-1", request=request)
     first = catalog.finalize_capture(
         source_job_id="test-1", request=request, result=data,
+        selection_policy_pin=PIN,
     )
     assert first["status"] == "COMPLETE"
     samples = catalog.list_samples(capture_run_id=first["id"])
@@ -251,6 +265,7 @@ def test_real_sqlite_prospective_capture_and_dedup(tmp_path: Path, monkeypatch):
     catalog.begin_capture(source_job_id="test-2", request=request)
     second = catalog.finalize_capture(
         source_job_id="test-2", request=request, result=data,
+        selection_policy_pin=PIN,
     )
     assert second["status"] == "DUPLICATE"
     assert second["canonical_capture_id"] == first["id"]
