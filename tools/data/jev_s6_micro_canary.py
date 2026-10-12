@@ -95,6 +95,13 @@ def _protocol(args: argparse.Namespace, cases: tuple[str, ...]) -> FrozenMicroPr
 
 def _upper_bound_check(protocol: FrozenMicroProtocol, cases: tuple[str, ...]) -> dict[str, Any]:
     """Conservative local planning only; provider cannot promise token maxima."""
+    if (protocol.verified_input_usd_per_million is None or
+        protocol.verified_output_usd_per_million is None):
+        return {
+            "status": "PRICE_UNKNOWN",
+            "upper_bound_cost_usd": None,
+            "note": "가격이 입력되지 않아 비용을 추정할 수 없습니다. 실제 실행은 금지됩니다.",
+        }
     input_rate = _decimal(protocol.verified_input_usd_per_million, "S6_ACCOUNT_PRICE_REQUIRED")
     output_rate = _decimal(protocol.verified_output_usd_per_million, "S6_ACCOUNT_PRICE_REQUIRED")
     max_request_bytes = max(
@@ -191,6 +198,62 @@ def _approved(
     )
 
 
+def _record_owner_attestation(
+    conn: sqlite3.Connection, proto: FrozenMicroProtocol,
+    cases: tuple[str, ...], args: argparse.Namespace,
+) -> None:
+    """Immutable owner-entered evidence; NOT third-party price verification."""
+    conn.executescript("""
+    CREATE TABLE IF NOT EXISTS jev_s6_owner_attestation (
+        protocol_hash TEXT PRIMARY KEY,
+        case_ids_json TEXT NOT NULL,
+        model_id TEXT NOT NULL,
+        max_attempts INTEGER NOT NULL,
+        total_budget_usd TEXT NOT NULL,
+        input_price TEXT NOT NULL,
+        output_price TEXT NOT NULL,
+        account_terms_ref TEXT NOT NULL,
+        account_price_ref TEXT NOT NULL,
+        source_type TEXT NOT NULL CHECK(source_type='USER_ATTESTED'),
+        approved_at TEXT NOT NULL
+    );
+    CREATE TRIGGER IF NOT EXISTS jev_s6_approval_no_delete
+    BEFORE DELETE ON jev_s6_owner_attestation BEGIN
+        SELECT RAISE(ABORT,'S6 approval immutable');
+    END;
+    CREATE TRIGGER IF NOT EXISTS jev_s6_approval_no_update
+    BEFORE UPDATE ON jev_s6_owner_attestation BEGIN
+        SELECT RAISE(ABORT,'S6 approval immutable');
+    END;
+    """)
+    values = (
+        proto.identity_hash, json.dumps(cases, ensure_ascii=False),
+        proto.model_returned, proto.max_attempts, proto.total_budget_usd,
+        proto.verified_input_usd_per_million,
+        proto.verified_output_usd_per_million,
+        args.account_terms_ref, args.account_price_ref, "USER_ATTESTED",
+    )
+    existing = conn.execute(
+        "SELECT case_ids_json,model_id,max_attempts,total_budget_usd,"
+        "input_price,output_price,account_terms_ref,account_price_ref,source_type "
+        "FROM jev_s6_owner_attestation WHERE protocol_hash=?",
+        (proto.identity_hash,),
+    ).fetchone()
+    if existing:
+        if tuple(existing) != values[1:]:
+            raise DecisionReviewContractError("S6_ATTESTATION_DRIFT")
+        return
+    conn.execute(
+        """INSERT INTO jev_s6_owner_attestation(
+            protocol_hash,case_ids_json,model_id,max_attempts,total_budget_usd,
+            input_price,output_price,account_terms_ref,account_price_ref,
+            source_type,approved_at
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+        (*values, datetime.now(timezone.utc).isoformat()),
+    )
+    conn.commit()
+
+
 def _display(value: dict[str, Any], *, as_json: bool) -> None:
     if as_json:
         print(json.dumps(value, ensure_ascii=False, indent=2))
@@ -206,10 +269,13 @@ def _display(value: dict[str, Any], *, as_json: bool) -> None:
 
 
 def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    sources = ("ACTUAL_PROVIDER", "MOCK_TEST")
+    sources = ("ACTUAL_PROVIDER", "MOCK_TEST", "UNVERIFIED")
     groups: dict[str, Any] = {}
     for origin in sources:
-        subset = [r for r in rows if r.get("execution_origin") == origin]
+        subset = [
+            r for r in rows
+            if (r.get("execution_origin") or "UNVERIFIED") == origin
+        ]
         valid = [r for r in subset if r["state"] == "VALID"]
         # Gold is local-only. Wrong model decisions include every synthetic
         # case, and do not constitute an investment-performance comparison.
@@ -364,6 +430,7 @@ async def execute(
         journal = MicroJournal(conn)
         journal.initialize()
         journal.interrupt_pending()  # Never silently re-send a crashed request.
+        _record_owner_attestation(conn, proto, cases, args)
         provider = SystemOneMicroProvider(transport=transport)
         runner = MicroCanaryRunner(journal, provider, execution_origin=origin)
         for case in cases:
