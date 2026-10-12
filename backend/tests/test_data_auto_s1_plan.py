@@ -117,6 +117,12 @@ def test_invalid_date_and_malformed_existing_database_are_fail_closed(tmp_path):
             market_db=tmp_path / "missing.db",
             today=TODAY,
         )
+    fresh = tmp_path / "empty.db"
+    sqlite3.connect(fresh).close()
+    first_install = _plan(tmp_path, fresh)
+    assert first_install["status"] == "APPROVAL_REQUIRED"
+    assert "NEW_DEVICE_MARKET_SCHEMA_NOT_INITIALIZED" in first_install["warnings"]
+    assert fresh.stat().st_size == 0
     malformed = tmp_path / "malformed.db"
     with sqlite3.connect(malformed) as conn:
         conn.execute("CREATE TABLE unrelated(id INT)")
