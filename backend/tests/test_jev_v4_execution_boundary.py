@@ -134,6 +134,7 @@ def _capture(db: Path) -> dict:
                 }
             },
         },
+        require_policy_provenance=False,  # Deliberate synthetic V4 boundary fixture
     )
 
 
