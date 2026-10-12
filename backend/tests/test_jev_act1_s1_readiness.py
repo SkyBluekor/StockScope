@@ -207,3 +207,41 @@ def test_provider_calls_are_not_performed_even_with_eligible_samples(
     result = run_readiness_audit(db)
     assert result["audit"]["provider_calls"] == 0
     assert result["activation_readiness"]["external_network_requests"] == 0
+
+
+
+def test_act2_readonly_user_explanation_keeps_legacy_match_non_callable(tmp_path: Path) -> None:
+    """The scanner's October-like LOCAL_MATCH is real local evidence, not AI."""
+    db = _db(tmp_path / "readiness_only.db")
+    _sample(db, index=0, capture="legacy", horizon="LEGACY_UNSPECIFIED", source=_source())
+    _sample(db, index=1, capture="explicit", horizon="SHORT", source=_source())
+    result = run_readiness_audit(db)
+    detail = result["user_jev_execution"]
+    assert detail["user_model_review_available"] is False
+    assert detail["legacy_horizon_blocked"] == 1
+    assert detail["v4_scope_eligible_not_approved"] == 0
+    assert detail["local_match_is_not_a_model_call"] >= 1
+    assert "LEGACY_HORIZON_CANNOT_BE_BACKFILLED" in detail["reasons"]
+    assert "HORIZON_NUMERIC_POLICY_NOT_APPROVED" in detail["reasons"]
+    assert "USER_JEV_FEATURE_DISABLED" in detail["reasons"]
+    assert detail["db_writes"] == detail["external_network_requests"] == 0
+    assert "000001" not in json.dumps(result, ensure_ascii=False)
+
+
+def test_act2_even_a_technical_v4_eligible_does_not_override_activation_hold() -> None:
+    from tools.data.audit_jev_act1_readiness import explain_user_jev_blockers
+    audit = {
+        "total_samples": 2, "categories": {
+            "PROVIDER_ELIGIBLE": 2, "LEGACY_HORIZON_BLOCKED": 0,
+            "EXPLICIT_HORIZON_UNSUPPORTED": 0,
+        },
+        "legacy_local_inspection": {"categories": {}},
+    }
+    gate = {"activation_verdict": "HOLD", "checks": [
+        {"code": "V4_ACTUAL_CANARY", "status": "HOLD"},
+    ]}
+    verdict = explain_user_jev_blockers(audit, gate)
+    assert verdict["v4_scope_eligible_not_approved"] == 2
+    assert verdict["user_model_review_available"] is False
+    assert "NO_V4_RESIDUAL_PROVIDER_ELIGIBLE_CANDIDATES" not in verdict["reasons"]
+    assert "READINESS_V4_ACTUAL_CANARY" in verdict["reasons"]

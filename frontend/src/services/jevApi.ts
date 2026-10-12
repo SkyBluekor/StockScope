@@ -156,6 +156,7 @@ export type JevManualReviewResult = {
     | "RUNNING"
     | "PASS_THROUGH"
     | "REVIEW_REQUIRED"
+    | "ABSTAIN"
     | "SKIPPED"
     | "ERROR"
     | string;

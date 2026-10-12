@@ -7,16 +7,20 @@ from .typesafe_models import (
     JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V1,
     JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V2,
     JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V3,
+    JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V4,
     JEV_TYPESAFE_QUESTION_CONTRACT_VERSION_V1,
     JEV_TYPESAFE_QUESTION_CONTRACT_VERSION_V2,
     JEV_TYPESAFE_QUESTION_CONTRACT_VERSION_V3,
+    JEV_TYPESAFE_QUESTION_CONTRACT_VERSION_V4,
 )
 from .typesafe_policy import decide_typesafe_disposition
 from .typesafe_policy_v2 import decide_typesafe_disposition_v2
 from .typesafe_policy_v3 import decide_typesafe_disposition_v3
+from .typesafe_policy_v4 import decide_typesafe_disposition_v4
 from .typesafe_questions import JEV_TYPESAFE_QUESTION_IDS
 from .typesafe_questions_v2 import JEV_TYPESAFE_QUESTION_IDS_V2
 from .typesafe_questions_v3 import JEV_TYPESAFE_QUESTION_IDS_V3
+from .typesafe_questions_v4 import JEV_TYPESAFE_QUESTION_IDS_V4
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +61,11 @@ def _family(review: dict[str, Any], protocol_spec: dict[str, Any]) -> str:
         and policy_version == JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V3
     ):
         return "V3"
+    if (
+        question_version == JEV_TYPESAFE_QUESTION_CONTRACT_VERSION_V4
+        and policy_version == JEV_TYPESAFE_DISPOSITION_POLICY_VERSION_V4
+    ):
+        return "V4"
     raise ValueError("JEV_TYPESAFE_CONTRACT_VERSION_MISMATCH")
 
 
@@ -130,7 +139,25 @@ def project_typesafe_review(
 
     try:
         family = _family(review, protocol_spec)
-        if family == "V3":
+        if family == "V4":
+            threshold_strategy = protocol_spec.get("threshold_strategy")
+            if threshold_strategy is None:
+                return _error(
+                    status="ERROR",
+                    failure_code="DISPOSITION_POLICY_UNFROZEN",
+                    integrity_status="MISMATCH",
+                )
+            probabilities = _probabilities(
+                review.get("typed_answers"),
+                JEV_TYPESAFE_QUESTION_IDS_V4,
+            )
+            decision = decide_typesafe_disposition_v4(
+                probabilities,
+                threshold_strategy=threshold_strategy,
+            )
+            bands: dict[str, str] = {}
+            gate_results = dict(decision.gate_results)
+        elif family == "V3":
             threshold_strategy = protocol_spec.get("threshold_strategy")
             if threshold_strategy is None:
                 return _error(

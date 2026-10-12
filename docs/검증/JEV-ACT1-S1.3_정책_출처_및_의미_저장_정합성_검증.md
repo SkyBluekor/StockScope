@@ -111,3 +111,40 @@
 이 PR에서 달성할 범위는 **읽기 전용 계획 → 소량 자동 시작 / 대량 승인 → 기존 Scanner 자동 실행** 및 이에 대한 합성 테스트/CI다. 새로운 시장 데이터나 사용자 기록을 실제로 변경하는 테스트는 수행하지 않는다.
 
 추가 검증 필요: 복잡한 최초 설치·휴장일·무결성 오류·요청 예산·브라우저 이탈 실제 동작, 분석 전에 데이터 부족 때문에 생성되는 부분 결과의 사용자 표현, 실제 사용자 승인에 따른 제한된 신규 KRX 실행. **학교 PC에서 실제 UAT가 성공하기 전까지 DATA-AUTO-S1 실사용 완료라고 선언하지 않는다.**
+
+## JEV-ACT2-S1 — 실제 호출 전 Fake Provider 실행 및 V4 조회 정합성
+
+**범위:** JEV UI 애니메이션이 아니라 Backend의 안전한 실제 실행 경로 검증. 운영 기능은 계속 `DISABLED_VALIDATION_PENDING`이고, 외부 TypeSafe 모델 호출·API 인증·비용 지출·Scanner 실행·과거 자료 보완·Holdout 접근은 하지 않는다.
+
+### 기존 엔진에서 발견한 결함
+
+- `JevManualReviewService`는 저장된 검토의 `ABSTAIN`을 수동 호출 반환과 재사용 결과에서 `PASS_THROUGH`로 바꿀 가능성이 있었다. VALID 판정값을 각각 정확히 보존하도록 수정했다. 단, **현행 V4 단일 Q1 결정 정책은 PASS_THROUGH/REVIEW_REQUIRED만 산출**하므로 ABSTAIN 처리 검증은 합성 코어 응답 및 저장 계약을 테스트하는 것이다.
+- `project_typesafe_review`의 저장 결과 재검증은 V1~V3만 인식해, V4의 유효한 모델 결과도 조회에서 `CONTRACT_VERSION_MISMATCH`나 미인식 분기로 오류가 날 수 있었다. V4 Question/Disposition 계약을 명시적으로 분기하고 V4 Q1 확률과 고정 임계값을 사용해 저장된 결과를 **서버에서 다시 계산/검증**하도록 변경했다. 원본 Scanner 판단에는 영향 없음.
+
+### 오프라인 통합 검증
+
+`backend/tests/test_jev_act2_s1_fake_pipeline.py`에서는 **별도 임시 SQLite**에 Prospective와 TypeSafe V2 테이블을 생성하고, Canary V4의 합성 잔여 의미 검토 소스에서 다음을 실행한다.
+
+1. 명시적인 합성 SHORT 기간, 유효 V4 source, FAKE 전용 고정 프로토콜 및 Test Fake Provider
+2. V4 Q1 호출 → PASS_THROUGH 또는 REVIEW_REQUIRED → DB의 VALID 저장 → 모니터 조회의 `integrity_status=MATCHED` 및 같은 disposition 재검증
+3. 동일 요청 두 번: 새로운 Provider 호출 없이 저장 결과 재사용
+4. 모델 오류·잘못된 응답: ERROR 저장, 기존 Scanner 캡처 유지
+5. 기간 미지정 기존 캡처: V4 진입 실패, Provider 호출 없음
+6. synthetic VALID ABSTAIN 저장/재사용 표현: PASS_THROUGH로 변조되지 않음 (V4 Q1 정책의 실제 출력은 아님)
+
+오프라인 Fake Provider 결과는 실제 모델의 정확도·추가 유용성 또는 운영 입력에서의 잔여 사례 출현을 증명하지 않는다. 테스트용 SHORT 캡처는 제품용 Horizon 숫자 정책 승인과 전혀 관계가 없다.
+
+### 실제 사용자 JEV가 여전히 비활성인 근거
+
+기존 읽기 전용 감사 도구:
+```powershell
+.\.venv\Scripts\python.exe .\tools\data\audit_jev_act1_readiness.py
+```
+
+- 진입 후보에 대해 `LEGACY_UNSPECIFIED`를 SHORT/MEDIUM으로 추정하거나 소급 변경하지 않음
+- LOCAL_MATCH는 모델 호출 필요 없음
+- SHORT/MEDIUM 숫자 Horizon 정책은 아직 EVALUATION_PENDING
+- 실제 V4 Canary, 모델 버전/가격·권한·외부 전송 승인, 사용자 기능 활성화가 아직 HOLD
+- `--json`에는 `user_jev_execution`이 추가되어 차단 이유·LOCAL_MATCH 수·기술적 잔여 검토 적격 건수를 익명 집계하고, 실제 AI 호출 수 0건을 명시함
+
+**최종 판정:** ACT2-S1 오프라인 실행 경로와 조회 회귀 통과 후에도, 실제 외부 모델 호출 및 사용자 기능 제공은 별도 승인·UAT 이전까지 완료가 아니다. V4 모델 호출 후보가 없는 경우 가짜 호출을 만들지 않는다.

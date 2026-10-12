@@ -203,11 +203,63 @@ def audit_stored_prospective(db_path: Path) -> dict[str, Any]:
     }
 
 
+def explain_user_jev_blockers(
+    audit: dict[str, Any],
+    readiness: dict[str, Any],
+) -> dict[str, Any]:
+    """Plain aggregate reasons, never a request to activate provider.
+
+    The legacy local semantic counts are *observations*, not V4 callable
+    candidates; even a later approved horizon never turns LOCAL_MATCH into
+    a model call. No capture, ticker or stock name enters this output.
+    """
+    categories = audit.get("categories") or {}
+    legacy = audit.get("legacy_local_inspection") or {}
+    local = legacy.get("categories") or {}
+    horizon_blocked = int(categories.get("LEGACY_HORIZON_BLOCKED") or 0)
+    horizon_unsupported = int(categories.get("EXPLICIT_HORIZON_UNSUPPORTED") or 0)
+    v4_ready = int(categories.get("PROVIDER_ELIGIBLE") or 0)
+    local_matches = int(categories.get("LOCAL_MATCH") or 0) + int(local.get("LOCAL_MATCH") or 0)
+    reasons = ["USER_JEV_FEATURE_DISABLED"]
+    if horizon_blocked:
+        reasons.append("LEGACY_HORIZON_CANNOT_BE_BACKFILLED")
+    if horizon_unsupported:
+        reasons.append("EXPLICIT_HORIZON_UNSUPPORTED")
+    # The numeric horizon rules remain EVALUATION_PENDING, including when
+    # callers pass "SHORT"/"MEDIUM" strings. No synthetic fake test approves them.
+    from app.horizon import resolve_horizon_context
+    if any(not resolve_horizon_context(h).is_activatable for h in ("SHORT", "MEDIUM")):
+        reasons.append("HORIZON_NUMERIC_POLICY_NOT_APPROVED")
+    if v4_ready == 0:
+        reasons.append("NO_V4_RESIDUAL_PROVIDER_ELIGIBLE_CANDIDATES")
+    for item in readiness.get("checks") or []:
+        if item.get("status") != "PASS" and item.get("code") in {
+            "V4_ACTUAL_CANARY", "V4_THRESHOLD_MODEL_BINDING",
+            "LIVE_PRICING_ACCOUNT_TERMS", "SOURCE_TRANSMISSION_APPROVAL",
+        }:
+            reasons.append("READINESS_" + str(item["code"]))
+    return {
+        "version": "JEV_ACT2_S1_USER_ACTIVATION_EXPLANATION_V1",
+        "user_model_review_available": False,
+        "activation_verdict": readiness.get("activation_verdict") or "HOLD",
+        "reasons": sorted(set(reasons)),
+        "stored_candidate_count": int(audit.get("total_samples") or 0),
+        "legacy_horizon_blocked": horizon_blocked,
+        "v4_scope_eligible_not_approved": v4_ready,
+        "local_match_is_not_a_model_call": local_matches,
+        "external_network_requests": 0,
+        "provider_calls": 0,
+        "db_writes": 0,
+    }
+
+
 def run_readiness_audit(db_path: Path) -> dict[str, Any]:
     audit = audit_stored_prospective(db_path)
+    gate = assess_jev_act1_readiness(audit=audit)
     return {
         "audit": audit,
-        "activation_readiness": assess_jev_act1_readiness(audit=audit),
+        "activation_readiness": gate,
+        "user_jev_execution": explain_user_jev_blockers(audit, gate),
     }
 
 
@@ -241,6 +293,11 @@ def main() -> int:
         print(f"    {key:27s} {legacy['categories'][key]}")
     print("기간 미지정 로컬 의미 진단은 정식 Jev 모델 검토 승인이 아닙니다.")
     print(f"제품 AI 활성화 판정: {gate['activation_verdict']} (활성화하지 않음)")
+    execution = result["user_jev_execution"]
+    print(f"실제 JEV 호출 가능: 아니요 · V4 추가검토 기술적 적격 {execution['v4_scope_eligible_not_approved']}건")
+    print(f"로컬 근거 일치 {execution['local_match_is_not_a_model_call']}건 (AI 모델 호출 아님)")
+    for reason in execution["reasons"]:
+        print(f"  실행 차단: {reason}")
     for item in gate["checks"]:
         print(f"  {item['status']:5s} {item['code']}: {item['explanation']}")
     print("외부 호출 0건 / DB 쓰기 0건 / Runtime 동기화 없음")
