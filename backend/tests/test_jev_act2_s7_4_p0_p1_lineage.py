@@ -135,6 +135,10 @@ def test_p1_packet_covers_every_leaf_and_keeps_unknown_sources(real_prepared):
     assert statements[-1]["expected_parents"][0] == "SCANNER_RISK_PLAN"
     assert statements[0]["expected_parents"][0] == "SCANNER_ENGINE_PASS"
     assert all(f["actual_source"] == "UNVERIFIED" for f in statements)
+    assert statements[0]["local_source_ref"] == (
+        "snapshot.semantic_source_v2.conditions.items[0]"
+    )
+    assert "scanner_shadow_s7_3.py" in statements[0]["producer_ref"]
     assert all("LINEAGE_PARENT_UNVERIFIED" in f["reason_codes"] for f in statements)
     assert "Momentum condition verified." not in json.dumps(report)
 
