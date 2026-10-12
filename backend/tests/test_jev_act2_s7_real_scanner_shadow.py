@@ -214,3 +214,201 @@ def test_corrupt_snapshot_cannot_be_observed(tmp_path):
         )
     with pytest.raises(DecisionReviewContractError, match="S7_SNAPSHOT_HASH_MISMATCH"):
         inspect_real_candidates(sim, market)
+
+# S7.1 integrity tests use the same real Prospective/Market SQLite schema.
+from app.jev.scanner_integrity_s7_1 import assess_frozen_candidate
+
+
+def test_s7_1_separates_entry_reference_and_independent_failures(tmp_path):
+    sim, market = _fixture(tmp_path)
+    report = inspect_real_candidates(sim, market)
+    assert report["candidate_count"] == 2
+    assert report["entry_candidate_count"] == 1
+    assert report["reference_count"] == 1
+    assert report["integrity_invalid_count"] == 1
+    assert report["integrity_category_counts"] == {
+        "INVALID": 1, "REFERENCE_ONLY": 1
+    }
+    # Diagnostic reports multiple independent issues, not only first S3 error.
+    entry = next(r for r in report["records"]
+                 if r["baseline_action"] == "ENTRY_CANDIDATE")
+    assert {"POLICY_PROVENANCE_UNVERIFIED", "DATE_MISSING",
+            "STRATEGY_IDENTITY_MISSING"}.issubset(
+        set(entry["integrity"]["codes"])
+    )
+    reference = next(r for r in report["records"]
+                     if r["baseline_action"] != "ENTRY_CANDIDATE")
+    assert reference["integrity"]["category"] == "REFERENCE_ONLY"
+    assert report["real_stock_provider_eligible"] == 0
+
+
+def test_s7_1_missing_rank_diagnosed_not_backfilled(tmp_path):
+    sim, market = _fixture(tmp_path)
+    with sqlite3.connect(sim) as conn:
+        conn.execute(
+            "UPDATE prospective_recommendation_sample SET rank=NULL "
+            "WHERE capture_run_id='capt-01' AND sample_index=0"
+        )
+    unchanged = _file_hash(sim)
+    result = inspect_real_candidates(sim, market)
+    entry = next(r for r in result["records"]
+                 if r["baseline_action"] == "ENTRY_CANDIDATE")
+    assert entry["integrity"]["rank"]["code"] == "RANK_MISSING"
+    assert entry["integrity"]["rank"]["stored"] is None
+    assert entry["integrity"]["rank"]["snapshot_priority"] == 1
+    assert entry["integrity"]["category"] == "INVALID"
+    assert _file_hash(sim) == unchanged
+
+
+def test_s7_1_rank_conflict_and_value_mismatch_not_normalized(tmp_path):
+    sim, market = _fixture(tmp_path)
+    with sqlite3.connect(sim) as conn:
+        conn.execute(
+            "UPDATE prospective_recommendation_sample SET rank=3 "
+            "WHERE capture_run_id='capt-01' AND sample_index=0"
+        )
+    result = inspect_real_candidates(sim, market)
+    entry = next(r for r in result["records"]
+                 if r["baseline_action"] == "ENTRY_CANDIDATE")
+    assert entry["integrity"]["rank"]["code"] == "RANK_VALUE_MISMATCH"
+    with sqlite3.connect(sim) as conn:
+        row = conn.execute(
+            "SELECT snapshot_json FROM prospective_recommendation_sample "
+            "WHERE capture_run_id='capt-01' AND sample_index=0"
+        ).fetchone()
+        snap = json.loads(row[0])
+        snap["rank"] = 99
+        conn.execute(
+            "UPDATE prospective_recommendation_sample "
+            "SET snapshot_json=?,snapshot_hash=? "
+            "WHERE capture_run_id='capt-01' AND sample_index=0",
+            (json.dumps(snap, ensure_ascii=False), digest_json(snap)),
+        )
+    entry = next(r for r in inspect_real_candidates(sim, market)["records"]
+                 if r["baseline_action"] == "ENTRY_CANDIDATE")
+    assert entry["integrity"]["rank"]["code"] == "RANK_REPRO_CONFLICT"
+    assert entry["integrity"]["category"] == "INVALID"
+
+
+def _proven_identity_fixture(tmp_path):
+    sim, market = _fixture(tmp_path)
+    capture, sample = load_frozen_candidates(sim, capture_id="capt-01")[0]
+    snap = sample["snapshot"]
+    snap["data_date"] = "2026-01-02"
+    snap["strategy_version_id"] = "strategy-v1"
+    snap["strategy_definition_hash"] = "strategy-hash"
+    snap["semantic_policy_provenance"] = {
+        "status": "VERIFIED_PINNED_EXECUTION",
+        "policy_source": "ACTIVE_SELECTION_POLICY",
+        "policy_id": "policy-1", "policy_hash": "policy-hash",
+    }
+    snap["semantic_source_v2"] = {
+        "strategy": {
+            "strategy_version_id": "strategy-v1",
+            "strategy_definition_hash": "strategy-hash",
+        },
+        "readiness": {"q2_status": "COMPLETE"},
+        "conditions": {"items": [
+            {"source_condition": "CONDITION_A", "condition_id": "c1"},
+        ]},
+    }
+    snap["semantic_condition_evidence"] = {
+        "items": [
+            {"condition_id": "c1", "source_condition": "CONDITION_A",
+             "status": "PASS"},
+        ]
+    }
+    capture["request"] = {
+        "selection_policy_id": "policy-1",
+        "selection_policy_hash": "policy-hash",
+    }
+    sample["snapshot_hash"] = digest_json(snap)
+    return capture, sample
+
+
+def test_s7_1_validated_category_keeps_strict_s3_as_authority(tmp_path, monkeypatch):
+    import app.jev.scanner_integrity_s7_1 as integrity
+    cap, sample = _proven_identity_fixture(tmp_path)
+    # Semantic source digest and strict S3 validation are independently
+    # tested in their own existing suites; simulate known-valid proofs here.
+    monkeypatch.setattr(integrity, "verify_semantic_source_v2", lambda source: (True, None))
+    monkeypatch.setattr(integrity, "build_scanner_review_input",
+                        lambda c, s, protocol_id: {"status": "OFFLINE_INSPECTABLE_ONLY"})
+    checks = assess_frozen_candidate(cap, sample)
+    assert checks["category"] == "LOCAL_VALIDATED"
+    assert checks["locally_validated"] is True
+    assert checks["external_provider_eligible"] is False
+    assert checks["codes"] == []
+    monkeypatch.setattr(
+        integrity, "build_scanner_review_input",
+        lambda c, s, protocol_id: (_ for _ in ()).throw(
+            DecisionReviewContractError("CANDIDATE_IDENTITY_MISMATCH")
+        ),
+    )
+    checks = assess_frozen_candidate(cap, sample)
+    assert checks["category"] == "INVALID"
+
+
+def test_s7_1_legacy_proof_is_limited_not_strictly_validated(tmp_path, monkeypatch):
+    import app.jev.scanner_integrity_s7_1 as integrity
+    from app.strategy.semantic_identity_bridge import ENGINE_VERIFIED_SOURCE
+    cap, sample = _proven_identity_fixture(tmp_path)
+    snap = sample["snapshot"]
+    snap["strategy_version_id"] = None
+    snap["strategy_definition_hash"] = None
+    snap["semantic_policy_provenance"]["policy_source"] = "LEGACY_CURRENT_10_FALLBACK"
+    snap["semantic_strategy_identity"] = {
+        "source": ENGINE_VERIFIED_SOURCE, "strategy_key": "MOMENTUM",
+        "strategy_version_id": "strategy-v1",
+        "strategy_definition_hash": "strategy-hash",
+        "selection_policy_id": "policy-1",
+        "selection_policy_hash": "policy-hash",
+    }
+    sample["snapshot_hash"] = digest_json(snap)
+    monkeypatch.setattr(integrity, "verify_semantic_source_v2", lambda source: (True, None))
+    def strict_rejection(c, s, protocol_id):
+        raise DecisionReviewContractError("STRATEGY_IDENTITY_MISMATCH")
+    monkeypatch.setattr(integrity, "build_scanner_review_input", strict_rejection)
+    result = assess_frozen_candidate(cap, sample)
+    assert result["category"] == "LEGACY_LIMITED"
+    assert result["strategy"]["status"] == "LEGACY_DERIVED"
+    assert result["locally_validated"] is False
+    snap["semantic_strategy_identity"]["strategy_definition_hash"] = "forged"
+    sample["snapshot_hash"] = digest_json(snap)
+    result = assess_frozen_candidate(cap, sample)
+    assert result["category"] == "INVALID"
+    assert result["strategy"]["code"] == "STRATEGY_DERIVATION_UNVERIFIED"
+
+
+def test_s7_1_existing_research_journal_is_immutable_and_enriched(tmp_path):
+    sim, market = _fixture(tmp_path)
+    target = tmp_path / "s7_legacy_research.db"
+    report = inspect_real_candidates(sim, market)
+    journal = S7ShadowJournal(target)
+    assert journal.capture(report)["inserted"] == 2
+    # An idempotent observation recapture writes no duplicate price rows.
+    assert journal.capture(report)["reused"] == 2
+    with sqlite3.connect(target) as conn:
+        assert conn.execute("SELECT count(*) FROM jev_s7_local_observation").fetchone()[0] == 2
+        assert conn.execute("SELECT count(*) FROM jev_s7_1_integrity_audit").fetchone()[0] == 2
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute("DELETE FROM jev_s7_1_integrity_audit")
+    saved = journal.report()
+    assert saved["entry_candidate_count"] == 1
+    assert saved["reference_count"] == 1
+    assert saved["integrity_invalid_count"] == 1
+    assert saved["not_diagnosed_count"] == 0
+    assert saved["window_summaries"]["5d"]["observed"] == 1
+    assert saved["validated_window_summaries"]["5d"]["observed"] == 0
+
+
+def test_s7_1_human_report_counts_entry_and_reference(tmp_path, capsys):
+    sim, market = _fixture(tmp_path)
+    report = inspect_real_candidates(sim, market)
+    display(report)
+    text = capsys.readouterr().out
+    assert "전체 조회 기록: 2건" in text
+    assert "실제 진입 후보: 1건 | 비추천·참고 기록: 1건" in text
+    assert "정합성 제외: 1건" in text
+    assert "후보 정합성 진단" in text
+    assert "실제 JEV 검토: 0건" in text
