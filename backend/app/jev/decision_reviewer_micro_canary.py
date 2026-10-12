@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 import json
 import math
+import time
 import sqlite3
 from typing import Any
 
@@ -394,6 +395,9 @@ class MicroJournal:
             reserved_usd TEXT NOT NULL,
             computed_cost_usd TEXT,
             cost_status TEXT NOT NULL,
+            execution_origin TEXT NOT NULL DEFAULT 'MOCK_TEST'
+              CHECK(execution_origin IN ('MOCK_TEST','ACTUAL_PROVIDER')),
+            duration_ms REAL,
             created_at TEXT NOT NULL,
             completed_at TEXT
         );
@@ -424,9 +428,13 @@ class MicroJournal:
         return result
 
     def reserve(self, projection: dict[str, Any], packet: dict[str, Any],
-                protocol: FrozenMicroProtocol) -> tuple[dict[str, Any], bool]:
+                protocol: FrozenMicroProtocol, *, origin: str = "MOCK_TEST"
+                ) -> tuple[dict[str, Any], bool]:
+        if origin not in ("MOCK_TEST", "ACTUAL_PROVIDER"):
+            raise DecisionReviewContractError("S6_ORIGIN_INVALID")
         key = digest_json({
-            "protocol": protocol.identity_hash, "case": projection["input"]["case_id"],
+            "protocol": protocol.identity_hash, "origin": origin,
+            "case": projection["input"]["case_id"],
             "input_hash": projection["input_hash"], "request_hash": digest_json(packet),
         })
         now = datetime.now(timezone.utc).isoformat()
@@ -449,17 +457,32 @@ class MicroJournal:
                    > Decimal(protocol.total_budget_usd)
             ):
                 raise DecisionReviewContractError("S5_TRIAL_BUDGET_EXHAUSTED")
+            # Independent hard cap across ALL actual research protocols in
+            # this SQLite catalog, not just the current protocol hash.
+            # Exact reserved amounts stay booked even after API errors.
+            if origin == "ACTUAL_PROVIDER":
+                globally_reserved = self.conn.execute(
+                    "SELECT reserved_usd FROM jev_s5_synthetic "
+                    "WHERE execution_origin='ACTUAL_PROVIDER'"
+                ).fetchall()
+                total_reserved = sum(
+                    (Decimal(r["reserved_usd"]) for r in globally_reserved),
+                    Decimal("0"),
+                )
+                if total_reserved + Decimal(protocol.per_attempt_reservation_usd) > Decimal("0.50"):
+                    raise DecisionReviewContractError("S6_PROJECT_TOTAL_RESERVATION_EXCEEDED")
             self.conn.execute(
                 """INSERT INTO jev_s5_synthetic(
                   review_id,protocol_hash,case_id,input_hash,request_hash,expected_gold,
-                  provider_id,model_id,state,reserved_usd,cost_status,created_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                  provider_id,model_id,state,reserved_usd,cost_status,
+                  execution_origin,created_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     key,protocol.identity_hash,projection["input"]["case_id"],
                     projection["input_hash"],digest_json(packet),
                     _CASE_INDEX[projection["input"]["case_id"]]["gold"],
                     PROVIDER_ID,protocol.model_returned,"PENDING",
-                    protocol.per_attempt_reservation_usd,"UNKNOWN",now,
+                    protocol.per_attempt_reservation_usd,"UNKNOWN",origin,now,
                 ),
             )
             self.conn.commit()
@@ -470,7 +493,8 @@ class MicroJournal:
 
     def finish(self, key: str, *, output: dict[str, Any] | None,
                typed: dict[str, Any] | None, error: str | None,
-               protocol: FrozenMicroProtocol) -> dict[str, Any]:
+               protocol: FrozenMicroProtocol, duration_ms: float | None = None
+               ) -> dict[str, Any]:
         if output is None:
             state, cost, cost_status = "ERROR", None, "UNKNOWN"
         else:
@@ -487,13 +511,15 @@ class MicroJournal:
         cur = self.conn.execute(
             """UPDATE jev_s5_synthetic
                SET state=?,decision=?,output_json=?,typed_response_json=?,
-                   reason_code=?,computed_cost_usd=?,cost_status=?,completed_at=?
+                   reason_code=?,computed_cost_usd=?,cost_status=?,
+                   duration_ms=?,completed_at=?
                WHERE review_id=? AND state='PENDING'""",
             (
                 state, output["decision"] if output else "ABSTAIN",
                 canonical_json(output) if output else None,
                 canonical_json(typed) if typed else None,
-                error,cost,cost_status,datetime.now(timezone.utc).isoformat(),key,
+                error,cost,cost_status,duration_ms,
+                datetime.now(timezone.utc).isoformat(),key,
             ),
         )
         self.conn.commit()
@@ -522,9 +548,21 @@ class MicroJournal:
 
 class MicroCanaryRunner:
     """One-by-one, no retry, reserve BEFORE provider; error preserves baseline."""
-    def __init__(self, journal: MicroJournal, provider: SystemOneMicroProvider):
+    def __init__(
+        self, journal: MicroJournal, provider: SystemOneMicroProvider,
+        *, execution_origin: str = "MOCK_TEST",
+    ):
+        if execution_origin not in ("MOCK_TEST", "ACTUAL_PROVIDER"):
+            raise DecisionReviewContractError("S6_ORIGIN_INVALID")
+        if execution_origin == "ACTUAL_PROVIDER" and provider.transport is not None:
+            raise DecisionReviewContractError("S6_ACTUAL_TRANSPORT_MUST_NOT_BE_MOCK")
+        if execution_origin == "MOCK_TEST" and not isinstance(
+            provider.transport, httpx.MockTransport
+        ):
+            raise DecisionReviewContractError("S6_TEST_TRANSPORT_MUST_BE_MOCK")
         self.journal = journal
         self.provider = provider
+        self.execution_origin = execution_origin
         self.lock = asyncio.Lock()
 
     async def run_case(
@@ -538,9 +576,12 @@ class MicroCanaryRunner:
         projection = synthetic_projection(case_id)
         packet = micro_packet(projection, protocol)
         async with self.lock:
-            prior, reused = self.journal.reserve(projection, packet, protocol)
+            prior, reused = self.journal.reserve(
+                projection, packet, protocol, origin=self.execution_origin,
+            )
             if reused:
                 return {**prior, "reused": True}
+            started = time.monotonic()
             try:
                 typed = await asyncio.wait_for(
                     self.provider.ask(
@@ -562,6 +603,7 @@ class MicroCanaryRunner:
             result = self.journal.finish(
                 prior["review_id"], output=output, typed=typed,
                 error=error, protocol=protocol,
+                duration_ms=round((time.monotonic() - started) * 1000, 3),
             )
             return {**result, "reused": False}
 
