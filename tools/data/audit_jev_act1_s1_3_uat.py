@@ -8,11 +8,8 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 from datetime import date, datetime, timedelta
-import hashlib
 import json
-import os
 from pathlib import Path
-import re
 import subprocess
 import sys
 from typing import Any, Callable
@@ -146,7 +143,7 @@ def preflight(
             result["same_date_complete_captures"] = int(record[0])
             if record[0]:
                 warnings.append("SAME_DATE_DUPLICATE_RISK")
-    except (OSError, ValueError, Exception) as exc:
+    except Exception as exc:
         reasons.append("PROSPECTIVE_DB_NOT_READY")
         result["prospective_db_error_type"] = type(exc).__name__
 
@@ -201,7 +198,7 @@ def preflight(
             result["missing_market_store_slots_total"] = sum(missing_slots.values())
             if any(missing_slots.values()):
                 warnings.append("NETWORK_OR_RAW_CACHE_CHECK_REQUIRED")
-    except (OSError, ValueError, Exception) as exc:
+    except Exception as exc:
         reasons.append("MARKET_DB_NOT_READY")
         result["market_db_error_type"] = type(exc).__name__
 
@@ -297,6 +294,7 @@ def inspect(
         unresolved.append("NEW_COMPLETE_CAPTURE_REQUIRED")
 
     n_policy = n_engine = n_semantic = n_rank = 0
+    stored_entry: dict[tuple[str, str, str], dict[str, Any]] = {}
     for row in rows:
         try:
             snap = json.loads(str(row["snapshot_json"]))
@@ -307,8 +305,12 @@ def inspect(
                 continue
             out["entry_candidates"] += 1
             key = scanner_repro_candidate_key(snap)
-            if all(key) and int(row["rank"]) == int(key[2]):
+            if all(key) and row["rank"] is not None and int(row["rank"]) == int(key[2]):
                 n_rank += 1
+                if key in stored_entry:
+                    problems.append("DUPLICATE_STORED_CANDIDATE_KEY")
+                else:
+                    stored_entry[key] = snap
             else:
                 problems.append("SAMPLE_RANK_MISMATCH")
             proof = snap.get("semantic_policy_provenance")
@@ -331,7 +333,8 @@ def inspect(
                 and evidence.get("source") == "SCANNER_REPRO_ENGINE_PASSED_CONDITIONS_V1"
                 and isinstance(evidence.get("items"), list)
                 and evidence.get("passed") == evidence.get("total") == len(evidence["items"])
-                and all(item.get("status") == "PASS" for item in evidence["items"] if isinstance(item, dict))
+                and all(isinstance(item, dict) and item.get("status") == "PASS"
+                        and item.get("condition_id") for item in evidence["items"])
             ):
                 n_engine += 1
             else:
@@ -370,7 +373,11 @@ def inspect(
         unresolved.append("ORIGINAL_SCANNER_RESULT_NOT_SUPPLIED")
     else:
         result_capture = scanner_result.get("prospective_capture")
-        if not isinstance(result_capture, dict) or result_capture.get("capture_id") != capture_id:
+        if (
+            not isinstance(result_capture, dict)
+            or result_capture.get("capture_id") != capture_id
+            or result_capture.get("status") != "COMPLETE"
+        ):
             problems.append("SCANNER_RESULT_CAPTURE_MISMATCH")
         if scanner_result.get("scanner_cache_hit") is not False:
             unresolved.append("SCANNER_NOT_FRESH_ANALYSIS")
@@ -403,6 +410,39 @@ def inspect(
                     problems.append("ORIGINAL_CANDIDATE_AUDIT_MISMATCH")
         if len(result_candidates) != len(rows):
             problems.append("SCANNER_CANDIDATE_ROW_COUNT_MISMATCH")
+        source_entry = {}
+        for candidate in result_candidates:
+            if candidate.get("action") != "ENTRY_CANDIDATE":
+                continue
+            key = scanner_repro_candidate_key(candidate)
+            if not all(key) or key in source_entry:
+                problems.append("SCANNER_RESULT_CANDIDATE_KEY_INVALID")
+                continue
+            source_entry[key] = candidate
+        if set(source_entry) != set(stored_entry):
+            problems.append("SCANNER_STORED_ENTRY_KEYS_MISMATCH")
+        for key in set(source_entry) & set(stored_entry):
+            candidate, snap = source_entry[key], stored_entry[key]
+            for field in (
+                "market", "code", "priority", "strategy", "action",
+                "candidate_state", "data_date", "current_price",
+                "risk", "conditions", "strategy_version_id",
+                "strategy_definition_hash",
+            ):
+                if candidate.get(field) != snap.get(field):
+                    problems.append("ORIGINAL_SCANNER_CANDIDATE_CHANGED")
+                    break
+        if scanner_result.get("strategy_selection_policy") and rows:
+            try:
+                request = json.loads(str(run["request_json"]))
+                policy_meta = scanner_result["strategy_selection_policy"]
+                if (
+                    policy_meta.get("policy_id") != request.get("selection_policy_id")
+                    or policy_meta.get("policy_hash") != request.get("selection_policy_hash")
+                ):
+                    problems.append("ORIGINAL_SCANNER_POLICY_MISMATCH")
+            except (TypeError, ValueError, AttributeError):
+                problems.append("ORIGINAL_SCANNER_POLICY_MISMATCH")
 
     out["reasons"] = sorted(set(problems))
     out["inconclusive_reasons"] = sorted(set(unresolved))
