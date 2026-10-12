@@ -88,6 +88,58 @@ REASONS_KO = {
 }
 
 
+def _producer_reference(path: str, *, is_risk: bool) -> tuple[str, str | None]:
+    """Reviewed code producer and immutable snapshot field *path*, not data."""
+    if path.startswith("evidence["):
+        match = re.match(r"^evidence\[(\d+)\]", path)
+        if is_risk:
+            return (
+                "backend/app/jev/scanner_shadow_s7_3.py::_local_packet;"
+                "backend/app/risk/engine.py::RiskEngine.build_plan",
+                "snapshot.risk",
+            )
+        return (
+            "backend/app/strategy/semantic_source_v2.py::build_semantic_source_v2;"
+            "backend/app/jev/scanner_shadow_s7_3.py::_local_packet",
+            f"snapshot.semantic_source_v2.conditions.items[{match.group(1)}]"
+            if match else None,
+        )
+    if path.startswith("baseline.conditions."):
+        return (
+            "backend/app/backtest/selector.py::build_condition_state;"
+            "backend/app/jev/scanner_shadow_s7_3.py::_local_packet",
+            "snapshot.conditions." + path.rsplit(".", 1)[-1],
+        )
+    if path.startswith("baseline.risk."):
+        return (
+            "backend/app/risk/engine.py::RiskEngine.build_plan;"
+            "backend/app/backtest/selector.py::current_readiness",
+            "snapshot.risk." + path.rsplit(".", 1)[-1],
+        )
+    if path == "baseline.rank":
+        return (
+            "backend/app/backtest/candidate_priority.py::rank_candidates",
+            "snapshot.priority.rank",
+        )
+    if path.startswith("baseline.strategy_identity.") or path in (
+        "baseline.policy_id", "baseline.policy_hash"
+    ):
+        return (
+            "backend/app/strategy/semantic_identity_bridge.py::semantic_projection_candidate;"
+            "backend/app/jev/scanner_shadow_s7_3.py::_local_packet",
+            "snapshot.semantic_strategy_identity or snapshot.semantic_policy_provenance",
+        )
+    if path.startswith("source."):
+        return (
+            "backend/app/prospective/catalog.py::finalize_capture;"
+            "backend/app/jev/scanner_shadow_s7_3.py::_local_packet",
+            "prospective_capture_run / prospective_recommendation_sample",
+        )
+    if path.startswith("baseline."):
+        return "backend/app/jev/scanner_shadow_s7_3.py::_local_packet", None
+    return "backend/app/jev/scanner_shadow_s7_3.py::_local_packet", None
+
+
 def source_audit() -> dict[str, Any]:
     """Reviewed static inventory only: no live license/account inspection."""
     return {
@@ -155,6 +207,7 @@ def _field_entry(path: str, *, is_risk: bool) -> dict[str, Any]:
             "path": path, "origin_type": ORIGIN_UNKNOWN,
             "expected_parents": [], "actual_source": "UNVERIFIED",
             "rights_status": "UNVERIFIED", "time_quality": "UNKNOWN",
+            "producer_ref": None, "local_source_ref": None,
             "reason_codes": ["UNKNOWN_OUTBOUND_FIELD"],
         }
     origin, parents, quality = rule
@@ -169,10 +222,13 @@ def _field_entry(path: str, *, is_risk: bool) -> dict[str, Any]:
         codes += ["SOURCE_ORIGIN_UNVERIFIED", "LINEAGE_PARENT_UNVERIFIED"]
     if quality in ("DATE_ONLY", "UNKNOWN") or dependent:
         codes.append("SOURCE_RELEASE_TIME_UNVERIFIED")
+    producer_ref, local_source_ref = _producer_reference(path, is_risk=is_risk)
     return {
         "path": path,
         "origin_type": origin,
         "expected_parents": list(parents),
+        "producer_ref": producer_ref,
+        "local_source_ref": local_source_ref,
         "expected_source": "KRX_OPEN_API_DEFAULT_PATH" if dependent else "STOCKSCOPE_INTERNAL",
         "actual_source": "UNVERIFIED" if dependent else "INTERNAL_CODE_ONLY",
         "rights_status": "UNVERIFIED",
