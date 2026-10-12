@@ -20,6 +20,7 @@ from .review_models import (
     REVIEW_ERROR,
     REVIEW_NOT_READY,
     REVIEW_PASS_THROUGH,
+    REVIEW_ABSTAIN,
     REVIEW_QUEUED,
     REVIEW_REQUIRED,
     REVIEW_RUNNING,
@@ -186,9 +187,10 @@ class JevManualReviewService:
         elif operational == "VALID":
             disposition = str(review.get("disposition") or "")
             status = (
-                REVIEW_REQUIRED
-                if disposition == REVIEW_REQUIRED
-                else REVIEW_PASS_THROUGH
+                REVIEW_REQUIRED if disposition == REVIEW_REQUIRED
+                else REVIEW_PASS_THROUGH if disposition == REVIEW_PASS_THROUGH
+                else REVIEW_ABSTAIN if disposition == REVIEW_ABSTAIN
+                else REVIEW_ERROR
             )
             reason = "DUPLICATE_REVIEW_REUSED"
         elif operational == "SKIPPED":
@@ -513,10 +515,12 @@ class JevManualReviewService:
                 review_identity=review_identity,
             )
 
+        disposition = str(completed.get("disposition") or "")
         final_status = (
-            REVIEW_REQUIRED
-            if str(completed.get("disposition") or "") == REVIEW_REQUIRED
-            else REVIEW_PASS_THROUGH
+            REVIEW_REQUIRED if disposition == REVIEW_REQUIRED
+            else REVIEW_PASS_THROUGH if disposition == REVIEW_PASS_THROUGH
+            else REVIEW_ABSTAIN if disposition == REVIEW_ABSTAIN
+            else REVIEW_ERROR
         )
         return self._result(
             status=final_status,
