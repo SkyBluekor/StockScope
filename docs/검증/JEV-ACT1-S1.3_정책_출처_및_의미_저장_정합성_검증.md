@@ -224,3 +224,26 @@ S3 성공 판정은 **오프라인 계약을 완주하는 Fake 검토 및 CI**�
 **기록과 보고:** 실제 시스템/Simulation DB schema 변경 없이, 명시적으로 생성한 격리 SQLite의 `jev_s5_synthetic`에 protocol/model/입력/질문 hash, case ID, 기대 답, 선택 응답, 사용량, 입력/출력 토큰 기준 **계정 단가로 추정한 비용**, 실패/중단/중복을 별도 기록한다. 계정 단가 미확인 시 유료 호출 불가; 실패 또는 중단의 실제 청구액을 0으로 단정하지 않는다. 결과는 `NOT_EVALUATED`이며 Shadow 투자성과를 주장하지 않는다. 테스트 파일: `backend/tests/test_jev_act2_s5_micro_canary.py`.
 
 **아직 HOLD:** 현재 승인받은 실제 공급자 계정/모델 revision, 계정 청구/보존·권한 조건, 유료 호출 예산·사용자 특정 실행 승인 없음. 실제 호출 **0건**, 실제 모델 성능 검증 **0건**. TypeSafe V4 frozen Canary·S3/S4 Mock·Horizon 원칙·시장 데이터 전송 차단·비활성 사용자 기능 모두 유지. 합성 정답과 비교한 품질은 승인된 호출을 실행한 **이후에만** 기록할 수 있고 그때도 실제 Scanner 순증분 효용의 근거는 아니다.
+
+## JEV-ACT2-S6 — 계정 조회·동의 실행·합성 Canary 보고 CLI (2026-10-12)
+
+이번 단계의 실행 도구는 `tools/data/jev_s6_micro_canary.py`이며, 별도 파일 서버나 사용자용 JEV 기능을 추가하지 않는다. **기본 실행은 `status`: 네트워크 0회, DB 쓰기 0회.** `dry-run`과 `report`도 비전송이다. 표준 실행 경로는 `C:\Projects\StockScope\data\jev_research\s6_micro_canary.sqlite3`에만 실험 기록을 저장한다(`.gitignore` 적용). 운영 Simulation·Holdings·Tracking·Holdout을 열거나 수정하지 않는다.
+
+- `status`: 비활성 기본 경로·실행 모드만 확인. 키 조회 없음.
+- `dry-run --model <고정 모델 ID> --input-price <계정 확인 값> --output-price <계정 확인 값>`: 5개 합성 케이스, protocol/질문 hash, 시도 횟수, 예약 금액 및 추정량을 **조회만** 한다. 계정 가격 미확인 시 PRICE_UNKNOWN으로 표시하며 읽기 전용 확인은 허용한다.
+- `check-account --authorize-model-lookup --model <ID>`: 사용자가 콘솔에서 별도 확인 문구를 직접 입력해야 기존 `GET /v1/models`를 호출한다. 성공해도 현재 계정의 요금·약관 확인은 별도다.
+- `run-approved`: 합성 사례 ID/고정 모델/계정 입력·출력 단가, 약관·가격 출처 URL 및 호출/예약 예산을 제시한 뒤 **해당 실행 protocol hash와 예산을 포함한 문장, 계정 약관·요금 확인 문구를 별도로 입력**해야 외부 조회 및 요청을 시작한다. `latest` 별칭과 원본 시장 캡처는 허용하지 않는다. 실제 계정의 고정 모델 ID를 조회한 뒤 동일한 모델만 시스템원 응답으로 수용한다. 첫 번째 실패 시 이후 요청을 중단하고 자동 재시도하지 않는다.
+- `report`: 저장된 연구 DB를 읽기 전용 열기로 조회한다. 각 합성 사례별 사전 정답, 실제 선택, 확률 분포, 오류, 평균 지연·토큰 기반 **추정** 비용, 불명확한 청구액을 분리해 표시한다. **MOCK_TEST와 ACTUAL_PROVIDER를 다른 모집단으로 취급**, 실험을 하지 않았다면 실제 검증 결과 0건으로 표시한다.
+- 합성 MicroJournal의 동일 프로토콜 호출 제한과 별개로 **실제 Provider 실험은 모든 프로토콜을 합쳐 예약금 $0.50를 초과할 수 없도록 동일 SQLite 트랜잭션 안에서 차단**한다. 실패·중단·불확실 비용을 0원으로 간주하여 예산을 되돌리지 않는다. 공급자 HTTP 응답은 실제 비용 청구의 상한을 보증하지 않으며, 입력 byte와 최대 8192 출력 토큰을 이용한 보수적인 추정치를 제공한다.
+- `jev_s6_owner_attestation`에 입력한 계정 약관·가격 URL, 가격, 프로토콜/모델/대상/예산/승인 시각을 변경 불가능한 **사용자 확인 기록(USER_ATTESTED)** 으로 보존한다. 이는 공급자의 가격 증명도, 자동으로 발생한 사용자 동의도 아니다. 잘못된 가격/모델 확인, 계정 접근 불가·키 누락이면 실행되지 않는다.
+- 실제 네트워크 없는 CI 검증용 `backend/tests/test_jev_act2_s6_micro_cli.py`는 `httpx.MockTransport`와 임시 DB를 사용하고, 결과 origin을 `MOCK_TEST`로만 찍는다. 실제 TypeSafe API 키를 사용하거나 유료 요청하지 않는다.
+
+**재현 명령 (호출 없음)**:
+```powershell
+.\.venv\Scripts\python.exe tools\data\jev_s6_micro_canary.py status
+.\.venv\Scripts\python.exe tools\data\jev_s6_micro_canary.py dry-run --model jev-1.13.0
+.\.venv\Scripts\python.exe tools\data\jev_s6_micro_canary.py report
+.\.venv\Scripts\python.exe -m pytest backend/tests/test_jev_act2_s6_micro_cli.py -q
+```
+
+본 문서의 `jev-1.13.0`은 CLI 예시이지 계정에서 해당 모델이 확인됐다는 뜻이 아니다. 공식 API 스키마 `https://api.typesafe.ai/openapi.json`의 `/v1/systemone` 요청 및 `/v1/models` 응답 계약을 사용했다. 실제 계정 모델·실제 요금·이용권·보존 정책은 사용자 계정에서 별도 검증해야 한다. **S6 코드 구현과 Micro-Canary 실호출은 별도 완료 상태**: 실제 유료 실험 승인 없이 S6 코드를 작성/테스트·병합하는 행위는 외부 API 실행 승인이 아니다. 실거래 시장 데이터/실제 종목과의 JEV 성능, Scanner 수익·손실 개선, 활성화는 계속 HOLD.
