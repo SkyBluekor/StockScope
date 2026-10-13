@@ -28,6 +28,7 @@ from app.jev.local_history_review import review_capture as review_local_history
 from app.jev.local_shadow_cohort_s10 import measure_capture as measure_local_cohort
 from app.jev.local_outcome_link_s11 import evaluate_capture_readonly as evaluate_local_outcomes
 from app.jev.local_first_check_s12 import first_local_check
+from app.jev.local_readiness_s13 import diagnose_local_readiness
 from app.jev.scanner_shadow_s7_3 import (
     S73PreflightJournal, REASONS_KO, prepare_capture,
 )
@@ -49,7 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
             "status", "inspect", "capture", "report", "run-approved",
             "prepare", "preflight", "source-audit", "lineage", "v4-readiness",
             "s8-readiness", "local-evidence", "local-history", "local-cohort", "local-outcomes",
-            "local-first-check",
+            "local-first-check", "local-readiness",
         ),
     )
     parser.add_argument("--capture-id", default=None)
@@ -87,13 +88,19 @@ def execute(
             "actual_provider_calls": 0,
             "db_writes": 0,
         }
-    if args.mode in ("source-audit", "lineage", "v4-readiness", "s8-readiness", "local-evidence", "local-history", "local-cohort", "local-outcomes", "local-first-check"):
+    if args.mode in ("source-audit", "lineage", "v4-readiness", "s8-readiness", "local-evidence", "local-history", "local-cohort", "local-outcomes", "local-first-check", "local-readiness"):
         if args.save_preflight:
             raise DecisionReviewContractError("S7_4_DIAGNOSTIC_READ_ONLY")
         if args.mode == "source-audit":
             if args.capture_id or args.sample_index is not None:
                 raise DecisionReviewContractError("S7_4_SOURCE_AUDIT_ARGUMENT_INVALID")
             return source_audit()
+        if args.mode == "local-readiness":
+            if (args.capture_id or args.evaluation_run_id
+                    or args.sample_index is not None or args.market_db is not None
+                    or args.limit != 60):
+                raise DecisionReviewContractError("S13_AUTO_DISCOVERY_ARGUMENT_CONFLICT")
+            return diagnose_local_readiness(args.simulation_db or simulation_db_path())
         if args.mode == "local-first-check":
             if args.capture_id or args.evaluation_run_id or args.sample_index is not None:
                 raise DecisionReviewContractError("S12_AUTO_DISCOVERY_ARGUMENT_CONFLICT")
@@ -181,6 +188,53 @@ def display(value: dict[str, Any], *, as_json: bool = False) -> None:
     print("StockScope S7 · 실제 추천 후보 관찰")
     print("=" * 63)
     print(f"상태: {value.get('status', 'UNKNOWN')}")
+    if value.get("version") == "JEV_LOCAL_PIPELINE_READINESS_S13_V1":
+        policy = value["policy"]
+        print(
+            "현재 운영 정책: "
+            + ("활성 정책 적용 중" if policy["active_policy_effective"]
+               else "레거시 대체 또는 정책 해석 실패")
+            + f" [{policy['selection_policy_source']}]"
+        )
+        if not policy["q7_activation_eligible"] or not policy["q7_precommitted"]:
+            print("Q7 운영 승인 기준: 미승인 (현재 코드에서는 정식 정책 활성화 불가)")
+        if value.get("counts_complete") is not None:
+            if not value["counts_complete"]:
+                print("주의: 전체 Capture 검사가 완료되지 않았습니다.")
+            if "categories" in value:
+                c = value["categories"]
+                print(
+                    f"조회 {value['inspected_samples']}건"
+                    f" | 진입 {value['entry_candidates']}건"
+                    f" | 참고 {value['reference_only']}건"
+                )
+                print(
+                    f"완전 검증 {c['LOCAL_VALIDATED']}건"
+                    f" | 레거시 제한 {c['LEGACY_LIMITED']}건"
+                    f" | 원본 불충분 {c['INVALID']}건"
+                )
+                for title, field in (
+                    ("원본 증거 부족 원인", "invalid_reason_counts"),
+                    ("레거시 제한 원인", "legacy_limitation_counts"),
+                ):
+                    if value.get(field):
+                        print(title + ":")
+                        for code, count in sorted(
+                            value[field].items(), key=lambda item: (-item[1], item[0])
+                        ):
+                            print(f"  {EXPLAIN.get(code, code)}: {count}건 [{code}]")
+        action = value.get("next_action")
+        if action == "Q7_APPROVAL_PROTOCOL_UNAPPROVED":
+            print("다음: 승인 기준·실제 근거를 마련해야 합니다. 우회 활성화 금지.")
+        elif action == "VERIFY_NEW_CAPTURE_POLICY_RANK_ENGINE_EVIDENCE":
+            print("다음: 새 Scanner Capture의 순위·정책·엔진 PASS 원본 증거 확인.")
+        elif action == "OBSERVE_ONLY_NO_REAL_PROVIDER_AUTHORIZATION":
+            print("다음: 로컬 관찰만 가능. 실데이터 외부 AI 전송은 여전히 보류.")
+        else:
+            print("다음 단계: " + str(action or "로컬 데이터·증거 상태 점검"))
+        print("※ 기존 Capture를 수정하지 않았으며 성능 향상을 입증하지 않습니다.")
+        print("※ 외부 AI 호출 0건 / Runtime DB 쓰기 0건")
+        return
     if value.get("version") == "JEV_LOCAL_FIRST_CHECK_V1":
         explanations = {
             "NO_LOCAL_SIMULATION_DB": "이 컴퓨터에 Simulation 데이터베이스가 없습니다.",
