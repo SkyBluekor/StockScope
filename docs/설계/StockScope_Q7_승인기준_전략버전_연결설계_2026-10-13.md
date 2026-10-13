@@ -100,3 +100,34 @@ S14에서는 단계 1~5의 **무단 우회 차단**을 구현한다. 정식 Q7 �
 - `q7_approval_eligible=False`, `production_activation_allowed=False`, `model_uplift_verified=False`. 기존 운영 정책·Risk·Capture·전략/시장 SQLite는 변경하지 않는다.
 
 **S16에서 아직 필요한 실제 근거:** 거래일별 독립성/시장 국면 분류, 분리된 미래 Holdout 평가 및 독립적인 시점 증명, 실제 JEV 미사용 대조군 및 비용·위험 반영. 관측 건수가 늘었다는 사실만으로 진짜 모델 개선이나 전략 승격으로 바꾸지 않는다.
+
+
+## 10. S17 — 다음 영업일 추천 자동 기록·성과 추적 (2026-10-14)
+
+**실행 대상:** Windows 한국시간 PC의 로컬 StockScope `backend`. 사용자가 명시적으로 설치한 Windows Task Scheduler만 자동 실행한다. `git pull` 자체는 작업을 등록하지 않는다.
+
+**자동 실행 로직:** 주중 오전 7시(실제 허용 시간 05:00~08:45 KST)에 루프백 백엔드가 없으면 임시로 실행하여 `POST /api/backtest/scanner/freshness`를 호출한다. 확정된 기준일은 **오늘 이전**이며 4일 이내여야 한다. 휴장일·장기 지연·오래된 시세는 실행 건수를 채우려고 소급 생성하지 않고 보류한다. 사전 Capture 조회로 동일 시장·기준일의 이미 완료/진행 중인 작업이 있으면 Scanner를 재실행하지 않는다. 새 데이터라면 `POST /api/backtest/scanner/jobs`에 `force_refresh=true`, `allow_large_sync=false`, 실제 기준일을 제공하고, 완료될 때까지 job status를 확인한다. 정식 COMPLETE Capture ID가 생긴 경우에만 관측 단계로 이동한다.
+
+**추적:** 매일 갱신된 로컬 Market Store를 가지고 S16의 5·10·20 거래일 종가 변화 기술통계를 읽기 전용 재계산한다. 같은 EOD일의 Scanner 기록이 이미 있더라도 관측 결과를 확인한다. **진입가·주문 수익률·JEV 개선 효과·정식 사전승인 자료는 아니다.** 분석 대상이 과거 신호일인 것은 정상 EOD 처리 지연의 결과이며, 작업이 시작된 날짜를 과거로 옮기지 않는다. 완료 시각이 오전 9시를 넘었으면 `completed_before_open=false`로 표시하며 장전 기록임을 주장하지 않는다.
+
+**운영 로그:** `data/prospective_daily/YYYY-MM-DD_kospi.json` 등 현황 파일. 중복 실행 방지에 `.lock` 파일을 사용하며 프로세스 강제 종료로 남은 lock은 사용자가 원본 Capture 상태를 확인한 후 수동으로 정리해야 한다. 로그/로컬 시계는 외부 공인 타임스탬프가 아니다. PC가 꺼져 있거나 사용자가 로그아웃한 시간에는 실행되지 않으며 지난 거래일을 자동 소급하지 않는다. 로컬 SQLite와 로그는 다른 PC로 Git 동기화되지 않는다.
+
+**수동 검증 (전송·주문 없음):**
+```powershell
+python .\tools\data\prospective_daily.py --dry-run
+python .\tools\data\q7_precommit.py inventory
+python .\tools\data\q7_precommit.py observe
+```
+
+**명시적 자동 등록 (사용자가 실행해야 함):**
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\data\install_prospective_daily.ps1
+Get-ScheduledTask -TaskName StockScope-Prospective-Daily
+# 중단하려면:
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\data\install_prospective_daily.ps1 -Remove
+```
+이 등록은 **한국시간 PC, 로그인 상태에서만** 작동하도록 안전 제한한다. 별도 상시 서버는 필수가 아니며 시작한 백엔드는 작업 후 종료한다. `KOSPI`가 기본이며 `-Scope KOSDAQ` 또는 `-Scope ALL`을 선택할 수 있다.
+
+**범위 한도:** S16 현황은 COMPLETE Capture 최대 260회, 전체 표본 최대 6000개, 단일 Capture 최대 499개를 읽는다. 이를 초과하면 전체 통계라고 주장하지 않고 `COHORT_TOO_LARGE_FOR_COMPLETE_AUDIT`로 차단한다. 이후의 규모 확장·증분 저장은 별도 구조 검증이 필요하다.
+
+**안전:** 최초 실행시 실제 KRX 시세 조회 및 로컬 Market DB/Prospective DB **저장은 발생**한다. 인터넷 유료 모델·주문 전송은 금지. Q7 운영 정책 승인·원본 전략 ID 복원·운영 전략 승격은 이 기능만으로 일어나지 않는다.
