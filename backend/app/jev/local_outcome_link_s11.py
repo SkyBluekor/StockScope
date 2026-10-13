@@ -7,7 +7,7 @@ purged, immature or non-CLOSED observations never become 0% returns.
 """
 from __future__ import annotations
 
-from collections import Counter, defaultdict
+from collections import Counter
 from datetime import date, datetime, timezone
 from math import isfinite
 from pathlib import Path
@@ -125,6 +125,8 @@ def _result_reason(
         return "OBSERVATION_TIME_UNVERIFIED"
 
     split = unit.get("split")
+    if type(split) is not str:
+        return "SPLIT_NOT_VERIFIED"
     if split not in _ELIGIBLE_SPLITS:
         return "PURGED_OR_EXCLUDED" if split in {"PURGED", "EXCLUDED"} else "SPLIT_NOT_VERIFIED"
     if unit.get("maturity_status") != "MATURE":
