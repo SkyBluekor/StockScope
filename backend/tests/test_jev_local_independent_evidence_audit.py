@@ -103,3 +103,42 @@ def test_reference_and_failed_lookup_never_generate_reviews(monkeypatch, tmp_pat
                                sample_index=99)
     with pytest.raises(DecisionReviewContractError, match="LOCAL_EVIDENCE_CAPTURE_ID_REQUIRED"):
         audit.diagnose_capture(tmp_path / "NON_EXISTENT.db", capture_id=None)
+
+
+def test_local_evidence_cli_is_readonly_and_does_not_execute_any_provider(
+    monkeypatch, tmp_path, capsys,
+):
+    import tools.data.jev_s7_shadow as cli
+
+    calls = []
+    def audit_stub(path, **kwargs):
+        calls.append((path, kwargs))
+        return {
+            "status": "LOCAL_REVIEW_EVIDENCE_DIAGNOSTIC_ONLY",
+            "total_records": 1,
+            "counts": {"NO_INDEPENDENT_REVIEW_EVIDENCE": 1},
+            "review_opinions_created": 0,
+            "actual_provider_calls": 0,
+            "db_writes": 0,
+        }
+
+    monkeypatch.setattr(cli, "diagnose_local_evidence", audit_stub)
+    path = tmp_path / "absent.db"
+    args = cli.build_parser().parse_args([
+        "local-evidence", "--simulation-db", str(path),
+        "--capture-id", "synthetic-capture", "--sample-index", "0",
+    ])
+    report = cli.execute(args)
+    assert report["review_opinions_created"] == 0
+    assert len(calls) == 1
+    assert calls[0][0] == path
+    assert calls[0][1]["capture_id"] == "synthetic-capture"
+    cli.display(report)
+    displayed = capsys.readouterr().out
+    assert "독립 근거 미확보 1건" in displayed
+    assert "Runtime DB 쓰기 0건" in displayed
+    assert not path.exists()
+
+    args.save_preflight = True
+    with pytest.raises(DecisionReviewContractError, match="S7_4_DIAGNOSTIC_READ_ONLY"):
+        cli.execute(args)
