@@ -250,3 +250,22 @@ def test_s8_projectable_candidate_explicitly_lacks_v4_wire_lineage(monkeypatch):
     assert "V4_OUTBOUND_LINEAGE_NOT_AUDITED" in result["reason_codes"]
     assert "V4_WIRE_CONTRACT_UNVERIFIED" in result["reason_codes"]
     assert result["transmission_decision"] == "NO_GO"
+
+
+def test_s8_all_local_skip_aggregate_never_reports_external_no_go(monkeypatch, tmp_path, capsys):
+    _patch_candidate(monkeypatch, v4_status="SKIPPED_LOCAL")
+    monkeypatch.setattr(
+        s8, "load_frozen_candidates",
+        lambda *_args, **_kwargs: [({"id": "synthetic"}, {"sample_index": 0})],
+    )
+    report = s8.diagnose_capture(tmp_path / "nonexistent.db", capture_id="synthetic")
+    assert report["entry_candidates"] == 1
+    assert report["v4_local_skipped_count"] == 1
+    assert report["no_go_count"] == 0
+    assert report["decision"] == "NOT_REQUIRED"
+    assert report["data_eligibility"] == "NOT_APPLICABLE"
+    assert report["v4_outbound_lineage_unverified_count"] == 0
+    display(report)
+    output = capsys.readouterr().out
+    assert "AI 호출 대상 없음" in output
+    assert "현재 외부 TypeSafe 전송 NO-GO" not in output
