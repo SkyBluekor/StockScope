@@ -83,30 +83,31 @@ def first_local_check(simulation_db: Path) -> dict[str, Any]:
                 "ORDER BY completed_at DESC,id DESC LIMIT 1"
             ).fetchone()
             run_id = str(latest["id"])
-            captures_in_run = conn.execute(
-                "SELECT capture_run_id,COUNT(*) AS samples "
-                "FROM prospective_evaluation_unit "
-                "WHERE evaluation_run_id=? "
-                "GROUP BY capture_run_id ORDER BY capture_run_id LIMIT 2",
+            summary = conn.execute(
+                "SELECT COUNT(DISTINCT capture_run_id) AS capture_count "
+                "FROM prospective_evaluation_unit WHERE evaluation_run_id=?",
                 (run_id,),
-            ).fetchall()
-
-            if not captures_in_run:
+            ).fetchone()
+            linked_capture_count = int(summary["capture_count"])
+            if not linked_capture_count:
                 return _status(
                     "LATEST_EVALUATION_HAS_NO_UNITS",
                     complete_capture_count=captures,
                     completed_evaluation_count=completed_runs,
                     latest_evaluation_run_id=run_id,
                 )
-            if len(captures_in_run) != 1:
-                return _status(
-                    "LATEST_EVALUATION_SPANS_MULTIPLE_CAPTURES",
-                    complete_capture_count=captures,
-                    completed_evaluation_count=completed_runs,
-                    latest_evaluation_run_id=run_id,
-                )
-            capture_id = str(captures_in_run[0]["capture_run_id"])
-            evaluation_units = int(captures_in_run[0]["samples"])
+            # Deterministic, non-outcome-based selection: most recent signal
+            # date in the latest completed run. No search for favorable results.
+            # S11 will audit only this capture, not the entire multi-capture run.
+            selected = conn.execute(
+                "SELECT capture_run_id,COUNT(*) AS samples "
+                "FROM prospective_evaluation_unit WHERE evaluation_run_id=? "
+                "GROUP BY capture_run_id "
+                "ORDER BY MAX(signal_date) DESC,capture_run_id DESC LIMIT 1",
+                (run_id,),
+            ).fetchone()
+            capture_id = str(selected["capture_run_id"])
+            evaluation_units = int(selected["samples"])
             cap = conn.execute(
                 "SELECT status FROM prospective_capture_run WHERE id=?",
                 (capture_id,),
@@ -157,6 +158,8 @@ def first_local_check(simulation_db: Path) -> dict[str, Any]:
         "DESCRIPTIVE_OUTCOMES_AVAILABLE" if matched else "NO_COMPARABLE_CLOSED_OUTCOMES",
         complete_capture_count=captures,
         completed_evaluation_count=completed_runs,
+        captures_in_evaluation_run=linked_capture_count,
+        selection_scope="LATEST_SIGNAL_CAPTURE_IN_LATEST_COMPLETED_RUN",
         selected_capture_id=capture_id,
         selected_evaluation_run_id=run_id,
         frozen_sample_count=frozen_count,
