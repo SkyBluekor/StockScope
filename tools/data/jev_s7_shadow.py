@@ -20,6 +20,7 @@ for p in (ROOT, BACKEND):
 
 from app.jev.decision_reviewer_offline import DecisionReviewContractError
 from app.jev.scanner_lineage_s7_4 import diagnose_capture, source_audit, REASONS_KO as LINEAGE_REASONS_KO
+from app.jev.scanner_v4_readiness_s7_5 import diagnose_capture as diagnose_v4_capture
 from app.jev.scanner_integrity_s7_1 import EXPLAIN
 from app.jev.scanner_shadow_s7_3 import (
     S73PreflightJournal, REASONS_KO, prepare_capture,
@@ -40,7 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
         "mode", nargs="?", default="status",
         choices=(
             "status", "inspect", "capture", "report", "run-approved",
-            "prepare", "preflight", "source-audit", "lineage",
+            "prepare", "preflight", "source-audit", "lineage", "v4-readiness",
         ),
     )
     parser.add_argument("--capture-id", default=None)
@@ -77,13 +78,19 @@ def execute(
             "actual_provider_calls": 0,
             "db_writes": 0,
         }
-    if args.mode in ("source-audit", "lineage"):
+    if args.mode in ("source-audit", "lineage", "v4-readiness"):
         if args.save_preflight:
             raise DecisionReviewContractError("S7_4_DIAGNOSTIC_READ_ONLY")
         if args.mode == "source-audit":
             if args.capture_id or args.sample_index is not None:
                 raise DecisionReviewContractError("S7_4_SOURCE_AUDIT_ARGUMENT_INVALID")
             return source_audit()
+        if args.mode == "v4-readiness":
+            return diagnose_v4_capture(
+                args.simulation_db or simulation_db_path(),
+                capture_id=args.capture_id, limit=args.limit,
+                sample_index=args.sample_index,
+            )
         return diagnose_capture(
             args.simulation_db or simulation_db_path(),
             capture_id=args.capture_id, limit=args.limit,
@@ -127,6 +134,55 @@ def display(value: dict[str, Any], *, as_json: bool = False) -> None:
     print("StockScope S7 · 실제 추천 후보 관찰")
     print("=" * 63)
     print(f"상태: {value.get('status', 'UNKNOWN')}")
+    if value.get("status") == "SCANNER_V4_LOCAL_DIAGNOSTIC_PROVIDER_HOLD":
+        print(
+            f"조회 {value['total_records']}건 | 진입 {value['entry_candidates']}건"
+            f" | 참고 {value['reference_only']}건"
+        )
+        print(
+            f"V4 로컬 투영 가능 {value['local_v4_projectable']}건"
+            f" | 로컬 판단으로 제외 {value['skipped_local']}건"
+            f" | 정합성 차단 {value['blocked_integrity']}건"
+            f" | 기간 차단 {value['blocked_horizon']}건"
+            f" | 의미 자료 부족 {value['blocked_semantic_source']}건"
+        )
+        print("V4 질문: strategy_relation_conflict (Noul · 한 질문)")
+        print("-" * 63)
+        reasons_ko = {
+            **EXPLAIN, **REASONS_KO, **LINEAGE_REASONS_KO,
+            "S7_3_PACKET_LINEAGE_NOT_COMPLETE": "로컬 패킷 필드 검사를 마치지 못했습니다.",
+            "OUT_OF_SCOPE_HORIZON": "V4가 지원하는 투자 기간(SHORT/MEDIUM)이 아닙니다.",
+            "SEMANTIC_SOURCE_V2_INCOMPLETE": "V4의 전략·조건 의미 자료가 부족합니다.",
+            "V4_SOURCE_RIGHTS_UNVERIFIED": "V4 입력의 외부 AI 전송 권한이 확인되지 않았습니다.",
+            "V4_SOURCE_RELEASE_TIME_UNVERIFIED": "V4 입력 원천 자료의 공개 시각이 확인되지 않았습니다.",
+            "V4_SOURCE_LINEAGE_UNVERIFIED": "S7.3 패킷 계보는 V4 전송 자료의 계보 인증이 아닙니다.",
+            "V4_MODEL_AND_BILLING_NOT_APPROVED": "실제 모델·과금 승인 정보가 없습니다.",
+        }
+        for rec in value["records"]:
+            if rec["status"] == "REFERENCE_ONLY":
+                continue
+            identity = rec["identity"]
+            print(
+                f"{identity.get('name') or identity.get('ticker') or '후보'}"
+                f" ({identity.get('ticker') or '식별자 없음'})"
+                f" · {rec['integrity_category']} · {rec['status']}"
+            )
+            print(
+                f"  S7.3 계보 검사: {rec['s7_3_packet_lineage_status']}"
+                f" | V4 로컬 상태: {rec['v4_local_status'] or '미실행'}"
+            )
+            for code in rec["integrity_reason_codes"]:
+                print(f"  원본 검증: {reasons_ko.get(code, code)} [{code}]")
+            for code in rec["reason_codes"]:
+                if code not in rec["integrity_reason_codes"]:
+                    print(f"  V4 판단: {reasons_ko.get(code, code)} [{code}]")
+            if rec["v4_state_hash"]:
+                print(f"  V4 로컬 의미 입력 생성: 완료 (상태 해시 {rec['v4_state_hash'][:12]})")
+            print("  실제 TypeSafe 전송: 보류 (출처 권한·공개 시각·모델 승인 미확인)")
+        print("※ 로컬 V4 입력 생성 성공은 실제 Provider 적격성이나 추천 개선 증거가 아닙니다.")
+        print("※ S7.3 Choice 패킷은 V4 Noul 요청으로 전송하지 않습니다.")
+        print("※ 원본 DB 변경 0건 / TypeSafe 호출 0건")
+        return
     if value.get("status") == "SOURCE_AUDIT_PROVIDER_HOLD":
         print("KRX OPEN API 기본 Scanner 경로 (코드 기준, 실제 개별 행 인증 아님):")
         for item in value["products"]:
