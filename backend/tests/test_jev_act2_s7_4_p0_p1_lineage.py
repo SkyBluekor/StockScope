@@ -10,6 +10,7 @@ import pytest
 import app.jev.scanner_shadow_s7_3 as s73
 from app.jev.decision_reviewer_offline import DecisionReviewContractError
 import app.jev.scanner_lineage_s7_4 as lineage
+import app.jev.scanner_v4_readiness_s7_5 as v45
 from app.jev.scanner_lineage_s7_4 import (
     FIELDS, _leaves, diagnose_capture, diagnose_prepared, source_audit,
 )
@@ -433,3 +434,163 @@ def test_p11_preparation_zero_packets_is_explicit(capsys):
     output = capsys.readouterr().out
     assert "로컬 JEV 패킷 0건" in output
     assert "준비된 입력이 없어" in output
+
+
+def test_s75_existing_legacy_capture_is_not_promoted_to_v4(monkeypatch):
+    capture, sample = _real_shaped()
+    # The legacy source was independently known to be S7.3 inspectable only.
+    monkeypatch.setattr(
+        s73, "assess_frozen_candidate",
+        lambda _c, _s: {"category": "LEGACY_LIMITED", "codes": ["STRATEGY_IDENTITY_MISMATCH"]},
+    )
+    monkeypatch.setattr(
+        v45, "assess_frozen_candidate",
+        lambda _c, _s: {"category": "LEGACY_LIMITED", "codes": ["STRATEGY_IDENTITY_MISMATCH"]},
+    )
+    before = deepcopy((capture, sample))
+    report = v45.diagnose_candidate(capture, sample)
+    assert (capture, sample) == before
+    assert report["category"] == "LEGACY_LIMITED"
+    assert report["lineage_analysis_status"] == "COMPLETE"
+    assert report["local_v4_status"] == "BLOCKED_HORIZON"
+    assert "V4_HORIZON_UNSUPPORTED" in report["reason_codes"]
+    assert report["provider_status"] == "PROVIDER_HOLD"
+    assert report["v4_outbound_lineage_status"] == "NOT_APPLICABLE"
+    assert report["v4_wire_contract_verified"] is False
+    assert report["real_provider_eligible"] is False
+    assert report["actual_provider_calls"] == report["db_writes"] == 0
+    assert "Momentum condition verified." not in json.dumps(report)
+
+
+def test_s75_invalid_candidate_preserves_all_observed_codes(monkeypatch):
+    capture, sample = _real_shaped()
+    monkeypatch.setattr(
+        s73, "assess_frozen_candidate",
+        lambda _c, _s: {"category": "INVALID", "codes": OLD_CAPTURE_CODES.copy()},
+    )
+    monkeypatch.setattr(
+        v45, "assess_frozen_candidate",
+        lambda _c, _s: {"category": "INVALID", "codes": OLD_CAPTURE_CODES.copy()},
+    )
+    result = v45.diagnose_candidate(capture, sample)
+    assert result["local_v4_status"] == "BLOCKED_INTEGRITY"
+    assert set(OLD_CAPTURE_CODES).issubset(result["reason_codes"])
+    assert result["integrity_reason_codes"] == OLD_CAPTURE_CODES
+    assert result["lineage_analysis_status"] == "NOT_RUN"
+    assert result["v4_state_hash"] is None
+    assert result["actual_provider_calls"] == 0
+
+
+def test_s75_v4_route_and_projector_reuse_existing_contract(monkeypatch, real_prepared):
+    from app.jev.typesafe_canary_v4 import _sample_from_spec
+    from app.jev.typesafe_canary_v4_fixtures import FIXTURE_SPECS
+    from app.jev.typesafe_state_v4 import route_typesafe_state_v4
+
+    residual_spec = next(
+        item for item in FIXTURE_SPECS
+        if item["expected_local_status"] == "RESIDUAL_SEMANTIC_REVIEW"
+    )
+    v4_sample = _sample_from_spec(residual_spec)
+    assert route_typesafe_state_v4(v4_sample).provider_eligible
+    capture, _sample = _real_shaped()
+    capture["horizon_intent"] = "SHORT"
+    v4_sample["horizon_intent"] = "SHORT"
+    v4_sample["snapshot_hash"] = digest_json(v4_sample["snapshot"])
+    monkeypatch.setattr(v45, "prepare_shadow_candidate", lambda _c, _s: deepcopy(real_prepared))
+    monkeypatch.setattr(v45, "assess_frozen_candidate", lambda _c, _s: {
+        "category": "LOCAL_VALIDATED", "codes": [],
+    })
+    monkeypatch.setattr(v45, "diagnose_prepared", lambda _p: {
+        "lineage_analysis_status": "COMPLETE", "reason_codes": [],
+        "field_count": 41, "unclassified_fields": 0,
+    })
+    original = deepcopy(v4_sample)
+    report = v45.diagnose_candidate(capture, v4_sample)
+    assert v4_sample == original
+    assert report["local_v4_status"] == "LOCAL_V4_PROJECTABLE"
+    assert report["v4_outbound_lineage_status"] == "NOT_AUDITED"
+    assert report["v4_wire_contract_verified"] is False
+    assert len(report["v4_state_hash"]) == 64
+    assert report["v4_state_bytes"] > 0
+    assert report["provider_status"] == "PROVIDER_HOLD"
+    assert report["s73_lineage_field_count"] > 0
+    assert report["s73_lineage_unclassified_fields"] == 0
+    assert report["actual_provider_calls"] == report["db_writes"] == 0
+    assert "strategy_intent" not in json.dumps(report)
+
+
+def test_s75_cli_read_only_json_and_display(monkeypatch, tmp_path, capsys):
+    capture, sample = _real_shaped()
+    monkeypatch.setattr(v45, "load_frozen_candidates", lambda *_a, **_kw: [(capture, sample)])
+    monkeypatch.setattr(s73, "assess_frozen_candidate", lambda _c, _s: {
+        "category": "INVALID", "codes": ["POLICY_PROVENANCE_UNVERIFIED"],
+    })
+    monkeypatch.setattr(v45, "assess_frozen_candidate", lambda _c, _s: {
+        "category": "INVALID", "codes": ["POLICY_PROVENANCE_UNVERIFIED"],
+    })
+    missing = tmp_path / "not_created.sqlite3"
+    args = build_parser().parse_args([
+        "v4-readiness", "--capture-id", capture["id"], "--simulation-db", str(missing),
+    ])
+    result = execute(args)
+    assert result["counts"]["BLOCKED_INTEGRITY"] == 1
+    assert result["actual_provider_calls"] == result["db_writes"] == 0
+    assert not missing.exists()
+    display(result)
+    msg = capsys.readouterr().out
+    assert "정합성 차단 1건" in msg
+    assert "POLICY_PROVENANCE_UNVERIFIED" in msg
+    assert "DB 쓰기 0건" in msg
+    display(result, as_json=True)
+    parsed = json.loads(capsys.readouterr().out)
+    assert parsed["records"][0]["local_v4_status"] == "BLOCKED_INTEGRITY"
+
+
+def test_s75_reference_only_is_not_reported_as_v4_semantic_skip(monkeypatch, tmp_path, capsys):
+    capture, sample = _real_shaped()
+    sample["action"] = "REFERENCE_ONLY"
+    sample["snapshot"]["action"] = "REFERENCE_ONLY"
+    sample["snapshot_hash"] = digest_json(sample["snapshot"])
+    monkeypatch.setattr(v45, "load_frozen_candidates", lambda *_a, **_kw: [(capture, sample)])
+
+    db = tmp_path / "not_created.sqlite3"
+    report = v45.diagnose_capture(db, capture_id=capture["id"])
+    assert report["entry_candidates"] == 0
+    assert report["counts"]["REFERENCE_ONLY"] == 1
+    assert report["counts"]["SKIPPED_LOCAL"] == 0
+    assert report["counts"]["LOCAL_V4_PROJECTABLE"] == 0
+    assert report["records"][0]["lineage_analysis_status"] == "NOT_APPLICABLE"
+    assert report["actual_provider_calls"] == report["db_writes"] == 0
+    assert not db.exists()
+    display(report)
+    output = capsys.readouterr().out
+    assert "단순 참고 1건" in output
+    assert "V4 로컬 의미 판단으로 생략 0건" in output
+
+
+def test_s75_legacy_cli_shows_primary_blocker_not_false_identity_difference(monkeypatch, capsys):
+    capture, sample = _real_shaped()
+    monkeypatch.setattr(s73, "assess_frozen_candidate", lambda _c, _s: {
+        "category": "LEGACY_LIMITED",
+        "codes": ["LEGACY_DERIVED_IDENTITY", "STRATEGY_IDENTITY_MISMATCH"],
+    })
+    monkeypatch.setattr(v45, "assess_frozen_candidate", lambda _c, _s: {
+        "category": "LEGACY_LIMITED",
+        "codes": ["LEGACY_DERIVED_IDENTITY", "STRATEGY_IDENTITY_MISMATCH"],
+    })
+    report = {
+        "status": "V4_READINESS_PROVIDER_HOLD",
+        "total_records": 1, "entry_candidates": 1,
+        "counts": {name: 1 if name == "BLOCKED_HORIZON" else 0 for name in (
+            "LOCAL_V4_PROJECTABLE", "SKIPPED_LOCAL", "REFERENCE_ONLY",
+            "BLOCKED_INTEGRITY", "BLOCKED_HORIZON", "BLOCKED_SEMANTIC_SOURCE",
+        )},
+        "records": [v45.diagnose_candidate(capture, sample)],
+    }
+    assert "STRATEGY_IDENTITY_MISMATCH" in report["records"][0]["reason_codes"]
+    display(report)
+    output = capsys.readouterr().out
+    assert "당시 투자 기간이 단기·중기로 확정되지 않아" in output
+    assert "원본 제한: 당시 전략 버전이 없고" in output
+    assert "원본 전략 버전과 의미 분석용 전략 버전이 다릅니다" not in output
+    assert "모든 원본 진단 코드는 --json 출력" in output

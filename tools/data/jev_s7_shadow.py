@@ -21,6 +21,7 @@ for p in (ROOT, BACKEND):
 from app.jev.decision_reviewer_offline import DecisionReviewContractError
 from app.jev.scanner_lineage_s7_4 import diagnose_capture, source_audit, REASONS_KO as LINEAGE_REASONS_KO
 from app.jev.scanner_integrity_s7_1 import EXPLAIN
+from app.jev.scanner_v4_readiness_s7_5 import diagnose_capture as diagnose_v4_readiness
 from app.jev.scanner_shadow_s7_3 import (
     S73PreflightJournal, REASONS_KO, prepare_capture,
 )
@@ -40,7 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
         "mode", nargs="?", default="status",
         choices=(
             "status", "inspect", "capture", "report", "run-approved",
-            "prepare", "preflight", "source-audit", "lineage",
+            "prepare", "preflight", "source-audit", "lineage", "v4-readiness",
         ),
     )
     parser.add_argument("--capture-id", default=None)
@@ -77,13 +78,19 @@ def execute(
             "actual_provider_calls": 0,
             "db_writes": 0,
         }
-    if args.mode in ("source-audit", "lineage"):
+    if args.mode in ("source-audit", "lineage", "v4-readiness"):
         if args.save_preflight:
             raise DecisionReviewContractError("S7_4_DIAGNOSTIC_READ_ONLY")
         if args.mode == "source-audit":
             if args.capture_id or args.sample_index is not None:
                 raise DecisionReviewContractError("S7_4_SOURCE_AUDIT_ARGUMENT_INVALID")
             return source_audit()
+        if args.mode == "v4-readiness":
+            return diagnose_v4_readiness(
+                args.simulation_db or simulation_db_path(),
+                capture_id=args.capture_id, limit=args.limit,
+                sample_index=args.sample_index,
+            )
         return diagnose_capture(
             args.simulation_db or simulation_db_path(),
             capture_id=args.capture_id, limit=args.limit,
@@ -127,6 +134,84 @@ def display(value: dict[str, Any], *, as_json: bool = False) -> None:
     print("StockScope S7 · 실제 추천 후보 관찰")
     print("=" * 63)
     print(f"상태: {value.get('status', 'UNKNOWN')}")
+    if value.get("status") == "V4_READINESS_PROVIDER_HOLD":
+        counts = value["counts"]
+        print(
+            f"조회 {value['total_records']}건"
+            f" | 진입 후보 {value['entry_candidates']}건"
+            f" | 단순 참고 {counts['REFERENCE_ONLY']}건"
+        )
+        print(
+            f"V4 입력 구성 가능 {counts['LOCAL_V4_PROJECTABLE']}건"
+            f" | V4 로컬 의미 판단으로 생략 {counts['SKIPPED_LOCAL']}건"
+            f" | 원본 정합성 차단 {counts['BLOCKED_INTEGRITY']}건"
+            f" | 기간 차단 {counts['BLOCKED_HORIZON']}건"
+            f" | 의미 자료 차단 {counts['BLOCKED_SEMANTIC_SOURCE']}건"
+        )
+        translations = {
+            **EXPLAIN, **REASONS_KO, **LINEAGE_REASONS_KO,
+            "V4_HORIZON_UNSUPPORTED": (
+                "당시 투자 기간이 단기·중기로 확정되지 않아 V4 검토를 진행할 수 없습니다."
+            ),
+            "S7_4_LINEAGE_NOT_COMPLETE": (
+                "로컬 입력의 필드 계보 검사가 완료되지 않았습니다."
+            ),
+        }
+        for record in value["records"]:
+            if record["category"] == "REFERENCE_ONLY":
+                continue
+            ident = record["identity"]
+            category = record["category"]
+            local_status = record["local_v4_status"]
+            print(
+                f"{ident.get('name') or ident.get('ticker') or '후보'}"
+                f" ({ident.get('ticker') or '식별자 없음'})"
+                f" · {category} · {local_status}"
+            )
+            if local_status == "BLOCKED_HORIZON":
+                primary_codes = ["V4_HORIZON_UNSUPPORTED"]
+            elif local_status == "BLOCKED_INTEGRITY":
+                primary_codes = [
+                    code for code in record["integrity_reason_codes"]
+                    if code != "LEGACY_DERIVED_IDENTITY"
+                ]
+                if "S7_4_LINEAGE_NOT_COMPLETE" in record["reason_codes"]:
+                    primary_codes.append("S7_4_LINEAGE_NOT_COMPLETE")
+            elif local_status == "BLOCKED_SEMANTIC_SOURCE":
+                primary_codes = [
+                    code for code in record["reason_codes"]
+                    if code not in record["provider_blocking_reasons"]
+                    and code not in record["integrity_reason_codes"]
+                ]
+            elif local_status == "SKIPPED_LOCAL":
+                primary_codes = [
+                    code for code in record["reason_codes"]
+                    if code.startswith("SKIPPED_")
+                ]
+            else:
+                primary_codes = []
+            for code in dict.fromkeys(primary_codes):
+                message = translations.get(code, code)
+                if code == "STRATEGY_IDENTITY_MISMATCH" and category == "LEGACY_LIMITED":
+                    message = (
+                        "원본 전략 버전이 없어 S3 엄격 검사를 통과하지 못했습니다."
+                        " 전략 내용이 실제로 서로 다르다고 확인된 것은 아닙니다."
+                    )
+                print(f"  주된 사유: {message} [{code}]")
+            if category == "LEGACY_LIMITED":
+                print(
+                    "  원본 제한: 당시 전략 버전이 없고 검증된 유도 식별자만"
+                    " 있어 완전 검증 기록으로 취급하지 않습니다."
+                )
+            if local_status == "LOCAL_V4_PROJECTABLE":
+                print("  V4 로컬 입력 구성 가능 (실제 TypeSafe 전송은 계속 차단)")
+        print(
+            "외부 AI 전송: 원천 공개 시각·자료 이용 권한·모델/실행 승인"
+            " 확인 전까지 일괄 보류"
+        )
+        print("※ 모든 원본 진단 코드는 --json 출력에 그대로 보존됩니다.")
+        print("※ 실제 시장 데이터 TypeSafe 전송 0건 / DB 쓰기 0건")
+        return
     if value.get("status") == "SOURCE_AUDIT_PROVIDER_HOLD":
         print("KRX OPEN API 기본 Scanner 경로 (코드 기준, 실제 개별 행 인증 아님):")
         for item in value["products"]:
