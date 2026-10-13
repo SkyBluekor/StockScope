@@ -49,6 +49,8 @@ def _validate_record(
     capture: dict[str, Any], sample: dict[str, Any], observation: dict[str, Any],
 ) -> str:
     """Fail closed if the reviewer response cannot be bound to this exact sample."""
+    if not isinstance(observation, dict):
+        raise DecisionReviewContractError("LOCAL_COHORT_REVIEW_STATUS_INVALID")
     identity = observation.get("identity")
     if not isinstance(identity, dict) or (
         identity.get("capture_id") != capture["id"]
@@ -57,7 +59,7 @@ def _validate_record(
     ):
         raise DecisionReviewContractError("LOCAL_COHORT_REVIEW_IDENTITY_MISMATCH")
     status = observation.get("status")
-    if status not in _ALLOWED_STATUSES:
+    if type(status) is not str or status not in _ALLOWED_STATUSES:
         raise DecisionReviewContractError("LOCAL_COHORT_REVIEW_STATUS_INVALID")
     is_entry = sample.get("action") == ENTRY
     if (is_entry and status not in _ENTRY_STATUSES) or (
