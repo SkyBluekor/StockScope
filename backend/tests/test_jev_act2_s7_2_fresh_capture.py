@@ -273,7 +273,7 @@ def test_s13_full_active_fresh_capture_is_locally_validated_but_provider_held(
     sample = catalog.list_samples(capture_run_id=capture["id"])[0]
 
     verdict = assess_frozen_candidate(capture, sample)
-    assert verdict["category"] == "LOCAL_VALIDATED"
+    assert verdict["category"] == "LOCAL_VALIDATED", verdict
     assert verdict["codes"] == []
     assert verdict["locally_validated"] is True
     assert verdict["external_provider_eligible"] is False
