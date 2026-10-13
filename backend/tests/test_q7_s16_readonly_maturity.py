@@ -198,3 +198,45 @@ def test_cli_observe_only_requires_existing_sources(tmp_path):
     assert value["status"] == "NO_SIMULATION_DB"
     assert value["runtime_db_writes"] == 0
     assert not missing.exists()
+
+
+def test_s17_twenty_one_completed_captures_still_have_complete_denominator(
+    tmp_path, monkeypatch,
+):
+    sim, market = _db(tmp_path)
+    with sqlite3.connect(sim) as conn:
+        conn.executemany(
+            "INSERT INTO prospective_capture_run VALUES(?,?,?)",
+            [(f"old-capture-{i:03d}", "COMPLETE",
+              f"2026-09-{i+1:02d}T07:00:00+09:00") for i in range(20)],
+        )
+    # Existing 5 samples are still from capture-1; other captures are empty.
+    def load(db, *, capture_id, limit):
+        return _pairs() if capture_id == "capture-1" else []
+    _mock(monkeypatch)
+    monkeypatch.setattr(s16, "load_frozen_candidates", load)
+    result = s16.measure(sim, market, as_of=date(2026,10,14))
+    assert result["status"] == "DESCRIPTIVE_OBSERVATIONS_ONLY"
+    assert result["counts_complete"] is True
+    assert result["total_complete_captures"] == 21
+    assert result["audited_captures"] == 21
+    assert result["entry_candidates"] == 4
+
+
+def test_s17_bounded_total_sample_count_refuses_incomplete_large_cohort(
+    tmp_path, monkeypatch,
+):
+    sim, market = _db(tmp_path)
+    with sqlite3.connect(sim) as conn:
+        conn.executemany(
+            "INSERT INTO prospective_recommendation_sample VALUES(?,?,?)",
+            [("capture-1", 1000+i, "REFERENCE_ONLY") for i in range(6000)],
+        )
+    monkeypatch.setattr(
+        s16, "load_frozen_candidates",
+        lambda *a, **k: pytest.fail("no partial scans when total cohort too large"),
+    )
+    result = s16.measure(sim, market, as_of=date(2026,10,14))
+    assert result["status"] == "COHORT_TOO_LARGE_FOR_COMPLETE_AUDIT"
+    assert result["counts_complete"] is False
+    assert result["total_sample_cap"] == 6000
