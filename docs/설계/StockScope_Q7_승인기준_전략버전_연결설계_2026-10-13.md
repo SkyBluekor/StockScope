@@ -4,9 +4,9 @@
 
 ## 1. 확인된 현재 상태와 목표
 
-- 최신 Scanner Capture \`19e0ba21-5fd5-4202-a244-e65a3dad839a\`: 15건 중 진입 후보 3건, 3건 모두 \`LEGACY_LIMITED\`, \`LOCAL_PACKET_READY\`. 완전 검증 0건, 실제 TypeSafe 호출 0건.
-- 현재 이 PC에서 \`LEGACY_CURRENT_10_FALLBACK\` 사용. 레거시 원본에는 \`strategy_version_id\`, \`strategy_definition_hash\`가 없으며 유도한 엔진 식별자는 원본 필드가 아니다.
-- Q7 승인 기준은 \`production_blocked_approval_protocol()\`에서 \`activation_eligible=False\`, \`q7_precommitted=False\`. 이 PC의 Evaluation/Proposal/Approval Artifact는 모두 0건이었다.
+- 최신 Scanner Capture `19e0ba21-5fd5-4202-a244-e65a3dad839a`: 15건 중 진입 후보 3건, 3건 모두 `LEGACY_LIMITED`, `LOCAL_PACKET_READY`. 완전 검증 0건, 실제 TypeSafe 호출 0건.
+- 현재 이 PC에서 `LEGACY_CURRENT_10_FALLBACK` 사용. 레거시 원본에는 `strategy_version_id`, `strategy_definition_hash`가 없으며 유도한 엔진 식별자는 원본 필드가 아니다.
+- Q7 승인 기준은 `production_blocked_approval_protocol()`에서 `activation_eligible=False`, `q7_precommitted=False`. 이 PC의 Evaluation/Proposal/Approval Artifact는 모두 0건이었다.
 - 목표는 **미래 결과로 검증할 수 있는 전략 버전별 평가 기준을 결과 관찰 *전에* 고정**, 독립 근거를 얻은 뒤 승인/운영 선택 정책으로 연결하는 것. JEV와 Scanner의 실제 성능 향상을 주장하는 것이 아니다.
 
 ## 2. Q7에서 반드시 사전에 결정할 항목
@@ -24,14 +24,14 @@
 | 시간 분리 | DEVELOPMENT에서 기준 결정, 별도 HOLDOUT/전진 시점 잠금, 공개·수집 시각 확인 | **미정** |
 | 승격·유보·강등·롤백 | 정량 임계값, 안전 조건, 실패 시 변경 취소, 명시적 승인 주체 | **미정** |
 
-**합격 원칙:** 하나라도 미정인 상태에서는 Q7 승인/전략 승격/자동 Rotation을 허용하지 않는다. \`INSUFFICIENT_EVIDENCE\`, \`SAMPLE_SIZE_POLICY_UNDEFINED\` 같은 부정적 근거 상태를 합격으로 바꾸지 않는다.
+**합격 원칙:** 하나라도 미정인 상태에서는 Q7 승인/전략 승격/자동 Rotation을 허용하지 않는다. `INSUFFICIENT_EVIDENCE`, `SAMPLE_SIZE_POLICY_UNDEFINED` 같은 부정적 근거 상태를 합격으로 바꾸지 않는다.
 
 ## 3. 증거의 연결과 전략 원본 식별
 
-- 원본 증거는 \`strategy_registry_version\`의 **실제** \`strategy_version_id + definition_hash\`를 참조해야 한다. 단순히 전략 이름이나 현재 코드가 계산한 버전만 과거 후보에 적용해서는 안 된다.
-- \`Scanner\` 실행 시 확정한 \`SelectionPolicyPin\`과 실행 메타데이터를 Capture 요청·원본 후보 스냅샷에 연결한다. 캐시 결과는 fresh engine PASS 증거를 계승할 수 없다.
+- 원본 증거는 `strategy_registry_version`의 **실제** `strategy_version_id + definition_hash`를 참조해야 한다. 단순히 전략 이름이나 현재 코드가 계산한 버전만 과거 후보에 적용해서는 안 된다.
+- `Scanner` 실행 시 확정한 `SelectionPolicyPin`과 실행 메타데이터를 Capture 요청·원본 후보 스냅샷에 연결한다. 캐시 결과는 fresh engine PASS 증거를 계승할 수 없다.
 - Prospective/Feedback의 Evaluation Artifact는 **원본 전략 버전, 신호일, 평가 run, 평가 프로토콜, 결과 잠금/성숙 조건**을 확인해야 한다.
-- 레거시에서 엔진 재현 근거로 파생한 \`semantic_strategy_identity\`는 \`LEGACY_LIMITED\` 로컬 관찰만 가능하다. \`strategy_version_id\` 원본을 사후 생성하거나 기존 Capture를 덮어쓰지 않는다.
+- 레거시에서 엔진 재현 근거로 파생한 `semantic_strategy_identity`는 `LEGACY_LIMITED` 로컬 관찰만 가능하다. `strategy_version_id` 원본을 사후 생성하거나 기존 Capture를 덮어쓰지 않는다.
 - **부트스트랩 문제:** 활성 정책이 없으면 새 Scanner는 레거시 버전을 기록하고, 승인에는 완전한 원본 전략 버전 근거가 필요하다. 이 순환 의존성은 *읽기 전용 연구 검증 코호트와 사전 고정된 미래 평가 프로토콜*을 분리해 해결하도록 별도 명세/검증해야 한다. 레거시 결과를 정식 승인으로 둔갑시키는 우회는 금지한다.
 
 ## 4. 정식 승인 연결 계약 (아직 미구현)
@@ -47,21 +47,21 @@ S14에서는 단계 1~5의 **무단 우회 차단**을 구현한다. 정식 Q7 �
 
 ## 5. S14 구현 경계와 테스트
 
-- 제안/승인 서비스가 전달받은 임의 객체의 \`activation_eligible=True\` 또는 \`q7_precommitted=True\`를 정식 근거로 신뢰하지 않는다.
+- 제안/승인 서비스가 전달받은 임의 객체의 `activation_eligible=True` 또는 `q7_precommitted=True`를 정식 근거로 신뢰하지 않는다.
 - 운영 Selection Policy 게이트도 승인 기록의 해시가 맞는다는 이유만으로 출처 미확인 Q7을 통과시키지 않는다.
-- 명시적인 \`TEST_ONLY_SYNTHETIC\` 프로토콜을 사용하는 자동 테스트는 해당 테스트 환경에서만 허용하고, 운영에서는 차단한다.
-- 전략 원본 버전·순위·엔진 PASS 및 \`LEGACY_LIMITED\`의 차단 방식은 유지한다.
+- 명시적인 `TEST_ONLY_SYNTHETIC` 프로토콜을 사용하는 자동 테스트는 해당 테스트 환경에서만 허용하고, 운영에서는 차단한다.
+- 전략 원본 버전·순위·엔진 PASS 및 `LEGACY_LIMITED`의 차단 방식은 유지한다.
 - 이번 단계는 기존 SQLite, Capture, 전략 선택 정책, Scanner 결과를 수정하지 않고 운영 정책을 활성화하지 않는다.
 
 ## 6. 다음 단계 인수 조건
 
 **S15 (Q7 기준 고정)**: 개발 코호트의 실제 분포·성숙도·편향을 먼저 조사, 운영자가 정한 숫자를 불변 사전고정 artifact에 담는 저장·검증 경로를 구현한다. 빈 기준이나 임의의 수치로 승인시키지 않는다.
 
-**S16 (독립 평가)**: Versioned Research/Prospective의 결과 시점·전략 원본 identity·holdout 분리를 확인하고 진짜 승인 적격성을 판정한다. 필요한 표본이 부족하면 계속 \`HOLD\`.
+**S16 (독립 평가)**: Versioned Research/Prospective의 결과 시점·전략 원본 identity·holdout 분리를 확인하고 진짜 승인 적격성을 판정한다. 필요한 표본이 부족하면 계속 `HOLD`.
 
-**S17 (활성화)**: 검증된 Q7 artifact를 StrategyChange Proposal/Approval/Selection Registry에서 재검증하고, 승인된 최신 후보부터 운영 정책을 명시적으로 활성화한다. 이후 새로운 Scanner Capture가 \`LOCAL_VALIDATED\`인지를 실측한다.
+**S17 (활성화)**: 검증된 Q7 artifact를 StrategyChange Proposal/Approval/Selection Registry에서 재검증하고, 승인된 최신 후보부터 운영 정책을 명시적으로 활성화한다. 이후 새로운 Scanner Capture가 `LOCAL_VALIDATED`인지를 실측한다.
 
 ## 7. 설계 원문
 
-- \`docs/StockScope_MASTER_ARCHITECTURE_vNext.md\` §8, §13 Q7: 평가·승인 절차는 설계에서 정해졌으나 장기/최근·국면·최소 표본은 **미정**, cohort 분석 후 사전 고정 필요.
-- \`docs/StockScope_DEVELOPMENT_ROADMAP_vNext.md\` P2-S2 / P5-S1: Q7 평가 기준 및 최소 표본을 수치 기반 승격 활성화 **전에** 고정, 숫자 임의 설정 금지.
+- `docs/StockScope_MASTER_ARCHITECTURE_vNext.md` §8, §13 Q7: 평가·승인 절차는 설계에서 정해졌으나 장기/최근·국면·최소 표본은 **미정**, cohort 분석 후 사전 고정 필요.
+- `docs/StockScope_DEVELOPMENT_ROADMAP_vNext.md` P2-S2 / P5-S1: Q7 평가 기준 및 최소 표본을 수치 기반 승격 활성화 **전에** 고정, 숫자 임의 설정 금지.
