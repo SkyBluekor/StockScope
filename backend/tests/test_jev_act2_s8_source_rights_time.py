@@ -214,3 +214,14 @@ def test_s8_cli_no_missing_capture_or_writes():
         s8.diagnose_capture("unused.db", capture_id=None)
     with pytest.raises(DecisionReviewContractError, match="S8_SAMPLE_INDEX_INVALID"):
         s8.diagnose_capture("unused.db", capture_id="synthetic", sample_index=-1)
+
+
+def test_s8_strict_json_rejects_duplicate_keys_and_nonfinite_literals():
+    with pytest.raises(ValueError, match="OUTBOUND_BODY_DUPLICATE_KEY"):
+        s8.hash_local_outbound_candidate(
+            '{"state":{},"questions":{"q":{}},"model":"FAKE","state":{}}'
+        )
+    with pytest.raises(ValueError, match="OUTBOUND_BODY_NONFINITE"):
+        s8.hash_local_outbound_candidate(
+            '{"state":{"value":NaN},"questions":{"q":{}},"model":"FAKE"}'
+        )
