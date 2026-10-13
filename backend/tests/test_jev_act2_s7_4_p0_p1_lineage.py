@@ -455,6 +455,8 @@ def test_s75_existing_legacy_capture_is_not_promoted_to_v4(monkeypatch):
     assert report["local_v4_status"] == "BLOCKED_HORIZON"
     assert "V4_HORIZON_UNSUPPORTED" in report["reason_codes"]
     assert report["provider_status"] == "PROVIDER_HOLD"
+    assert report["v4_outbound_lineage_status"] == "NOT_APPLICABLE"
+    assert report["v4_wire_contract_verified"] is False
     assert report["real_provider_eligible"] is False
     assert report["actual_provider_calls"] == report["db_writes"] == 0
     assert "Momentum condition verified." not in json.dumps(report)
@@ -513,8 +515,6 @@ def test_s75_v4_route_and_projector_reuse_existing_contract(monkeypatch, real_pr
     assert report["provider_status"] == "PROVIDER_HOLD"
     assert report["s73_lineage_field_count"] > 0
     assert report["s73_lineage_unclassified_fields"] == 0
-    assert report["v4_outbound_lineage_status"] == "NOT_APPLICABLE"
-    assert report["v4_wire_contract_verified"] is False
     assert report["actual_provider_calls"] == report["db_writes"] == 0
     assert "strategy_intent" not in json.dumps(report)
 
