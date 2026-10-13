@@ -505,9 +505,15 @@ def test_s75_v4_route_and_projector_reuse_existing_contract(monkeypatch, real_pr
     report = v45.diagnose_candidate(capture, v4_sample)
     assert v4_sample == original
     assert report["local_v4_status"] == "LOCAL_V4_PROJECTABLE"
+    assert report["v4_outbound_lineage_status"] == "NOT_AUDITED"
+    assert report["v4_wire_contract_verified"] is False
     assert len(report["v4_state_hash"]) == 64
     assert report["v4_state_bytes"] > 0
     assert report["provider_status"] == "PROVIDER_HOLD"
+    assert report["s73_lineage_field_count"] > 0
+    assert report["s73_lineage_unclassified_fields"] == 0
+    assert report["v4_outbound_lineage_status"] == "NOT_APPLICABLE"
+    assert report["v4_wire_contract_verified"] is False
     assert report["actual_provider_calls"] == report["db_writes"] == 0
     assert "strategy_intent" not in json.dumps(report)
 
