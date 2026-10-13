@@ -24,6 +24,7 @@ from app.jev.scanner_integrity_s7_1 import EXPLAIN
 from app.jev.scanner_v4_readiness_s7_5 import diagnose_capture as diagnose_v4_readiness
 from app.jev.scanner_eligibility_s8 import diagnose_capture as diagnose_s8_eligibility
 from app.jev.local_evidence_audit import diagnose_capture as diagnose_local_evidence
+from app.jev.local_history_review import review_capture as review_local_history
 from app.jev.scanner_shadow_s7_3 import (
     S73PreflightJournal, REASONS_KO, prepare_capture,
 )
@@ -44,7 +45,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=(
             "status", "inspect", "capture", "report", "run-approved",
             "prepare", "preflight", "source-audit", "lineage", "v4-readiness",
-            "s8-readiness", "local-evidence",
+            "s8-readiness", "local-evidence", "local-history",
         ),
     )
     parser.add_argument("--capture-id", default=None)
@@ -81,13 +82,19 @@ def execute(
             "actual_provider_calls": 0,
             "db_writes": 0,
         }
-    if args.mode in ("source-audit", "lineage", "v4-readiness", "s8-readiness", "local-evidence"):
+    if args.mode in ("source-audit", "lineage", "v4-readiness", "s8-readiness", "local-evidence", "local-history"):
         if args.save_preflight:
             raise DecisionReviewContractError("S7_4_DIAGNOSTIC_READ_ONLY")
         if args.mode == "source-audit":
             if args.capture_id or args.sample_index is not None:
                 raise DecisionReviewContractError("S7_4_SOURCE_AUDIT_ARGUMENT_INVALID")
             return source_audit()
+        if args.mode == "local-history":
+            return review_local_history(
+                args.simulation_db or simulation_db_path(),
+                capture_id=args.capture_id, limit=args.limit,
+                sample_index=args.sample_index,
+            )
         if args.mode == "local-evidence":
             return diagnose_local_evidence(
                 args.simulation_db or simulation_db_path(),
@@ -149,6 +156,16 @@ def display(value: dict[str, Any], *, as_json: bool = False) -> None:
     print("StockScope S7 · 실제 추천 후보 관찰")
     print("=" * 63)
     print(f"상태: {value.get('status', 'UNKNOWN')}")
+    if value.get("status") == "LOCAL_HISTORY_SHADOW_OBSERVATION_ONLY":
+        counts = value["counts"]
+        print(f"조회 {value['total_records']}건"
+              f" | 과거 반대 근거 재검토 {counts.get('LOCAL_SHADOW_REVIEW_ONLY', 0)}건"
+              f" | 유보 {counts.get('ABSTAIN', 0)}건"
+              f" | 과거 반대 근거 미발견 {counts.get('NO_ADVERSE_HISTORY_SIGNAL', 0)}건")
+        print("과거 3년 근거는 후보 순위에 반영되지 않은 별도 참고자료입니다.")
+        print("재검토는 관찰용 의견이며 현재 추천·실제 매매·성과 평가를 바꾸지 않습니다.")
+        print("※ 외부 AI 호출 0건 / Runtime DB 쓰기 0건")
+        return
     if value.get("status") == "LOCAL_REVIEW_EVIDENCE_DIAGNOSTIC_ONLY":
         counts = value["counts"]
         print(f"조회 {value['total_records']}건"
