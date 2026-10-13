@@ -586,4 +586,4 @@ def test_s75_legacy_cli_shows_primary_blocker_not_false_identity_difference(monk
     assert "당시 투자 기간이 단기·중기로 확정되지 않아" in output
     assert "원본 제한: 당시 전략 버전이 없고" in output
     assert "원본 전략 버전과 의미 분석용 전략 버전이 다릅니다" not in output
-    assert "상세 진단 코드는 --json 출력" in output
+    assert "모든 원본 진단 코드는 --json 출력" in output
