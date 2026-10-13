@@ -22,6 +22,7 @@ from app.jev.decision_reviewer_offline import DecisionReviewContractError
 from app.jev.scanner_lineage_s7_4 import diagnose_capture, source_audit, REASONS_KO as LINEAGE_REASONS_KO
 from app.jev.scanner_integrity_s7_1 import EXPLAIN
 from app.jev.scanner_v4_readiness_s7_5 import diagnose_capture as diagnose_v4_readiness
+from app.jev.scanner_eligibility_s8 import diagnose_capture as diagnose_s8_eligibility
 from app.jev.scanner_shadow_s7_3 import (
     S73PreflightJournal, REASONS_KO, prepare_capture,
 )
@@ -42,6 +43,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=(
             "status", "inspect", "capture", "report", "run-approved",
             "prepare", "preflight", "source-audit", "lineage", "v4-readiness",
+            "s8-readiness",
         ),
     )
     parser.add_argument("--capture-id", default=None)
@@ -78,13 +80,19 @@ def execute(
             "actual_provider_calls": 0,
             "db_writes": 0,
         }
-    if args.mode in ("source-audit", "lineage", "v4-readiness"):
+    if args.mode in ("source-audit", "lineage", "v4-readiness", "s8-readiness"):
         if args.save_preflight:
             raise DecisionReviewContractError("S7_4_DIAGNOSTIC_READ_ONLY")
         if args.mode == "source-audit":
             if args.capture_id or args.sample_index is not None:
                 raise DecisionReviewContractError("S7_4_SOURCE_AUDIT_ARGUMENT_INVALID")
             return source_audit()
+        if args.mode == "s8-readiness":
+            return diagnose_s8_eligibility(
+                args.simulation_db or simulation_db_path(),
+                capture_id=args.capture_id, limit=args.limit,
+                sample_index=args.sample_index,
+            )
         if args.mode == "v4-readiness":
             return diagnose_v4_readiness(
                 args.simulation_db or simulation_db_path(),
@@ -134,6 +142,59 @@ def display(value: dict[str, Any], *, as_json: bool = False) -> None:
     print("StockScope S7 · 실제 추천 후보 관찰")
     print("=" * 63)
     print(f"상태: {value.get('status', 'UNKNOWN')}")
+    if value.get("status") == "S8_SOURCE_RIGHTS_TIME_PROVIDER_HOLD":
+        print(
+            f"조회 {value['total_records']}건"
+            f" | 진입 후보 {value['entry_candidates']}건"
+            f" | 참고 {value['reference_count']}건"
+        )
+        print(
+            f"로컬 V4 입력 구성 가능 {value['v4_projectable_count']}건"
+            f" | V4 전송필드 계보 미검사 {value['v4_outbound_lineage_unverified_count']}건"
+            f" | AI 검토 불필요 {value['v4_local_skipped_count']}건"
+        )
+        print(
+            f"개별 원천 미확인 {value['origin_unverified_count']}건"
+            f" | 외부 AI 이용권 미확인 {value['rights_unverified_count']}건"
+            f" | 공개 시각 미확인 {value['source_time_unverified_count']}건"
+        )
+        print(
+            "KRX OPEN API 약관: 받은 원본 자료의 제3자 제공 제한"
+            " (제11조 2항)."
+        )
+        print(
+            "조건·Risk·순위 등 파생정보의 TypeSafe 처리 권한:"
+            " 공식 개별 승인/계정 증거 미확인."
+        )
+        for record in value["records"]:
+            if record["category"] == "REFERENCE_ONLY":
+                continue
+            ident = record["identity"]
+            name = ident.get("name") or ident.get("ticker") or "진입 후보"
+            print(
+                f"{name} · V4 {record['v4_local_status']}"
+                f" · 외부 전송 {record['transmission_decision']}"
+            )
+            if record["v4_local_status"] == "BLOCKED_HORIZON":
+                print("  현재 기록의 투자 기간이 미확정이라 V4 로컬 입력도 만들 수 없습니다.")
+            elif record["v4_local_status"] == "BLOCKED_INTEGRITY":
+                print("  Scanner 원본·전략·조건 증거가 충분하지 않습니다.")
+            elif record["v4_local_status"] == "BLOCKED_SEMANTIC_SOURCE":
+                print("  V4가 요구하는 전략 관계·의미 자료가 부족합니다.")
+            elif record["v4_local_status"] == "LOCAL_V4_PROJECTABLE":
+                print("  로컬 V4 입력은 가능하지만 실제 TypeSafe 처리 권한은 없습니다.")
+        print("다음 확인에 필요한 증거:")
+        for item in value["next_evidence"]:
+            print(f"  - {item}")
+        if value["decision"] == "NO_GO_CURRENT_REQUEST":
+            print("결론: 데이터 적격성 HOLD / 현재 외부 TypeSafe 전송 NO-GO")
+        elif value["decision"] == "NOT_REQUIRED":
+            print("결론: AI 호출 대상 없음 / 별도 외부 전송 불필요")
+        else:
+            print("결론: 진입 검토 대상 없음")
+        print("※ 공식 계정 허가, 공개·수집 시각, 자료별 계보는 자동으로 증명되지 않습니다.")
+        print("※ 실제 시장 데이터 전송 0건 / Runtime DB 쓰기 0건")
+        return
     if value.get("status") == "V4_READINESS_PROVIDER_HOLD":
         counts = value["counts"]
         print(

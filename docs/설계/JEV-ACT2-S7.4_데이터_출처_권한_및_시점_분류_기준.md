@@ -558,3 +558,37 @@ pykrx, FinanceDataReader, yfinance, data.go.kr을 기본 Scanner 수집원이라
 | 10. TypeSafe를 왜 계속 비활성화하는가? | §8·§12: 원본 제3자 제공 제한, 파생 AI 권한·시점 증거 부족, 실제 adapter 및 독립 실행 승인 부재 | 실제 시장 호출 **NO-GO / PROVIDER_HOLD**, 본 문서 보완으로 해제되지 않음 |
 
 설계 규칙을 구체화한 것과 실제 사용자 계약/허가·시점 증거를 확보한 것은 별개다. 따라서 DOC-R1 문서 보완은 검토 가능하지만 실제 데이터의 권한 확보나 S7.4 구현 완료를 뜻하지 않는다.
+
+## 13. JEV-ACT2-S8 소수 입력 권한·시점 판정 구현 및 외부 확인 (2026-10-13)
+
+**구현 범위:** `backend/app/jev/scanner_eligibility_s8.py`, `tools/data/jev_s7_shadow.py s8-readiness`. S7.5 브랜치를 부모로 한 후속 작업이다. 여기서 작성한 권한·시각의 **검사 함수는 진위 인증서가 아니며**, 외부 TypeSafe 호출을 활성화하지 않는다. 소스별 원본의 행/revision, 최초 확보, 계약 적용 계정 및 실제 허가는 현재 Runtime 자료에서 입증되지 않았다. 기존 Cache mtime·Capture 완료시각을 원천 시각으로 승격하지 않는다.
+
+### 13.1 공식 공개 자료 재확인
+
+- [KRX OPEN API 국문 약관](https://openapi.krx.co.kr/contents/OPP/INFO/OPPINFO002.jsp): 제11조②는 제공받은 정보의 제3자 제공을 제한한다. 제12조③의 새로운 부가정보 면책은 파생 자료의 외부 TypeSafe 처리 허가 조항이 아니다. 계정별 별도 허가/상품 계약은 이번 확인에서 입증되지 않았다. **받은 KRX 원본 제3자 전송은 공개약관상 제한**, 조건 문장·Risk·순위 등 파생정보의 AI 처리 범위는 **UNVERIFIED**로 구분한다.
+- [TypeSafe MCA](https://typesafe.ai/legal/mca): §4.3의 Telemetry 및 §5의 제3자 데이터 권리 확보 의무는 원천 권리자의 별도 허가가 필요함을 보여준다. [TypeSafe 개인정보 처리방침](https://typesafe.ai/legal/privacy-policy)에는 입력의 모델 학습 미사용과 별도의 보관·미국 호스팅/처리 설명이 있다. 개인정보 처리방침만으로 특정 고객 계정의 서비스 계약·로그/파생 시세 처리 권리가 확보된 것은 아니다.
+- [KRX OPEN API 이용 방법](https://openapi.krx.co.kr/contents/OPP/INFO/OPPINFO003.jsp): 인증키 및 개별 상품 활용 승인 절차가 존재한다. 실제 계정에 승인된 상품은 개별 승인 내역을 확인해야 한다.
+
+### 13.2 제공처에 확인할 최소 질문 (별도 답변 없으면 HOLD)
+
+**KRX에 확인:** 현재 사용 중인 주식 일별/지수 일별 OPEN API 상품 및 승인 계정 기준으로,
+
+1. OHLCV·지수 원본을 TypeSafe AI(미국 소재 외부 수신자)에 전송하여 분석하는 것이 허용되는가? 금지/허용을 구체적인 상품과 행위별로 구분할 수 있는가?
+2. 원본 수치가 아니라 StockScope가 계산한 기술조건 PASS 문장, 전략 의미 관계, Risk status/warning, 후보 순위 및 Snapshot hash만 외부 TypeSafe에 전송하여 판단·기록하는 것도 허용되는가?
+3. TypeSafe 서비스의 처리·보관·진단로그/telemetry·백업·하위처리자 사용 및 지역 범위에 대한 별도 조건이나 재위탁·분배 계약이 필요한가?
+4. KOSPI/KOSDAQ 주식/지수 OPEN API의 공개/갱신·정정(개별 revision 포함) 시점을 확인할 수 있는 공식 기록이나 제공 방법이 있는가? 별도 계약/상품이 필요하면 무엇인가?
+
+**TypeSafe 계정 담당에 확인:**
+
+1. 실제 계정의 적용 MCA/주문서, input·output·hash·telemetry·로그·백업의 보관기간과 처리/삭제 범위는 무엇인가?
+2. 실제 처리 국가, 하위처리자, 외부 입력 파생정보의 모델 학습/제품 개선 이용 범위는 무엇인가?
+3. 당시 실행 가능한 모델 ID·요금·호출 예산 및 해당 계정의 별도 이용 제한은 무엇인가?
+
+공식 답변은 권한 있는 주체, 해당 계정·제품·행위·기간·대상에 결합한 뒤 RA01~RA10으로 검증해야 한다. 사용자가 임의로 작성한 승인 문자열, hash, 시각, 증거참조는 그 자체로 허가가 아니다. 응답 미수신은 금지 확정이 아니라 **UNVERIFIED / HOLD**다.
+
+### 13.3 실행과 완료 경계
+
+- `s8-readiness --capture-id <ID>`는 S7.5의 정합성·Horizon·V4 로컬 판정과 S7.4 계보를 재사용해, 시장 원천·revision·권한·공개/확보 시각의 빈자리를 **읽기 전용**으로 요약한다.
+- 새로운 `inspect_temporal_chain`은 synthetic 이벤트의 UTC-aware 순서만 검증하며 이벤트 원문·최초 수신의 진위는 인증하지 않는다. `hash_local_outbound_candidate`도 정확한 로컬 `{state, questions, model}` 후보의 해시만 계산할 뿐 실제 전송 바이트·모델 binding·실행 승인을 검증하지 않는다.
+- 실제 수집 경로의 신규 sidecar 기록은 관련 상품·목적의 이용 조건이 확인되고 사용자가 실제 조회/저장 실행을 승인한 경우에만 추가한다. 과거 원천 자료를 수정하거나 숨겨진 API 호출로 증거를 만들지 않는다.
+- **판정:** 현재 KRX OPEN API 원본 제3자 전송은 공개약관상 제한, 파생정보 TypeSafe 사용권 및 개별 원천·시간 증거는 미확인. 따라서 현 실제 시장 Capture에 대한 전송은 **NO-GO**, 데이터 적격성은 **HOLD_UNVERIFIED**, 로컬 진단은 가능하다. 공식 답변을 얻어도 Provider 호출과 유료 실행은 독립 승인 대상이다.
