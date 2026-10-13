@@ -27,6 +27,7 @@ from app.jev.local_evidence_audit import diagnose_capture as diagnose_local_evid
 from app.jev.local_history_review import review_capture as review_local_history
 from app.jev.local_shadow_cohort_s10 import measure_capture as measure_local_cohort
 from app.jev.local_outcome_link_s11 import evaluate_capture_readonly as evaluate_local_outcomes
+from app.jev.local_first_check_s12 import first_local_check
 from app.jev.scanner_shadow_s7_3 import (
     S73PreflightJournal, REASONS_KO, prepare_capture,
 )
@@ -48,6 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
             "status", "inspect", "capture", "report", "run-approved",
             "prepare", "preflight", "source-audit", "lineage", "v4-readiness",
             "s8-readiness", "local-evidence", "local-history", "local-cohort", "local-outcomes",
+            "local-first-check",
         ),
     )
     parser.add_argument("--capture-id", default=None)
@@ -85,13 +87,17 @@ def execute(
             "actual_provider_calls": 0,
             "db_writes": 0,
         }
-    if args.mode in ("source-audit", "lineage", "v4-readiness", "s8-readiness", "local-evidence", "local-history", "local-cohort", "local-outcomes"):
+    if args.mode in ("source-audit", "lineage", "v4-readiness", "s8-readiness", "local-evidence", "local-history", "local-cohort", "local-outcomes", "local-first-check"):
         if args.save_preflight:
             raise DecisionReviewContractError("S7_4_DIAGNOSTIC_READ_ONLY")
         if args.mode == "source-audit":
             if args.capture_id or args.sample_index is not None:
                 raise DecisionReviewContractError("S7_4_SOURCE_AUDIT_ARGUMENT_INVALID")
             return source_audit()
+        if args.mode == "local-first-check":
+            if args.capture_id or args.evaluation_run_id or args.sample_index is not None:
+                raise DecisionReviewContractError("S12_AUTO_DISCOVERY_ARGUMENT_CONFLICT")
+            return first_local_check(args.simulation_db or simulation_db_path())
         if args.mode == "local-outcomes":
             if args.sample_index is not None:
                 raise DecisionReviewContractError("S11_SAMPLE_INDEX_UNSUPPORTED")
@@ -175,6 +181,48 @@ def display(value: dict[str, Any], *, as_json: bool = False) -> None:
     print("StockScope S7 · 실제 추천 후보 관찰")
     print("=" * 63)
     print(f"상태: {value.get('status', 'UNKNOWN')}")
+    if value.get("version") == "JEV_LOCAL_FIRST_CHECK_V1":
+        explanations = {
+            "NO_LOCAL_SIMULATION_DB": "이 컴퓨터에 Simulation 데이터베이스가 없습니다.",
+            "PROSPECTIVE_SCHEMA_NOT_READY": "Prospective 테이블이 아직 준비되지 않았습니다.",
+            "NO_COMPLETED_FROZEN_CAPTURE": "완료된 동결 Scanner 후보가 없습니다.",
+            "NO_COMPLETED_PROSPECTIVE_EVALUATION": "완료된 Prospective 미래 결과 평가가 없습니다.",
+            "LATEST_EVALUATION_HAS_NO_UNITS": "최신 완료 평가에 후보별 결과가 없습니다.",
+            "EVALUATION_CAPTURE_NOT_COMPLETE": "최신 평가에 연결된 동결 후보가 완료 상태가 아닙니다.",
+            "EVALUATED_CAPTURE_HAS_NO_FROZEN_SAMPLES": "해당 동결 Capture에 저장된 후보가 없습니다.",
+            "FROZEN_SAMPLE_COUNT_EXCEEDS_READ_LIMIT": "한도 초과로 전체 후보 분석을 중지했습니다.",
+            "LOCAL_PROSPECTIVE_READ_UNAVAILABLE": "로컬 Prospective DB를 안전하게 읽을 수 없습니다.",
+            "LOCAL_EVIDENCE_NOT_COMPARABLE": "기존 평가와 동결 후보의 정합성 검증이 통과하지 못했습니다.",
+        }
+        status = value["status"]
+        if status in ("DESCRIPTIVE_OUTCOMES_AVAILABLE", "NO_COMPARABLE_CLOSED_OUTCOMES"):
+            print(
+                f"동결 후보 {value['frozen_sample_count']}건"
+                f" | 진입 후보 {value['entry_candidates']}건"
+                f" | 로컬 검토 가능 {value['reviewable']}건"
+            )
+            print(
+                f"잠정 재검토 {value['provisional_recheck']}건"
+                f" | 유보 {value['abstained']}건"
+                f" | 정합성 차단 {value['integrity_blocked']}건"
+            )
+            for split, label in (("DEVELOPMENT", "개발용"), ("HOLDOUT", "검증용")):
+                part = value["split_descriptive"][split]
+                print(
+                    f"{label} 결과 비교 가능 {part['closed_comparable']}건"
+                    f" | 재검토 {part['flagged_closed']}건"
+                    f" | 반대 신호 없음 {part['unflagged_closed']}건"
+                )
+            if status == "NO_COMPARABLE_CLOSED_OUTCOMES":
+                print("현재 연결된 표본 중 종료되어 비교 가능한 결과는 없습니다.")
+            print("※ 최근 완료된 평가의 가장 최근 신호일 Capture 1개만 확인했습니다.")
+        else:
+            print(explanations.get(status, "진단 차단: " + status))
+            if value.get("reason_code"):
+                print("차단 사유: " + value["reason_code"])
+        print("※ 관찰용이며 JEV 수익 개선이나 손실 회피가 입증된 것은 아닙니다.")
+        print("※ 외부 AI 호출 0건 / Runtime DB 쓰기 0건")
+        return
     if value.get("status") == "S11_LOCAL_OUTCOME_LINK_DESCRIPTIVE_ONLY":
         c = value["cohort_counts"]
         print(
