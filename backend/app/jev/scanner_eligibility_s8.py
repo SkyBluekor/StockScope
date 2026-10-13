@@ -157,6 +157,9 @@ def hash_local_outbound_candidate(body: dict[str, Any] | str) -> str:
         raise ValueError("OUTBOUND_BODY_INVALID")
     if body["model"].strip().upper() == "UNFROZEN":
         raise ValueError("OUTBOUND_BODY_MODEL_UNFROZEN")
+    # Reject non-JSON objects and nonfinite numbers before attempting any
+    # semantic/contract comparisons on attacker-controlled structures.
+    _validate_json_value(body)
     # A generic JSON object with a model string is not a TypeSafe V4 request.
     # This is strictly a shape/contract check, NOT a rights or wire approval.
     if body["questions"] != build_typesafe_questions_v4():
@@ -171,7 +174,6 @@ def hash_local_outbound_candidate(body: dict[str, Any] | str) -> str:
         or any(not isinstance(body["state"][key], list) or not body["state"][key]
                for key in ("term_definitions", "authored_relations", "passed_condition_meanings"))):
         raise ValueError("OUTBOUND_V4_STATE_SHAPE_INVALID")
-    _validate_json_value(body)
     payload = json.dumps(
         body, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
         allow_nan=False,
