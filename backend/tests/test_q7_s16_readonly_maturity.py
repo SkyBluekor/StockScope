@@ -116,7 +116,7 @@ def test_real_simulation_db_inventory_uses_complete_denominators(tmp_path, monke
     assert report["excluded_reason_counts"]["FROZEN_INTEGRITY_INVALID"] == 1
     assert report["windows"]["5d"]["readiness_denominator"] == 3
     assert report["windows"]["5d"]["observed"] == 3
-    assert report["windows"]["5d"]["average_signal_close_change_pct"] == pytest.approx(2/3)
+    assert report["windows"]["5d"]["average_signal_close_change_pct"] == pytest.approx(0.6667)
     assert report["windows"]["5d"]["positive_observations"] == 2
     assert report["windows"]["5d"]["negative_observations"] == 1
     assert report["windows"]["10d"]["observed"] == 1
