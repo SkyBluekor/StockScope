@@ -155,6 +155,8 @@ def hash_local_outbound_candidate(body: dict[str, Any] | str) -> str:
         raise ValueError("OUTBOUND_BODY_INVALID")
     if not body["questions"] or not isinstance(body["model"], str) or not body["model"].strip():
         raise ValueError("OUTBOUND_BODY_INVALID")
+    if body["model"].strip().upper() == "UNFROZEN":
+        raise ValueError("OUTBOUND_BODY_MODEL_UNFROZEN")
     _validate_json_value(body)
     payload = json.dumps(
         body, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
