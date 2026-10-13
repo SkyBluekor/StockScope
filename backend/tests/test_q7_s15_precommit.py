@@ -216,3 +216,33 @@ def test_cli_requires_ack_and_cannot_modify_runtime_db(tmp_path, monkeypatch):
     result = cli.execute(args)
     assert result["actual_provider_calls"] == 0
     assert not db.exists()
+
+
+def test_existing_frozen_record_survives_future_date_and_engine_update(
+    tmp_path, monkeypatch,
+):
+    from app.jev import q7_precommit_s15 as s15
+
+    root = tmp_path / "q7"
+    spec = _spec()
+    original = freeze(spec, root=root, now=NOW)
+    future_clock = datetime(2026, 12, 15, 8, tzinfo=KST)
+    monkeypatch.setattr(
+        s15, "_definition",
+        lambda *_: {
+            "strategy_key": "pullback",
+            "strategy_version_id": "next-engine-version",
+            "definition_hash": "0" * 64,
+        },
+    )
+    # Immutable history remains independently hash-verifiable; *new* freezes
+    # need to match the engine currently running.
+    assert load(spec["study_id"], root=root)["record_hash"]
+    after = freeze(spec, root=root, now=future_clock)
+    assert after["created"] is False
+    assert after["spec_hash"] == original["spec_hash"]
+
+    new_plan = _spec()
+    new_plan["study_id"] = "after-engine-changed"
+    _err(lambda: freeze(new_plan, root=root, now=NOW),
+         "Q7_STRATEGY_IDENTITY_NOT_CURRENT")
