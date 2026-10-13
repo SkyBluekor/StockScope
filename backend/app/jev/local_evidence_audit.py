@@ -43,6 +43,12 @@ def diagnose_candidate(capture: dict[str, Any], sample: dict[str, Any]) -> dict[
           or digest_json(snapshot) != sample["snapshot_hash"]):
         category = "INVALID"
         reason = "SNAPSHOT_HASH_MISMATCH"
+    elif (capture.get("status") != "COMPLETE"
+          or not capture.get("id")
+          or sample.get("capture_run_id") != capture["id"]
+          or snapshot.get("action") != sample["action"]):
+        category = "INVALID"
+        reason = "CAPTURE_IDENTITY_MISMATCH"
     else:
         try:
             integrity = assess_frozen_candidate(capture, sample)
@@ -83,6 +89,20 @@ def diagnose_candidate(capture: dict[str, Any], sample: dict[str, Any]) -> dict[
                 "incremental_evidence": False,
             },
         ]
+        # Historical fit and displayed advice are also Scanner-owned output,
+        # even if stored in the same frozen candidate. They are not a second
+        # independent observer of a market fact.
+        for dimension, owner, field in (
+            ("historical_fit", "SCANNER_HISTORICAL_EVIDENCE", "historical_fit"),
+            ("display_advice", "SCANNER_USER_ACTION", "user_action"),
+        ):
+            if isinstance(snapshot.get(field), dict):
+                axes.append({
+                    "dimension": dimension,
+                    "baseline_owner": owner,
+                    "frozen_available": True,
+                    "incremental_evidence": False,
+                })
 
     usable = category in {"LOCAL_VALIDATED", "LEGACY_LIMITED"}
     return {
