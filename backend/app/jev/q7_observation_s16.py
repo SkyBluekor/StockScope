@@ -168,7 +168,6 @@ def measure(
     evaluator = ProspectiveEvaluator(market_db)
     integrity_counts: Counter[str] = Counter()
     skipped_reasons: Counter[str] = Counter()
-    category_windows: dict[str, dict[str, dict[str, Any]]] = {}
     values: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
     strategy_counts: dict[str, dict[str, Any]] = {}
     seen: set[tuple[str, str, str, str]] = set()
@@ -212,7 +211,10 @@ def measure(
                 completed = capture.get("completed_at")
                 signal = sample.get("signal_date")
                 try:
-                    completed_date = datetime.fromisoformat(completed).astimezone(_KST).date()
+                    timestamp = datetime.fromisoformat(completed)
+                    if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+                        raise ValueError("UNVERIFIED_CAPTURE_TIMEZONE")
+                    completed_date = timestamp.astimezone(_KST).date()
                     signal_date = date.fromisoformat(signal)
                 except (ValueError, TypeError, AttributeError):
                     completed_date, signal_date = None, None
@@ -249,7 +251,8 @@ def measure(
                     win["readiness_denominator"] += 1
                     state, value = windows[window]
                     if state == "OBSERVED":
-                        assert value is not None
+                        if value is None:
+                            return _base("OBSERVATION_CONTRACT_INVALID", counts_complete=False)
                         win["observed"] += 1
                         win["positive_observations"] += int(value > 0)
                         win["negative_observations"] += int(value < 0)
