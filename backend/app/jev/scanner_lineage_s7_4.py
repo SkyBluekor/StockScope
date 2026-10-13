@@ -238,12 +238,22 @@ def _field_entry(path: str, *, is_risk: bool) -> dict[str, Any]:
 
 
 def diagnose_prepared(prepared: dict[str, Any]) -> dict[str, Any]:
-    """Diagnose a genuine S7.3 local result, never approve/transmit it."""
+    """Preserve upstream S7.1/S7.3 failures and diagnose only verified packets.
+
+    COMPLETE means *field enumeration completed*, never that data origin,
+    rights, time evidence or external TypeSafe eligibility was verified.
+    """
     identity = deepcopy(prepared.get("identity") or {})
-    packet = prepared.get("packet")
-    codes: set[str] = set()
+    category = prepared.get("category")
+    upstream_codes = list(prepared.get("reason_codes") or [])
+    codes: set[str] = set(upstream_codes)
     fields: list[dict[str, Any]] = []
-    if prepared.get("status") != "LOCAL_PACKET_READY" or not isinstance(packet, dict):
+    packet = prepared.get("packet")
+    lineage_status = "NOT_RUN"
+    if category == "REFERENCE_ONLY":
+        # A reference-only record is not a failed entry candidate.
+        lineage_status = "NOT_APPLICABLE"
+    elif prepared.get("status") != "LOCAL_PACKET_READY" or not isinstance(packet, dict):
         codes.add("LOCAL_INTEGRITY_NOT_VERIFIED")
     else:
         unsigned = dict(packet)
@@ -263,23 +273,33 @@ def diagnose_prepared(prepared: dict[str, Any]) -> dict[str, Any]:
                     is_risk = (
                         path.startswith("evidence[")
                         and isinstance(packet.get("evidence"), list)
-                        and path.split("]", 1)[0].removeprefix("evidence[") .isdigit()
+                        and path.split("]", 1)[0].removeprefix("evidence[").isdigit()
                         and packet["evidence"][int(path.split("]", 1)[0][9:])].get("source")
                         == "SCANNER_RISK_DERIVED"
                     )
                     item = _field_entry(path, is_risk=is_risk)
                     fields.append(item)
                     codes.update(item["reason_codes"])
-            except (TypeError, KeyError, IndexError, AttributeError) as exc:
-                raise DecisionReviewContractError("S7_4_PACKET_SHAPE_INVALID") from exc
-    # Keep local identity only for a local CLI. No packet values/statements,
-    # pricing, credentials, holdings or free text are copied into the report.
+            except DecisionReviewContractError as exc:
+                # A partially traversed packet must never look complete.
+                fields.clear()
+                codes.add(exc.code)
+                lineage_status = "PARTIAL"
+            except (TypeError, KeyError, IndexError, AttributeError):
+                fields.clear()
+                codes.add("S7_4_PACKET_SHAPE_INVALID")
+                lineage_status = "PARTIAL"
+            else:
+                lineage_status = "COMPLETE"
+    # Report only paths/categories, never raw statements, prices or keys.
     return {
         "version": VERSION,
         "status": "LINEAGE_DIAGNOSTIC_PROVIDER_HOLD",
         "identity": identity,
-        "category": prepared.get("category"),
+        "category": category,
         "integrity_status": prepared.get("status"),
+        "integrity_reason_codes": upstream_codes,
+        "lineage_analysis_status": lineage_status,
         "packet_hash": prepared.get("packet_hash"),
         "temporal_status": prepared.get("temporal_status"),
         "field_diagnostics": fields,
@@ -292,7 +312,6 @@ def diagnose_prepared(prepared: dict[str, Any]) -> dict[str, Any]:
         "actual_provider_calls": 0,
         "db_writes": 0,
     }
-
 
 def diagnose_capture(
     simulation_db: Path, *, capture_id: str | None, limit: int = 60,
@@ -311,6 +330,16 @@ def diagnose_capture(
         if not pairs:
             raise DecisionReviewContractError("S7_3_SAMPLE_NOT_FOUND")
     records = [diagnose_prepared(prepare_shadow_candidate(c, s)) for c, s in pairs]
+    entry_records = [r for r in records if r["category"] != "REFERENCE_ONLY"]
+    statuses = [r["lineage_analysis_status"] for r in entry_records]
+    if not entry_records:
+        lineage_status = "NOT_APPLICABLE"
+    elif all(status == "COMPLETE" for status in statuses):
+        lineage_status = "COMPLETE"
+    elif any(status in ("COMPLETE", "PARTIAL") for status in statuses):
+        lineage_status = "PARTIAL"
+    else:
+        lineage_status = "NOT_RUN"
     return {
         "version": VERSION,
         "status": "LINEAGE_DIAGNOSTIC_PROVIDER_HOLD",
@@ -319,6 +348,20 @@ def diagnose_capture(
         "entry_candidates": sum(r["category"] != "REFERENCE_ONLY" for r in records),
         "local_packets_ready": sum(r["integrity_status"] == "LOCAL_PACKET_READY" for r in records),
         "unclassified_fields": sum(r["unclassified_fields"] for r in records),
+        "lineage_analysis_status": lineage_status,
+        "lineage_examined_count": sum(
+            r["lineage_analysis_status"] == "COMPLETE" for r in records
+        ),
+        "lineage_not_run_count": sum(
+            r["lineage_analysis_status"] == "NOT_RUN" for r in records
+        ),
+        "lineage_partial_count": sum(
+            r["lineage_analysis_status"] == "PARTIAL" for r in records
+        ),
+        "reference_count": sum(
+            r["lineage_analysis_status"] == "NOT_APPLICABLE" for r in records
+        ),
+        "invalid_count": sum(r["category"] == "INVALID" for r in records),
         "records": records,
         "real_provider_eligible": 0,
         "actual_provider_calls": 0,

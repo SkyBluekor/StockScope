@@ -141,31 +141,82 @@ def display(value: dict[str, Any], *, as_json: bool = False) -> None:
         print("실제 시장 데이터 외부 TypeSafe 호출: 0건 (계속 보류)")
         return
     if value.get("status") == "LINEAGE_DIAGNOSTIC_PROVIDER_HOLD":
-        print(f"조회 {value['total_records']}건"
-              f" | 로컬 패킷 {value['local_packets_ready']}건"
-              f" | 미분류 필드 {value['unclassified_fields']}건")
+        captions = {
+            "COMPLETE": "필드 분류 검사 완료 (이용 권한 승인 아님)",
+            "NOT_RUN": "계보 검사 미수행",
+            "PARTIAL": "일부 계보 검사만 완료",
+            "NOT_APPLICABLE": "계보 검사 대상 없음",
+        }
+        status = value["lineage_analysis_status"]
+        examined = value["lineage_examined_count"]
+        print(f"계보 검사: {captions.get(status, status)}")
+        print(
+            f"조회 {value['total_records']}건"
+            f" | 진입 {value['entry_candidates']}건"
+            f" | 정합성 제외 {value['invalid_count']}건"
+            f" | 참고 {value['reference_count']}건"
+        )
+        print(
+            f"로컬 JEV 패킷 {value['local_packets_ready']}건"
+            f" | 계보 검사 완료 {examined}건"
+            f" | 미수행 {value['lineage_not_run_count']}건"
+        )
+        if examined == 0:
+            print("미분류 필드: 검사 미수행 (0건이라고 해서 정상 분류된 것은 아닙니다)")
+        else:
+            print(f"분류를 검사한 패킷의 미분류 필드: {value['unclassified_fields']}건")
+        print("-" * 63)
+        explanations = {
+            **EXPLAIN,
+            **REASONS_KO,
+            **LINEAGE_REASONS_KO,
+            "BASELINE_RANK_MISMATCH": "저장된 기준 추천 순위와 원본 순위의 정합성을 확인할 수 없습니다.",
+            "PACKET_HASH_MISMATCH": "로컬 패킷 내용과 무결성 해시가 일치하지 않습니다.",
+            "S7_4_PACKET_SHAPE_INVALID": "계보 검사 도중 패킷 형식을 확인할 수 없었습니다.",
+        }
         for record in value["records"]:
             ident = record["identity"]
-            print(f"{ident.get('name') or ident.get('ticker') or '후보'}"
-                  f" ({ident.get('ticker') or '식별자 없음'})"
-                  f" · {record['category']} · {record['integrity_status']}")
-            for field in record["field_diagnostics"]:
-                parents = ", ".join(field.get("expected_parents", [])) or "내부 정의/기록"
-                print(f"  {field['path']}: {field['origin_type']}"
-                      f" | 예상 의존: {parents}"
-                      f" | 실제 원천: {field['actual_source']}"
-                      f" | 전송권한: {field['rights_status']}"
-                      f" | 시각: {field['time_quality']}")
-                if field.get("local_source_ref"):
-                    print(f"    로컬 근거: {field['local_source_ref']}")
-                if field.get("producer_ref") and (
-                    field["path"].endswith(".statement")
-                    or field["path"] in ("baseline.rank", "baseline.risk.status")
-                ):
-                    print(f"    생성 함수: {field['producer_ref']}")
+            category = record["category"]
+            stage = record["lineage_analysis_status"]
+            print(
+                f"{ident.get('name') or ident.get('ticker') or '후보'}"
+                f" ({ident.get('ticker') or '식별자 없음'})"
+                f" · {category} · {record['integrity_status']}"
+            )
+            if stage == "NOT_APPLICABLE":
+                print("  참고 기록: 원래 진입 후보가 아니므로 계보 검사 대상이 아닙니다.")
+                continue
+            if stage == "NOT_RUN":
+                print("  계보 검사 미수행: 유효한 로컬 패킷이 없습니다.")
+            elif stage == "PARTIAL":
+                print("  계보 검사 중단: 일부 또는 전체 필드의 검사가 완료되지 않았습니다.")
+            else:
+                print("  필드 분류 검사 완료 (원천 권한·공개 시각은 별도 미확인)")
+            if stage == "COMPLETE":
+                for field in record["field_diagnostics"]:
+                    parents = ", ".join(field.get("expected_parents", [])) or "내부 정의/기록"
+                    print(
+                        f"  {field['path']}: {field['origin_type']}"
+                        f" | 예상 의존: {parents}"
+                        f" | 실제 원천: {field['actual_source']}"
+                        f" | 전송권한: {field['rights_status']}"
+                        f" | 시각: {field['time_quality']}"
+                    )
+                    if field.get("local_source_ref"):
+                        print(f"    로컬 근거: {field['local_source_ref']}")
+                    if field.get("producer_ref") and (
+                        field["path"].endswith(".statement")
+                        or field["path"] in ("baseline.rank", "baseline.risk.status")
+                    ):
+                        print(f"    생성 함수: {field['producer_ref']}")
+            original_codes = record.get("integrity_reason_codes", [])
+            for code in original_codes:
+                print(f"  원본 정합성: {explanations.get(code, code)} [{code}]")
             for code in record["reason_codes"]:
-                print(f"  보류 사유: {LINEAGE_REASONS_KO.get(code, code)} [{code}]")
-        print("※ 코드상 예상 출처는 개별 자료의 실제 출처/이용권 증명이 아닙니다.")
+                if code in original_codes or (original_codes and code == "LOCAL_INTEGRITY_NOT_VERIFIED"):
+                    continue
+                print(f"  진단 제한: {explanations.get(code, code)} [{code}]")
+        print("※ 필드 분류 완료는 원천 확인이나 외부 AI 전송 허가를 뜻하지 않습니다.")
         print("※ 원본과 Runtime은 변경되지 않았으며 외부 호출은 0건입니다.")
         return
     if "local_packets_ready" in value:
@@ -194,6 +245,9 @@ def display(value: dict[str, Any], *, as_json: bool = False) -> None:
         if value.get("research_write"):
             print(f"사전 점검 기록: 신규 {value['research_write']['inserted']}건"
                   f" / 재사용 {value['research_write']['reused']}건")
+        if value["local_packets_ready"] == 0:
+            print("※ 실제 로컬 JEV 패킷 0건: 준비된 입력이 없어 계보 검사를 진행할 수 없습니다.")
+            print("※ 위 상태명은 데이터 전송 또는 개별 후보 준비 성공을 뜻하지 않습니다.")
         print("※ 로컬 준비 성공은 외부 AI 전송 승인이나 수익률 개선을 의미하지 않습니다.")
         return
     if "candidate_count" in value:
