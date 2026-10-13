@@ -133,6 +133,55 @@ def _reject_duplicate_json_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
+
+def _validate_v4_state_items(state: dict[str, Any]) -> None:
+    """Reject structurally invalid V4 rows; this is not a wire/rights grant."""
+    intent = state["strategy_intent"]
+    if (set(intent) != {"text"} or not intent["text"].strip()):
+        raise ValueError("OUTBOUND_V4_STATE_SHAPE_INVALID")
+
+    expected = {
+        "term_definitions": {"ref", "text"},
+        "authored_relations": {"ref", "kind", "member_refs", "guard_refs", "materiality"},
+        "passed_condition_meanings": {"ref", "concept_refs", "meaning"},
+    }
+    for section, fields in expected.items():
+        refs: set[str] = set()
+        for item in state[section]:
+            if not isinstance(item, dict) or set(item) != fields:
+                raise ValueError("OUTBOUND_V4_STATE_SHAPE_INVALID")
+            ref = item.get("ref")
+            if not isinstance(ref, str) or not ref.strip() or ref in refs:
+                raise ValueError("OUTBOUND_V4_STATE_SHAPE_INVALID")
+            refs.add(ref)
+            text_fields = {
+                "term_definitions": ("text",),
+                "authored_relations": ("kind", "materiality"),
+                "passed_condition_meanings": ("meaning",),
+            }[section]
+            if any(not isinstance(item[k], str) or not item[k].strip()
+                   for k in text_fields):
+                raise ValueError("OUTBOUND_V4_STATE_SHAPE_INVALID")
+            list_fields = {
+                "term_definitions": (),
+                "authored_relations": ("member_refs", "guard_refs"),
+                "passed_condition_meanings": ("concept_refs",),
+            }[section]
+            for key in list_fields:
+                values = item[key]
+                if (not isinstance(values, list)
+                    or (key != "guard_refs" and not values)
+                    or any(not isinstance(v, str) or not v.strip() for v in values)):
+                    raise ValueError("OUTBOUND_V4_STATE_SHAPE_INVALID")
+    terms = {item["ref"] for item in state["term_definitions"]}
+    for relation in state["authored_relations"]:
+        if not set(relation["member_refs"] + relation["guard_refs"]) <= terms:
+            raise ValueError("OUTBOUND_V4_STATE_SHAPE_INVALID")
+    for condition in state["passed_condition_meanings"]:
+        if not set(condition["concept_refs"]) <= terms:
+            raise ValueError("OUTBOUND_V4_STATE_SHAPE_INVALID")
+
+
 def hash_local_outbound_candidate(body: dict[str, Any] | str) -> str:
     """Hash an exact syntactically-valid V4 body; NEVER grant transmission.
 
@@ -174,6 +223,7 @@ def hash_local_outbound_candidate(body: dict[str, Any] | str) -> str:
         or any(not isinstance(body["state"][key], list) or not body["state"][key]
                for key in ("term_definitions", "authored_relations", "passed_condition_meanings"))):
         raise ValueError("OUTBOUND_V4_STATE_SHAPE_INVALID")
+    _validate_v4_state_items(body["state"])
     payload = json.dumps(
         body, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
         allow_nan=False,
