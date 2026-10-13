@@ -84,3 +84,19 @@ S14에서는 단계 1~5의 **무단 우회 차단**을 구현한다. 정식 Q7 �
 ### 인수 기준
 
 새로운 Research Study에서 미래 Holdout을 향한 계획을 처음 1회 생성·해시 검증하는 것까지 S15 범위다. 완료된 실제 평가 결과 및 사람이 수치 기준을 결정하지 않았다면 연구 계획을 **확정하지 않는다**. S16은 시장 데이터의 시점·출처 권한, 성숙 평가 표본, 독립/중복, 국면별 성능과 holdout 누출을 검증하며 S17에서만 운영 승인/활성화 authority를 구축한다.
+
+
+## 9. S16 — 실제 추천 이후 수익률 관측 현황 (2026-10-14)
+
+학교 PC에서 S15 `inventory` 실측: COMPLETE 3회, 저장 45건, 진입 24건, 평가 보고서 0건. 원시 24건은 독립/성숙 표본이 **아니다**. 전략별 원시 수: ma20_rebound 12, pullback 4, trend_recovery 4, support_bounce 3, range_trading 1.
+
+- 실행 명령: `python tools/data/q7_precommit.py observe` (기본적으로 `STOCKSCOPE_SIM_DB`, `STOCKSCOPE_MARKET_STORE_DB` 또는 각 Runtime DB 경로 사용). 둘 다 **읽기 전용**, 외부 시세 요청·AI 호출 없음.
+- 현재 서울 날짜까지만 이용. Market Store에 미래 날짜 데이터가 섞인 샘플은 **모든 구간의 수익률을 제외**하고 `FUTURE_DATED_MARKET_EVIDENCE`로 기록.
+- 기존 ProspectiveEvaluator로 신호일 종가 기준 5·10·20 거래일 뒤 종가 변화율 관측. 실제 매수가·실제 주문 수익률·JEV 증분 효과가 아니다.
+- `LOCAL_VALIDATED`, `LEGACY_LIMITED`만 **관측 통계** 대상으로 사용하고 `INVALID`는 제외. 레거시는 원본 전략 ID가 없으므로 정식 Q7 승인 샘플이 아니다.
+- 각 구간에서 `observed`, `awaiting_future_trading_days`, `price_missing`, `market_evidence_unavailable`, `post_as_of_data_rejected`을 분리한다. 표본 부족과 가격 누락을 0% 수익률로 계산하지 않는다.
+- 완료된 Capture가 20개 초과 또는 Capture당 499개 초과이면 **전체 코호트 분모를 주장하지 않고 중단**한다. 동일 날짜·시장·종목·전략 키의 단순 중복은 표시하되 독립 표본 수를 계산했다고 주장하지 않는다.
+- 과거 Scanner 완료 시각이 신호일 이후면 `retrospective_or_later_capture_count`에 별도로 표시하며, 시각 증거가 불명확하면 `timing_not_proven_count`로 표시. 둘 다 현재 시점의 사전고정 성과라는 결론을 허용하지 않는다.
+- `q7_approval_eligible=False`, `production_activation_allowed=False`, `model_uplift_verified=False`. 기존 운영 정책·Risk·Capture·전략/시장 SQLite는 변경하지 않는다.
+
+**S16에서 아직 필요한 실제 근거:** 거래일별 독립성/시장 국면 분류, 분리된 미래 Holdout 평가 및 독립적인 시점 증명, 실제 JEV 미사용 대조군 및 비용·위험 반영. 관측 건수가 늘었다는 사실만으로 진짜 모델 개선이나 전략 승격으로 바꾸지 않는다.
