@@ -56,7 +56,7 @@ def execute(args: argparse.Namespace) -> dict:
     if args.file is None:
         raise Q7PrecommitError("Q7_SPEC_FILE_REQUIRED")
     try:
-        value = json.loads(args.file.read_text(encoding="utf-8"))
+        value = json.loads(args.file.read_text(encoding="utf-8-sig"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise Q7PrecommitError("Q7_SPEC_READ_FAILED") from exc
     if args.mode == "check":
