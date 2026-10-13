@@ -65,3 +65,22 @@ S14에서는 단계 1~5의 **무단 우회 차단**을 구현한다. 정식 Q7 �
 
 - `docs/StockScope_MASTER_ARCHITECTURE_vNext.md` §8, §13 Q7: 평가·승인 절차는 설계에서 정해졌으나 장기/최근·국면·최소 표본은 **미정**, cohort 분석 후 사전 고정 필요.
 - `docs/StockScope_DEVELOPMENT_ROADMAP_vNext.md` P2-S2 / P5-S1: Q7 평가 기준 및 최소 표본을 수치 기반 승격 활성화 **전에** 고정, 숫자 임의 설정 금지.
+
+
+---
+
+## 8. S15 구현 결과 (2026-10-14)
+
+**구현 범위**: S15는 연구용 평가 계획을 미래 Holdout 관측 전에 기록하는 **로컬 write-once 파일**을 제공한다. 검증 가능한 Q7 정식 승인 artifact는 아직 아니다.
+
+- 읽기 전용 코호트 현황: `python tools/data/q7_precommit.py inventory`. 현재 Prospective 동결 Capture 원시 표본, 전략별 signal-date/market/ticker/strategy 중복 키, 평가 리포트 건수를 읽는다. 이 숫자는 **독립 성숙 표본/성과가 아님**.
+- 실제 엔진 전략 identity를 포함한 빈 기준 초안: `python tools/data/q7_precommit.py template --strategy pullback`. 기간·최소 표본·비용·승격·롤백 등 미결정 수치는 `null`.
+- 내용 검토: `python tools/data/q7_precommit.py check --file <spec.json>`. 비용·표본·국면·시장 기간, 현재 strategy version/hash, 결과 미관측 Holdout 시작일 등을 검증한다.
+- 명시적 연구 확정: `python tools/data/q7_precommit.py freeze --file <spec.json> --acknowledge-research-only`. 기본 저장 `data/q7_precommit/<study_id>.json`; Git에는 포함되지 않으며 **다른 PC의 DB·장부와 자동 동기화되지 않는다**.
+- 내용·SHA-256 확인: `python tools/data/q7_precommit.py verify --study-id <study_id>`. 동일 study_id로 수정된 계획은 저장 불가; 이후 전략 코드 변경과 무관하게 과거 파일의 해시를 검증할 수 있다.
+- **신뢰 한계**: 파일의 시간은 운영 PC 시스템 시각이므로 공인 타임스탬프가 아니다. OS 파일 권한·백업·외부 증명을 침해할 수 있는 운영자가 파일과 해시를 통째로 재작성하는 것까지 방어하지는 못한다. S16에서 독립 시점·원천 증명을 연결하기 전에는 역사적 사전고정으로 인정하지 않는다.
+- **승인 경계**: `q7_approval_eligible=False`, `production_activation_allowed=False` 상수로 유지한다. S14의 production 승인/활성화 차단은 변경하지 않는다. 기존 완료 Capture에 strategy_version_id를 소급 첨가하지 않는다.
+
+### 인수 기준
+
+새로운 Research Study에서 미래 Holdout을 향한 계획을 처음 1회 생성·해시 검증하는 것까지 S15 범위다. 완료된 실제 평가 결과 및 사람이 수치 기준을 결정하지 않았다면 연구 계획을 **확정하지 않는다**. S16은 시장 데이터의 시점·출처 권한, 성숙 평가 표본, 독립/중복, 국면별 성능과 holdout 누출을 검증하며 S17에서만 운영 승인/활성화 authority를 구축한다.
