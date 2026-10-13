@@ -19,7 +19,6 @@ from app.jev.typesafe_state import TypeSafeStateProjectionError
 from app.jev.typesafe_state_v4 import (
     route_typesafe_state_v4, project_typesafe_state_v4,
 )
-from app.prospective.models import digest_json
 
 VERSION = "JEV_ACT2_S7_5_SCANNER_V4_READINESS_V1"
 
@@ -85,6 +84,14 @@ def diagnose_candidate(capture: dict[str, Any], sample: dict[str, Any]) -> dict[
         "capture_snapshot_hash": sample.get("snapshot_hash"),
         "s73_packet_hash": prepared.get("packet_hash"),
         "lineage_analysis_status": lineage["lineage_analysis_status"],
+        "s73_lineage_field_count": lineage["field_count"],
+        "s73_lineage_unclassified_fields": lineage["unclassified_fields"],
+        # S7.4 enumerates the old Choice packet, NOT the TypeSafe V4 body.
+        "v4_outbound_lineage_status": (
+            "NOT_AUDITED" if local_status == "LOCAL_V4_PROJECTABLE"
+            else "NOT_APPLICABLE"
+        ),
+        "v4_wire_contract_verified": False,
         "integrity_reason_codes": integrity["codes"],
         "reason_codes": sorted(reasons),
         "provider_status": "PROVIDER_HOLD",
