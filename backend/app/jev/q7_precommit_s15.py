@@ -18,7 +18,7 @@ import sqlite3
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from app.simulation.strategy_governance import strategy_definition
+from app.simulation.strategy_governance import StrategyGovernanceError, strategy_definition
 from app.strategy.models import StrategyName
 
 
@@ -92,7 +92,7 @@ def _definition(strategy_key: str) -> dict[str, str]:
     try:
         selected = StrategyName(strategy_key)
         definition = strategy_definition(selected)
-    except (ValueError, KeyError) as exc:
+    except (ValueError, KeyError, StrategyGovernanceError) as exc:
         raise Q7PrecommitError("Q7_STRATEGY_NOT_SUPPORTED") from exc
     return {
         "strategy_key": definition.strategy_key,
@@ -149,11 +149,18 @@ def template(strategy_key: str) -> dict[str, Any]:
     }
 
 
-def validate_spec(spec: Any, *, now: datetime | None = None) -> dict[str, Any]:
-    """Require an explicit, current-version, *future-holdout* user-defined plan."""
+def validate_spec(
+    spec: Any, *, now: datetime | None = None,
+    require_current_identity: bool = True,
+) -> dict[str, Any]:
+    """Validate prospective split, completeness, and optional current engine binding.
+
+    An archived artifact's historical hash must remain verifiable even when
+    the engine definition changes later. New freezes always require the actual
+    current engine identity.
+    """
     today = _clock(now).date()
-    t = template(next(iter([spec.get("strategy", {}).get("strategy_key", "")]), "")
-                 if isinstance(spec, dict) and isinstance(spec.get("strategy"), dict) else "")
+    t = template("pullback")
     _expect_keys(spec, set(t), "Q7_SPEC_FIELDS_INVALID")
     if spec["contract_version"] != VERSION:
         raise Q7PrecommitError("Q7_SPEC_VERSION_INVALID")
@@ -162,7 +169,12 @@ def validate_spec(spec: Any, *, now: datetime | None = None) -> dict[str, Any]:
         raise Q7PrecommitError("Q7_STUDY_ID_INVALID")
     _string(spec["operator"], "Q7_OPERATOR_REQUIRED", maximum=100)
     identity = _expect_keys(spec["strategy"], set(t["strategy"]), "Q7_IDENTITY_FIELDS_INVALID")
-    if identity != t["strategy"]:
+    _string(identity.get("strategy_key"), "Q7_STRATEGY_KEY_INVALID")
+    _string(identity.get("strategy_version_id"), "Q7_STRATEGY_VERSION_INVALID")
+    definition_hash = _string(identity.get("definition_hash"), "Q7_STRATEGY_HASH_INVALID", minimum=64, maximum=64)
+    if not _HEX.fullmatch(definition_hash):
+        raise Q7PrecommitError("Q7_STRATEGY_HASH_INVALID")
+    if require_current_identity and identity != _definition(identity["strategy_key"]):
         raise Q7PrecommitError("Q7_STRATEGY_IDENTITY_NOT_CURRENT")
     if spec["market_scope"] not in ("ALL", "KOSPI", "KOSDAQ"):
         raise Q7PrecommitError("Q7_MARKET_SCOPE_INVALID")
@@ -236,7 +248,7 @@ def verify_artifact(value: Any, *, expected_study_id: str | None = None) -> dict
         raise Q7PrecommitError("Q7_ARTIFACT_TIME_INVALID") from exc
     if when.tzinfo is None:
         raise Q7PrecommitError("Q7_ARTIFACT_TIME_INVALID")
-    validate_spec(record["spec"], now=when)
+    validate_spec(record["spec"], now=when, require_current_identity=False)
     if record["spec_hash"] != _hash(record["spec"]):
         raise Q7PrecommitError("Q7_ARTIFACT_SPEC_HASH_MISMATCH")
     body = dict(record)
@@ -259,10 +271,19 @@ def freeze(
     now: datetime | None = None,
 ) -> dict[str, Any]:
     clock = _clock(now)
-    validate_spec(spec, now=clock)
+    if not isinstance(spec, dict) or type(spec.get("study_id")) is not str or not _STUDY.fullmatch(spec["study_id"]):
+        raise Q7PrecommitError("Q7_STUDY_ID_INVALID")
     root = Path(root).resolve()
     study_id = spec["study_id"]
     path = root / (study_id + ".json")
+    # Idempotent retries stay readable even after the future holdout begins.
+    if path.exists():
+        existing = load(study_id, root=root)
+        if existing["spec_hash"] != _hash(spec):
+            raise Q7PrecommitError("Q7_STUDY_ALREADY_FROZEN_DIFFERENT_SPEC")
+        return {**verify_artifact(existing, expected_study_id=study_id),
+                "created": False, "path": str(path)}
+    validate_spec(spec, now=clock)
     body = {
         "schema": VERSION,
         "artifact_id": _artifact_id(study_id),
