@@ -21,7 +21,7 @@ import sys
 import time as time_module
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, build_opener, ProxyHandler
+from urllib.request import HTTPRedirectHandler, Request, build_opener, ProxyHandler
 from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -115,6 +115,11 @@ def _existing_capture(db: Path, *, market_scope: str, data_date: date) -> dict[s
     return dict(row) if row else None
 
 
+class _NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise DailyError("LOCAL_API_REDIRECT_FORBIDDEN")
+
+
 def _http(path: str, *, method: str = "GET", payload: dict[str, Any] | None = None,
           timeout: int = 30) -> dict[str, Any]:
     """Loopback only, no credentials, proxies or remote host overrides."""
@@ -125,7 +130,7 @@ def _http(path: str, *, method: str = "GET", payload: dict[str, Any] | None = No
         BASE_URL + path, data=data, method=method,
         headers={"Content-Type": "application/json"} if data else {},
     )
-    opener = build_opener(ProxyHandler({}))
+    opener = build_opener(ProxyHandler({}), _NoRedirect())
     try:
         with opener.open(request, timeout=timeout) as response:
             answer = json.loads(response.read(4_000_000).decode("utf-8"))
@@ -239,12 +244,15 @@ def run_once(*, scope: str = "KOSPI", candidate_limit: int = 5,
                 return outcome
             prior = _existing_capture(sim, market_scope=scope, data_date=signal_date)
             if prior is not None:
+                observations = observe_outcomes(sim, market, as_of=today)
                 outcome = _report(
                     "SKIPPED_ALREADY_CAPTURED_OR_PENDING",
                     local_date=today.isoformat(),
                     source_data_date=signal_date.isoformat(),
                     existing_capture_id=prior["id"],
                     existing_capture_status=prior["status"],
+                    outcome_status=observations["status"],
+                    outcome_windows=observations.get("windows"),
                 )
                 _write_result(log, outcome)
                 return outcome
@@ -290,13 +298,16 @@ def run_once(*, scope: str = "KOSPI", candidate_limit: int = 5,
             if not capture_id:
                 raise DailyError("FROZEN_CAPTURE_ID_MISSING")
 
+            observed_finished_at = _now()
             observations = observe_outcomes(sim, market, as_of=today)
             outcome = _report(
                 "SCANNER_CAPTURED_AND_OUTCOME_CHECKED",
                 local_date=today.isoformat(),
                 source_data_date=signal_date.isoformat(),
                 scanner_started_at=started_at,
-                scanner_finished_at=_now().isoformat(),
+                scanner_finished_at=observed_finished_at.isoformat(),
+                completed_before_open=observed_finished_at.astimezone(KST).time() < time(9, 0),
+                premarket_execution_is_not_independent_timestamp_attestation=True,
                 scanner_job_id=job_id, capture_id=capture_id,
                 capture_status=capture["status"],
                 captured_candidate_count=capture.get("returned_candidate_count"),
@@ -306,11 +317,12 @@ def run_once(*, scope: str = "KOSPI", candidate_limit: int = 5,
             )
             _write_result(log, outcome)
             return outcome
-    except DailyError as exc:
+    except (DailyError, OSError, subprocess.SubprocessError, TimeoutError) as exc:
+        reason = exc.code if isinstance(exc, DailyError) else "LOCAL_OPERATION_UNAVAILABLE"
         error = _report(
             "HOLD_MANUAL_REVIEW",
             local_date=today.isoformat(),
-            error_code=exc.code,
+            error_code=reason,
             note="자동 재시도 전에 Scanner job과 Frozen Capture 상태 확인 필요",
         )
         _write_result(log, error)
