@@ -25,6 +25,7 @@ from app.jev.scanner_v4_readiness_s7_5 import diagnose_capture as diagnose_v4_re
 from app.jev.scanner_eligibility_s8 import diagnose_capture as diagnose_s8_eligibility
 from app.jev.local_evidence_audit import diagnose_capture as diagnose_local_evidence
 from app.jev.local_history_review import review_capture as review_local_history
+from app.jev.local_shadow_cohort_s10 import measure_capture as measure_local_cohort
 from app.jev.scanner_shadow_s7_3 import (
     S73PreflightJournal, REASONS_KO, prepare_capture,
 )
@@ -45,7 +46,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=(
             "status", "inspect", "capture", "report", "run-approved",
             "prepare", "preflight", "source-audit", "lineage", "v4-readiness",
-            "s8-readiness", "local-evidence", "local-history",
+            "s8-readiness", "local-evidence", "local-history", "local-cohort",
         ),
     )
     parser.add_argument("--capture-id", default=None)
@@ -82,13 +83,20 @@ def execute(
             "actual_provider_calls": 0,
             "db_writes": 0,
         }
-    if args.mode in ("source-audit", "lineage", "v4-readiness", "s8-readiness", "local-evidence", "local-history"):
+    if args.mode in ("source-audit", "lineage", "v4-readiness", "s8-readiness", "local-evidence", "local-history", "local-cohort"):
         if args.save_preflight:
             raise DecisionReviewContractError("S7_4_DIAGNOSTIC_READ_ONLY")
         if args.mode == "source-audit":
             if args.capture_id or args.sample_index is not None:
                 raise DecisionReviewContractError("S7_4_SOURCE_AUDIT_ARGUMENT_INVALID")
             return source_audit()
+        if args.mode == "local-cohort":
+            if args.sample_index is not None:
+                raise DecisionReviewContractError("LOCAL_COHORT_SAMPLE_INDEX_UNSUPPORTED")
+            return measure_local_cohort(
+                args.simulation_db or simulation_db_path(),
+                capture_id=args.capture_id, limit=args.limit,
+            )
         if args.mode == "local-history":
             return review_local_history(
                 args.simulation_db or simulation_db_path(),
@@ -156,6 +164,27 @@ def display(value: dict[str, Any], *, as_json: bool = False) -> None:
     print("StockScope S7 · 실제 추천 후보 관찰")
     print("=" * 63)
     print(f"상태: {value.get('status', 'UNKNOWN')}")
+    if value.get("status") == "LOCAL_SHADOW_COHORT_MEASUREMENT_ONLY":
+        counts = value["counts"]
+        scope = value["scope"]
+        print(
+            f"조회 {scope['returned_samples']}건"
+            f" | 진입 후보 {counts['entry_candidates']}건"
+            f" | 참고 {counts['reference_only']}건"
+        )
+        print(
+            f"검토 가능 {counts['reviewable']}건"
+            f" | 잠정 재검토 {counts['provisional_recheck']}건"
+            f" | 유보 {counts['abstained']}건"
+            f" | 정합성 차단 {counts['integrity_blocked']}건"
+        )
+        if scope["completeness"] == "UNKNOWN_LIMIT_REACHED":
+            print("※ 조회 한도에 도달했습니다. 전체 Capture 비율이라고 해석하면 안 됩니다.")
+        else:
+            print("※ 지정한 Capture에서 조회 한도 미만의 후보를 확인했습니다.")
+        print("과거 참고자료와의 불일치만 관찰한 결과로, 판단 오류 발견률이나 투자 성과 개선율은 아닙니다.")
+        print("※ 외부 AI 호출 0건 / Runtime DB 쓰기 0건")
+        return
     if value.get("status") == "LOCAL_HISTORY_SHADOW_OBSERVATION_ONLY":
         counts = value["counts"]
         print(f"조회 {value['total_records']}건"
