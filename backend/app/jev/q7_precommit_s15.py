@@ -236,6 +236,8 @@ def verify_artifact(value: Any, *, expected_study_id: str | None = None) -> dict
     if not isinstance(record["spec"], dict):
         raise Q7PrecommitError("Q7_ARTIFACT_SPEC_INVALID")
     study_id = record["spec"].get("study_id")
+    if type(study_id) is not str or not _STUDY.fullmatch(study_id):
+        raise Q7PrecommitError("Q7_ARTIFACT_STUDY_ID_MISMATCH")
     if study_id != expected_study_id and expected_study_id is not None:
         raise Q7PrecommitError("Q7_ARTIFACT_STUDY_ID_MISMATCH")
     if record["artifact_id"] != _artifact_id(study_id):
