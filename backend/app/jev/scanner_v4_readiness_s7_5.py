@@ -38,7 +38,8 @@ def diagnose_candidate(capture: dict[str, Any], sample: dict[str, Any]) -> dict[
     state_bytes = None
 
     if category == "REFERENCE_ONLY":
-        local_status = "SKIPPED_LOCAL"
+        # A non-entry sample is not a V4 semantic-skip verdict.
+        local_status = "REFERENCE_ONLY"
         reasons.add("NOT_ENTRY_CANDIDATE")
     elif category == "INVALID" or lineage["lineage_analysis_status"] != "COMPLETE":
         if lineage["lineage_analysis_status"] != "COMPLETE":
@@ -110,7 +111,7 @@ def diagnose_capture(
         if not pairs:
             raise DecisionReviewContractError("S7_5_SAMPLE_NOT_FOUND")
     records = [diagnose_candidate(capture, sample) for capture, sample in pairs]
-    categories = ("LOCAL_V4_PROJECTABLE", "SKIPPED_LOCAL", "BLOCKED_INTEGRITY",
+    categories = ("LOCAL_V4_PROJECTABLE", "SKIPPED_LOCAL", "REFERENCE_ONLY", "BLOCKED_INTEGRITY",
                   "BLOCKED_HORIZON", "BLOCKED_SEMANTIC_SOURCE")
     return {
         "version": VERSION,
