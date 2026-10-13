@@ -500,6 +500,7 @@ def test_s75_v4_route_and_projector_reuse_existing_contract(monkeypatch, real_pr
     })
     monkeypatch.setattr(v45, "diagnose_prepared", lambda _p: {
         "lineage_analysis_status": "COMPLETE", "reason_codes": [],
+        "field_count": 41, "unclassified_fields": 0,
     })
     original = deepcopy(v4_sample)
     report = v45.diagnose_candidate(capture, v4_sample)
