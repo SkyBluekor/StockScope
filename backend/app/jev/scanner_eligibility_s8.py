@@ -14,6 +14,12 @@ from pathlib import Path
 from typing import Any
 
 from app.jev.decision_reviewer_offline import DecisionReviewContractError
+from app.jev.models import canonical_json
+from app.jev.typesafe_state import MAX_CONDITIONS, MAX_SEMANTIC_TEXT, MAX_STATE_BYTES
+from app.jev.typesafe_state_v4 import (
+    MAX_DEFINITION_TEXT_V4, MAX_INTENT_TEXT_V4, MAX_RELATIONS_V4,
+    MAX_RELATION_REFS_V4,
+)
 from app.jev.scanner_lineage_s7_4 import CONTRACT_REF, DEFAULT_SOURCE_PRODUCTS
 from app.jev.scanner_shadow_s7 import load_frozen_candidates
 from app.jev.scanner_v4_readiness_s7_5 import diagnose_candidate as diagnose_v4_candidate
@@ -139,6 +145,10 @@ def _validate_v4_state_items(state: dict[str, Any]) -> None:
     intent = state["strategy_intent"]
     if (set(intent) != {"text"} or not intent["text"].strip()):
         raise ValueError("OUTBOUND_V4_STATE_SHAPE_INVALID")
+    if (len(intent["text"]) > MAX_INTENT_TEXT_V4
+        or len(state["authored_relations"]) > MAX_RELATIONS_V4
+        or len(state["passed_condition_meanings"]) > MAX_CONDITIONS):
+        raise ValueError("OUTBOUND_V4_STATE_LIMIT_EXCEEDED")
 
     expected = {
         "term_definitions": {"ref", "text"},
@@ -162,6 +172,11 @@ def _validate_v4_state_items(state: dict[str, Any]) -> None:
             if any(not isinstance(item[k], str) or not item[k].strip()
                    for k in text_fields):
                 raise ValueError("OUTBOUND_V4_STATE_SHAPE_INVALID")
+            if (section == "term_definitions"
+                and len(item["text"]) > MAX_DEFINITION_TEXT_V4
+                or section == "passed_condition_meanings"
+                and len(item["meaning"]) > MAX_SEMANTIC_TEXT):
+                raise ValueError("OUTBOUND_V4_STATE_LIMIT_EXCEEDED")
             list_fields = {
                 "term_definitions": (),
                 "authored_relations": ("member_refs", "guard_refs"),
@@ -173,6 +188,8 @@ def _validate_v4_state_items(state: dict[str, Any]) -> None:
                     or (key != "guard_refs" and not values)
                     or any(not isinstance(v, str) or not v.strip() for v in values)):
                     raise ValueError("OUTBOUND_V4_STATE_SHAPE_INVALID")
+                if section == "authored_relations" and len(values) > MAX_RELATION_REFS_V4:
+                    raise ValueError("OUTBOUND_V4_STATE_LIMIT_EXCEEDED")
     terms = {item["ref"] for item in state["term_definitions"]}
     for relation in state["authored_relations"]:
         if not set(relation["member_refs"] + relation["guard_refs"]) <= terms:
@@ -180,6 +197,8 @@ def _validate_v4_state_items(state: dict[str, Any]) -> None:
     for condition in state["passed_condition_meanings"]:
         if not set(condition["concept_refs"]) <= terms:
             raise ValueError("OUTBOUND_V4_STATE_SHAPE_INVALID")
+    if len(canonical_json(state).encode("utf-8")) > MAX_STATE_BYTES:
+        raise ValueError("OUTBOUND_V4_STATE_LIMIT_EXCEEDED")
 
 
 def hash_local_outbound_candidate(body: dict[str, Any] | str) -> str:
