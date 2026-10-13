@@ -537,3 +537,53 @@ def test_s75_cli_read_only_json_and_display(monkeypatch, tmp_path, capsys):
     display(result, as_json=True)
     parsed = json.loads(capsys.readouterr().out)
     assert parsed["records"][0]["local_v4_status"] == "BLOCKED_INTEGRITY"
+
+
+def test_s75_reference_only_is_not_reported_as_v4_semantic_skip(monkeypatch, tmp_path, capsys):
+    capture, sample = _real_shaped()
+    sample["action"] = "REFERENCE_ONLY"
+    sample["snapshot"]["action"] = "REFERENCE_ONLY"
+    sample["snapshot_hash"] = digest_json(sample["snapshot"])
+    monkeypatch.setattr(v45, "load_frozen_candidates", lambda *_a, **_kw: [(capture, sample)])
+
+    db = tmp_path / "not_created.sqlite3"
+    report = v45.diagnose_capture(db, capture_id=capture["id"])
+    assert report["entry_candidates"] == 0
+    assert report["counts"]["REFERENCE_ONLY"] == 1
+    assert report["counts"]["SKIPPED_LOCAL"] == 0
+    assert report["counts"]["LOCAL_V4_PROJECTABLE"] == 0
+    assert report["records"][0]["lineage_analysis_status"] == "NOT_APPLICABLE"
+    assert report["actual_provider_calls"] == report["db_writes"] == 0
+    assert not db.exists()
+    display(report)
+    output = capsys.readouterr().out
+    assert "단순 참고 1건" in output
+    assert "V4 로컬 의미 판단으로 생략 0건" in output
+
+
+def test_s75_legacy_cli_shows_primary_blocker_not_false_identity_difference(monkeypatch, capsys):
+    capture, sample = _real_shaped()
+    monkeypatch.setattr(s73, "assess_frozen_candidate", lambda _c, _s: {
+        "category": "LEGACY_LIMITED",
+        "codes": ["LEGACY_DERIVED_IDENTITY", "STRATEGY_IDENTITY_MISMATCH"],
+    })
+    monkeypatch.setattr(v45, "assess_frozen_candidate", lambda _c, _s: {
+        "category": "LEGACY_LIMITED",
+        "codes": ["LEGACY_DERIVED_IDENTITY", "STRATEGY_IDENTITY_MISMATCH"],
+    })
+    report = {
+        "status": "V4_READINESS_PROVIDER_HOLD",
+        "total_records": 1, "entry_candidates": 1,
+        "counts": {name: 1 if name == "BLOCKED_HORIZON" else 0 for name in (
+            "LOCAL_V4_PROJECTABLE", "SKIPPED_LOCAL", "REFERENCE_ONLY",
+            "BLOCKED_INTEGRITY", "BLOCKED_HORIZON", "BLOCKED_SEMANTIC_SOURCE",
+        )},
+        "records": [v45.diagnose_candidate(capture, sample)],
+    }
+    assert "STRATEGY_IDENTITY_MISMATCH" in report["records"][0]["reason_codes"]
+    display(report)
+    output = capsys.readouterr().out
+    assert "당시 투자 기간이 단기·중기로 확정되지 않아" in output
+    assert "원본 제한: 당시 전략 버전이 없고" in output
+    assert "원본 전략 버전과 의미 분석용 전략 버전이 다릅니다" not in output
+    assert "상세 진단 코드는 --json 출력" in output
