@@ -150,7 +150,11 @@ def display(value: dict[str, Any], *, as_json: bool = False) -> None:
         )
         print(
             f"로컬 V4 입력 구성 가능 {value['v4_projectable_count']}건"
-            f" | 개별 원천 미확인 {value['origin_unverified_count']}건"
+            f" | V4 전송필드 계보 미검사 {value['v4_outbound_lineage_unverified_count']}건"
+            f" | AI 검토 불필요 {value['v4_local_skipped_count']}건"
+        )
+        print(
+            f"개별 원천 미확인 {value['origin_unverified_count']}건"
             f" | 외부 AI 이용권 미확인 {value['rights_unverified_count']}건"
             f" | 공개 시각 미확인 {value['source_time_unverified_count']}건"
         )
@@ -182,7 +186,12 @@ def display(value: dict[str, Any], *, as_json: bool = False) -> None:
         print("다음 확인에 필요한 증거:")
         for item in value["next_evidence"]:
             print(f"  - {item}")
-        print("결론: 데이터 적격성 HOLD / 현재 외부 TypeSafe 전송 NO-GO")
+        if value["decision"] == "NO_GO_CURRENT_REQUEST":
+            print("결론: 데이터 적격성 HOLD / 현재 외부 TypeSafe 전송 NO-GO")
+        elif value["decision"] == "NOT_REQUIRED":
+            print("결론: AI 호출 대상 없음 / 별도 외부 전송 불필요")
+        else:
+            print("결론: 진입 검토 대상 없음")
         print("※ 공식 계정 허가, 공개·수집 시각, 자료별 계보는 자동으로 증명되지 않습니다.")
         print("※ 실제 시장 데이터 전송 0건 / Runtime DB 쓰기 0건")
         return
