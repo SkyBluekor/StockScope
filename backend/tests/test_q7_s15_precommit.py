@@ -226,6 +226,8 @@ def test_existing_frozen_record_survives_future_date_and_engine_update(
     root = tmp_path / "q7"
     spec = _spec()
     original = freeze(spec, root=root, now=NOW)
+    new_plan = _spec()
+    new_plan["study_id"] = "after-engine-changed"
     future_clock = datetime(2026, 12, 15, 8, tzinfo=KST)
     monkeypatch.setattr(
         s15, "_definition",
@@ -242,7 +244,5 @@ def test_existing_frozen_record_survives_future_date_and_engine_update(
     assert after["created"] is False
     assert after["spec_hash"] == original["spec_hash"]
 
-    new_plan = _spec()
-    new_plan["study_id"] = "after-engine-changed"
     _err(lambda: freeze(new_plan, root=root, now=NOW),
          "Q7_STRATEGY_IDENTITY_NOT_CURRENT")
