@@ -213,7 +213,7 @@ def validate_spec(
 
     decision = _expect_keys(spec["decision"], set(t["decision"]), "Q7_DECISION_FIELDS_INVALID")
     for key, value in decision.items():
-        _string(value, f"Q7_{key.upper()}_RULE_REQUIRED", minimum=20)
+        _string(value, f"Q7_{key.upper()}_REQUIRED", minimum=20)
 
     evidence = _expect_keys(spec["evidence"], set(t["evidence"]), "Q7_EVIDENCE_FIELDS_INVALID")
     if evidence != t["evidence"]:
