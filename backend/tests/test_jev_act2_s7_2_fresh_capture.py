@@ -255,6 +255,30 @@ def test_s7_report_only_entry_denominators_and_missing_price_types():
     assert summary["economic_uplift_proven"] is False
 
 
+def _s13_authentic_active_fixture():
+    """Use the actual strategy registry + Q2 entry contract, not made-up 'v1'."""
+    from dataclasses import replace
+    from app.simulation.strategy_governance import strategy_definition
+    from app.strategy.models import StrategyName
+
+    definition = strategy_definition(StrategyName(STRATEGY))
+    pin = replace(
+        _pin(),
+        operating_strategies=((
+            definition.strategy_version_id, STRATEGY, definition.definition_hash,
+        ),),
+    )
+    candidate = _ranked_candidate()
+    candidate["strategy_version_id"] = definition.strategy_version_id
+    candidate["strategy_definition_hash"] = definition.definition_hash
+    candidate["entry_risk_guide"]["price_rule"].update({
+        "basis": "현재가가 20일선 위",
+        "semantic_role": "STRATEGY_REFERENCE",
+        "executable_entry_range": False,
+    })
+    return pin, candidate
+
+
 def test_s13_full_active_fresh_capture_is_locally_validated_but_provider_held(
     tmp_path, monkeypatch,
 ):
@@ -263,9 +287,8 @@ def test_s13_full_active_fresh_capture_is_locally_validated_but_provider_held(
     from app.jev.decision_reviewer_offline import build_scanner_review_input
 
     catalog = _catalog(tmp_path, monkeypatch)
-    pin = _pin()
+    pin, candidate = _s13_authentic_active_fixture()
     request = _request(pin)
-    candidate = _ranked_candidate()
     result = _result(pin, candidate)
     _attach_real_shaped_repro_audit(tmp_path, monkeypatch, result, candidate)
     capture = _finalize(catalog, request, result, pin)
@@ -293,9 +316,8 @@ def test_s13_cached_capture_does_not_become_locally_validated(
     from app.jev.scanner_integrity_s7_1 import assess_frozen_candidate
 
     catalog = _catalog(tmp_path, monkeypatch)
-    pin = _pin()
+    pin, candidate = _s13_authentic_active_fixture()
     request = _request(pin)
-    candidate = _ranked_candidate()
     result = _result(pin, candidate)
     _attach_real_shaped_repro_audit(tmp_path, monkeypatch, result, candidate)
     result["scanner_cache_hit"] = True
