@@ -12,6 +12,18 @@ import pytest
 from tools.data import prospective_daily as daily
 
 
+@pytest.fixture(autouse=True)
+def _separate_s16_clock_from_synthetic_future_day(monkeypatch):
+    """S16 future-date protection is tested separately using real dates."""
+    monkeypatch.setattr(
+        daily, "observe_outcomes",
+        lambda db, market, **kw: {
+            "status": "DESCRIPTIVE_OBSERVATIONS_ONLY",
+            "windows": {"5d": {"observed": 0}},
+        },
+    )
+
+
 KST = ZoneInfo("Asia/Seoul")
 MONDAY = datetime(2026, 10, 19, 7, 0, tzinfo=KST)
 
