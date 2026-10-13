@@ -23,6 +23,7 @@ from app.jev.scanner_lineage_s7_4 import diagnose_capture, source_audit, REASONS
 from app.jev.scanner_integrity_s7_1 import EXPLAIN
 from app.jev.scanner_v4_readiness_s7_5 import diagnose_capture as diagnose_v4_readiness
 from app.jev.scanner_eligibility_s8 import diagnose_capture as diagnose_s8_eligibility
+from app.jev.local_evidence_audit import diagnose_capture as diagnose_local_evidence
 from app.jev.scanner_shadow_s7_3 import (
     S73PreflightJournal, REASONS_KO, prepare_capture,
 )
@@ -43,7 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=(
             "status", "inspect", "capture", "report", "run-approved",
             "prepare", "preflight", "source-audit", "lineage", "v4-readiness",
-            "s8-readiness",
+            "s8-readiness", "local-evidence",
         ),
     )
     parser.add_argument("--capture-id", default=None)
@@ -80,13 +81,19 @@ def execute(
             "actual_provider_calls": 0,
             "db_writes": 0,
         }
-    if args.mode in ("source-audit", "lineage", "v4-readiness", "s8-readiness"):
+    if args.mode in ("source-audit", "lineage", "v4-readiness", "s8-readiness", "local-evidence"):
         if args.save_preflight:
             raise DecisionReviewContractError("S7_4_DIAGNOSTIC_READ_ONLY")
         if args.mode == "source-audit":
             if args.capture_id or args.sample_index is not None:
                 raise DecisionReviewContractError("S7_4_SOURCE_AUDIT_ARGUMENT_INVALID")
             return source_audit()
+        if args.mode == "local-evidence":
+            return diagnose_local_evidence(
+                args.simulation_db or simulation_db_path(),
+                capture_id=args.capture_id, limit=args.limit,
+                sample_index=args.sample_index,
+            )
         if args.mode == "s8-readiness":
             return diagnose_s8_eligibility(
                 args.simulation_db or simulation_db_path(),
@@ -142,6 +149,16 @@ def display(value: dict[str, Any], *, as_json: bool = False) -> None:
     print("StockScope S7 · 실제 추천 후보 관찰")
     print("=" * 63)
     print(f"상태: {value.get('status', 'UNKNOWN')}")
+    if value.get("status") == "LOCAL_REVIEW_EVIDENCE_DIAGNOSTIC_ONLY":
+        counts = value["counts"]
+        print(f"조회 {value['total_records']}건"
+              f" | 독립 근거 미확보 {counts.get('NO_INDEPENDENT_REVIEW_EVIDENCE', 0)}건"
+              f" | 정합성 차단 {counts.get('BLOCKED_INTEGRITY', 0)}건"
+              f" | 참고 {counts.get('REFERENCE_ONLY', 0)}건")
+        print("현재 PASS 조건·진입 의미·Risk는 기존 검사가 이미 확인한 근거입니다.")
+        print("추가 독립 근거를 증명하기 전에는 로컬 AI 검토 의견을 만들지 않습니다.")
+        print("※ 실제 시장 데이터 전송 0건 / Runtime DB 쓰기 0건")
+        return
     if value.get("status") == "S8_SOURCE_RIGHTS_TIME_PROVIDER_HOLD":
         print(
             f"조회 {value['total_records']}건"
