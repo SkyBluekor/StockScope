@@ -189,6 +189,47 @@ class StrategyChangeService:
         )
         self.allow_test_protocol = allow_test_protocol
 
+    def _require_trusted_approval_protocol(
+        self, protocol: StrategyApprovalProtocol,
+    ) -> None:
+        """Do not let an injected object self-declare Q7 production approval.
+
+        Q7 has no ratified, source-bound production protocol yet. The test
+        protocol is permitted ONLY via the explicit test service switch.
+        Future Q7 approval requires a separately verified, precommitted
+        authority and must not be implemented by toggling these booleans.
+        """
+        if not isinstance(protocol, StrategyApprovalProtocol):
+            raise StrategyChangeError(
+                "Q7_APPROVAL_PROTOCOL_UNTRUSTED",
+                "Q7 승인 정책의 자료형을 확인할 수 없습니다.",
+            )
+        if protocol.test_only:
+            if not self.allow_test_protocol:
+                raise StrategyChangeError(
+                    "TEST_APPROVAL_PROTOCOL_FORBIDDEN",
+                    "TEST-only approval protocol은 production 경로에서 사용할 수 없습니다.",
+                )
+            if (
+                protocol.protocol_version != test_only_approval_protocol().protocol_version
+                or protocol.source != "TEST_ONLY_SYNTHETIC"
+                or protocol.activation_eligible is not True
+                or protocol.q7_precommitted is not True
+            ):
+                raise StrategyChangeError(
+                    "Q7_APPROVAL_PROTOCOL_UNTRUSTED",
+                    "TEST-only 프로토콜의 출처와 사전 고정 계약이 일치하지 않습니다.",
+                )
+            return
+
+        # An arbitrary caller-supplied protocol is NOT Q7 approval evidence.
+        # The only currently authoritative production protocol is BLOCKED.
+        if protocol != production_blocked_approval_protocol():
+            raise StrategyChangeError(
+                "Q7_APPROVAL_PROTOCOL_UNAPPROVED",
+                "검증된 Q7 사전 고정 승인 근거가 없습니다. 임의 기준으로 운영 변경을 승인할 수 없습니다.",
+            )
+
     def _connect(self) -> sqlite3.Connection:
         if not self.simulation_db.is_file():
             raise StrategyChangeError(
@@ -705,11 +746,7 @@ class StrategyChangeService:
         proposal_protocol = (
             approval_protocol or production_blocked_approval_protocol()
         )
-        if proposal_protocol.test_only and not self.allow_test_protocol:
-            raise StrategyChangeError(
-                "TEST_APPROVAL_PROTOCOL_FORBIDDEN",
-                "TEST-only approval protocol은 production 경로에서 사용할 수 없습니다.",
-            )
+        self._require_trusted_approval_protocol(proposal_protocol)
 
         baseline = self._normalize_baseline(self.baseline_provider())
         scope = self._normalize_scope(
@@ -1205,11 +1242,7 @@ class StrategyChangeService:
         approved_by: str = "LOCAL_USER",
     ) -> dict[str, Any]:
         active_protocol = protocol or production_blocked_approval_protocol()
-        if active_protocol.test_only and not self.allow_test_protocol:
-            raise StrategyChangeError(
-                "TEST_APPROVAL_PROTOCOL_FORBIDDEN",
-                "TEST-only approval protocol은 production 경로에서 사용할 수 없습니다.",
-            )
+        self._require_trusted_approval_protocol(active_protocol)
         if not active_protocol.activation_eligible:
             raise StrategyChangeError(
                 "Q7_APPROVAL_PROTOCOL_UNAPPROVED",
