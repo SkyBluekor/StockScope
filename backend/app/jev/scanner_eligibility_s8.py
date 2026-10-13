@@ -11,7 +11,6 @@ import hashlib
 import json
 import math
 from pathlib import Path
-import re
 from typing import Any
 
 from app.jev.decision_reviewer_offline import DecisionReviewContractError
@@ -127,12 +126,29 @@ def _validate_json_value(value: Any, depth: int = 0) -> None:
     raise ValueError("OUTBOUND_BODY_INVALID")
 
 
-def hash_local_outbound_candidate(body: dict[str, Any]) -> str:
+def _reject_duplicate_json_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("OUTBOUND_BODY_DUPLICATE_KEY")
+        result[key] = value
+    return result
+
+
+def hash_local_outbound_candidate(body: dict[str, Any] | str) -> str:
     """Hash an exact syntactically-valid V4 body; NEVER grant transmission.
 
     Used for isolated synthetic/locally constructed comparisons only. The
     actual wire bytes and transport model binding are outside this gate.
     """
+    if isinstance(body, str):
+        body = json.loads(
+            body,
+            object_pairs_hook=_reject_duplicate_json_keys,
+            parse_constant=lambda _value: (_ for _ in ()).throw(
+                ValueError("OUTBOUND_BODY_NONFINITE")
+            ),
+        )
     if not isinstance(body, dict) or set(body) != {"state", "questions", "model"}:
         raise ValueError("OUTBOUND_BODY_INVALID")
     if not isinstance(body["state"], dict) or not isinstance(body["questions"], dict):
