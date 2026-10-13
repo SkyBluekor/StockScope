@@ -12,6 +12,7 @@ from app.prospective.models import digest_json
 
 def _pair():
     snapshot = {
+        "action": "ENTRY_CANDIDATE",
         "semantic_source_v2": {
             "conditions": {"items": [
                 {"source_condition": "pass-1", "stance": "SUPPORTS"},
@@ -24,6 +25,7 @@ def _pair():
     }
     capture = {"id": "SYNTHETIC-capture-1", "status": "COMPLETE"}
     sample = {
+        "capture_run_id": capture["id"],
         "action": "ENTRY_CANDIDATE", "sample_index": 0,
         "snapshot": snapshot, "snapshot_hash": digest_json(snapshot),
     }
@@ -142,3 +144,42 @@ def test_local_evidence_cli_is_readonly_and_does_not_execute_any_provider(
     args.save_preflight = True
     with pytest.raises(DecisionReviewContractError, match="S7_4_DIAGNOSTIC_READ_ONLY"):
         cli.execute(args)
+
+
+def test_capture_identity_mismatch_never_enters_local_review(monkeypatch):
+    monkeypatch.setattr(
+        audit, "assess_frozen_candidate",
+        lambda c, s: {"category": "LOCAL_VALIDATED", "codes": []},
+    )
+    capture, sample = _pair()
+    sample["capture_run_id"] = "DIFFERENT-CAPTURE"
+    report = audit.diagnose_candidate(capture, sample)
+    assert report["status"] == "BLOCKED_INTEGRITY"
+    assert report["reason_code"] == "CAPTURE_IDENTITY_MISMATCH"
+    assert report["new_independent_evidence_count"] == 0
+    sample["capture_run_id"] = capture["id"]
+    capture["status"] = "FAILED"
+    assert audit.diagnose_candidate(capture, sample)["status"] == "BLOCKED_INTEGRITY"
+    capture["status"] = "COMPLETE"
+    sample["snapshot"]["action"] = "WAIT"
+    sample["snapshot_hash"] = digest_json(sample["snapshot"])
+    assert audit.diagnose_candidate(capture, sample)["status"] == "BLOCKED_INTEGRITY"
+
+
+def test_historical_fit_and_display_advice_are_not_new_evidence(monkeypatch):
+    monkeypatch.setattr(
+        audit, "assess_frozen_candidate",
+        lambda c, s: {"category": "LOCAL_VALIDATED", "codes": []},
+    )
+    capture, sample = _pair()
+    sample["snapshot"]["historical_fit"] = {"status": "WEAK", "trades": 2}
+    sample["snapshot"]["user_action"] = {"detail": "Potential overclaim"}
+    sample["snapshot_hash"] = digest_json(sample["snapshot"])
+    result = audit.diagnose_candidate(capture, sample)
+    assert len(result["baseline_evidence_axes"]) == 5
+    assert {x["dimension"] for x in result["baseline_evidence_axes"]} >= {
+        "historical_fit", "display_advice",
+    }
+    assert result["new_independent_evidence_count"] == 0
+    assert result["review_decision"] is None
+    assert "Potential overclaim" not in str(result)
