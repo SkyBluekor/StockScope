@@ -10,6 +10,7 @@ Examples:
 from __future__ import annotations
 
 import argparse
+from datetime import date
 import json
 from pathlib import Path
 import sys
@@ -20,17 +21,20 @@ for p in (ROOT, BACKEND):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
 
+from app.jev.q7_observation_s16 import measure as measure_maturity
 from app.jev.q7_precommit_s15 import (
     Q7PrecommitError, freeze, inventory, load, template, validate_spec,
     verify_artifact,
 )
-from tools.data.common import simulation_db_path
+from tools.data.common import market_db_path, simulation_db_path
 
 
 def parser() -> argparse.ArgumentParser:
     cmd = argparse.ArgumentParser(description="Q7 S15 · local research-only precommit")
-    cmd.add_argument("mode", choices=("inventory", "template", "check", "freeze", "verify"))
+    cmd.add_argument("mode", choices=("inventory", "observe", "template", "check", "freeze", "verify"))
     cmd.add_argument("--simulation-db", type=Path, default=None)
+    cmd.add_argument("--market-db", type=Path, default=None)
+    cmd.add_argument("--as-of", default=None)
     cmd.add_argument("--strategy", default=None)
     cmd.add_argument("--file", type=Path, default=None)
     cmd.add_argument("--study-id", default=None)
@@ -42,6 +46,15 @@ def parser() -> argparse.ArgumentParser:
 def execute(args: argparse.Namespace) -> dict:
     if args.mode == "inventory":
         return inventory(args.simulation_db or simulation_db_path())
+    if args.mode == "observe":
+        try:
+            cutoff = date.fromisoformat(args.as_of) if args.as_of else None
+            return measure_maturity(
+                args.simulation_db or simulation_db_path(),
+                args.market_db or market_db_path(), as_of=cutoff,
+            )
+        except ValueError as exc:
+            raise Q7PrecommitError("Q7_S16_AS_OF_DATE_INVALID") from exc
     if args.mode == "template":
         if not args.strategy:
             raise Q7PrecommitError("Q7_STRATEGY_REQUIRED")
