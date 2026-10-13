@@ -169,6 +169,7 @@ def test_s8_strict_body_hash_is_version_sensitive_and_never_an_approval():
     {"state": {"q": float("nan")}, "questions": {"q": {}}, "model": "FAKE"},
     {"state": {"q": object()}, "questions": {"q": {}}, "model": "FAKE"},
     {"state": {}, "questions": {"q": {}}, "model": ""},
+    {"state": {}, "questions": {"q": {}}, "model": "UNFROZEN"},
 ])
 def test_s8_body_rejects_unsafe_or_changed_envelopes(bad):
     with pytest.raises(ValueError, match="OUTBOUND_BODY"):
