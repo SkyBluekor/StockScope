@@ -128,6 +128,7 @@ def test_exact_frozen_capture_holdout_and_development_outcomes_are_only_descript
     ("signal_date", "2026-09-02", "SOURCE_IDENTITY_MISMATCH"),
     ("computed_at", "2026-09-01T01:00:00+00:00", "OBSERVATION_TIME_UNVERIFIED"),
     ("computed_at", "2026-10-09T01:00:00+00:00", "OBSERVATION_TIME_UNVERIFIED"),
+    ("split", ["HOLDOUT"], "SPLIT_NOT_VERIFIED"),
     ("split", "PURGED", "PURGED_OR_EXCLUDED"),
     ("split", "EXCLUDED", "PURGED_OR_EXCLUDED"),
     ("maturity_status", "IMMATURE", "NOT_MATURE"),
