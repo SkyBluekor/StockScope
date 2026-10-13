@@ -253,3 +253,55 @@ def test_s7_report_only_entry_denominators_and_missing_price_types():
     assert summary["entry_window_summaries_by_integrity"]["LEGACY_LIMITED"]["5d"]["observed"] == 0
     assert summary["actual_jev_reviews"] == 0
     assert summary["economic_uplift_proven"] is False
+
+
+def test_s13_full_active_fresh_capture_is_locally_validated_but_provider_held(
+    tmp_path, monkeypatch,
+):
+    """End-to-end: real pin + rank + fresh repro audit + frozen SQL + S7.1/S3."""
+    from app.jev.scanner_integrity_s7_1 import assess_frozen_candidate
+    from app.jev.decision_reviewer_offline import build_scanner_review_input
+
+    catalog = _catalog(tmp_path, monkeypatch)
+    pin = _pin()
+    request = _request(pin)
+    candidate = _ranked_candidate()
+    result = _result(pin, candidate)
+    _attach_real_shaped_repro_audit(tmp_path, monkeypatch, result, candidate)
+    capture = _finalize(catalog, request, result, pin)
+    assert capture["status"] == "COMPLETE"
+    sample = catalog.list_samples(capture_run_id=capture["id"])[0]
+
+    verdict = assess_frozen_candidate(capture, sample)
+    assert verdict["category"] == "LOCAL_VALIDATED"
+    assert verdict["codes"] == []
+    assert verdict["locally_validated"] is True
+    assert verdict["external_provider_eligible"] is False
+
+    projection = build_scanner_review_input(
+        capture, sample, protocol_id="S13_SYNTHETIC_TEST_ONLY",
+    )
+    assert projection["status"] == "OFFLINE_INSPECTABLE_ONLY"
+    assert projection["actual_provider_eligible"] is False
+    assert projection["external_requests"] == 0
+
+
+def test_s13_cached_capture_does_not_become_locally_validated(
+    tmp_path, monkeypatch,
+):
+    """A cached or unaudited Scanner result cannot invent engine PASS evidence."""
+    from app.jev.scanner_integrity_s7_1 import assess_frozen_candidate
+
+    catalog = _catalog(tmp_path, monkeypatch)
+    pin = _pin()
+    request = _request(pin)
+    candidate = _ranked_candidate()
+    result = _result(pin, candidate)
+    _attach_real_shaped_repro_audit(tmp_path, monkeypatch, result, candidate)
+    result["scanner_cache_hit"] = True
+    capture = _finalize(catalog, request, result, pin)
+    sample = catalog.list_samples(capture_run_id=capture["id"])[0]
+    verdict = assess_frozen_candidate(capture, sample)
+    assert verdict["category"] == "INVALID"
+    assert "ENGINE_EVIDENCE_INCOMPLETE" in verdict["codes"]
+    assert verdict["external_provider_eligible"] is False
