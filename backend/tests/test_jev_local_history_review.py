@@ -97,6 +97,8 @@ def test_nonnegative_or_nonadverse_historical_status_is_not_a_pass_verdict(statu
     ({"expectancy_pct": True}, "HISTORICAL_METRICS_NOT_VERIFIED"),
     ({"expectancy_pct": "-3.2"}, "HISTORICAL_METRICS_NOT_VERIFIED"),
     ({"status": "DATA_UNAVAILABLE"}, "HISTORICAL_METRICS_NOT_VERIFIED"),
+    ({"status": "GOOD", "expectancy_pct": -3.0}, "HISTORICAL_STATUS_METRIC_CONFLICT"),
+    ({"status": "FAIR", "expectancy_pct": 0.0}, "HISTORICAL_STATUS_METRIC_CONFLICT"),
 ])
 def test_untrusted_or_insufficient_history_abstains_without_review(change, reason):
     cap, sample = _frozen()
@@ -167,3 +169,12 @@ def test_readonly_capture_report_and_cli_contract(monkeypatch, tmp_path, capsys)
     cli_args.save_preflight = True
     with pytest.raises(DecisionReviewContractError, match="S7_4_DIAGNOSTIC_READ_ONLY"):
         cli.execute(cli_args)
+
+
+def test_huge_numeric_input_never_bypasses_finite_metric_gate():
+    cap, sample = _frozen()
+    sample["snapshot"]["historical_evidence"]["expectancy_pct"] = 10**500
+    result = review.review_candidate(cap, sample)
+    assert result["status"] == "ABSTAIN"
+    assert result["reason_code"] == "HISTORICAL_METRICS_NOT_VERIFIED"
+    assert result["shadow_only_decision"] is None
