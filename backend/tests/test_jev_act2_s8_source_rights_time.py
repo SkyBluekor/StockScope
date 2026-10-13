@@ -269,3 +269,26 @@ def test_s8_all_local_skip_aggregate_never_reports_external_no_go(monkeypatch, t
     output = capsys.readouterr().out
     assert "AI 호출 대상 없음" in output
     assert "현재 외부 TypeSafe 전송 NO-GO" not in output
+
+
+def test_s8_nested_v4_rows_reject_invalid_structure_and_unknown_refs():
+    from app.jev.typesafe_canary_v4 import _sample_from_spec
+    from app.jev.typesafe_canary_v4_fixtures import FIXTURE_SPECS
+    from app.jev.typesafe_state_v4 import project_typesafe_state_v4
+    from app.jev.typesafe_questions_v4 import build_typesafe_questions_v4
+
+    valid = {
+        "state": project_typesafe_state_v4(_sample_from_spec(FIXTURE_SPECS[0])).state,
+        "questions": build_typesafe_questions_v4(),
+        "model": "FAKE",
+    }
+    assert len(s8.hash_local_outbound_candidate(valid)) == 64
+    bad_row = deepcopy(valid)
+    bad_row["state"]["term_definitions"][0] = 42
+    dangling = deepcopy(valid)
+    dangling["state"]["passed_condition_meanings"][0]["concept_refs"] = ["missing-term"]
+    unexpected = deepcopy(valid)
+    unexpected["state"]["authored_relations"][0]["unexpected"] = "unverified"
+    for body in (bad_row, dangling, unexpected):
+        with pytest.raises(ValueError, match="OUTBOUND_V4_STATE_SHAPE_INVALID"):
+            s8.hash_local_outbound_candidate(body)
