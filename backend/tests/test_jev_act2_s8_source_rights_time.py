@@ -292,3 +292,33 @@ def test_s8_nested_v4_rows_reject_invalid_structure_and_unknown_refs():
     for body in (bad_row, dangling, unexpected):
         with pytest.raises(ValueError, match="OUTBOUND_V4_STATE_SHAPE_INVALID"):
             s8.hash_local_outbound_candidate(body)
+
+
+def test_s8_local_v4_hash_enforces_projector_size_and_count_limits():
+    from app.jev.typesafe_canary_v4 import _sample_from_spec
+    from app.jev.typesafe_canary_v4_fixtures import FIXTURE_SPECS
+    from app.jev.typesafe_state_v4 import project_typesafe_state_v4
+    from app.jev.typesafe_questions_v4 import build_typesafe_questions_v4
+
+    body = {
+        "state": project_typesafe_state_v4(_sample_from_spec(FIXTURE_SPECS[0])).state,
+        "questions": build_typesafe_questions_v4(),
+        "model": "FAKE",
+    }
+    assert len(s8.hash_local_outbound_candidate(body)) == 64
+    oversized_intent = deepcopy(body)
+    oversized_intent["state"]["strategy_intent"]["text"] = "a" * 641
+    too_many_conditions = deepcopy(body)
+    too_many_conditions["state"]["passed_condition_meanings"] *= 13
+    too_many_relations = deepcopy(body)
+    too_many_relations["state"]["authored_relations"] *= 17
+    oversized_state = deepcopy(body)
+    oversized_state["state"]["term_definitions"] += [
+        {"ref": f"term-extra-{i:02d}", "text": "a" * 300}
+        for i in range(30)
+    ]
+    for candidate in (
+        oversized_intent, too_many_conditions, too_many_relations, oversized_state
+    ):
+        with pytest.raises(ValueError, match="OUTBOUND_V4_STATE_LIMIT_EXCEEDED"):
+            s8.hash_local_outbound_candidate(candidate)
