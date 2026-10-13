@@ -20,6 +20,14 @@ def _record(*, reference=False, v4_status="BLOCKED_HORIZON"):
         "reason_codes": ["LEGACY_HORIZON_UNDEFINED"] if not reference else [
             "NOT_ENTRY_CANDIDATE"
         ],
+        "lineage_analysis_status": "NOT_APPLICABLE" if reference else "COMPLETE",
+        "s73_lineage_field_count": 0 if reference else 42,
+        "s73_lineage_unclassified_fields": 0,
+        "v4_outbound_lineage_status": (
+            "NOT_AUDITED" if not reference and v4_status == "LOCAL_V4_PROJECTABLE"
+            else "NOT_APPLICABLE"
+        ),
+        "v4_wire_contract_verified": False,
     }
 
 
@@ -27,21 +35,6 @@ def _patch_candidate(monkeypatch, *, reference=False, v4_status="BLOCKED_HORIZON
     monkeypatch.setattr(
         s8, "diagnose_v4_candidate",
         lambda capture, sample: deepcopy(_record(reference=reference, v4_status=v4_status)),
-    )
-    monkeypatch.setattr(
-        s8, "prepare_shadow_candidate",
-        lambda capture, sample: {
-            "identity": {"name": "synthetic-only", "ticker": "000001"},
-            "category": "REFERENCE_ONLY" if reference else "LEGACY_LIMITED",
-        },
-    )
-    monkeypatch.setattr(
-        s8, "diagnose_prepared",
-        lambda prepared: {
-            "lineage_analysis_status": "NOT_APPLICABLE" if reference else "COMPLETE",
-            "field_count": 0 if reference else 42,
-            "unclassified_fields": 0,
-        },
     )
 
 
@@ -86,10 +79,11 @@ def test_s8_reference_not_confused_with_v4_local_skip(monkeypatch):
 
 def test_s8_unclassified_lineage_stays_blocked(monkeypatch):
     _patch_candidate(monkeypatch, v4_status="LOCAL_V4_PROJECTABLE")
-    monkeypatch.setattr(s8, "diagnose_prepared", lambda _prepared: {
-        "lineage_analysis_status": "PARTIAL", "field_count": 12,
-        "unclassified_fields": 2,
-    })
+    bad = _record(v4_status="LOCAL_V4_PROJECTABLE")
+    bad["lineage_analysis_status"] = "PARTIAL"
+    bad["s73_lineage_field_count"] = 12
+    bad["s73_lineage_unclassified_fields"] = 2
+    monkeypatch.setattr(s8, "diagnose_v4_candidate", lambda *_a: deepcopy(bad))
     result = s8.diagnose_candidate({}, {})
     assert result["unclassified_fields"] == 2
     assert "UNCLASSIFIED_OUTBOUND_FIELD" in result["reason_codes"]
@@ -147,9 +141,15 @@ def test_s8_client_provided_flags_do_not_establish_trusted_time():
 
 
 def test_s8_strict_body_hash_is_version_sensitive_and_never_an_approval():
+    from app.jev.typesafe_canary_v4 import _sample_from_spec
+    from app.jev.typesafe_canary_v4_fixtures import FIXTURE_SPECS
+    from app.jev.typesafe_state_v4 import project_typesafe_state_v4
+    from app.jev.typesafe_questions_v4 import build_typesafe_questions_v4
+
+    sample = _sample_from_spec(FIXTURE_SPECS[0])
     request = {
-        "state": {"strategy_intent": {"text": "synthetic"}},
-        "questions": {"strategy_relation_conflict": {"type": "noul", "instructions": "test"}},
+        "state": project_typesafe_state_v4(sample).state,
+        "questions": build_typesafe_questions_v4(),
         "model": "FAKE",
     }
     original = deepcopy(request)
@@ -157,8 +157,13 @@ def test_s8_strict_body_hash_is_version_sensitive_and_never_an_approval():
     changed_question = deepcopy(request)
     changed_question["questions"]["strategy_relation_conflict"]["instructions"] = "changed"
     changed_model = {**request, "model": "OTHER-FAKE"}
-    assert h1 != s8.hash_local_outbound_candidate(changed_question)
+    with pytest.raises(ValueError, match="OUTBOUND_V4_QUESTION_CONTRACT_MISMATCH"):
+        s8.hash_local_outbound_candidate(changed_question)
     assert h1 != s8.hash_local_outbound_candidate(changed_model)
+    changed_state = deepcopy(request)
+    changed_state["state"]["strategy_intent"]["text"] = "changed"
+    assert h1 != s8.hash_local_outbound_candidate(changed_state)
+    assert not s8.RIGHTS_ACTIONS["KRX_OPEN_API_DERIVED_TYPESAFE_AI"] == "VERIFIED_ALLOWED"
     assert request == original
     assert len(h1) == 64
 
@@ -226,3 +231,22 @@ def test_s8_strict_json_rejects_duplicate_keys_and_nonfinite_literals():
         s8.hash_local_outbound_candidate(
             '{"state":{"value":NaN},"questions":{"q":{}},"model":"FAKE"}'
         )
+
+def test_s8_local_v4_semantic_skip_does_not_count_as_external_no_go(monkeypatch):
+    _patch_candidate(monkeypatch, v4_status="SKIPPED_LOCAL")
+    result = s8.diagnose_candidate({"id": "synthetic"}, {"sample_index": 0})
+    assert result["transmission_decision"] == "NOT_REQUIRED"
+    assert result["data_eligibility"] == "NOT_APPLICABLE"
+    assert result["v4_outbound_lineage_status"] == "NOT_APPLICABLE"
+
+
+def test_s8_projectable_candidate_explicitly_lacks_v4_wire_lineage(monkeypatch):
+    _patch_candidate(monkeypatch, v4_status="LOCAL_V4_PROJECTABLE")
+    result = s8.diagnose_candidate({"id": "synthetic"}, {"sample_index": 0})
+    assert result["lineage_analysis_status"] == "COMPLETE"
+    assert result["lineage_field_count"] == 42
+    assert result["v4_outbound_lineage_status"] == "NOT_AUDITED"
+    assert result["v4_wire_contract_verified"] is False
+    assert "V4_OUTBOUND_LINEAGE_NOT_AUDITED" in result["reason_codes"]
+    assert "V4_WIRE_CONTRACT_UNVERIFIED" in result["reason_codes"]
+    assert result["transmission_decision"] == "NO_GO"
