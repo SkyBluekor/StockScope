@@ -9,6 +9,7 @@ import pytest
 
 import app.jev.scanner_shadow_s7_3 as s73
 from app.jev.decision_reviewer_offline import DecisionReviewContractError
+import app.jev.scanner_lineage_s7_4 as lineage
 from app.jev.scanner_lineage_s7_4 import (
     FIELDS, _leaves, diagnose_capture, diagnose_prepared, source_audit,
 )
@@ -119,6 +120,7 @@ def test_p1_packet_covers_every_leaf_and_keeps_unknown_sources(real_prepared):
     assert report["status"] == "LINEAGE_DIAGNOSTIC_PROVIDER_HOLD"
     assert report["integrity_status"] == "LOCAL_PACKET_READY"
     assert report["category"] == "LEGACY_LIMITED"
+    assert report["lineage_analysis_status"] == "COMPLETE"
     assert report["unclassified_fields"] == 0
     assert report["field_count"] == len(list(_leaves(real_prepared["packet"])))
     assert set(f["path"] for f in report["field_diagnostics"]) == {
@@ -182,7 +184,8 @@ def test_p1_empty_and_reference_are_local_only():
         "packet": None, "temporal_status": "TIME_UNVERIFIED",
     })
     assert report["field_count"] == 0
-    assert "LOCAL_INTEGRITY_NOT_VERIFIED" in report["reason_codes"]
+    assert report["lineage_analysis_status"] == "NOT_APPLICABLE"
+    assert "LOCAL_INTEGRITY_NOT_VERIFIED" not in report["reason_codes"]
     assert report["actual_provider_calls"] == 0
     simple = {"version": s73.PACKET_VERSION,
               "question_hash": s73.QUESTION_HASH, "weird_empty": {}}
@@ -274,3 +277,159 @@ def test_p1_disallow_preflight_journal_and_missing_capture(tmp_path):
         execute(source)
     with pytest.raises(DecisionReviewContractError, match="S7_SOURCE_DB_NOT_FOUND"):
         diagnose_capture(tmp_path / "missing.db", capture_id="missing")
+
+
+# P1.1: an old real-shaped Capture may have six INVALID entries and no
+# inspection-ready local packets. This is a *known missing evidence* condition,
+# not "all fields classified".
+OLD_CAPTURE_CODES = [
+    "BASELINE_RANK_MISMATCH",
+    "ENGINE_EVIDENCE_INCOMPLETE",
+    "POLICY_PROVENANCE_UNVERIFIED",
+    "RANK_MISSING",
+    "STRATEGY_IDENTITY_MISSING",
+]
+
+
+def test_p11_preserves_five_original_failure_codes_and_korean_display(capsys):
+    prepared = {
+        "identity": {"name": "대한항공", "ticker": "003490", "sample_index": 1},
+        "category": "INVALID", "status": "LOCAL_HOLD",
+        "reason_codes": OLD_CAPTURE_CODES.copy(),
+        "packet": None, "temporal_status": "RETROSPECTIVE_CAPTURE",
+    }
+    frozen = deepcopy(prepared)
+    result = diagnose_prepared(prepared)
+    assert prepared == frozen
+    assert result["lineage_analysis_status"] == "NOT_RUN"
+    assert result["integrity_reason_codes"] == OLD_CAPTURE_CODES
+    assert set(OLD_CAPTURE_CODES).issubset(set(result["reason_codes"]))
+    assert result["field_count"] == result["unclassified_fields"] == 0
+    assert result["real_provider_eligible"] is False
+    report = {
+        "status": "LINEAGE_DIAGNOSTIC_PROVIDER_HOLD",
+        "total_records": 1, "entry_candidates": 1, "local_packets_ready": 0,
+        "invalid_count": 1, "reference_count": 0, "lineage_examined_count": 0,
+        "lineage_not_run_count": 1, "lineage_partial_count": 0,
+        "lineage_analysis_status": "NOT_RUN", "unclassified_fields": 0,
+        "records": [result],
+    }
+    display(report)
+    output = capsys.readouterr().out
+    assert "계보 검사 미수행" in output
+    assert "미분류 필드: 검사 미수행" in output
+    for code in OLD_CAPTURE_CODES:
+        assert f"[{code}]" in output
+    assert "원본 정합성" in output
+    display(report, as_json=True)
+    parsed = json.loads(capsys.readouterr().out)
+    assert parsed["records"][0]["integrity_reason_codes"] == OLD_CAPTURE_CODES
+
+
+def _mixed_15(monkeypatch, *, first_ready: bool):
+    capture, sample = _real_shaped()
+    rows = []
+    for index in range(15):
+        entry = deepcopy(sample)
+        entry["sample_index"] = index
+        entry["ticker"] = f"{index + 1:06d}"
+        entry["name"] = f"fixture-{index}"
+        if index >= 6:
+            entry["action"] = "REFERENCE_ONLY"
+            entry["snapshot"]["action"] = "REFERENCE_ONLY"
+            entry["snapshot_hash"] = digest_json(entry["snapshot"])
+        rows.append((capture, entry))
+
+    def fake_check(_capture, entry):
+        if entry["action"] == "REFERENCE_ONLY":
+            return {"category": "REFERENCE_ONLY", "codes": ["NOT_ENTRY_CANDIDATE"]}
+        if first_ready and entry["sample_index"] == 0:
+            return {"category": "LEGACY_LIMITED", "codes": ["LEGACY_DERIVED_IDENTITY"]}
+        return {"category": "INVALID", "codes": OLD_CAPTURE_CODES.copy()}
+
+    monkeypatch.setattr(s73, "assess_frozen_candidate", fake_check)
+    monkeypatch.setattr(lineage, "load_frozen_candidates", lambda *a, **kw: rows)
+    return capture["id"]
+
+
+@pytest.mark.parametrize(
+    ("first_ready", "expected_status", "examined"),
+    [(False, "NOT_RUN", 0), (True, "PARTIAL", 1)],
+)
+def test_p11_mixed_15_categorizes_reference_vs_failure(
+    monkeypatch, capsys, tmp_path, first_ready, expected_status, examined,
+):
+    capture_id = _mixed_15(monkeypatch, first_ready=first_ready)
+    result = diagnose_capture(tmp_path / "no-database-created.db", capture_id=capture_id)
+    assert result["total_records"] == 15
+    assert result["entry_candidates"] == 6
+    assert result["invalid_count"] == 6 - examined
+    assert result["reference_count"] == 9
+    assert result["lineage_not_run_count"] == 6 - examined
+    assert result["lineage_examined_count"] == examined
+    assert result["local_packets_ready"] == examined
+    assert result["lineage_analysis_status"] == expected_status
+    assert result["unclassified_fields"] == 0
+    assert all(
+        rec["lineage_analysis_status"] == "NOT_APPLICABLE"
+        for rec in result["records"][6:]
+    )
+    assert all(
+        rec["integrity_reason_codes"] == OLD_CAPTURE_CODES
+        for rec in result["records"][examined:6]
+    )
+    assert result["actual_provider_calls"] == 0
+    assert not (tmp_path / "no-database-created.db").exists()
+    display(result)
+    output = capsys.readouterr().out
+    assert "정합성 제외" in output
+    assert "계보 검사 미수행" in output
+    assert "외부 호출은 0건" in output
+    if examined == 0:
+        assert "미분류 필드: 검사 미수행" in output
+        assert "분류를 검사한 패킷의 미분류 필드" not in output
+    else:
+        assert "분류를 검사한 패킷의 미분류 필드: 0건" in output
+    display(result, as_json=True)
+    data = json.loads(capsys.readouterr().out)
+    assert data["lineage_analysis_status"] == expected_status
+
+
+def test_p11_tampered_hash_never_reports_complete(real_prepared):
+    candidate = deepcopy(real_prepared)
+    candidate["packet"]["evidence"][0]["statement"] = "NOT TRUSTED"
+    result = diagnose_prepared(candidate)
+    assert result["lineage_analysis_status"] == "NOT_RUN"
+    assert "PACKET_HASH_MISMATCH" in result["reason_codes"]
+    assert result["field_diagnostics"] == []
+    assert "NOT TRUSTED" not in json.dumps(result)
+
+
+def test_p11_unbounded_nesting_fails_closed_as_partial(real_prepared):
+    candidate = deepcopy(real_prepared)
+    child = "private raw evidence"
+    for _ in range(18):
+        child = {"x": child}
+    candidate["packet"]["deep"] = child
+    candidate["packet"]["input_hash"] = digest_json({
+        key: val for key, val in candidate["packet"].items() if key != "input_hash"
+    })
+    candidate["packet_hash"] = candidate["packet"]["input_hash"]
+    report = diagnose_prepared(candidate)
+    assert report["lineage_analysis_status"] == "PARTIAL"
+    assert "S7_4_LINEAGE_DEPTH_EXCEEDED" in report["reason_codes"]
+    assert report["field_count"] == 0
+    assert "private raw evidence" not in json.dumps(report)
+
+
+def test_p11_preparation_zero_packets_is_explicit(capsys):
+    display({
+        "status": "LOCAL_PREPARATION_READY_PROVIDER_HOLD",
+        "total_records": 15, "entry_candidates": 6,
+        "local_packets_ready": 0, "local_validated": 0,
+        "legacy_limited": 0, "invalid": 6, "references": 9,
+        "records": [],
+    })
+    output = capsys.readouterr().out
+    assert "로컬 JEV 패킷 0건" in output
+    assert "준비된 입력이 없어" in output
