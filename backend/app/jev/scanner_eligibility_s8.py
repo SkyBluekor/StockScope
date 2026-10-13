@@ -14,12 +14,10 @@ from pathlib import Path
 from typing import Any
 
 from app.jev.decision_reviewer_offline import DecisionReviewContractError
-from app.jev.scanner_lineage_s7_4 import (
-    CONTRACT_REF, DEFAULT_SOURCE_PRODUCTS, diagnose_prepared,
-)
+from app.jev.scanner_lineage_s7_4 import CONTRACT_REF, DEFAULT_SOURCE_PRODUCTS
 from app.jev.scanner_shadow_s7 import load_frozen_candidates
-from app.jev.scanner_shadow_s7_3 import prepare_shadow_candidate
 from app.jev.scanner_v4_readiness_s7_5 import diagnose_candidate as diagnose_v4_candidate
+from app.jev.typesafe_questions_v4 import build_typesafe_questions_v4
 
 VERSION = "JEV_ACT2_S8_RIGHTS_TIME_ELIGIBILITY_V1"
 KRX_TERMS_URL = "https://openapi.krx.co.kr/contents/OPP/INFO/OPPINFO002.jsp"
@@ -142,6 +140,8 @@ def hash_local_outbound_candidate(body: dict[str, Any] | str) -> str:
     actual wire bytes and transport model binding are outside this gate.
     """
     if isinstance(body, str):
+        if len(body.encode("utf-8")) > 32768:
+            raise ValueError("OUTBOUND_BODY_TOO_LARGE")
         body = json.loads(
             body,
             object_pairs_hook=_reject_duplicate_json_keys,
@@ -157,6 +157,20 @@ def hash_local_outbound_candidate(body: dict[str, Any] | str) -> str:
         raise ValueError("OUTBOUND_BODY_INVALID")
     if body["model"].strip().upper() == "UNFROZEN":
         raise ValueError("OUTBOUND_BODY_MODEL_UNFROZEN")
+    # A generic JSON object with a model string is not a TypeSafe V4 request.
+    # This is strictly a shape/contract check, NOT a rights or wire approval.
+    if body["questions"] != build_typesafe_questions_v4():
+        raise ValueError("OUTBOUND_V4_QUESTION_CONTRACT_MISMATCH")
+    if set(body["state"]) != {
+        "strategy_intent", "term_definitions", "authored_relations",
+        "passed_condition_meanings",
+    }:
+        raise ValueError("OUTBOUND_V4_STATE_SHAPE_INVALID")
+    if (not isinstance(body["state"]["strategy_intent"], dict)
+        or not isinstance(body["state"]["strategy_intent"].get("text"), str)
+        or any(not isinstance(body["state"][key], list) or not body["state"][key]
+               for key in ("term_definitions", "authored_relations", "passed_condition_meanings"))):
+        raise ValueError("OUTBOUND_V4_STATE_SHAPE_INVALID")
     _validate_json_value(body)
     payload = json.dumps(
         body, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
@@ -170,36 +184,46 @@ def hash_local_outbound_candidate(body: dict[str, Any] | str) -> str:
 def diagnose_candidate(capture: dict[str, Any], sample: dict[str, Any]) -> dict[str, Any]:
     """Assess existing frozen data only. Neither public terms nor hash is a grant."""
     v4 = diagnose_v4_candidate(capture, sample)
-    prepared = prepare_shadow_candidate(capture, sample)
-    lineage = diagnose_prepared(prepared)
+    # S7.5 already performed the S7.3 preparation + lineage enumeration;
+    # never rerun the source and confuse its Choice packet with a V4 wire audit.
     reference = v4["local_v4_status"] == "REFERENCE_ONLY"
+    local_skip = v4["local_v4_status"] == "SKIPPED_LOCAL"
+    needs_provider = not (reference or local_skip)
     blockers = set(v4["reason_codes"])
-    if not reference:
+    if needs_provider:
         blockers.update({
             "SOURCE_RIGHTS_UNVERIFIED", "SOURCE_RELEASE_TIME_UNVERIFIED",
             "SOURCE_ORIGIN_UNVERIFIED", "REVISION_ASOF_UNPROVEN",
             "RIGHTS_AUTHENTICITY_UNVERIFIED", "TYPESAFE_ACCOUNT_POLICY_UNVERIFIED",
             "OUTBOUND_BODY_NOT_APPROVED",
         })
-        if lineage["lineage_analysis_status"] != "COMPLETE":
+        if v4["lineage_analysis_status"] != "COMPLETE":
             blockers.add("LINEAGE_INCOMPLETE")
-        if lineage["unclassified_fields"]:
+        if v4["s73_lineage_unclassified_fields"]:
             blockers.add("UNCLASSIFIED_OUTBOUND_FIELD")
+        if v4["v4_outbound_lineage_status"] == "NOT_AUDITED":
+            blockers.add("V4_OUTBOUND_LINEAGE_NOT_AUDITED")
+        if not v4["v4_wire_contract_verified"]:
+            blockers.add("V4_WIRE_CONTRACT_UNVERIFIED")
     return {
         "identity": v4["identity"],
         "category": v4["category"],
         "v4_local_status": v4["local_v4_status"],
         "v4_state_hash": v4["v4_state_hash"],
-        "lineage_analysis_status": lineage["lineage_analysis_status"],
-        "lineage_field_count": lineage["field_count"],
-        "unclassified_fields": lineage["unclassified_fields"],
+        "lineage_analysis_status": v4["lineage_analysis_status"],
+        "lineage_field_count": v4["s73_lineage_field_count"],
+        "unclassified_fields": v4["s73_lineage_unclassified_fields"],
+        "v4_outbound_lineage_status": v4["v4_outbound_lineage_status"],
+        "v4_wire_contract_verified": v4["v4_wire_contract_verified"],
         "source_origin_status": "NOT_APPLICABLE" if reference else "UNVERIFIED",
         "source_revision_status": "NOT_APPLICABLE" if reference else "UNVERIFIED",
         "publication_time_status": "NOT_APPLICABLE" if reference else "UNKNOWN",
         "acquisition_time_status": "NOT_APPLICABLE" if reference else "UNKNOWN",
         "rights_status": "NOT_APPLICABLE" if reference else "UNVERIFIED",
-        "data_eligibility": "NOT_APPLICABLE" if reference else "HOLD_UNVERIFIED",
-        "transmission_decision": "NOT_APPLICABLE" if reference else "NO_GO",
+        "data_eligibility": "NOT_APPLICABLE" if not needs_provider else "HOLD_UNVERIFIED",
+        "transmission_decision": (
+            "NOT_APPLICABLE" if reference else ("NOT_REQUIRED" if local_skip else "NO_GO")
+        ),
         "reason_codes": sorted(blockers),
         "actual_provider_calls": 0,
         "db_writes": 0,
@@ -231,6 +255,10 @@ def diagnose_capture(
         "entry_candidates": len(entry),
         "reference_count": len(records) - len(entry),
         "v4_projectable_count": sum(r["v4_local_status"] == "LOCAL_V4_PROJECTABLE" for r in entry),
+        "v4_outbound_lineage_unverified_count": sum(
+            r["v4_outbound_lineage_status"] == "NOT_AUDITED" for r in entry
+        ),
+        "v4_local_skipped_count": sum(r["v4_local_status"] == "SKIPPED_LOCAL" for r in entry),
         "origin_unverified_count": sum(r["source_origin_status"] == "UNVERIFIED" for r in entry),
         "rights_unverified_count": sum(r["rights_status"] == "UNVERIFIED" for r in entry),
         "source_time_unverified_count": sum(r["publication_time_status"] == "UNKNOWN" for r in entry),
@@ -251,8 +279,14 @@ def diagnose_capture(
         },
         "next_evidence": list(NEXT_EVIDENCE),
         "contract_ref": CONTRACT_REF,
-        "decision": "NO_GO_CURRENT_REQUEST" if entry else "NOT_APPLICABLE",
-        "data_eligibility": "HOLD_UNVERIFIED" if entry else "NOT_APPLICABLE",
+        "decision": (
+            "NO_GO_CURRENT_REQUEST" if any(r["transmission_decision"] == "NO_GO" for r in entry)
+            else ("NOT_REQUIRED" if entry else "NOT_APPLICABLE")
+        ),
+        "data_eligibility": (
+            "HOLD_UNVERIFIED" if any(r["data_eligibility"] == "HOLD_UNVERIFIED" for r in entry)
+            else "NOT_APPLICABLE"
+        ),
         "records": records,
         "provider_status": "PROVIDER_HOLD",
         "actual_provider_calls": 0,
