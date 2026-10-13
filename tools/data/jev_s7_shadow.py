@@ -21,6 +21,7 @@ for p in (ROOT, BACKEND):
 from app.jev.decision_reviewer_offline import DecisionReviewContractError
 from app.jev.scanner_lineage_s7_4 import diagnose_capture, source_audit, REASONS_KO as LINEAGE_REASONS_KO
 from app.jev.scanner_integrity_s7_1 import EXPLAIN
+from app.jev.scanner_v4_readiness_s7_5 import diagnose_capture as diagnose_v4_readiness
 from app.jev.scanner_shadow_s7_3 import (
     S73PreflightJournal, REASONS_KO, prepare_capture,
 )
@@ -40,7 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
         "mode", nargs="?", default="status",
         choices=(
             "status", "inspect", "capture", "report", "run-approved",
-            "prepare", "preflight", "source-audit", "lineage",
+            "prepare", "preflight", "source-audit", "lineage", "v4-readiness",
         ),
     )
     parser.add_argument("--capture-id", default=None)
@@ -77,13 +78,19 @@ def execute(
             "actual_provider_calls": 0,
             "db_writes": 0,
         }
-    if args.mode in ("source-audit", "lineage"):
+    if args.mode in ("source-audit", "lineage", "v4-readiness"):
         if args.save_preflight:
             raise DecisionReviewContractError("S7_4_DIAGNOSTIC_READ_ONLY")
         if args.mode == "source-audit":
             if args.capture_id or args.sample_index is not None:
                 raise DecisionReviewContractError("S7_4_SOURCE_AUDIT_ARGUMENT_INVALID")
             return source_audit()
+        if args.mode == "v4-readiness":
+            return diagnose_v4_readiness(
+                args.simulation_db or simulation_db_path(),
+                capture_id=args.capture_id, limit=args.limit,
+                sample_index=args.sample_index,
+            )
         return diagnose_capture(
             args.simulation_db or simulation_db_path(),
             capture_id=args.capture_id, limit=args.limit,
@@ -127,6 +134,35 @@ def display(value: dict[str, Any], *, as_json: bool = False) -> None:
     print("StockScope S7 · 실제 추천 후보 관찰")
     print("=" * 63)
     print(f"상태: {value.get('status', 'UNKNOWN')}")
+    if value.get("status") == "V4_READINESS_PROVIDER_HOLD":
+        counts = value["counts"]
+        print(f"조회 {value['total_records']}건 | 진입 후보 {value['entry_candidates']}건")
+        print(
+            f"V4 입력 생성 가능 {counts['LOCAL_V4_PROJECTABLE']}건"
+            f" | 로컬 판단으로 생략 {counts['SKIPPED_LOCAL']}건"
+            f" | 원본 정합성 차단 {counts['BLOCKED_INTEGRITY']}건"
+            f" | 기간 차단 {counts['BLOCKED_HORIZON']}건"
+            f" | 의미 자료 차단 {counts['BLOCKED_SEMANTIC_SOURCE']}건"
+        )
+        translations = {
+            **EXPLAIN, **REASONS_KO, **LINEAGE_REASONS_KO,
+            "V4_HORIZON_UNSUPPORTED": "V4가 지원하는 투자 기간이 아닙니다.",
+            "S7_4_LINEAGE_NOT_COMPLETE": "로컬 입력의 필드 계보 검사가 완료되지 않았습니다.",
+        }
+        for record in value["records"]:
+            ident = record["identity"]
+            if record["category"] == "REFERENCE_ONLY":
+                continue
+            print(
+                f"{ident.get('name') or ident.get('ticker') or '후보'}"
+                f" ({ident.get('ticker') or '식별자 없음'})"
+                f" · {record['category']} · {record['local_v4_status']}"
+            )
+            for reason in record["reason_codes"]:
+                print(f"  확인 필요: {translations.get(reason, reason)} [{reason}]")
+        print("※ V4 입력 생성 가능은 외부 전송 허가가 아닙니다.")
+        print("※ 실제 시장 데이터 TypeSafe 전송 0건 / DB 쓰기 0건")
+        return
     if value.get("status") == "SOURCE_AUDIT_PROVIDER_HOLD":
         print("KRX OPEN API 기본 Scanner 경로 (코드 기준, 실제 개별 행 인증 아님):")
         for item in value["products"]:
