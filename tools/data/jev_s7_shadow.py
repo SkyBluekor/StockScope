@@ -26,6 +26,7 @@ from app.jev.scanner_eligibility_s8 import diagnose_capture as diagnose_s8_eligi
 from app.jev.local_evidence_audit import diagnose_capture as diagnose_local_evidence
 from app.jev.local_history_review import review_capture as review_local_history
 from app.jev.local_shadow_cohort_s10 import measure_capture as measure_local_cohort
+from app.jev.local_outcome_link_s11 import evaluate_capture_readonly as evaluate_local_outcomes
 from app.jev.scanner_shadow_s7_3 import (
     S73PreflightJournal, REASONS_KO, prepare_capture,
 )
@@ -46,11 +47,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=(
             "status", "inspect", "capture", "report", "run-approved",
             "prepare", "preflight", "source-audit", "lineage", "v4-readiness",
-            "s8-readiness", "local-evidence", "local-history", "local-cohort",
+            "s8-readiness", "local-evidence", "local-history", "local-cohort", "local-outcomes",
         ),
     )
     parser.add_argument("--capture-id", default=None)
     parser.add_argument("--sample-index", type=int, default=None)
+    parser.add_argument("--evaluation-run-id", default=None)
     parser.add_argument(
         "--save-preflight", action="store_true",
         help="Append unchanged preflight verdicts to isolated research DB.",
@@ -83,13 +85,22 @@ def execute(
             "actual_provider_calls": 0,
             "db_writes": 0,
         }
-    if args.mode in ("source-audit", "lineage", "v4-readiness", "s8-readiness", "local-evidence", "local-history", "local-cohort"):
+    if args.mode in ("source-audit", "lineage", "v4-readiness", "s8-readiness", "local-evidence", "local-history", "local-cohort", "local-outcomes"):
         if args.save_preflight:
             raise DecisionReviewContractError("S7_4_DIAGNOSTIC_READ_ONLY")
         if args.mode == "source-audit":
             if args.capture_id or args.sample_index is not None:
                 raise DecisionReviewContractError("S7_4_SOURCE_AUDIT_ARGUMENT_INVALID")
             return source_audit()
+        if args.mode == "local-outcomes":
+            if args.sample_index is not None:
+                raise DecisionReviewContractError("S11_SAMPLE_INDEX_UNSUPPORTED")
+            return evaluate_local_outcomes(
+                args.simulation_db or simulation_db_path(),
+                capture_id=args.capture_id,
+                evaluation_run_id=args.evaluation_run_id,
+                limit=args.limit,
+            )
         if args.mode == "local-cohort":
             if args.sample_index is not None:
                 raise DecisionReviewContractError("LOCAL_COHORT_SAMPLE_INDEX_UNSUPPORTED")
@@ -164,6 +175,24 @@ def display(value: dict[str, Any], *, as_json: bool = False) -> None:
     print("StockScope S7 · 실제 추천 후보 관찰")
     print("=" * 63)
     print(f"상태: {value.get('status', 'UNKNOWN')}")
+    if value.get("status") == "S11_LOCAL_OUTCOME_LINK_DESCRIPTIVE_ONLY":
+        c = value["cohort_counts"]
+        print(
+            f"진입 후보 {c['entry_candidates']}건"
+            f" | 검토 가능 {c['reviewable']}건"
+            f" | 유보 {c['abstained']}건"
+            f" | 정합성 차단 {c['integrity_blocked']}건"
+        )
+        for part, label in (("DEVELOPMENT", "개발 표본"), ("HOLDOUT", "검증 표본")):
+            row = value["split_descriptive"][part]
+            print(
+                f"{label}: 결과 비교 가능 {row['closed_comparable']}건"
+                f" | 재검토 {row['flagged_closed']}건"
+                f" | 과거 반대 신호 없음 {row['unflagged_closed']}건"
+            )
+        print("이 수치는 기존 Prospective 종료 결과의 관찰적 비교이지, JEV의 손실 회피·성능 향상 증명이 아닙니다.")
+        print("※ 외부 AI 호출 0건 / Runtime DB 쓰기 0건")
+        return
     if value.get("status") == "LOCAL_SHADOW_COHORT_MEASUREMENT_ONLY":
         counts = value["counts"]
         scope = value["scope"]
