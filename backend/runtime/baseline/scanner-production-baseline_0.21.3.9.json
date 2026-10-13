@@ -1,13 +1,13 @@
 {
   "schema_version": "stockscope.sim0.v1",
-  "baseline_id": "SS-SCANNER-0.21.3.9-cf48adb0d19e7953",
+  "baseline_id": "SS-SCANNER-0.21.3.9-fbccb83ade7c66a8",
   "scanner_version": "0.21.3.9",
-  "created_at": "2026-09-29T06:51:42Z",
+  "created_at": "2026-10-13T14:31:51.495Z",
   "production_changed": false,
   "git": {
     "available": true,
-    "head": "3d0ae31374997c2bd2f4247f880734d2157e514c",
-    "branch": "fix/next5-e2e-structural-evidence-availability",
+    "head": "1f730243f1e7ab8470ebe4f60ff61f74e8db5837",
+    "branch": "codex/jev-q7-precommit-governance-s14",
     "working_tree_dirty": false,
     "status_porcelain": []
   },
@@ -253,14 +253,14 @@
     },
     {
       "path": "backend/app/strategy/production_selection_policy.py",
-      "sha256": "391be011e106b2b8c6192a97ed3a643571064ac40b139abd0e0d511182d403a0"
+      "sha256": "a2290b4fdafc632abc9b1af2a7cfbbe7a03c8b43e9a223b3b9049ec21cacf93a"
     },
     {
       "path": "backend/app/strategy/service.py",
       "sha256": "0f029a4e4dd8130b3f3c52ab694adf3b544535f2381d55cbb7ec198dcd747f6a"
     }
   ],
-  "production_fingerprint": "ad9cf4b19c15a100dfeb8d5ce52a538da04b4812e834495feab93f31a7c69242",
+  "production_fingerprint": "58807bce8c522ec3901458c1d809eb743f78a16966e25dfa6c9874a0b80ce0e2",
   "policies": {
     "scanner_version": "0.21.3.9",
     "ma120": "NO_LOOKAHEAD",

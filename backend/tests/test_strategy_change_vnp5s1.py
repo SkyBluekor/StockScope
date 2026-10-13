@@ -818,3 +818,74 @@ def test_real_approval_artifact_publishes_selection_policy_without_registry_muta
             (version_id,),
         ).fetchone()
     assert after == before
+
+
+def test_s14_injected_production_protocol_cannot_self_approve_q7(
+    tmp_path: Path,
+):
+    """Q7 cannot be enabled by constructing a dataclass with true flags."""
+    from app.simulation.strategy_change import StrategyApprovalProtocol
+
+    path = _db(tmp_path)
+    service = _service(path)
+    fake = StrategyApprovalProtocol(
+        protocol_version="Q7_SELF_ASSERTED",
+        activation_eligible=True,
+        q7_precommitted=True,
+        allowed_evidence_states=("INSUFFICIENT_EVIDENCE",),
+        allow_legacy_horizon=True,
+        allow_explicit_horizons=False,
+        source="USER_SUPPLIED",
+        criteria={"min_samples": 1},
+        test_only=False,
+    )
+    with sqlite3.connect(path) as conn:
+        before = conn.execute(
+            "SELECT COUNT(*) FROM strategy_change_proposal"
+        ).fetchone()[0]
+
+    with pytest.raises(StrategyChangeError) as exc:
+        service.create_proposal(
+            client_request_id="q7-forged",
+            changes=[],
+            evidence_artifact_ids=[],
+            affected_horizons=["LEGACY_UNSPECIFIED"],
+            affected_regimes=["UNKNOWN"],
+            approval_protocol=fake,
+        )
+    assert exc.value.code == "Q7_APPROVAL_PROTOCOL_UNAPPROVED"
+
+    with pytest.raises(StrategyChangeError) as exc:
+        service.approve_proposal(proposal_id="not-existing", protocol=fake)
+    assert exc.value.code == "Q7_APPROVAL_PROTOCOL_UNAPPROVED"
+
+    with sqlite3.connect(path) as conn:
+        after = conn.execute(
+            "SELECT COUNT(*) FROM strategy_change_proposal"
+        ).fetchone()[0]
+    assert before == after
+
+
+def test_s14_test_approval_flag_cannot_disguise_untrusted_source(
+    tmp_path: Path,
+):
+    """Even explicit unit-test mode accepts only a recognizable test source."""
+    from dataclasses import replace
+
+    db = _db(tmp_path)
+    service = _service(db, allow_test_protocol=True)
+    fake = replace(make_test_approval_protocol(), source="FAKE_PRODUCTION_Q7")
+    with pytest.raises(StrategyChangeError) as exc:
+        service.approve_proposal(proposal_id="unused", protocol=fake)
+    assert exc.value.code == "Q7_APPROVAL_PROTOCOL_UNTRUSTED"
+
+    with pytest.raises(StrategyChangeError) as exc:
+        service.create_proposal(
+            client_request_id="q7-fake-test-source",
+            changes=[],
+            evidence_artifact_ids=[],
+            affected_horizons=["LEGACY_UNSPECIFIED"],
+            affected_regimes=["UNKNOWN"],
+            approval_protocol=fake,
+        )
+    assert exc.value.code == "Q7_APPROVAL_PROTOCOL_UNTRUSTED"

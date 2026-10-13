@@ -829,13 +829,19 @@ class ProductionStrategySelectionRegistry:
                 "APPROVAL_ARTIFACT_HASH_MISMATCH",
                 "Approval Artifact integrity가 일치하지 않습니다.",
             )
-        if (
-            self._approval_protocol_is_test_only(approval)
-            and not self.allow_test_activation
-        ):
+        if self._approval_protocol_is_test_only(approval):
+            if not self.allow_test_activation:
+                raise SelectionPolicyError(
+                    "TEST_APPROVAL_ACTIVATION_FORBIDDEN",
+                    "TEST-only Approval은 Production Selection Policy로 게시할 수 없습니다.",
+                )
+        else:
+            # No approved, precommitted production Q7 protocol has been
+            # implemented. An artifact's valid hash alone is not an authority
+            # to activate a new strategy selection policy.
             raise SelectionPolicyError(
-                "TEST_APPROVAL_ACTIVATION_FORBIDDEN",
-                "TEST-only Approval은 Production Selection Policy로 게시할 수 없습니다.",
+                "Q7_APPROVAL_PROTOCOL_UNAPPROVED",
+                "검증된 운영 Q7 사전 승인 정책이 없어 활성화할 수 없습니다.",
             )
 
         proposal_id = str(approval.get("proposal_id") or "")

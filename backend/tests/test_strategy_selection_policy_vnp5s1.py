@@ -580,3 +580,34 @@ def test_snapshot_rejects_unknown_strategy_key():
     )
     assert valid is False
     assert reason == "POLICY_STRATEGY_KEY_UNSUPPORTED"
+
+
+def test_s14_non_test_approval_artifact_cannot_bypass_q7_authority(
+    tmp_path: Path,
+):
+    """A valid-looking reference/hash is not Q7 approval authorization."""
+    fake_rows = _fake_rows()
+    original, proposal = fake_rows["approval-1"]
+    spoofed = {
+        **original,
+        "approval_context": {
+            **original["approval_context"],
+            "protocol": {
+                "test_only": False,
+                "activation_eligible": True,
+                "q7_precommitted": True,
+                "source": "UNVERIFIED_Q7",
+            },
+        },
+    }
+    fake = _FakeChangeService({"approval-1": (spoofed, proposal)})
+    registry = _registry(tmp_path, service=fake, allow_test_activation=False)
+
+    with pytest.raises(SelectionPolicyError) as exc:
+        registry.activate_approved_policy(
+            approval_artifact_id="approval-1",
+            expected_active_policy_id=None,
+        )
+    assert exc.value.code == "Q7_APPROVAL_PROTOCOL_UNAPPROVED"
+    assert not registry.active_path.exists()
+    assert not registry.policies_dir.exists()
