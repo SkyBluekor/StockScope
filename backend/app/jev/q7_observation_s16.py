@@ -24,7 +24,8 @@ from .scanner_shadow_s7 import EVALUATION_SPEC, WINDOWS, load_frozen_candidates
 
 
 VERSION = "Q7_S16_READONLY_COHORT_MATURITY_V1"
-_MAX_CAPTURES = 20
+_MAX_CAPTURES = 260  # about one year of weekday sessions; bounded SQL work
+_MAX_TOTAL_SAMPLES = 6000  # stop before a large market-history read
 _MAX_SAMPLES = 499  # 500 rows from S7 loader might be a truncated capture.
 _STRATEGIES = frozenset(s.value for s in StrategyName if s is not StrategyName.NO_TRADE)
 _KST = ZoneInfo("Asia/Seoul")
@@ -156,12 +157,14 @@ def measure(
         return _base("SCHEMA_OR_DB_READ_UNAVAILABLE")
     if not rows:
         return _base("NO_COMPLETE_CAPTURES", total_complete_captures=0)
-    if len(rows) != total or any(int(x["sample_count"]) > _MAX_SAMPLES for x in rows):
+    if (len(rows) != total or any(int(x["sample_count"]) > _MAX_SAMPLES for x in rows)
+            or sum(int(x["sample_count"]) for x in rows) > _MAX_TOTAL_SAMPLES):
         return _base(
             "COHORT_TOO_LARGE_FOR_COMPLETE_AUDIT",
             total_complete_captures=total,
             auditable_captures=len(rows),
             sample_cap_per_capture=_MAX_SAMPLES,
+            total_sample_cap=_MAX_TOTAL_SAMPLES,
             counts_complete=False,
         )
 
