@@ -225,3 +225,76 @@ def test_readonly_entrypoint_and_cli_never_create_db(monkeypatch, tmp_path, caps
         cohort.measure_capture(path, capture_id=None)
     with pytest.raises(DecisionReviewContractError, match="LOCAL_COHORT_LIMIT_INVALID"):
         cohort.measure_capture(path, capture_id="synthetic-canonical-capture",limit=0)
+
+
+def test_non_dict_and_unhashable_review_outputs_fail_closed(monkeypatch):
+    rows = _pairs()
+    monkeypatch.setattr(cohort, "review_candidate", lambda c, s: [])
+    with pytest.raises(DecisionReviewContractError, match="LOCAL_COHORT_REVIEW_STATUS_INVALID"):
+        cohort.build_cohort_report(
+            rows, requested_capture_id="synthetic-canonical-capture", limit=60,
+        )
+
+    def unhashable(cap, sample):
+        row = _mock_review(cap, sample)
+        row["status"] = ["LOCAL_SHADOW_REVIEW_ONLY"]
+        return row
+    monkeypatch.setattr(cohort, "review_candidate", unhashable)
+    with pytest.raises(DecisionReviewContractError, match="LOCAL_COHORT_REVIEW_STATUS_INVALID"):
+        cohort.build_cohort_report(
+            rows, requested_capture_id="synthetic-canonical-capture", limit=60,
+        )
+
+
+def test_actual_s9_observation_function_binds_to_s10_denominator(monkeypatch):
+    """Only the full integrity source is stubbed; S9 real rules execute."""
+    from app.jev import local_history_review
+    from app.prospective.models import digest_json
+
+    def frozen_identity(capture, sample):
+        return {
+            "identity": {
+                "capture_id": capture["id"],
+                "sample_index": sample["sample_index"],
+                "snapshot_hash": sample["snapshot_hash"],
+            },
+            "category": "LOCAL_VALIDATED",
+        }
+    monkeypatch.setattr(
+        local_history_review, "audit_frozen_evidence", frozen_identity,
+    )
+    capture = {"id":"SYNTHETIC-ONLY", "status":"COMPLETE"}
+    rows = []
+    for i, (status, expectancy) in enumerate((("WEAK",-1.0),("GOOD",1.0))):
+        snapshot = {
+            "action":"ENTRY_CANDIDATE",
+            "verification_level":"CURRENT_AND_3Y_EVIDENCE",
+            "historical_evidence": {
+                "verified":True, "strategy":"trend_following",
+                "validation_years":3,
+                "period":{"start":"2023-10-08","end":"2026-10-08"},
+                "sample_count":12, "sample_sufficient":True,
+                "minimum_sample":10, "status":status,
+                "expectancy_pct":expectancy,
+            },
+        }
+        sample = {
+            "capture_run_id":capture["id"],
+            "sample_index":i,
+            "snapshot_hash":digest_json(snapshot),
+            "snapshot":snapshot,
+            "action":"ENTRY_CANDIDATE",
+            "signal_date":"2026-10-08",
+            "strategy":"trend_following",
+        }
+        rows.append((dict(capture),sample))
+    report = cohort.build_cohort_report(
+        rows, requested_capture_id="SYNTHETIC-ONLY", limit=60,
+    )
+    assert report["counts"]["entry_candidates"] == 2
+    assert report["counts"]["reviewable"] == 2
+    assert report["counts"]["provisional_recheck"] == 1
+    assert report["counts"]["no_adverse_signal"] == 1
+    assert report["rates_pct"]["provisional_of_reviewable"] == 50.0
+    assert report["outcome_comparison"] is None
+    assert report["actual_provider_calls"] == report["db_writes"] == 0
