@@ -41,7 +41,10 @@ def _verified_date(value: Any) -> date | None:
 def _finite_number(value: Any) -> float | None:
     if type(value) not in (int, float):
         return None
-    converted = float(value)
+    try:
+        converted = float(value)
+    except (OverflowError, ValueError):
+        return None
     return converted if isfinite(converted) else None
 
 
@@ -122,6 +125,12 @@ def review_candidate(capture: dict[str, Any], sample: dict[str, Any]) -> dict[st
             identity, status="ABSTAIN", reason="HISTORICAL_METRICS_NOT_VERIFIED",
         )
 
+    # GOOD and FAIR are produced only for positive expectancy by the
+    # historical evidence scorer; contradictory frozen rows are untrusted.
+    if history["status"] in {"GOOD", "FAIR"} and expectancy <= 0:
+        return _not_ready(
+            identity, status="ABSTAIN", reason="HISTORICAL_STATUS_METRIC_CONFLICT",
+        )
     adverse = history["status"] == "WEAK" and expectancy < 0
     # This is an *additional post-rank perspective*, not independent source
     # provenance, TypeSafe semantics, or a prospective economic finding.
