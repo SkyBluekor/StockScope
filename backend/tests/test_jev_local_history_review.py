@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import date
-from math import nan
 
 import pytest
 
@@ -96,7 +94,7 @@ def test_nonnegative_or_nonadverse_historical_status_is_not_a_pass_verdict(statu
     ({"sample_count": 2, "sample_sufficient":False}, "HISTORICAL_SAMPLE_NOT_SUFFICIENT"),
     ({"sample_count": 12, "sample_sufficient":False}, "HISTORICAL_SAMPLE_NOT_SUFFICIENT"),
     ({"sample_count": 12, "minimum_sample": 3}, "HISTORICAL_SAMPLE_NOT_SUFFICIENT"),
-    ({"expectancy_pct": nan}, "HISTORICAL_METRICS_NOT_VERIFIED"),
+    ({"expectancy_pct": True}, "HISTORICAL_METRICS_NOT_VERIFIED"),
     ({"expectancy_pct": "-3.2"}, "HISTORICAL_METRICS_NOT_VERIFIED"),
     ({"status": "DATA_UNAVAILABLE"}, "HISTORICAL_METRICS_NOT_VERIFIED"),
 ])
