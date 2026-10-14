@@ -19,7 +19,7 @@ from app.prospective.evaluation import ProspectiveEvaluator, ProspectiveEvaluati
 from app.strategy.models import StrategyName
 
 from .decision_reviewer_offline import DecisionReviewContractError
-from .q7_diagnosis_s18 import _timing as classify_capture_timing
+from .q7_diagnosis_s18 import classify_capture_timing
 from .scanner_integrity_s7_1 import assess_frozen_candidate
 from .scanner_shadow_s7 import EVALUATION_SPEC, WINDOWS, load_frozen_candidates
 
