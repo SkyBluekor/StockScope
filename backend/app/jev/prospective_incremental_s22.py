@@ -12,6 +12,7 @@ from contextlib import closing
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 import base64
+import binascii
 import json
 from pathlib import Path
 import sqlite3
@@ -98,6 +99,8 @@ def _as_of(value: str | None, today: date | None) -> date:
 def _cursor(value: str | None) -> tuple[str, str] | None:
     if value is None:
         return None
+    if not isinstance(value, str) or not 1 <= len(value) <= 512:
+        raise IncrementalObservationError("CAPTURE_CURSOR_INVALID")
     try:
         raw = base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
         fields = json.loads(raw)
@@ -107,7 +110,7 @@ def _cursor(value: str | None) -> tuple[str, str] | None:
         ):
             raise ValueError()
         return fields[0], fields[1]
-    except (ValueError, UnicodeError, json.JSONDecodeError) as exc:
+    except (ValueError, UnicodeError, binascii.Error, json.JSONDecodeError) as exc:
         raise IncrementalObservationError("CAPTURE_CURSOR_INVALID") from exc
 
 
