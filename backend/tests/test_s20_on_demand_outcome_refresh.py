@@ -141,7 +141,9 @@ def test_plan_pure_ro_and_exact_date_gap_selection(tmp_path, monkeypatch):
     report = s20.plan(sim, market, through="2026-10-13", today=date(2026, 10, 14))
     assert (sim.read_bytes(), market.read_bytes()) == original
     assert report["status"] == "PLAN_ONLY"
-    assert report["date_counts"] == {"CLOSED_VERIFIED": 1, "MISSING": 2}
+    assert report["date_counts"] == {"CLOSED_VERIFIED": 1, "UNKNOWN": 2}
+    assert all(row["calendar_state"] == "UNKNOWN" for row in report["days"]
+               if row["state"] == "UNKNOWN")
     assert report["days"][0]["closure_reason"] == "한글날"
     assert report["days"][0]["closure_source"].startswith("https://trn.krx.co.kr")
     assert [(x["market"], x["date"]) for x in report["days"]] == [
