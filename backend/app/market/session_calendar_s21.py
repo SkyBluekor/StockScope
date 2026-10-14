@@ -14,9 +14,15 @@ from typing import Iterable
 from urllib.parse import urlsplit
 
 
-CALENDAR_VERSION = "KRX_CASH_SESSION_EVIDENCE_S23_V1"
+CALENDAR_VERSION = "KRX_CASH_SESSION_EVIDENCE_S23_V2"
 RULES_SOURCE = "https://global.krx.co.kr/contents/GLB/06/0602/0602010201/GLB0602010201T1.jsp"
 NOTICE_SOURCE = "https://trn.krx.co.kr/index.jsp"
+# KRX KOSPI/KOSDAQ disclosure division's dated 2026 closure intervals.
+# Cross-checked against KRX market rules, official public holiday law, and
+# KRX KONEX dated closure notice for June 3 / July 17.
+KRX_2026_DISCLOSURE_SOURCE = "https://kind.krx.co.kr/external/dst/notice/11637/%5B%ED%95%9C%EA%B5%AD%EA%B1%B0%EB%9E%98%EC%86%8C%5D%202026%EB%85%84%20%EC%98%AC%EB%B9%BC%EB%AF%B8%EA%B3%B5%EC%8B%9C%20%EC%95%88%EB%82%B4.pdf"
+KRX_STATUTORY_HOLIDAY_SOURCE = "https://www.law.go.kr/lsLinkCommonInfo.do?lsJoLnkSeq=1029728073"
+KRX_2026_SPECIAL_NOTICE_SOURCE = "https://kind.krx.co.kr/external/2026/05/20/000110/20260520000197/32154.htm"
 ANNUAL_SCHEDULE_SOURCE = (
     "https://open.krx.co.kr/contents/MKD/01/0110/01100305/MKD01100305.jsp"
 )
@@ -86,17 +92,38 @@ class AnnualSessionEvidence:
             raise ValueError("FULL_CALENDAR_WEEKDAY_COVERAGE_INCOMPLETE")
 
 
-# S21's two *dated* October closure notices are preserved as sourced evidence.
-# Neither this ledger nor KRX's generic trading rules certifies the rest of 2026.
+# S23-B: 2026 dated cash-market closures cross-checked against KRX's own
+# disclosure-division schedule and statutory holiday rules. This covers the
+# 17 identified *weekday closures*, NOT the 244 weekdays marked open. Until
+# an independently verified complete KRX cash-session schedule is recorded,
+# this manifest remains PARTIAL; all other weekdays remain UNKNOWN unless
+# independently proven by complete stock+index EOD data.
+# Source provenance is per date; do not infer an extraordinary closure from
+# the KRX simulation system's separate maintenance or replay-only notices.
 _2026_PARTIAL = AnnualSessionEvidence(
     year=2026,
     version=CALENDAR_VERSION,
     coverage="PARTIAL",
-    source_url=NOTICE_SOURCE,
+    source_url=KRX_2026_DISCLOSURE_SOURCE,
     source_sha256=None,
     closed_days=(
+        (date(2026, 1, 1), "신정", KRX_STATUTORY_HOLIDAY_SOURCE),
+        (date(2026, 2, 16), "설 연휴", KRX_2026_DISCLOSURE_SOURCE),
+        (date(2026, 2, 17), "설날", KRX_2026_DISCLOSURE_SOURCE),
+        (date(2026, 2, 18), "설 연휴", KRX_2026_DISCLOSURE_SOURCE),
+        (date(2026, 3, 2), "삼일절 대체공휴일", KRX_2026_DISCLOSURE_SOURCE),
+        (date(2026, 5, 1), "노동절", KRX_2026_DISCLOSURE_SOURCE),
+        (date(2026, 5, 5), "어린이날", KRX_STATUTORY_HOLIDAY_SOURCE),
+        (date(2026, 5, 25), "부처님오신날 대체공휴일", KRX_2026_DISCLOSURE_SOURCE),
+        (date(2026, 6, 3), "전국동시지방선거일", KRX_2026_SPECIAL_NOTICE_SOURCE),
+        (date(2026, 7, 17), "제헌절", KRX_2026_SPECIAL_NOTICE_SOURCE),
+        (date(2026, 8, 17), "광복절 대체공휴일", KRX_2026_DISCLOSURE_SOURCE),
+        (date(2026, 9, 24), "추석 연휴", KRX_2026_DISCLOSURE_SOURCE),
+        (date(2026, 9, 25), "추석", KRX_2026_DISCLOSURE_SOURCE),
         (date(2026, 10, 5), "개천절 대체휴일", NOTICE_SOURCE),
         (date(2026, 10, 9), "한글날", NOTICE_SOURCE),
+        (date(2026, 12, 25), "성탄절", KRX_2026_DISCLOSURE_SOURCE),
+        (date(2026, 12, 31), "연말 휴장", KRX_2026_DISCLOSURE_SOURCE),
     ),
 )
 _REVIEWED_CALENDARS = {2026: _2026_PARTIAL}

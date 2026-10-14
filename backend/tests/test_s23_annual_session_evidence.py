@@ -111,3 +111,44 @@ def test_full_ledger_requires_every_weekday_and_a_source_digest():
         AnnualSessionEvidence(**{**kwargs, "coverage":"PARTIAL", "open_days":(date(2027, 12, 30),)})
     with pytest.raises(ValueError, match="YEAR_MISMATCH"):
         session_evidence(date(2026, 10, 10), calendar=cal)
+
+
+def test_2026_primary_sourced_weekday_closures_are_complete_as_closure_list_only():
+    """S23-B: dated primary KRX disclosure and holiday regulation provenance."""
+    dates = ("2026-01-01", "2026-02-16", "2026-02-17", "2026-02-18", "2026-03-02", "2026-05-01", "2026-05-05", "2026-05-25", "2026-06-03", "2026-07-17", "2026-08-17", "2026-09-24", "2026-09-25", "2026-10-05", "2026-10-09", "2026-12-25", "2026-12-31",)
+    actual = {date.fromisoformat(raw) for raw in dates}
+    assert len(actual) == 17
+    assert all(closure_evidence(day) is not None for day in actual)
+    for day in actual:
+        e = closure_evidence(day)
+        assert e["status"] == "CLOSED_VERIFIED"
+        assert e["calendar_version"] == CALENDAR_VERSION
+        assert e["source"].startswith("https://")
+        assert any(host in e["source"] for host in ("kind.krx.co.kr", "law.go.kr", "trn.krx.co.kr"))
+
+    # The 17 official dated holidays do NOT establish all 244 open days.
+    cursor = date(2026, 1, 1)
+    through = date(2027, 1, 1)
+    unknown = []
+    while cursor < through:
+        if cursor.weekday() < 5 and cursor not in actual:
+            evidence = session_evidence(cursor)
+            assert evidence["calendar_state"] == "UNKNOWN"
+            unknown.append(cursor)
+        cursor += timedelta(days=1)
+    assert len(unknown) == 244
+    assert market_day_evidence(date(2026, 12, 30))["state"] == "UNKNOWN"
+
+
+def test_s16_s22_eod_maturity_skips_only_sourced_2026_closures():
+    # New sources cannot be treated as market price observations.
+    for signal, cutoff, stocks in (
+        (date(2026, 2, 13), date(2026, 2, 19), [date(2026, 2, 19)]),
+        (date(2026, 9, 23), date(2026, 9, 28), [date(2026, 9, 28)]),
+        (date(2026, 12, 24), date(2026, 12, 28), [date(2026, 12, 28)]),
+    ):
+        assert unresolved_weekdays(signal, cutoff, stocks) == []
+        assert unresolved_weekdays(signal, cutoff, []) == [cutoff.isoformat()]
+    assert market_day_evidence(date(2026, 7, 17), stock_rows=110,
+                               stock_status="data", index_status="data",
+                               index_rows=1)["state"] == "CLOSURE_DATA_CONFLICT"
