@@ -46,7 +46,7 @@ def _report(status: str, **extra: Any) -> dict[str, Any]:
     }
 
 
-def _timing(completed_at: Any, signal_date: Any) -> str:
+def classify_capture_timing(completed_at: Any, signal_date: Any) -> str:
     """Descriptive clock grouping only, NOT evidence of data availability."""
     try:
         if type(completed_at) is not str or type(signal_date) is not str:
@@ -65,6 +65,9 @@ def _timing(completed_at: Any, signal_date: Any) -> str:
     if local.date() == signal + timedelta(days=1) and local.time() < time(9, 0):
         return "NEXT_CALENDAR_DAY_BEFORE_09_KST_UNVERIFIED"
     return "LATER_THAN_SIGNAL_CALENDAR_DAY_OTHER"
+
+
+_timing = classify_capture_timing  # compatibility with existing S18 tests
 
 
 def _missing_columns(conn: sqlite3.Connection, table: str, required: frozenset[str]) -> list[str]:
@@ -176,7 +179,7 @@ def diagnose(
                             reference_snapshot_pass += 1
                         continue
                     entries += 1
-                    date_group = _timing(capture["completed_at"], sample["signal_date"])
+                    date_group = classify_capture_timing(capture["completed_at"], sample["signal_date"])
                     timing[date_group] += 1
                     strategy = str(sample.get("strategy") or "UNKNOWN")
                     scanner_version = str(capture.get("scanner_version") or "UNKNOWN")
