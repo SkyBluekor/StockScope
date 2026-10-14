@@ -324,3 +324,27 @@ def test_changed_frozen_source_between_plan_and_write_is_blocked_atomically(
         s22.apply_batch(sim, market, today=date(2026, 10, 17))
     with sqlite3.connect(sim) as c:
         assert c.execute(f"SELECT COUNT(*) FROM {s22.TABLE}").fetchone()[0] == 0
+
+
+
+def test_corrupted_cached_value_with_unchanged_evidence_is_not_reused(
+    tmp_path, monkeypatch,
+):
+    sim = _sim(tmp_path, monkeypatch)
+    market = _market(tmp_path, 5)
+    kw = {"today": date(2026, 10, 17)}
+    assert s22.apply_batch(sim, market, **kw)["simulation_db_writes"] == 1
+    with sqlite3.connect(sim) as c:
+        c.execute(
+            f"UPDATE {s22.TABLE} SET close_change_pct=999.0 WHERE horizon_days=5"
+        )
+    observed = s22.evaluate_batch(sim, market, **kw)
+    assert observed["counts"]["revision_required"] == 1
+    assert observed["counts"].get("cache_hit", 0) == 0
+    saved = s22.apply_batch(sim, market, **kw)
+    assert saved["revisions_saved"] == 1
+    with sqlite3.connect(sim) as c:
+        values = c.execute(
+            f"SELECT close_change_pct FROM {s22.TABLE} ORDER BY revision_id"
+        ).fetchall()
+        assert values == [(999.0,), (10.0,)]
