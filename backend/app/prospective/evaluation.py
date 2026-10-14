@@ -154,17 +154,49 @@ class ReadOnlyMarketEvidence:
         market: str,
         after_date: str,
         limit: int,
+        through_date: str | None = None,
+        complete_only: bool = False,
     ) -> list[str]:
-        rows = conn.execute(
-            """
-            SELECT bas_dd
-            FROM day_status
-            WHERE market=? AND kind='stock' AND status='data' AND bas_dd>?
-            ORDER BY bas_dd
-            LIMIT ?
-            """,
-            (market, after_date.replace("-", ""), int(limit)),
-        ).fetchall()
+        # Observation-only clients may provide an as-of cutoff so late market
+        # data can never advance their historical maturity or 5/10/20 windows.
+        upper = through_date.replace("-", "") if through_date else "99991231"
+        if complete_only:
+            # Both markets' stock and index evidence must exist for each
+            # marked day; a single stock status marker is not enough.
+            rows = conn.execute(
+                """
+                SELECT d.bas_dd
+                FROM day_status d
+                JOIN day_status i
+                  ON i.market=d.market AND i.bas_dd=d.bas_dd
+                 AND i.kind='index' AND i.status='data'
+                WHERE d.market=? AND d.kind='stock' AND d.status='data'
+                  AND d.bas_dd>? AND d.bas_dd<=?
+                  AND EXISTS (
+                    SELECT 1 FROM stock_daily s
+                    WHERE s.market=d.market AND s.bas_dd=d.bas_dd
+                  )
+                  AND EXISTS (
+                    SELECT 1 FROM main_index_daily x
+                    WHERE x.market=d.market AND x.bas_dd=d.bas_dd
+                  )
+                ORDER BY d.bas_dd
+                LIMIT ?
+                """,
+                (market, after_date.replace("-", ""), upper, int(limit)),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT bas_dd
+                FROM day_status
+                WHERE market=? AND kind='stock' AND status='data'
+                  AND bas_dd>? AND bas_dd<=?
+                ORDER BY bas_dd
+                LIMIT ?
+                """,
+                (market, after_date.replace("-", ""), upper, int(limit)),
+            ).fetchall()
         return [str(row["bas_dd"]) for row in rows]
 
     @staticmethod
@@ -580,6 +612,8 @@ class ProspectiveEvaluator:
                 market=market,
                 after_date=signal_date,
                 limit=requested_future,
+                through_date=spec.get("as_of_date"),
+                complete_only=bool(spec.get("require_complete_market_eod", False)),
             )
             split, split_reason = self._split_for_signal(
                 signal_date,
@@ -712,6 +746,12 @@ class ProspectiveEvaluator:
                 "reference_price": observation["reference_price"],
                 "execution": execution,
                 "observation_windows": observation_windows,
+                "observed_market_days": [self._iso(day) for day in future_days],
+                "observation_window_end_dates": {
+                    f"{window}d": self._iso(future_days[window - 1])
+                    if len(future_days) >= window else None
+                    for window in observation_windows
+                },
                 "future_data_used_for_signal": False,
             },
             "computed_at": now,

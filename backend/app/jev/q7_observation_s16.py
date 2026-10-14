@@ -8,7 +8,7 @@ approval sample. Missing / future-dated price data do not become zeros.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import math
 from pathlib import Path
 import sqlite3
@@ -16,6 +16,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.prospective.evaluation import ProspectiveEvaluator, ProspectiveEvaluationError
+from app.market.session_calendar_s21 import CALENDAR_VERSION, unresolved_weekdays
 from app.strategy.models import StrategyName
 
 from .decision_reviewer_offline import DecisionReviewContractError
@@ -76,6 +77,7 @@ def _empty_window(denominator: int) -> dict[str, Any]:
         "price_missing": 0,
         "market_evidence_unavailable": 0,
         "post_as_of_data_rejected": 0,
+        "unverified_calendar_or_market_gap": 0,
         "average_signal_close_change_pct": None,
         "positive_observations": 0,
         "negative_observations": 0,
@@ -83,26 +85,68 @@ def _empty_window(denominator: int) -> dict[str, Any]:
     }
 
 
-def _record_windows(observation: dict[str, Any], as_of: date) -> tuple[dict[int, tuple[str, float | None]], str | None]:
-    """Never count an EOD return without the bounded future observation."""
+def _record_windows(
+    observation: dict[str, Any], as_of: date, *, signal_date: str | None = None,
+) -> tuple[dict[int, tuple[str, float | None]], str | None]:
+    """Check each window independently; never skip unknown in-between sessions.
+
+    When evaluator supplies individual horizon end dates, a future 20d result
+    may not invalidate an independently matured 5d result.
+    """
     through = observation.get("evaluated_through")
-    if through:
-        try:
-            observed_through = date.fromisoformat(str(through))
-        except ValueError:
-            return {window: ("MARKET_EVIDENCE_UNAVAILABLE", None) for window in WINDOWS}, "DATE_INVALID"
-        if observed_through > as_of:
-            return {window: ("POST_AS_OF_DATA_REJECTED", None) for window in WINDOWS}, "FUTURE_DATED_MARKET_EVIDENCE"
+    try:
+        observed_through = date.fromisoformat(str(through)) if through else None
+    except ValueError:
+        return {w: ("MARKET_EVIDENCE_UNAVAILABLE", None) for w in WINDOWS}, "DATE_INVALID"
+    details = observation.get("details")
+    details = details if isinstance(details, dict) else {}
+    windows_end = details.get("observation_window_end_dates")
+    windows_end = windows_end if isinstance(windows_end, dict) else {}
+    known_days = details.get("observed_market_days")
+    gap_check_enabled = (
+        signal_date is not None and isinstance(known_days, list)
+        and all(isinstance(day, str) for day in known_days)
+    )
+    try:
+        signal = date.fromisoformat(signal_date) if gap_check_enabled else None
+        market_days = [date.fromisoformat(day) for day in known_days] if gap_check_enabled else []
+    except (ValueError, TypeError):
+        return {w: ("MARKET_EVIDENCE_UNAVAILABLE", None) for w in WINDOWS}, "MARKET_DAYS_INVALID"
 
     available = observation.get("available_trading_days")
     if type(available) is not int or available < 0:
-        return {window: ("MARKET_EVIDENCE_UNAVAILABLE", None) for window in WINDOWS}, "DAYS_INVALID"
-    reference = observation.get("details", {}).get("reference_price") if isinstance(observation.get("details"), dict) else None
+        return {w: ("MARKET_EVIDENCE_UNAVAILABLE", None) for w in WINDOWS}, "DAYS_INVALID"
+    if gap_check_enabled and (len(market_days) != available or market_days != sorted(set(market_days))):
+        return {w: ("MARKET_EVIDENCE_UNAVAILABLE", None) for w in WINDOWS}, "MARKET_DAYS_MISMATCH"
+    reference = details.get("reference_price")
     out: dict[int, tuple[str, float | None]] = {}
+    issues: set[str] = set()
     for window in WINDOWS:
+        window_end_raw = windows_end.get(f"{window}d")
+        try:
+            window_end = (
+                date.fromisoformat(str(window_end_raw))
+                if window_end_raw else observed_through
+            )
+        except ValueError:
+            out[window] = ("MARKET_EVIDENCE_UNAVAILABLE", None)
+            issues.add("DATE_INVALID")
+            continue
+        if window_end is not None and window_end > as_of:
+            out[window] = ("POST_AS_OF_DATA_REJECTED", None)
+            issues.add("FUTURE_DATED_MARKET_EVIDENCE")
+            continue
+        # Missing weekdays in a complete window's span invalidate that window
+        # even when later EOD rows exist. For immature windows only classify
+        # unresolved dates through the permitted as-of cutoff.
+        until = window_end if available >= window and window_end else as_of
+        if signal is not None and until >= signal and unresolved_weekdays(
+            signal, until, market_days,
+        ):
+            out[window] = ("UNVERIFIED_CALENDAR_OR_DATA_GAP", None)
+            continue
         candidate = observation.get(f"return_{window}d")
         if available < window:
-            # No known complete trading window: even a supplied value is suspect.
             out[window] = ("AWAITING_FUTURE_DAYS", None)
         elif (
             type(reference) not in (int, float) or not math.isfinite(reference)
@@ -112,7 +156,7 @@ def _record_windows(observation: dict[str, Any], as_of: date) -> tuple[dict[int,
             out[window] = ("PRICE_MISSING", None)
         else:
             out[window] = ("OBSERVED", float(candidate))
-    return out, None
+    return out, (sorted(issues)[0] if issues else None)
 
 
 def _capture_rows(simulation_db: Path) -> tuple[int, list[dict[str, Any]]]:
@@ -147,6 +191,9 @@ def measure(
     remains absent, never an inferred economic outcome.
     """
     cutoff = _as_of(as_of)
+    # Day-of-run EOD may not have been published or fully verified yet.
+    # Only yesterday or earlier is eligible for S16 local outcome proof.
+    market_cutoff = min(cutoff, datetime.now(_KST).date() - timedelta(days=1))
     simulation_db, market_db = Path(simulation_db), Path(market_db)
     if not simulation_db.is_file():
         return _base("NO_SIMULATION_DB")
@@ -239,8 +286,14 @@ def measure(
                     continue
                 group["integrity_valid"] += 1
                 try:
-                    obs = evaluator.evaluate_sample(sample=sample, spec=EVALUATION_SPEC)
-                    windows, issue = _record_windows(obs, cutoff)
+                    obs = evaluator.evaluate_sample(
+                        sample=sample,
+                        spec={**EVALUATION_SPEC, "as_of_date": market_cutoff.isoformat(),
+                              "require_complete_market_eod": True},
+                    )
+                    windows, issue = _record_windows(
+                        obs, market_cutoff, signal_date=str(sample.get("signal_date")),
+                    )
                     if issue:
                         skipped_reasons[_code(issue)] += 1
                 except (ProspectiveEvaluationError, sqlite3.Error, ValueError, KeyError, TypeError) as exc:
@@ -267,6 +320,8 @@ def measure(
                         win["price_missing"] += 1
                     elif state == "POST_AS_OF_DATA_REJECTED":
                         win["post_as_of_data_rejected"] += 1
+                    elif state == "UNVERIFIED_CALENDAR_OR_DATA_GAP":
+                        win["unverified_calendar_or_market_gap"] += 1
                     else:
                         win["market_evidence_unavailable"] += 1
     except (DecisionReviewContractError, sqlite3.Error, KeyError, ValueError, TypeError):
@@ -285,7 +340,8 @@ def measure(
             for key in (
                 "readiness_denominator", "observed", "awaiting_future_trading_days",
                 "price_missing", "market_evidence_unavailable",
-                "post_as_of_data_rejected", "positive_observations",
+                "post_as_of_data_rejected", "unverified_calendar_or_market_gap",
+                "positive_observations",
                 "negative_observations", "unchanged_observations",
             ):
                 root[key] += item[key]
@@ -299,6 +355,8 @@ def measure(
     return _base(
         "DESCRIPTIVE_OBSERVATIONS_ONLY",
         as_of_date=cutoff.isoformat(),
+        market_eod_cutoff_date=market_cutoff.isoformat(),
+        calendar_evidence_version=CALENDAR_VERSION,
         total_complete_captures=total,
         audited_captures=len(rows),
         counts_complete=True,
@@ -326,5 +384,7 @@ def measure(
             "LEGACY_DERIVED_IS_NOT_ORIGINAL_STRATEGY_IDENTITY",
             "NO_UNBIASED_PRECOMMITTED_HOLDOUT_OR_COMPARABLE_JEV",
             "LATER_LOCAL_COMPLETION_DATE_DOES_NOT_PROVE_RETROSPECTIVE_SELECTION",
+            "UNVERIFIED_WEEKDAY_GAP_WITHHOLDS_HORIZON_NOT_EVIDENCE_OF_TRADING_DAY",
+            "EOD_OBSERVATION_CUTOFF_IS_NO_LATER_THAN_PREVIOUS_CALENDAR_DAY",
         ],
     )

@@ -28,6 +28,7 @@ from app.jev.q7_observation_s16 import measure as observe
 from app.jev.scanner_integrity_s7_1 import assess_frozen_candidate
 from app.jev.scanner_shadow_s7 import load_frozen_candidates
 from app.market.providers import KrxProvider
+from app.market.session_calendar_s21 import closure_evidence, CALENDAR_VERSION
 from tools.data.common import market_db_path, simulation_db_path
 
 VERSION = "STOCKSCOPE_S20_ON_DEMAND_OUTCOME_EOD_GAP_V1"
@@ -164,6 +165,7 @@ def plan(
             raise GapFillError("MARKET_SCHEMA_INCOMPLETE")
         for scope, days in sorted(date_ranges.items()):
             for day in days:
+                evidence = closure_evidence(day)
                 key = day.strftime("%Y%m%d")
                 status_rows = c.execute(
                     "SELECT kind,status FROM day_status WHERE market=? AND bas_dd=?",
@@ -178,7 +180,14 @@ def plan(
                     "SELECT COUNT(*) FROM main_index_daily WHERE market=? AND bas_dd=?",
                     (scope, key),
                 ).fetchone()[0])
-                if flags.get("stock") == "data" and flags.get("index") == "data" and stocks > 0 and indexes == 1:
+                if evidence is not None:
+                    # A claimed market session on a verified closure is a
+                    # conflict, never something to silently ignore or overwrite.
+                    state = (
+                        "CLOSURE_DATA_CONFLICT" if flags or stocks or indexes
+                        else "CLOSED_VERIFIED"
+                    )
+                elif flags.get("stock") == "data" and flags.get("index") == "data" and stocks > 0 and indexes == 1:
                     state = "STORED_COMPLETE"
                 elif flags or stocks or indexes:
                     state = "PARTIAL_OR_UNVERIFIED_EXISTING"
@@ -187,6 +196,10 @@ def plan(
                 dates.append({
                     "market": scope, "date": day.isoformat(), "state": state,
                     "stock_rows": stocks, "index_rows": indexes,
+                    **({
+                        "closure_reason": evidence["reason"],
+                        "closure_source": evidence["source"],
+                    } if evidence else {}),
                 })
     counts = dict(sorted(Counter(x["state"] for x in dates).items()))
     return _result(
@@ -196,8 +209,9 @@ def plan(
         signals_by_market={k: sorted(d.isoformat() for d in v) for k, v in sources.items()},
         date_counts=counts, days=dates,
         exact_trading_calendar_verified=False,
+        calendar_evidence_version=CALENDAR_VERSION,
         performance_is_trading_profit=False,
-        notice="MISSING means weekday without stored rows, NOT a verified open session.",
+        notice="Only dated, sourced closures are known. MISSING means unresolved weekday without stored rows, NOT a verified open session.",
         runtime_db_writes=0, network_requests=0,
     )
 
@@ -291,6 +305,8 @@ async def apply(
     if type(max_days) is not int or not 1 <= max_days <= MAX_APPLY_DAYS:
         raise GapFillError("INVALID_MAX_DAYS")
     before = plan(sim, market_db, through=through, today=today)
+    if before["date_counts"].get("CLOSURE_DATA_CONFLICT", 0):
+        raise GapFillError("VERIFIED_CLOSURE_HAS_CONFLICTING_MARKET_DATA")
     if before["date_counts"].get("PARTIAL_OR_UNVERIFIED_EXISTING", 0):
         raise GapFillError("PARTIAL_EXISTING_DAYS_REQUIRE_MANUAL_REVIEW")
     missing = [x for x in before["days"] if x["state"] == "MISSING"]
@@ -299,7 +315,7 @@ async def apply(
     if not missing:
         observed = observe(sim, market_db, as_of=date.fromisoformat(before["as_of_cutoff"]))
         return _result(
-            "NO_MISSING_WEEKDAYS", as_of_cutoff=before["as_of_cutoff"],
+            "NO_MISSING_POTENTIAL_SESSIONS", as_of_cutoff=before["as_of_cutoff"],
             day_counts=before["date_counts"], outcomes=observed,
             runtime_db_writes=0, network_requests=0,
         )
@@ -350,9 +366,9 @@ async def apply(
     finally:
         await source.close_session()
     after = plan(sim, market_db, through=through, today=today)
-    incomplete = after["date_counts"].get("MISSING", 0) + after["date_counts"].get(
-        "PARTIAL_OR_UNVERIFIED_EXISTING", 0
-    )
+    incomplete = sum(after["date_counts"].get(k, 0) for k in (
+        "MISSING", "PARTIAL_OR_UNVERIFIED_EXISTING", "CLOSURE_DATA_CONFLICT",
+    ))
     # S16 itself remains an observation-only statistical instrument and does
     # not persist a new run. Never claim matured 5d/10d/20d data with gaps.
     observed = observe(sim, market_db, as_of=date.fromisoformat(after["as_of_cutoff"]))
@@ -395,7 +411,7 @@ def main(argv: list[str] | None = None) -> int:
             report = asyncio.run(apply(sim, market, through=args.through, max_days=args.max_days))
         print(json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False))
         return 0 if report["status"] in {
-            "PLAN_ONLY", "NO_MISSING_WEEKDAYS", "MARKET_GAPS_FILLED"
+            "PLAN_ONLY", "NO_MISSING_POTENTIAL_SESSIONS", "MARKET_GAPS_FILLED"
         } else 2
     except (GapFillError, sqlite3.Error, ValueError) as exc:
         print(json.dumps(_result("BLOCKED", reason=str(exc), runtime_db_writes=0), ensure_ascii=False))
