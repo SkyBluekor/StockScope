@@ -21,6 +21,7 @@ for p in (ROOT, BACKEND):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
 
+from app.jev.q7_diagnosis_s18 import diagnose as diagnose_captures
 from app.jev.q7_observation_s16 import measure as measure_maturity
 from app.jev.q7_precommit_s15 import (
     Q7PrecommitError, freeze, inventory, load, template, validate_spec,
@@ -31,10 +32,12 @@ from tools.data.common import market_db_path, simulation_db_path
 
 def parser() -> argparse.ArgumentParser:
     cmd = argparse.ArgumentParser(description="Q7 S15 · local research-only precommit")
-    cmd.add_argument("mode", choices=("inventory", "observe", "template", "check", "freeze", "verify"))
+    cmd.add_argument("mode", choices=("inventory", "observe", "diagnose", "template", "check", "freeze", "verify"))
     cmd.add_argument("--simulation-db", type=Path, default=None)
     cmd.add_argument("--market-db", type=Path, default=None)
     cmd.add_argument("--as-of", default=None)
+    cmd.add_argument("--detail-limit", type=int, default=40)
+    cmd.add_argument("--max-samples", type=int, default=100_000)
     cmd.add_argument("--strategy", default=None)
     cmd.add_argument("--file", type=Path, default=None)
     cmd.add_argument("--study-id", default=None)
@@ -46,6 +49,14 @@ def parser() -> argparse.ArgumentParser:
 def execute(args: argparse.Namespace) -> dict:
     if args.mode == "inventory":
         return inventory(args.simulation_db or simulation_db_path())
+    if args.mode == "diagnose":
+        try:
+            return diagnose_captures(
+                args.simulation_db or simulation_db_path(),
+                detail_limit=args.detail_limit, max_samples=args.max_samples,
+            )
+        except ValueError as exc:
+            raise Q7PrecommitError(str(exc)) from exc
     if args.mode == "observe":
         try:
             cutoff = date.fromisoformat(args.as_of) if args.as_of else None
@@ -97,6 +108,8 @@ def main(argv: list[str] | None = None) -> int:
         print("Q7 S15 차단: " + exc.code, file=sys.stderr)
         return 2
     print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
+    if args.mode == "diagnose" and result.get("status") != "DIAGNOSIS_ONLY":
+        return 2
     return 0
 
 
