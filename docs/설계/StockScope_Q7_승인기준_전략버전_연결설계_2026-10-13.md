@@ -162,3 +162,27 @@ S18 실제 로컬 진단: COMPLETE 5회, DUPLICATE 9회, 후보 75건(진입 31�
 과거 S16 필드 `retrospective_or_later_capture_count`는 **캡처 완료일이 신호일보다 뒤인 수**였고, 이 숫자만으로 사후 추천을 입증하지 않는다. 호환성을 위해 기존 필드는 유지하되 `retrospective_or_later_capture_count_deprecated=true`를 표기하고 `later_calendar_day_capture_count`, `completion_timing_counts`를 추가한다. 분류는 S18과 같은 한국시간 완료 시각 규칙으로 계산한다. 이후 생성 기록이라고 해서 장전 사전 확정이나 미래 시세 사용 여부가 증명되는 것은 아니다. `independently_proven_retroactive_count=null`을 명시한다.
 
 이번 S19 범위는 시각 보고 **의미 개선만** 적용하며 거래일 누락·정정 가격 revision·구간별 as-of·S16 후보 무결성 판단·260/6000 상한·관측 계산은 그대로 유지한다. 해당 영역은 별도 테스트와 입력 계약 설계가 필요하다. 자동 수집 작업이나 Windows 예약 작업도 변경하지 않는다.
+
+## 13. S20 — 사용자 수동 실행형 성과 관측 시장 데이터 보충 (2026-10-14)
+
+실제 로컬 출력에서 KOSPI 942종목, KOSDAQ 1,823종목의 마지막 저장일이 2026-10-08로 확인됐다. 해당 시점의 S16 유효·제한적 후보 7개는 신호일 이후 저장 세션 0개였으므로 5/10/20일 관측이 모두 대기였다. 이것은 실제 휴장 여부가 아닌 **로컬 Market Store 수집 공백**의 증거다.
+
+수동 모드만 존재한다. **Windows 예약 작업 추가, 서버 상주, Scanner 실행, 신규 Capture 생성, JEV 외부 호출, 주문 실행은 없다.** 실시간 장중 가격이나 당일 확정되지 않은 EOD는 처리하지 않는다.
+
+### 기본 사용법 (프로젝트 루트, 기존 .venv)
+
+```powershell
+.\.venv\Scripts\python.exe -B .\tools\data\prospective_outcome_refresh.py plan
+# 결과 확인 후 사용자 명시 승인 시에만 실제 수집:
+.\.venv\Scripts\python.exe -B .\tools\data\prospective_outcome_refresh.py apply --acknowledge-market-writes
+```
+
+`plan`은 `mode=ro`로 COMPLETE Prospective Capture를 확인하고 S7에서 `LOCAL_VALIDATED` 또는 `LEGACY_LIMITED` 후보의 이후 **저장되지 않은 평일**을 목록화한다. 원본 Snapshot, 전략 식별자, DB를 변경하지 않는다. 260 Capture / 6000 샘플 / 단일 499 샘플의 현재 감사 범위를 초과하면 전체를 거부한다. 분석 대상 날짜가 90달력일보다 길어도 조용히 생략하지 않고 차단한다.
+
+`apply`는 별도 `--acknowledge-market-writes`가 필요하고 최대 40개의 시장·날짜 쌍만 수집한다. 초과 시 일부만 자동 처리하지 않고 차단한다. KRX의 전체 시장 일봉과 해당 시장 대표 지수가 유효한 경우에만, 새 날짜의 종목·지수·완료 표시를 **단일 SQLite 트랜잭션**으로 추가한다. 기존에 어떤 데이터라도 있는 날짜는 덮어쓰지 않으며, 부분 저장일이 발견되면 수집 전에 전체 동작을 중단한다. 심하게 적은 종목 응답, 잘못된 날짜·코드, 대표 지수 누락은 차단한다.
+
+휴장일·공급 장애 판정은 아직 독립 공식 달력과 연결되지 않았다. 평일 KRX 종목·지수가 모두 빈 결과면 `EMPTY_KRX_UNVERIFIED_CLOSURE`로만 표시하고 DB 거래일로 저장하지 않는다. 따라서 10월 9일처럼 빈 날은 계획상 MISSING으로 남아 재검사 대상이 될 수 있다. **실패를 휴장으로 간주하지 않으며, 남은 날짜가 있으면 성과 완성/정확성 보증으로 표시하지 않는다.** 이는 휴장일 계약을 별도로 닫기 전의 의도적인 보수성이다.
+
+시세 보충 후 S16 `observe()`를 읽기 전용으로 호출하여 `outcome_windows`와 구간별 관측 상태를 보고한다. 이 출력은 S16 관측 통계이고, 평가 결과 DB 영속 증분화·구간별 as-of 수정·공식 거래 달력·가격 revision 보존·Q7 적격성 증명은 **아직 구현하지 않았다.** 날짜별 시장 전체 스냅샷 저장은 추후 정정 이력과 충돌할 수 있으므로 기존 날짜는 건드리지 않는다.
+
+테스트는 실제 Runtime/외부 KRX를 사용하지 않고 합성 DB와 가짜 provider로 수동 동의, 부분 날짜 차단, 빈 KRX 응답, 원자적 추가, 중복 실행, 공급 실패, 날짜 상한·미래일 차단을 검증한다.
