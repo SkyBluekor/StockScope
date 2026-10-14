@@ -28,7 +28,6 @@ from app.jev.q7_observation_s16 import measure as observe
 from app.jev.scanner_integrity_s7_1 import assess_frozen_candidate
 from app.jev.scanner_shadow_s7 import load_frozen_candidates
 from app.market.providers import KrxProvider
-from app.prospective.models import digest_json
 from tools.data.common import market_db_path, simulation_db_path
 
 VERSION = "STOCKSCOPE_S20_ON_DEMAND_OUTCOME_EOD_GAP_V1"
@@ -307,6 +306,12 @@ async def apply(
     source = provider or KrxProvider(get_settings().krx_api_key)
     if not source.api_key:
         raise GapFillError("KRX_API_KEY_MISSING")
+    # Preflight against the shared KRX quota ledger before any market write.
+    # Estimate conservatively: stock and index endpoint for each missing day.
+    try:
+        source.assert_budget(2 * len(missing))
+    except Exception as exc:
+        raise GapFillError("KRX_BUDGET_PREFLIGHT_BLOCKED") from exc
     report: list[dict[str, Any]] = []
     errors: list[str] = []
     try:
