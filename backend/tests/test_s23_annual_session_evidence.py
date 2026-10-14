@@ -84,9 +84,10 @@ def test_missing_single_ticker_is_not_proof_market_closed():
     assert market_day_evidence(day)["state"] == "UNKNOWN"
 
 
-def test_unverified_span_crosses_year_boundary_without_guessed_holiday():
+def test_unverified_span_crosses_year_boundary_with_dated_new_year_closure():
+    assert closure_evidence(date(2026, 1, 1)) is not None
     assert unresolved_weekdays(date(2025, 12, 30), date(2026, 1, 2), []) == [
-        "2025-12-31", "2026-01-01", "2026-01-02",
+        "2025-12-31", "2026-01-02",
     ]
 
 
