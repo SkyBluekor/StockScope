@@ -154,3 +154,11 @@ cd C:\Projects\StockScope
 이 검사로 확인되는 것은 S7 엄격한 검증이 기록을 어떻게 판정했는지까지이며, 가격 관측 가능성, 독립 실시간 추천 증명, JEV 성과 증가 또는 운영 승인을 보장하지 않는다. 오류 코드 진단 결과를 확보한 **이후** 거래일 누락 판정, 구간별 as-of, 증분 관측 결과 보존의 설계를 최종 확정한다.
 
 사용자 동의 없이 Windows 예약 작업을 등록·수정·제거하지 않는다. 기존 S17 작업이 이미 등록됐는지 여부는 각 PC의 Windows 작업 스케줄러에서 별도로 확인해야 하며, 본 코드는 관여하지 않는다.
+
+## 12. S19 — S16 결과의 추천 시각 분류 바로잡기 (2026-10-14)
+
+S18 실제 로컬 진단: COMPLETE 5회, DUPLICATE 9회, 후보 75건(진입 31·참고 44). 진입 31건 중 INVALID 24건(Scanner 0.21.3.7의 15건은 SEMANTIC_SOURCE_V2_MISSING, 0.21.3.9의 9건은 ENGINE_EVIDENCE_INCOMPLETE), LEGACY_LIMITED 7건이며 모든 75개 Snapshot 해시는 일치했다. INVALID 24건에는 모두 RANK_MISSING, POLICY_PROVENANCE_UNVERIFIED, STRATEGY_IDENTITY_MISSING이 동반했다. 이 사실은 원본 내용 훼손이 확인되지 않았음을 뜻하지만 실제 시점 증명·가격 성과의 정당성을 뜻하지 않는다.
+
+과거 S16 필드 `retrospective_or_later_capture_count`는 **캡처 완료일이 신호일보다 뒤인 수**였고, 이 숫자만으로 사후 추천을 입증하지 않는다. 호환성을 위해 기존 필드는 유지하되 `retrospective_or_later_capture_count_deprecated=true`를 표기하고 `later_calendar_day_capture_count`, `completion_timing_counts`를 추가한다. 분류는 S18과 같은 한국시간 완료 시각 규칙으로 계산한다. 이후 생성 기록이라고 해서 장전 사전 확정이나 미래 시세 사용 여부가 증명되는 것은 아니다. `independently_proven_retroactive_count=null`을 명시한다.
+
+이번 S19 범위는 시각 보고 **의미 개선만** 적용하며 거래일 누락·정정 가격 revision·구간별 as-of·S16 후보 무결성 판단·260/6000 상한·관측 계산은 그대로 유지한다. 해당 영역은 별도 테스트와 입력 계약 설계가 필요하다. 자동 수집 작업이나 Windows 예약 작업도 변경하지 않는다.

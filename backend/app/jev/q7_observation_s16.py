@@ -19,6 +19,7 @@ from app.prospective.evaluation import ProspectiveEvaluator, ProspectiveEvaluati
 from app.strategy.models import StrategyName
 
 from .decision_reviewer_offline import DecisionReviewContractError
+from .q7_diagnosis_s18 import classify_capture_timing
 from .scanner_integrity_s7_1 import assess_frozen_candidate
 from .scanner_shadow_s7 import EVALUATION_SPEC, WINDOWS, load_frozen_candidates
 
@@ -176,6 +177,7 @@ def measure(
     seen: set[tuple[str, str, str, str]] = set()
     entries = references = duplicates = inspected = 0
     retro = forward_unverified = 0
+    completion_timing_counts: Counter[str] = Counter()
 
     try:
         for row in rows:
@@ -211,19 +213,17 @@ def measure(
                 else:
                     seen.add(key)
                     group["distinct_keys"] += 1
-                completed = capture.get("completed_at")
-                signal = sample.get("signal_date")
-                try:
-                    timestamp = datetime.fromisoformat(completed)
-                    if timestamp.tzinfo is None or timestamp.utcoffset() is None:
-                        raise ValueError("UNVERIFIED_CAPTURE_TIMEZONE")
-                    completed_date = timestamp.astimezone(_KST).date()
-                    signal_date = date.fromisoformat(signal)
-                except (ValueError, TypeError, AttributeError):
-                    completed_date, signal_date = None, None
-                # If the completed timestamp is later than the signal date,
-                # this sample cannot count as an actual precommitted prediction.
-                if completed_date and signal_date and completed_date > signal_date:
+                timing_class = classify_capture_timing(
+                    capture.get("completed_at"), sample.get("signal_date"),
+                )
+                completion_timing_counts[timing_class] += 1
+                # Preserve the historical counter for existing clients, but
+                # expose its actual meaning. A later local completion date
+                # does NOT prove retrospective selection or use of future bars.
+                if timing_class in {
+                    "NEXT_CALENDAR_DAY_BEFORE_09_KST_UNVERIFIED",
+                    "LATER_THAN_SIGNAL_CALENDAR_DAY_OTHER",
+                }:
                     retro += 1
                 else:
                     forward_unverified += 1
@@ -309,6 +309,10 @@ def measure(
         distinct_signal_keys=len(seen),
         independent_samples_verified=None,
         retrospective_or_later_capture_count=retro,
+        retrospective_or_later_capture_count_deprecated=True,
+        later_calendar_day_capture_count=retro,
+        completion_timing_counts=dict(sorted(completion_timing_counts.items())),
+        independently_proven_retroactive_count=None,
         timing_not_proven_count=forward_unverified,
         integrity_counts={
             k: integrity_counts[k] for k in ("LOCAL_VALIDATED", "LEGACY_LIMITED", "INVALID")
@@ -321,5 +325,6 @@ def measure(
             "SAME_COEFFICIENT_ACROSS_CORRELATED_STOCKS_NOT_INDEPENDENT",
             "LEGACY_DERIVED_IS_NOT_ORIGINAL_STRATEGY_IDENTITY",
             "NO_UNBIASED_PRECOMMITTED_HOLDOUT_OR_COMPARABLE_JEV",
+            "LATER_LOCAL_COMPLETION_DATE_DOES_NOT_PROVE_RETROSPECTIVE_SELECTION",
         ],
     )

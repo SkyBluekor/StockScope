@@ -240,3 +240,33 @@ def test_s17_bounded_total_sample_count_refuses_incomplete_large_cohort(
     assert result["status"] == "COHORT_TOO_LARGE_FOR_COMPLETE_AUDIT"
     assert result["counts_complete"] is False
     assert result["total_sample_cap"] == 6000
+
+
+def test_local_completion_clock_groups_are_not_called_verified_backtests(
+    tmp_path, monkeypatch,
+):
+    sim, market = _db(tmp_path)
+    mixed = _pairs()
+    timestamps = (
+        "2026-10-13T08:00:00+09:00",  # next calendar morning before 09:00
+        "2026-10-12T15:31:00+09:00",  # same signal calendar date
+        "2026-10-14T09:00:00+09:00",  # later calendar date, no provenance claim
+        "2026-10-13T08:00:00",        # unzoned/unknown
+    )
+    for index, completed in enumerate(timestamps):
+        capture, sample = mixed[index]
+        capture["completed_at"] = completed
+    _mock(monkeypatch, pairs=mixed)
+    result = s16.measure(sim, market, as_of=date(2026, 10, 14))
+    assert result["status"] == "DESCRIPTIVE_OBSERVATIONS_ONLY"
+    assert result["completion_timing_counts"] == {
+        "COMPLETED_ON_SIGNAL_CALENDAR_DAY": 1,
+        "LATER_THAN_SIGNAL_CALENDAR_DAY_OTHER": 1,
+        "NEXT_CALENDAR_DAY_BEFORE_09_KST_UNVERIFIED": 1,
+        "TIME_OR_SIGNAL_UNKNOWN": 1,
+    }
+    assert result["later_calendar_day_capture_count"] == 2
+    assert result["retrospective_or_later_capture_count"] == 2
+    assert result["retrospective_or_later_capture_count_deprecated"] is True
+    assert result["independently_proven_retroactive_count"] is None
+    assert "LATER_LOCAL_COMPLETION_DATE_DOES_NOT_PROVE_RETROSPECTIVE_SELECTION" in result["notes"]
