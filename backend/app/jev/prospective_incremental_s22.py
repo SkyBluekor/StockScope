@@ -49,8 +49,7 @@ CREATE TABLE IF NOT EXISTS {TABLE} (
     target_close TEXT NOT NULL,
     close_change_pct REAL NOT NULL,
     source_integrity TEXT NOT NULL,
-    recorded_at TEXT NOT NULL,
-    UNIQUE(capture_run_id,sample_index,horizon_days,evidence_hash)
+    recorded_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_s22_latest
 ON {TABLE}(capture_run_id,sample_index,horizon_days,revision_id);
@@ -405,8 +404,10 @@ def apply_batch(
     written = revised = 0
     with sqlite3.connect(Path(simulation_db).resolve(), timeout=20) as conn:
         conn.row_factory = sqlite3.Row
-        conn.execute("BEGIN IMMEDIATE")
+        # executescript() commits pending transactions in sqlite3. Install
+        # additive schema BEFORE opening the atomic revision-write transaction.
         conn.executescript(_SCHEMA)
+        conn.execute("BEGIN IMMEDIATE")
         for item in pending:
             prior = conn.execute(
                 f"SELECT evidence_hash FROM {TABLE} "
