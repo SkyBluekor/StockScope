@@ -276,3 +276,33 @@ def test_source_day_price_revision_changes_fingerprint(tmp_path, monkeypatch):
     result = s22.evaluate_batch(sim, market, **kw)
     assert result["counts"]["revision_required"] == 1
     assert result["observed_or_cached"][0]["close_change_pct"] == 37.5
+
+
+
+def test_invalid_cursor_fails_closed_without_partial_cohort(tmp_path, monkeypatch):
+    sim = _sim(tmp_path, monkeypatch)
+    market = _market(tmp_path, 5)
+    with pytest.raises(s22.IncrementalObservationError, match="CAPTURE_CURSOR_INVALID"):
+        s22.evaluate_batch(sim, market, after="%", today=date(2026, 10, 17))
+    with pytest.raises(s22.IncrementalObservationError, match="CAPTURE_CURSOR_INVALID"):
+        s22.evaluate_batch(sim, market, after="x" * 513, today=date(2026, 10, 17))
+
+
+def test_revised_index_evidence_creates_new_revision_even_with_same_close(tmp_path, monkeypatch):
+    sim = _sim(tmp_path, monkeypatch)
+    market = _market(tmp_path, 5)
+    kw = {"today": date(2026, 10, 17)}
+    s22.apply_batch(sim, market, **kw)
+    with sqlite3.connect(market) as c:
+        c.execute(
+            "UPDATE main_index_daily SET row_json=? "
+            "WHERE market='KOSPI' AND bas_dd='20261015'",
+            (json.dumps({"date": "20261015", "name": "코스피", "close": 3001.0}),),
+        )
+    plan = s22.evaluate_batch(sim, market, **kw)
+    assert plan["counts"]["revision_required"] == 1
+    assert plan["observed_or_cached"][0]["close_change_pct"] == 10.0
+    result = s22.apply_batch(sim, market, **kw)
+    assert result["revisions_saved"] == 1
+    with sqlite3.connect(sim) as c:
+        assert c.execute(f"SELECT COUNT(*) FROM {s22.TABLE}").fetchone()[0] == 2
