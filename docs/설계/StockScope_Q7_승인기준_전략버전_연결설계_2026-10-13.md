@@ -145,7 +145,7 @@ cd C:\Projects\StockScope
 .\.venv\Scripts\python.exe -B .\tools\data\q7_precommit.py diagnose --simulation-db "D:\...\simulation.db"
 ```
 
-새 모드는 `mode=ro` SQLite 트랜잭션에서 `COMPLETE` 원본을 전부 읽고, 각 진입 후보의 기존 JSON 해시를 검증한 뒤 **기존 S7 검증 함수를 그대로** 호출한다. 진입 후보가 아닌 참고 후보는 별도로 집계한다. 각 `INVALID`의 `codes` 및 복합 발생, `rank/strategy/policy/engine/dates/risk/strict_s3` 실패, 전략·Scanner 버전 분포를 기록한다. JSON 해시가 틀린 후보는 JEV 검증 전에 `SNAPSHOT_UNREADABLE_OR_MISMATCH`로 보류한다.
+새 모드는 `mode=ro` SQLite 트랜잭션에서 `COMPLETE` 원본을 전부 읽고, 진입 후보 및 참고 후보의 기존 JSON 해시를 검증한 뒤 **기존 S7 검증 함수를 그대로** 호출한다. 진입 후보가 아닌 참고 후보는 해시 검사를 포함하되 JEV 진입 검증과 분리하여 집계한다. 각 `INVALID`의 `codes` 및 복합 발생, `rank/strategy/policy/engine/dates/risk/strict_s3` 실패, 전략·Scanner 버전 분포를 기록한다. JSON 해시가 틀린 후보는 JEV 검증 전에 `SNAPSHOT_UNREADABLE_OR_MISMATCH`로 보류한다.
 
 `completion_timing_counts`는 **신호 날짜 기준 달력상 완료일**과 KST 오전 9시를 기술적으로 구분한다. `NEXT_CALENDAR_DAY_BEFORE_09_KST_UNVERIFIED`도 시세 공급자 공개시각·사용자 제공시각·독립 시각 증명이 확보됐다는 의미는 아니다. 이 검사 결과를 이용해 S16의 기존 retrospective 집계를 임의로 덮어쓰지 않는다.
 
