@@ -396,10 +396,20 @@ def test_phase1_synthetic_only_fake_links_input_validation_without_ai(
     assert reused["fake_decision"] == decision
 
 
-def test_phase1_real_capture_is_never_silently_fake_reviewed(tmp_path):
+def test_phase1_real_capture_is_never_silently_fake_reviewed(tmp_path, monkeypatch):
+    from app.jev import scanner_reviewer_bridge as bridge
+
     db, capture_id = _stored(tmp_path)
-    with sqlite3.connect(db) as conn:
-        conn.execute("UPDATE prospective_capture_run SET capture_version='REAL' WHERE id=?", (capture_id,))
+    capture, sample, projection = bridge._candidate(
+        db, capture_id=capture_id, sample_index=0,
+    )
+    # A completed Capture is immutable: exercise the REAL marker only on a
+    # separate in-memory copy, never by updating the frozen SQLite source.
+    real_capture = {**capture, "capture_version": "REAL"}
+    monkeypatch.setattr(
+        bridge, "_candidate",
+        lambda *args, **kwargs: (real_capture, sample, projection),
+    )
     plan = inspect_reviewer_candidate_readonly(
         db, capture_id=capture_id, sample_index=0,
     )
@@ -424,15 +434,26 @@ def test_phase1_legacy_and_tampered_candidate_never_enable_provider(tmp_path):
         )
     (tmp_path / "bad").mkdir()
     db, capture_id = _stored(tmp_path / "bad")
-    with sqlite3.connect(db) as conn:
-        conn.execute(
-            "UPDATE prospective_recommendation_sample SET snapshot_hash='bad' "
-            "WHERE capture_run_id=?", (capture_id,),
+    from app.jev import scanner_reviewer_bridge as bridge
+    capture, sample = load_canonical_candidate_readonly(
+        db, capture_id=capture_id, sample_index=0,
+    )
+    # The immutable stored row must remain intact; change only a copy of
+    # the candidate returned by the test's read adapter.
+    broken_sample = {**sample, "snapshot_hash": "bad"}
+    before = db.read_bytes()
+    with pytest.MonkeyPatch.context() as patcher:
+        patcher.setattr(
+            bridge, "load_canonical_candidate_readonly",
+            lambda *args, **kwargs: (capture, broken_sample),
         )
-    result = inspect_reviewer_candidate_readonly(db, capture_id=capture_id, sample_index=0)
+        result = inspect_reviewer_candidate_readonly(
+            db, capture_id=capture_id, sample_index=0,
+        )
     assert result["status"] == "HOLD"
     assert result["reason_code"] == "SNAPSHOT_HASH_MISMATCH"
     assert result["provider_calls"] == 0
+    assert db.read_bytes() == before
 
 
 def test_phase1_bridge_cli_uses_existing_s7_command_without_feature_toggle(tmp_path):
