@@ -108,6 +108,8 @@ def _rows_from_csv(raw: bytes) -> list[Any]:
         for row in parser:
             if len(rows) >= MAX_CLOSURE_ROWS:
                 raise CalendarSourceAuditError("HOLIDAY_SOURCE_ROW_LIMIT")
+            if None in row or any(field_value is None for field_value in row.values()):
+                raise CalendarSourceAuditError("CSV_ROW_COLUMN_COUNT_INVALID")
             rows.append(row)
         return rows
     except csv.Error as exc:

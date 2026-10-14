@@ -114,8 +114,8 @@ def test_full_ledger_requires_every_weekday_and_a_source_digest():
         session_evidence(date(2026, 10, 10), calendar=cal)
 
 
-def test_2026_primary_sourced_weekday_closures_are_complete_as_closure_list_only():
-    """S23-B: dated primary KRX disclosure and holiday regulation provenance."""
+def test_2026_dated_weekday_closures_track_source_scope():
+    """S23-B: distinguish KRX original data from reported all-market closure."""
     dates = ("2026-01-01", "2026-02-16", "2026-02-17", "2026-02-18", "2026-03-02", "2026-05-01", "2026-05-05", "2026-05-25", "2026-06-03", "2026-07-17", "2026-08-17", "2026-09-24", "2026-09-25", "2026-10-05", "2026-10-09", "2026-12-25", "2026-12-31",)
     actual = {date.fromisoformat(raw) for raw in dates}
     assert len(actual) == 17
@@ -125,7 +125,7 @@ def test_2026_primary_sourced_weekday_closures_are_complete_as_closure_list_only
         assert e["status"] == "CLOSED_VERIFIED"
         assert e["calendar_version"] == CALENDAR_VERSION
         assert e["source"].startswith("https://")
-        assert any(host in e["source"] for host in ("kind.krx.co.kr", "law.go.kr", "trn.krx.co.kr"))
+        assert any(host in e["source"] for host in ("kind.krx.co.kr", "law.go.kr", "trn.krx.co.kr", "news.einfomax.co.kr"))
 
     # The 17 official dated holidays do NOT establish all 244 open days.
     cursor = date(2026, 1, 1)
@@ -153,3 +153,14 @@ def test_s16_s22_eod_maturity_skips_only_sourced_2026_closures():
     assert market_day_evidence(date(2026, 7, 17), stock_rows=110,
                                stock_status="data", index_status="data",
                                index_rows=1)["state"] == "CLOSURE_DATA_CONFLICT"
+
+def test_konex_only_notice_not_used_as_kospi_kosdaq_provenance():
+    from app.market.session_calendar_s21 import (
+        KRX_2026_ALL_MARKETS_REPORTED_SOURCE,
+        KRX_2026_KONEX_ONLY_NOTICE_SOURCE,
+    )
+    for day in (date(2026, 6, 3), date(2026, 7, 17)):
+        ev = closure_evidence(day)
+        assert ev["source"] == KRX_2026_ALL_MARKETS_REPORTED_SOURCE
+        assert ev["source"] != KRX_2026_KONEX_ONLY_NOTICE_SOURCE
+

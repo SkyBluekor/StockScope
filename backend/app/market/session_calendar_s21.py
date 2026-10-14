@@ -14,15 +14,19 @@ from typing import Iterable
 from urllib.parse import urlsplit
 
 
-CALENDAR_VERSION = "KRX_CASH_SESSION_EVIDENCE_S23_V2"
+CALENDAR_VERSION = "KRX_CASH_SESSION_EVIDENCE_S23_V3"
 RULES_SOURCE = "https://global.krx.co.kr/contents/GLB/06/0602/0602010201/GLB0602010201T1.jsp"
 NOTICE_SOURCE = "https://trn.krx.co.kr/index.jsp"
 # KRX KOSPI/KOSDAQ disclosure division's dated 2026 closure intervals.
 # Cross-checked against KRX market rules, official public holiday law, and
-# KRX KONEX dated closure notice for June 3 / July 17.
+# contemporary KRX all-market announcement reported by the press for June 3 / July 17.
 KRX_2026_DISCLOSURE_SOURCE = "https://kind.krx.co.kr/external/dst/notice/11637/%5B%ED%95%9C%EA%B5%AD%EA%B1%B0%EB%9E%98%EC%86%8C%5D%202026%EB%85%84%20%EC%98%AC%EB%B9%BC%EB%AF%B8%EA%B3%B5%EC%8B%9C%20%EC%95%88%EB%82%B4.pdf"
 KRX_STATUTORY_HOLIDAY_SOURCE = "https://www.law.go.kr/lsLinkCommonInfo.do?lsJoLnkSeq=1029728073"
-KRX_2026_SPECIAL_NOTICE_SOURCE = "https://kind.krx.co.kr/external/2026/05/20/000110/20260520000197/32154.htm"
+# The KIND notice below covers KONEX ONLY, not KOSPI or KOSDAQ.
+# Contemporary reporting of KRX's all-securities-markets announcement
+# independently supports these dates, but is SECONDARY evidence.
+KRX_2026_ALL_MARKETS_REPORTED_SOURCE = "https://news.einfomax.co.kr/news/articleView.html?idxno=4415834"
+KRX_2026_KONEX_ONLY_NOTICE_SOURCE = "https://kind.krx.co.kr/external/2026/05/20/000110/20260520000197/32154.htm"
 ANNUAL_SCHEDULE_SOURCE = (
     "https://open.krx.co.kr/contents/MKD/01/0110/01100305/MKD01100305.jsp"
 )
@@ -115,8 +119,8 @@ _2026_PARTIAL = AnnualSessionEvidence(
         (date(2026, 5, 1), "노동절", KRX_2026_DISCLOSURE_SOURCE),
         (date(2026, 5, 5), "어린이날", KRX_STATUTORY_HOLIDAY_SOURCE),
         (date(2026, 5, 25), "부처님오신날 대체공휴일", KRX_2026_DISCLOSURE_SOURCE),
-        (date(2026, 6, 3), "전국동시지방선거일", KRX_2026_SPECIAL_NOTICE_SOURCE),
-        (date(2026, 7, 17), "제헌절", KRX_2026_SPECIAL_NOTICE_SOURCE),
+        (date(2026, 6, 3), "전국동시지방선거일", KRX_2026_ALL_MARKETS_REPORTED_SOURCE),
+        (date(2026, 7, 17), "제헌절", KRX_2026_ALL_MARKETS_REPORTED_SOURCE),
         (date(2026, 8, 17), "광복절 대체공휴일", KRX_2026_DISCLOSURE_SOURCE),
         (date(2026, 9, 24), "추석 연휴", KRX_2026_DISCLOSURE_SOURCE),
         (date(2026, 9, 25), "추석", KRX_2026_DISCLOSURE_SOURCE),

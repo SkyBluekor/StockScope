@@ -128,3 +128,12 @@ def test_cli_blocks_unknown_format_and_missing_file(tmp_path: Path, capsys):
     )
     assert audit_cli(["--source-file", str(tmp_path / "missing.json")]) == 2
     assert json.loads(capsys.readouterr().out)["reason"] == "SOURCE_FILE_NOT_FOUND"
+
+def test_ragged_csv_records_are_rejected():
+    for content in (
+        "일자,시장\n2026-01-01,한국거래소,unexpected\n",
+        "일자,시장,비고\n2026-01-01,한국거래소\n",
+    ):
+        with pytest.raises(CalendarSourceAuditError, match="CSV_ROW_COLUMN_COUNT_INVALID"):
+            audit_source(content.encode("utf-8"), year=2026, source_format="csv")
+
