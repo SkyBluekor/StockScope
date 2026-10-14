@@ -131,3 +131,26 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\data\install_prospec
 **범위 한도:** S16 현황은 COMPLETE Capture 최대 260회, 전체 표본 최대 6000개, 단일 Capture 최대 499개를 읽는다. 이를 초과하면 전체 통계라고 주장하지 않고 `COHORT_TOO_LARGE_FOR_COMPLETE_AUDIT`로 차단한다. 이후의 규모 확장·증분 저장은 별도 구조 검증이 필요하다.
 
 **안전:** 최초 실행시 실제 KRX 시세 조회 및 로컬 Market DB/Prospective DB **저장은 발생**한다. 인터넷 유료 모델·주문 전송은 금지. Q7 운영 정책 승인·원본 전략 ID 복원·운영 전략 승격은 이 기능만으로 일어나지 않는다.
+
+## 11. S18 — 실제 INVALID 원인 확인을 위한 읽기 전용 검사 (2026-10-14)
+
+S16 결과에서 COMPLETE Capture 3회, 전체 후보 45개, 진입 후보 24개 중 S7 `INVALID` 21개가 기록되었다. 이 숫자만으로 `INVALID`의 실제 원인을 특정하거나, 가격 관측 불가·원본 손상·JEV 부적격을 같은 의미로 판단할 수 없다. S18의 우선 과제는 **기존 스냅샷을 수정하지 않고** 실제 원인 코드·원인 조합·검사 영역별 실패를 집계하는 것이다.
+
+실행 예시 (해당 원본 DB를 보유한 PC에서):
+
+```powershell
+cd C:\Projects\StockScope
+.\.venv\Scripts\python.exe -B .\tools\data\q7_precommit.py diagnose
+# DB가 다른 경로라면:
+.\.venv\Scripts\python.exe -B .\tools\data\q7_precommit.py diagnose --simulation-db "D:\...\simulation.db"
+```
+
+새 모드는 `mode=ro` SQLite 트랜잭션에서 `COMPLETE` 원본을 전부 읽고, 각 진입 후보의 기존 JSON 해시를 검증한 뒤 **기존 S7 검증 함수를 그대로** 호출한다. 진입 후보가 아닌 참고 후보는 별도로 집계한다. 각 `INVALID`의 `codes` 및 복합 발생, `rank/strategy/policy/engine/dates/risk/strict_s3` 실패, 전략·Scanner 버전 분포를 기록한다. JSON 해시가 틀린 후보는 JEV 검증 전에 `SNAPSHOT_UNREADABLE_OR_MISMATCH`로 보류한다.
+
+`completion_timing_counts`는 **신호 날짜 기준 달력상 완료일**과 KST 오전 9시를 기술적으로 구분한다. `NEXT_CALENDAR_DAY_BEFORE_09_KST_UNVERIFIED`도 시세 공급자 공개시각·사용자 제공시각·독립 시각 증명이 확보됐다는 의미는 아니다. 이 검사 결과를 이용해 S16의 기존 retrospective 집계를 임의로 덮어쓰지 않는다.
+
+기본 검사 상한은 `--max-samples 100000`, 자세한 문제 후보는 `--detail-limit 40`개까지 표시한다. 상세를 줄여도 전체 건수·원인별 합계는 유지한다. 상한을 넘거나 스키마가 맞지 않으면 `counts_complete=false`로 차단한다. 결과에는 **종목명, 원본 Snapshot JSON, 계정 정보, 유료 모델 응답이나 시세 데이터가 포함되지 않는다.** Capture ID와 종목 전략 및 날짜 등 기술 진단 필드만 내보낸다.
+
+이 검사로 확인되는 것은 S7 엄격한 검증이 기록을 어떻게 판정했는지까지이며, 가격 관측 가능성, 독립 실시간 추천 증명, JEV 성과 증가 또는 운영 승인을 보장하지 않는다. 오류 코드 진단 결과를 확보한 **이후** 거래일 누락 판정, 구간별 as-of, 증분 관측 결과 보존의 설계를 최종 확정한다.
+
+사용자 동의 없이 Windows 예약 작업을 등록·수정·제거하지 않는다. 기존 S17 작업이 이미 등록됐는지 여부는 각 PC의 Windows 작업 스케줄러에서 별도로 확인해야 하며, 본 코드는 관여하지 않는다.
