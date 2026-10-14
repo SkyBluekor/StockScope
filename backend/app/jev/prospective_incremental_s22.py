@@ -408,13 +408,34 @@ def apply_batch(
         return {**planned, "status": "NO_NEW_MATURE_OBSERVATIONS",
                 "simulation_db_writes": 0}
     written = revised = 0
-    with closing(sqlite3.connect(Path(simulation_db).resolve(), timeout=20)) as conn:
+    target_db = Path(simulation_db).resolve()
+    if not target_db.is_file():
+        raise IncrementalObservationError("SOURCE_DB_DISAPPEARED_BEFORE_WRITE")
+    # mode=rw forbids SQLite from silently creating a new empty DB if the
+    # original disappeared between planning and the explicit write.
+    with closing(sqlite3.connect(target_db.as_uri() + "?mode=rw",
+                                 uri=True, timeout=20)) as conn:
         conn.row_factory = sqlite3.Row
         # executescript() commits pending transactions in sqlite3. Install
         # additive schema BEFORE opening the atomic revision-write transaction.
         conn.executescript(_SCHEMA)
         conn.execute("BEGIN IMMEDIATE")
         for item in pending:
+            # Never attach outcomes to a deleted, replaced or non-COMPLETE
+            # source capture between the snapshot plan and its write.
+            source = conn.execute(
+                "SELECT status FROM prospective_capture_run WHERE id=?",
+                (item["capture_run_id"],),
+            ).fetchone()
+            sample_source = conn.execute(
+                "SELECT snapshot_hash FROM prospective_recommendation_sample "
+                "WHERE capture_run_id=? AND sample_index=?",
+                (item["capture_run_id"], item["sample_index"]),
+            ).fetchone()
+            if (source is None or source["status"] != "COMPLETE"
+                    or sample_source is None
+                    or sample_source["snapshot_hash"] != item["snapshot_hash"]):
+                raise IncrementalObservationError("FROZEN_SOURCE_CHANGED_DURING_APPLY")
             prior = conn.execute(
                 f"SELECT evidence_hash FROM {TABLE} "
                 "WHERE capture_run_id=? AND sample_index=? AND horizon_days=? "
