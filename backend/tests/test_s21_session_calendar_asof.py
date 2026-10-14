@@ -126,3 +126,33 @@ def test_ro_market_day_query_never_uses_bars_after_requested_asof(tmp_path):
             conn, market="KOSPI", after_date="2026-10-08", limit=20,
         ) == ["20261012", "20261013", "20261014", "20261015"]
     assert path.read_bytes() == original
+
+
+def test_strict_market_day_requires_both_markers_and_actual_rows(tmp_path):
+    path = tmp_path / "market_complete.db"
+    with sqlite3.connect(path) as conn:
+        conn.executescript("""
+        CREATE TABLE day_status(market TEXT,bas_dd TEXT,kind TEXT,status TEXT);
+        CREATE TABLE stock_daily(market TEXT,bas_dd TEXT,stock_code TEXT,row_json TEXT);
+        CREATE TABLE main_index_daily(market TEXT,bas_dd TEXT,row_json TEXT);
+        """)
+        conn.executemany("INSERT INTO day_status VALUES(?,?,?,?)", [
+            ("KOSPI", "20261012", "stock", "data"),
+            ("KOSPI", "20261012", "index", "data"),
+            ("KOSPI", "20261013", "stock", "data"),  # missing index evidence
+            ("KOSPI", "20261014", "stock", "data"),
+            ("KOSPI", "20261014", "index", "data"),  # no actual index row
+        ])
+        conn.executemany("INSERT INTO stock_daily VALUES(?,?,?,?)", [
+            ("KOSPI", d, "000001", "{}") for d in (
+                "20261012", "20261013", "20261014"
+            )
+        ])
+        conn.execute("INSERT INTO main_index_daily VALUES(?,?,?)",
+                     ("KOSPI", "20261012", "{}"))
+    with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as conn:
+        selected = ReadOnlyMarketEvidence.market_days(
+            conn, market="KOSPI", after_date="2026-10-08", limit=20,
+            through_date="2026-10-14", complete_only=True,
+        )
+        assert selected == ["20261012"]
