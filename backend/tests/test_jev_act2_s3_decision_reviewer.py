@@ -481,3 +481,71 @@ def test_phase1_malformed_reference_fails_without_model_calls(tmp_path, capture_
     assert out["status"] == "HOLD"
     assert out["reason_code"] == "REVIEWER_BRIDGE_REFERENCE_INVALID"
     assert out["external_requests"] == out["runtime_db_writes"] == 0
+
+
+def test_phase1_legacy_derived_strategy_is_diagnostic_only_not_reviewable(tmp_path, monkeypatch):
+    """Three school-PC candidates have source-only identity; never backfill."""
+    from app.jev import scanner_reviewer_bridge as bridge
+    from app.strategy.semantic_identity_bridge import ENGINE_VERIFIED_SOURCE
+
+    db, capture_id = _stored(tmp_path)
+    capture, sample = load_canonical_candidate_readonly(
+        db, capture_id=capture_id, sample_index=0,
+    )
+    sample = deepcopy(sample)
+    source = sample["snapshot"]["semantic_source_v2"]["strategy"]
+    sample["snapshot"].pop("strategy_version_id")
+    sample["snapshot"].pop("strategy_definition_hash")
+    sample["snapshot"]["semantic_policy_provenance"][
+        "policy_source"
+    ] = "LEGACY_CURRENT_10_FALLBACK"
+    sample["snapshot"]["semantic_strategy_identity"] = {
+        "source": ENGINE_VERIFIED_SOURCE,
+        "strategy_key": STRATEGY,
+        "strategy_version_id": source["strategy_version_id"],
+        "strategy_definition_hash": source["strategy_definition_hash"],
+        "selection_policy_id": "synthetic-policy",
+        "selection_policy_hash": "synthetic-policy-hash",
+    }
+    sample["snapshot_hash"] = digest_json(sample["snapshot"])
+    original = db.read_bytes()
+    monkeypatch.setattr(
+        bridge, "load_canonical_candidate_readonly",
+        lambda *args, **kwargs: (capture, sample),
+    )
+    status = inspect_reviewer_candidate_readonly(
+        db, capture_id=capture_id, sample_index=0,
+    )
+    assert status["status"] == "LEGACY_INSPECTION_ONLY"
+    assert status["reason_code"] == "LEGACY_DERIVED_IDENTITY"
+    assert status["candidate_category"] == "LEGACY_LIMITED"
+    assert status["strict_block_reason"] == "STRATEGY_IDENTITY_MISMATCH"
+    assert status["semantic_strategy_identity"] == "DERIVED_NOT_ORIGINAL"
+    assert status["actual_provider_eligible"] is False
+    assert status["fake_only_available"] is False
+    assert status["provider_calls"] == status["runtime_db_writes"] == 0
+    assert "evidence_items" not in status
+    assert db.read_bytes() == original
+    with pytest.raises(DecisionReviewContractError, match="STRATEGY_IDENTITY_MISMATCH"):
+        inspect_synthetic_fake_review_readonly(
+            db, capture_id=capture_id, sample_index=0,
+            fake_response=_response("PASS_THROUGH"),
+        )
+
+    # A fabricated derived-only identity must never earn LEGACY_LIMITED.
+    sample["snapshot"]["semantic_strategy_identity"]["strategy_definition_hash"] = "forged"
+    sample["snapshot_hash"] = digest_json(sample["snapshot"])
+    forged = inspect_reviewer_candidate_readonly(
+        db, capture_id=capture_id, sample_index=0,
+    )
+    assert forged["status"] == "HOLD"
+    assert forged["reason_code"] == "STRATEGY_IDENTITY_MISMATCH"
+    assert forged["actual_provider_eligible"] is False
+
+    # A tampered immutable sample digest also fails closed.
+    sample["snapshot_hash"] = "tampered"
+    tampered = inspect_reviewer_candidate_readonly(
+        db, capture_id=capture_id, sample_index=0,
+    )
+    assert tampered["status"] == "HOLD"
+    assert tampered["reason_code"] == "SNAPSHOT_HASH_MISMATCH"

@@ -14,6 +14,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from app.prospective.models import digest_json
+
 from .decision_reviewer_offline import (
     DecisionReviewContractError,
     OfflineFakeShadowSession,
@@ -21,6 +23,7 @@ from .decision_reviewer_offline import (
     load_canonical_candidate_readonly,
 )
 from .scanner_eligibility_s8 import RIGHTS_ACTIONS
+from .scanner_integrity_s7_1 import assess_frozen_candidate
 
 VERSION = "JEV_ACT2_PHASE1_REVIEW_BRIDGE_V1"
 PROTOCOL = "JEV_ACT2_PHASE1_LOCAL_INSPECTION_V1"
@@ -62,6 +65,54 @@ def _candidate(
     return capture, sample, projected
 
 
+def _verified_legacy_explanation(
+    simulation_db: Path, *, capture_id: str, sample_index: int,
+) -> dict[str, Any] | None:
+    """Describe independently verified derived-only legacy identity, never waive S3.
+
+    A missing source identity alone proves nothing. Reuse the existing S7.1
+    complete integrity result, re-check the immutable stored snapshot digest,
+    and require the exact strict S3 rejection before labeling legacy-limited.
+    """
+    try:
+        capture, sample = load_canonical_candidate_readonly(
+            simulation_db, capture_id=capture_id, sample_index=sample_index,
+        )
+        snapshot = sample.get("snapshot")
+        if (
+            capture.get("status") != "COMPLETE"
+            or not isinstance(snapshot, dict)
+            or not sample.get("snapshot_hash")
+            or digest_json(snapshot) != sample["snapshot_hash"]
+            or sample.get("capture_run_id") != capture.get("id")
+            or sample.get("action") != "ENTRY_CANDIDATE"
+            or snapshot.get("action") != "ENTRY_CANDIDATE"
+        ):
+            return None
+        audit = assess_frozen_candidate(capture, sample)
+        if (
+            audit.get("category") != "LEGACY_LIMITED"
+            or audit.get("strategy", {}).get("code") != "LEGACY_DERIVED_IDENTITY"
+            or audit.get("strict_s3", {}).get("code") != "STRATEGY_IDENTITY_MISMATCH"
+        ):
+            return None
+        return _base(
+            "LEGACY_INSPECTION_ONLY", "LEGACY_DERIVED_IDENTITY",
+            strict_block_reason="STRATEGY_IDENTITY_MISMATCH",
+            candidate_category="LEGACY_LIMITED",
+            original_strategy_identity="MISSING",
+            semantic_strategy_identity="DERIVED_NOT_ORIGINAL",
+            canonical_capture_id=capture["id"],
+            sample_index=sample["sample_index"],
+            snapshot_hash=sample["snapshot_hash"],
+            baseline_action=sample["action"],
+            baseline_rank=sample["rank"],
+            fake_only_available=False,
+        )
+    except (DecisionReviewContractError, KeyError, TypeError, ValueError):
+        return None
+
+
 def inspect_reviewer_candidate_readonly(
     simulation_db: Path, *, capture_id: str, sample_index: int,
 ) -> dict[str, Any]:
@@ -75,6 +126,12 @@ def inspect_reviewer_candidate_readonly(
             simulation_db, capture_id=capture_id, sample_index=sample_index,
         )
     except DecisionReviewContractError as exc:
+        if exc.code == "STRATEGY_IDENTITY_MISMATCH":
+            legacy = _verified_legacy_explanation(
+                simulation_db, capture_id=capture_id, sample_index=sample_index,
+            )
+            if legacy is not None:
+                return legacy
         return _base("HOLD", exc.code)
     review_input = projected["input"]
     return _base(

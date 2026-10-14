@@ -209,6 +209,10 @@ def display(value: dict[str, Any], *, as_json: bool = False) -> None:
                 f"/ Risk {value['baseline_risk']}"
             )
             print("입력 근거 항목: " + str(value["evidence_item_count"]) + "건")
+        if value.get("candidate_category") == "LEGACY_LIMITED":
+            print("레거시 원본 전략 버전/해시 없음 · 의미 분석용 파생 식별자만 확인됨")
+            print("엄격한 JEV 입력 계약: STRATEGY_IDENTITY_MISMATCH (해제 불가)")
+            print("※ 다음 새 Capture에는 승인된 원본 전략 정책 증명이 필요합니다.")
         print("실제 모델 사용: 보류 · 원천자료 권한/공개 시점/시험 승인 필요")
         print("※ 기존 추천·Risk 불변 / AI 호출 0 / DB 쓰기 0 / AI 개선 효과 미검증")
         return
