@@ -204,3 +204,27 @@ S20 `plan`에서는 검증된 휴장일은 `CLOSED_VERIFIED`와 출처를 표시
 관측 평가 응답에는 `observation_window_end_dates`, `observed_market_days`를 추가했다. S16은 5일 종료일이 as-of 이전이면 10·20일 데이터가 미래라는 이유로 5일 성과까지 배제하지 않는다. 그러나 특정 구간에 저장된 일봉도 근거가 있는 휴장 기록도 없는 평일이 끼면 **그 구간만** `UNVERIFIED_CALENDAR_OR_DATA_GAP`로 보류한다. 관측 거래일이 모자라지만 모든 과거 날짜가 확인됐으면 `AWAITING_FUTURE_DAYS`로 구분한다. 새 집계 필드 `unverified_calendar_or_market_gap`는 불확실성을 표시하며, 임의로 값 0이나 수익률로 대체하지 않는다.
 
 이것은 특정 2026년 10월 휴장의 감사 가능한 첫 기반이며, **전체 장기 공식 KRX 거래달력, 시세 정정 버전 재현, 결과 영속 캐시, JEV 모델 비교·Q7 승인까지 완료했다는 뜻이 아니다**. 사용자 동의 없이 예약 작업·장중 데이터 수집·실제 주문은 생성하지 않는다.
+
+## 15. S22 — 증분 EOD 관측 영속 저장과 정정 이력 (2026-10-14)
+
+기존 `prospective_evaluation_unit`은 평가 실행의 결과 테이블이며, S16의 짧은 5일 구간을 다음 평가에서 자동 재사용하지 않는다. S22는 기존 Prospective Capture·평가 프로토콜/보고서·가격 원본 테이블을 바꾸지 않고 **기존 Simulation DB에 추가되는 단일 S22 관측 revision 테이블**을 도입한다. 쓰기는 별도의 opt-in CLI에서만 발생한다. DB 버전 스키마를 변경하거나 자동 마이그레이션을 트리거하지 않는다.
+
+```powershell
+# 새 코드를 받은 뒤, 우선 읽기 전용 계획:
+.\.venv\Scripts\python.exe -B .\tools\data\prospective_incremental_s22.py plan
+# 실제 평가 결과 저장은 명시적으로 승인한 경우만:
+.\.venv\Scripts\python.exe -B .\tools\data\prospective_incremental_s22.py apply --acknowledge-simulation-writes
+# 여러 Capture가 있으면 next_cursor를 --after 인자로 전달해 다음 페이지 진행
+```
+
+기본 한 번에 COMPLETE Capture 20개를 검토하며, `--limit-captures 1..40`로 제한할 수 있다. Cursor는 `completed_at,id` 정렬 기준이며 전체 후보를 일부 조회한 통계를 **전수 조사 결과로 표현하지 않는다**. 첫 조회 결과의 `next_cursor`가 없을 때까지 필요하면 사용자가 다음 배치를 호출한다.
+
+각 관측을 `(canonical capture id, sample index, horizon=5/10/20)` 단위로 분리한다. S7의 `INVALID`는 계속 제외하고 `LEGACY_LIMITED`는 독립적으로 라벨링하여 관측 결과에 포함한다. **금융 추천 수익률이 아닌 신호일 종가 대비 이후 N거래일 종가 변화율**만 저장하며, 실제 주문 가격/목표가 도달/거래 비용/JEV uplift으로 해석해서는 안 된다.
+
+검증된 양 시장 전체 일봉 `day_status(stock,index)=data`, 종목 원본 존재, 대표 지수 날짜·종가·이름 검사, S21의 출처 있는 휴장 판정을 재사용한다. 그 사이 근거가 없는 평일이 비어 있으면 5·10·20일 해당 구간을 보류한다. cutoff는 한국시간 **전날 이전**만 허용한다. 5일 구간이 먼저 완성되면 10일·20일이 완성될 때까지 기다리지 않고 별도 저장한다.
+
+재사용은 단순 날짜 비교가 아니라 `EVALUATOR_VERSION` + `CALENDAR_VERSION` + Frozen Snapshot hash/전략/검증 등급 + 신호일 원본 종목 행 + 목표 구간 전체 거래일의 종목 원본·대표 지수 원본을 포함한 정규화된 SHA-256 digest 비교로 판단한다. 동일 digest이면 `CACHE_HIT`이고 새 쓰기는 없다. 종목·지수 시세 수정, 출처/달력 규칙 변경, 중간 거래일 편입, Frozen source 조건이 달라지면 `REVISION_REQUIRED`로 표시하고 별도의 불변 revision 행을 기록한다. **오래된 DB 행은 그 자체로 현재 유효한 성과가 아니다. 조회할 때 현재 원본과 다시 대조해야 한다.**
+
+데이터 확보 이전에 `apply`를 실행해도 5/10/20 중 완성 구간이 없으면 새 테이블조차 생성하지 않는다. 조회 `plan`은 시장·Simulation DB를 모두 읽기 전용으로 열고, 네트워크 요청/Scanner/주문/새 Capture/JEV 호출을 하지 않는다. `apply`도 기존 Capture·평가 유닛·원본 시세는 수정하지 않으며, S22 관측 revision만 저장한다. 합성 SQLite 테스트에서 2거래일 대기, 5일 단독 완성, 10일 추가, 반복 무쓰기, 가격 정정, 중간 거래일 누락/복구, 휴장, 엄격한 후보 제외, cursor 순회, 명시 동의를 검증한다.
+
+**남는 제약:** 본 저장 이력은 실제 KRX 원시 가격 revision archive를 대체하지 않는다. 기존 Market Store가 가격을 덮어쓰면 S22에는 과거 종가와 근거 hash가 남아 있어도 원시 전체 시장 스냅샷까지 복원되지는 않는다. S21 달력은 2026-10-05/09만 명시 인증하고 있어 다른 미수집 평일은 휴장인지 누락인지 보류된다. 이 기능을 기존 API나 자동 스케줄러에 강제 연결하지 않는다. Prospective 평가 전체 스키마 재구축, JEV 무작위 기준군 비교, Q7 운영 승인은 별도 단계다.
