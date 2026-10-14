@@ -129,6 +129,10 @@ class FakeKrx:
     def request_stats(self):
         return {"network_requests": self.calls}
 
+    def assert_budget(self, estimated_requests):
+        assert estimated_requests > 0
+        return {"remaining_after": 100}
+
 
 def test_plan_pure_ro_and_exact_date_gap_selection(tmp_path, monkeypatch):
     sim = _simulation(tmp_path, monkeypatch)
@@ -269,3 +273,22 @@ def test_cap_refuses_partial_apply_without_network(tmp_path, monkeypatch):
             provider=provider, max_days=2,
         ))
     assert provider.calls == 0
+
+
+
+def test_budget_block_prevents_any_market_write(tmp_path, monkeypatch):
+    sim = _simulation(tmp_path, monkeypatch)
+    market = _market(tmp_path)
+    provider = FakeKrx()
+    def reject(*a):
+        raise RuntimeError("quota exhausted")
+    provider.assert_budget = reject
+    before = market.read_bytes()
+    with pytest.raises(s20.GapFillError, match="BUDGET_PREFLIGHT"):
+        asyncio.run(s20.apply(
+            sim, market, through="2026-10-13",
+            today=date(2026, 10, 14), provider=provider,
+        ))
+    assert market.read_bytes() == before
+    assert provider.calls == 0
+    assert not provider.started
