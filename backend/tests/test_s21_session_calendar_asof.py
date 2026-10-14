@@ -118,6 +118,7 @@ def test_ro_market_day_query_never_uses_bars_after_requested_asof(tmp_path):
         )
     original = path.read_bytes()
     with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as conn:
+        conn.row_factory = sqlite3.Row
         assert ReadOnlyMarketEvidence.market_days(
             conn, market="KOSPI", after_date="2026-10-08", limit=20,
             through_date="2026-10-13",
@@ -151,6 +152,7 @@ def test_strict_market_day_requires_both_markers_and_actual_rows(tmp_path):
         conn.execute("INSERT INTO main_index_daily VALUES(?,?,?)",
                      ("KOSPI", "20261012", "{}"))
     with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as conn:
+        conn.row_factory = sqlite3.Row
         selected = ReadOnlyMarketEvidence.market_days(
             conn, market="KOSPI", after_date="2026-10-08", limit=20,
             through_date="2026-10-14", complete_only=True,
