@@ -32,14 +32,15 @@ def _sim(tmp: Path, monkeypatch, *, categories=None, capture_count=1):
                 id TEXT PRIMARY KEY,status TEXT NOT NULL,completed_at TEXT NOT NULL
             );
             CREATE TABLE prospective_recommendation_sample(
-                capture_run_id TEXT NOT NULL,sample_index INTEGER NOT NULL
+                capture_run_id TEXT NOT NULL,sample_index INTEGER NOT NULL,
+                snapshot_hash TEXT NOT NULL
             );
         """)
         for i in range(capture_count):
             c.execute("INSERT INTO prospective_capture_run VALUES (?,?,?)",
                       (f"capture-{i:02d}", "COMPLETE", f"2026-10-09T{8+i:02d}:00:00+09:00"))
-            c.execute("INSERT INTO prospective_recommendation_sample VALUES (?,?)",
-                      (f"capture-{i:02d}", 0))
+            c.execute("INSERT INTO prospective_recommendation_sample VALUES (?,?,?)",
+                      (f"capture-{i:02d}", 0, "original-frozen-hash"))
     categories = categories or ["LEGACY_LIMITED"] * capture_count
     def fake_load(db_path, *, capture_id, limit):
         i = int(capture_id[-2:])
@@ -306,3 +307,20 @@ def test_revised_index_evidence_creates_new_revision_even_with_same_close(tmp_pa
     assert result["revisions_saved"] == 1
     with sqlite3.connect(sim) as c:
         assert c.execute(f"SELECT COUNT(*) FROM {s22.TABLE}").fetchone()[0] == 2
+
+
+
+def test_changed_frozen_source_between_plan_and_write_is_blocked_atomically(
+    tmp_path, monkeypatch,
+):
+    sim = _sim(tmp_path, monkeypatch)
+    market = _market(tmp_path, 5)
+    with sqlite3.connect(sim) as c:
+        c.execute(
+            "UPDATE prospective_recommendation_sample SET snapshot_hash='tampered' "
+            "WHERE capture_run_id='capture-00'"
+        )
+    with pytest.raises(s22.IncrementalObservationError, match="FROZEN_SOURCE_CHANGED"):
+        s22.apply_batch(sim, market, today=date(2026, 10, 17))
+    with sqlite3.connect(sim) as c:
+        assert c.execute(f"SELECT COUNT(*) FROM {s22.TABLE}").fetchone()[0] == 0
