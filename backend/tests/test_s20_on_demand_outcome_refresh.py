@@ -313,3 +313,22 @@ def test_verified_october_closure_never_calls_krx(tmp_path, monkeypatch):
     assert report["runtime_db_writes"] == 0
     assert provider.calls == 0
     assert not provider.started
+
+
+def test_verified_closure_with_market_rows_is_conflict_not_silent_holiday(tmp_path, monkeypatch):
+    sim = _simulation(tmp_path, monkeypatch)
+    market = _market(tmp_path)
+    with sqlite3.connect(market) as c:
+        _populate(c, "KOSPI", "20261009")
+    report = s20.plan(
+        sim, market, through="2026-10-13", today=date(2026, 10, 14),
+    )
+    assert report["date_counts"]["CLOSURE_DATA_CONFLICT"] == 1
+    assert report["days"][0]["state"] == "CLOSURE_DATA_CONFLICT"
+    source = FakeKrx()
+    with pytest.raises(s20.GapFillError, match="VERIFIED_CLOSURE_HAS_CONFLICTING"):
+        asyncio.run(s20.apply(
+            sim, market, through="2026-10-13",
+            today=date(2026, 10, 14), provider=source,
+        ))
+    assert source.calls == 0 and not source.started
