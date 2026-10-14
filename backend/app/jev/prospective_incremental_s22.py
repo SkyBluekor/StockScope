@@ -8,6 +8,7 @@ This is not an executable return, fair JEV uplift experiment, or Q7 approval.
 from __future__ import annotations
 
 from collections import Counter
+from contextlib import closing
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 import base64
@@ -210,6 +211,7 @@ def _closure_conflicts(
 def _fingerprint(
     sample: dict[str, Any], horizon: int, reference: str,
     future: list[tuple[date, str]], candidate_rows: dict[str, str | None],
+    category: str,
 ) -> str:
     # Include every chosen session's index snapshot, target stock rows, source
     # row, frozen candidate hash and contract versions. A changed bar, a new
@@ -221,6 +223,7 @@ def _fingerprint(
         "signal_date": sample["signal_date"],
         "ticker": sample["ticker"], "market": sample["market"],
         "snapshot_hash": sample["snapshot_hash"],
+        "strategy": sample.get("strategy"), "source_integrity": category,
         "reference_row": reference,
         "session_evidence": [
             [day.isoformat(), index, candidate_rows.get(day.isoformat())]
@@ -261,7 +264,7 @@ def evaluate_batch(
     ready: list[dict[str, Any]] = []
     selected = 0
     next_cursor: str | None = None
-    with _db(Path(simulation_db)) as sim, _db(Path(market_db)) as market:
+    with closing(_db(Path(simulation_db))) as sim, closing(_db(Path(market_db))) as market:
         table_exists = sim.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
             (TABLE,),
@@ -338,7 +341,7 @@ def evaluate_batch(
                         report["target_price_missing"] += 1
                         continue
                     evid = _fingerprint(
-                        sample, horizon, source_json, sessions, target_rows,
+                        sample, horizon, source_json, sessions, target_rows, category,
                     )
                     stored = sim.execute(
                         f"SELECT revision_id,evidence_hash FROM {TABLE} "
@@ -402,7 +405,7 @@ def apply_batch(
         return {**planned, "status": "NO_NEW_MATURE_OBSERVATIONS",
                 "simulation_db_writes": 0}
     written = revised = 0
-    with sqlite3.connect(Path(simulation_db).resolve(), timeout=20) as conn:
+    with closing(sqlite3.connect(Path(simulation_db).resolve(), timeout=20)) as conn:
         conn.row_factory = sqlite3.Row
         # executescript() commits pending transactions in sqlite3. Install
         # additive schema BEFORE opening the atomic revision-write transaction.
