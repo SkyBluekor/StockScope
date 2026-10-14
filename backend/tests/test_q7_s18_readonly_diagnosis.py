@@ -102,6 +102,8 @@ def test_diagnosis_exact_denominators_codes_and_clock(tmp_path, monkeypatch):
     assert result["entry_candidates"] == 4
     assert result["reference_only"] == 1
     assert result["snapshot_hash_verified_entry_count"] == 3
+    assert result["snapshot_hash_verified_reference_count"] == 1
+    assert result["reference_snapshot_error_counts"] == {}
     assert result["entry_categories"] == {
         "INVALID": 1,
         "LEGACY_LIMITED": 1,
@@ -194,3 +196,19 @@ def test_s7_real_validator_reports_codes_not_fake_validity(tmp_path):
     assert result["entry_categories"] == {"INVALID": 1}
     assert result["invalid_code_counts"]
     assert result["q7_approval_eligible"] is False
+
+
+
+def test_reference_only_corruption_is_not_silently_ignored(tmp_path):
+    path = _db(tmp_path)
+    with sqlite3.connect(path) as conn:
+        _sample(conn, 0, action="REFERENCE_ONLY", corrupt=True)
+    result = diagnosis.diagnose(path)
+    assert result["status"] == "DIAGNOSIS_ONLY"
+    assert result["reference_only"] == 1
+    assert result["entry_candidates"] == 0
+    assert result["reference_snapshot_error_counts"] == {
+        "S7_SNAPSHOT_HASH_MISMATCH": 1,
+    }
+    assert result["snapshot_hash_verified_reference_count"] == 0
+    assert result["runtime_db_writes"] == 0
