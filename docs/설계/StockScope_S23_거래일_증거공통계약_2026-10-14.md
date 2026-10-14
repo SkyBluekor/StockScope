@@ -57,3 +57,44 @@ KRX 공식 '증시일정 > 휴장일' 연간 동적 조회/다운로드 원문�
 그 원문 bytes 해시·조회 연도·발행/취득 시점·개장일 전수와 임시휴장 수정 공지까지 검증해야만
 FULL 원장을 활성화할 수 있다. **17개 폐장일을 확인했다고 244일 모두 공식 개장으로 승격하지 않는다.**
 실제 KRX 요청, runtime SQLite 변경, Task 변경, 운영 배포는 승인 없이 하지 않는다.
+
+
+## S23-C — 공식 휴장 원본 파일 감사 준비 (2026-10-14)
+
+**구현 완료:** 다운로드한 원본 JSON/CSV에 대한 로컬 읽기 전용 증거 감사 계약.
+**미완료:** 원본 KRX 사이트 다운로드 파일 확보, 원본 요청/시장/연도/조회 시각 입증,
+공식 연간 개장일 전체 검증 및 \`FULL\` 운영 반영.
+
+### 공식 원본 확보 경로
+
+- KRX 공식 휴장일: https://open.krx.co.kr/contents/MKD/01/0110/01100305/MKD01100305.jsp
+- 연도 \`2026\`, 시장 \`한국거래소\`(KRX) 선택 후 KRX 화면의 **조회/다운로드** 기능으로 공식 파일 확보.
+- 동적 그리드가 빈 상태인 HTML, 캡처 화면, 비공식 캘린더나 임의 스프레드시트는 공인 원본 아님.
+- 감사 도구가 직접 KRX 서버로 요청하거나 OTP/API를 호출하지 않음.
+- 현재 도구는 **원본 JSON**(\`block1[].calnd_dd_dy\` 구조) 또는 **CSV**(\`일자\` 또는 \`Date\` 컬럼)만 지원. XLSX, PDF, HTML은 파싱 없이 차단한다. KRX 실제 내보내기 형식과 다르면 새 계약 테스트/리뷰 후 별도 구현한다.
+
+### 사용법 (PowerShell, 별도 로컬 파일)
+
+\`\`\`powershell
+cd C:\Projects\StockScope
+.\.venv\Scripts\python.exe -B .\tools\data\krx_calendar_audit_s23.py --source-file "C:\Users\USER\Downloads\krx-2026-holidays.csv" --year 2026
+\`\`\`
+
+원본 SHA-256을 **별도 신뢰한 경로에서 이미 기록해 둔 경우에만** \`--expected-sha256 <64자 소문자 해시>\`를 추가한다.
+이때 해시 일치는 파일 동일성만 검증하며 공식 다운로드 여부를 증명하지 않는다.
+파일명·URL·파일 생성 시각은 출처 증명 자체가 아니다.
+
+출력:
+- \`MATCHES_REVIEWED_CLOSURES\`: 파일의 휴장일이 현재 17개 검토 휴장일과 일치한다는 **제한된 의미**만 가짐.
+- \`REVIEW_REQUIRED\`: 추가 공식 휴장 또는 누락/필터된 원본 가능성. 기존 코드·DB로 자동 반영하지 않음.
+- \`BLOCKED\`: 스키마, 원본 해시, 연도, 시장 구분, 중복 등 명확한 검증 오류.
+- 모든 경우 \`download_origin_authenticated=false\`, \`full_calendar_eligible=false\`, \`runtime_calendar_updated=false\`.
+- 정상 검사에는 **외부 요청 0, 런타임 DB 쓰기 0, 실제 Scanner/Capture/JEV 호출 0**.
+
+### S23-C 후속 승인 조건
+
+KRX 증시일정의 **진짜 2026년 전체 원본**(가능하면 원본 bytes, 쿼리 연도,
+KRX 시장 구분, 공식 게시/다운로드 시점, 원본 해시)을 확보하고
+검토된 휴장 17일 및 공지된 임시휴장 변경 이력을 독립적으로 대조해야 한다.
+그 뒤에만 \`PARTIAL → FULL\`용 reviewed source commit 및 별도 승인 절차를 진행한다.
+**검사 PASS는 244개 개장일을 공식 확인한 증거가 아니며, 2026년 10월 이후 미래 개장 보증도 아니다.**
