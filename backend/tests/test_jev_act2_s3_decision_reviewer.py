@@ -412,6 +412,7 @@ def test_phase1_real_capture_is_never_silently_fake_reviewed(tmp_path):
 
 
 def test_phase1_legacy_and_tampered_candidate_never_enable_provider(tmp_path):
+    (tmp_path / "legacy").mkdir()
     legacy, lid = _stored(tmp_path / "legacy", horizon="LEGACY_UNSPECIFIED")
     result = inspect_reviewer_candidate_readonly(legacy, capture_id=lid, sample_index=0)
     assert result["status"] == "LEGACY_INSPECTION_ONLY"
@@ -421,6 +422,7 @@ def test_phase1_legacy_and_tampered_candidate_never_enable_provider(tmp_path):
             legacy, capture_id=lid, sample_index=0,
             fake_response=_response("PASS_THROUGH"),
         )
+    (tmp_path / "bad").mkdir()
     db, capture_id = _stored(tmp_path / "bad")
     with sqlite3.connect(db) as conn:
         conn.execute(
