@@ -132,11 +132,13 @@ def diagnose(
             invalid_code_combinations: Counter[str] = Counter()
             check_failures: Counter[str] = Counter()
             snapshot_failures: Counter[str] = Counter()
+            reference_snapshot_failures: Counter[str] = Counter()
             timing: Counter[str] = Counter()
             strategy_categories: dict[str, Counter[str]] = {}
             scanner_version_categories: dict[str, Counter[str]] = {}
             details: list[dict[str, Any]] = []
             captures = entries = references = snapshot_pass = strict_only = 0
+            reference_snapshot_pass = 0
             inspected = 0
             for capture_row in conn.execute(
                 "SELECT * FROM prospective_capture_run WHERE status='COMPLETE' "
@@ -154,6 +156,24 @@ def diagnose(
                     sample = dict(sample_row)
                     if sample["action"] != "ENTRY_CANDIDATE":
                         references += 1
+                        # S7 validates hashes even for reference-only samples
+                        # before loading any candidate. Do not hide this failure.
+                        try:
+                            reference_snapshot = json.loads(str(sample["snapshot_json"]))
+                            if not isinstance(reference_snapshot, dict):
+                                raise ValueError("S7_SNAPSHOT_INVALID")
+                            if (not sample["snapshot_hash"]
+                                    or digest_json(reference_snapshot) != sample["snapshot_hash"]):
+                                raise ValueError("S7_SNAPSHOT_HASH_MISMATCH")
+                        except (ValueError, TypeError, UnicodeError) as exc:
+                            reason = (
+                                str(exc) if isinstance(exc, ValueError)
+                                and str(exc).startswith("S7_")
+                                else "S7_SNAPSHOT_JSON_INVALID"
+                            )
+                            reference_snapshot_failures[reason] += 1
+                        else:
+                            reference_snapshot_pass += 1
                         continue
                     entries += 1
                     date_group = _timing(capture["completed_at"], sample["signal_date"])
@@ -229,6 +249,8 @@ def diagnose(
                 all_samples_in_completed_captures=inspected,
                 entry_candidates=entries, reference_only=references,
                 snapshot_hash_verified_entry_count=snapshot_pass,
+                snapshot_hash_verified_reference_count=reference_snapshot_pass,
+                reference_snapshot_error_counts=dict(sorted(reference_snapshot_failures.items())),
                 entry_categories=dict(sorted(entry_categories.items())),
                 invalid_code_counts=dict(sorted(invalid_codes.items())),
                 invalid_code_combinations=dict(sorted(invalid_code_combinations.items())),
