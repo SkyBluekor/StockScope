@@ -28,6 +28,7 @@ from app.jev.q7_observation_s16 import measure as observe
 from app.jev.scanner_integrity_s7_1 import assess_frozen_candidate
 from app.jev.scanner_shadow_s7 import load_frozen_candidates
 from app.market.providers import KrxProvider
+from app.market.session_calendar_s21 import closure_evidence, CALENDAR_VERSION
 from tools.data.common import market_db_path, simulation_db_path
 
 VERSION = "STOCKSCOPE_S20_ON_DEMAND_OUTCOME_EOD_GAP_V1"
@@ -164,6 +165,15 @@ def plan(
             raise GapFillError("MARKET_SCHEMA_INCOMPLETE")
         for scope, days in sorted(date_ranges.items()):
             for day in days:
+                evidence = closure_evidence(day)
+                if evidence is not None:
+                    dates.append({
+                        "market": scope, "date": day.isoformat(),
+                        "state": "CLOSED_VERIFIED", "stock_rows": 0,
+                        "index_rows": 0, "closure_reason": evidence["reason"],
+                        "closure_source": evidence["source"],
+                    })
+                    continue
                 key = day.strftime("%Y%m%d")
                 status_rows = c.execute(
                     "SELECT kind,status FROM day_status WHERE market=? AND bas_dd=?",
@@ -196,8 +206,9 @@ def plan(
         signals_by_market={k: sorted(d.isoformat() for d in v) for k, v in sources.items()},
         date_counts=counts, days=dates,
         exact_trading_calendar_verified=False,
+        calendar_evidence_version=CALENDAR_VERSION,
         performance_is_trading_profit=False,
-        notice="MISSING means weekday without stored rows, NOT a verified open session.",
+        notice="Only dated, sourced closures are known. MISSING means unresolved weekday without stored rows, NOT a verified open session.",
         runtime_db_writes=0, network_requests=0,
     )
 
@@ -299,7 +310,7 @@ async def apply(
     if not missing:
         observed = observe(sim, market_db, as_of=date.fromisoformat(before["as_of_cutoff"]))
         return _result(
-            "NO_MISSING_WEEKDAYS", as_of_cutoff=before["as_of_cutoff"],
+            "NO_MISSING_POTENTIAL_SESSIONS", as_of_cutoff=before["as_of_cutoff"],
             day_counts=before["date_counts"], outcomes=observed,
             runtime_db_writes=0, network_requests=0,
         )
@@ -395,7 +406,7 @@ def main(argv: list[str] | None = None) -> int:
             report = asyncio.run(apply(sim, market, through=args.through, max_days=args.max_days))
         print(json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False))
         return 0 if report["status"] in {
-            "PLAN_ONLY", "NO_MISSING_WEEKDAYS", "MARKET_GAPS_FILLED"
+            "PLAN_ONLY", "NO_MISSING_POTENTIAL_SESSIONS", "MARKET_GAPS_FILLED"
         } else 2
     except (GapFillError, sqlite3.Error, ValueError) as exc:
         print(json.dumps(_result("BLOCKED", reason=str(exc), runtime_db_writes=0), ensure_ascii=False))
