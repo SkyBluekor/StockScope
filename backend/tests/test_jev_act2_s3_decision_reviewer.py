@@ -330,3 +330,131 @@ def test_malformed_abstain_reason_is_rejected_not_executed(tmp_path):
     record = OfflineFakeShadowSession().inspect(projection, invalid)
     assert record["status"] == "ERROR"
     assert record["failure_code"] == "ABSTAIN_REASON_INVALID"
+
+
+# ACT2 Phase-1 integration: reuse S3 frozen source, S8's non-authorizing
+# rights status, and the existing fake-only reviewer without re-ranking.
+from app.jev.scanner_reviewer_bridge import (
+    inspect_reviewer_candidate_readonly,
+    inspect_synthetic_fake_review_readonly,
+)
+from tools.data.jev_s7_shadow import build_parser as s7_build_parser, execute as s7_execute
+
+
+def test_phase1_bridge_inspects_real_shaped_source_without_source_export(tmp_path):
+    db, capture_id = _stored(tmp_path)
+    with sqlite3.connect(db) as conn:
+        before = "\n".join(conn.iterdump())
+    output = inspect_reviewer_candidate_readonly(
+        db, capture_id=capture_id, sample_index=0,
+    )
+    assert output["status"] == "LOCAL_PROJECTION_READY_PROVIDER_HOLD"
+    assert output["provider_gate"] == "NO_GO"
+    assert output["source_rights"] == "UNVERIFIED"
+    assert output["approved_trial_protocol"] is False
+    assert output["actual_provider_eligible"] is False
+    assert output["baseline_action"] == "ENTRY_CANDIDATE"
+    assert output["baseline_rank"] == 1
+    assert output["evidence_item_count"] >= 2
+    assert output["publication_time_proven"] is False
+    assert output["provider_calls"] == output["runtime_db_writes"] == 0
+    assert "evidence_items" not in output
+    assert "entry_risk_guide" not in output
+    with sqlite3.connect(db) as conn:
+        assert before == "\n".join(conn.iterdump())
+
+
+@pytest.mark.parametrize("decision,action", [
+    ("PASS_THROUGH", "BASELINE_UNCHANGED"),
+    ("REVIEW_REQUIRED", "DEFER_THIS_OPPORTUNITY"),
+    ("ABSTAIN", "BASELINE_UNCHANGED"),
+])
+def test_phase1_synthetic_only_fake_links_input_validation_without_ai(
+    tmp_path, decision, action,
+):
+    db, capture_id = _stored(tmp_path)
+    session = OfflineFakeShadowSession()
+    result = inspect_synthetic_fake_review_readonly(
+        db, capture_id=capture_id, sample_index=0,
+        fake_response=_response(decision), session=session,
+    )
+    assert result["status"] == "SYNTHETIC_FAKE_REVIEW_ONLY"
+    assert result["validation_status"] == "VALID"
+    assert result["fake_decision"] == decision
+    assert result["fake_shadow_action"] == action
+    assert result["outcome_return"] is None
+    assert result["provider_gate"] == "NO_GO"
+    assert result["actual_provider_eligible"] is False
+    assert result["external_requests"] == result["runtime_db_writes"] == 0
+    assert result["production_action_modified"] is False
+    assert result["investment_improvement_verified"] is False
+    reused = inspect_synthetic_fake_review_readonly(
+        db, capture_id=capture_id, sample_index=0,
+        fake_response=_response("ABSTAIN"), session=session,
+    )
+    assert reused["reused"] is True
+    assert reused["fake_decision"] == decision
+
+
+def test_phase1_real_capture_is_never_silently_fake_reviewed(tmp_path):
+    db, capture_id = _stored(tmp_path)
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE prospective_capture_run SET capture_version='REAL' WHERE id=?", (capture_id,))
+    plan = inspect_reviewer_candidate_readonly(
+        db, capture_id=capture_id, sample_index=0,
+    )
+    assert plan["fake_only_available"] is False
+    with pytest.raises(DecisionReviewContractError, match="REAL_CAPTURE_FAKE_REVIEW_FORBIDDEN"):
+        inspect_synthetic_fake_review_readonly(
+            db, capture_id=capture_id, sample_index=0,
+            fake_response=_response("PASS_THROUGH"),
+        )
+
+
+def test_phase1_legacy_and_tampered_candidate_never_enable_provider(tmp_path):
+    legacy, lid = _stored(tmp_path / "legacy", horizon="LEGACY_UNSPECIFIED")
+    result = inspect_reviewer_candidate_readonly(legacy, capture_id=lid, sample_index=0)
+    assert result["status"] == "LEGACY_INSPECTION_ONLY"
+    assert result["fake_only_available"] is False
+    with pytest.raises(DecisionReviewContractError, match="HORIZON_NOT_FAKE_TEST_SCOPE"):
+        inspect_synthetic_fake_review_readonly(
+            legacy, capture_id=lid, sample_index=0,
+            fake_response=_response("PASS_THROUGH"),
+        )
+    db, capture_id = _stored(tmp_path / "bad")
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "UPDATE prospective_recommendation_sample SET snapshot_hash='bad' "
+            "WHERE capture_run_id=?", (capture_id,),
+        )
+    result = inspect_reviewer_candidate_readonly(db, capture_id=capture_id, sample_index=0)
+    assert result["status"] == "HOLD"
+    assert result["reason_code"] == "SNAPSHOT_HASH_MISMATCH"
+    assert result["provider_calls"] == 0
+
+
+def test_phase1_bridge_cli_uses_existing_s7_command_without_feature_toggle(tmp_path):
+    db, capture_id = _stored(tmp_path)
+    args = s7_build_parser().parse_args([
+        "reviewer-bridge", "--simulation-db", str(db),
+        "--capture-id", capture_id, "--sample-index", "0", "--json",
+    ])
+    out = s7_execute(args)
+    assert out["status"] == "LOCAL_PROJECTION_READY_PROVIDER_HOLD"
+    assert out["provider_gate"] == "NO_GO"
+    args.sample_index = None
+    with pytest.raises(DecisionReviewContractError, match="REVIEWER_BRIDGE_ARGUMENT_CONFLICT"):
+        s7_execute(args)
+
+
+@pytest.mark.parametrize("capture_id,index", [
+    ("", 0), ("x", -1), ("x", 500), ("x", True),
+])
+def test_phase1_malformed_reference_fails_without_model_calls(tmp_path, capture_id, index):
+    db, _ = _stored(tmp_path)
+    out = inspect_reviewer_candidate_readonly(
+        db, capture_id=capture_id, sample_index=index,
+    )
+    assert out["status"] == "HOLD"
+    assert out["reason_code"] == "REVIEWER_BRIDGE_REFERENCE_INVALID"
+    assert out["external_requests"] == out["runtime_db_writes"] == 0
