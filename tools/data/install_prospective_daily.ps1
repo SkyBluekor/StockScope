@@ -37,6 +37,6 @@ $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -Execution
 $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 $principal = New-ScheduledTaskPrincipal -UserId $identity -LogonType Interactive -RunLevel Limited
 Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Description 'Read-only freshness preflight, local Scanner capture and outcome observation. No catch-up/backfill.' -ErrorAction Stop | Out-Null
-Write-Host "Installed $taskName: 07:00 Korea Standard Time Monday-Friday (signed-in user only)."
+Write-Host "Installed ${taskName}: 07:00 Korea Standard Time Monday-Friday (signed-in user only)."
 Write-Host "Results: $root\data\prospective_daily"
 Write-Host 'Stop: powershell -File tools\data\install_prospective_daily.ps1 -Remove'
