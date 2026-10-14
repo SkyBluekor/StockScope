@@ -141,7 +141,9 @@ def test_plan_pure_ro_and_exact_date_gap_selection(tmp_path, monkeypatch):
     report = s20.plan(sim, market, through="2026-10-13", today=date(2026, 10, 14))
     assert (sim.read_bytes(), market.read_bytes()) == original
     assert report["status"] == "PLAN_ONLY"
-    assert report["date_counts"] == {"MISSING": 3}
+    assert report["date_counts"] == {"CLOSED_VERIFIED": 1, "MISSING": 2}
+    assert report["days"][0]["closure_reason"] == "한글날"
+    assert report["days"][0]["closure_source"].startswith("https://trn.krx.co.kr")
     assert [(x["market"], x["date"]) for x in report["days"]] == [
         ("KOSPI", "2026-10-09"), ("KOSPI", "2026-10-12"),
         ("KOSPI", "2026-10-13"),
@@ -158,10 +160,10 @@ def test_apply_appends_complete_dates_atomically_and_does_not_invent_holiday(tmp
         sim, market, through="2026-10-13", today=date(2026, 10, 14),
         provider=provider,
     ))
-    assert result["status"] == "PARTIAL_OR_UNVERIFIED_GAPS"
+    assert result["status"] == "MARKET_GAPS_FILLED"
     assert result["stored_days"] == 2
-    assert result["remaining_date_counts"] == {"MISSING": 1, "STORED_COMPLETE": 2}
-    assert result["outstanding_calendar_verification"]
+    assert result["remaining_date_counts"] == {"CLOSED_VERIFIED": 1, "STORED_COMPLETE": 2}
+    assert not result["outstanding_calendar_verification"]
     assert provider.started and provider.closed
     with sqlite3.connect(market) as c:
         assert c.execute(
@@ -182,8 +184,9 @@ def test_apply_appends_complete_dates_atomically_and_does_not_invent_holiday(tmp
         sim, market, through="2026-10-13", today=date(2026, 10, 14),
         provider=FakeKrx(),
     ))
-    assert again["stored_days"] == 0
-    assert again["remaining_date_counts"] == {"MISSING": 1, "STORED_COMPLETE": 2}
+    assert again["status"] == "NO_MISSING_POTENTIAL_SESSIONS"
+    assert again["runtime_db_writes"] == again["network_requests"] == 0
+    assert again["day_counts"] == {"CLOSED_VERIFIED": 1, "STORED_COMPLETE": 2}
 
 
 def test_reject_existing_partial_day_before_network(tmp_path, monkeypatch):
@@ -270,7 +273,7 @@ def test_cap_refuses_partial_apply_without_network(tmp_path, monkeypatch):
     with pytest.raises(s20.GapFillError, match="EXPLICIT_CAP"):
         asyncio.run(s20.apply(
             sim, market, through="2026-10-13", today=date(2026, 10, 14),
-            provider=provider, max_days=2,
+            provider=provider, max_days=1,
         ))
     assert provider.calls == 0
 
@@ -290,5 +293,23 @@ def test_budget_block_prevents_any_market_write(tmp_path, monkeypatch):
             today=date(2026, 10, 14), provider=provider,
         ))
     assert market.read_bytes() == before
+    assert provider.calls == 0
+    assert not provider.started
+
+
+def test_verified_october_closure_never_calls_krx(tmp_path, monkeypatch):
+    sim = _simulation(tmp_path, monkeypatch)
+    market = _market(tmp_path)
+    with sqlite3.connect(market) as c:
+        _populate(c, "KOSPI", "20261012")
+        _populate(c, "KOSPI", "20261013")
+    provider = FakeKrx()
+    report = asyncio.run(s20.apply(
+        sim, market, through="2026-10-13", today=date(2026, 10, 14),
+        provider=provider,
+    ))
+    assert report["status"] == "NO_MISSING_POTENTIAL_SESSIONS"
+    assert report["day_counts"]["CLOSED_VERIFIED"] == 1
+    assert report["runtime_db_writes"] == 0
     assert provider.calls == 0
     assert not provider.started
