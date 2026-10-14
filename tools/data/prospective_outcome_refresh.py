@@ -166,14 +166,6 @@ def plan(
         for scope, days in sorted(date_ranges.items()):
             for day in days:
                 evidence = closure_evidence(day)
-                if evidence is not None:
-                    dates.append({
-                        "market": scope, "date": day.isoformat(),
-                        "state": "CLOSED_VERIFIED", "stock_rows": 0,
-                        "index_rows": 0, "closure_reason": evidence["reason"],
-                        "closure_source": evidence["source"],
-                    })
-                    continue
                 key = day.strftime("%Y%m%d")
                 status_rows = c.execute(
                     "SELECT kind,status FROM day_status WHERE market=? AND bas_dd=?",
@@ -188,7 +180,14 @@ def plan(
                     "SELECT COUNT(*) FROM main_index_daily WHERE market=? AND bas_dd=?",
                     (scope, key),
                 ).fetchone()[0])
-                if flags.get("stock") == "data" and flags.get("index") == "data" and stocks > 0 and indexes == 1:
+                if evidence is not None:
+                    # A claimed market session on a verified closure is a
+                    # conflict, never something to silently ignore or overwrite.
+                    state = (
+                        "CLOSURE_DATA_CONFLICT" if flags or stocks or indexes
+                        else "CLOSED_VERIFIED"
+                    )
+                elif flags.get("stock") == "data" and flags.get("index") == "data" and stocks > 0 and indexes == 1:
                     state = "STORED_COMPLETE"
                 elif flags or stocks or indexes:
                     state = "PARTIAL_OR_UNVERIFIED_EXISTING"
@@ -197,6 +196,10 @@ def plan(
                 dates.append({
                     "market": scope, "date": day.isoformat(), "state": state,
                     "stock_rows": stocks, "index_rows": indexes,
+                    **({
+                        "closure_reason": evidence["reason"],
+                        "closure_source": evidence["source"],
+                    } if evidence else {}),
                 })
     counts = dict(sorted(Counter(x["state"] for x in dates).items()))
     return _result(
@@ -302,6 +305,8 @@ async def apply(
     if type(max_days) is not int or not 1 <= max_days <= MAX_APPLY_DAYS:
         raise GapFillError("INVALID_MAX_DAYS")
     before = plan(sim, market_db, through=through, today=today)
+    if before["date_counts"].get("CLOSURE_DATA_CONFLICT", 0):
+        raise GapFillError("VERIFIED_CLOSURE_HAS_CONFLICTING_MARKET_DATA")
     if before["date_counts"].get("PARTIAL_OR_UNVERIFIED_EXISTING", 0):
         raise GapFillError("PARTIAL_EXISTING_DAYS_REQUIRE_MANUAL_REVIEW")
     missing = [x for x in before["days"] if x["state"] == "MISSING"]
@@ -361,9 +366,9 @@ async def apply(
     finally:
         await source.close_session()
     after = plan(sim, market_db, through=through, today=today)
-    incomplete = after["date_counts"].get("MISSING", 0) + after["date_counts"].get(
-        "PARTIAL_OR_UNVERIFIED_EXISTING", 0
-    )
+    incomplete = sum(after["date_counts"].get(k, 0) for k in (
+        "MISSING", "PARTIAL_OR_UNVERIFIED_EXISTING", "CLOSURE_DATA_CONFLICT",
+    ))
     # S16 itself remains an observation-only statistical instrument and does
     # not persist a new run. Never claim matured 5d/10d/20d data with gaps.
     observed = observe(sim, market_db, as_of=date.fromisoformat(after["as_of_cutoff"]))
