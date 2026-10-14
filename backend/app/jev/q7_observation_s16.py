@@ -288,7 +288,8 @@ def measure(
                 try:
                     obs = evaluator.evaluate_sample(
                         sample=sample,
-                        spec={**EVALUATION_SPEC, "as_of_date": market_cutoff.isoformat()},
+                        spec={**EVALUATION_SPEC, "as_of_date": market_cutoff.isoformat(),
+                              "require_complete_market_eod": True},
                     )
                     windows, issue = _record_windows(
                         obs, market_cutoff, signal_date=str(sample.get("signal_date")),
