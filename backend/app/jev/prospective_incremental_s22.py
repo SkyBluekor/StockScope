@@ -347,7 +347,9 @@ def evaluate_batch(
                         sample, horizon, source_json, sessions, target_rows, category,
                     )
                     stored = sim.execute(
-                        f"SELECT revision_id,evidence_hash FROM {TABLE} "
+                        f"SELECT revision_id,evidence_hash,snapshot_hash,source_integrity,"
+                        "target_date,reference_close,target_close,close_change_pct FROM "
+                        f"{TABLE} "
                         "WHERE capture_run_id=? AND sample_index=? AND horizon_days=? "
                         "ORDER BY revision_id DESC LIMIT 1",
                         (cid, int(sample["sample_index"]), horizon),
@@ -356,7 +358,17 @@ def evaluate_batch(
                         float((target - source_close) / source_close * Decimal("100")),
                         4,
                     )
-                    if stored is not None and stored["evidence_hash"] == evid:
+                    cache_verified = (
+                        stored is not None
+                        and stored["evidence_hash"] == evid
+                        and stored["snapshot_hash"] == sample["snapshot_hash"]
+                        and stored["source_integrity"] == category
+                        and stored["target_date"] == endpoint.isoformat()
+                        and stored["reference_close"] == str(source_close)
+                        and stored["target_close"] == str(target)
+                        and stored["close_change_pct"] == change
+                    )
+                    if cache_verified:
                         report["cache_hit"] += 1
                         state = "CACHE_HIT"
                     else:
@@ -437,12 +449,25 @@ def apply_batch(
                     or sample_source["snapshot_hash"] != item["snapshot_hash"]):
                 raise IncrementalObservationError("FROZEN_SOURCE_CHANGED_DURING_APPLY")
             prior = conn.execute(
-                f"SELECT evidence_hash FROM {TABLE} "
+                f"SELECT evidence_hash,snapshot_hash,source_integrity,target_date,"
+                "reference_close,target_close,close_change_pct FROM "
+                f"{TABLE} "
                 "WHERE capture_run_id=? AND sample_index=? AND horizon_days=? "
                 "ORDER BY revision_id DESC LIMIT 1",
                 (item["capture_run_id"], item["sample_index"], item["horizon_days"]),
             ).fetchone()
-            if prior and prior["evidence_hash"] == item["evidence_hash"]:
+            # Re-check persisted values as well as hashes. An altered
+            # cached return must never be treated as an authoritative hit.
+            prior_valid = (
+                prior and prior["evidence_hash"] == item["evidence_hash"]
+                and prior["snapshot_hash"] == item["snapshot_hash"]
+                and prior["source_integrity"] == item["source_integrity"]
+                and prior["target_date"] == item["target_date"]
+                and prior["reference_close"] == item["reference_close"]
+                and prior["target_close"] == item["target_close"]
+                and prior["close_change_pct"] == item["close_change_pct"]
+            )
+            if prior_valid:
                 continue
             # Immutable revisions, including when the market source changes
             # back to a prior fingerprint; a later revision is still recorded.
