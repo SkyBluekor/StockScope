@@ -112,6 +112,24 @@ jobs:
         shell: powershell
         run: .\setup.ps1
 
+      - name: Parse S17 Windows task installer without registering a task
+        shell: powershell
+        run: |
+          $script = Join-Path $PWD.Path 'tools\data\install_prospective_daily.ps1'
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            $script,
+            [ref]$tokens,
+            [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Host $_.ToString() }
+            throw 'S17 PowerShell task installer contains syntax errors.'
+          }
+          Write-Host 'S17 task installer syntax: PASS'
+
+
       - name: Verify local startup contract without provider credentials
         shell: powershell
         run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_health.py
