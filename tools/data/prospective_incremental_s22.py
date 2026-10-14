@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
 from pathlib import Path
 import sys
 from typing import Any
@@ -69,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
         answer = execute(args)
-    except (IncrementalObservationError, ValueError, OSError, json.JSONDecodeError) as exc:
+    except (IncrementalObservationError, sqlite3.Error, ValueError, OSError, json.JSONDecodeError) as exc:
         answer = _result(
             "BLOCKED", reason=str(exc), simulation_db_writes=0, market_db_writes=0,
         )
