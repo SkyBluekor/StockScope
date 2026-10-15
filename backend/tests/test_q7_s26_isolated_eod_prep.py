@@ -101,7 +101,7 @@ class FakeKRX:
 
 
 def _copy(source, folder):
-    folder.mkdir()
+    folder.mkdir(parents=True)
     out = folder / "market_snapshot.db"
     research._clone_readonly_source(source, out)
     return out
