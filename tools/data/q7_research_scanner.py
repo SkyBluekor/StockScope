@@ -154,6 +154,7 @@ async def _execute_scan(*, root: Path, market: str, source_date: date, policy) -
         candidate_limit=5, force_refresh=True, allow_large_sync=False,
         selection_policy_pin=policy,
         repro_output_root=root / "scanner-repro",
+        repro_identity_root=root / "repro_identity",
     )
 
 
