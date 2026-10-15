@@ -277,6 +277,7 @@ async def capture(*, market: str = "KOSPI", market_db: Path | None = None,
                   root: Path = DEFAULT_ROOT, now: datetime | None = None,
                   acknowledge: bool = False,
                   prepare_missing_eod: bool = False,
+                  smoke_only: bool = False,
                   execute_scan: Callable[..., Awaitable[dict[str, Any]]] | None = None,
                   execute_prepare: Callable[..., Awaitable[dict[str, Any]]] | None = None,
                   ) -> dict[str, Any]:
@@ -284,19 +285,41 @@ async def capture(*, market: str = "KOSPI", market_db: Path | None = None,
         raise ResearchCaptureError("RESEARCH_EXPLICIT_NETWORK_AND_LOCAL_WRITES_ACK_REQUIRED")
     clock = now or datetime.now(KST)
     source = Path(market_db or market_db_path())
-    root = _root_guard(root, source)
+    # TECHNICAL smoke results can NEVER share a directory with forward-looking
+    # research Captures. They are separate experiments even for the same date.
+    root = _root_guard(
+        Path(root) / "smoke_only" if smoke_only else Path(root), source,
+    )
     readiness = plan(market=market, market_db=source, now=clock)
     pending = readiness["eod_preparation_dates"]
+    baseline_ready = (
+        readiness["market_data_ready"]
+        if smoke_only else readiness["capture_permitted_now"]
+    )
     needs_prep = (
-        not readiness["capture_permitted_now"]
+        not baseline_ready
         and readiness["eod_preparation_eligible"]
         and bool(prepare_missing_eod)
     )
-    if not readiness["capture_permitted_now"] and not needs_prep:
-        return readiness
-    # Never create a directory or hit KRX outside the premarket window,
-    # even if a missing weekday is available for investigation.
-    if not readiness["collection_window_open"]:
+    if not baseline_ready and not needs_prep:
+        return (
+            _report(
+                "SMOKE_ONLY_BLOCKED",
+                reason_code=readiness["reason_code"],
+                market=market,
+                source_date=readiness["source_date"],
+                market_data_ready=readiness["market_data_ready"],
+                eod_preparation_dates=pending,
+                technical_smoke_only=True,
+                retrospective_not_precommit=True,
+                network_requests=0, research_db_writes=0,
+            )
+            if smoke_only else readiness
+        )
+    # Real future research Captures remain premarket-only. Separate smoke
+    # validation can run in daylight with current local EOD, but must never
+    # be promoted into a forward-looking prediction or Q7 cohort.
+    if not smoke_only and not readiness["collection_window_open"]:
         return readiness
     expected_source = pending[-1] if needs_prep else readiness["source_date"]
     policy = research_pin()
@@ -343,8 +366,12 @@ async def capture(*, market: str = "KOSPI", market_db: Path | None = None,
         # A successful prep is not permission to scan an unverified gap.
         # Reuse S25 strict clock+calendar+physical-row validation.
         latest_plan = plan(market=market, market_db=snapshot_path, now=clock)
+        final_gate = (
+            latest_plan["market_data_ready"]
+            if smoke_only else latest_plan["capture_permitted_now"]
+        )
         if (
-            not latest_plan["capture_permitted_now"]
+            not final_gate
             or latest_plan["source_date"] != expected_source
         ):
             raise ResearchCaptureError("RESEARCH_COPIED_MARKET_SNAPSHOT_NOT_CURRENT")
@@ -358,6 +385,14 @@ async def capture(*, market: str = "KOSPI", market_db: Path | None = None,
             market=market, recorded_at=datetime.now(KST),
         )
         payload["research_started_at_local_unverified"] = started.isoformat()
+        payload["execution_mode"] = (
+            "POSTHOC_TECHNICAL_SMOKE_ONLY"
+            if smoke_only else "PREMARKET_RESEARCH_CAPTURE"
+        )
+        if smoke_only:
+            payload["evaluation_use"] = "TECHNICAL_SMOKE_ONLY_NOT_Q7_COHORT"
+            payload["not_a_prospective_prediction"] = True
+            payload["ineligible_for_precommit_or_outcome_study"] = True
         payload["eod_preparation"] = preparation
         payload["eod_preparation_version"] = EOD_PREP_VERSION
         # Re-hash after adding the start timestamp; no approval or attestation.
@@ -369,7 +404,10 @@ async def capture(*, market: str = "KOSPI", market_db: Path | None = None,
         with destination.open("x", encoding="utf-8") as handle:
             handle.write(canonical_json(payload) + "\n")
         return _report(
-            "RESEARCH_CAPTURE_SAVED_NOT_Q7_APPROVED",
+            "RESEARCH_SMOKE_SAVED_NOT_Q7_EVIDENCE"
+            if smoke_only else "RESEARCH_CAPTURE_SAVED_NOT_Q7_APPROVED",
+            technical_smoke_only=smoke_only,
+            retrospective_not_precommit=smoke_only,
             market=market, source_date=source_date.isoformat(),
             capture_file=str(destination),
             payload_hash=payload["payload_hash"],
@@ -389,8 +427,8 @@ async def capture(*, market: str = "KOSPI", market_db: Path | None = None,
 
 
 def parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="S24 isolated manual research scanner (never Q7 approval)")
-    p.add_argument("mode", choices=("plan", "capture"))
+    p = argparse.ArgumentParser(description="S27 isolated research scanner: plan, premarket capture, or technical smoke")
+    p.add_argument("mode", choices=("plan", "capture", "smoke"))
     p.add_argument("--market", choices=("KOSPI", "KOSDAQ"), default="KOSPI")
     p.add_argument("--market-db", type=Path, default=None)
     p.add_argument("--acknowledge-network-and-research-writes", action="store_true")
@@ -411,6 +449,7 @@ def main(argv: list[str] | None = None) -> int:
                 market=args.market, market_db=args.market_db,
                 acknowledge=args.acknowledge_network_and_research_writes,
                 prepare_missing_eod=args.prepare_missing_eod,
+                smoke_only=args.mode == "smoke",
             ))
     except (ResearchCaptureError, sqlite3.Error, OSError, ValueError) as exc:
         result = _report("HOLD", reason_code=getattr(exc, "code", type(exc).__name__))
@@ -419,6 +458,7 @@ def main(argv: list[str] | None = None) -> int:
         "PLAN_ONLY_CAPTURE_BLOCKED",
         "RESEARCH_WINDOW_READY_NOT_Q7_APPROVED",
         "RESEARCH_CAPTURE_SAVED_NOT_Q7_APPROVED",
+        "RESEARCH_SMOKE_SAVED_NOT_Q7_EVIDENCE",
     ) else 2
 
 
