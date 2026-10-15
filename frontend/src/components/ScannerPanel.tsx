@@ -559,7 +559,7 @@ function CandidateDetail({
         <section className={`scanner-priority-card priority-${candidate.priority.tier.toLowerCase()}`}>
           <div className="scanner-priority-head">
             <div>
-              <small>분석일 기준 · {s29.orderLabel}</small>
+              <small>분석일 기준 후보 순위는 표시용 · {s29.orderLabel}</small>
               <strong>{asOfPriorityLabel(candidate)}</strong>
               <p>{candidate.priority.reason}</p>
               {s29.tieExplanation && <p className="scanner-s29-caution">{s29.tieExplanation}</p>}
