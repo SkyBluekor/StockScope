@@ -21,6 +21,7 @@ for p in (ROOT, BACKEND):
 from app.jev.decision_reviewer_offline import DecisionReviewContractError
 from app.jev.scanner_reviewer_bridge import inspect_reviewer_candidate_readonly
 from app.jev.scanner_capture_proof import inspect_capture_proof_readonly
+from app.jev.daily_capture_lineage_s23 import audit_daily_capture_readonly
 from app.jev.scanner_lineage_s7_4 import diagnose_capture, source_audit, REASONS_KO as LINEAGE_REASONS_KO
 from app.jev.scanner_integrity_s7_1 import EXPLAIN
 from app.jev.scanner_v4_readiness_s7_5 import diagnose_capture as diagnose_v4_readiness
@@ -53,9 +54,11 @@ def build_parser() -> argparse.ArgumentParser:
             "prepare", "preflight", "source-audit", "lineage", "v4-readiness",
             "s8-readiness", "local-evidence", "local-history", "local-cohort", "local-outcomes",
             "local-first-check", "local-readiness", "reviewer-bridge", "capture-proof",
+            "daily-lineage",
         ),
     )
     parser.add_argument("--capture-id", default=None)
+    parser.add_argument("--expected-source-date", default=None)
     parser.add_argument("--sample-index", type=int, default=None)
     parser.add_argument("--evaluation-run-id", default=None)
     parser.add_argument(
@@ -80,6 +83,18 @@ def execute(
             "reason": "SOURCE_RELEASE_TIME_AND_RIGHTS_AND_HORIZON_UNVERIFIED",
             "actual_provider_calls": 0,
         }
+    if args.mode == "daily-lineage":
+        if (args.save_preflight or not args.capture_id or not args.expected_source_date
+                or args.sample_index is not None or args.evaluation_run_id is not None
+                or args.market_db is not None or args.limit != 60):
+            raise DecisionReviewContractError("DAILY_LINEAGE_ARGUMENT_CONFLICT")
+        return audit_daily_capture_readonly(
+            args.simulation_db or simulation_db_path(),
+            capture_id=args.capture_id,
+            expected_source_date=args.expected_source_date,
+        )
+    if args.expected_source_date is not None:
+        raise DecisionReviewContractError("EXPECTED_SOURCE_DATE_MODE_INVALID")
     if args.mode == "capture-proof":
         if (args.save_preflight or not args.capture_id or args.sample_index is not None
                 or args.evaluation_run_id is not None or args.market_db is not None):

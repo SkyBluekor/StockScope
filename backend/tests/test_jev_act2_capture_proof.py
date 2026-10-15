@@ -531,3 +531,89 @@ def test_q7_study_capture_original_strategy_identity_must_match_frozen_spec(
     assert result["cohorts"]["DEVELOPMENT"]["study_strategy_version_mismatch"] == 1
     assert result["cohorts"]["DEVELOPMENT"]["strict_original_identity_match"] == 0
     assert "STUDY_STRATEGY_VERSION_MISMATCH" in result["failure_reasons"]
+
+
+
+def test_s23_readonly_lineage_receipt_after_real_prospective_writer(tmp_path, monkeypatch):
+    """Actual isolated writer → strict S3 proof → S23 daily evidence receipt."""
+    from app.jev.daily_capture_lineage_s23 import audit_daily_capture_readonly
+    db, capture_id = _write_fresh_fixture(tmp_path, monkeypatch)
+    original = db.read_bytes()
+    result = audit_daily_capture_readonly(
+        db, capture_id=capture_id, expected_source_date=DATE,
+        runtime_dir=tmp_path / "unapproved_selection",
+    )
+    assert result["status"] == "SOURCE_CONTRACT_READY_Q7_HOLD", result
+    assert result["strict_jev_input_ready"] is True
+    assert result["contract_ready_candidates"] == 1
+    assert result["original_source_date_matches_requested"] is True
+    assert result["q7_approval_eligible"] is False
+    assert result["q7_research_study_bound"] is False
+    assert result["independent_timestamp_attestation"] is False
+    assert result["verified_provider_publication_timestamp"] is False
+    assert result["external_ai_calls"] == result["runtime_db_writes"] == 0
+    assert "name" not in result and "price" not in result
+    assert db.read_bytes() == original
+
+    wrong_date = audit_daily_capture_readonly(
+        db, capture_id=capture_id, expected_source_date="2026-10-07",
+        runtime_dir=tmp_path / "unapproved_selection",
+    )
+    assert wrong_date["status"] == "HOLD"
+    assert wrong_date["reason_code"] == "SOURCE_DATE_OR_REQUEST_MISMATCH"
+    assert wrong_date["strict_jev_input_ready"] is False
+    assert db.read_bytes() == original
+
+
+def test_s23_original_rank_conflict_blocks_receipt(tmp_path, monkeypatch):
+    from app.jev.daily_capture_lineage_s23 import audit_daily_capture_readonly
+    db, capture_id = _write_fresh_fixture(tmp_path, monkeypatch, conflict_rank=True)
+    before = db.read_bytes()
+    outcome = audit_daily_capture_readonly(
+        db, capture_id=capture_id, expected_source_date=DATE,
+        runtime_dir=tmp_path / "unapproved_selection",
+    )
+    assert outcome["status"] == "CAPTURE_EVIDENCE_INCOMPLETE"
+    assert outcome["strict_jev_input_ready"] is False
+    assert outcome["contract_blocked_candidates"] == 1
+    assert outcome["q7_approval_eligible"] is False
+    assert db.read_bytes() == before
+
+
+def test_s23_missing_or_invalid_source_never_synthesizes_lineage(tmp_path):
+    from app.jev.daily_capture_lineage_s23 import audit_daily_capture_readonly
+    missing_db = tmp_path / "not_created.db"
+    result = audit_daily_capture_readonly(
+        missing_db, capture_id="synthetic-capture", expected_source_date=DATE,
+    )
+    assert result["status"] == "HOLD"
+    assert result["reason_code"] == "SIMULATION_DB_NOT_FOUND"
+    assert not missing_db.exists()
+    assert audit_daily_capture_readonly(
+        missing_db, capture_id="synthetic-capture", expected_source_date="invalid",
+    )["reason_code"] == "EXPECTED_SOURCE_DATE_INVALID"
+
+
+
+def test_s23_direct_cli_date_bound_and_no_side_effects(tmp_path, monkeypatch):
+    from tools.data.jev_s7_shadow import build_parser, execute
+    from app.jev.decision_reviewer_offline import DecisionReviewContractError
+
+    db, capture_id = _write_fresh_fixture(tmp_path, monkeypatch)
+    old = db.read_bytes()
+    parsed = build_parser().parse_args([
+        "daily-lineage", "--capture-id", capture_id,
+        "--expected-source-date", DATE, "--simulation-db", str(db), "--json",
+    ])
+    report = execute(parsed)
+    assert report["status"] == "SOURCE_CONTRACT_READY_Q7_HOLD"
+    assert report["q7_approval_eligible"] is False
+    assert report["verified_provider_publication_timestamp"] is False
+    assert db.read_bytes() == old
+    with pytest.raises(DecisionReviewContractError) as caught:
+        execute(build_parser().parse_args([
+            "daily-lineage", "--capture-id", capture_id,
+            "--expected-source-date", DATE, "--limit", "1",
+            "--simulation-db", str(db),
+        ]))
+    assert caught.value.code == "DAILY_LINEAGE_ARGUMENT_CONFLICT"
