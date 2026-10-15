@@ -29,6 +29,11 @@ from app.jev.research_scanner_s24 import (
 )
 from tools.data.common import market_db_path
 from app.jev.market_session_s25 import inspect_latest_session_readonly
+from tools.data.q7_research_eod_s26 import (
+    VERSION as EOD_PREP_VERSION,
+    candidate_missing_days,
+    prepare_missing_days,
+)
 
 VERSION = "Q7_S24_RESEARCH_CAPTURE_CLI_V1"
 DEFAULT_ROOT = ROOT / "data" / "q7_research_scanner"
@@ -137,6 +142,19 @@ def plan(*, market: str = "KOSPI", market_db: Path | None = None,
         # hard safety gates even when the old 1–4 day age check passes.
         allowed_day = None
         reason = "RESEARCH_" + session["session_evidence_status"]
+    # A missing *unverified* weekday can be checked against KRX only after
+    # explicit preparation opt-in; no 'open day' claim is made at plan time.
+    provisional = {
+        "latest_complete_eod_date": latest.isoformat() if latest is not None else None,
+        "local_market_date_age_days": age,
+        "data_readiness_reason": (
+            "RECENT_LOCAL_COMPLETE_EOD" if market_data_ready
+            else session["session_evidence_status"] if recent_local_eod
+            else "RESEARCH_FRESH_EOD_REQUIRED"
+        ),
+        **session,
+    }
+    pending = candidate_missing_days(provisional)
     return _report(
         "RESEARCH_WINDOW_READY_NOT_Q7_APPROVED"
         if allowed_day is not None else "PLAN_ONLY_CAPTURE_BLOCKED",
@@ -151,6 +169,11 @@ def plan(*, market: str = "KOSPI", market_db: Path | None = None,
             else "RESEARCH_FRESH_EOD_REQUIRED"
         ),
         **session,
+        eod_preparation_version=EOD_PREP_VERSION,
+        eod_preparation_eligible=bool(pending),
+        eod_preparation_dates=pending,
+        eod_preparation_requires_explicit_opt_in=True,
+        eod_preparation_writes_only_research_snapshot=True,
         collection_window_open=window_open,
         collection_window_kst="05:00-08:45, weekdays",
         capture_permitted_now=allowed_day is not None,
@@ -253,7 +276,9 @@ def _clone_readonly_source(source: Path, dest: Path) -> None:
 async def capture(*, market: str = "KOSPI", market_db: Path | None = None,
                   root: Path = DEFAULT_ROOT, now: datetime | None = None,
                   acknowledge: bool = False,
+                  prepare_missing_eod: bool = False,
                   execute_scan: Callable[..., Awaitable[dict[str, Any]]] | None = None,
+                  execute_prepare: Callable[..., Awaitable[dict[str, Any]]] | None = None,
                   ) -> dict[str, Any]:
     if not acknowledge:
         raise ResearchCaptureError("RESEARCH_EXPLICIT_NETWORK_AND_LOCAL_WRITES_ACK_REQUIRED")
@@ -261,35 +286,69 @@ async def capture(*, market: str = "KOSPI", market_db: Path | None = None,
     source = Path(market_db or market_db_path())
     root = _root_guard(root, source)
     readiness = plan(market=market, market_db=source, now=clock)
-    if readiness["status"] != "RESEARCH_WINDOW_READY_NOT_Q7_APPROVED":
+    pending = readiness["eod_preparation_dates"]
+    needs_prep = (
+        not readiness["capture_permitted_now"]
+        and readiness["eod_preparation_eligible"]
+        and bool(prepare_missing_eod)
+    )
+    if not readiness["capture_permitted_now"] and not needs_prep:
         return readiness
-    source_date = date.fromisoformat(readiness["source_date"])
+    # Never create a directory or hit KRX outside the premarket window,
+    # even if a missing weekday is available for investigation.
+    if not readiness["collection_window_open"]:
+        return readiness
+    expected_source = pending[-1] if needs_prep else readiness["source_date"]
     policy = research_pin()
-    folder = root / f"{source_date.isoformat()}_{market.lower()}"
-    # Directory creation is atomic. Replays cannot replace a prior file or
-    # silently fabricate an earlier study precommit. Failed runs stay visible.
+    folder = root / f"{expected_source}_{market.lower()}"
+    # One immutable daily attempt across failures. Never auto-replay a
+    # partially prepared research snapshot or its provider requests.
     root.mkdir(parents=True, exist_ok=True)
     try:
         folder.mkdir(exist_ok=False)
     except FileExistsError:
         return _report(
             "HOLD", reason_code="RESEARCH_DAY_ALREADY_ATTEMPTED",
-            market=market, source_date=source_date.isoformat(),
+            market=market, source_date=expected_source,
             research_db_writes=0, network_requests=0,
         )
     started = datetime.now(KST)
     try:
         snapshot_path = folder / "market_snapshot.db"
         _clone_readonly_source(source, snapshot_path)
-        # Plan and copy are separate operations. Recheck the exact SQLite
-        # snapshot after copying to reject an intervening market-store update,
-        # partial day, or verified-closure conflict before any Scanner call.
         snapshot_plan = plan(market=market, market_db=snapshot_path, now=clock)
+        # Eliminate any mixed-date read between plan and SQLite backup.
         if (
-            not snapshot_plan["capture_permitted_now"]
-            or snapshot_plan["source_date"] != source_date.isoformat()
+            snapshot_plan["source_date"] != readiness["source_date"]
+            or snapshot_plan["eod_preparation_dates"] != pending
+            or snapshot_plan["session_evidence_status"]
+                != readiness["session_evidence_status"]
         ):
             raise ResearchCaptureError("RESEARCH_COPIED_MARKET_SNAPSHOT_NOT_CURRENT")
+        preparation = None
+        if needs_prep:
+            if not snapshot_plan["eod_preparation_eligible"]:
+                raise ResearchCaptureError("RESEARCH_EOD_PREP_NO_ELIGIBLE_MISSING_DAYS")
+            action = execute_prepare or prepare_missing_days
+            preparation = await action(
+                market=market, days=pending, destination_db=snapshot_path,
+                research_root=folder,
+            )
+            if (
+                not isinstance(preparation, dict)
+                or [row.get("date") for row in preparation.get("stored_days", [])]
+                    != pending
+            ):
+                raise ResearchCaptureError("RESEARCH_EOD_PREP_INCOMPLETE_RESULT")
+        # A successful prep is not permission to scan an unverified gap.
+        # Reuse S25 strict clock+calendar+physical-row validation.
+        latest_plan = plan(market=market, market_db=snapshot_path, now=clock)
+        if (
+            not latest_plan["capture_permitted_now"]
+            or latest_plan["source_date"] != expected_source
+        ):
+            raise ResearchCaptureError("RESEARCH_COPIED_MARKET_SNAPSHOT_NOT_CURRENT")
+        source_date = date.fromisoformat(expected_source)
         scanner = execute_scan or _execute_scan
         result = await scanner(
             root=folder, market=market, source_date=source_date, policy=policy,
@@ -299,6 +358,8 @@ async def capture(*, market: str = "KOSPI", market_db: Path | None = None,
             market=market, recorded_at=datetime.now(KST),
         )
         payload["research_started_at_local_unverified"] = started.isoformat()
+        payload["eod_preparation"] = preparation
+        payload["eod_preparation_version"] = EOD_PREP_VERSION
         # Re-hash after adding the start timestamp; no approval or attestation.
         from app.jev.research_scanner_s24 import digest
         payload["payload_hash"] = digest({
@@ -313,6 +374,7 @@ async def capture(*, market: str = "KOSPI", market_db: Path | None = None,
             capture_file=str(destination),
             payload_hash=payload["payload_hash"],
             original_strategy_rows=len(policy.operating_strategies),
+            eod_preparation=preparation,
             original_candidates=payload["candidate_count"],
             entry_candidates=payload["entry_candidates"],
             research_scanner_runs=1,
@@ -332,6 +394,10 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--market", choices=("KOSPI", "KOSDAQ"), default="KOSPI")
     p.add_argument("--market-db", type=Path, default=None)
     p.add_argument("--acknowledge-network-and-research-writes", action="store_true")
+    p.add_argument(
+        "--prepare-missing-eod", action="store_true",
+        help="Explicit opt-in to fetch only fully missing EOD market days into the research snapshot before Scanner.",
+    )
     return p
 
 
@@ -344,6 +410,7 @@ def main(argv: list[str] | None = None) -> int:
             result = asyncio.run(capture(
                 market=args.market, market_db=args.market_db,
                 acknowledge=args.acknowledge_network_and_research_writes,
+                prepare_missing_eod=args.prepare_missing_eod,
             ))
     except (ResearchCaptureError, sqlite3.Error, OSError, ValueError) as exc:
         result = _report("HOLD", reason_code=getattr(exc, "code", type(exc).__name__))
