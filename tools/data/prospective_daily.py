@@ -31,6 +31,7 @@ for p in (ROOT, BACKEND):
         sys.path.insert(0, str(p))
 
 from app.jev.q7_observation_s16 import measure as observe_outcomes
+from app.jev.daily_capture_lineage_s23 import audit_daily_capture_readonly
 from tools.data.common import market_db_path, simulation_db_path
 
 VERSION = "STOCKSCOPE_PROSPECTIVE_DAILY_S17_V1"
@@ -245,12 +246,27 @@ def run_once(*, scope: str = "KOSPI", candidate_limit: int = 5,
             prior = _existing_capture(sim, market_scope=scope, data_date=signal_date)
             if prior is not None:
                 observations = observe_outcomes(sim, market, as_of=today)
+                # A previous completed capture remains immutable. Audit only
+                # completed rows; never treat PENDING/PARTIAL as evidence.
+                lineage = (
+                    audit_daily_capture_readonly(
+                        sim, capture_id=prior["id"],
+                        expected_source_date=signal_date.isoformat(),
+                    ) if prior["status"] in ("COMPLETE", "DUPLICATE")
+                    else {
+                        "status": "HOLD",
+                        "reason_code": "EXISTING_CAPTURE_NOT_COMPLETE",
+                        "q7_approval_eligible": False,
+                        "strict_jev_input_ready": False,
+                    }
+                )
                 outcome = _report(
                     "SKIPPED_ALREADY_CAPTURED_OR_PENDING",
                     local_date=today.isoformat(),
                     source_data_date=signal_date.isoformat(),
                     existing_capture_id=prior["id"],
                     existing_capture_status=prior["status"],
+                    capture_lineage=lineage,
                     outcome_status=observations["status"],
                     outcome_windows=observations.get("windows"),
                 )
@@ -300,6 +316,13 @@ def run_once(*, scope: str = "KOSPI", candidate_limit: int = 5,
 
             observed_finished_at = _now()
             observations = observe_outcomes(sim, market, as_of=today)
+            # Scanner COMPLETE and actual original-evidence completeness
+            # are different facts. Report the second without altering the
+            # original capture, Q7 policy, or any investment decision.
+            lineage = audit_daily_capture_readonly(
+                sim, capture_id=capture_id,
+                expected_source_date=signal_date.isoformat(),
+            )
             outcome = _report(
                 "SCANNER_CAPTURED_AND_OUTCOME_CHECKED",
                 local_date=today.isoformat(),
@@ -310,6 +333,7 @@ def run_once(*, scope: str = "KOSPI", candidate_limit: int = 5,
                 premarket_execution_is_not_independent_timestamp_attestation=True,
                 scanner_job_id=job_id, capture_id=capture_id,
                 capture_status=capture["status"],
+                capture_lineage=lineage,
                 captured_candidate_count=capture.get("returned_candidate_count"),
                 outcome_status=observations["status"],
                 outcome_windows=observations.get("windows"),
