@@ -311,6 +311,7 @@ function CandidateCompareRow({
 }) {
   const tone = candidateTone(candidate);
   const key = candidateKey(candidate);
+  const view = beginnerCandidatePresentation(candidate);
   const evidenceView = scannerCandidateEvidence(candidate, rank - 1);
   const watchBusy = actionBusyKey === "watch:" + key;
   const heldBusy = actionBusyKey === "held:" + key;
@@ -335,6 +336,9 @@ function CandidateCompareRow({
           <strong>{candidate.conditions.passed}/{candidate.conditions.total} 충족</strong>
           <small className="scanner-s29-metric">{evidenceView.riskLabel}</small>
           <small className="scanner-s29-history">{evidenceView.historicalLabel}</small>
+          <span className="scanner-ux2-row-next">
+            <span>{view.nextActionLabel}</span>
+          </span>
           {aiStatusLabel && aiStatusLabel !== "AI 검토 미제공"
             && aiStatusLabel !== "AI 검토 미실행"
             && aiStatusLabel !== "AI 검토 꺼짐"
@@ -1962,7 +1966,7 @@ export default function ScannerPanel({
                     <span>후보 목록</span>
                     <strong>분석일 기준 후보 {result.candidates.length}개</strong>
                     <small className="scanner-ux5-count">
-                      전체 {allCandidates.length}개 · 동률 포함 첫 화면 {displayLayout.visibleFeaturedCount}개
+                      전체 {result.candidates.length + result.more_candidates.length}개 후보 · 동률 포함 첫 화면 {displayLayout.visibleFeaturedCount}개
                     </small>
                   </div>
                   <small>분석일 검토 순서 · 예상 수익률 순위 아님</small>
