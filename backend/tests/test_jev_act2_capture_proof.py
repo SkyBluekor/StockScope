@@ -469,14 +469,15 @@ def test_q7_study_future_holdout_and_missing_history_are_not_promoted(tmp_path):
     )["status"] == "INVALID_AS_OF"
 
 
-def test_q7_study_legacy_and_tampered_frozen_reference_fail_closed(tmp_path, monkeypatch):
+def test_q7_study_unexpected_extra_frozen_reference_fails_closed(tmp_path, monkeypatch):
     from datetime import date
     from app.jev.q7_study_audit import audit_study_readonly
 
     db, capture_id = _write_fresh_fixture(tmp_path, monkeypatch)
     spec, root = _frozen_study(tmp_path)
-    # Only mutate the isolated synthetic DB to emulate a corrupted reference
-    # source; the auditor must not quietly count a strict-valid entry.
+    # Only insert an extra row into an isolated synthetic DB. The immutable
+    # COMPLETE capture must keep its original expected count unchanged;
+    # a new unaccounted-for reference must block the study audit.
     with sqlite3.connect(db) as conn:
         conn.execute(
             "INSERT INTO prospective_recommendation_sample("
@@ -489,10 +490,6 @@ def test_q7_study_legacy_and_tampered_frozen_reference_fail_closed(tmp_path, mon
             "FROM prospective_recommendation_sample WHERE capture_run_id=? "
             "AND sample_index=0",
             (capture_id,),
-        )
-        conn.execute(
-            "UPDATE prospective_capture_run SET returned_candidate_count=2 "
-            "WHERE id=?", (capture_id,),
         )
     before = db.read_bytes()
     result = audit_study_readonly(
