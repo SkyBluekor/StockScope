@@ -246,3 +246,98 @@ def test_plan_cli_reports_blocked_capture_as_successful_readonly_diagnosis(
     assert result["status"] == "PLAN_ONLY_CAPTURE_BLOCKED"
     assert result["market_data_ready"] is True
     assert result["network_requests"] == result["research_db_writes"] == 0
+
+
+
+@pytest.mark.asyncio
+async def test_s27_real_data_smoke_can_run_in_daytime_but_is_not_a_q7_capture(
+    tmp_path,
+):
+    market = _market(tmp_path)
+    old_bytes = market.read_bytes()
+    root = tmp_path / "research"
+    called = []
+
+    async def fake_scanner(*, root, market, source_date, policy):
+        called.append((root, market, source_date))
+        assert root.parent.name == "smoke_only"
+        assert (root / "market_snapshot.db").exists()
+        assert policy.policy_source == SOURCE
+        return _scanner_result(pin=policy)
+
+    allowed_plan = research.plan(market="KOSPI", market_db=market, now=OUTSIDE)
+    assert allowed_plan["status"] == "PLAN_ONLY_CAPTURE_BLOCKED"
+    assert allowed_plan["market_data_ready"] is True
+
+    with pytest.raises(ResearchCaptureError) as exc:
+        await research.capture(
+            market="KOSPI", market_db=market, root=root, now=OUTSIDE,
+            smoke_only=True, acknowledge=False, execute_scan=fake_scanner,
+        )
+    assert exc.value.code == "RESEARCH_EXPLICIT_NETWORK_AND_LOCAL_WRITES_ACK_REQUIRED"
+    assert not root.exists()
+
+    smoke = await research.capture(
+        market="KOSPI", market_db=market, root=root, now=OUTSIDE,
+        smoke_only=True, acknowledge=True, execute_scan=fake_scanner,
+    )
+    assert smoke["status"] == "RESEARCH_SMOKE_SAVED_NOT_Q7_EVIDENCE"
+    assert smoke["technical_smoke_only"] is True
+    assert smoke["retrospective_not_precommit"] is True
+    assert smoke["q7_approval_eligible"] is False
+    assert smoke["production_market_db_writes"] == 0
+    assert len(called) == 1
+    path = Path(smoke["capture_file"])
+    assert path.parent == root / "smoke_only" / "2026-10-14_kospi"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["execution_mode"] == "POSTHOC_TECHNICAL_SMOKE_ONLY"
+    assert data["evaluation_use"] == "TECHNICAL_SMOKE_ONLY_NOT_Q7_COHORT"
+    assert data["not_a_prospective_prediction"] is True
+    assert data["ineligible_for_precommit_or_outcome_study"] is True
+    assert data["q7_approval_eligible"] is False
+    assert data["trusted_precommit_timestamp_proven"] is False
+    assert data["independent_capture_timestamp_proven"] is False
+    assert data["market_publication_timestamp_proven"] is False
+    assert data["payload_hash"] == digest({
+        k: v for k, v in data.items() if k != "payload_hash"
+    })
+    assert market.read_bytes() == old_bytes
+    assert not (root / "2026-10-14_kospi").exists()
+
+    duplicate = await research.capture(
+        market="KOSPI", market_db=market, root=root, now=OUTSIDE,
+        smoke_only=True, acknowledge=True, execute_scan=fake_scanner,
+    )
+    assert duplicate["reason_code"] == "RESEARCH_DAY_ALREADY_ATTEMPTED"
+    assert len(called) == 1
+    assert path.exists()
+
+
+@pytest.mark.asyncio
+async def test_s27_smoke_never_unlocks_original_premarket_capture(tmp_path):
+    market = _market(tmp_path)
+    root = tmp_path / "research"
+
+    async def fake_scanner(*, policy, **_):
+        return _scanner_result(pin=policy)
+
+    smoke = await research.capture(
+        market="KOSPI", market_db=market, root=root, now=OUTSIDE,
+        smoke_only=True, acknowledge=True, execute_scan=fake_scanner,
+    )
+    blocked = await research.capture(
+        market="KOSPI", market_db=market, root=root, now=OUTSIDE,
+        smoke_only=False, acknowledge=True, execute_scan=fake_scanner,
+    )
+    assert smoke["status"] == "RESEARCH_SMOKE_SAVED_NOT_Q7_EVIDENCE"
+    assert blocked["status"] == "PLAN_ONLY_CAPTURE_BLOCKED"
+    assert blocked["capture_permitted_now"] is False
+    assert not (root / "2026-10-14_kospi").exists()
+
+
+def test_s27_cli_explicitly_labels_smoke_as_distinct_from_capture():
+    p = research.parser()
+    smoke = p.parse_args(["smoke", "--market", "KOSPI"])
+    assert smoke.mode == "smoke"
+    assert smoke.acknowledge_network_and_research_writes is False
+    assert p.parse_args(["capture"]).mode == "capture"
