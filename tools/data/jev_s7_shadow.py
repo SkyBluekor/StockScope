@@ -20,6 +20,7 @@ for p in (ROOT, BACKEND):
 
 from app.jev.decision_reviewer_offline import DecisionReviewContractError
 from app.jev.scanner_reviewer_bridge import inspect_reviewer_candidate_readonly
+from app.jev.scanner_capture_proof import inspect_capture_proof_readonly
 from app.jev.scanner_lineage_s7_4 import diagnose_capture, source_audit, REASONS_KO as LINEAGE_REASONS_KO
 from app.jev.scanner_integrity_s7_1 import EXPLAIN
 from app.jev.scanner_v4_readiness_s7_5 import diagnose_capture as diagnose_v4_readiness
@@ -51,7 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
             "status", "inspect", "capture", "report", "run-approved",
             "prepare", "preflight", "source-audit", "lineage", "v4-readiness",
             "s8-readiness", "local-evidence", "local-history", "local-cohort", "local-outcomes",
-            "local-first-check", "local-readiness", "reviewer-bridge",
+            "local-first-check", "local-readiness", "reviewer-bridge", "capture-proof",
         ),
     )
     parser.add_argument("--capture-id", default=None)
@@ -79,6 +80,14 @@ def execute(
             "reason": "SOURCE_RELEASE_TIME_AND_RIGHTS_AND_HORIZON_UNVERIFIED",
             "actual_provider_calls": 0,
         }
+    if args.mode == "capture-proof":
+        if (args.save_preflight or not args.capture_id or args.sample_index is not None
+                or args.evaluation_run_id is not None or args.market_db is not None):
+            raise DecisionReviewContractError("CAPTURE_PROOF_ARGUMENT_CONFLICT")
+        return inspect_capture_proof_readonly(
+            args.simulation_db or simulation_db_path(),
+            capture_id=args.capture_id, max_samples=args.limit,
+        )
     if args.mode == "reviewer-bridge":
         if (args.save_preflight or not args.capture_id or args.sample_index is None
                 or args.evaluation_run_id is not None or args.market_db is not None
