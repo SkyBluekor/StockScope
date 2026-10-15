@@ -592,3 +592,28 @@ def test_s23_missing_or_invalid_source_never_synthesizes_lineage(tmp_path):
     assert audit_daily_capture_readonly(
         missing_db, capture_id="synthetic-capture", expected_source_date="invalid",
     )["reason_code"] == "EXPECTED_SOURCE_DATE_INVALID"
+
+
+
+def test_s23_direct_cli_date_bound_and_no_side_effects(tmp_path, monkeypatch):
+    from tools.data.jev_s7_shadow import build_parser, execute
+    from app.jev.decision_reviewer_offline import DecisionReviewContractError
+
+    db, capture_id = _write_fresh_fixture(tmp_path, monkeypatch)
+    old = db.read_bytes()
+    parsed = build_parser().parse_args([
+        "daily-lineage", "--capture-id", capture_id,
+        "--expected-source-date", DATE, "--simulation-db", str(db), "--json",
+    ])
+    report = execute(parsed)
+    assert report["status"] == "SOURCE_CONTRACT_READY_Q7_HOLD"
+    assert report["q7_approval_eligible"] is False
+    assert report["verified_provider_publication_timestamp"] is False
+    assert db.read_bytes() == old
+    with pytest.raises(DecisionReviewContractError) as caught:
+        execute(build_parser().parse_args([
+            "daily-lineage", "--capture-id", capture_id,
+            "--expected-source-date", DATE, "--limit", "1",
+            "--simulation-db", str(db),
+        ]))
+    assert caught.value.code == "DAILY_LINEAGE_ARGUMENT_CONFLICT"
