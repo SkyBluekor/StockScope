@@ -42,7 +42,7 @@ function simpleDifference(
   if (field === "entry_gap_missing") return a + "는 가격 기준과의 차이를 확인할 수 있지만 " + b + "는 관련 자료가 부족해요.";
   if (field === "entry_gap_pct") return a + "가 분석 당시의 전략 가격 기준에 더 가까워서 먼저 보여줘요.";
   if (field === "negative_strategy_fit") return a + "가 현재 투자 조건에 더 잘 맞는 점수를 받았어요. 다만 매수 권유는 아니에요.";
-  if (field === "tie_focus_order") return a + "와 " + b + "의 기본 조건이 같아, 기록된 차트 목표 기준으로 순서를 정했어요.";
+  if (field === "tie_focus_order") return a + "와 " + b + "는 우선순위 조건상 동률이에요. 구조 목표가 가까운 한 종목만 앞으로 표시한 것이며 실제 수익률의 우열은 확인되지 않았어요.";
   if (field === "code") return "실제 비교 조건이 같아 종목코드 순서로 보여줬어요. 어느 종목이 더 좋다는 뜻이 아니에요.";
   return "저장된 분석의 순서를 확인했어요. 자세한 계산 자료는 아래에서 볼 수 있어요.";
 }

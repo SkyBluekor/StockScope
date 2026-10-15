@@ -2883,6 +2883,14 @@ export type ScannerCandidatePriority = {
   rank: number;
   previous_rank: number;
   rank_change: number;
+  tie_group?: number;
+  tie_size?: number;
+  tie_focus?: boolean;
+  tie_focus_order?: number;
+  tie_breaker?: string;
+  strict_rank?: boolean;
+  structural_target_distance_pct?: number | null;
+  structural_target_basis?: string | null;
 };
 
 export type ScannerAiReviewPresentation = {

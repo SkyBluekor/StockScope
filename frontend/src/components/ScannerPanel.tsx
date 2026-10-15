@@ -43,6 +43,7 @@ import ScannerPriceStatus from "./ScannerPriceStatus";
 import useScannerQuote from "./useScannerQuote";
 import { asOfPriorityLabel } from "./scannerQuoteTruth";
 import { beginnerCandidatePresentation, simpleConditionStatus } from "./scannerDecisionPresentation";
+import { scannerCandidateEvidence, scannerTieSummary } from "./scannerCandidateEvidence";
 import ScannerRankComparison from "./ScannerRankComparison";
 import ScannerMotionProgress from "./ScannerMotionProgress";
 import AiReviewProgress from "./AiReviewProgress";
@@ -310,6 +311,7 @@ function CandidateCompareRow({
   const tone = candidateTone(candidate);
   const key = candidateKey(candidate);
   const view = beginnerCandidatePresentation(candidate);
+  const evidenceView = scannerCandidateEvidence(candidate, rank - 1);
   const watchBusy = actionBusyKey === "watch:" + key;
   const heldBusy = actionBusyKey === "held:" + key;
   const isWatched = managedStock?.watch_enabled === true;
@@ -320,15 +322,19 @@ function CandidateCompareRow({
       <button
         type="button" className="scanner-ux-row-select" onClick={onSelect}
         aria-pressed={selected}
-        aria-label={candidate.name + " 선택, 먼저 살펴볼 순서 " + rank}
+        aria-label={candidate.name + " 선택. " + evidenceView.orderLabel}
       >
-        <span className="scanner-compare-rank">{rank}</span>
+        <span className="scanner-compare-rank" title={evidenceView.orderLabel}>{rank}</span>
         <span className="scanner-compare-stock">
           <strong>{candidate.name}</strong>
           <small>{candidate.market}</small>
+          {candidate.priority?.tie_size && candidate.priority.tie_size > 1 && candidate.priority.strict_rank === false
+            && <small className="scanner-s29-tie-label">동률 {candidate.priority.tie_size}개</small>}
         </span>
         <span className="scanner-compare-judgement">
           <strong>{candidate.conditions.passed}/{candidate.conditions.total} 충족</strong>
+          <small className="scanner-s29-metric">{evidenceView.riskLabel}</small>
+          <small className="scanner-s29-history">{evidenceView.historicalLabel}</small>
           <span className="scanner-ux2-row-next">
             <span>{view.nextActionLabel}</span>
           </span>
@@ -414,6 +420,7 @@ function CandidateDetail({
   const evidenceSummary = evidenceSummaryText(candidate);
   const canPrepareEvidence = evidencePreparationAvailable(candidate);
   const targetCap = targetCapExplanation(candidate);
+  const s29 = scannerCandidateEvidence(candidate, rank - 1);
   const [activeTab, setActiveTab] = useState<"summary" | "strategy" | "ai" | "history" | "news">("summary");
   // Lives above tab panels so a manual quote survives tab switches, never stock switches.
   const { snapshot: quoteSnapshot, checkPrice } = useScannerQuote(candidate);
@@ -435,7 +442,7 @@ function CandidateDetail({
     <article className={`scanner-selected-detail tone-${tone}`}>
       <header className="scanner-selected-head">
         <div>
-          <span className="scanner-selected-kicker">선택한 후보 · 살펴볼 순서 {rank}</span>
+          <span className="scanner-selected-kicker">선택한 후보 · {s29.orderLabel}</span>
           <div className="scanner-stock-line">
             <h3>{candidate.name}</h3>
             <span>{candidate.market} · {candidate.code}</span>
@@ -552,10 +559,19 @@ function CandidateDetail({
         <section className={`scanner-priority-card priority-${candidate.priority.tier.toLowerCase()}`}>
           <div className="scanner-priority-head">
             <div>
-              <small>분석일 기준 후보 순위 · {rank}순위</small>
+              <small>분석일 기준 · {s29.orderLabel}</small>
               <strong>{asOfPriorityLabel(candidate)}</strong>
               <p>{candidate.priority.reason}</p>
+              {s29.tieExplanation && <p className="scanner-s29-caution">{s29.tieExplanation}</p>}
             </div>
+          </div>
+          <div className="scanner-s29-evidence" aria-label="동률 및 위험·검증 근거">
+            <strong>분석일 기준 근거 · 실제 주문 기준 아님</strong>
+            <span>{s29.riskLabel} · {s29.structuralLabel}</span>
+            <span>{s29.historicalLabel}</span>
+            {s29.riskStatus !== "CHECKED" && <span className="scanner-s29-caution">가격·위험 근거를 확인하기 전에는 손익비를 믿고 판단하지 마세요.</span>}
+            {s29.sameRunRankChangeLabel && <small>{s29.sameRunRankChangeLabel}</small>}
+            <small>5·10·20거래일 성과는 별도 사전 기록이 확인된 후보만 평가합니다. 현재 표시 순서가 수익을 예측하지는 않아요.</small>
           </div>
           <div className="scanner-priority-factors">
             {candidate.priority.strengths.map((item) => <span className="positive" key={`strength-${item}`}>✓ {item}</span>)}
@@ -1949,6 +1965,7 @@ export default function ScannerPanel({
                   </div>
                   <small>분석일 기준 검토 순서</small>
                 </header>
+                <p className="scanner-s29-list-note" role="status">{scannerTieSummary([...result.candidates, ...result.more_candidates])}</p>
 
                 <div className="scanner-compare-labels" aria-hidden="true">
                   <span>순서</span><span>종목</span><span>조건 충족 · 핵심 확인</span><span>내 종목</span>
