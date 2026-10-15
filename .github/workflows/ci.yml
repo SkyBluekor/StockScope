@@ -83,6 +83,10 @@ jobs:
         working-directory: frontend
         run: npm run test:sc-ux-motion
 
+      - name: Test S29 rank and reference-risk evidence
+        working-directory: frontend
+        run: npm run test:sc-s29
+
       - name: Build frontend
         working-directory: frontend
         run: npm run build

@@ -774,3 +774,29 @@
   }
   .scanner-jev-motion-status.is-running .scanner-jev-motion-icon::after { content: none; }
 }
+
+
+/* S29: inline source-evidence, not artificial investment-rank badges. */
+.scanner-workspace .scanner-s29-list-note {
+  margin: 0; padding: 10px 14px; color: var(--text-subtle);
+  font-size: 13px; line-height: 1.5; border-bottom: 1px solid var(--line-soft);
+}
+.scanner-workspace .scanner-s29-tie-label {
+  display: inline-block; color: var(--text-strong); font-weight: 600;
+}
+.scanner-workspace .scanner-s29-metric,
+.scanner-workspace .scanner-s29-history {
+  display: block; color: var(--text-subtle); font-size: 12px;
+  line-height: 1.45; word-break: keep-all;
+}
+.scanner-workspace .scanner-s29-evidence {
+  display: grid; gap: 6px; margin: 10px 0; padding: 12px 14px;
+  border: 1px solid var(--line-soft); border-radius: 10px;
+  color: var(--text-strong); font-size: 13px; line-height: 1.5;
+}
+.scanner-workspace .scanner-s29-evidence small {
+  color: var(--text-subtle); line-height: 1.5;
+}
+.scanner-workspace .scanner-s29-caution {
+  color: var(--text-subtle); font-size: 12px; line-height: 1.5;
+}
