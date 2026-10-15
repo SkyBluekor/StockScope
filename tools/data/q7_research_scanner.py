@@ -24,7 +24,7 @@ for folder in (ROOT, BACKEND):
         sys.path.insert(0, str(folder))
 
 from app.jev.research_scanner_s24 import (
-    ResearchCaptureError, KST, canonical_json, research_pin,
+    ResearchCaptureError, KST, START, END, canonical_json, research_pin,
     recent_eod_source_date, receipt_for_scanner,
 )
 from tools.data.common import market_db_path
@@ -92,32 +92,68 @@ def _latest_complete_day(market_db: Path, market: str, today: date) -> date | No
 
 def plan(*, market: str = "KOSPI", market_db: Path | None = None,
          now: datetime | None = None) -> dict[str, Any]:
+    """Read-only at ANY hour. Report data readiness separately from run eligibility.
+
+    An out-of-window plan must NOT conceal EOD/data/strategy information, and
+    must NOT grant permission to perform an out-of-window capture.
+    """
     if market not in ("KOSPI", "KOSDAQ"):
         raise ResearchCaptureError("RESEARCH_MARKET_INVALID")
     clock = now or datetime.now(KST)
     if clock.tzinfo is None or clock.utcoffset() is None:
         raise ResearchCaptureError("RESEARCH_AWARE_KST_CLOCK_REQUIRED")
+    local = clock.astimezone(KST)
     source = Path(market_db or market_db_path())
-    latest = _latest_complete_day(source, market, clock.astimezone(KST).date())
+    latest = _latest_complete_day(source, market, local.date())
     pin = research_pin()
+    market_data_ready = (
+        latest is not None and 1 <= (local.date() - latest).days <= 4
+    )
+    window_open = (
+        local.weekday() < 5
+        and START <= local.time().replace(tzinfo=None) <= END
+    )
+
+    # Reuse the exact capture gate for the final result, rather than
+    # reimplementing authorization in plan. A data-ready plan outside the
+    # window remains BLOCKED for capture.
     try:
-        eligible = recent_eod_source_date(clock, complete_market_day=latest)
-    except ResearchCaptureError as exc:
-        return _report(
-            "HOLD", reason_code=exc.code,
-            latest_complete_eod_date=latest.isoformat() if latest else None,
-            market=market, strategy_count=len(pin.operating_strategies),
-            research_policy_source=pin.policy_source,
-            network_requests=0, research_db_writes=0,
+        allowed_day = recent_eod_source_date(
+            clock, complete_market_day=latest,
         )
+        reason = None
+    except ResearchCaptureError as exc:
+        allowed_day = None
+        reason = exc.code
     return _report(
-        "RESEARCH_WINDOW_READY_NOT_Q7_APPROVED",
-        market=market, source_date=eligible.isoformat(),
+        "RESEARCH_WINDOW_READY_NOT_Q7_APPROVED"
+        if allowed_day is not None else "PLAN_ONLY_CAPTURE_BLOCKED",
+        market=market,
+        source_date=latest.isoformat() if latest is not None else None,
+        latest_complete_eod_date=latest.isoformat() if latest is not None else None,
+        market_data_ready=market_data_ready,
+        local_market_date_age_days=(
+            (local.date() - latest).days if latest is not None else None
+        ),
+        data_readiness_reason=(
+            "RECENT_LOCAL_COMPLETE_EOD" if market_data_ready
+            else "RESEARCH_FRESH_EOD_REQUIRED"
+        ),
+        collection_window_open=window_open,
+        collection_window_kst="05:00-08:45, weekdays",
+        capture_permitted_now=allowed_day is not None,
+        capture_block_reason=reason,
+        reason_code=reason,
         strategy_count=len(pin.operating_strategies),
         research_policy_source=pin.policy_source,
-        network_requests=0, research_db_writes=0,
+        network_requests=0,
+        research_db_writes=0,
         if_executed_network_access_may_occur=True,
-        note="Existing local EOD is not independent as-of/publication proof.",
+        note=(
+            "Local EOD completeness does not establish exchange release time, "
+            "latest actual market session, independently attested precommit, "
+            "or Q7 eligibility."
+        ),
     )
 
 
@@ -291,7 +327,9 @@ def main(argv: list[str] | None = None) -> int:
         result = _report("HOLD", reason_code=getattr(exc, "code", type(exc).__name__))
     print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
     return 0 if result["status"] in (
-        "RESEARCH_WINDOW_READY_NOT_Q7_APPROVED", "RESEARCH_CAPTURE_SAVED_NOT_Q7_APPROVED",
+        "PLAN_ONLY_CAPTURE_BLOCKED",
+        "RESEARCH_WINDOW_READY_NOT_Q7_APPROVED",
+        "RESEARCH_CAPTURE_SAVED_NOT_Q7_APPROVED",
     ) else 2
 
 

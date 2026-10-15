@@ -91,11 +91,19 @@ def test_plan_is_zero_write_and_rejects_midday_and_outdated_days(tmp_path):
     assert report["source_date"] == "2026-10-14"
     assert report["research_policy_source"] == SOURCE
     assert report["q7_approval_eligible"] is False
-    assert research.plan(market="KOSPI", market_db=market, now=OUTSIDE)[
-        "reason_code"] == "RESEARCH_PREMARKET_WINDOW_REQUIRED"
+    outside = research.plan(market="KOSPI", market_db=market, now=OUTSIDE)
+    assert outside["status"] == "PLAN_ONLY_CAPTURE_BLOCKED"
+    assert outside["reason_code"] == "RESEARCH_PREMARKET_WINDOW_REQUIRED"
+    assert outside["market_data_ready"] is True
+    assert outside["collection_window_open"] is False
+    assert outside["capture_permitted_now"] is False
+    assert outside["source_date"] == "2026-10-14"
     next_week = MORNING + timedelta(days=7)
-    assert research.plan(market="KOSPI", market_db=market, now=next_week)[
-        "reason_code"] == "RESEARCH_FRESH_EOD_REQUIRED"
+    stale = research.plan(market="KOSPI", market_db=market, now=next_week)
+    assert stale["status"] == "PLAN_ONLY_CAPTURE_BLOCKED"
+    assert stale["data_readiness_reason"] == "RESEARCH_FRESH_EOD_REQUIRED"
+    assert stale["market_data_ready"] is False
+    assert stale["capture_permitted_now"] is False
     assert market.read_bytes() == old
 
 
@@ -195,3 +203,46 @@ def test_plan_cli_does_not_have_unacknowledged_execute_mode():
     args = p.parse_args(["capture", "--market", "KOSDAQ"])
     assert args.acknowledge_network_and_research_writes is False
     assert "execute" not in p._actions[1].choices
+
+
+
+@pytest.mark.asyncio
+async def test_plan_outside_window_does_not_permit_capture_or_create_files(
+    tmp_path,
+):
+    """Daytime diagnosis is always available; capture stays fail-closed."""
+    market = _market(tmp_path)
+    folder = tmp_path / "research"
+    calls = []
+
+    async def never_called(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("research Scanner must not run")
+
+    readiness = research.plan(market="KOSPI", market_db=market, now=OUTSIDE)
+    assert readiness["market_data_ready"] is True
+    assert readiness["capture_permitted_now"] is False
+    result = await research.capture(
+        market="KOSPI", market_db=market, root=folder, now=OUTSIDE,
+        acknowledge=True, execute_scan=never_called,
+    )
+    assert result["status"] == "PLAN_ONLY_CAPTURE_BLOCKED"
+    assert result["capture_block_reason"] == "RESEARCH_PREMARKET_WINDOW_REQUIRED"
+    assert calls == []
+    assert not folder.exists()
+    assert (tmp_path / "research").exists() is False
+
+
+def test_plan_cli_reports_blocked_capture_as_successful_readonly_diagnosis(
+    tmp_path, monkeypatch, capsys,
+):
+    market = _market(tmp_path)
+    monkeypatch.setattr(
+        research, "market_db_path", lambda: market,
+    )
+    monkeypatch.setattr(research, "datetime", __import__("datetime").datetime)
+    # Direct plan is deterministic even on a daytime system clock.
+    result = research.plan(market="KOSPI", market_db=market, now=OUTSIDE)
+    assert result["status"] == "PLAN_ONLY_CAPTURE_BLOCKED"
+    assert result["market_data_ready"] is True
+    assert result["network_requests"] == result["research_db_writes"] == 0
