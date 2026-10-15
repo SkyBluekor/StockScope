@@ -204,3 +204,87 @@ def test_backend_is_started_locally_only_and_preexisting_is_not_owned(monkeypatc
         assert calls[0][0][-4:] == ["--host", "127.0.0.1", "--port", "8000"]
         assert calls[0][1]["cwd"] == daily.BACKEND
     assert process.stopped
+
+
+
+def test_s23_completed_daily_run_persists_lineage_status_without_q7_promotion(
+    tmp_path, monkeypatch,
+):
+    sim = _db(tmp_path)
+    http, calls = _client()
+    examined = []
+
+    def lineage(db, *, capture_id, expected_source_date):
+        examined.append((db, capture_id, expected_source_date))
+        return {
+            "status": "LEGACY_ORIGINAL_IDENTITY_MISSING",
+            "reason_code": "ORIGINAL_STRATEGY_IDENTITY_MISSING",
+            "strict_jev_input_ready": False,
+            "q7_approval_eligible": False,
+            "verified_provider_publication_timestamp": False,
+            "runtime_db_writes": 0,
+            "external_ai_calls": 0,
+        }
+
+    monkeypatch.setattr(daily, "audit_daily_capture_readonly", lineage)
+    before = sim.read_bytes()
+    report = daily.run_once(
+        now=MONDAY, simulation_db=sim, market_db=tmp_path / "market.db",
+        log_root=tmp_path / "daily", http=http, server=_server,
+    )
+    assert report["status"] == "SCANNER_CAPTURED_AND_OUTCOME_CHECKED"
+    assert examined == [(sim, "capture-1", "2026-10-16")]
+    assert report["capture_lineage"]["status"] == "LEGACY_ORIGINAL_IDENTITY_MISSING"
+    assert report["q7_approval_eligible"] is False
+    assert report["external_ai_calls"] == 0
+    import json
+    persisted = json.loads(
+        (tmp_path / "daily" / "2026-10-19_kospi.json").read_text(encoding="utf-8")
+    )
+    assert persisted["capture_lineage"]["strict_jev_input_ready"] is False
+    assert sim.read_bytes() == before
+
+
+def test_s23_existing_complete_is_audited_but_pending_is_not(
+    tmp_path, monkeypatch,
+):
+    sim = _db(tmp_path)
+    calls = []
+
+    def lineage(db, *, capture_id, expected_source_date):
+        calls.append(capture_id)
+        return {"status": "SOURCE_CONTRACT_READY_Q7_HOLD",
+                "strict_jev_input_ready": True, "q7_approval_eligible": False}
+
+    monkeypatch.setattr(daily, "audit_daily_capture_readonly", lineage)
+    with sqlite3.connect(sim) as conn:
+        conn.execute(
+            "INSERT INTO prospective_capture_run VALUES (?,?,?,?,?,?)",
+            ("stored", "KOSPI", "2026-10-16", "2026-10-16",
+             "COMPLETE", "2026-10-19T06:58:00+09:00"),
+        )
+    http, http_calls = _client()
+    report = daily.run_once(
+        now=MONDAY, simulation_db=sim,
+        log_root=tmp_path / "daily", http=http, server=_server,
+    )
+    assert report["status"] == "SKIPPED_ALREADY_CAPTURED_OR_PENDING"
+    assert report["capture_lineage"]["strict_jev_input_ready"] is True
+    assert report["capture_lineage"]["q7_approval_eligible"] is False
+    assert calls == ["stored"]
+    assert len(http_calls) == 1
+
+    with sqlite3.connect(sim) as conn:
+        conn.execute("DELETE FROM prospective_capture_run")
+        conn.execute(
+            "INSERT INTO prospective_capture_run VALUES (?,?,?,?,?,?)",
+            ("pending", "KOSPI", "2026-10-16", "2026-10-16",
+             "PENDING", "2026-10-19T06:58:00+09:00"),
+        )
+    other = daily.run_once(
+        now=MONDAY, simulation_db=sim, log_root=tmp_path / "daily",
+        http=http, server=_server,
+    )
+    assert other["capture_lineage"]["status"] == "HOLD"
+    assert other["capture_lineage"]["strict_jev_input_ready"] is False
+    assert calls == ["stored"]
