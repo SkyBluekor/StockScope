@@ -14,6 +14,9 @@ import sqlite3
 from typing import Any
 
 from app.prospective.models import digest_json
+from app.strategy.production_selection_policy import DEFAULT_RUNTIME_DIR
+
+from .local_readiness_s13 import _current_policy_state
 
 from .decision_reviewer_offline import (
     DecisionReviewContractError, load_canonical_candidate_readonly,
@@ -43,6 +46,7 @@ def _report(status: str, reason_code: str, **details: Any) -> dict[str, Any]:
 
 def inspect_capture_proof_readonly(
     simulation_db: Path, *, capture_id: str, max_samples: int = 60,
+    runtime_dir: Path | None = None,
 ) -> dict[str, Any]:
     """Audit all original entry candidates and reference-row hashes; no DB writes.
 
@@ -165,8 +169,23 @@ def inspect_capture_proof_readonly(
         status, reason = "CAPTURE_LEGACY_LIMITED", "ORIGINAL_STRATEGY_IDENTITY_MISSING"
     else:
         status, reason = "CAPTURE_NOT_READY", "ORIGINAL_ENTRY_PROOFS_INCOMPLETE"
+    # Current policy resolution is an observation at inspection time, NOT
+    # proof that the policy existed when the frozen capture was produced.
+    # Reuse the same Q7 gate and baseline-aware pin resolver as S13; never
+    # reinterpret the original strategy IDs or use a test-only activation as
+    # production/Q7 approval.
+    gate = _current_policy_state(
+        db.resolve(), Path(runtime_dir or DEFAULT_RUNTIME_DIR),
+    )
     return _report(
         status, reason,
+        current_policy_gate={
+            **gate,
+            "observed_at_inspection_not_capture": True,
+            "cannot_upgrade_frozen_capture": True,
+            "jev_trial_approved": False,
+            "model_data_transmission_approved": False,
+        },
         requested_capture_id=capture_id,
         canonical_capture_id=canonical_id,
         duplicate_resolved=(canonical_id != capture_id),
