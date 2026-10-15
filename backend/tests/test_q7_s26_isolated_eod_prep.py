@@ -322,3 +322,75 @@ def test_s26_command_requires_separate_eod_opt_in():
         "--acknowledge-network-and-research-writes",
         "--prepare-missing-eod",
     ]).prepare_missing_eod is True
+
+
+
+@pytest.mark.asyncio
+async def test_s27_smoke_can_prepare_real_isolated_eod_at_midday_without_q7_capture(
+    tmp_path,
+):
+    source = _market(tmp_path)
+    before = source.read_bytes()
+    root = tmp_path / "research"
+    provider = FakeKRX()
+    seen = []
+
+    async def fake_scanner(*, root, market, source_date, policy):
+        seen.append((market, source_date.isoformat()))
+        assert root.parent.name == "smoke_only"
+        with sqlite3.connect(root / "market_snapshot.db") as c:
+            assert c.execute(
+                "SELECT COUNT(*) FROM stock_daily WHERE bas_dd='20261015'"
+            ).fetchone()[0] == 120
+        return _fake_result(policy)
+
+    report = await research.capture(
+        market="KOSPI", market_db=source, root=root,
+        now=MIDDAY, acknowledge=True, prepare_missing_eod=True,
+        smoke_only=True, execute_scan=fake_scanner,
+        execute_prepare=partial(prepare_missing_days, provider=provider),
+    )
+    assert report["status"] == "RESEARCH_SMOKE_SAVED_NOT_Q7_EVIDENCE"
+    assert report["source_date"] == "2026-10-15"
+    assert report["eod_preparation"]["research_only_market_db_writes"] == 1
+    assert report["q7_approval_eligible"] is False
+    assert seen == [("KOSPI", "2026-10-15")]
+    assert source.read_bytes() == before
+    receipt = json.loads(Path(report["capture_file"]).read_text(encoding="utf-8"))
+    assert receipt["not_a_prospective_prediction"] is True
+    assert receipt["market_publication_timestamp_proven"] is False
+    assert receipt["payload_hash"] == digest({
+        k: v for k, v in receipt.items() if k != "payload_hash"
+    })
+    assert not (root / "2026-10-15_kospi").exists()
+
+    original_capture = await research.capture(
+        market="KOSPI", market_db=source, root=root,
+        now=MIDDAY, acknowledge=True, prepare_missing_eod=True,
+        smoke_only=False, execute_scan=fake_scanner,
+        execute_prepare=partial(prepare_missing_days, provider=provider),
+    )
+    assert original_capture["status"] == "PLAN_ONLY_CAPTURE_BLOCKED"
+    assert len(seen) == 1
+
+
+@pytest.mark.asyncio
+async def test_s27_smoke_partial_eod_still_denied_even_after_explicit_optin(tmp_path):
+    source = _market(tmp_path, partial=True)
+    root = tmp_path / "research"
+    calls = []
+
+    async def never_run(**kw):
+        calls.append(kw)
+        raise AssertionError("cannot scan partial EOD")
+
+    report = await research.capture(
+        market="KOSPI", market_db=source, root=root, now=MIDDAY,
+        acknowledge=True, prepare_missing_eod=True, smoke_only=True,
+        execute_scan=never_run, execute_prepare=never_run,
+    )
+    assert report["status"] == "SMOKE_ONLY_BLOCKED"
+    assert report["eod_preparation_dates"] == []
+    assert report["technical_smoke_only"] is True
+    assert calls == []
+    assert not root.exists()
