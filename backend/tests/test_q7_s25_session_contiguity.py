@@ -192,7 +192,7 @@ async def test_copied_market_snapshot_is_rechecked_before_scanner(tmp_path, monk
         # The source Market Store remains pristine; only research copy changes.
         with sqlite3.connect(dest) as c:
             c.execute(
-                "INSERT INTO day_status VALUES ('KOSPI','20261009','stock','data')"
+                "DELETE FROM main_index_daily WHERE market='KOSPI' AND bas_dd='20261015'"
             )
 
     async def never_run(**kw):
