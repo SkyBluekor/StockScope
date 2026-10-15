@@ -358,3 +358,178 @@ def test_q7_research_and_spoofed_operating_approval_cannot_activate(
         )
     assert err.value.code == "Q7_APPROVAL_PROTOCOL_UNAPPROVED"
     assert not registry.active_path.exists()
+
+
+
+def _study_spec():
+    """Explicit synthetic thresholds are ONLY for contract/CLI tests."""
+    from app.jev.q7_precommit_s15 import template
+    spec = template(STRATEGY)
+    spec.update({
+        "study_id": "synthetic-study-fixture",
+        "operator": "SYNTHETIC_TEST_OPERATOR",
+        "market_scope": "KOSPI",
+    })
+    spec["time_split"].update({
+        "development_start": "2026-10-01",
+        "development_end": "2026-10-14",
+        "holdout_start": "2026-11-16",
+        "holdout_end": "2027-03-31",
+        "purge_trading_days": 20,
+    })
+    spec["population"].update({
+        "universe_rule": "Frozen KOSPI test candidates whose membership was known on signal date",
+        "regime_rule": "Use past-only index bands and a fixed prior window for labels",
+        "minimum_independent_samples_total": 40,
+        "minimum_independent_samples_per_regime": 8,
+        "maturity_trading_days": 20,
+    })
+    spec["comparison"].update({
+        "round_trip_cost_pct": 0.2,
+        "fee_pct": 0.05, "tax_pct": 0.1, "slippage_pct": 0.1,
+        "min_outperformance_pct": 1.5,
+        "max_drawdown_pct": 12,
+        "confidence_level_pct": 95,
+        "multiple_testing_rule": "Control false discoveries across all fixed prospective strategy cohorts",
+    })
+    spec["decision"].update({
+        "promotion_rule": "Only promote following a separately verified independent holdout evaluation",
+        "abstain_rule": "Always abstain when original strategy identity or source timestamps are unproven",
+        "demotion_rule": "Demote only after a separately specified future regression criterion",
+        "rollback_rule": "Restore the pinned previous policy on a verified safety regression",
+    })
+    return spec
+
+
+def _frozen_study(tmp_path):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from app.jev.q7_precommit_s15 import freeze
+
+    root = tmp_path / "isolated-research-freeze"
+    spec = _study_spec()
+    record = freeze(
+        spec, root=root,
+        now=datetime(2026, 10, 15, 9, tzinfo=ZoneInfo("Asia/Seoul")),
+    )
+    assert record["q7_approval_eligible"] is False
+    return spec, root
+
+
+def test_q7_study_v1_real_capture_binding_keeps_approval_blocked(tmp_path, monkeypatch):
+    from datetime import date
+    from app.jev.q7_study_audit import audit_study_readonly
+
+    db, capture_id = _write_fresh_fixture(tmp_path, monkeypatch)
+    spec, root = _frozen_study(tmp_path)
+    before_db = db.read_bytes()
+    before_study = (root / (spec["study_id"] + ".json")).read_bytes()
+
+    r = audit_study_readonly(
+        db, study_id=spec["study_id"], root=root, as_of=date(2026, 10, 15),
+    )
+    assert r["status"] == "RESEARCH_STUDY_HOLD", r
+    assert r["counts_complete"] is True
+    assert r["matched_entry_rows"] == r["distinct_signal_keys_descriptive"] == 1
+    assert r["cohorts"]["DEVELOPMENT"]["strict_original_identity_match"] == 1
+    assert r["cohorts"]["HOLDOUT"]["matched_entries"] == 0
+    assert "FUTURE_HOLDOUT_NOT_STARTED" in r["remaining_blockers"]
+    assert r["independent_samples_verified"] is None
+    assert r["trusted_source_publication_time_proven"] is False
+    assert r["q7_approval_eligible"] is False
+    assert r["production_activation_allowed"] is False
+    assert r["external_provider_calls"] == r["runtime_db_writes"] == 0
+    assert db.read_bytes() == before_db
+    assert (root / (spec["study_id"] + ".json")).read_bytes() == before_study
+
+    args = __import__(
+        "tools.data.q7_precommit", fromlist=["parser"]
+    ).parser().parse_args([
+        "study-audit", "--study-id", spec["study_id"],
+        "--store-dir", str(root), "--simulation-db", str(db),
+        "--as-of", "2026-10-15",
+    ])
+    from tools.data import q7_precommit as cli
+    assert cli.execute(args)["study_spec_hash"] == r["study_spec_hash"]
+
+
+def test_q7_study_future_holdout_and_missing_history_are_not_promoted(tmp_path):
+    from datetime import date
+    from app.jev.q7_study_audit import audit_study_readonly
+    spec, root = _frozen_study(tmp_path)
+    missing = audit_study_readonly(
+        tmp_path / "missing.db", study_id=spec["study_id"], root=root,
+    )
+    assert missing["status"] == "NO_SIMULATION_DB"
+    assert missing["counts_complete"] is False
+    assert missing["production_activation_allowed"] is False
+    assert audit_study_readonly(
+        tmp_path / "missing.db", study_id=spec["study_id"], root=root,
+        as_of=date(2099, 1, 1),
+    )["status"] == "INVALID_AS_OF"
+
+
+def test_q7_study_legacy_and_tampered_frozen_reference_fail_closed(tmp_path, monkeypatch):
+    from datetime import date
+    from app.jev.q7_study_audit import audit_study_readonly
+
+    db, capture_id = _write_fresh_fixture(tmp_path, monkeypatch)
+    spec, root = _frozen_study(tmp_path)
+    # Only mutate the isolated synthetic DB to emulate a corrupted reference
+    # source; the auditor must not quietly count a strict-valid entry.
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "INSERT INTO prospective_recommendation_sample("
+            "capture_run_id,sample_index,market,ticker,name,rank,"
+            "strategy,decision_status,candidate_state,action,signal_date,"
+            "snapshot_json,snapshot_hash,created_at) "
+            "SELECT capture_run_id,1,market,'000002',name,rank,"
+            "strategy,decision_status,candidate_state,'REFERENCE_ONLY',"
+            "signal_date,snapshot_json,'broken',created_at "
+            "FROM prospective_recommendation_sample WHERE capture_run_id=? "
+            "AND sample_index=0",
+            (capture_id,),
+        )
+        conn.execute(
+            "UPDATE prospective_capture_run SET returned_candidate_count=2 "
+            "WHERE id=?", (capture_id,),
+        )
+    before = db.read_bytes()
+    result = audit_study_readonly(
+        db, study_id=spec["study_id"], root=root,
+        as_of=date(2026, 10, 15),
+    )
+    assert result["status"] == "STUDY_CAPTURE_PROOF_INCOMPLETE"
+    assert result["counts_complete"] is False
+    assert result["q7_approval_eligible"] is False
+    assert db.read_bytes() == before
+
+
+def test_q7_study_capture_original_strategy_identity_must_match_frozen_spec(
+    tmp_path, monkeypatch,
+):
+    from datetime import date
+    from app.jev import q7_study_audit
+    db, _ = _write_fresh_fixture(tmp_path, monkeypatch)
+    spec, root = _frozen_study(tmp_path)
+    source_reader = q7_study_audit.load_canonical_candidate_readonly
+
+    def differing_original(*args, **kwargs):
+        capture, sample = source_reader(*args, **kwargs)
+        cloned = {**sample, "snapshot": {
+            **sample["snapshot"],
+            "strategy_definition_hash": "0" * 64,
+        }}
+        return capture, cloned
+
+    monkeypatch.setattr(
+        q7_study_audit, "load_canonical_candidate_readonly", differing_original,
+    )
+    result = q7_study_audit.audit_study_readonly(
+        db, study_id=spec["study_id"], root=root,
+        as_of=date(2026, 10, 15),
+    )
+    assert result["counts_complete"] is True
+    assert result["cohorts"]["DEVELOPMENT"]["study_strategy_version_mismatch"] == 1
+    assert result["cohorts"]["DEVELOPMENT"]["strict_original_identity_match"] == 0
+    assert "STUDY_STRATEGY_VERSION_MISMATCH" in result["failure_reasons"]
