@@ -67,7 +67,7 @@ def _write_fresh_fixture(tmp_path, monkeypatch, *, missing_repro=False, conflict
             "missing": 0, "top_missing": [],
         },
         "entry_risk_guide": {"price_rule": {
-            "basis": "synthetic indicator above moving average",
+            "basis": "현재가가 20일 이동평균선 위",
             "semantic_role": "STRATEGY_REFERENCE",
             "executable_entry_range": False,
         }},
@@ -132,7 +132,7 @@ def test_fresh_capture_writer_to_strict_review_input_offline(tmp_path, monkeypat
     db, capture_id = _write_fresh_fixture(tmp_path, monkeypatch)
     before = db.read_bytes()
     result = inspect_capture_proof_readonly(db, capture_id=capture_id)
-    assert result["status"] == "CAPTURE_INPUT_READY_PROVIDER_HOLD", result
+    assert result["status"] == "CAPTURE_INPUT_READY_PROVIDER_HOLD", result["records"]
     assert result["entry_candidates"] == result["contract_ready"] == 1
     assert result["inspected_samples"] == result["expected_samples"] == 1
     assert result["reference_candidates"] == result["blocked"] == 0
