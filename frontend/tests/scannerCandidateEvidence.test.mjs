@@ -103,7 +103,9 @@ test("S29 legacy candidates without tie metadata are not invented strict winners
 
 test("S29 UI renders rank caution and distinct Target1-R on list and detail without changing engine", () => {
   assert.match(panel, /scannerCandidateEvidence\(candidate, rank - 1\)/);
-  assert.match(panel, /scannerTieSummary\(\[\.\.\.result\.candidates, \.\.\.result\.more_candidates\]\)/);
+  assert.match(panel, /scannerTieSummary\(allCandidates\)/);
+  assert.match(panel, /\[\.\.\.result\.candidates, \.\.\.result\.more_candidates\]/);
+  assert.match(panel, /buildScannerDisplayLayout\(allCandidates, result\?\.candidates\.length \?\? 0\)/);
   assert.match(panel, /scanner-s29-metric/);
   assert.match(panel, /s29\.structuralLabel/);
   assert.match(panel, /5·10·20거래일 성과는 별도 사전 기록/);

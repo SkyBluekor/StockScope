@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "test:sc-s29": "node --experimental-strip-types --test tests/scannerCandidateEvidence.test.mjs",
+    "test:sc-s30": "node --experimental-strip-types --test tests/scannerDisplayGroups.test.mjs",
     "test:sc-ux1": "node --experimental-strip-types --test tests/scannerDecisionPresentation.test.mjs",
     "preview": "vite preview",
     "test:sc-ux3": "node --experimental-strip-types --test tests/scannerAiReviewStatus.test.mjs",
