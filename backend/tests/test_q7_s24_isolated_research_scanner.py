@@ -1,7 +1,6 @@
 """S24 Q7 research bootstrap: synthetic isolated Scanner, zero production writes."""
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, timedelta
 import json
 from pathlib import Path
@@ -115,10 +114,12 @@ async def test_capture_runs_isolated_real_pin_and_saves_write_once_receipt(tmp_p
             assert conn.execute("SELECT COUNT(*) FROM stock_daily").fetchone()[0] == 1
         return _scanner_result(pin=policy)
 
-    _err(lambda: asyncio.run(research.capture(
-        market="KOSPI", market_db=market, root=directory, now=MORNING,
-        acknowledge=False, execute_scan=fake_scanner,
-    )), "RESEARCH_EXPLICIT_NETWORK_AND_LOCAL_WRITES_ACK_REQUIRED")
+    with pytest.raises(ResearchCaptureError) as exc:
+        await research.capture(
+            market="KOSPI", market_db=market, root=directory, now=MORNING,
+            acknowledge=False, execute_scan=fake_scanner,
+        )
+    assert exc.value.code == "RESEARCH_EXPLICIT_NETWORK_AND_LOCAL_WRITES_ACK_REQUIRED"
     assert not directory.exists()
     r = await research.capture(
         market="KOSPI", market_db=market, root=directory, now=MORNING,
