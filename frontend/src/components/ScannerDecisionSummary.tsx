@@ -22,7 +22,15 @@ export default function ScannerDecisionSummary({ candidate, quoteSnapshot, onOpe
   return (
     <section className="scanner-ux-decision scanner-ux2-decision" aria-label="선택한 종목의 쉬운 판단">
       <span className="scanner-ux-eyebrow">분석일 기준 판단 · 최신 전략 확인 전</span>
-      <h4>{view.headline}</h4>
+      <div className="scanner-s30-quote-hold" role="status">
+        {quote.state === "NOT_CHECKED" ? "현재 가격 미확인 · 지금 진입 판단 불가"
+          : quote.state === "CHECKING" ? "새 시세 확인 중 · 분석 당시 조건만 참고"
+          : quote.state === "ERROR" ? "새 시세 확인 실패 · 현재 진입 판단 보류"
+          : quote.state === "OUT_OF_RANGE" ? "새 가격이 분석일 참고 범위 밖 · 최신 전략·위험 재검증 필요"
+          : quote.state === "IN_RANGE" ? "가격은 당시 참고 범위 안 · 현재 전략·위험 재검증 전"
+          : "새 시세로 현재 가격 조건을 확정할 수 없음 · 현재 진입 판단 보류"}
+      </div>
+      <h4>분석일 기준 · {view.headline}</h4>
       <p className="scanner-ux2-decision-why">
         <strong>조건 현황</strong>
         <span>{view.why}</span>

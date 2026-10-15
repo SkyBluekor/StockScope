@@ -29,8 +29,8 @@ export type ScannerDisplayLayout = {
 function tieIdentity(candidate: ScannerCandidate): string | null {
   const priority = candidate.priority;
   if (!priority || priority.strict_rank !== false
-    || !Number.isInteger(priority.tie_group) || !Number.isInteger(priority.tie_size)
     || typeof priority.tie_group !== "number" || typeof priority.tie_size !== "number"
+    || !Number.isInteger(priority.tie_group) || !Number.isInteger(priority.tie_size)
     || priority.tie_group < 1 || priority.tie_size <= 1) return null;
   return [priority.tie_group, priority.tie_size, priority.tier].join("/");
 }
