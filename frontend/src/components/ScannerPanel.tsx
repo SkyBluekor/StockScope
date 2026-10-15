@@ -1969,7 +1969,7 @@ export default function ScannerPanel({
                       전체 {result.candidates.length + result.more_candidates.length}개 후보 · 동률 포함 첫 화면 {displayLayout.visibleFeaturedCount}개
                     </small>
                   </div>
-                  <small>분석일 검토 순서 · 예상 수익률 순위 아님</small>
+                  <small>분석일 기준 검토 순서 · 예상 수익률 순위 아님</small>
                 </header>
                 <p className="scanner-s29-list-note" role="status">{scannerTieSummary(allCandidates)}</p>
                 {displayLayout.expandedToKeepTieTogether && (
