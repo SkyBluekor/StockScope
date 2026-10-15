@@ -87,6 +87,10 @@ jobs:
         working-directory: frontend
         run: npm run test:sc-s29
 
+      - name: Test S30 complete tie group and as-of price truth
+        working-directory: frontend
+        run: npm run test:sc-s30
+
       - name: Build frontend
         working-directory: frontend
         run: npm run build
