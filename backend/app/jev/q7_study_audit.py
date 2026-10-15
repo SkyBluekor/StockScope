@@ -69,20 +69,19 @@ def audit_study_readonly(
 
     # Only the frozen strategy and declared development/holdout windows may be
     # matched. The future split stays uninspected until it has actually begun.
+    # The Q7 study only PRECOMMITTED a future holdout window; no independent
+    # outcome-release or custody authorization exists. Never query its sample
+    # rows, not even after the wall clock reaches holdout_start.
     windows = {
         "DEVELOPMENT": (split["development_start"], split["development_end"]),
-        "HOLDOUT": (split["holdout_start"], split["holdout_end"]),
     }
-    raw: list[tuple[str, int, str, str, str, str]] = []
+    raw: list[tuple[str, str, int, str, str, str]] = []
     try:
         with closing(sqlite3.connect(db.resolve().as_uri() + "?mode=ro", uri=True)) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA query_only=ON")
             conn.execute("BEGIN")
             for label, (start, end) in windows.items():
-                # A future holdout cannot be examined just to manufacture
-                # favorable counts. Even after the start, independent custody
-                # and source as-of proof remain separate requirements.
                 if start > cutoff.isoformat():
                     continue
                 through = min(end, cutoff.isoformat())
@@ -193,6 +192,7 @@ def audit_study_readonly(
         "INDEPENDENT_SAMPLE_AND_REGIME_NOT_PROVEN",
         "NO_PROSPECTIVE_COMPARATIVE_PERFORMANCE_EVALUATION",
     }
+    blockers.add("HOLDOUT_INDEPENDENT_RELEASE_NOT_AUTHORIZED")
     if start > cutoff.isoformat():
         blockers.add("FUTURE_HOLDOUT_NOT_STARTED")
     if not raw:
@@ -218,14 +218,22 @@ def audit_study_readonly(
         duplicate_signal_keys=duplicate_keys,
         capture_count=len(capture_ids),
         cohorts={
-            key: {
-                "matched_entries": counts[key]["matched_entries"],
-                "strict_original_identity_match": counts[key]["strict_original_identity_match"],
-                "legacy_limited": counts[key]["legacy_limited"],
-                "contract_blocked": counts[key]["contract_blocked"],
-                "study_strategy_version_mismatch": counts[key]["study_strategy_version_mismatch"],
-            }
-            for key in ("DEVELOPMENT", "HOLDOUT")
+            "DEVELOPMENT": {
+                "matched_entries": counts["DEVELOPMENT"]["matched_entries"],
+                "strict_original_identity_match": counts["DEVELOPMENT"]["strict_original_identity_match"],
+                "legacy_limited": counts["DEVELOPMENT"]["legacy_limited"],
+                "contract_blocked": counts["DEVELOPMENT"]["contract_blocked"],
+                "study_strategy_version_mismatch": counts["DEVELOPMENT"]["study_strategy_version_mismatch"],
+                "inspection_status": "DESCRIPTIVE_ONLY",
+            },
+            "HOLDOUT": {
+                "inspection_status": "LOCKED_NOT_QUERIED",
+                "matched_entries": None,
+                "strict_original_identity_match": None,
+                "legacy_limited": None,
+                "contract_blocked": None,
+                "study_strategy_version_mismatch": None,
+            },
         },
         failure_reasons=dict(sorted(reasons.items())),
         remaining_blockers=sorted(blockers),

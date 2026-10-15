@@ -432,7 +432,8 @@ def test_q7_study_v1_real_capture_binding_keeps_approval_blocked(tmp_path, monke
     assert r["counts_complete"] is True
     assert r["matched_entry_rows"] == r["distinct_signal_keys_descriptive"] == 1
     assert r["cohorts"]["DEVELOPMENT"]["strict_original_identity_match"] == 1
-    assert r["cohorts"]["HOLDOUT"]["matched_entries"] == 0
+    assert r["cohorts"]["HOLDOUT"]["matched_entries"] is None
+    assert r["cohorts"]["HOLDOUT"]["inspection_status"] == "LOCKED_NOT_QUERIED"
     assert "FUTURE_HOLDOUT_NOT_STARTED" in r["remaining_blockers"]
     assert r["independent_samples_verified"] is None
     assert r["trusted_source_publication_time_proven"] is False
