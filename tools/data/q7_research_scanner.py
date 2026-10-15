@@ -28,6 +28,7 @@ from app.jev.research_scanner_s24 import (
     recent_eod_source_date, receipt_for_scanner,
 )
 from tools.data.common import market_db_path
+from app.jev.market_session_s25 import inspect_latest_session_readonly
 
 VERSION = "Q7_S24_RESEARCH_CAPTURE_CLI_V1"
 DEFAULT_ROOT = ROOT / "data" / "q7_research_scanner"
@@ -106,9 +107,15 @@ def plan(*, market: str = "KOSPI", market_db: Path | None = None,
     source = Path(market_db or market_db_path())
     latest = _latest_complete_day(source, market, local.date())
     pin = research_pin()
-    market_data_ready = (
-        latest is not None and 1 <= (local.date() - latest).days <= 4
+    age = (local.date() - latest).days if latest is not None else None
+    recent_local_eod = age is not None and 1 <= age <= 4
+    session = inspect_latest_session_readonly(
+        source, market=market, latest_eod=latest, today=local.date(),
     )
+    session_complete = (
+        session["session_evidence_status"] == "LOCAL_SESSION_CONTIGUITY_CHECKED"
+    )
+    market_data_ready = recent_local_eod and session_complete
     window_open = (
         local.weekday() < 5
         and START <= local.time().replace(tzinfo=None) <= END
@@ -125,6 +132,11 @@ def plan(*, market: str = "KOSPI", market_db: Path | None = None,
     except ResearchCaptureError as exc:
         allowed_day = None
         reason = exc.code
+    if recent_local_eod and not session_complete:
+        # Missing weekdays and independently verified closure conflicts are
+        # hard safety gates even when the old 1–4 day age check passes.
+        allowed_day = None
+        reason = "RESEARCH_" + session["session_evidence_status"]
     return _report(
         "RESEARCH_WINDOW_READY_NOT_Q7_APPROVED"
         if allowed_day is not None else "PLAN_ONLY_CAPTURE_BLOCKED",
@@ -132,13 +144,13 @@ def plan(*, market: str = "KOSPI", market_db: Path | None = None,
         source_date=latest.isoformat() if latest is not None else None,
         latest_complete_eod_date=latest.isoformat() if latest is not None else None,
         market_data_ready=market_data_ready,
-        local_market_date_age_days=(
-            (local.date() - latest).days if latest is not None else None
-        ),
+        local_market_date_age_days=age,
         data_readiness_reason=(
             "RECENT_LOCAL_COMPLETE_EOD" if market_data_ready
+            else session["session_evidence_status"] if recent_local_eod
             else "RESEARCH_FRESH_EOD_REQUIRED"
         ),
+        **session,
         collection_window_open=window_open,
         collection_window_kst="05:00-08:45, weekdays",
         capture_permitted_now=allowed_day is not None,
@@ -267,7 +279,17 @@ async def capture(*, market: str = "KOSPI", market_db: Path | None = None,
         )
     started = datetime.now(KST)
     try:
-        _clone_readonly_source(source, folder / "market_snapshot.db")
+        snapshot_path = folder / "market_snapshot.db"
+        _clone_readonly_source(source, snapshot_path)
+        # Plan and copy are separate operations. Recheck the exact SQLite
+        # snapshot after copying to reject an intervening market-store update,
+        # partial day, or verified-closure conflict before any Scanner call.
+        snapshot_plan = plan(market=market, market_db=snapshot_path, now=clock)
+        if (
+            not snapshot_plan["capture_permitted_now"]
+            or snapshot_plan["source_date"] != source_date.isoformat()
+        ):
+            raise ResearchCaptureError("RESEARCH_COPIED_MARKET_SNAPSHOT_NOT_CURRENT")
         scanner = execute_scan or _execute_scan
         result = await scanner(
             root=folder, market=market, source_date=source_date, policy=policy,
