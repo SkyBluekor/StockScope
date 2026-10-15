@@ -23,6 +23,7 @@ for p in (ROOT, BACKEND):
 
 from app.jev.q7_diagnosis_s18 import diagnose as diagnose_captures
 from app.jev.q7_observation_s16 import measure as measure_maturity
+from app.jev.q7_study_audit import audit_study_readonly
 from app.jev.q7_precommit_s15 import (
     Q7PrecommitError, freeze, inventory, load, template, validate_spec,
     verify_artifact,
@@ -32,7 +33,7 @@ from tools.data.common import market_db_path, simulation_db_path
 
 def parser() -> argparse.ArgumentParser:
     cmd = argparse.ArgumentParser(description="Q7 S15 · local research-only precommit")
-    cmd.add_argument("mode", choices=("inventory", "observe", "diagnose", "template", "check", "freeze", "verify"))
+    cmd.add_argument("mode", choices=("inventory", "observe", "diagnose", "template", "check", "freeze", "verify", "study-audit"))
     cmd.add_argument("--simulation-db", type=Path, default=None)
     cmd.add_argument("--market-db", type=Path, default=None)
     cmd.add_argument("--as-of", default=None)
@@ -49,6 +50,19 @@ def parser() -> argparse.ArgumentParser:
 def execute(args: argparse.Namespace) -> dict:
     if args.mode == "inventory":
         return inventory(args.simulation_db or simulation_db_path())
+    if args.mode == "study-audit":
+        if not args.study_id:
+            raise Q7PrecommitError("Q7_STUDY_ID_REQUIRED")
+        try:
+            cutoff = date.fromisoformat(args.as_of) if args.as_of else None
+        except ValueError as exc:
+            raise Q7PrecommitError("Q7_STUDY_AS_OF_INVALID") from exc
+        return audit_study_readonly(
+            args.simulation_db or simulation_db_path(),
+            study_id=args.study_id,
+            **({"root": args.store_dir} if args.store_dir else {}),
+            as_of=cutoff,
+        )
     if args.mode == "diagnose":
         try:
             return diagnose_captures(
@@ -109,6 +123,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
     if args.mode == "diagnose" and result.get("status") != "DIAGNOSIS_ONLY":
+        return 2
+    if args.mode == "study-audit" and not result.get("counts_complete"):
         return 2
     return 0
 
