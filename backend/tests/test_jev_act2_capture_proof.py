@@ -132,7 +132,7 @@ def test_fresh_capture_writer_to_strict_review_input_offline(tmp_path, monkeypat
     db, capture_id = _write_fresh_fixture(tmp_path, monkeypatch)
     before = db.read_bytes()
     result = inspect_capture_proof_readonly(db, capture_id=capture_id)
-    assert result["status"] == "CAPTURE_INPUT_READY_PROVIDER_HOLD"
+    assert result["status"] == "CAPTURE_INPUT_READY_PROVIDER_HOLD", result
     assert result["entry_candidates"] == result["contract_ready"] == 1
     assert result["inspected_samples"] == result["expected_samples"] == 1
     assert result["reference_candidates"] == result["blocked"] == 0

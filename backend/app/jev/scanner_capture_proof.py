@@ -7,6 +7,7 @@ or treat legacy-derived semantic identities as production strategy identity.
 from __future__ import annotations
 
 from collections import Counter
+from contextlib import closing
 import json
 from pathlib import Path
 import sqlite3
@@ -56,7 +57,7 @@ def inspect_capture_proof_readonly(
     if not db.is_file():
         return _report("HOLD", "LOCAL_SIMULATION_DB_NOT_FOUND")
     try:
-        with sqlite3.connect(db.resolve().as_uri() + "?mode=ro", uri=True) as conn:
+        with closing(sqlite3.connect(db.resolve().as_uri() + "?mode=ro", uri=True)) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA query_only=ON")
             selected = conn.execute(
