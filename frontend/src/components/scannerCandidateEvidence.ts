@@ -39,7 +39,7 @@ function historyText(candidate: ScannerCandidate): string {
 export function scannerCandidateEvidence(candidate: ScannerCandidate, displayIndex: number): CandidateEvidenceView {
   const p = candidate.priority;
   const rank = displayIndex + 1;
-  const tied = Number.isInteger(p?.tie_size) && (p?.tie_size ?? 0) > 1
+  const tied = typeof p?.tie_size === "number" && Number.isInteger(p.tie_size) && p.tie_size > 1
     && p?.strict_rank === false;
   const orderLabel = tied
     ? `동률 ${p!.tie_size}개 · 표시 ${rank}번`
@@ -98,7 +98,7 @@ export function scannerCandidateEvidence(candidate: ScannerCandidate, displayInd
 
 export function scannerTieSummary(candidates: ScannerCandidate[]): string {
   const first = candidates[0]?.priority;
-  if (!first || !Number.isInteger(first.tie_size) || (first.tie_size ?? 0) <= 1
+  if (!first || typeof first.tie_size !== "number" || !Number.isInteger(first.tie_size) || first.tie_size <= 1
       || first.strict_rank !== false) {
     return "표시 번호는 분석일 검토 순서이며 예상 수익률 순위가 아니에요.";
   }
