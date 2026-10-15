@@ -153,7 +153,13 @@ def receipt_for_scanner(
         "market_publication_timestamp_proven": False,
         "baseline_scanner_equivalence_proven": False,
         "jev_model_improvement_verified": False,
-        "provider_calls": 0,
+        # KRX may be called for missing market history during the research run.
+        # Do not misreport those as zero; JEV model calls are always zero.
+        "krx_network_requests_reported": (
+            result.get("diagnostics", {}).get("network_requests")
+            if isinstance(result.get("diagnostics"), dict) else None
+        ),
+        "jev_model_calls": 0,
         "orders": 0,
         "production_scanner_result_modified": False,
         "source_market_db_writes": 0,

@@ -218,6 +218,8 @@ async def capture(*, market: str = "KOSPI", market_db: Path | None = None,
             original_strategy_rows=len(policy.operating_strategies),
             original_candidates=payload["candidate_count"],
             entry_candidates=payload["entry_candidates"],
+            research_scanner_runs=1,
+            krx_network_requests_reported=payload["krx_network_requests_reported"],
             research_only_local_clock=True,
             isolated_market_db_writes=True,
         )
