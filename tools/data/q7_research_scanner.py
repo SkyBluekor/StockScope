@@ -123,6 +123,8 @@ def plan(*, market: str = "KOSPI", market_db: Path | None = None,
 
 async def _execute_scan(*, root: Path, market: str, source_date: date, policy) -> dict[str, Any]:
     from app.backtest.scanner import StockScannerService
+    from app.backtest import scanner as scanner_module
+    from unittest.mock import patch as scoped_patch
     from app.backtest.market_store import HistoricalMarketStore
     from app.core.config import get_settings
     from app.market.krx_budget import KrxApiBudget
@@ -149,13 +151,49 @@ async def _execute_scan(*, root: Path, market: str, source_date: date, policy) -
     scanner = ResearchScanner(
         provider, market_store=HistoricalMarketStore(root / "market_snapshot.db"),
     )
-    return await scanner.run(
-        market_scope=market, as_of_date=source_date.isoformat(),
-        candidate_limit=5, force_refresh=True, allow_large_sync=False,
-        selection_policy_pin=policy,
-        repro_output_root=root / "scanner-repro",
-        repro_identity_root=root / "repro_identity",
-    )
+
+    # Scanner production implementation and its audited fingerprint remain
+    # BYTE-FOR-BYTE unchanged. Only this isolated CLI process substitutes the
+    # diagnostic *writer* while the research run is in progress. It still calls
+    # the canonical reproducibility payload builder with original raw inputs.
+    def isolated_repro_writer(**inputs):
+        from app.backtest.reproducibility_audit import (
+            build_scanner_reproducibility_payload,
+        )
+        from datetime import datetime
+        output = root / "scanner-repro"
+        runtime_identity = root / "repro_identity"
+        output.mkdir(parents=True, exist_ok=True)
+        runtime_identity.mkdir(parents=True, exist_ok=True)
+        payload = build_scanner_reproducibility_payload(
+            **inputs, runtime_root=runtime_identity,
+        )
+        generated = datetime.fromisoformat(payload["generated_at"])
+        filename = (
+            "scanner-repro_research_" + generated.strftime("%Y%m%d-%H%M%S-%f")
+            + "_analysis-" + source_date.strftime("%Y%m%d") + ".json"
+        )
+        file = output / filename
+        with file.open("x", encoding="utf-8") as fp:
+            fp.write(json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2))
+        return {
+            "written": True,
+            "path": str(file),
+            "filename": filename,
+            "analysis_date": source_date.isoformat(),
+            "candidate_count": len(inputs["ranked_candidates"]),
+            "result_source": inputs["result_source"],
+            "research_isolated_not_authoritative_production_repro": True,
+        }
+
+    with scoped_patch.object(
+        scanner_module, "write_scanner_reproducibility_audit", isolated_repro_writer,
+    ):
+        return await scanner.run(
+            market_scope=market, as_of_date=source_date.isoformat(),
+            candidate_limit=5, force_refresh=True, allow_large_sync=False,
+            selection_policy_pin=policy,
+        )
 
 
 def _clone_readonly_source(source: Path, dest: Path) -> None:

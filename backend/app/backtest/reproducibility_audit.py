@@ -357,13 +357,8 @@ def write_scanner_reproducibility_audit(
     candidate_pool_complete: bool,
     project_root_hint: Path,
     output_root: Path | None = None,
-    identity_root_override: Path | None = None,
 ) -> dict[str, Any]:
-    identity_root = (
-        Path(identity_root_override)
-        if identity_root_override is not None
-        else Path(__file__).resolve().parents[2] / "runtime" / "reproducibility"
-    )
+    identity_root = Path(__file__).resolve().parents[2] / "runtime" / "reproducibility"
     artifact_root = output_root or (project_root_hint / "scanner-repro")
     try:
         identity_root.mkdir(parents=True, exist_ok=True)

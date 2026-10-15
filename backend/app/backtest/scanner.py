@@ -2196,8 +2196,6 @@ class StockScannerService:
         allow_large_sync: bool = False,
         progress: ProgressCallback | None = None,
         selection_policy_pin: SelectionPolicyPin | None = None,
-        repro_output_root: Path | None = None,
-        repro_identity_root: Path | None = None,
     ) -> dict[str, Any]:
         run_policy = (
             selection_policy_pin
@@ -2614,8 +2612,6 @@ class StockScannerService:
                 result_source="fresh_analysis",
                 candidate_pool_complete=True,
                 project_root_hint=Path(__file__).resolve().parents[3],
-                output_root=repro_output_root,
-                identity_root_override=repro_identity_root,
             )
             for item in ranked_actionable:
                 item.pop("internal_rank", None)
