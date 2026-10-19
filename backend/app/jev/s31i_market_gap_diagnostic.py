@@ -15,7 +15,9 @@ from typing import Any
 
 from app.jev.research_scanner_s24 import ResearchCaptureError
 from app.jev.s31h_frozen_risk_event_audit import audit_frozen_risk
-from app.prospective.evaluation import ReadOnlyMarketEvidence, _decimal
+from math import isfinite
+
+from app.prospective.evaluation import ReadOnlyMarketEvidence, _float
 from app.strategy.context import regime_from_index
 
 
@@ -45,8 +47,10 @@ def _signal_market_context(db: Path) -> dict[str, Any]:
          and str(row.get("date") or "").replace("-", "") == "20261014"),
         None,
     )
-    raw = _decimal((day or {}).get("change_rate"))
-    rate = float(raw) if raw is not None else None
+    # Price-only _decimal() rejects values <= 0. Index change_rate is a
+    # *signed percentage* and must preserve negative crash-day evidence.
+    raw = _float((day or {}).get("change_rate"))
+    rate = raw if raw is not None and isfinite(raw) else None
     return {
         "market": MARKET, "source_date": SIGNAL_DATE,
         "original_index_daily_change_rate_pct": rate,
