@@ -31,7 +31,7 @@ def korean_report(report: dict[str, object]) -> str:
         f"최근 확정 로컬 KOSPI EOD: {report['last_confirmed_market_eod'] or '없음'}",
         f"해당 일 KOSPI 등락률: {index['daily_index_change_rate_pct']}% · "
         f"시장 분류: {index['production_regime']}",
-        "※ 원본은 사후 기술 점검이며 과거의 READY는 현재 매수 허가가 아닙니다.",
+        "※ 원본은 사후 기술 점검이며 과거 READY는 현재 매수 허가가 아닙니다.",
         "※ 이 도구는 확정 일봉만 조회하며 실시간 호가·보유정보·자동주문을 사용하지 않습니다.",
     ]
     if report["unconfirmed_market_dates_through_asof"]:
