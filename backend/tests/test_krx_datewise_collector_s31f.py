@@ -251,3 +251,74 @@ def test_date_truncation_from_krx_rejected(tmp_path):
     assert result["errors"][0]["reason_code"] == "STOCK_RESPONSE_TOO_SMALL"
     with mod._connect_ro(target) as c:
         assert c.execute("SELECT COUNT(*) FROM stock_daily WHERE bas_dd='20261015'").fetchone()[0] == 0
+
+def test_backup_connection_closed_before_publish_windows_like(tmp_path, monkeypatch):
+    """Reproduce Windows' refusal to rename a still-open backup DB on Linux CI."""
+    source = _source(tmp_path)
+    root, target = _paths(tmp_path)
+    real_connect = sqlite3.connect
+    original_replace = Path.replace
+    opened = []
+    closed = []
+
+    class WatchedConnection(sqlite3.Connection):
+        def close(self):
+            closed.append(self)
+            return super().close()
+
+    def observe_connect(database, *args, **kwargs):
+        if str(database).endswith(".initializing"):
+            kwargs["factory"] = WatchedConnection
+            connection = real_connect(database, *args, **kwargs)
+            opened.append(connection)
+            return connection
+        return real_connect(database, *args, **kwargs)
+
+    def strict_windows_replace(self, destination):
+        if self.name.endswith(".initializing"):
+            assert opened, "expected temporary SQLite connection"
+            assert all(c in closed for c in opened), (
+                "SQLite context manager does not close DB; Windows rename would fail"
+            )
+        return original_replace(self, destination)
+
+    monkeypatch.setattr(mod.sqlite3, "connect", observe_connect)
+    monkeypatch.setattr(Path, "replace", strict_windows_replace)
+    result = _collect(source, target, root, FakeKrx())
+    assert result["status"] == "RESEARCH_DAYS_STORED"
+    assert len(opened) == len(closed) == 1
+    assert not list(root.glob("*.initializing"))
+
+
+def test_windows_permission_error_has_stage_code_and_no_staging_leak(
+    tmp_path, monkeypatch,
+):
+    source = _source(tmp_path)
+    root, target = _paths(tmp_path)
+    before = source.read_bytes()
+    original_replace = Path.replace
+
+    def reject_publish(self, destination):
+        if self.name.endswith(".initializing"):
+            raise PermissionError(13, "Windows file locked", str(self))
+        return original_replace(self, destination)
+
+    monkeypatch.setattr(Path, "replace", reject_publish)
+    with pytest.raises(mod.CollectorError, match="RESEARCH_COPY_PUBLISH_PERMISSION_DENIED"):
+        _collect(source, target, root, FakeKrx())
+    assert source.read_bytes() == before
+    assert not target.exists()
+    assert not list(root.glob("*.initializing"))
+
+
+def test_old_fixed_name_staging_file_is_ignored_without_deletion(tmp_path):
+    """A failed earlier Windows run must not require deleting unknown files."""
+    source = _source(tmp_path)
+    root, target = _paths(tmp_path)
+    root.mkdir(parents=True)
+    legacy = target.with_name(target.name + ".initializing")
+    legacy.write_text("old failed backup; do not reuse", encoding="utf-8")
+    result = _collect(source, target, root, FakeKrx())
+    assert result["status"] == "RESEARCH_DAYS_STORED"
+    assert legacy.read_text(encoding="utf-8") == "old failed backup; do not reuse"
+    assert target.is_file()
