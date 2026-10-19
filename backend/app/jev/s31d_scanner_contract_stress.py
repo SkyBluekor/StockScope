@@ -59,7 +59,7 @@ def _base_source() -> tuple[dict[str, Any], dict[str, Any]]:
         },
         "risk": {"status": "READY", "warning": False},
         "entry_risk_guide": {"price_rule": {
-            "basis": "합성 전략 기준선 위", "semantic_role": "STRATEGY_REFERENCE",
+            "basis": "현재가가 20일 이동평균선 위", "semantic_role": "STRATEGY_REFERENCE",
             "executable_entry_range": False,
         }},
         "semantic_policy_provenance": {
