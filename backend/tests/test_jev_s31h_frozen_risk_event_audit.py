@@ -250,3 +250,133 @@ def test_cli_missing_receipt_is_safe(tmp_path, capsys):
     result = json.loads(capsys.readouterr().out)
     assert result["reason_code"] == "S31H_RECEIPT_MISSING_OR_TOO_LARGE"
     assert result["production_db_writes"] == 0
+
+from app.jev.s31i_market_gap_diagnostic import analyze_market_gap
+from tools.data import jev_s31i_gap_diagnostic as gap_cli
+
+
+def test_s31i_observed_open_gap_and_risk_are_not_executions(tmp_path):
+    db = _db(tmp_path)
+    frozen = _receipt()
+    before_receipt = deepcopy(frozen)
+    before_db = db.read_bytes()
+    result = analyze_market_gap(frozen, db, as_of="2026-10-16")
+    assert result["status"] == "LOCAL_SIGNAL_ASOF_AND_POSTHOC_GAP_DIAGNOSTIC_ONLY"
+    assert result["complete_eod_sessions"] == 2
+    assert result["post_signal_open_below_invalidation_event_count"] == 5
+    assert result["signal_day_known_information"]["production_regime_rule"] == "UNKNOWN"
+    assert result["signal_day_known_information"]["next_day_return_used_in_signal_regime"] is False
+    row = result["candidates"][0]
+    assert row["original_risk_status"] == "READY"
+    assert row["risk_ready_means_gap_protected"] is False
+    assert row["original_strategy_price_rule"]["is_executable_buy_range"] is False
+    assert row["actual_entry_or_position_proven"] is False
+    assert row["days"][0]["opening_price"] == 99
+    assert row["days"][0]["opening_gap_from_signal_close_pct"] == -1.0
+    assert row["days"][0]["opening_gap_class"] == "OPEN_BELOW_SIGNAL_CLOSE_ABOVE_INVALIDATION"
+    assert row["days"][1]["opening_price"] == 94
+    assert row["days"][1]["opening_gap_from_signal_close_pct"] == -6.0
+    assert row["days"][1]["opening_gap_class"] == "OPEN_AT_OR_BELOW_REFERENCE_INVALIDATION"
+    assert row["days"][1]["actual_fill_or_stop_trigger_proven"] is False
+    assert result["actual_entry_or_exit_proven"] is False
+    assert result["decisions_or_captures_recomputed"] is False
+    assert (result["market_network_requests"], result["jev_model_calls"],
+            result["orders"], result["production_db_writes"]) == (0, 0, 0, 0)
+    assert frozen == before_receipt
+    assert db.read_bytes() == before_db
+
+
+def test_s31i_signal_day_market_regime_is_asof_only(tmp_path):
+    db = _db(tmp_path)
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "UPDATE main_index_daily SET row_json=? WHERE bas_dd='20261014'",
+            (json.dumps({"date":"20261014", "name":"코스피",
+                         "close":3000, "change_rate":-2.25}),),
+        )
+        conn.execute(
+            "UPDATE main_index_daily SET row_json=? WHERE bas_dd='20261015'",
+            (json.dumps({"date":"20261015", "name":"코스피",
+                         "close":2970, "change_rate":+9.99}),),
+        )
+    result = analyze_market_gap(_receipt(), db, as_of="2026-10-15")
+    market = result["signal_day_known_information"]
+    assert market["original_index_daily_change_rate_pct"] == -2.25
+    assert market["production_regime_rule"] == "TREND_DOWN"
+    assert market["source_date"] == "2026-10-14"
+    assert market["exact_original_scanner_regime_recorded_in_receipt"] is False
+    assert result["complete_eod_sessions"] == 1
+    assert all(len(record["days"]) == 1 for record in result["candidates"])
+    assert result["post_signal_open_below_invalidation_event_count"] == 0
+
+
+def test_s31i_invalid_ohlc_cannot_claim_open_gap(tmp_path):
+    db = _db(tmp_path, invalid_ohlc=True)
+    result = analyze_market_gap(_receipt(), db, as_of="2026-10-15")
+    item = result["candidates"][0]["days"][0]
+    assert item["opening_price"] is None
+    assert item["opening_gap_from_signal_close_pct"] is None
+    assert item["opening_gap_class"] == "OPENING_PRICE_UNAVAILABLE_OR_INVALID_BAR"
+    assert item["original_strategy_condition_level_touched"] is None
+    assert item["actual_fill_or_stop_trigger_proven"] is False
+
+
+def test_s31i_missing_signal_index_does_not_guess_market_regime(tmp_path):
+    db = _db(tmp_path, omit_source_index=True)
+    result = analyze_market_gap(_receipt(), db, as_of="2026-10-16")
+    info = result["signal_day_known_information"]
+    assert info["original_index_daily_change_rate_pct"] is None
+    assert info["production_regime_rule"] == "UNKNOWN"
+    assert info["missing_index_rate_does_not_mean_range_market"] is True
+
+
+def test_s31i_missing_intermediate_trading_day_holds(tmp_path):
+    db = _db(tmp_path, omit_day="20261015")
+    result = analyze_market_gap(_receipt(), db, as_of="2026-10-16")
+    assert result["status"] == "HOLD_UNRESOLVED_MARKET_SESSIONS"
+    assert result["unresolved_prior_weekdays"] == ["2026-10-15"]
+    assert result["post_signal_open_below_invalidation_events"] == []
+    assert all(not r["days"] for r in result["candidates"])
+
+
+def test_s31i_tampered_frozen_receipt_fails_without_market_db(tmp_path):
+    payload = _receipt()
+    payload["original_scanner_candidates"][0]["name"] = "위조"
+    missing = tmp_path / "does-not-exist.db"
+    with pytest.raises(ResearchCaptureError, match="S28_RECEIPT_PAYLOAD_HASH_MISMATCH"):
+        analyze_market_gap(payload, missing, as_of="2026-10-16")
+    assert not missing.exists()
+
+
+def test_s31i_cli_output_separates_strategy_conditions_from_trades(tmp_path, capsys):
+    db = _db(tmp_path)
+    receipt_path = tmp_path / "receipt.json"
+    receipt_path.write_text(json.dumps(_receipt(), ensure_ascii=False), encoding="utf-8")
+    before = db.read_bytes()
+    assert gap_cli.main([
+        "--receipt", str(receipt_path), "--market-db", str(db),
+        "--as-of", "2026-10-16",
+    ]) == 0
+    output = capsys.readouterr().out
+    assert "RANGE/ABOVE는 전략 조건" in output
+    assert "시가부터 참고 무효화선 이하" in output
+    assert "실제 매수·보유·손절 주문/체결" in output
+    assert db.read_bytes() == before
+    assert gap_cli.main([
+        "--receipt", str(receipt_path), "--market-db", str(db),
+        "--as-of", "2026-10-16", "--json",
+    ]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["post_signal_open_below_invalidation_event_count"] == 5
+    assert report["source_is_posthoc_not_prospectively_precommitted"] is True
+
+
+def test_s31i_cli_missing_receipt_fails_closed(tmp_path, capsys):
+    assert gap_cli.main([
+        "--receipt", str(tmp_path / "no.json"),
+        "--market-db", str(tmp_path / "no.db"), "--as-of", "2026-10-16",
+    ]) == 2
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "HOLD"
+    assert payload["reason_code"] == "S31I_RECEIPT_MISSING_OR_TOO_LARGE"
+    assert payload["production_db_writes"] == 0
