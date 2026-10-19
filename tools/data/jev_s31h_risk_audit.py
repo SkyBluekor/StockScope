@@ -48,7 +48,7 @@ def korean_report(report: dict) -> str:
             f"· {entry['name']} ({entry['code']}) / {entry['original_strategy']}",
             f"  당시 기록: {entry['original_action']}, Risk {entry['original_risk_status']}, "
             f"조건 {entry['original_conditions']['passed']}/{entry['original_conditions']['total']}",
-            f"  참고 진입가 {entry['risk_reference_entry']} / 무효화선 {entry['risk_reference_invalidation']} / 목표1 {entry['risk_reference_target1']}",
+            f"  Risk 계산 기준가 {entry['risk_reference_entry']} / 참고 무효화선 {entry['risk_reference_invalidation']} / 목표1 {entry['risk_reference_target1']}",
             f"  신호일 종가 {entry['signal_close']} · 전략 조건 기준 {entry['scanner_entry_price_rule']['kind']}",
         ])
         for day in entry["sessions"]:
