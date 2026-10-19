@@ -33,6 +33,7 @@ def korean_report(report: dict) -> str:
         f"상태: {report['status']}, 확정 EOD {report['complete_eod_sessions']}일",
         f"참고 무효화선 일중 도달: {report['stock_count_with_invalidation_touch']}개",
         f"참고 무효화선 이하 종가 기록: {report['stock_count_below_invalidation_at_close']}개",
+        "※ RANGE/ABOVE는 전략 조건 가격대이며 실제 매수 범위나 체결을 뜻하지 않습니다.",
         "※ 실제 매수 여부, 손절 실행 여부 및 당일 위험 대응은 확인되지 않았습니다.",
         "※ 시장지수 대비 변화폭은 단순 가격 비교로 전략 우월성을 뜻하지 않습니다.",
     ]
@@ -47,8 +48,8 @@ def korean_report(report: dict) -> str:
             f"· {entry['name']} ({entry['code']}) / {entry['original_strategy']}",
             f"  당시 기록: {entry['original_action']}, Risk {entry['original_risk_status']}, "
             f"조건 {entry['original_conditions']['passed']}/{entry['original_conditions']['total']}",
-            f"  참고 진입가 {entry['risk_reference_entry']} / 무효화선 {entry['risk_reference_invalidation']} / 목표1 {entry['risk_reference_target1']}",
-            f"  신호일 종가 {entry['signal_close']} · 진입 규칙 {entry['scanner_entry_price_rule']['kind']}",
+            f"  Risk 계산 기준가 {entry['risk_reference_entry']} / 참고 무효화선 {entry['risk_reference_invalidation']} / 목표1 {entry['risk_reference_target1']}",
+            f"  신호일 종가 {entry['signal_close']} · 전략 조건 기준 {entry['scanner_entry_price_rule']['kind']}",
         ])
         for day in entry["sessions"]:
             def flag(value):
@@ -58,10 +59,10 @@ def korean_report(report: dict) -> str:
                 f"KOSPI {_percent(day['index_change_from_signal_close_pct'])}, "
                 f"무효화 저가 {flag(day['invalidation_low_touched'])}, "
                 f"무효화 종가 {flag(day['invalidation_close_at_or_below'])}, "
-                f"진입규칙 고저 {flag(day['entry_rule_touched'])}"
+                f"전략조건 고저 {flag(day['entry_rule_touched'])}"
             )
             if day["entry_and_invalidation_same_bar_order_unknown"]:
-                lines.append("    동일 일봉에 진입규칙·무효화선 모두 도달: 선후관계 알 수 없음")
+                lines.append("    동일 일봉에 전략조건·무효화선 모두 도달: 선후관계 알 수 없음")
         first = entry["earliest_eod_flags"]
         lines.append(
             f"  최초 참고 무효화 저가 도달: {first['invalidation_low_touch'] or '없음/검증 불가'}"
