@@ -380,3 +380,183 @@ def test_s31i_cli_missing_receipt_fails_closed(tmp_path, capsys):
     assert payload["status"] == "HOLD"
     assert payload["reason_code"] == "S31I_RECEIPT_MISSING_OR_TOO_LARGE"
     assert payload["production_db_writes"] == 0
+
+from app.jev.s31j_prior_ready_recheck import evaluate_prior_ready
+from tools.data import jev_s31j_recheck as recheck_cli
+
+
+def test_s31j_prior_ready_rechecks_existing_risk_breach_without_executions(tmp_path):
+    receipt = _receipt()
+    db = _db(tmp_path)
+    original = deepcopy(receipt)
+    market_bytes = db.read_bytes()
+    result = evaluate_prior_ready(receipt, db, as_of="2026-10-16")
+    assert result["status"] == "LOCAL_PRIOR_READY_RECHECK_ONLY"
+    assert result["last_confirmed_market_eod"] == "2026-10-16"
+    assert result["unconfirmed_market_dates_through_asof"] == []
+    assert result["prior_reference_breach_candidate_count"] == 5
+    assert result["candidate_count"] == 5
+    assert result["new_entry_permission"] is False
+    assert result["today_live_quote_verified"] is False
+    assert result["reran_scanner_or_risk"] is False
+    assert (result["market_network_requests"], result["jev_model_calls"],
+            result["orders"], result["production_db_writes"]) == (0, 0, 0, 0)
+    candidate = result["candidates"][0]
+    assert candidate["original_ready"] is True
+    assert candidate["original_reference_invalidation_not_executed_stop"] == 95
+    assert candidate["recheck_status"] == "PREVIOUS_RISK_REFERENCE_BREACHED"
+    assert candidate["original_signal_date"] == "2026-10-14"
+    assert candidate["actual_position_known"] is False
+    assert candidate["entry_allowed_by_this_result"] is False
+    assert candidate["past_reference_breach_count"] == 4
+    assert candidate["last_complete_eod_open_price_source"] == "HISTORICAL_EOD_OPEN_NOT_LIVE_PRICE"
+    assert candidate["last_complete_eod_open_price"] == 94
+    assert db.read_bytes() == market_bytes
+    assert receipt == original
+
+
+def test_s31j_asof_missing_recent_weekday_holds_while_preserving_prior_events(tmp_path):
+    result = evaluate_prior_ready(_receipt(), _db(tmp_path), as_of="2026-10-19")
+    assert result["status"] == "HOLD_EOD_CONFIRMATION_REQUIRED"
+    assert result["last_confirmed_market_eod"] == "2026-10-16"
+    assert result["unconfirmed_market_dates_through_asof"] == ["2026-10-19"]
+    assert result["unconfirmed_dates_are_not_proven_market_sessions"] is True
+    assert all(r["recheck_status"] == "DATA_CONFIRMATION_REQUIRED"
+               for r in result["candidates"])
+    assert all(r["past_reference_breach_count"] > 0 for r in result["candidates"])
+    assert result["new_entry_permission"] is False
+
+
+def test_s31j_weekend_only_does_not_fabricate_data_gap(tmp_path):
+    result = evaluate_prior_ready(_receipt(), _db(tmp_path), as_of="2026-10-18")
+    assert result["status"] == "LOCAL_PRIOR_READY_RECHECK_ONLY"
+    assert result["unconfirmed_market_dates_through_asof"] == []
+    assert result["last_confirmed_market_eod"] == "2026-10-16"
+
+
+def test_s31j_uncrossed_reference_still_expires_old_ready(tmp_path):
+    db = _db(tmp_path)
+    with sqlite3.connect(db) as conn:
+        for day in ("20261015", "20261016"):
+            for i in range(5):
+                code = f"{1800+i:06d}"
+                bar = {
+                    "date": day, "code": code,
+                    "open": 99, "high": 101, "low": 96, "close": 98,
+                }
+                conn.execute(
+                    "UPDATE stock_daily SET row_json=? WHERE bas_dd=? AND stock_code=?",
+                    (json.dumps(bar), day, code),
+                )
+    result = evaluate_prior_ready(_receipt(), db, as_of="2026-10-16")
+    assert result["prior_reference_breach_candidate_count"] == 0
+    assert all(x["recheck_status"] == "PREVIOUS_READY_RECHECK_REQUIRED"
+               for x in result["candidates"])
+    assert all(x["entry_allowed_by_this_result"] is False for x in result["candidates"])
+
+
+def test_s31j_stock_latest_eod_unavailable_not_classified_safe(tmp_path):
+    db = _db(tmp_path)
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "DELETE FROM stock_daily WHERE bas_dd='20261016' AND stock_code='001800'"
+        )
+    result = evaluate_prior_ready(_receipt(), db, as_of="2026-10-16")
+    first = result["candidates"][0]
+    assert first["recheck_status"] == "STOCK_EOD_UNAVAILABLE"
+    assert first["last_complete_eod_open_price"] is None
+    assert first["past_reference_breach_count"] >= 1
+    assert all(x["entry_allowed_by_this_result"] is False for x in result["candidates"])
+
+
+def test_s31j_negative_market_rate_only_latest_confirmed_eod(tmp_path):
+    db = _db(tmp_path)
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "UPDATE main_index_daily SET row_json=? WHERE bas_dd='20261014'",
+            (json.dumps({"date":"20261014", "name":"코스피",
+                         "close":3000, "change_rate":-0.44}),),
+        )
+        conn.execute(
+            "UPDATE main_index_daily SET row_json=? WHERE bas_dd='20261016'",
+            (json.dumps({"date":"20261016", "name":"코스피",
+                         "close":2940, "change_rate":-2.0}),),
+        )
+    result = evaluate_prior_ready(_receipt(), db, as_of="2026-10-16")
+    asof = result["signal_day_market_context"]
+    recent = result["market_context_latest_completed_eod"]
+    assert asof["original_index_daily_change_rate_pct"] == -0.44
+    assert asof["production_regime_rule"] == "RANGE"
+    assert recent["daily_index_change_rate_pct"] == -2.0
+    assert recent["production_regime"] == "TREND_DOWN"
+    assert "LATEST_COMPLETED_EOD_MARKET_TREND_DOWN" in result["candidates"][0]["additional_market_context"]
+    assert result["market_regime_not_a_new_gate"] is True
+
+
+def test_s31j_missing_index_regime_is_unknown_and_not_assumed_safe(tmp_path):
+    result = evaluate_prior_ready(_receipt(), _db(tmp_path), as_of="2026-10-16")
+    assert result["market_context_latest_completed_eod"]["production_regime"] == "UNKNOWN"
+    assert "LATEST_COMPLETED_EOD_MARKET_REGIME_UNKNOWN" in result["candidates"][0]["additional_market_context"]
+
+
+def test_s31j_partial_source_day_data_stops_unknown_eod_sequence(tmp_path):
+    result = evaluate_prior_ready(
+        _receipt(), _db(tmp_path, omit_day="20261015"), as_of="2026-10-16",
+    )
+    assert result["status"] == "HOLD_EOD_CONFIRMATION_REQUIRED"
+    assert result["unconfirmed_market_dates_through_asof"] == ["2026-10-15", "2026-10-16"]
+    assert result["new_entry_permission"] is False
+
+
+def test_s31j_invalid_ohlc_blocks_candidate_specific_eod(tmp_path):
+    result = evaluate_prior_ready(
+        _receipt(), _db(tmp_path, invalid_ohlc=True), as_of="2026-10-15",
+    )
+    assert result["candidates"][0]["recheck_status"] == "STOCK_EOD_UNAVAILABLE"
+    assert result["candidates"][0]["last_complete_eod_open_price"] is None
+    assert result["candidates"][1]["recheck_status"] == "PREVIOUS_RISK_REFERENCE_BREACHED"
+
+
+def test_s31j_cli_readonly_and_json_report(tmp_path, capsys):
+    db = _db(tmp_path)
+    receipt_path = tmp_path / "receipt.json"
+    receipt_path.write_text(json.dumps(_receipt(), ensure_ascii=False), encoding="utf-8")
+    original = db.read_bytes()
+    assert recheck_cli.main([
+        "--receipt", str(receipt_path), "--market-db", str(db),
+        "--as-of", "2026-10-16",
+    ]) == 0
+    human = capsys.readouterr().out
+    assert "기존 READY 신규 진입 전 재검증" in human
+    assert "과거 READY는 현재 매수 허가가 아닙니다" in human
+    assert "실시간 호가" in human
+    assert recheck_cli.main([
+        "--receipt", str(receipt_path), "--market-db", str(db),
+        "--as-of", "2026-10-16", "--json",
+    ]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["candidate_count"] == 5
+    assert payload["new_entry_permission"] is False
+    assert db.read_bytes() == original
+
+
+def test_s31j_cli_missing_eod_returns_hold_not_trade_approval(tmp_path, capsys):
+    db = _db(tmp_path)
+    receipt_path = tmp_path / "receipt.json"
+    receipt_path.write_text(json.dumps(_receipt(), ensure_ascii=False), encoding="utf-8")
+    assert recheck_cli.main([
+        "--receipt", str(receipt_path), "--market-db", str(db),
+        "--as-of", "2026-10-19", "--json",
+    ]) == 2
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "HOLD_EOD_CONFIRMATION_REQUIRED"
+    assert payload["new_entry_permission"] is False
+
+
+def test_s31j_tampered_receipt_aborts_before_market_read(tmp_path):
+    receipt = _receipt()
+    receipt["original_scanner_candidates"][0]["name"] = "forged"
+    missing = tmp_path / "missing.sqlite"
+    with pytest.raises(ResearchCaptureError, match="S28_RECEIPT_PAYLOAD_HASH_MISMATCH"):
+        evaluate_prior_ready(receipt, missing, as_of="2026-10-16")
+    assert not missing.exists()
