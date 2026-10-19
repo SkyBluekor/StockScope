@@ -409,8 +409,8 @@ def test_s31j_prior_ready_rechecks_existing_risk_breach_without_executions(tmp_p
     assert candidate["actual_position_known"] is False
     assert candidate["entry_allowed_by_this_result"] is False
     assert candidate["past_reference_breach_count"] == 4
-    assert candidate["last_stock_eod_price_field"] == "HISTORICAL_EOD_OPEN_NOT_LIVE_PRICE"
-    assert candidate["last_stock_eod_price"] == 94
+    assert candidate["last_complete_eod_open_price_source"] == "HISTORICAL_EOD_OPEN_NOT_LIVE_PRICE"
+    assert candidate["last_complete_eod_open_price"] == 94
     assert db.read_bytes() == market_bytes
     assert receipt == original
 
@@ -464,7 +464,7 @@ def test_s31j_stock_latest_eod_unavailable_not_classified_safe(tmp_path):
     result = evaluate_prior_ready(_receipt(), db, as_of="2026-10-16")
     first = result["candidates"][0]
     assert first["recheck_status"] == "STOCK_EOD_UNAVAILABLE"
-    assert first["last_stock_eod_price"] is None
+    assert first["last_complete_eod_open_price"] is None
     assert first["past_reference_breach_count"] >= 1
     assert all(x["entry_allowed_by_this_result"] is False for x in result["candidates"])
 
@@ -513,7 +513,7 @@ def test_s31j_invalid_ohlc_blocks_candidate_specific_eod(tmp_path):
         _receipt(), _db(tmp_path, invalid_ohlc=True), as_of="2026-10-15",
     )
     assert result["candidates"][0]["recheck_status"] == "STOCK_EOD_UNAVAILABLE"
-    assert result["candidates"][0]["last_stock_eod_price"] is None
+    assert result["candidates"][0]["last_complete_eod_open_price"] is None
     assert result["candidates"][1]["recheck_status"] == "PREVIOUS_RISK_REFERENCE_BREACHED"
 
 
