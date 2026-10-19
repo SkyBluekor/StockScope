@@ -116,13 +116,13 @@ def test_eod_cutoff_prevents_lookahead_and_no_source_mutation(tmp_path, monkeypa
         def now(tz):
             return type("Time", (), {"date": lambda self: date(2026, 12, 31)})()
     monkeypatch.setattr(module, "datetime", Clock)
-    report = observe_frozen_candidates(receipt, market, as_of="2026-10-21")
+    report = observe_frozen_candidates(receipt, market, as_of="2026-10-19")
     assert receipt == unchanged
     assert report["candidate_count"] == 5
     assert report["observed_window_counts"] == {"5d": 0, "10d": 0, "20d": 0}
-    assert all(x["completed_market_days_after_signal"] == 5 for x in report["candidates"])
+    assert all(x["completed_market_days_after_signal"] == 3 for x in report["candidates"])
     assert all(x["windows"]["5d"]["return_pct"] is None for x in report["candidates"])
-    assert all(x["evaluated_through"] == "2026-10-21" for x in report["candidates"])
+    assert all(x["evaluated_through"] == "2026-10-19" for x in report["candidates"])
     assert report["jev_model_calls"] == 0
     assert report["market_network_requests"] == 0
     assert report["production_db_writes"] == 0
