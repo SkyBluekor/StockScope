@@ -8,6 +8,7 @@ No provider, market fetch, order, DB write, or rights escalation exists here.
 """
 from __future__ import annotations
 
+from contextlib import closing
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -61,7 +62,7 @@ def observe_frozen_candidates(
     # windows. Even a valid SQLite file can have an incomplete/old schema.
     source = ReadOnlyMarketEvidence(local_db)
     try:
-        with source.connect() as conn:
+        with closing(source.connect()) as conn:
             for table in ("day_status", "stock_daily", "main_index_daily"):
                 if not conn.execute(
                     "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
@@ -134,7 +135,7 @@ def observe_frozen_candidates(
             d.replace("-", "") for d in
             (details.get("observed_market_days") or [])[:max(EARLY_WINDOWS)]
         ]
-        with source.connect() as conn:
+        with closing(source.connect()) as conn:
             signal_row = source.stock_row(
                 conn, market=baseline["market"], ticker=code,
                 bas_dd=baseline["source_date"].replace("-", ""),
