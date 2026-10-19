@@ -322,3 +322,121 @@ def test_old_fixed_name_staging_file_is_ignored_without_deletion(tmp_path):
     assert result["status"] == "RESEARCH_DAYS_STORED"
     assert legacy.read_text(encoding="utf-8") == "old failed backup; do not reuse"
     assert target.is_file()
+
+def test_auto_range_from_original_last_complete_to_explicit_yesterday(tmp_path):
+    source = _source(tmp_path)
+    root, target = _paths(tmp_path)
+    report = mod.plan(
+        source, target, market="KOSPI", research_root=root,
+        today=date(2026, 10, 19),
+    )
+    assert report["status"] == "PLAN_ONLY"
+    assert report["from_resolution"] == "LAST_COMPLETE_PLUS_ONE"
+    assert report["last_complete_market_eod"] == "20261014"
+    assert report["from"] == "2026-10-15"
+    assert report["through"] == "2026-10-18"
+    assert report["pending_dates"] == ["2026-10-15", "2026-10-16"]
+    assert report["verified_closed_count"] == 2
+    assert report["potential_api_requests"] == 4
+    assert report["older_gaps_prior_to_last_complete_scanned"] is False
+    assert not target.exists()
+
+
+def test_auto_collect_after_copy_and_resume_with_new_cutoff(tmp_path):
+    source = _source(tmp_path)
+    root, target = _paths(tmp_path)
+    first = FakeKrx()
+    report = asyncio.run(mod.collect(
+        source, target, market="KOSPI", research_root=root,
+        through="2026-10-16", today=date(2026, 10, 19),
+        acknowledge=True, provider=first,
+    ))
+    assert report["status"] == "RESEARCH_DAYS_STORED"
+    assert report["stored_count"] == 2
+    assert first.stock_calls == ["20261015", "20261016"]
+    # Next auto run starts after the last complete day in the RESEARCH COPY,
+    # even if the original source has not changed at all.
+    after = mod.plan(
+        source, target, market="KOSPI", research_root=root,
+        today=date(2026, 10, 19),
+    )
+    assert after["from"] == "2026-10-17"
+    assert after["through"] == "2026-10-18"
+    assert after["read_from"] == "RESEARCH_COPY"
+    assert after["pending_dates"] == []
+    second = FakeKrx()
+    noop = asyncio.run(mod.collect(
+        source, target, market="KOSPI", research_root=root,
+        today=date(2026, 10, 19), acknowledge=True, provider=second,
+    ))
+    assert noop["status"] == "NO_MISSING_DAYS"
+    assert second.stock_calls == second.index_calls == []
+    later = mod.plan(
+        source, target, market="KOSPI", research_root=root,
+        today=date(2026, 10, 20),
+    )
+    assert later["pending_dates"] == ["2026-10-19"]
+    assert later["from"] == "2026-10-17"
+    assert later["through"] == "2026-10-19"
+
+
+def test_auto_noop_when_latest_complete_is_yesterday(tmp_path):
+    source = _source(tmp_path)
+    root, target = _paths(tmp_path)
+    report = mod.plan(
+        source, target, market="KOSPI", research_root=root,
+        today=date(2026, 10, 15),
+    )
+    assert report["status"] == "UP_TO_DATE"
+    assert report["days"] == []
+    assert report["pending_dates"] == []
+    assert report["potential_api_requests"] == 0
+    provider = FakeKrx()
+    noop = asyncio.run(mod.collect(
+        source, target, market="KOSPI", research_root=root,
+        today=date(2026, 10, 15), acknowledge=True, provider=provider,
+    ))
+    assert noop["status"] == "NO_MISSING_DAYS"
+    assert provider.stock_calls == provider.index_calls == []
+    assert not target.exists()
+
+
+def test_auto_refuses_no_baseline_instead_of_guessing_start_date(tmp_path):
+    source = _source(tmp_path)
+    root, target = _paths(tmp_path)
+    with sqlite3.connect(source) as conn:
+        conn.execute("DELETE FROM day_status")
+    with pytest.raises(mod.CollectorError, match="AUTO_FROM_REQUIRES_EXISTING_COMPLETE_EOD"):
+        mod.plan(
+            source, target, market="KOSPI", research_root=root,
+            today=date(2026, 10, 19),
+        )
+    # Explicit date range remains possible when baseline does not exist.
+    manual = mod.plan(
+        source, target, market="KOSPI", research_root=root,
+        start="2026-10-15", through="2026-10-16",
+        today=date(2026, 10, 19),
+    )
+    assert manual["status"] == "PLAN_ONLY"
+
+
+def test_auto_refuses_unbounded_old_backlog_without_silent_truncation(tmp_path):
+    source = _source(tmp_path)
+    root, target = _paths(tmp_path)
+    with pytest.raises(mod.CollectorError, match="DATE_RANGE_OUTSIDE_SAFE_LIMIT"):
+        mod.plan(
+            source, target, market="KOSPI", research_root=root,
+            today=date(2027, 1, 10),
+        )
+    assert not target.exists()
+
+
+def test_explicit_range_reversed_remains_invalid(tmp_path):
+    source = _source(tmp_path)
+    root, target = _paths(tmp_path)
+    with pytest.raises(mod.CollectorError, match="DATE_RANGE_OUTSIDE_SAFE_LIMIT"):
+        mod.plan(
+            source, target, market="KOSPI", research_root=root,
+            start="2026-10-16", through="2026-10-15",
+            today=date(2026, 10, 19),
+        )
