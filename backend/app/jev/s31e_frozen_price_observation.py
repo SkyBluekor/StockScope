@@ -124,9 +124,38 @@ def observe_frozen_candidates(
         details = observed.get("details") or {}
         close = details.get("reference_price")
         count = observed["available_trading_days"]
+
+        # ProspectiveEvaluator's public result intentionally exposes only
+        # 5/10/20d returns. Its existing pure _observation() supports any
+        # requested window. Reuse THAT exact calculation on the evaluator's
+        # confirmed, as-of-bounded market day list for 1/2/3d. No guessed
+        # sessions, new source, or changed production evaluator contract.
+        early_days = [
+            d.replace("-", "") for d in
+            (details.get("observed_market_days") or [])[:max(EARLY_WINDOWS)]
+        ]
+        with source.connect() as conn:
+            signal_row = source.stock_row(
+                conn, market=baseline["market"], ticker=code,
+                bas_dd=baseline["source_date"].replace("-", ""),
+            )
+            early_rows = {
+                day: source.stock_row(
+                    conn, market=baseline["market"], ticker=code, bas_dd=day,
+                ) or {}
+                for day in early_days
+            }
+        early_returns = ProspectiveEvaluator._observation(
+            signal_row=signal_row, future_days=early_days,
+            future_rows=early_rows, snapshot=raw[code],
+            observation_windows=list(EARLY_WINDOWS),
+        )["returns"]
         windows = {}
         for n in ALL_WINDOWS:
-            ret = observed.get(f"return_{n}d")
+            ret = (
+                early_returns.get(n) if n in EARLY_WINDOWS
+                else observed.get(f"return_{n}d")
+            )
             end_date = (details.get("observation_window_end_dates") or {}).get(f"{n}d")
             if close is None:
                 status = "SIGNAL_CLOSE_UNAVAILABLE"
