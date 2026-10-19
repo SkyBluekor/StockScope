@@ -12,6 +12,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from contextlib import closing
+import os
+import tempfile
 from datetime import date, datetime, timedelta
 import json
 from pathlib import Path
@@ -109,7 +112,7 @@ def plan(
     days = _range(start, through, today)
     active = Path(research_db) if Path(research_db).is_file() else Path(source_db)
     rows = []
-    with _connect_ro(active) as conn:
+    with closing(_connect_ro(active)) as conn:
         for day in days:
             key = day.strftime("%Y%m%d")
             flags = conn.execute(
@@ -168,27 +171,58 @@ def plan(
 
 
 def _clone_if_missing(source_db: Path, research_db: Path, research_root: Path) -> bool:
+    """Publish a WAL-safe SQLite backup only AFTER both handles are closed.
+
+    A sqlite3.Connection context manager commits/rolls back but does NOT
+    close the handle. On Windows the former S31-F implementation therefore
+    raised PermissionError while renaming its still-open .initializing DB.
+    Each attempt now uses an exclusive unique temp name, so an abandoned
+    staging file from the old failure cannot block a fresh, safe backup.
+    """
     _safe_paths(source_db, research_db, research_root)
     if research_db.is_file():
         return False
     if research_db.exists():
         raise CollectorError("RESEARCH_TARGET_IS_NOT_FILE")
-    # A backup of a live WAL-enabled SQLite DB is consistent; copying raw
-    # .db bytes would silently omit uncheckpointed WAL changes.
+
     research_db.parent.mkdir(parents=True, exist_ok=True)
-    tmp = research_db.with_name(research_db.name + ".initializing")
-    if tmp.exists():
-        raise CollectorError("RESEARCH_TEMP_FILE_ALREADY_EXISTS")
+    tmp: Path | None = None
+    stage = "CREATE"
     try:
-        with _connect_ro(source_db) as src:
-            with sqlite3.connect(tmp) as dest:
+        # mkstemp's OS handle must be closed before opening the file via
+        # SQLite, particularly on Windows. Never overwrite another temp DB.
+        fd, name = tempfile.mkstemp(
+            prefix=research_db.name + ".", suffix=".initializing",
+            dir=research_db.parent,
+        )
+        os.close(fd)
+        tmp = Path(name)
+        stage = "BACKUP"
+        with closing(_connect_ro(source_db)) as src:
+            with closing(sqlite3.connect(tmp)) as dest:
                 src.backup(dest)
+
+        # Both connections are now explicitly closed before atomic rename.
+        stage = "PUBLISH"
+        if research_db.exists():
+            raise CollectorError("RESEARCH_TARGET_CREATED_CONCURRENTLY")
         tmp.replace(research_db)
-        with _connect_ro(research_db):
+        stage = "VERIFY"
+        with closing(_connect_ro(research_db)):
             pass
+    except PermissionError as exc:
+        if tmp is not None and tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+        raise CollectorError(f"RESEARCH_COPY_{stage}_PERMISSION_DENIED") from exc
     except Exception:
-        if tmp.exists():
-            tmp.unlink()
+        if tmp is not None and tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
         raise
     return True
 
