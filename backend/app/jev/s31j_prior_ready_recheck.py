@@ -105,10 +105,10 @@ def _candidate_recheck(
             candidate["reference_invalidation"]
         ),
         "last_observed_complete_eod": last_complete,
-        "last_stock_eod_price": (
+        "last_complete_eod_open_price": (
             last["opening_price"] if has_complete_current_bar else None
         ),
-        "last_stock_eod_price_field": (
+        "last_complete_eod_open_price_source": (
             "HISTORICAL_EOD_OPEN_NOT_LIVE_PRICE" if has_complete_current_bar else None
         ),
         "previous_reference_breach_history": events,
