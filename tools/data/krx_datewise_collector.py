@@ -91,6 +91,30 @@ def _connect_ro(path: Path) -> sqlite3.Connection:
     return connection
 
 
+def _latest_complete_eod(conn: sqlite3.Connection, market: str) -> str | None:
+    """Last wholly recorded stock+index market session, not a guessed weekday.
+
+    The source DB may contain older partial attempts. Never consider a
+    bare day_status marker to be a complete market-wide EOD snapshot.
+    """
+    row = conn.execute(
+        """
+        SELECT s.bas_dd FROM day_status AS s
+        JOIN day_status AS i
+          ON i.market=s.market AND i.bas_dd=s.bas_dd
+         AND i.kind='index' AND i.status='data'
+        WHERE s.market=? AND s.kind='stock' AND s.status='data'
+          AND (SELECT COUNT(*) FROM stock_daily AS d
+               WHERE d.market=s.market AND d.bas_dd=s.bas_dd) >= ?
+          AND (SELECT COUNT(*) FROM main_index_daily AS idx
+               WHERE idx.market=s.market AND idx.bas_dd=s.bas_dd) = 1
+        ORDER BY s.bas_dd DESC LIMIT 1
+        """,
+        (market, MIN_MARKET_ROWS),
+    ).fetchone()
+    return str(row[0]) if row is not None else None
+
+
 def _safe_paths(source_db: Path, research_db: Path, research_root: Path) -> None:
     src, dest, root = (
         Path(source_db).resolve(),
@@ -103,16 +127,33 @@ def _safe_paths(source_db: Path, research_db: Path, research_root: Path) -> None
 
 def plan(
     source_db: Path, research_db: Path, *,
-    market: str, start: str, through: str, research_root: Path,
-    today: date | None = None,
+    market: str, start: str | None = None, through: str | None = None,
+    research_root: Path, today: date | None = None,
 ) -> dict[str, Any]:
     if market not in ("KOSPI", "KOSDAQ"):
         raise CollectorError("MARKET_MUST_BE_KOSPI_OR_KOSDAQ")
     _safe_paths(source_db, research_db, research_root)
-    days = _range(start, through, today)
+    now = today or datetime.now(KST).date()
+    end = _day(through) if through is not None else now - timedelta(days=1)
+    if end >= now:
+        raise CollectorError("TODAY_OR_FUTURE_EOD_UNVERIFIED")
     active = Path(research_db) if Path(research_db).is_file() else Path(source_db)
     rows = []
     with closing(_connect_ro(active)) as conn:
+        latest = _latest_complete_eod(conn, market) if start is None else None
+        if start is None and latest is None:
+            raise CollectorError("AUTO_FROM_REQUIRES_EXISTING_COMPLETE_EOD")
+        beginning = (
+            date.fromisoformat(latest[:4] + "-" + latest[4:6] + "-" + latest[6:8])
+            + timedelta(days=1)
+            if start is None else _day(start)
+        )
+        # This is a valid automatic no-op, not a request to examine a
+        # backwards range. An explicit backwards range still fails closed.
+        days = (
+            [] if start is None and beginning > end else
+            _range(beginning.isoformat(), end.isoformat(), now)
+        )
         for day in days:
             key = day.strftime("%Y%m%d")
             flags = conn.execute(
@@ -153,9 +194,14 @@ def plan(
         "version": VERSION, "status": (
             "HOLD_EXISTING_DATA_CONFLICT" if conflicts
             else "HOLD_TOO_MANY_DAYS" if len(pending) > MAX_REQUEST_DAYS
+            else "UP_TO_DATE" if not days and start is None
             else "PLAN_ONLY"
         ),
-        "market": market, "from": start, "through": through,
+        "market": market,
+        "from": beginning.isoformat(), "through": end.isoformat(),
+        "from_resolution": "LAST_COMPLETE_PLUS_ONE" if start is None else "EXPLICIT",
+        "last_complete_market_eod": latest,
+        "older_gaps_prior_to_last_complete_scanned": False,
         "read_from": "RESEARCH_COPY" if active == Path(research_db) else "SOURCE_READ_ONLY",
         "source_market_db": str(Path(source_db).resolve()),
         "research_market_db": str(Path(research_db).resolve()),
@@ -249,7 +295,8 @@ def _isolated_provider(root: Path) -> Any:
 
 async def collect(
     source_db: Path, research_db: Path, *,
-    research_root: Path, market: str, start: str, through: str,
+    research_root: Path, market: str,
+    start: str | None = None, through: str | None = None,
     acknowledge: bool = False, today: date | None = None,
     provider: Any | None = None,
 ) -> dict[str, Any]:
@@ -259,7 +306,7 @@ async def collect(
         source_db, research_db, market=market, start=start, through=through,
         research_root=research_root, today=today,
     )
-    if before["status"] != "PLAN_ONLY":
+    if before["status"] not in ("PLAN_ONLY", "UP_TO_DATE"):
         raise CollectorError(before["status"])
     requested = list(before["pending_dates"])
     if not requested:
@@ -352,8 +399,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("mode", nargs="?", choices=("plan", "collect"), default="plan")
     parser.add_argument("--market", required=True, choices=("KOSPI", "KOSDAQ"))
-    parser.add_argument("--from", dest="start", required=True, help="YYYY-MM-DD")
-    parser.add_argument("--through", required=True, help="YYYY-MM-DD; KST yesterday or older")
+    parser.add_argument("--from", dest="start", default=None,
+                        help="YYYY-MM-DD; 생략 시 마지막 완료 EOD 다음 날 자동 계산")
+    parser.add_argument("--through", default=None,
+                        help="YYYY-MM-DD; 생략 시 한국시간 어제까지 (당일 EOD 제외)")
     parser.add_argument("--acknowledge-research-writes", action="store_true")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
@@ -383,7 +432,9 @@ def main(argv: list[str] | None = None) -> int:
         if report["status"] == "HOLD":
             print(f"차단 이유: {report['reason_code']}")
         elif args.mode == "plan":
-            print(f"시장: {report['market']} | 이미 완료: {report['complete_count']}일")
+            print(f"시장: {report['market']} | 범위: {report['from']} ~ {report['through']} | 이미 완료: {report['complete_count']}일")
+            if report["from_resolution"] == "LAST_COMPLETE_PLUS_ONE":
+                print(f"자동 시작점: 마지막 완료 EOD {report['last_complete_market_eod']} 다음 날")
             print(f"확인된 휴장: {report['verified_closed_count']}일 | 새로 수집할 날짜: {len(report['pending_dates'])}일")
             for item in report["days"]:
                 print(f"  {item['date']} · {item['status']}")
@@ -393,7 +444,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"연구 DB: {report['research_market_db']}")
         print("Scanner/JEV 실행 없음. 원본 Market DB 변경 없음.")
     return 0 if report["status"] in (
-        "PLAN_ONLY", "NO_MISSING_DAYS", "RESEARCH_DAYS_STORED"
+        "PLAN_ONLY", "UP_TO_DATE", "NO_MISSING_DAYS", "RESEARCH_DAYS_STORED"
     ) else 2
 
 
