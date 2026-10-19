@@ -33,9 +33,9 @@ def korean_report(report: dict) -> str:
         f"상태: {report['status']}, 확정 EOD {report['complete_eod_sessions']}일",
         f"참고 무효화선 일중 도달: {report['stock_count_with_invalidation_touch']}개",
         f"참고 무효화선 이하 종가 기록: {report['stock_count_below_invalidation_at_close']}개",
-        "※ RANGE/ABOVE는 전략 조건 가격대이며 실제 매수 범위나 체결을 뜻하지 않습니다.\n        ※ 실제 매수 여부, 손절 실행 여부 및 당일 위험 대응은 확인되지 않았습니다.",
+        "※ RANGE/ABOVE는 전략 조건 가격대이며 실제 매수 범위나 체결을 뜻하지 않습니다.",
+        "※ 실제 매수 여부, 손절 실행 여부 및 당일 위험 대응은 확인되지 않았습니다.",
         "※ 시장지수 대비 변화폭은 단순 가격 비교로 전략 우월성을 뜻하지 않습니다.",
-        "※ 아래 전략 조건 가격대는 매매 진입 조건이 아닙니다.",
     ]
     if report["unresolved_prior_weekdays"]:
         lines.append(
