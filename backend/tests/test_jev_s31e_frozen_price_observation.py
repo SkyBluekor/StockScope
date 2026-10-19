@@ -225,3 +225,85 @@ def test_cli_rejects_missing_db_and_missing_receipt(tmp_path, capsys):
     assert not missing.exists()
     assert cli.main(["--receipt", str(tmp_path / "absent")]) == 2
     assert "S31E_RECEIPT_FILE_MISSING_OR_TOO_LARGE" in capsys.readouterr().out
+
+def _advance_s31g_clock(monkeypatch):
+    from app.jev import s31e_frozen_price_observation as module
+    class Clock:
+        @staticmethod
+        def now(tz):
+            return type("Time", (), {"date": lambda self: date(2026, 12, 31)})()
+    monkeypatch.setattr(module, "datetime", Clock)
+
+
+def test_interim_1_2_days_read_actual_completed_eod_not_full_5d(tmp_path, monkeypatch):
+    _advance_s31g_clock(monkeypatch)
+    market = _market(tmp_path, future_days=20)
+    report = observe_frozen_candidates(_receipt(), market, as_of="2026-10-16")
+    assert report["early_observed_counts"] == {"1d": 5, "2d": 5, "3d": 0}
+    assert report["observed_window_counts"] == {"5d": 0, "10d": 0, "20d": 0}
+    assert report["early_windows_are_final_5d_10d_20d_results"] is False
+    for row in report["candidates"]:
+        assert row["completed_market_days_after_signal"] == 2
+        assert row["early_windows"]["1d"] == {
+            "status": "OBSERVED_SIGNAL_CLOSE_CHANGE_ONLY",
+            "return_pct": 1.0, "end_date": "2026-10-15",
+        }
+        assert row["early_windows"]["2d"] == {
+            "status": "OBSERVED_SIGNAL_CLOSE_CHANGE_ONLY",
+            "return_pct": 2.0, "end_date": "2026-10-16",
+        }
+        assert row["early_windows"]["3d"]["return_pct"] is None
+        assert row["windows"]["5d"]["return_pct"] is None
+        assert row["investment_outcome"] is None
+    assert report["real_jev_model_results"] is False
+    assert report["production_db_writes"] == 0
+
+
+def test_interim_3d_observed_without_advancing_final_5d(tmp_path, monkeypatch):
+    _advance_s31g_clock(monkeypatch)
+    market = _market(tmp_path)
+    report = observe_frozen_candidates(_receipt(), market, as_of="2026-10-19")
+    assert report["early_observed_counts"] == {"1d": 5, "2d": 5, "3d": 5}
+    assert report["observed_window_counts"] == {"5d": 0, "10d": 0, "20d": 0}
+    assert all(row["early_windows"]["3d"]["return_pct"] == 3.0 for row in report["candidates"])
+
+
+def test_interim_target_close_missing_is_null_no_interpolation(tmp_path, monkeypatch):
+    _advance_s31g_clock(monkeypatch)
+    market = _market(tmp_path, missing_ticker_end_day=2)
+    report = observe_frozen_candidates(_receipt(), market, as_of="2026-10-16")
+    first = report["candidates"][0]
+    assert first["early_windows"]["2d"]["status"] == "TARGET_DAY_STOCK_CLOSE_UNAVAILABLE"
+    assert first["early_windows"]["2d"]["return_pct"] is None
+    assert first["early_windows"]["1d"]["return_pct"] == 1.0
+    assert report["early_observed_counts"]["2d"] == 4
+    assert report["observed_window_counts"] == {"5d": 0, "10d": 0, "20d": 0}
+
+
+def test_interim_missing_signal_close_never_invents_gain(tmp_path, monkeypatch):
+    _advance_s31g_clock(monkeypatch)
+    market = _market(tmp_path)
+    with sqlite3.connect(market) as conn:
+        conn.execute(
+            "DELETE FROM stock_daily WHERE bas_dd='20261014' AND stock_code='001820'"
+        )
+    report = observe_frozen_candidates(_receipt(), market, as_of="2026-10-16")
+    first = report["candidates"][0]
+    assert all(item["status"] == "SIGNAL_CLOSE_UNAVAILABLE" for item in first["early_windows"].values())
+    assert all(item["return_pct"] is None for item in first["early_windows"].values())
+
+
+def test_cli_separates_interim_from_final_horizons(tmp_path, capsys):
+    market = _market(tmp_path, future_days=2)
+    receipt = tmp_path / "receipt.json"
+    receipt.write_text(json.dumps(_receipt(), ensure_ascii=False), encoding="utf-8")
+    assert cli.main([
+        "--receipt", str(receipt), "--market-db", str(market),
+        "--as-of", "2026-10-16",
+    ]) == 0
+    rendered = capsys.readouterr().out
+    assert "중간 1d: +1.0000%" in rendered
+    assert "중간 2d: +2.0000%" in rendered
+    assert "중간 3d: 관측 불가" in rendered
+    assert "평가 5d: 관측 불가" in rendered
+    assert "JEV 실종목 추론 0회" in rendered

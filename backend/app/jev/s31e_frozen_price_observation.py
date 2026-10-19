@@ -8,6 +8,7 @@ No provider, market fetch, order, DB write, or rights escalation exists here.
 """
 from __future__ import annotations
 
+from contextlib import closing
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,8 @@ VERSION = "JEV_ACT2_S31E_FROZEN_PRICE_OBSERVATION_V1"
 FROZEN_SOURCE_DATE = "2026-10-14"
 FROZEN_MARKET = "KOSPI"
 WINDOWS = (5, 10, 20)
+EARLY_WINDOWS = (1, 2, 3)
+ALL_WINDOWS = (*EARLY_WINDOWS, *WINDOWS)
 
 
 def _as_of_date(value: str) -> str:
@@ -43,7 +46,7 @@ def _as_of_date(value: str) -> str:
 def observe_frozen_candidates(
     receipt: dict[str, Any], market_db: Path, *, as_of: str,
 ) -> dict[str, Any]:
-    """Only genuine existing local EOD rows can contribute 5/10/20 day values."""
+    """Use original S31-E final windows plus separate 1/2/3-day descriptive observations."""
     as_of = _as_of_date(as_of)
     baseline = inspect_frozen_candidates(receipt, limit=5)
     if (baseline["source_date"] != FROZEN_SOURCE_DATE
@@ -59,7 +62,7 @@ def observe_frozen_candidates(
     # windows. Even a valid SQLite file can have an incomplete/old schema.
     source = ReadOnlyMarketEvidence(local_db)
     try:
-        with source.connect() as conn:
+        with closing(source.connect()) as conn:
             for table in ("day_status", "stock_daily", "main_index_daily"):
                 if not conn.execute(
                     "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
@@ -87,7 +90,7 @@ def observe_frozen_candidates(
             observed = evaluator.evaluate_sample(
                 sample=sample,
                 spec={
-                    "observation_windows": list(WINDOWS),
+                    "observation_windows": list(ALL_WINDOWS),
                     "max_holding_days": 20,
                     "execution_mode": "OBSERVATION_ONLY",
                     "require_complete_market_eod": True,
@@ -110,6 +113,11 @@ def observe_frozen_candidates(
                               "end_date": None}
                     for n in WINDOWS
                 },
+                "early_windows": {
+                    f"{n}d": {"status": "UNAVAILABLE", "return_pct": None,
+                              "end_date": None}
+                    for n in EARLY_WINDOWS
+                },
                 "jev_decision": None,
                 "investment_outcome": None,
             })
@@ -117,9 +125,38 @@ def observe_frozen_candidates(
         details = observed.get("details") or {}
         close = details.get("reference_price")
         count = observed["available_trading_days"]
+
+        # ProspectiveEvaluator's public result intentionally exposes only
+        # 5/10/20d returns. Its existing pure _observation() supports any
+        # requested window. Reuse THAT exact calculation on the evaluator's
+        # confirmed, as-of-bounded market day list for 1/2/3d. No guessed
+        # sessions, new source, or changed production evaluator contract.
+        early_days = [
+            d.replace("-", "") for d in
+            (details.get("observed_market_days") or [])[:max(EARLY_WINDOWS)]
+        ]
+        with closing(source.connect()) as conn:
+            signal_row = source.stock_row(
+                conn, market=baseline["market"], ticker=code,
+                bas_dd=baseline["source_date"].replace("-", ""),
+            )
+            early_rows = {
+                day: source.stock_row(
+                    conn, market=baseline["market"], ticker=code, bas_dd=day,
+                ) or {}
+                for day in early_days
+            }
+        early_returns = ProspectiveEvaluator._observation(
+            signal_row=signal_row, future_days=early_days,
+            future_rows=early_rows, snapshot=raw[code],
+            observation_windows=list(EARLY_WINDOWS),
+        )["returns"]
         windows = {}
-        for n in WINDOWS:
-            ret = observed.get(f"return_{n}d")
+        for n in ALL_WINDOWS:
+            ret = (
+                early_returns.get(n) if n in EARLY_WINDOWS
+                else observed.get(f"return_{n}d")
+            )
             end_date = (details.get("observation_window_end_dates") or {}).get(f"{n}d")
             if close is None:
                 status = "SIGNAL_CLOSE_UNAVAILABLE"
@@ -133,7 +170,12 @@ def observe_frozen_candidates(
                 "status": status, "return_pct": ret if status.startswith("OBSERVED") else None,
                 "end_date": end_date if status.startswith("OBSERVED") else None,
             }
-        ready = sum(v["status"].startswith("OBSERVED") for v in windows.values())
+        ready = sum(
+            windows[f"{n}d"]["status"] == "OBSERVED_SIGNAL_CLOSE_CHANGE_ONLY"
+            for n in WINDOWS
+        )
+        early_windows = {f"{n}d": windows[f"{n}d"] for n in EARLY_WINDOWS}
+        final_windows = {f"{n}d": windows[f"{n}d"] for n in WINDOWS}
         rows.append({
             "code": code, "name": candidate["name"],
             "baseline": candidate["baseline"],
@@ -145,7 +187,8 @@ def observe_frozen_candidates(
             "signal_close_reference": close,
             "completed_market_days_after_signal": count,
             "evaluated_through": observed["evaluated_through"],
-            "windows": windows,
+            "windows": final_windows,
+            "early_windows": early_windows,
             "jev_decision": None,
             "investment_outcome": None,
         })
@@ -156,6 +199,13 @@ def observe_frozen_candidates(
         )
         for n in WINDOWS
     }
+    early_observed_counts = {
+        f"{n}d": sum(
+            row["early_windows"][f"{n}d"]["status"] == "OBSERVED_SIGNAL_CLOSE_CHANGE_ONLY"
+            for row in rows
+        )
+        for n in EARLY_WINDOWS
+    }
     return {
         "version": VERSION,
         "status": "LOCAL_POSTHOC_EOD_OBSERVATION_ONLY",
@@ -165,6 +215,8 @@ def observe_frozen_candidates(
         "market": baseline["market"],
         "candidate_count": len(rows),
         "observed_window_counts": observed_counts,
+        "early_observed_counts": early_observed_counts,
+        "early_windows_are_final_5d_10d_20d_results": False,
         "complete_market_day_definition": (
             "day_status stock+index data AND any stock_daily AND main_index_daily "
             "on the same market/day; candidate closing price independently required"
@@ -188,7 +240,8 @@ def observe_frozen_candidates(
         "candidates": rows,
         "limitations": [
             "원본 S27은 사후 기술 점검으로 사전 추천·Q7 예측 적중률 근거가 아닙니다.",
-            "5·10·20 거래일 종가 변화율은 가상 매수 체결·세금·수수료·슬리피지 미반영입니다.",
+            "1·2·3일은 중간 관측이며 5·10·20일 최종 구간의 대체 지표가 아닙니다.",
+            "1·2·3·5·10·20 거래일 종가 변화율은 가상 매수 체결·세금·수수료·슬리피지 미반영입니다.",
             "기준일 종가는 Scanner 위험관리 진입 참고가 또는 실제 체결가와 다릅니다.",
             "로컬 DB에 없는 일별 기록은 보간하거나 온라인 보충하지 않습니다.",
             "기업행위/수정주가 검증과 독립 공개 시각 검증이 없으면 투자 성과로 해석하지 않습니다.",

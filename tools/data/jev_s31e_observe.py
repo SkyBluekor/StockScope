@@ -38,6 +38,9 @@ def korean_report(report: dict) -> str:
         f"상태: {report['status']} · 원본 {report['source_date']} / 관측 상한 {report['as_of_date']}",
         f"진입 후보 {report['candidate_count']}개 · 종가 관측 완료 "
         + ", ".join(f"{k} {v}개" for k, v in report["observed_window_counts"].items()),
+        "중간 관측 1·2·3거래일: "
+        + ", ".join(f"{k} {v}개" for k, v in report["early_observed_counts"].items()),
+        "※ 중간 관측은 5·10·20거래일 평가를 대체하지 않습니다.",
         "※ 원본은 사후 기술 점검이며, 사전 추천 적중률이 아닙니다.",
         "※ 수익률은 매매 성과가 아니라 기준일 종가 대비 시장 종가 변화율입니다.",
         "",
@@ -48,9 +51,18 @@ def korean_report(report: dict) -> str:
             f"  데이터: {record['observation_status']} · 완료 EOD {record['completed_market_days_after_signal']}일",
             f"  기준일 종가: {record['signal_close_reference'] if record['signal_close_reference'] is not None else '없음'}",
         ])
+        for label, window in record["early_windows"].items():
+            lines.append(
+                f"  중간 {label}: "
+                + (
+                    f"{window['return_pct']:+.4f}% (종료일 {window['end_date']})"
+                    if window["return_pct"] is not None else
+                    f"관측 불가 ({window['status']})"
+                )
+            )
         for label, window in record["windows"].items():
             lines.append(
-                f"  {label}: "
+                f"  평가 {label}: "
                 + (
                     f"{window['return_pct']:+.4f}% (종료일 {window['end_date']})"
                     if window["return_pct"] is not None else
