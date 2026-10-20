@@ -1083,3 +1083,46 @@
   line-height: 1.6;
   color: var(--text-subtle);
 }
+
+/* S31-T unique authored-case model-vs-naive comparison; not Scanner uplift. */
+.scanner-jev-paired {
+  margin: 10px 0 16px;
+  padding: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+}
+.scanner-jev-paired > strong {
+  font-size: 13px;
+}
+.scanner-jev-paired p,
+.scanner-jev-paired small {
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.scanner-jev-paired table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  margin-bottom: 9px;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.scanner-jev-paired td,
+.scanner-jev-paired th {
+  min-width: 75px;
+  padding: 8px 5px;
+  white-space: normal;
+}
+.scanner-jev-paired td:first-child,
+.scanner-jev-paired th:first-child {
+  min-width: 95px;
+}
+.scanner-jev-paired + details {
+  margin: 10px 0;
+}
+.scanner-jev-paired + details summary {
+  cursor: pointer;
+  font-size: 12px;
+  padding: 7px 0;
+}
