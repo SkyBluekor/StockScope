@@ -25,7 +25,7 @@ export default function ScannerPriorRiskRecheck({
       role="status"
     >
       <div className="scanner-prior-risk-heading">
-        <strong>기존 READY 유효성 · {check.label}</strong>
+        <strong>분석일 Risk 참고선 · {check.label}</strong>
         <small>분석일 {check.analysisDate ?? "미확인"} · Risk {check.originalRiskStatus ?? "미확인"}</small>
       </div>
       <p>{check.explanation}</p>
