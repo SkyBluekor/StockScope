@@ -14,6 +14,7 @@ from typing import Any
 
 from app.core.config import PROJECT_ROOT
 from app.jev.decision_reviewer_micro_canary import CASES, synthetic_projection
+from app.jev.synthetic_incremental_benchmark_s31t import compare_synthetic_cases
 
 DEFAULT_JOURNAL = PROJECT_ROOT / "data" / "jev_research" / "s6_micro_canary.sqlite3"
 VERSION = "JEV_ACT2_S31S_SYNTHETIC_ACTUAL_RECEIPT_VIEW_V1"
@@ -37,6 +38,9 @@ _COLUMNS = frozenset({
 def _base(status: str) -> dict[str, Any]:
     return {
         "version": VERSION, "status": status, "scope": "SYNTHETIC_ONLY",
+        "paired_baseline": compare_synthetic_cases(
+            [], total_actual_attempts=0, malformed_rows=0, read_limit=50,
+        ),
         "actual_provider_attempts_recorded": 0,
         "actual_valid_receipts": 0, "correct_against_synthetic_gold": 0,
         "incorrect_against_synthetic_gold": 0,
@@ -149,6 +153,10 @@ def inspect_synthetic_actual_provider_receipts(
     results = [row for row in accepted if row is not None]
     valid = [r for r in results if r["receipt_status"] == "JOURNAL_CONSISTENCY_CHECK_PASSED"]
     result.update({
+        "paired_baseline": compare_synthetic_cases(
+            results, total_actual_attempts=actual_count,
+            malformed_rows=actual_count - len(results), read_limit=50,
+        ),
         "actual_provider_attempts_recorded": actual_count,
         "mock_rows_excluded": mock_count,
         "actual_valid_receipts": len(valid),
