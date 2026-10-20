@@ -12,6 +12,7 @@ from app.jev.review_models import (
     JEV_USER_FEATURE_DISABLED,
 )
 from app.jev.candidate_local_review_s31p import inspect_captured_candidate_local
+from app.jev.synthetic_model_report_s31s import inspect_synthetic_actual_provider_receipts
 from app.jev.review_service import JevManualReviewService
 from app.jev.typesafe_catalog import (
     TypeSafeJevCatalog,
@@ -200,6 +201,15 @@ class JevManualReviewRequest(BaseModel):
     capture_id: str = Field(..., min_length=1, max_length=200)
     sample_index: int = Field(default=0, ge=0, le=100)
     review_epoch: int = Field(default=0, ge=0, le=1_000_000)
+
+
+@router.get("/synthetic-actual-receipts")
+def get_jev_synthetic_actual_receipts() -> dict[str, object]:
+    """Existing S6 actual-provider journal claims, synthetic only, strictly local.
+
+    No new model call. Do not mix these receipts into candidate review status.
+    """
+    return inspect_synthetic_actual_provider_receipts()
 
 
 @router.get("/candidate-local-check")
