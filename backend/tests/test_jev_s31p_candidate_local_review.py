@@ -9,6 +9,7 @@ from app.api import jev as api
 from app.jev import candidate_local_review_s31p as local
 from app.jev.typesafe_state import TypeSafeStateProjectionError
 from app.jev.typesafe_state_v4 import TypeSafeV4Route
+from app.prospective.models import digest_json
 
 
 class StubSource:
@@ -24,7 +25,7 @@ class StubSource:
         self.calls += 1
         return self.sample, {
             "capture_id": capture_id, "sample_index": sample_index,
-            "snapshot_hash": "captured-source-hash",
+            "snapshot_hash": digest_json(self.sample["snapshot"]),
         }, None
 
 
@@ -78,7 +79,7 @@ def test_local_v4_routes_real_capture_without_external_model(
     assert result["provider_call_authorized"] is False
     assert result["rights_for_real_market_transmission_verified"] is False
     assert result["review_kind"] == "LOCAL_SEMANTIC_CHECK_NOT_JEV_MODEL"
-    assert result["snapshot_hash"] == "captured-source-hash"
+    assert result["snapshot_hash"] == digest_json(stub.sample["snapshot"])
     assert (result["jev_model_calls"], result["external_requests"],
             result["db_writes"], result["orders"]) == (0, 0, 0, 0)
 
@@ -139,3 +140,21 @@ def test_api_exposes_local_check_and_no_model_dispatch(stub, monkeypatch):
     assert answer["jev_model_calls"] == 0
     assert answer["baseline_candidate_changed"] is False
     assert answer["provider_call_authorized"] is False
+
+
+def test_tampered_snapshot_digest_holds_before_semantic_engine(stub, monkeypatch):
+    monkeypatch.setattr(
+        stub, "_load_sample",
+        lambda *_: (
+            stub.sample, {"capture_id": "cap-one", "snapshot_hash": "forged"}, None,
+        ),
+    )
+    monkeypatch.setattr(
+        local, "route_typesafe_state_v4",
+        lambda _: pytest.fail("router must not see a forged snapshot"),
+    )
+    result = call()
+    assert result["status"] == "HOLD"
+    assert result["reason_code"] == "CAPTURE_SNAPSHOT_HASH_MISMATCH"
+    assert result["snapshot_hash"] is None
+    assert result["jev_model_calls"] == 0
