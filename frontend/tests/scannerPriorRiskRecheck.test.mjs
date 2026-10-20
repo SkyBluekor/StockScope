@@ -139,3 +139,18 @@ test("no special 10/14 identifiers: any Scanner candidate has identical fail-clo
   assert.equal(r.state, "OLD_REFERENCE_NOT_BREACHED");
   assert.equal(r.analysisDate, "2026-09-01");
 });
+
+test("WATCH candidate is not mislabeled READY by this generic risk overlay", () => {
+  const item = candidate({
+    candidate_state: "WATCH",
+    risk: { status: "CAUTION", warning: true, warnings: [] },
+  });
+  const before = structuredClone(item);
+  const r = scannerPriorRiskRecheck(item, {
+    quote: null, loading: false, error: null, marketSession: null,
+  });
+  assert.equal(r.state, "NOT_CHECKED");
+  assert.doesNotMatch(r.label, /READY/);
+  assert.match(r.explanation, /Risk 판단/);
+  assert.deepEqual(item, before);
+});
