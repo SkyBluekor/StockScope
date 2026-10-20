@@ -10,7 +10,7 @@ type Props = {
 };
 
 /** Display-only: never promotes an old Scanner READY or initiates network calls. */
-export default function ScannerPriorRiskRecheck({
+export default function ScannerPriorRiskCard({
   candidate, snapshot, onOpenPriceTab,
 }: Props) {
   const check = scannerPriorRiskRecheck(candidate, snapshot);

@@ -1,7 +1,7 @@
 import type { ScannerCandidate } from "../services/api";
 import { beginnerCandidatePresentation } from "./scannerDecisionPresentation";
 import { scannerQuoteTruth, type ScannerQuoteSnapshot } from "./scannerQuoteTruth";
-import ScannerPriorRiskRecheck from "./ScannerPriorRiskRecheck";
+import ScannerPriorRiskRecheck from "./ScannerPriorRiskCard";
 
 type Props = {
   candidate: ScannerCandidate;

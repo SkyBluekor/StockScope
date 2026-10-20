@@ -1,6 +1,6 @@
 import type { ScannerCandidate } from "../services/api";
 import { assessPriceRule, priceReferenceText, wonText } from "./scannerDecisionPresentation";
-import ScannerPriorRiskRecheck from "./ScannerPriorRiskRecheck";
+import ScannerPriorRiskRecheck from "./ScannerPriorRiskCard";
 import {
   quoteMatchesCandidate,
   scannerQuoteTruth,
