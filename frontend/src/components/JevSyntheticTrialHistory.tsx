@@ -9,6 +9,13 @@ const labels: Record<string, string> = {
   REVIEW_REQUIRED: "재검토 필요",
   ABSTAIN: "판단 보류",
 };
+const caseTitles: Record<string, string> = {
+  "s5-consistent": "정상 전략",
+  "s5-condition-contradiction": "전략 조건 충돌",
+  "s5-risk-contradiction": "위험 판단 충돌",
+  "s5-insufficient-evidence": "근거 부족",
+  "s5-unresolved-ambiguity": "해결되지 않는 모순",
+};
 
 function validResponse(value: JevSyntheticActualReport): boolean {
   return value.scope === "SYNTHETIC_ONLY"
@@ -18,6 +25,16 @@ function validResponse(value: JevSyntheticActualReport): boolean {
     && value.external_requests_on_request === 0
     && value.db_writes_on_request === 0
     && value.provider_provenance === "LOCAL_JOURNAL_ORIGIN_CLAIM_NOT_CRYPTOGRAPHICALLY_ATTESTED"
+    && value.paired_baseline?.scope === "AUTHOR_CREATED_SYNTHETIC_CASES_ONLY"
+    && value.paired_baseline.unique_authored_cases === 5
+    && value.paired_baseline.real_market_cases === 0
+    && value.paired_baseline.naive_baseline_is_actual_scanner_algorithm === false
+    && value.paired_baseline.actual_stock_comparison_available === false
+    && value.paired_baseline.jev_incremental_market_value_proven === false
+    && value.paired_baseline.external_calls === 0
+    && value.paired_baseline.db_writes === 0
+    && value.paired_baseline.rows.length === 5
+    && value.paired_baseline.rows.every(r => Object.hasOwn(caseTitles, r.case_id))
     && value.results.every(r =>
       ["s5-consistent","s5-condition-contradiction","s5-risk-contradiction",
         "s5-insufficient-evidence","s5-unresolved-ambiguity"].includes(r.case_id));
@@ -76,6 +93,56 @@ export default function JevSyntheticTrialHistory() {
             {data.unverified_receipt_rows > 0 && (
               <p>형식 검증에 실패한 연구 기록 {data.unverified_receipt_rows}건은 결과에서 제외했습니다.</p>
             )}
+            <div className="scanner-jev-paired">
+              <strong>독립적인 합성 문제별 비교 (S31-T)</strong>
+              <p>
+                원래 진입 후보를 전부 통과시키는 단순 가상 대조군과 실제 기록된 모델 판단을
+                동일한 문제별로 비교했어요. 이 대조군은 실제 StockScope Scanner 알고리즘이 아닙니다.
+              </p>
+              {data.paired_baseline.full_case_coverage
+                ? <p>
+                    <strong>서로 다른 합성 문제 {data.paired_baseline.pairable_unique_cases}종</strong>
+                    {" · "}모델의 기대 답안 일치 {data.paired_baseline.model_correct_paired}종
+                    {" · "}단순 대조군 일치 {data.paired_baseline.naive_baseline_correct_paired}종
+                    {" · "}일치 개수 차이 {data.paired_baseline.paired_gold_label_difference > 0 ? "+" : ""}
+                    {data.paired_baseline.paired_gold_label_difference}종
+                  </p>
+                : <p>
+                    <strong>비교 불충분: 독립 문제 {data.paired_baseline.pairable_unique_cases}/5종만 비교 가능.</strong>
+                    중복 응답 불일치, 모델 종류 혼합, 검증 불가 기록, 미실행 문제,
+                    기록 조회 범위 제한이 있는 경우 전체 비교 점수를 만들지 않습니다.
+                  </p>
+              }
+              <p>
+                호출 기록 {data.paired_baseline.raw_actual_attempts}건 중
+                반복된 문제 {data.paired_baseline.repeated_cases}종.
+                같은 문제가 여러 번 나와도 독립 사례 수는 늘어나지 않습니다.
+              </p>
+              <table>
+                <thead><tr>
+                  <th>합성 문제</th><th>단순 대조군</th><th>모델 기록</th><th>기대 답안</th><th>반복</th>
+                </tr></thead>
+                <tbody>{data.paired_baseline.rows.map(row => (
+                  <tr key={row.case_id}>
+                    <td>{caseTitles[row.case_id] ?? "미확인"}</td>
+                    <td>{labels[row.baseline_choice]}</td>
+                    <td>{row.status === "PAIRABLE"
+                      ? labels[row.model_decision ?? ""] ?? "검증 불가"
+                      : "비교 제외 (" + row.status + ")"}</td>
+                    <td>{labels[row.gold]}</td>
+                    <td>{row.attempt_count}건{row.repeat_stability === "AGREED_REPEATS"
+                      ? " · 일치" : ""}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+              <small>
+                이 평가는 사전에 정답을 만들어 둔 합성 문제의 분류 차이만 보여줍니다.
+                모델이 기존 Scanner보다 새로운 종목 위험을 발견했다는 증거나
+                매매 성과 개선 증거는 아닙니다.
+              </small>
+            </div>
+            <details>
+              <summary>개별 호출 기록 {data.actual_provider_attempts_recorded}건 펼쳐보기</summary>
             <table>
               <thead><tr>
                 <th>합성 사례</th><th>기대</th><th>기록된 모델 판단</th><th>일치</th>
@@ -90,6 +157,7 @@ export default function JevSyntheticTrialHistory() {
                 </tr>
               ))}</tbody>
             </table>
+            </details>
           </>
         }
         <small>
