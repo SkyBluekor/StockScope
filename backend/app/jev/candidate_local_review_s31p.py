@@ -87,7 +87,8 @@ def inspect_captured_candidate_local(
     snapshot = sample.get("snapshot")
     original_hash = sample.get("snapshot_hash")
     if (not isinstance(snapshot, dict) or not isinstance(original_hash, str)
-        or not original_hash or digest_json(snapshot) != original_hash):
+        or not original_hash or digest_json(snapshot) != original_hash
+        or original_hash != reference.get("snapshot_hash")):
         response["reason_code"] = "CAPTURE_SNAPSHOT_HASH_MISMATCH"
         return response
 
