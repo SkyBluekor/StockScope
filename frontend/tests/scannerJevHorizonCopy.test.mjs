@@ -31,3 +31,10 @@ test("capture hash error and completed local check are distinctly labeled", () =
   assert.match(stage("CAPTURE_INTEGRITY"), /해시/);
   assert.match(stage("COMPLETE"), /완료/);
 });
+
+test("S31-R legacy-only evidence has a distinct UI stage from in-scope V4", () => {
+  assert.equal(stage("LOCAL_EVIDENCE_COMPLETE"), "기간과 무관한 전략 관계 검사 완료");
+  assert.notEqual(stage("LOCAL_EVIDENCE_COMPLETE"), stage("COMPLETE"));
+  assert.notEqual(stage("LOCAL_EVIDENCE_COMPLETE"), stage("HORIZON_SCOPE"));
+  assert.equal(horizon("LEGACY_UNSPECIFIED"), "기간 미지정 (LEGACY_UNSPECIFIED)");
+});
