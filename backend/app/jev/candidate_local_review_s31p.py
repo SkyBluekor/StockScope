@@ -166,7 +166,7 @@ def inspect_captured_candidate_local(
             response["next_action"] = "원본 후보 상태를 확인하세요. 임의로 진입 후보로 바꾸지 마세요."
         else:
             response["check_stage"] = "SEMANTIC_INPUT"
-            response["headline"] = "이 후보의 전략 의미 근거를 검증할 수 없어요."
+            response["headline"] = "이 후보의 전략·조건 의미 근거를 검증할 수 없어요."
             response["explanation"] = "투자 기간 제한이 아니라 전략·조건 의미 근거를 확인해야 합니다."
             response["next_action"] = "원본 캡처의 전략 정의·조건 관계를 확인하세요."
         return response
