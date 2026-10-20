@@ -7,6 +7,7 @@ import { quoteReceivedTime } from "../services/quote";
 import { marketSessionIsPaused } from "../services/marketSession";
 import HoldingsPriceChart from "./HoldingsPriceChart";
 import HoldingDecisionPanel from "./HoldingDecisionPanel";
+import HoldingProtectionOverview from "./HoldingProtectionOverview";
 import HoldingRecoveryPanel from "./HoldingRecoveryPanel";
 import HoldingWatchStatus from "./HoldingWatchStatus";
 import StockNewsPanel from "./StockNewsPanel";
@@ -1958,6 +1959,14 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                 onRefresh={refreshSelectedQuote}
               />
 
+              {detail.is_held && (
+                <HoldingProtectionOverview
+                  stock={detail}
+                  context={workspaceContext}
+                  loading={loadingDetail}
+                />
+              )}
+
               <div className="holdings-data-state" aria-live="polite">
                 <div className="holdings-analysis-state">
                   <span>저장된 분석</span>
@@ -2308,7 +2317,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                 />
 
                 {management && management.positions.length > 0 && (
-                  <div className="holdings-management-block" aria-label="보유분 관리 기준">
+                  <div id="holdings-management-block" className="holdings-management-block" aria-label="보유분 관리 기준">
                     <div className="holdings-management-head">
                       <div>
                         <strong>보유분 관리 기준</strong>
