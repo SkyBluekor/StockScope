@@ -211,15 +211,27 @@ def test_actual_stored_capture_horizon_not_semantic_shortage(
         db, capture_id=capture_id, sample_index=0,
         market="KOSPI", ticker="000001",
     )
-    assert result["status"] == "HOLD"
-    assert result["reason_code"] == "OUT_OF_SCOPE_HORIZON"
-    assert result["check_stage"] == "HORIZON_SCOPE"
+    if horizon == "LEGACY_UNSPECIFIED":
+        assert result["status"] == "LOCAL_EVIDENCE_COMPLETE"
+        assert result["reason_code"] == "LEGACY_LOCAL_EVIDENCE_ONLY_LOCAL_MATCH"
+        assert result["check_stage"] == "LOCAL_EVIDENCE_COMPLETE"
+        assert result["local_semantic_status"] == "LOCAL_MATCH"
+        assert result["local_evidence_scope"] == "HORIZON_INDEPENDENT_ONLY"
+        assert result["provider_review_suggested_by_local_state"] is False
+        assert "기간별 전략 적합성" in result["explanation"]
+    else:
+        assert result["status"] == "HOLD"
+        assert result["reason_code"] == "OUT_OF_SCOPE_HORIZON"
+        assert result["check_stage"] == "HORIZON_SCOPE"
     assert result["capture_horizon_intent"] == horizon
     assert result["horizon_diagnostic_status"] == expected_diagnostic
     assert result["capture_horizon_policy_version"] == "VN_P1_S2_HORIZON_CONTEXT_V1"
     assert result["local_v4_horizon_supported"] is False
-    assert "전략 조건 부족이 아니라" in result["explanation"]
-    assert "미승인" in result["next_action"] if horizon == "LEGACY_UNSPECIFIED" else "장기" in result["next_action"]
+    if horizon == "LEGACY_UNSPECIFIED":
+        assert "SHORT/MEDIUM 정책은 미승인" in result["next_action"]
+    else:
+        assert "전략 조건 부족이 아니라" in result["explanation"]
+        assert "장기" in result["next_action"]
     assert result["model_result_available"] is False
     assert (result["jev_model_calls"], result["external_requests"],
             result["db_writes"], result["orders"]) == (0, 0, 0, 0)
@@ -323,3 +335,103 @@ def test_non_entry_candidate_is_not_misdiagnosed_as_horizon_failure(
     assert result["reason_code"] == "OUT_OF_SCOPE_ACTION"
     assert result["check_stage"] == "ACTION_SCOPE"
     assert result["model_result_available"] is False
+
+@pytest.mark.parametrize("outcome", [
+    "LOCAL_MATCH", "LOCAL_CONFLICT", "LOCAL_INCOMPLETE",
+    "LOCAL_AMBIGUOUS", "RESIDUAL_SEMANTIC_REVIEW",
+])
+def test_legacy_local_semantic_outcomes_are_not_provider_eligible(
+    stub, monkeypatch, outcome,
+):
+    from app.jev.typesafe_state_v4 import TypeSafeV4Route
+    stub.sample["horizon_intent"] = "LEGACY_UNSPECIFIED"
+    seen = []
+    def legacy_route(sample):
+        seen.append(sample)
+        return TypeSafeV4Route(
+            local_status=outcome, provider_eligible=False,
+            reason_code="LEGACY_LOCAL_EVIDENCE_ONLY_" + outcome,
+        )
+    monkeypatch.setattr(local, "inspect_legacy_semantic_evidence_v4", legacy_route)
+    monkeypatch.setattr(
+        local, "route_typesafe_state_v4",
+        lambda _: pytest.fail("V4 provider route must not run for legacy"),
+    )
+    result = call()
+    assert seen == [stub.sample]
+    assert result["status"] == "LOCAL_EVIDENCE_COMPLETE"
+    assert result["local_semantic_status"] == outcome
+    assert result["provider_review_suggested_by_local_state"] is False
+    assert result["provider_call_authorized"] is False
+    assert result["rights_for_real_market_transmission_verified"] is False
+    assert result["model_result_available"] is False
+    assert result["baseline_candidate_changed"] is False
+    assert (result["jev_model_calls"], result["external_requests"],
+            result["orders"], result["db_writes"]) == (0, 0, 0, 0)
+
+
+def test_legacy_semantic_source_invalid_still_holds_before_any_result(tmp_path):
+    from tests.test_jev_act2_s3_decision_reviewer import _stored
+    db, capture_id = _stored(
+        tmp_path, horizon="LEGACY_UNSPECIFIED",
+        mutate_snapshot=lambda candidate: candidate.__setitem__(
+            "semantic_source_v2", {"invalid": True},
+        ),
+    )
+    result = local.inspect_captured_candidate_local(
+        db, capture_id=capture_id, sample_index=0,
+        market="KOSPI", ticker="000001",
+    )
+    assert result["status"] == "HOLD"
+    assert result["check_stage"] == "SEMANTIC_INPUT"
+    assert result["model_result_available"] is False
+    assert result["jev_model_calls"] == 0
+
+
+def test_legacy_semantic_check_does_not_expand_existing_v4_scope(tmp_path):
+    from tests.test_jev_act2_s3_decision_reviewer import _stored
+    from app.jev.typesafe_state_v4 import (
+        route_typesafe_state_v4, project_typesafe_state_v4,
+        inspect_legacy_semantic_evidence_v4,
+    )
+    from app.jev.review_service import JevManualReviewService
+
+    db, capture_id = _stored(tmp_path, horizon="LEGACY_UNSPECIFIED")
+    sample, _ref, err = JevManualReviewService(db)._load_sample(capture_id, 0)
+    assert err is None
+    assert sample["horizon_intent"] == "LEGACY_UNSPECIFIED"
+    with pytest.raises(TypeSafeStateProjectionError, match="OUT_OF_SCOPE_HORIZON"):
+        route_typesafe_state_v4(sample)
+    with pytest.raises(TypeSafeStateProjectionError, match="OUT_OF_SCOPE_HORIZON"):
+        project_typesafe_state_v4(sample)
+    local_result = inspect_legacy_semantic_evidence_v4(sample)
+    assert local_result.local_status == "LOCAL_MATCH"
+    assert local_result.provider_eligible is False
+    assert local_result.reason_code == "LEGACY_LOCAL_EVIDENCE_ONLY_LOCAL_MATCH"
+
+
+def test_legacy_non_entry_candidate_does_not_create_approved_local_result(stub):
+    stub.sample["horizon_intent"] = "LEGACY_UNSPECIFIED"
+    stub.sample["action"] = "WAIT"
+    result = call()
+    assert result["status"] == "HOLD"
+    assert result["reason_code"] == "OUT_OF_SCOPE_ACTION"
+    assert result["local_evidence_scope"] == "NOT_CHECKED"
+
+
+def test_unknown_or_long_still_do_not_receive_legacy_evidence(stub, monkeypatch):
+    monkeypatch.setattr(
+        local, "inspect_legacy_semantic_evidence_v4",
+        lambda _: pytest.fail("legacy semantic route must not run"),
+    )
+    monkeypatch.setattr(
+        local, "route_typesafe_state_v4",
+        lambda _: (_ for _ in ()).throw(
+            TypeSafeStateProjectionError("OUT_OF_SCOPE_HORIZON")
+        ),
+    )
+    for horizon in ("LONG", None):
+        stub.sample["horizon_intent"] = horizon
+        result = call()
+        assert result["status"] == "HOLD"
+        assert result["reason_code"] == "OUT_OF_SCOPE_HORIZON"

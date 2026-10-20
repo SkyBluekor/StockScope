@@ -23,6 +23,7 @@ export function scannerJevDiagnosticStageLabel(
     case "SEMANTIC_INPUT": return "전략·조건 의미 근거 검사";
     case "CAPTURE_INTEGRITY": return "원본 캡처 해시 검증";
     case "CAPTURE_LOOKUP": return "캡처 조회";
+    case "LOCAL_EVIDENCE_COMPLETE": return "기간과 무관한 전략 관계 검사 완료";
     case "COMPLETE": return "로컬 의미검사 완료";
     default: return "요청 근거 확인";
   }

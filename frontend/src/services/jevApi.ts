@@ -199,17 +199,19 @@ export type JevCandidateLocalCheck = {
   sample_index: number;
   market: "KOSPI" | "KOSDAQ";
   ticker: string;
-  status: "LOCAL_CHECK_COMPLETE" | "HOLD";
+  status: "LOCAL_CHECK_COMPLETE" | "LOCAL_EVIDENCE_COMPLETE" | "HOLD";
   reason_code: string | null;
   local_semantic_status: string | null;
   /** Provenance from the immutable Prospective capture, after its hash check. */
   capture_horizon_intent: "SHORT" | "MEDIUM" | "LONG" | "LEGACY_UNSPECIFIED" | "UNKNOWN" | null;
   capture_horizon_policy_version: string | null;
   local_v4_horizon_supported: boolean;
+  local_evidence_scope: "NOT_CHECKED" | "V4_SUPPORTED_HORIZON" | "HORIZON_INDEPENDENT_ONLY";
   horizon_diagnostic_status: "NOT_CHECKED" | "LOCAL_V4_IN_SCOPE"
     | "LEGACY_HORIZON_UNSPECIFIED" | "LONG_OUTSIDE_LOCAL_V4" | "CAPTURE_HORIZON_UNKNOWN";
   check_stage: "REQUEST_VALIDATION" | "CAPTURE_LOOKUP" | "CAPTURE_INTEGRITY"
-    | "HORIZON_SCOPE" | "ACTION_SCOPE" | "SEMANTIC_INPUT" | "COMPLETE";
+    | "HORIZON_SCOPE" | "ACTION_SCOPE" | "SEMANTIC_INPUT" | "COMPLETE"
+    | "LOCAL_EVIDENCE_COMPLETE";
   next_action: string;
   headline: string;
   explanation: string;

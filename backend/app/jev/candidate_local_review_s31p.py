@@ -13,9 +13,9 @@ from typing import Any
 from app.prospective.models import digest_json
 from app.jev.review_service import JevManualReviewService
 from app.jev.typesafe_state import TypeSafeStateProjectionError
-from app.jev.typesafe_state_v4 import route_typesafe_state_v4
+from app.jev.typesafe_state_v4 import (route_typesafe_state_v4, inspect_legacy_semantic_evidence_v4)
 
-VERSION = "JEV_ACT2_S31P_LOCAL_SCANNER_CHECK_V1"
+VERSION = "JEV_ACT2_S31R_LOCAL_SCANNER_CHECK_V1"
 
 MESSAGES: dict[str, tuple[str, str]] = {
     "LOCAL_MATCH": (
@@ -85,6 +85,7 @@ def inspect_captured_candidate_local(
         "capture_horizon_intent": None, "capture_horizon_policy_version": None,
         "local_v4_horizon_supported": False,
         "horizon_diagnostic_status": "NOT_CHECKED",
+        "local_evidence_scope": "NOT_CHECKED",
         "check_stage": "REQUEST_VALIDATION",
         "next_action": "원본 캡처와 분석 입력 상태를 확인하세요.",
         "headline": "검토 근거를 확인할 수 없어요.",
@@ -144,8 +145,14 @@ def inspect_captured_candidate_local(
         "horizon_diagnostic_status": horizon_status,
         "check_stage": "HORIZON_SCOPE",
     })
+    is_legacy = captured_horizon == "LEGACY_UNSPECIFIED"
     try:
-        local = route_typesafe_state_v4(sample)
+        # Limited strictly to semantic relation recomposition. It never
+        # waives the original V4 SHORT/MEDIUM and provider restrictions.
+        local = (
+            inspect_legacy_semantic_evidence_v4(sample)
+            if is_legacy else route_typesafe_state_v4(sample)
+        )
     except (TypeSafeStateProjectionError, ValueError, KeyError, TypeError) as exc:
         # Only stable codes, never echo embedded strategy/market text to API.
         response["reason_code"] = (
@@ -172,7 +179,29 @@ def inspect_captured_candidate_local(
         return response
 
     title, explanation = MESSAGES[local.local_status]
+    if is_legacy:
+        response.update({
+            "check_stage": "LOCAL_EVIDENCE_COMPLETE",
+            "status": "LOCAL_EVIDENCE_COMPLETE",
+            "reason_code": local.reason_code,
+            "local_semantic_status": local.local_status,
+            "local_evidence_scope": "HORIZON_INDEPENDENT_ONLY",
+            "headline": (
+                "기간 미지정 후보의 전략 의미 근거 검사 완료"
+                if local.local_status != "LOCAL_INCOMPLETE"
+                else "기간 미지정 후보의 전략 의미 근거가 부족해요"
+            ),
+            "explanation": title + " " + explanation
+                + " 투자 기간이 없으므로 기간별 전략 적합성·손절 기한은 검증하지 않았습니다.",
+            "next_action": (
+                "전략 근거의 로컬 의미 관계만 참고하세요. 원본 투자 기간은 여전히 미지정이고 "
+                "SHORT/MEDIUM 정책은 미승인입니다. 실제 JEV 모델 검토와 신규 매수 판단은 진행되지 않았습니다."
+            ),
+            "provider_review_suggested_by_local_state": False,
+        })
+        return response
     response.update({
+        "local_evidence_scope": "V4_SUPPORTED_HORIZON",
         "check_stage": "COMPLETE",
         "next_action": (
             "로컬 의미검사 결과를 참고하되, 외부 JEV 모델 검토나 "
