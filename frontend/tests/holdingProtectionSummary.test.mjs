@@ -110,7 +110,7 @@ test("Watch setting absent when policy enabled is not claimed as running",()=>{
 });
 test("one OPEN record cannot silently consume another position plan",()=>{
   const x=review(stock(),context({mgmt:management({...plan(),position_id:"p2"})}),false);
-  assert.equal(x.plan.state,"NONE");
+  assert.equal(x.plan.state,"SOURCE_UNVERIFIED");
   assert.equal(x.hasExecutedStopProof,false);
 });
 test("context position mismatch, duplicate, closed stock and wrong market block",()=>{
