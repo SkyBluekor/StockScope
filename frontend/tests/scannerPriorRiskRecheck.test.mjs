@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { scannerPriorRiskRecheck } from "../src/components/scannerPriorRiskRecheck.ts";
+import {
+  scannerPriorRiskRecheck as evaluate,
+  QUOTE_DISPLAY_MAX_AGE_MS,
+} from "../src/components/scannerPriorRiskRecheck.ts";
+
+// A fixed observation clock: never depend on the machine running CI.
+const NOW = Date.parse("2026-10-15T09:02:00+09:00");
+function scannerPriorRiskRecheck(candidate, quoteSnapshot, nowMs = NOW) {
+  return evaluate(candidate, quoteSnapshot, nowMs);
+}
 
 function candidate(overrides = {}) {
   return {
@@ -51,7 +60,7 @@ test("valid matching later KIS quote below original invalidation has explicit re
   assert.equal(r.oldReferenceComparison, "AT_OR_BELOW");
   assert.equal(r.riskRevalidated, false);
   assert.equal(r.executionPermission, false);
-  assert.match(r.explanation, /분석 당시/);
+  assert.match(r.explanation, /분석일 Risk/);
 });
 test("exactly equal to old invalidation price also counts as touched", () => {
   assert.equal(scannerPriorRiskRecheck(candidate(),
@@ -76,7 +85,7 @@ test("wrong stock or market/provider quote is hidden from any old-reference comp
 });
 test("no timestamp, future timestamp relative to receive or invalid amount fails closed", () => {
   const changes = [
-    { provider_timestamp: null },
+    { provider_timestamp: "not-a-time" },
     { received_at: "bad" },
     { provider_timestamp: "2026-10-16T09:00:00+09:00" },
     { current_price: "NaN" },
@@ -112,12 +121,13 @@ test("invalid analysis date and missing reference block comparisons", () => {
     assert.equal(result.executionPermission, false);
   }
 });
-test("cached KIS quote and closed market are timestamped past observation only", () => {
+test("cached stale KIS quote is a past observation, not a current breach", () => {
   const r = scannerPriorRiskRecheck(candidate(), snapshot(quote({
     delivery: { source: "CACHE", cache_age_ms: 5_000_000 },
     current_price: "130000",
   }), { marketSession: { market_active: false } }));
-  assert.equal(r.state, "OLD_REFERENCE_BREACHED");
+  assert.equal(r.state, "QUOTE_TOO_OLD");
+  assert.equal(r.oldReferenceComparison, "NOT_COMPARABLE");
   assert.match(r.quoteSourceLabel, /보관된/);
   assert.equal(r.riskRevalidated, false);
 });
@@ -135,7 +145,7 @@ test("no special 10/14 identifiers: any Scanner candidate has identical fail-clo
     provider_timestamp: "2026-09-02T09:00:00+09:00",
     received_at: "2026-09-02T09:01:00+09:00",
     current_price: "144000",
-  })));
+  })), Date.parse("2026-09-02T09:02:00+09:00"));
   assert.equal(r.state, "OLD_REFERENCE_NOT_BREACHED");
   assert.equal(r.analysisDate, "2026-09-01");
 });
@@ -153,4 +163,103 @@ test("WATCH candidate is not mislabeled READY by this generic risk overlay", () 
   assert.doesNotMatch(r.label, /READY/);
   assert.match(r.explanation, /Risk 판단/);
   assert.deepEqual(item, before);
+});
+
+test("real KIS REST contract: provider_timestamp null allows only tentative comparison", () => {
+  const q = quote({
+    provider_timestamp: null, received_at: "2026-10-15T09:01:00+09:00",
+    delivery: { source: "UPSTREAM", cache_age_ms: 0 },
+  });
+  const r = scannerPriorRiskRecheck(candidate(), snapshot(q));
+  assert.equal(r.state, "RECEIVED_TIME_ONLY");
+  assert.equal(r.quoteTimeBasis, "SERVER_RECEIVED_ONLY");
+  assert.equal(r.quoteProvidedAt, null);
+  assert.notEqual(r.quoteReceivedAt, null);
+  assert.equal(r.quotePrice, 130000);
+  assert.equal(r.oldReferenceComparison, "NOT_COMPARABLE");
+  assert.equal(r.indicativeOldReferenceComparison, "AT_OR_BELOW");
+  assert.match(r.explanation, /제공 시각/);
+  assert.equal(r.executionPermission, false);
+  assert.equal(r.riskRevalidated, false);
+});
+
+test("REST received-only quote ABOVE reference never becomes READY", () => {
+  const r = scannerPriorRiskRecheck(candidate(), snapshot(quote({
+    provider_timestamp: null, current_price: "140000",
+  })));
+  assert.equal(r.state, "RECEIVED_TIME_ONLY");
+  assert.equal(r.indicativeOldReferenceComparison, "ABOVE");
+  assert.equal(r.oldReferenceComparison, "NOT_COMPARABLE");
+  assert.match(r.explanation, /현재 안전하다는 뜻은 아니에요/);
+  assert.equal(r.scannerVerdictChanged, false);
+});
+
+test("REST received-only price on analysis day cannot be treated as post-signal", () => {
+  const r = scannerPriorRiskRecheck(candidate(), snapshot(quote({
+    provider_timestamp: null,
+    received_at: "2026-10-14T17:00:00+09:00",
+  })));
+  assert.equal(r.state, "QUOTE_NOT_AFTER_ANALYSIS");
+  assert.equal(r.indicativeOldReferenceComparison, "NOT_COMPARABLE");
+});
+
+test("provider-time websocket price still permits as-of-only reference comparison", () => {
+  const r = scannerPriorRiskRecheck(candidate(), snapshot(quote({
+    delivery: { source: "WEBSOCKET", cache_age_ms: 20_000 },
+  })));
+  assert.equal(r.state, "OLD_REFERENCE_BREACHED");
+  assert.equal(r.quoteTimeBasis, "PROVIDER_TIME");
+  assert.equal(r.oldReferenceComparison, "AT_OR_BELOW");
+  assert.equal(r.indicativeOldReferenceComparison, "NOT_COMPARABLE");
+  assert.equal(r.riskRevalidated, false);
+});
+
+test("15-minute display expiry does not change the original READY or issue permissions", () => {
+  const item = candidate();
+  const before = structuredClone(item);
+  const r = scannerPriorRiskRecheck(item, snapshot(), NOW + QUOTE_DISPLAY_MAX_AGE_MS + 3_000);
+  assert.equal(r.state, "QUOTE_TOO_OLD");
+  assert.equal(r.oldReferenceComparison, "NOT_COMPARABLE");
+  assert.equal(r.executionPermission, false);
+  assert.deepEqual(item, before);
+});
+
+test("fresh REST receipt does not invent provider time when its cached age is excessive", () => {
+  const r = scannerPriorRiskRecheck(candidate(), snapshot(quote({
+    provider_timestamp: null,
+    delivery: { source: "CACHE", cache_age_ms: QUOTE_DISPLAY_MAX_AGE_MS + 1 },
+  })));
+  assert.equal(r.state, "QUOTE_TOO_OLD");
+  assert.equal(r.quoteTimeBasis, "UNVERIFIED");
+});
+
+test("naive timestamp and client/server clock mismatch are not trusted", () => {
+  for (const update of [
+    { received_at: "2026-10-15T09:01:00" },
+    { provider_timestamp: "2026-10-15T09:00:00" },
+    { received_at: "2026-10-15T10:00:00+09:00" },
+  ]) {
+    const r = scannerPriorRiskRecheck(candidate(), snapshot(quote(update)));
+    assert.equal(r.state, "QUOTE_UNVERIFIED");
+    assert.equal(r.quotePrice, null);
+  }
+});
+
+test("valid provider timestamp from yesterday cannot be marketed as current", () => {
+  const now = Date.parse("2026-10-16T09:30:00+09:00");
+  const r = scannerPriorRiskRecheck(candidate(), snapshot(quote({
+    received_at: "2026-10-16T09:29:00+09:00",
+    provider_timestamp: "2026-10-15T09:00:00+09:00",
+  })), now);
+  assert.equal(r.state, "QUOTE_TOO_OLD");
+  assert.equal(r.oldReferenceComparison, "NOT_COMPARABLE");
+});
+
+test("closed market label explicitly disclaims an available latest trade price", () => {
+  const r = scannerPriorRiskRecheck(candidate(), snapshot(quote({
+    provider_timestamp: null,
+  }), { marketSession: { market_active: false } }));
+  assert.equal(r.state, "RECEIVED_TIME_ONLY");
+  assert.match(r.marketSessionLabel, /마지막 거래 가격/);
+  assert.equal(r.executionPermission, false);
 });
