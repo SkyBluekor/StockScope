@@ -972,3 +972,47 @@
   outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
+
+/* S31-P actual captured-candidate V4 local semantic check, not a model badge. */
+.scanner-jev-local-check {
+  margin: 15px 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line-soft);
+  border-left: 3px solid var(--text-subtle);
+  border-radius: 6px;
+}
+.scanner-jev-local-check > strong { font-size: 14px; }
+.scanner-jev-local-check p {
+  margin: 8px 0;
+  font-size: 12px;
+  line-height: 1.65;
+  word-break: keep-all;
+}
+.scanner-jev-local-check button {
+  display: inline-flex;
+  padding: 9px 12px;
+  margin: 5px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.scanner-jev-local-check button:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+.scanner-jev-local-check [data-local-review-state] {
+  padding: 10px 0;
+  border-top: 1px solid var(--line-soft);
+}
+.scanner-jev-local-check [data-local-review-state] strong { font-size: 13px; }
+.scanner-jev-local-check small {
+  display: block;
+  color: var(--text-subtle);
+  font-size: 11px;
+  line-height: 1.6;
+}
