@@ -15,6 +15,7 @@
     "test:sc-s31k": "node --experimental-strip-types --test tests/scannerPriorRiskRecheck.test.mjs",
     "test:sc-s31m": "node --experimental-strip-types --test tests/scannerPositionBoundary.test.mjs",
     "test:hold-s31n": "node --experimental-strip-types --test tests/holdingProtectionSummary.test.mjs",
+    "test:hold-s31o": "node --experimental-strip-types --test tests/holdingsWatchPolicyText.test.mjs",
     "test:sc-ux-motion": "node --experimental-strip-types --test tests/scannerMotion.test.mjs"
   },
   "dependencies": {
