@@ -97,6 +97,9 @@ jobs:
       - name: Test S31-M Scanner vs Holdings and as-of market boundary
         working-directory: frontend
         run: npm run test:sc-s31m
+      - name: Test S31-N Holdings protection overview
+        working-directory: frontend
+        run: npm run test:hold-s31n
       - name: Build frontend
         working-directory: frontend
         run: npm run build
