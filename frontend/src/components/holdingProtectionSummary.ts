@@ -78,7 +78,11 @@ export function holdingProtectionSummary(
   let plan: HoldingProtectionSummary["plan"];
   if (status.management?.status !== "AVAILABLE" || !context.management
     || context.positions.some(row => row.management == null
-      || row.management.position_id !== row.position.position_id)) {
+      || row.management.position_id !== row.position.position_id
+      || (row.management.active_plan != null && (
+        row.management.active_plan.position_id !== row.position.position_id
+        || row.management.active_plan.status !== "ACTIVE"
+      )))) {
     plan = { state: "SOURCE_UNVERIFIED", label: "적용 계획 확인 불가", count: null };
   } else {
     const active = context.positions.filter(row =>
