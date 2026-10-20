@@ -13,6 +13,7 @@
     "test:sc-ux3": "node --experimental-strip-types --test tests/scannerAiReviewStatus.test.mjs",
     "test:sc-ux4-s3": "node --experimental-strip-types --test tests/scannerQuoteTruth.test.mjs",
     "test:sc-s31k": "node --experimental-strip-types --test tests/scannerPriorRiskRecheck.test.mjs",
+    "test:sc-s31m": "node --experimental-strip-types --test tests/scannerPositionBoundary.test.mjs",
     "test:sc-ux-motion": "node --experimental-strip-types --test tests/scannerMotion.test.mjs"
   },
   "dependencies": {
