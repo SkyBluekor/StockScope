@@ -11,6 +11,7 @@ from app.jev.review_models import (
     BASELINE_WITH_JEV,
     JEV_USER_FEATURE_DISABLED,
 )
+from app.jev.candidate_local_review_s31p import inspect_captured_candidate_local
 from app.jev.review_service import JevManualReviewService
 from app.jev.typesafe_catalog import (
     TypeSafeJevCatalog,
@@ -199,6 +200,24 @@ class JevManualReviewRequest(BaseModel):
     capture_id: str = Field(..., min_length=1, max_length=200)
     sample_index: int = Field(default=0, ge=0, le=100)
     review_epoch: int = Field(default=0, ge=0, le=1_000_000)
+
+
+@router.get("/candidate-local-check")
+def jev_candidate_local_check(
+    capture_id: str = Query(min_length=1, max_length=200),
+    sample_index: int = Query(ge=0, le=100),
+    market: str = Query(pattern="^(KOSPI|KOSDAQ)$"),
+    ticker: str = Query(pattern="^[0-9]{6}$"),
+) -> dict[str, object]:
+    """User-triggered captured-candidate V4 semantic check, strictly local.
+
+    DO NOT call a model here or derive a transmission grant from the result.
+    No schema migration, DB writes, market API or account credentials.
+    """
+    return inspect_captured_candidate_local(
+        _db(), capture_id=capture_id, sample_index=sample_index,
+        market=market, ticker=ticker,
+    )
 
 
 @router.get("/review-feature")

@@ -1,4 +1,4 @@
-import { SimulationApiError } from "./simulationApi";
+import { SimulationApiError } from "./simulationApi.ts";
 
 type ApiErrorPayload = {
   detail?: string | { code?: string; message?: string };
@@ -189,4 +189,47 @@ export function requestJevReview(payload: JevManualReviewRequest) {
       review_epoch: payload.review_epoch ?? 0,
     }),
   });
+}
+
+
+/** S31-P: local semantic router output is never an external JEV model result. */
+export type JevCandidateLocalCheck = {
+  version: string;
+  capture_id: string;
+  sample_index: number;
+  market: "KOSPI" | "KOSDAQ";
+  ticker: string;
+  status: "LOCAL_CHECK_COMPLETE" | "HOLD";
+  reason_code: string | null;
+  local_semantic_status: string | null;
+  headline: string;
+  explanation: string;
+  snapshot_hash: string | null;
+  provider_review_suggested_by_local_state: boolean;
+  provider_call_authorized: false;
+  rights_for_real_market_transmission_verified: false;
+  model_result_available: false;
+  baseline_candidate_changed: false;
+  review_kind: "LOCAL_SEMANTIC_CHECK_NOT_JEV_MODEL";
+  jev_model_calls: 0;
+  external_requests: 0;
+  orders: 0;
+  db_writes: 0;
+};
+
+export function getJevCandidateLocalCheck(params: {
+  captureId: string;
+  sampleIndex: number;
+  market: "KOSPI" | "KOSDAQ";
+  ticker: string;
+}): Promise<JevCandidateLocalCheck> {
+  const query = new URLSearchParams({
+    capture_id: params.captureId,
+    sample_index: String(params.sampleIndex),
+    market: params.market,
+    ticker: params.ticker,
+  });
+  return jevJson<JevCandidateLocalCheck>(
+    "/api/simulation/jev/candidate-local-check?" + query.toString(),
+  );
 }
