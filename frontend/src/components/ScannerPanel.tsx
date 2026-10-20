@@ -39,6 +39,7 @@ import {
 } from "../services/dataTask";
 import StockNewsPanel from "./StockNewsPanel";
 import ScannerDecisionSummary from "./ScannerDecisionSummary";
+import ScannerPositionBoundaryCard from "./ScannerPositionBoundaryCard";
 import ScannerPriceStatus from "./ScannerPriceStatus";
 import useScannerQuote from "./useScannerQuote";
 import { asOfPriorityLabel } from "./scannerQuoteTruth";
@@ -485,6 +486,14 @@ function CandidateDetail({
         aria-labelledby={"scanner-tab-" + activeTab} tabIndex={0}>
         {activeTab === "summary" && (
           <div className="scanner-ux3-summary">
+            <ScannerPositionBoundaryCard
+              candidate={candidate}
+              result={result}
+              managedStock={managedStock}
+              holdingsLoading={holdingsLoading}
+              holdingsReady={holdingsReady}
+              onOpenHoldings={onOpenHoldings}
+            />
             <ScannerDecisionSummary
               candidate={candidate}
               quoteSnapshot={quoteSnapshot}
