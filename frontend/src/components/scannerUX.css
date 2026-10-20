@@ -915,3 +915,60 @@
   outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
+
+/* S31-M: explicit Scanner vs Holdings source boundary, no inferred execution. */
+.scanner-position-boundary {
+  margin: 8px 0 14px;
+  padding: 13px 15px;
+  border: 1px solid var(--line-soft);
+  border-left: 3px solid var(--text-subtle);
+  border-radius: 6px;
+}
+.scanner-position-boundary-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 5px 14px;
+  align-items: baseline;
+}
+.scanner-position-boundary-head strong {
+  color: var(--text-strong);
+  font-size: 14px;
+}
+.scanner-position-boundary-head span {
+  font-size: 12px;
+  color: var(--text-subtle);
+}
+.scanner-position-boundary p {
+  font-size: 12px;
+  line-height: 1.6;
+  word-break: keep-all;
+  margin: 7px 0;
+}
+.scanner-position-boundary .scanner-position-boundary-market {
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+}
+.scanner-position-boundary-market strong { color: var(--text-strong); }
+.scanner-position-boundary .scanner-position-boundary-next { font-weight: 600; }
+.scanner-position-boundary small {
+  display: block;
+  margin-top: 5px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-subtle);
+}
+.scanner-position-boundary button {
+  margin: 5px 0;
+  cursor: pointer;
+  color: var(--primary);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+.scanner-position-boundary button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
