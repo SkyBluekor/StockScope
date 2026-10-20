@@ -1037,3 +1037,49 @@
 .scanner-jev-local-check .scanner-jev-local-next {
   font-weight: 600;
 }
+
+/* S31-S separate synthetic actual-provider research receipts from Scanner review. */
+.scanner-jev-synthetic-report {
+  margin: 12px 0 16px;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  padding: 12px;
+}
+.scanner-jev-synthetic-report summary {
+  cursor: pointer;
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 650;
+}
+.scanner-jev-synthetic-report p {
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 9px 0;
+}
+.scanner-jev-synthetic-report button {
+  color: var(--text-strong);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 7px 11px;
+}
+.scanner-jev-synthetic-report table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.scanner-jev-synthetic-report th,
+.scanner-jev-synthetic-report td {
+  padding: 7px 4px;
+  border-bottom: 1px solid var(--line-soft);
+  text-align: left;
+}
+.scanner-jev-synthetic-report small {
+  display: block;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-subtle);
+}
