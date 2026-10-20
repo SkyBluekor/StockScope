@@ -160,3 +160,29 @@ def test_tampered_snapshot_digest_holds_before_semantic_engine(stub, monkeypatch
     assert result["reason_code"] == "CAPTURE_SNAPSHOT_HASH_MISMATCH"
     assert result["snapshot_hash"] is None
     assert result["jev_model_calls"] == 0
+
+
+def test_real_shape_immutable_prospective_capture_uses_actual_catalog(tmp_path):
+    """Full local integration: real Catalog read + real V4 semantic router.
+
+    The data is synthetic, but the storage shape and engine are production code.
+    """
+    import sqlite3
+    from tests.test_jev_act2_s3_decision_reviewer import _stored
+
+    db, capture_id = _stored(tmp_path)
+    with sqlite3.connect(db) as conn:
+        before = "\n".join(conn.iterdump())
+    result = local.inspect_captured_candidate_local(
+        db, capture_id=capture_id, sample_index=0,
+        market="KOSPI", ticker="000001",
+    )
+    assert result["status"] == "LOCAL_CHECK_COMPLETE", result
+    assert result["local_semantic_status"] == "LOCAL_MATCH"
+    assert result["reason_code"] == "SKIPPED_LOCAL_MATCH"
+    assert result["model_result_available"] is False
+    assert result["provider_call_authorized"] is False
+    assert result["jev_model_calls"] == 0
+    assert result["db_writes"] == 0
+    with sqlite3.connect(db) as conn:
+        assert before == "\n".join(conn.iterdump())
