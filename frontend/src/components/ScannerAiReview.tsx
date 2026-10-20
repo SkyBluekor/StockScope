@@ -53,7 +53,12 @@ export default function ScannerAiReview({
         || reply.sample_index !== sampleIndex || reply.capture_id !== captureId
         || reply.review_kind !== "LOCAL_SEMANTIC_CHECK_NOT_JEV_MODEL"
         || reply.model_result_available !== false || reply.jev_model_calls !== 0
-        || reply.provider_call_authorized !== false) {
+        || reply.provider_call_authorized !== false
+        || (reply.status === "LOCAL_EVIDENCE_COMPLETE" && (
+          reply.capture_horizon_intent !== "LEGACY_UNSPECIFIED"
+          || reply.local_evidence_scope !== "HORIZON_INDEPENDENT_ONLY"
+          || reply.provider_review_suggested_by_local_state !== false
+        ))) {
         setLocalError("요청한 캡처·종목과 로컬 검토 근거가 일치하지 않습니다.");
         return;
       }
@@ -132,14 +137,22 @@ export default function ScannerAiReview({
           {localCheck.horizon_diagnostic_status !== "NOT_CHECKED" && (
             <div className="scanner-jev-local-horizon">
               <strong>캡처에 저장된 투자 기간: {scannerJevCapturedHorizonLabel(localCheck.capture_horizon_intent)}</strong>
-              <small>로컬 V4 의미검사 지원 범위는 SHORT·MEDIUM입니다.
-                지원 범위와 실제 모델 호출 허가는 별개이며, 원본 투자 기간을 변경하지 않았습니다.</small>
+              <small>
+                {localCheck.local_evidence_scope === "HORIZON_INDEPENDENT_ONLY"
+                  ? "기간 미지정 원본은 그대로 유지하고 전략 개념·조건 관계만 재검사했습니다. 기간별 전략 적합성·매매 허가는 검증하지 않았습니다."
+                  : "일반 V4 로컬 검사의 투자 기간 지원 범위는 SHORT·MEDIUM입니다. 범위 통과와 외부 모델 호출 허가는 별개입니다."}
+              </small>
             </div>
           )}
           {localCheck.status === "HOLD" && (
             <p>검사 보류 사유: {localCheck.reason_code ?? "근거 미확인"}</p>
           )}
           <p className="scanner-jev-local-next">{localCheck.next_action}</p>
+          {localCheck.status === "LOCAL_EVIDENCE_COMPLETE" && (
+            <p>전략 의미 관계 검사: {localCheck.local_semantic_status} ·
+              투자 기간·기간별 성과 검증 제외 · 외부 모델 검토 대상 판정 아님
+            </p>
+          )}
           {localCheck.status === "LOCAL_CHECK_COMPLETE" && (
             <p>로컬 분류: {localCheck.local_semantic_status} ·
               {localCheck.provider_review_suggested_by_local_state
@@ -147,8 +160,11 @@ export default function ScannerAiReview({
                 : " 외부 모델 검토 대상 아님"}
             </p>
           )}
-          <small>검토 종류: 로컬 V4 의미검사 · 실제 JEV 모델 호출 0회 ·
-            기존 Scanner·Risk 판단 변경 없음</small>
+          <small>
+            검토 종류: {localCheck.local_evidence_scope === "HORIZON_INDEPENDENT_ONLY"
+              ? "기간 비의존 로컬 관계 점검" : "로컬 V4 의미검사"} ·
+            실제 JEV 모델 호출 0회 · 기존 Scanner·Risk 판단 변경 없음
+          </small>
         </div>}
       </section>
       <p className="scanner-jev-next">{loadError ? "저장된 검토 조회 상태를 확인한 후 다시 시도하세요." : state.next}</p>
