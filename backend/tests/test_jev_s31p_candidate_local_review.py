@@ -257,8 +257,9 @@ def test_current_scanner_explicit_horizon_requires_unapproved_numeric_policy():
     for horizon in ("SHORT", "MEDIUM"):
         context = resolve_horizon_context(horizon)
         assert context.support_status == "EVALUATION_PENDING"
-        with pytest.raises(HorizonPolicyError, match="HORIZON_POLICY_NOT_ACTIVE"):
+        with pytest.raises(HorizonPolicyError) as blocked:
             require_horizon_activatable(context)
+        assert blocked.value.code == "HORIZON_POLICY_NOT_ACTIVE"
 
 
 def test_horizon_unknown_does_not_backfill_or_invent_semantic_problem(stub, monkeypatch):
