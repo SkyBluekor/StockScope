@@ -244,3 +244,43 @@ export function getJevCandidateLocalCheck(params: {
     "/api/simulation/jev/candidate-local-check?" + query.toString(),
   );
 }
+
+
+/** S31-S synthetic research journal view. Not candidate/model trading output. */
+export type JevSyntheticActualReceipt = {
+  case_id: string;
+  case_title: string;
+  state: "VALID" | "ERROR" | "INTERRUPTED" | "PENDING";
+  expected: "PASS_THROUGH" | "REVIEW_REQUIRED" | "ABSTAIN";
+  observed: "PASS_THROUGH" | "REVIEW_REQUIRED" | "ABSTAIN" | null;
+  model: string | null;
+  matches_expected: boolean | null;
+  cost_estimate_usd: string | null;
+  completed_at: string | null;
+  receipt_status: "JOURNAL_CONSISTENCY_CHECK_PASSED" | "ATTEMPT_RECORDED_NOT_VALIDATED";
+};
+export type JevSyntheticActualReport = {
+  version: string;
+  status: "NO_JOURNAL" | "JOURNAL_SCHEMA_UNAVAILABLE" |
+    "JOURNAL_READ_FAILED" | "NO_ACTUAL_RECEIPTS" | "ACTUAL_RECEIPTS_FOUND";
+  scope: "SYNTHETIC_ONLY";
+  actual_provider_attempts_recorded: number;
+  actual_valid_receipts: number;
+  correct_against_synthetic_gold: number;
+  incorrect_against_synthetic_gold: number;
+  unverified_receipt_rows: number;
+  mock_rows_excluded: number;
+  results: JevSyntheticActualReceipt[];
+  model_calls_on_request: 0;
+  external_requests_on_request: 0;
+  db_writes_on_request: 0;
+  real_stock_models_reviewed: 0;
+  scanner_uplift_proven: false;
+  provider_provenance: "LOCAL_JOURNAL_ORIGIN_CLAIM_NOT_CRYPTOGRAPHICALLY_ATTESTED";
+  cost_basis: "PUBLIC_STANDARD_ESTIMATE_NOT_ACCOUNT_BILLING";
+};
+export function getJevSyntheticActualReceipts(): Promise<JevSyntheticActualReport> {
+  return jevJson<JevSyntheticActualReport>(
+    "/api/simulation/jev/synthetic-actual-receipts",
+  );
+}

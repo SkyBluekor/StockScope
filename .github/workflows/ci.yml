@@ -109,6 +109,9 @@ jobs:
       - name: Test S31-Q capture horizon provenance / fail-closed display
         working-directory: frontend
         run: npm run test:jev-s31q
+      - name: Test S31-S actual-origin synthetic Jev receipt visibility
+        working-directory: frontend
+        run: npm run test:jev-s31s
       - name: Build frontend
         working-directory: frontend
         run: npm run build

@@ -18,6 +18,7 @@
     "test:hold-s31o": "node --experimental-strip-types --test tests/holdingsWatchPolicyText.test.mjs",
     "test:jev-s31p": "node --experimental-strip-types --test tests/scannerJevLocalCheck.test.mjs",
     "test:jev-s31q": "node --experimental-strip-types --test tests/scannerJevHorizonCopy.test.mjs",
+    "test:jev-s31s": "node --experimental-strip-types --test tests/scannerJevSyntheticActual.test.mjs",
     "test:sc-ux-motion": "node --experimental-strip-types --test tests/scannerMotion.test.mjs"
   },
   "dependencies": {
