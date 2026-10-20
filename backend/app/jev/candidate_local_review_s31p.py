@@ -56,12 +56,14 @@ def _horizon_diagnostic(raw: Any) -> tuple[str, bool, str, str, str]:
     if raw == "LEGACY_UNSPECIFIED":
         return ("LEGACY_UNSPECIFIED", False, "LEGACY_HORIZON_UNSPECIFIED",
                 "이전 Scanner 캡처에 투자 기간이 지정되지 않았어요.",
-                "원본에 없던 투자 기간을 임의로 채울 수 없습니다. 새로운 분석에서 "
-                "SHORT 또는 MEDIUM을 명시한 새 캡처가 필요합니다. 기존 캡처는 그대로 유지합니다.")
+                "원본에 없던 기간을 임의로 채울 수 없습니다. 현재 일반 Scanner는 SHORT·MEDIUM을 "
+                "명시한 새 분석도 기간 수치 정책 미승인으로 차단합니다. 사용자 설정 변경으로 "
+                "해결되지 않으며 별도 정책 검증이 필요합니다. 기존 캡처는 그대로 둡니다.")
     if raw == "LONG":
         return ("LONG", False, "LONG_OUTSIDE_LOCAL_V4",
                 "장기(LONG) 분석은 현재 로컬 V4 의미검사 범위가 아니에요.",
-                "장기 전략을 단기·중기로 바꿔 판정하면 안 됩니다. 장기용 의미검사는 별도 검증이 필요합니다.")
+                "장기 전략을 단기·중기로 바꿔 판정하면 안 됩니다. 장기용 의미검사는 별도 검증이 필요하고, "
+                "현재 일반 Scanner에서 명시적 투자 기간을 선택해 다시 분석하는 경로도 정책상 차단돼 있습니다.")
     return ("UNKNOWN", False, "CAPTURE_HORIZON_UNKNOWN",
             "저장된 분석의 투자 기간을 확인할 수 없어요.",
             "캡처의 원본 투자 기간 기록을 확인하세요. 기간을 자동으로 추정하거나 바꾸지 않습니다.")
