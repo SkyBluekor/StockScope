@@ -10,6 +10,7 @@ from app.jev import candidate_local_review_s31p as local
 from app.jev.typesafe_state import TypeSafeStateProjectionError
 from app.jev.typesafe_state_v4 import TypeSafeV4Route
 from app.prospective.models import digest_json
+from app.horizon import HorizonPolicyError, require_horizon_activatable, resolve_horizon_context
 
 
 class StubSource:
@@ -186,3 +187,138 @@ def test_real_shape_immutable_prospective_capture_uses_actual_catalog(tmp_path):
     assert result["db_writes"] == 0
     with sqlite3.connect(db) as conn:
         assert before == "\n".join(conn.iterdump())
+
+
+@pytest.mark.parametrize(
+    "horizon,expected_diagnostic",
+    [
+        ("LEGACY_UNSPECIFIED", "LEGACY_HORIZON_UNSPECIFIED"),
+        ("LONG", "LONG_OUTSIDE_LOCAL_V4"),
+    ],
+)
+def test_actual_stored_capture_horizon_not_semantic_shortage(
+    tmp_path, horizon, expected_diagnostic,
+):
+    """No retroactive SHORT coercion or writes for user's real-shaped case."""
+    import sqlite3
+    from tests.test_jev_act2_s3_decision_reviewer import _stored
+
+    db, capture_id = _stored(tmp_path, horizon=horizon)
+    with sqlite3.connect(db) as conn:
+        before = "\n".join(conn.iterdump())
+
+    result = local.inspect_captured_candidate_local(
+        db, capture_id=capture_id, sample_index=0,
+        market="KOSPI", ticker="000001",
+    )
+    assert result["status"] == "HOLD"
+    assert result["reason_code"] == "OUT_OF_SCOPE_HORIZON"
+    assert result["check_stage"] == "HORIZON_SCOPE"
+    assert result["capture_horizon_intent"] == horizon
+    assert result["horizon_diagnostic_status"] == expected_diagnostic
+    assert result["capture_horizon_policy_version"] == "VN_P1_S2_HORIZON_CONTEXT_V1"
+    assert result["local_v4_horizon_supported"] is False
+    assert "전략 조건 부족이 아니라" in result["explanation"]
+    assert "미승인" in result["next_action"] if horizon == "LEGACY_UNSPECIFIED" else "장기" in result["next_action"]
+    assert result["model_result_available"] is False
+    assert (result["jev_model_calls"], result["external_requests"],
+            result["db_writes"], result["orders"]) == (0, 0, 0, 0)
+    with sqlite3.connect(db) as conn:
+        assert before == "\n".join(conn.iterdump())
+
+
+@pytest.mark.parametrize("horizon", ["SHORT", "MEDIUM"])
+def test_actual_stored_explicit_period_proceeds_to_local_semantic_router(
+    tmp_path, horizon,
+):
+    import sqlite3
+    from tests.test_jev_act2_s3_decision_reviewer import _stored
+
+    db, capture_id = _stored(tmp_path, horizon=horizon)
+    with sqlite3.connect(db) as conn:
+        before = "\n".join(conn.iterdump())
+    result = local.inspect_captured_candidate_local(
+        db, capture_id=capture_id, sample_index=0,
+        market="KOSPI", ticker="000001",
+    )
+    assert result["status"] == "LOCAL_CHECK_COMPLETE"
+    assert result["check_stage"] == "COMPLETE"
+    assert result["capture_horizon_intent"] == horizon
+    assert result["local_v4_horizon_supported"] is True
+    assert result["horizon_diagnostic_status"] == "LOCAL_V4_IN_SCOPE"
+    assert result["local_semantic_status"] == "LOCAL_MATCH"
+    assert result["model_result_available"] is False
+    with sqlite3.connect(db) as conn:
+        assert before == "\n".join(conn.iterdump())
+
+
+def test_current_scanner_explicit_horizon_requires_unapproved_numeric_policy():
+    """Do not recommend to users a scanner re-run that is currently blocked."""
+    for horizon in ("SHORT", "MEDIUM"):
+        context = resolve_horizon_context(horizon)
+        assert context.support_status == "EVALUATION_PENDING"
+        with pytest.raises(HorizonPolicyError, match="HORIZON_POLICY_NOT_ACTIVE"):
+            require_horizon_activatable(context)
+
+
+def test_horizon_unknown_does_not_backfill_or_invent_semantic_problem(stub, monkeypatch):
+    stub.sample["horizon_intent"] = None
+    monkeypatch.setattr(
+        local, "route_typesafe_state_v4",
+        lambda sample: (_ for _ in ()).throw(
+            TypeSafeStateProjectionError("OUT_OF_SCOPE_HORIZON")
+        ),
+    )
+    result = call()
+    assert result["capture_horizon_intent"] == "UNKNOWN"
+    assert result["horizon_diagnostic_status"] == "CAPTURE_HORIZON_UNKNOWN"
+    assert result["status"] == "HOLD"
+    assert result["check_stage"] == "HORIZON_SCOPE"
+    assert result["model_result_available"] is False
+
+
+def test_bad_hash_does_not_disclose_unverified_horizon(stub, monkeypatch):
+    stub.sample["horizon_intent"] = "LONG"
+    monkeypatch.setattr(
+        stub, "_load_sample",
+        lambda *_: (stub.sample, {"snapshot_hash": "forged"}, None),
+    )
+    result = call()
+    assert result["reason_code"] == "CAPTURE_SNAPSHOT_HASH_MISMATCH"
+    assert result["check_stage"] == "CAPTURE_INTEGRITY"
+    assert result["capture_horizon_intent"] is None
+    assert result["horizon_diagnostic_status"] == "NOT_CHECKED"
+
+
+def test_semantic_source_failure_has_distinct_stage_from_horizon_gate(
+    stub, monkeypatch,
+):
+    stub.sample["horizon_intent"] = "SHORT"
+    monkeypatch.setattr(
+        local, "route_typesafe_state_v4",
+        lambda sample: (_ for _ in ()).throw(
+            TypeSafeStateProjectionError("SEMANTIC_SOURCE_V2_INVALID")
+        ),
+    )
+    result = call()
+    assert result["reason_code"] == "SEMANTIC_SOURCE_V2_INVALID"
+    assert result["check_stage"] == "SEMANTIC_INPUT"
+    assert result["capture_horizon_intent"] == "SHORT"
+    assert result["local_v4_horizon_supported"] is True
+    assert "전략·조건 의미 근거" in result["headline"]
+
+
+def test_non_entry_candidate_is_not_misdiagnosed_as_horizon_failure(
+    stub, monkeypatch,
+):
+    stub.sample["horizon_intent"] = "LEGACY_UNSPECIFIED"
+    monkeypatch.setattr(
+        local, "route_typesafe_state_v4",
+        lambda sample: (_ for _ in ()).throw(
+            TypeSafeStateProjectionError("OUT_OF_SCOPE_ACTION")
+        ),
+    )
+    result = call()
+    assert result["reason_code"] == "OUT_OF_SCOPE_ACTION"
+    assert result["check_stage"] == "ACTION_SCOPE"
+    assert result["model_result_available"] is False
