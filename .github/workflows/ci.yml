@@ -106,6 +106,9 @@ jobs:
       - name: Test S31-P Scanner local JEV routing / no-provider semantics
         working-directory: frontend
         run: npm run test:jev-s31p
+      - name: Test S31-Q capture horizon provenance / fail-closed display
+        working-directory: frontend
+        run: npm run test:jev-s31q
       - name: Build frontend
         working-directory: frontend
         run: npm run build

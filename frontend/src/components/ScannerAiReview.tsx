@@ -3,6 +3,7 @@ import type { ScannerCandidate, ScannerResponse } from "../services/api";
 import { getJevCandidateLocalCheck, type JevCandidateLocalCheck } from "../services/jevApi";
 import type { JevMonitorItem } from "../services/jevApi";
 import { scannerAiReviewStatus } from "./scannerAiReviewStatus";
+import { scannerJevCapturedHorizonLabel, scannerJevDiagnosticStageLabel } from "./scannerJevHorizonCopy";
 
 type Props = {
   candidate: ScannerCandidate;
@@ -127,9 +128,18 @@ export default function ScannerAiReview({
         {localCheck && <div role="status" data-local-review-state={localCheck.status}>
           <strong>{localCheck.headline}</strong>
           <p>{localCheck.explanation}</p>
+          <p>검사 단계: {scannerJevDiagnosticStageLabel(localCheck.check_stage)}</p>
+          {localCheck.horizon_diagnostic_status !== "NOT_CHECKED" && (
+            <div className="scanner-jev-local-horizon">
+              <strong>캡처에 저장된 투자 기간: {scannerJevCapturedHorizonLabel(localCheck.capture_horizon_intent)}</strong>
+              <small>로컬 V4 의미검사 지원 범위는 SHORT·MEDIUM입니다.
+                지원 범위와 실제 모델 호출 허가는 별개이며, 원본 투자 기간을 변경하지 않았습니다.</small>
+            </div>
+          )}
           {localCheck.status === "HOLD" && (
             <p>검사 보류 사유: {localCheck.reason_code ?? "근거 미확인"}</p>
           )}
+          <p className="scanner-jev-local-next">{localCheck.next_action}</p>
           {localCheck.status === "LOCAL_CHECK_COMPLETE" && (
             <p>로컬 분류: {localCheck.local_semantic_status} ·
               {localCheck.provider_review_suggested_by_local_state

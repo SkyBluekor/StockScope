@@ -1016,3 +1016,24 @@
   font-size: 11px;
   line-height: 1.6;
 }
+
+/* S31-Q · captured horizon is provenance, not a live JEV/model outcome. */
+.scanner-jev-local-horizon {
+  margin: 9px 0;
+  padding: 9px 12px;
+  border-left: 2px solid var(--text-subtle);
+  background: transparent;
+}
+.scanner-jev-local-horizon > strong {
+  display: block;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.scanner-jev-local-horizon small {
+  display: block;
+  margin-top: 5px;
+  line-height: 1.55;
+}
+.scanner-jev-local-check .scanner-jev-local-next {
+  font-weight: 600;
+}
