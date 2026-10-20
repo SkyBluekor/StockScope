@@ -91,6 +91,9 @@ jobs:
         working-directory: frontend
         run: npm run test:sc-s30
 
+      - name: Test S31-K Scanner prior READY / Risk reference overlay
+        working-directory: frontend
+        run: npm run test:sc-s31k
       - name: Build frontend
         working-directory: frontend
         run: npm run build

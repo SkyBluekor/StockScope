@@ -1,5 +1,6 @@
 import type { ScannerCandidate } from "../services/api";
 import { assessPriceRule, priceReferenceText, wonText } from "./scannerDecisionPresentation";
+import ScannerPriorRiskRecheck from "./ScannerPriorRiskCard";
 import {
   quoteMatchesCandidate,
   scannerQuoteTruth,
@@ -52,6 +53,7 @@ export default function ScannerPriceStatus({ candidate, snapshot, onCheckPrice }
           {snapshot.loading ? "시세 확인 중…" : quote ? "시세 다시 확인" : "새 시세 확인"}
         </button>
       </div>
+      <ScannerPriorRiskRecheck candidate={candidate} snapshot={snapshot} />
       {snapshot.error && <p role="alert" className="scanner-ux-price-warning">{snapshot.error}</p>}
       {truth.state === "ERROR" && !snapshot.error && (
         <p role="alert" className="scanner-ux-price-warning">{truth.stateLabel}</p>

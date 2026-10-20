@@ -1,6 +1,7 @@
 import type { ScannerCandidate } from "../services/api";
 import { beginnerCandidatePresentation } from "./scannerDecisionPresentation";
 import { scannerQuoteTruth, type ScannerQuoteSnapshot } from "./scannerQuoteTruth";
+import ScannerPriorRiskRecheck from "./ScannerPriorRiskCard";
 
 type Props = {
   candidate: ScannerCandidate;
@@ -30,6 +31,7 @@ export default function ScannerDecisionSummary({ candidate, quoteSnapshot, onOpe
           : quote.state === "IN_RANGE" ? "가격은 당시 참고 범위 안 · 현재 전략·위험 재검증 전"
           : "새 시세로 현재 가격 조건을 확정할 수 없음 · 현재 진입 판단 보류"}
       </div>
+      <ScannerPriorRiskRecheck candidate={candidate} snapshot={quoteSnapshot} onOpenPriceTab={onOpenPriceTab} />
       <h4>분석일 기준 · {view.headline}</h4>
       <p className="scanner-ux2-decision-why">
         <strong>조건 현황</strong>

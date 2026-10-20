@@ -851,3 +851,67 @@
     white-space: normal; overflow-wrap: anywhere;
   }
 }
+
+/* S31-K: risk reference display overlays old Scanner records, never alters ranks. */
+.scanner-prior-risk {
+  margin: 12px 0;
+  padding: 13px 15px;
+  border: 1px solid var(--line-soft);
+  border-left: 3px solid var(--text-subtle);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+}
+.scanner-prior-risk-breach {
+  border-left-color: var(--danger);
+}
+.scanner-prior-risk-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 7px 14px;
+}
+.scanner-prior-risk-heading strong {
+  color: var(--text-strong);
+  font-size: 14px;
+}
+.scanner-prior-risk small {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-subtle);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.scanner-prior-risk p {
+  margin: 7px 0;
+  line-height: 1.6;
+  font-size: 13px;
+  word-break: keep-all;
+}
+.scanner-prior-risk-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 7px 0;
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 12px;
+}
+.scanner-prior-risk .scanner-prior-risk-next {
+  font-weight: 600;
+}
+.scanner-prior-risk button {
+  cursor: pointer;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: transparent;
+  padding: 6px 9px;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 12px;
+}
+.scanner-prior-risk button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}

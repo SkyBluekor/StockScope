@@ -47,8 +47,10 @@ def korean_report(report: dict[str, object]) -> str:
             f"  이전 Risk READY: {entry['original_ready']} · 재검증: {entry['recheck_status']}",
             f"  {entry['reason']}",
             f"  기존 참고 무효화선: {entry['original_reference_invalidation_not_executed_stop']}",
-            f"  과거 위험 참고선 도달 관측: {entry['past_reference_breach_count']}건 "
-            "(매수/손절 체결이 아님)",
+            f"  과거 위험 참고선 도달 거래일: {entry['past_reference_breach_day_count']}일 "
+            f"({', '.join(entry['past_reference_breach_market_days']) or '없음'})",
+            f"  시가·저가·종가의 별도 비교 신호: {entry['past_reference_breach_count']}개 "
+            "(독립적인 거래/손절 횟수가 아님)",
         ])
         if entry["additional_market_context"]:
             lines.append("  시장 참고: " + ", ".join(entry["additional_market_context"]))

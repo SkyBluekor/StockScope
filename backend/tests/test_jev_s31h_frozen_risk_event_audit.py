@@ -409,6 +409,8 @@ def test_s31j_prior_ready_rechecks_existing_risk_breach_without_executions(tmp_p
     assert candidate["actual_position_known"] is False
     assert candidate["entry_allowed_by_this_result"] is False
     assert candidate["past_reference_breach_count"] == 4
+    assert candidate["past_reference_breach_market_days"] == ["2026-10-15", "2026-10-16"]
+    assert candidate["past_reference_breach_day_count"] == 2
     assert candidate["last_complete_eod_open_price_source"] == "HISTORICAL_EOD_OPEN_NOT_LIVE_PRICE"
     assert candidate["last_complete_eod_open_price"] == 94
     assert db.read_bytes() == market_bytes
@@ -424,6 +426,7 @@ def test_s31j_asof_missing_recent_weekday_holds_while_preserving_prior_events(tm
     assert all(r["recheck_status"] == "DATA_CONFIRMATION_REQUIRED"
                for r in result["candidates"])
     assert all(r["past_reference_breach_count"] > 0 for r in result["candidates"])
+    assert all(r["past_reference_breach_day_count"] == 2 for r in result["candidates"])
     assert result["new_entry_permission"] is False
 
 
