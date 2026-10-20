@@ -76,6 +76,7 @@ def _candidate_recheck(
         if happened
     ]
     history_breached = bool(events)
+    breach_market_days = sorted({item["date"] for item in events})
     if unconfirmed_dates:
         state = "DATA_CONFIRMATION_REQUIRED"
         reason = "요청 시점까지 완료 EOD가 확인되지 않은 날짜가 있습니다."
@@ -112,6 +113,11 @@ def _candidate_recheck(
             "HISTORICAL_EOD_OPEN_NOT_LIVE_PRICE" if has_complete_current_bar else None
         ),
         "previous_reference_breach_history": events,
+        # Count unique affected market dates for human interpretation.
+        # Separate event count remains to preserve existing machine consumers:
+        # one OHLC bar may trigger 2-3 distinct reference comparisons.
+        "past_reference_breach_market_days": breach_market_days,
+        "past_reference_breach_day_count": len(breach_market_days),
         "past_reference_breach_count": len(events),
         "recheck_status": state,
         "reason": reason,
