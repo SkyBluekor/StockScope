@@ -3437,3 +3437,36 @@ button.holdings-direct-value:hover { border-bottom-color: var(--accent-primary);
     border-bottom: 1px solid var(--border-subtle);
   }
 }
+
+/* S31-O · decision-first Holdings layout; secondary evidence stays expandable. */
+.holdings-protection-overview .holdings-protection-top { margin-bottom: 6px; }
+.holdings-protection-overview .holdings-protection-facts { margin: 9px 0; }
+.holdings-protection-overview .holdings-protection-next { margin: 8px 0; }
+.holdings-protection-policy-reason {
+  margin: 8px 0;
+  font-size: var(--font-body-small);
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+.holdings-protection-primary-link { font-weight: 700; }
+.holdings-secondary-details {
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  padding: 8px 12px;
+}
+.holdings-secondary-details > summary {
+  cursor: pointer;
+  color: var(--text-primary);
+  font-size: var(--font-body-small);
+  font-weight: 650;
+  padding: 5px 0;
+}
+.holdings-secondary-details[open] > summary { margin-bottom: 12px; }
+.holdings-secondary-details > .holdings-context-overview { margin-top: 6px; }
+.holding-watch-policy-explanation {
+  margin: 8px 0;
+  color: var(--text-secondary);
+  font-size: var(--font-body-small);
+  line-height: 1.6;
+}

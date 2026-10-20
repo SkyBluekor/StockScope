@@ -100,6 +100,9 @@ jobs:
       - name: Test S31-N Holdings protection overview
         working-directory: frontend
         run: npm run test:hold-s31n
+      - name: Test S31-O Watch policy explanation
+        working-directory: frontend
+        run: npm run test:hold-s31o
       - name: Build frontend
         working-directory: frontend
         run: npm run build
