@@ -96,8 +96,11 @@ export function scannerPriorRiskRecheck(
     "전략·가격 탭에서 시세를 다시 확인하세요.",
   );
   if (!snapshot.quote) return result(
-    "NOT_CHECKED", "이전 READY 재확인 필요",
-    "분석 당시 READY는 지금의 매수 허가가 아니에요. 새 가격도 아직 확인하지 않았어요.",
+    "NOT_CHECKED",
+    status === "READY" ? "이전 READY 재확인 필요" : "분석일 Risk 상태 재확인 필요",
+    status === "READY"
+      ? "분석 당시 READY는 지금의 매수 허가가 아니에요. 새 가격도 아직 확인하지 않았어요."
+      : "분석일 Risk 판단을 지금의 매수 허가로 볼 수 없어요. 새 가격도 아직 확인하지 않았어요.",
     "전략·가격 탭에서 선택한 종목의 새 시세를 수동 확인하세요.",
   );
   const quote = snapshot.quote;
@@ -136,7 +139,7 @@ export function scannerPriorRiskRecheck(
   );
   if (amount <= validRef) return result(
     "OLD_REFERENCE_BREACHED", "조회 가격이 기존 위험선 이하",
-    "조회 시점 가격이 분석 당시 무효화 참고가격 이하예요. 기존 READY를 신규 진입 근거로 사용하면 안 돼요.",
+    "조회 시점 가격이 분석 당시 무효화 참고가격 이하예요. 이전 Risk 판단을 신규 진입 근거로 사용하면 안 돼요.",
     "현재 가격과 시장 상황을 다시 분석하세요. 실제 보유·손절 주문 여부는 이 화면에서 알 수 없어요.",
     { ...context, oldReferenceComparison: "AT_OR_BELOW" },
   );
