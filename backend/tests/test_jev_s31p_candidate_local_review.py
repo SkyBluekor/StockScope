@@ -20,6 +20,8 @@ class StubSource:
 
     def __init__(self, _path: Path) -> None:
         self.calls = 0
+        self.sample = dict(type(self).sample)
+        self.sample["snapshot_hash"] = digest_json(self.sample["snapshot"])
 
     def _load_sample(self, capture_id: str, sample_index: int):
         self.calls += 1
