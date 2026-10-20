@@ -60,7 +60,7 @@ test("valid matching later KIS quote below original invalidation has explicit re
   assert.equal(r.oldReferenceComparison, "AT_OR_BELOW");
   assert.equal(r.riskRevalidated, false);
   assert.equal(r.executionPermission, false);
-  assert.match(r.explanation, /분석 당시/);
+  assert.match(r.explanation, /분석일 Risk/);
 });
 test("exactly equal to old invalidation price also counts as touched", () => {
   assert.equal(scannerPriorRiskRecheck(candidate(),
@@ -85,7 +85,7 @@ test("wrong stock or market/provider quote is hidden from any old-reference comp
 });
 test("no timestamp, future timestamp relative to receive or invalid amount fails closed", () => {
   const changes = [
-    { provider_timestamp: null },
+    { provider_timestamp: "not-a-time" },
     { received_at: "bad" },
     { provider_timestamp: "2026-10-16T09:00:00+09:00" },
     { current_price: "NaN" },
