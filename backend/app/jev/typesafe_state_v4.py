@@ -90,11 +90,13 @@ def _bounded_text(value: Any, *, limit: int) -> str:
     return text
 
 
-def _validated_source(sample: dict[str, Any]) -> tuple[dict[str, Any], str]:
+def _validated_source(
+    sample: dict[str, Any], *, horizon_scope_required: bool = True,
+) -> tuple[dict[str, Any], str]:
     if str(sample.get("action") or "") != "ENTRY_CANDIDATE":
         raise TypeSafeStateProjectionError("OUT_OF_SCOPE_ACTION")
     horizon = str(sample.get("horizon_intent") or "")
-    if horizon not in {"SHORT", "MEDIUM"}:
+    if horizon_scope_required and horizon not in {"SHORT", "MEDIUM"}:
         raise TypeSafeStateProjectionError("OUT_OF_SCOPE_HORIZON")
 
     snapshot = sample.get("snapshot")
@@ -155,6 +157,24 @@ def route_typesafe_state_v4(sample: dict[str, Any]) -> TypeSafeV4Route:
         local_status=local_status,
         provider_eligible=False,
         reason_code=_NO_CALL_REASON_BY_STATUS[local_status],
+    )
+
+
+def inspect_legacy_semantic_evidence_v4(sample: dict[str, Any]) -> TypeSafeV4Route:
+    """Evaluate only horizon-independent authored semantic relations for LEGACY.
+
+    The stored horizon remains LEGACY_UNSPECIFIED. The verified semantic source
+    is recomposed locally, but V4 provider routing and state projection remain
+    strictly SHORT/MEDIUM only. A residual is NEVER provider-eligible here.
+    This function does not issue trade approval or invent time-stop rules.
+    """
+    if sample.get("horizon_intent") != "LEGACY_UNSPECIFIED":
+        raise TypeSafeStateProjectionError("LEGACY_HORIZON_REQUIRED")
+    _source, local_status = _validated_source(sample, horizon_scope_required=False)
+    return TypeSafeV4Route(
+        local_status=local_status,
+        provider_eligible=False,
+        reason_code="LEGACY_LOCAL_EVIDENCE_ONLY_" + local_status,
     )
 
 
