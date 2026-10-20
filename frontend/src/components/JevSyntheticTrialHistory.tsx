@@ -34,7 +34,7 @@ function validResponse(value: JevSyntheticActualReport): boolean {
     && value.paired_baseline.external_calls === 0
     && value.paired_baseline.db_writes === 0
     && value.paired_baseline.rows.length === 5
-    && value.paired_baseline.rows.every(r => Object.hasOwn(caseTitles, r.case_id))
+    && value.paired_baseline.rows.every(r => Object.prototype.hasOwnProperty.call(caseTitles, r.case_id))
     && value.results.every(r =>
       ["s5-consistent","s5-condition-contradiction","s5-risk-contradiction",
         "s5-insufficient-evidence","s5-unresolved-ambiguity"].includes(r.case_id));
