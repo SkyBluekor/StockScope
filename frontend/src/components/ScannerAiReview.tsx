@@ -4,6 +4,7 @@ import { getJevCandidateLocalCheck, type JevCandidateLocalCheck } from "../servi
 import type { JevMonitorItem } from "../services/jevApi";
 import { scannerAiReviewStatus } from "./scannerAiReviewStatus";
 import { scannerJevCapturedHorizonLabel, scannerJevDiagnosticStageLabel } from "./scannerJevHorizonCopy";
+import JevSyntheticTrialHistory from "./JevSyntheticTrialHistory";
 
 type Props = {
   candidate: ScannerCandidate;
@@ -167,6 +168,7 @@ export default function ScannerAiReview({
           </small>
         </div>}
       </section>
+      <JevSyntheticTrialHistory />
       <p className="scanner-jev-next">{loadError ? "저장된 검토 조회 상태를 확인한 후 다시 시도하세요." : state.next}</p>
       {available && enabled && featureStatus === "ACTIVE" && (
         <button type="button" onClick={onRefresh} disabled={loading}>
