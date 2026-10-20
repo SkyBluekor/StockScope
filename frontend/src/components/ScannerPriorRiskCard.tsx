@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type { ScannerCandidate } from "../services/api";
 import type { ScannerQuoteSnapshot } from "./scannerQuoteTruth";
 import { wonText } from "./scannerDecisionPresentation";
@@ -13,7 +14,14 @@ type Props = {
 export default function ScannerPriorRiskCard({
   candidate, snapshot, onOpenPriceTab,
 }: Props) {
-  const check = scannerPriorRiskRecheck(candidate, snapshot);
+  // A one-shot KIS quote must not look current indefinitely in an open tab.
+  // Refresh the display clock only; never poll KIS or alter Risk/Scanner.
+  const [displayNow, setDisplayNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setDisplayNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+  const check = scannerPriorRiskRecheck(candidate, snapshot, displayNow);
   const warning = check.state === "OLD_REFERENCE_BREACHED"
     || check.indicativeOldReferenceComparison === "AT_OR_BELOW";
   const detail = check.quotePrice == null
