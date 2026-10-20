@@ -1,4 +1,4 @@
-import { SimulationApiError } from "./simulationApi";
+import { SimulationApiError } from "./simulationApi.ts";
 
 type ApiErrorPayload = {
   detail?: string | { code?: string; message?: string };
