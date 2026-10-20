@@ -114,12 +114,12 @@ def test_invalid_or_missing_semantic_source_stays_hold(stub, monkeypatch):
     assert result["model_result_available"] is False
 
 
-@pytest.mark.parametrize("request", [
+@pytest.mark.parametrize("params", [
     {"capture_id": ""}, {"sample_index": -1}, {"sample_index": True},
     {"market": "NASDAQ"}, {"ticker": "XX"},
 ])
-def test_invalid_requested_identity_fails_before_source_access(stub,request):
-    result = call(**request)
+def test_invalid_requested_identity_fails_before_source_access(stub,params):
+    result = call(**params)
     assert result["reason_code"] == "LOCAL_REVIEW_REQUEST_INVALID"
     assert stub.calls == 0
 
