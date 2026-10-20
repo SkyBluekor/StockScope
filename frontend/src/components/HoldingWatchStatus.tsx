@@ -134,7 +134,7 @@ export default function HoldingWatchStatus({
   if (openPositions.length === 0) return null;
 
   return (
-    <div className="holding-watch-summary" aria-label="실시간 감시 상태">
+    <div id="holding-watch-summary" className="holding-watch-summary" aria-label="실시간 감시 상태">
       <span className="holding-watch-summary-label">실시간 감시</span>
 
       <div className="holding-watch-health">
