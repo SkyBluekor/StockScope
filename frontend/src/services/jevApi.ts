@@ -259,6 +259,44 @@ export type JevSyntheticActualReceipt = {
   completed_at: string | null;
   receipt_status: "JOURNAL_CONSISTENCY_CHECK_PASSED" | "ATTEMPT_RECORDED_NOT_VALIDATED";
 };
+export type JevSyntheticPairedCase = {
+  case_id: string;
+  attempt_count: number;
+  valid_receipt_count: number;
+  status: "PAIRABLE" | "NO_ATTEMPT" | "INCOMPLETE_ATTEMPTS" |
+    "NO_VALID_RECEIPT" | "MIXED_MODEL_IDENTITIES" | "INCONSISTENT_REPEATS";
+  model_decision: "PASS_THROUGH" | "REVIEW_REQUIRED" | "ABSTAIN" | null;
+  gold: "PASS_THROUGH" | "REVIEW_REQUIRED" | "ABSTAIN";
+  model_matches_gold: boolean | null;
+  baseline_choice: "PASS_THROUGH";
+  naive_baseline_matches_gold: boolean;
+  repeat_stability: "AGREED_REPEATS" | "SINGLE_RECEIPT" | "NOT_ESTABLISHED";
+};
+export type JevSyntheticPairedBaseline = {
+  version: string;
+  scope: "AUTHOR_CREATED_SYNTHETIC_CASES_ONLY";
+  status: "NO_ACTUAL_MODEL_RECORDS" | "TRUNCATED_NOT_COMPARABLE" |
+    "PARTIAL_NOT_COMPARABLE" | "ALL_AUTHORED_SYNTHETIC_CASES_PAIRED";
+  unique_authored_cases: number;
+  pairable_unique_cases: number;
+  raw_actual_attempts: number;
+  raw_valid_receipts: number;
+  repeated_cases: number;
+  inconsistent_repeats: number;
+  matched_model_and_baseline_cases: number;
+  model_correct_paired: number;
+  naive_baseline_correct_paired: number;
+  paired_gold_label_difference: number;
+  full_case_coverage: boolean;
+  rows: JevSyntheticPairedCase[];
+  naive_baseline_is_actual_scanner_algorithm: false;
+  actual_stock_comparison_available: false;
+  jev_incremental_market_value_proven: false;
+  real_market_cases: 0;
+  external_calls: 0;
+  db_writes: 0;
+  interpretation: string;
+};
 export type JevSyntheticActualReport = {
   version: string;
   status: "NO_JOURNAL" | "JOURNAL_SCHEMA_UNAVAILABLE" |
@@ -271,6 +309,7 @@ export type JevSyntheticActualReport = {
   unverified_receipt_rows: number;
   mock_rows_excluded: number;
   results: JevSyntheticActualReceipt[];
+  paired_baseline: JevSyntheticPairedBaseline;
   model_calls_on_request: 0;
   external_requests_on_request: 0;
   db_writes_on_request: 0;
