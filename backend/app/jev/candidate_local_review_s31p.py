@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from app.prospective.models import digest_json
 from app.jev.review_service import JevManualReviewService
 from app.jev.typesafe_state import TypeSafeStateProjectionError
 from app.jev.typesafe_state_v4 import route_typesafe_state_v4
@@ -82,6 +83,12 @@ def inspect_captured_candidate_local(
         return response
     if sample.get("market") != market or sample.get("ticker") != ticker:
         response["reason_code"] = "CAPTURE_CANDIDATE_IDENTITY_MISMATCH"
+        return response
+    snapshot = sample.get("snapshot")
+    original_hash = sample.get("snapshot_hash")
+    if (not isinstance(snapshot, dict) or not isinstance(original_hash, str)
+        or not original_hash or digest_json(snapshot) != original_hash):
+        response["reason_code"] = "CAPTURE_SNAPSHOT_HASH_MISMATCH"
         return response
 
     response["capture_id"] = str(reference.get("capture_id") or capture_id)
