@@ -146,3 +146,30 @@ def test_cli_outputs_json_without_network_or_database_write(tmp_path: Path) -> N
     assert result["version"] == "STOCKSCOPE_P0_02_OPERATIONAL_STORE_AUDIT_V1"
     assert result["last_common_marked_stock_index_date"] is None
     assert target.read_bytes() == original
+
+
+def test_cli_works_when_no_system_timezone_db_or_tzdata_package(tmp_path: Path) -> None:
+    """Windows Python can lack both system timezone data and PyPI tzdata."""
+    import os
+
+    db = _db(tmp_path / "store.db")
+    before = db.read_bytes()
+    # Point stdlib zoneinfo at an empty TZPATH, and disable site-packages,
+    # including tzdata. The old ZoneInfo('Asia/Seoul') path fails here.
+    env = os.environ.copy()
+    env["PYTHONTZPATH"] = str(tmp_path / "empty-timezone-db")
+    proc = subprocess.run(
+        [
+            sys.executable, "-S", str(SCRIPT),
+            "--market-db", str(db),
+            "--as-of", "2026-10-21",
+            "--market-scope", "ALL",
+            "--lookback-calendar-days", "7",
+        ],
+        check=False, capture_output=True, text=True, env=env,
+    )
+    assert proc.returncode == 0, proc.stderr
+    result = json.loads(proc.stdout)
+    assert result["operational_db_read_only"] is True
+    assert result["provider_calls"] == result["db_writes"] == 0
+    assert db.read_bytes() == before

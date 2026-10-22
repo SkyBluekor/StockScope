@@ -8,19 +8,21 @@ from __future__ import annotations
 
 import argparse
 from contextlib import closing
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
 import sqlite3
 from typing import Any
-from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DB = ROOT / "backend" / "runtime" / "market_history" / "market_history.db"
 VERSION = "STOCKSCOPE_P0_02_OPERATIONAL_STORE_AUDIT_V1"
 MARKETS = ("KOSPI", "KOSDAQ")
 KINDS = ("stock", "index")
+# KST has a stable UTC+09:00 offset. A fixed datetime.timezone avoids
+# the optional system tzdb / PyPI tzdata dependency on plain Windows Python.
+KST = timezone(timedelta(hours=9), name="KST")
 
 
 def _iso(compact: str | None) -> str | None:
@@ -202,7 +204,7 @@ def main() -> int:
     parser.add_argument("--market-scope", choices=("ALL", *MARKETS), default="ALL")
     parser.add_argument("--lookback-calendar-days", type=int, default=220)
     args = parser.parse_args()
-    today_kst = datetime.now(ZoneInfo("Asia/Seoul")).date()
+    today_kst = datetime.now(KST).date()
     as_of = date.fromisoformat(args.as_of) if args.as_of else today_kst - timedelta(days=1)
     if as_of > today_kst:
         parser.error("--as-of must not be after today (Asia/Seoul)")

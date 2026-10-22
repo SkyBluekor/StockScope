@@ -6,7 +6,8 @@
 `backend/runtime/market_history/market_history.db`를 직접 점검한다.
 연구용 `S31` SQLite DB, 합성 자료 및 CI 임시 DB를 운영 성공 근거로 사용하지 않는다.
 
-이 도구는 표준 라이브러리만 사용하며 원본 DB를 `mode=ro` 및
+이 도구는 표준 라이브러리만 사용하며 **KST(UTC+09:00)는 고정 오프셋으로 계산한다.** 
+시스템 timezone DB나 Python `tzdata` 설치가 없는 Windows Python 3.14에서도 실행할 수 있다.\n원본 DB를 `mode=ro` 및
 `query_only=ON`으로 연다. KRX/TypeSafe 요청, API 사용료, DB 변경,
 원장/보유 데이터 접근, 스케줄러 설치, Runner 자동 시작이 없다.
 SQLite WAL의 커밋된 최신 상태를 읽기 위해 `immutable=1`을 쓰지 않는다.
