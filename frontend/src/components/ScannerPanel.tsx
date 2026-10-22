@@ -1653,6 +1653,15 @@ export default function ScannerPanel({
             <span>처음 필요한 시장 데이터 준비</span>
             <strong>종목을 찾기 전에 시장 데이터를 준비해야 해요.</strong>
             <p>현재 컴퓨터에 없는 자료를 준비할게요. 예상 기본 요청은 약 {formatNumber(pendingDataPlan.plan.estimated_missing_krx_slots ?? 0)}회예요. 거래일 확인이나 오류 재시도로 요청이 더 발생할 수 있어요.</p>
+            {pendingDataPlan.plan.operational_eod && (
+              <div>
+                <p>운영 DB에 종목·지수 행이 같은 날짜로 존재하는 최신 공통일: <strong>{pendingDataPlan.plan.operational_eod.stored_same_day_stock_index_date ? formatDate(pendingDataPlan.plan.operational_eod.stored_same_day_stock_index_date) : "확인 불가"}</strong> (조회 상한 {formatDate(pendingDataPlan.plan.operational_eod.inspection_end)})</p>
+                {Object.entries(pendingDataPlan.plan.operational_eod.markets).map(([market, details]) => (
+                  <p key={market}>{market} · 종목 {details.last_stock_rows_date ? formatDate(details.last_stock_rows_date) : "없음"} · 지수 {details.last_index_row_date ? formatDate(details.last_index_row_date) : "없음"} · 동일일 {details.last_same_day_rows_date ? formatDate(details.last_same_day_rows_date) : "없음"}</p>
+                ))}
+                <small>로컬 저장 행의 존재만 확인한 결과예요. 공식 휴장·KRX 공표 시각·전체 과거 데이터·실제 Scanner 분석 성공을 증명하지 않아요.</small>
+              </div>
+            )}
             {(Object.values(pendingDataPlan.plan.data_markers_missing_rows ?? {}).some((count) => count > 0)) && (
               <p>저장된 '데이터 있음' 표시와 실제 종목·지수 기록이 일치하지 않는 항목이 있어 다시 확인이 필요해요.</p>
             )}

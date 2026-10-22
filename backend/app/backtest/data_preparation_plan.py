@@ -78,6 +78,11 @@ def plan_scanner_data(
                            or PROJECT_ROOT / "backend/runtime/market_history/market_history.db")
     cache = raw_cache_root or KrxProvider._cache_dir
     status: dict[tuple[str, str, str], bool] = {}
+    # The operational Market Store is the only input. This is NOT a KRX
+    # publication-time, official holiday-calendar, or row-content audit.
+    persisted_dates: dict[str, dict[str, set[str]]] = {
+        market: {kind: set() for kind in KINDS} for market in markets
+    }
     incomplete_data_markers: dict[str, set[tuple[str, str]]] = {market: set() for market in markets}
     unverified_empty_markers: dict[str, set[tuple[str, str]]] = {market: set() for market in markets}
     warnings = []
@@ -85,7 +90,7 @@ def plan_scanner_data(
         try:
             with _readonly(db) as conn:
                 names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-                if "day_status" not in names and names:
+                if not {"day_status", "stock_daily", "main_index_daily"}.issubset(names) and names:
                     return {
                         "version": SCHEMA, "status": "BLOCKED_SCHEMA",
                         "reason": "MARKET_SCHEMA_MISSING", "provider_calls": 0, "db_writes": 0,
@@ -111,16 +116,27 @@ def plan_scanner_data(
                         " WHERE i.market=ds.market AND i.bas_dd=ds.bas_dd"
                         ") END "
                         "FROM day_status ds "
-                        "WHERE ds.market IN ('KOSPI','KOSDAQ') AND ds.bas_dd>=? AND ds.bas_dd<=?",
-                        (first, last),
+                        "WHERE ds.market IN ('KOSPI','KOSDAQ') AND ds.bas_dd<=?",
+                        (last,),
                     ):
-                        key = (str(market), str(dd), str(kind))
+                        market, dd, kind = str(market), str(dd), str(kind)
+                        if market not in persisted_dates or kind not in KINDS:
+                            continue
+                        try:
+                            valid_date = date.fromisoformat(f"{dd[:4]}-{dd[4:6]}-{dd[6:8]}")
+                            if len(dd) != 8 or valid_date.strftime("%Y%m%d") != dd:
+                                continue
+                        except ValueError:
+                            continue
+                        key = (market, dd, kind)
                         if label == "data" and bool(has_rows):
-                            status[key] = True
-                        elif market in incomplete_data_markers and label == "data":
-                            incomplete_data_markers[str(market)].add((str(dd), str(kind)))
-                        elif market in unverified_empty_markers and label == "empty":
-                            unverified_empty_markers[str(market)].add((str(dd), str(kind)))
+                            persisted_dates[market][kind].add(dd)
+                            if dd >= first:
+                                status[key] = True
+                        elif dd >= first and label == "data":
+                            incomplete_data_markers[market].add((dd, kind))
+                        elif dd >= first and label == "empty":
+                            unverified_empty_markers[market].add((dd, kind))
         except sqlite3.Error:
             return {
                 "version": SCHEMA, "status": "BLOCKED_SCHEMA",
@@ -133,6 +149,47 @@ def plan_scanner_data(
         warnings.append("MARKET_DATA_MARKER_WITHOUT_PERSISTED_ROWS")
     if any(unverified_empty_markers.values()):
         warnings.append("MARKET_EMPTY_RESPONSE_NOT_PROVEN_HOLIDAY")
+
+    def iso_latest(days: set[str]) -> str | None:
+        if not days:
+            return None
+        dd = max(days)
+        return f"{dd[:4]}-{dd[4:6]}-{dd[6:]}"
+
+    # Scope is a true intersection across every selected market AND its
+    # stock/index stored-row presence on the same date. Never substitute
+    # min(latest(stock), latest(index)) for a proved intersection.
+    coincident_days: dict[str, set[str]] = {
+        market: persisted_dates[market]["stock"] & persisted_dates[market]["index"]
+        for market in markets
+    }
+    scope_common_days = set.intersection(*(coincident_days[m] for m in markets))
+    observed_common_date = iso_latest(scope_common_days)
+    operational_eod = {
+        "source": "OPERATIONAL_MARKET_STORE_READONLY",
+        "market_scope": market_scope,
+        "inspection_end": end.isoformat(),
+        "lookback_start": start.isoformat(),
+        "stored_same_day_stock_index_date": observed_common_date,
+        "days_behind_inspection_end": (
+            (end - date.fromisoformat(observed_common_date)).days
+            if observed_common_date else None
+        ),
+        "markets": {
+            market: {
+                "last_stock_rows_date": iso_latest(persisted_dates[market]["stock"]),
+                "last_index_row_date": iso_latest(persisted_dates[market]["index"]),
+                "last_same_day_rows_date": iso_latest(coincident_days[market]),
+                "same_day_rows_in_lookback": sum(dd >= start.strftime("%Y%m%d") for dd in coincident_days[market]),
+            }
+            for market in markets
+        },
+        "verification": "DAY_STATUS_DATA_PLUS_PERSISTED_ROW_PRESENCE_ONLY",
+        "provider_publication_time_verified": False,
+        "official_holiday_calendar_verified": False,
+        "full_lookback_ready": False,
+        "reason": "Read-only stored-row observation; provider confirmation and trading-calendar/strategy lookback checks are still required.",
+    }
 
     requested = 0
     raw_hits = 0
@@ -182,6 +239,7 @@ def plan_scanner_data(
         "date_is_confirmed": False,
         "candidate_limit": candidate_limit,
         "store_slots_missing": missing,
+        "operational_eod": operational_eod,
         "data_markers_missing_rows": {market: len(incomplete_data_markers[market]) for market in markets},
         "unverified_empty_slots": {market: len(unverified_empty_markers[market]) for market in markets},
         "unverified_status_samples": [
