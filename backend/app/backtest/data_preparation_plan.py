@@ -49,9 +49,10 @@ def _valid_raw_cache(root: Path, market: str, day: date, kind: str, *, today: da
             )
         except (OSError, UnicodeError, ValueError, TypeError):
             return False
-    # A verified historical empty marker avoids querying valid exchange holidays.
-    marker = root / (name + ".empty")
-    return marker.is_file() and day <= today - timedelta(days=3)
+    # An empty HTTP response (even a stable cached .empty marker) cannot prove
+    # an exchange holiday or a complete trading-day snapshot. Conservatively
+    # estimate a request unless there is actual usable cached KRX data.
+    return False
 
 
 def plan_scanner_data(
@@ -76,7 +77,9 @@ def plan_scanner_data(
     db = market_db or Path(os.getenv("STOCKSCOPE_MARKET_STORE_DB") or os.getenv("STOCKSCOPE_MARKET_DB")
                            or PROJECT_ROOT / "backend/runtime/market_history/market_history.db")
     cache = raw_cache_root or KrxProvider._cache_dir
-    status = {}
+    status: dict[tuple[str, str, str], bool] = {}
+    incomplete_data_markers: dict[str, set[tuple[str, str]]] = {market: set() for market in markets}
+    unverified_empty_markers: dict[str, set[tuple[str, str]]] = {market: set() for market in markets}
     warnings = []
     if db.is_file():
         try:
@@ -94,12 +97,30 @@ def plan_scanner_data(
                 else:
                     first = start.strftime("%Y%m%d")
                     last = end.strftime("%Y%m%d")
-                    for market, dd, kind in conn.execute(
-                        "SELECT market,bas_dd,kind FROM day_status "
-                        "WHERE market IN ('KOSPI','KOSDAQ') AND bas_dd>=? AND bas_dd<=?",
+                    # A day_status='data' flag is not enough: it can survive
+                    # a partial/corrupt snapshot or a manual DB restore. Check
+                    # the actual market/date rows using PK-backed EXISTS probes.
+                    # All of this is read-only, against the operational DB path.
+                    for market, dd, kind, label, has_rows in conn.execute(
+                        "SELECT ds.market,ds.bas_dd,ds.kind,ds.status, "
+                        "CASE WHEN ds.kind='stock' THEN EXISTS("
+                        " SELECT 1 FROM stock_daily s "
+                        " WHERE s.market=ds.market AND s.bas_dd=ds.bas_dd"
+                        ") ELSE EXISTS("
+                        " SELECT 1 FROM main_index_daily i "
+                        " WHERE i.market=ds.market AND i.bas_dd=ds.bas_dd"
+                        ") END "
+                        "FROM day_status ds "
+                        "WHERE ds.market IN ('KOSPI','KOSDAQ') AND ds.bas_dd>=? AND ds.bas_dd<=?",
                         (first, last),
                     ):
-                        status[(str(market), str(dd), str(kind))] = True
+                        key = (str(market), str(dd), str(kind))
+                        if label == "data" and bool(has_rows):
+                            status[key] = True
+                        elif market in incomplete_data_markers and label == "data":
+                            incomplete_data_markers[str(market)].add((str(dd), str(kind)))
+                        elif market in unverified_empty_markers and label == "empty":
+                            unverified_empty_markers[str(market)].add((str(dd), str(kind)))
         except sqlite3.Error:
             return {
                 "version": SCHEMA, "status": "BLOCKED_SCHEMA",
@@ -107,6 +128,11 @@ def plan_scanner_data(
             }
     else:
         warnings.append("NEW_DEVICE_MARKET_DB_NOT_PRESENT")
+
+    if any(incomplete_data_markers.values()):
+        warnings.append("MARKET_DATA_MARKER_WITHOUT_PERSISTED_ROWS")
+    if any(unverified_empty_markers.values()):
+        warnings.append("MARKET_EMPTY_RESPONSE_NOT_PROVEN_HOLIDAY")
 
     requested = 0
     raw_hits = 0
@@ -156,6 +182,8 @@ def plan_scanner_data(
         "date_is_confirmed": False,
         "candidate_limit": candidate_limit,
         "store_slots_missing": missing,
+        "data_markers_missing_rows": {market: len(incomplete_data_markers[market]) for market in markets},
+        "unverified_empty_slots": {market: len(unverified_empty_markers[market]) for market in markets},
         "raw_cache_slots_reusable": raw_hits,
         "estimated_missing_krx_slots": requested,
         "fast_request_limit": fast_limit,

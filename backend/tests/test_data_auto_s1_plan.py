@@ -24,6 +24,12 @@ def _db(tmp_path: Path, *, complete: bool):
         conn.execute(
             "CREATE TABLE day_status(market TEXT, bas_dd TEXT, kind TEXT, status TEXT)"
         )
+        conn.execute(
+            "CREATE TABLE stock_daily(market TEXT, bas_dd TEXT, stock_code TEXT, row_json TEXT)"
+        )
+        conn.execute(
+            "CREATE TABLE main_index_daily(market TEXT, bas_dd TEXT, row_json TEXT)"
+        )
         if complete:
             start = END - timedelta(days=StockScannerService.FAST_HISTORY_CALENDAR_DAYS)
             for i in range((END - start).days + 1):
@@ -32,10 +38,21 @@ def _db(tmp_path: Path, *, complete: bool):
                     continue
                 for market in ("KOSPI", "KOSDAQ"):
                     for kind in ("stock", "index"):
+                        dd = day.strftime("%Y%m%d")
                         conn.execute(
                             "INSERT INTO day_status VALUES (?,?,?,?)",
-                            (market, day.strftime("%Y%m%d"), kind, "data"),
+                            (market, dd, kind, "data"),
                         )
+                        if kind == "stock":
+                            conn.execute(
+                                "INSERT INTO stock_daily VALUES (?,?,?,?)",
+                                (market, dd, "005930", json.dumps({"date": dd, "code": "005930"})),
+                            )
+                        else:
+                            conn.execute(
+                                "INSERT INTO main_index_daily VALUES (?,?,?)",
+                                (market, dd, json.dumps({"date": dd, "name": market})),
+                            )
     return db
 
 
@@ -127,3 +144,39 @@ def test_invalid_date_and_malformed_existing_database_are_fail_closed(tmp_path):
     with sqlite3.connect(malformed) as conn:
         conn.execute("CREATE TABLE unrelated(id INT)")
     assert _plan(tmp_path, malformed)["status"] == "BLOCKED_SCHEMA"
+
+
+def test_data_marker_without_stock_rows_is_not_reused(tmp_path):
+    db = _db(tmp_path, complete=True)
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "DELETE FROM stock_daily WHERE market='KOSPI' AND bas_dd='20261008'"
+        )
+    result = _plan(tmp_path, db)
+    assert result["data_markers_missing_rows"]["KOSPI"] == 1
+    assert result["store_slots_missing"]["KOSPI"] == 3
+    assert "MARKET_DATA_MARKER_WITHOUT_PERSISTED_ROWS" in result["warnings"]
+    assert result["estimated_missing_krx_slots"] == 5
+    assert result["provider_calls"] == result["db_writes"] == 0
+
+
+def test_empty_marker_never_proves_holiday_or_cached_market_rows(tmp_path):
+    db = _db(tmp_path, complete=True)
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    endpoint = KrxProvider._endpoint_for_kind("KOSPI", "index")
+    (cache / (endpoint.path.replace("/", "__") + "__20261009.empty")).write_text("")
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "UPDATE day_status SET status='empty' WHERE market='KOSPI' AND bas_dd='20261008' AND kind='index'"
+        )
+        conn.execute(
+            "DELETE FROM main_index_daily WHERE market='KOSPI' AND bas_dd='20261008'"
+        )
+    result = _plan(tmp_path, db)
+    assert result["unverified_empty_slots"]["KOSPI"] == 1
+    assert "MARKET_EMPTY_RESPONSE_NOT_PROVEN_HOLIDAY" in result["warnings"]
+    assert result["store_slots_missing"]["KOSPI"] == 3
+    assert result["estimated_missing_krx_slots"] == 5
+    assert result["raw_cache_slots_reusable"] == 0
+    assert result["provider_calls"] == result["db_writes"] == 0

@@ -377,7 +377,17 @@ class StockScannerService:
         holiday/weekend requests, but an empty marker must never qualify as an
         analysis-ready EOD day.
         """
-        return self.market_store.latest_complete_date(market, kind, bas_dd) == bas_dd
+        if self.market_store.latest_complete_date(market, kind, bas_dd) != bas_dd:
+            return False
+        # Real MarketStore records sometimes contain a surviving data marker
+        # without its underlying stock/index row (partial restore or repair).
+        # Never advertise that marker as a verified current EOD. Legacy fake
+        # stores used by isolated tests can still supply only marker methods.
+        if kind == "stock" and hasattr(self.market_store, "stock_day_count"):
+            return self.market_store.stock_day_count(market, bas_dd) > 0
+        if kind == "index" and hasattr(self.market_store, "index_day_row"):
+            return bool(self.market_store.index_day_row(market, bas_dd))
+        return True
 
     def _date_complete_for_markets(self, markets: list[str], iso_date: str | None) -> bool:
         normalized = self._normalize_iso_date(iso_date)

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+import sqlite3
 
 import pytest
+
+from app.backtest.market_store import HistoricalMarketStore
 
 from app.backtest.scanner import StockScannerService
 
@@ -163,3 +166,30 @@ async def test_freshness_failure_keeps_previous_date_for_explicit_fallback() -> 
     assert result["fallback_allowed"] is False
     assert result["available_data_date"] == "2026-09-14"
     assert result["market_data_updated"] is False
+
+
+def test_stale_data_markers_without_real_rows_cannot_certify_latest_eod(tmp_path):
+    db = tmp_path / "market.sqlite3"
+    store = HistoricalMarketStore(db)
+    with sqlite3.connect(db) as conn:
+        for kind in ("stock", "index"):
+            conn.execute(
+                "INSERT INTO day_status(market,bas_dd,kind,status) VALUES(?,?,?,?)",
+                ("KOSPI", "20261020", kind, "data"),
+            )
+    service = object.__new__(StockScannerService)
+    service.market_store = store
+    assert not service._date_complete_for_markets(["KOSPI"], "2026-10-20")
+
+    store.put_stock_day(
+        "KOSPI", "20261020",
+        [{"date": "20261020", "code": "005930", "name": "test", "close": 100}],
+        stable=True,
+    )
+    assert not service._date_complete_for_markets(["KOSPI"], "2026-10-20")
+    store.put_index_day(
+        "KOSPI", "20261020",
+        {"date": "20261020", "name": "KOSPI", "close": 2600},
+        stable=True,
+    )
+    assert service._date_complete_for_markets(["KOSPI"], "2026-10-20")
