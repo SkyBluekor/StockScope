@@ -7,6 +7,7 @@ Prints dates, row counts and missing-marker categories, never stock prices/codes
 from __future__ import annotations
 
 import argparse
+from contextlib import closing
 from datetime import date, datetime, timedelta
 import json
 import os
@@ -73,7 +74,7 @@ def inspect_operational_store(
         # SQLite's read-only URI protects the original DB while respecting
         # committed WAL records. Never use immutable=1 on a possibly live DB:
         # that could silently ignore not-yet-checkpointed WAL records.
-        with sqlite3.connect(db.resolve().as_uri() + "?mode=ro", uri=True) as conn:
+        with closing(sqlite3.connect(db.resolve().as_uri() + "?mode=ro", uri=True)) as conn:
             conn.execute("PRAGMA query_only=ON")
             tables = {str(row[0]) for row in conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table'"
