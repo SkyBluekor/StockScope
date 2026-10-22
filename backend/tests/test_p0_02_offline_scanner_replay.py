@@ -119,3 +119,44 @@ def test_actual_scanner_runs_with_no_provider_network_on_snapshot(tmp_path: Path
     assert result["network_attempts"] == 0
     assert result["krx_calls"] == 0
     assert db.read_bytes() == original
+
+
+def test_windows_worker_can_exit_before_snapshot_cleanup(tmp_path: Path) -> None:
+    """The isolated worker must never own the original DB or a parent cleanup handle."""
+    import subprocess
+    import sys
+
+    db = _db(tmp_path / "original.db", complete=True)
+    original = db.read_bytes()
+    # Mimics the parent: make a consistent copy, invoke the worker, then
+    # remove the parent scratch directory only *after* child process exit.
+    from tempfile import TemporaryDirectory
+
+    with TemporaryDirectory(prefix="StockScope_P0_02_OfflineScanner_") as root:
+        snap = Path(root) / "market_snapshot.sqlite3"
+        snapshot(db, snap)
+        run = subprocess.run(
+            [
+                sys.executable, str(SCRIPT), "--_snapshot-worker",
+                "--market-db", str(snap), "--operational-repo", str(tmp_path),
+                "--as-of", "2026-10-21", "--market-scope", "ALL",
+            ],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+        )
+        assert run.returncode == 0, run.stderr + "\n" + run.stdout
+        result = json.loads(run.stdout)
+        assert result["status"] == "OFFLINE_SCANNER_COMPUTATION_VERIFIED", result
+        assert result["krx_calls"] == 0
+        assert result["network_attempts"] == 0
+    assert db.read_bytes() == original
+
+
+def test_worker_rejects_non_snapshot_path_without_touching_operational_db(tmp_path: Path) -> None:
+    db = _db(tmp_path / "original.db")
+    original = db.read_bytes()
+    outcome = offline_replay(
+        db, as_of=date(2026, 10, 21),
+        operational_repo=tmp_path, _snapshot_worker=True,
+    )
+    assert outcome["status"] == "HOLD_UNSAFE_WORKER_SNAPSHOT_PATH"
+    assert db.read_bytes() == original

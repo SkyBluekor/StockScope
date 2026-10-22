@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from contextlib import closing, contextmanager
+from contextlib import closing, contextmanager, nullcontext
 from datetime import date, datetime, timedelta, timezone
 import json
 import os
@@ -163,6 +163,7 @@ def offline_replay(
     market_scope: str = "ALL",
     candidate_limit: int = 5,
     operational_repo: Path | None = None,
+    _snapshot_worker: bool = False,
 ) -> dict[str, Any]:
     if market_scope not in {"ALL", *MARKETS}:
         raise ValueError("INVALID_MARKET_SCOPE")
@@ -186,13 +187,68 @@ def offline_replay(
         "provider_publication_verified": False,
         "official_holiday_calendar_verified": False,
     }
-    with TemporaryDirectory(prefix="StockScope_P0_02_OfflineScanner_") as tmp:
+    # On Windows the production MarketStore uses SQLite connections in
+    # transaction context managers, which do NOT close sqlite3.Connection.
+    # If those handles survive until TemporaryDirectory cleanup, Windows
+    # denies deletion and hides the real Scanner result as PermissionError.
+    # The worker opens only a copied DB and exits before the parent cleans it.
+    if _snapshot_worker:
+        worker_db = Path(market_db).resolve()
+        if (
+            worker_db.name != "market_snapshot.sqlite3"
+            or not worker_db.parent.name.startswith("StockScope_P0_02_OfflineScanner_")
+        ):
+            return {**base, "status": "HOLD_UNSAFE_WORKER_SNAPSHOT_PATH"}
+        scratch_context = nullcontext(worker_db.parent)
+    else:
+        scratch_context = TemporaryDirectory(prefix="StockScope_P0_02_OfflineScanner_")
+
+    with scratch_context as tmp:
         scratch = Path(tmp)
-        snapshot = scratch / "market_snapshot.sqlite3"
-        try:
-            snapshot_sqlite_readonly(market_db, snapshot)
-        except (OSError, sqlite3.DatabaseError) as exc:
-            return {**base, "status": "HOLD_SOURCE_SNAPSHOT_FAILED", "error_class": type(exc).__name__}
+        snapshot = Path(market_db) if _snapshot_worker else scratch / "market_snapshot.sqlite3"
+        if not _snapshot_worker:
+            try:
+                snapshot_sqlite_readonly(market_db, snapshot)
+            except (OSError, sqlite3.DatabaseError) as exc:
+                return {**base, "status": "HOLD_SOURCE_SNAPSHOT_FAILED", "error_class": type(exc).__name__}
+
+        if os.name == "nt" and not _snapshot_worker:
+            # Important: never pass the ORIGINAL DB path to the child. Exit
+            # closes the worker's SQLite file handles before parent cleanup.
+            cmd = [
+                sys.executable, str(Path(__file__).resolve()),
+                "--_snapshot-worker",
+                "--market-db", str(snapshot),
+                "--as-of", as_of.isoformat(),
+                "--market-scope", market_scope,
+                "--candidate-limit", str(candidate_limit),
+            ]
+            if operational_repo is not None:
+                cmd.extend(["--operational-repo", str(operational_repo)])
+            try:
+                worker_env = dict(os.environ)
+                worker_env["PYTHONIOENCODING"] = "utf-8"
+                worker = subprocess.run(
+                    cmd, capture_output=True, text=True, encoding="utf-8",
+                    errors="replace", timeout=600, env=worker_env,
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                return {**base, "status": "HOLD_WORKER_START_OR_TIMEOUT", "error_class": type(exc).__name__}
+            try:
+                payload = json.loads(worker.stdout)
+            except (TypeError, json.JSONDecodeError):
+                return {
+                    **base, "status": "HOLD_WORKER_INVALID_OUTPUT",
+                    "worker_returncode": worker.returncode,
+                }
+            if not isinstance(payload, dict) or payload.get("version") != VERSION:
+                return {**base, "status": "HOLD_WORKER_INVALID_REPORT"}
+            if worker.returncode not in (0, 2):
+                return {
+                    **base, "status": "HOLD_WORKER_ABNORMAL_EXIT",
+                    "worker_returncode": worker.returncode,
+                }
+            return payload
 
         audit = inspect_operational_store(
             snapshot, as_of=as_of, market_scope=market_scope, lookback_calendar_days=220,
@@ -342,6 +398,7 @@ def main() -> int:
     parser.add_argument("--market-scope", default="ALL", choices=("ALL", *MARKETS))
     parser.add_argument("--candidate-limit", default=5, type=int)
     parser.add_argument("--operational-repo", type=Path, default=None)
+    parser.add_argument("--_snapshot-worker", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
     try:
         result = offline_replay(
@@ -350,6 +407,7 @@ def main() -> int:
             market_scope=args.market_scope,
             candidate_limit=args.candidate_limit,
             operational_repo=args.operational_repo,
+            _snapshot_worker=args._snapshot_worker,
         )
     except (ValueError, OSError) as exc:
         result = {"version": VERSION, "status": "HOLD_INVALID_REPLAY_INPUT", "error_class": type(exc).__name__}

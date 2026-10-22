@@ -16,7 +16,10 @@ KOSPI 940종목/KOSDAQ 1822종목, 양 시장 지수 1행, 148개 같은 날짜�
 
 이전 임시 worktree `$work` 변수를 그대로 재사용한다.
 코드는 원본 프로젝트 `$repo`가 아닌 검증용 worktree의 최신 SHA에서 실행한다.
-원본 Market Store는 연결하지 않고 SQLite 원본을 read-only로 백업하여
+원본 Market Store는 SQLite 읽기 전용 연결로만 접근하고, SQLite 온라인 백업본을 만든 뒤
+Windows에서는 별도 Python 작업 프로세스를 실행해 열린 DB 핸들을 프로세스 종료로 닫는다.
+그 다음 부모 프로세스가 임시 폴더를 정리한다. 원본 파일에 데이터를 기록하지 않는다.
+원본 Market Store를 read-only로 백업하여
 시스템 TEMP 아래의 임시 파일만 Scanner에 공급한다.
 
 ```powershell
@@ -61,3 +64,11 @@ Python의 실제 Scanner 코어만 계산한다. 전체 220일 범위에 누락 
 정책 버전과 source snapshot, KRX 실공표와 휴장 검증, 실제 UI/DB 동등성은
 별도의 유효한 제품 실행에서 확인해야 한다. 이 오프라인 재생을 P0-02
 전체 완료나 실시간 매매 승인으로 승격하지 않는다.
+
+
+## Windows PermissionError 수정
+- `HOLD_INVALID_REPLAY_INPUT / PermissionError`가 사용자 PC에서 관측됐다. SQLite `with conn:`이 연결을 닫지 않아 임시 폴더 삭제 단계에서 Windows 파일 잠금으로 실패했을 가능성이 있다.
+- 코어 실행을 자식 Python 프로세스로 옮기고, 자식 종료 후 부모가 SQLite 복제본을 지운다.
+- 부모는 원본 운영 DB를 읽기 전용으로 백업할 뿐이며, 자식에게는 **복제본 경로만** 전달한다.
+- `--_snapshot-worker`는 내부 플래그이고, 지정된 격리 스냅샷 경로만 허용한다.
+- 오류 원인은 실환경의 traceback만으로 확정되지 않았으므로, 동일 경로 재실행으로 확인한다.
