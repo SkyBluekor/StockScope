@@ -184,6 +184,20 @@ def plan_scanner_data(
         "store_slots_missing": missing,
         "data_markers_missing_rows": {market: len(incomplete_data_markers[market]) for market in markets},
         "unverified_empty_slots": {market: len(unverified_empty_markers[market]) for market in markets},
+        "unverified_status_samples": [
+            {
+                "market": market,
+                "date": f"{dd[:4]}-{dd[4:6]}-{dd[6:]}",
+                "kind": kind,
+                "reason": reason,
+            }
+            for market in markets
+            for reason, slots in (
+                ("DATA_MARKER_WITHOUT_ROWS", incomplete_data_markers[market]),
+                ("EMPTY_NOT_PROVEN_HOLIDAY", unverified_empty_markers[market]),
+            )
+            for dd, kind in sorted(slots, reverse=True)
+        ][:12],
         "raw_cache_slots_reusable": raw_hits,
         "estimated_missing_krx_slots": requested,
         "fast_request_limit": fast_limit,

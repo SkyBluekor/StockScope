@@ -1653,6 +1653,17 @@ export default function ScannerPanel({
             <span>처음 필요한 시장 데이터 준비</span>
             <strong>종목을 찾기 전에 시장 데이터를 준비해야 해요.</strong>
             <p>현재 컴퓨터에 없는 자료를 준비할게요. 예상 기본 요청은 약 {formatNumber(pendingDataPlan.plan.estimated_missing_krx_slots ?? 0)}회예요. 거래일 확인이나 오류 재시도로 요청이 더 발생할 수 있어요.</p>
+            {(Object.values(pendingDataPlan.plan.data_markers_missing_rows ?? {}).some((count) => count > 0)) && (
+              <p>저장된 '데이터 있음' 표시와 실제 종목·지수 기록이 일치하지 않는 항목이 있어 다시 확인이 필요해요.</p>
+            )}
+            {(Object.values(pendingDataPlan.plan.unverified_empty_slots ?? {}).some((count) => count > 0)) && (
+              <p>빈 응답만 남은 날짜는 실제 휴장으로 증명된 것이 아니어서, 준비 요청 추정에 포함했어요.</p>
+            )}
+            {(pendingDataPlan.plan.unverified_status_samples?.length ?? 0) > 0 && (
+              <p>확인할 날짜·자료(최대 12건): {(pendingDataPlan.plan.unverified_status_samples ?? []).map((item) =>
+                `${item.market} ${formatDate(item.date)} ${item.kind === "stock" ? "종목" : "지수"}`
+              ).join(" · ")}</p>
+            )}
             <p>준비한 자료는 이 컴퓨터에 저장돼 다음 분석부터 재사용하고, 완료되면 종목 찾기를 자동으로 이어갈게요.</p>
           </div>
           <button type="button" disabled={busy} onClick={() => void runScanner(false, true, pendingDataPlan.pinnedAsOfDate)}>

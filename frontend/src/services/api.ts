@@ -3130,6 +3130,15 @@ export type ScannerDataPlan = {
   date_is_confirmed?: boolean;
   estimated_missing_krx_slots?: number;
   raw_cache_slots_reusable?: number;
+  store_slots_missing?: Record<string, number>;
+  data_markers_missing_rows?: Record<string, number>;
+  unverified_empty_slots?: Record<string, number>;
+  unverified_status_samples?: Array<{
+    market: "KOSPI" | "KOSDAQ";
+    date: string;
+    kind: "stock" | "index";
+    reason: "DATA_MARKER_WITHOUT_ROWS" | "EMPTY_NOT_PROVEN_HOLIDAY";
+  }>;
   fast_request_limit?: number;
   daily_budget_remaining?: number | null;
   warnings?: string[];

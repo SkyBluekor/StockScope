@@ -156,6 +156,7 @@ def test_data_marker_without_stock_rows_is_not_reused(tmp_path):
     assert result["data_markers_missing_rows"]["KOSPI"] == 1
     assert result["store_slots_missing"]["KOSPI"] == 3
     assert "MARKET_DATA_MARKER_WITHOUT_PERSISTED_ROWS" in result["warnings"]
+    assert {"market": "KOSPI", "date": "2026-10-08", "kind": "stock", "reason": "DATA_MARKER_WITHOUT_ROWS"} in result["unverified_status_samples"]
     assert result["estimated_missing_krx_slots"] == 5
     assert result["provider_calls"] == result["db_writes"] == 0
 
@@ -176,6 +177,7 @@ def test_empty_marker_never_proves_holiday_or_cached_market_rows(tmp_path):
     result = _plan(tmp_path, db)
     assert result["unverified_empty_slots"]["KOSPI"] == 1
     assert "MARKET_EMPTY_RESPONSE_NOT_PROVEN_HOLIDAY" in result["warnings"]
+    assert {"market": "KOSPI", "date": "2026-10-08", "kind": "index", "reason": "EMPTY_NOT_PROVEN_HOLIDAY"} in result["unverified_status_samples"]
     assert result["store_slots_missing"]["KOSPI"] == 3
     assert result["estimated_missing_krx_slots"] == 5
     assert result["raw_cache_slots_reusable"] == 0
