@@ -158,6 +158,10 @@ jobs:
         shell: powershell
         run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_health.py
 
+      - name: Verify P0-02 offline Scanner replay on Windows (no KRX network)
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_02_offline_scanner_replay.py
+
       - name: Verify fresh runtime and no Drive dependency
         shell: powershell
         run: |
