@@ -83,6 +83,30 @@ jobs:
         working-directory: frontend
         run: npm run test:sc-ux-motion
 
+      - name: Test S29 rank/evidence
+        working-directory: frontend
+        run: npm run test:sc-s29
+
+      - name: Test S30 tie groups
+        working-directory: frontend
+        run: npm run test:sc-s30
+
+      - name: Test S31-K Risk reference and quote provenance
+        working-directory: frontend
+        run: npm run test:sc-s31k
+
+      - name: Test S31-M Scanner/Holdings boundary
+        working-directory: frontend
+        run: npm run test:sc-s31m
+
+      - name: Test S31-N Holdings protection summary
+        working-directory: frontend
+        run: npm run test:hold-s31n
+
+      - name: Test S31-O Watch policy explanation
+        working-directory: frontend
+        run: npm run test:hold-s31o
+
       - name: Build frontend
         working-directory: frontend
         run: npm run build

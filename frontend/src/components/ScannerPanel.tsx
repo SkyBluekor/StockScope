@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   clearScannerSession,
   latestScannerDataDate,
@@ -39,10 +39,13 @@ import {
 } from "../services/dataTask";
 import StockNewsPanel from "./StockNewsPanel";
 import ScannerDecisionSummary from "./ScannerDecisionSummary";
+import ScannerPositionBoundaryCard from "./ScannerPositionBoundaryCard";
 import ScannerPriceStatus from "./ScannerPriceStatus";
 import useScannerQuote from "./useScannerQuote";
 import { asOfPriorityLabel } from "./scannerQuoteTruth";
 import { beginnerCandidatePresentation, simpleConditionStatus } from "./scannerDecisionPresentation";
+import { scannerCandidateEvidence, scannerTieSummary } from "./scannerCandidateEvidence";
+import { buildScannerDisplayLayout } from "./scannerDisplayGroups";
 import ScannerRankComparison from "./ScannerRankComparison";
 import ScannerMotionProgress from "./ScannerMotionProgress";
 import AiReviewProgress from "./AiReviewProgress";
@@ -310,6 +313,7 @@ function CandidateCompareRow({
   const tone = candidateTone(candidate);
   const key = candidateKey(candidate);
   const view = beginnerCandidatePresentation(candidate);
+  const evidenceView = scannerCandidateEvidence(candidate, rank - 1);
   const watchBusy = actionBusyKey === "watch:" + key;
   const heldBusy = actionBusyKey === "held:" + key;
   const isWatched = managedStock?.watch_enabled === true;
@@ -320,15 +324,19 @@ function CandidateCompareRow({
       <button
         type="button" className="scanner-ux-row-select" onClick={onSelect}
         aria-pressed={selected}
-        aria-label={candidate.name + " 선택, 먼저 살펴볼 순서 " + rank}
+        aria-label={candidate.name + " 선택. " + evidenceView.orderLabel}
       >
-        <span className="scanner-compare-rank">{rank}</span>
+        <span className="scanner-compare-rank scanner-s30-order" title={evidenceView.orderLabel}>{candidate.priority?.strict_rank === false && (candidate.priority.tie_size ?? 0) > 1 ? "·" : rank}</span>
         <span className="scanner-compare-stock">
           <strong>{candidate.name}</strong>
           <small>{candidate.market}</small>
+          {candidate.priority?.tie_size && candidate.priority.tie_size > 1 && candidate.priority.strict_rank === false
+            && <small className="scanner-s29-tie-label">표시 {rank}번 · 동률</small>}
         </span>
         <span className="scanner-compare-judgement">
           <strong>{candidate.conditions.passed}/{candidate.conditions.total} 충족</strong>
+          <small className="scanner-s29-metric">{evidenceView.riskLabel}</small>
+          <small className="scanner-s29-history">{evidenceView.historicalLabel}</small>
           <span className="scanner-ux2-row-next">
             <span>{view.nextActionLabel}</span>
           </span>
@@ -414,6 +422,7 @@ function CandidateDetail({
   const evidenceSummary = evidenceSummaryText(candidate);
   const canPrepareEvidence = evidencePreparationAvailable(candidate);
   const targetCap = targetCapExplanation(candidate);
+  const s29 = scannerCandidateEvidence(candidate, rank - 1);
   const [activeTab, setActiveTab] = useState<"summary" | "strategy" | "ai" | "history" | "news">("summary");
   // Lives above tab panels so a manual quote survives tab switches, never stock switches.
   const { snapshot: quoteSnapshot, checkPrice } = useScannerQuote(candidate);
@@ -435,13 +444,14 @@ function CandidateDetail({
     <article className={`scanner-selected-detail tone-${tone}`}>
       <header className="scanner-selected-head">
         <div>
-          <span className="scanner-selected-kicker">선택한 후보 · 살펴볼 순서 {rank}</span>
+          <span className="scanner-selected-kicker">선택한 후보 · {s29.orderLabel}</span>
           <div className="scanner-stock-line">
             <h3>{candidate.name}</h3>
             <span>{candidate.market} · {candidate.code}</span>
           </div>
           <div className="scanner-selected-tags">
             <span className={`scanner-state-badge ${tone}`}>분석일 · {simpleConditionStatus(candidate)}</span>
+            <span className="scanner-s30-current-unchecked">현재 진입 판단 별도 · 새 시세·전략 재검증 필요</span>
             <span>{candidate.strategy_easy_name}</span>
 
           </div>
@@ -476,6 +486,14 @@ function CandidateDetail({
         aria-labelledby={"scanner-tab-" + activeTab} tabIndex={0}>
         {activeTab === "summary" && (
           <div className="scanner-ux3-summary">
+            <ScannerPositionBoundaryCard
+              candidate={candidate}
+              result={result}
+              managedStock={managedStock}
+              holdingsLoading={holdingsLoading}
+              holdingsReady={holdingsReady}
+              onOpenHoldings={onOpenHoldings}
+            />
             <ScannerDecisionSummary
               candidate={candidate}
               quoteSnapshot={quoteSnapshot}
@@ -552,10 +570,19 @@ function CandidateDetail({
         <section className={`scanner-priority-card priority-${candidate.priority.tier.toLowerCase()}`}>
           <div className="scanner-priority-head">
             <div>
-              <small>분석일 기준 후보 순위 · {rank}순위</small>
+              <small>분석일 기준 후보 순위는 표시용 · {s29.orderLabel}</small>
               <strong>{asOfPriorityLabel(candidate)}</strong>
               <p>{candidate.priority.reason}</p>
+              {s29.tieExplanation && <p className="scanner-s29-caution">{s29.tieExplanation}</p>}
             </div>
+          </div>
+          <div className="scanner-s29-evidence" aria-label="동률 및 위험·검증 근거">
+            <strong>분석일 기준 근거 · 실제 주문 기준 아님</strong>
+            <span>{s29.riskLabel} · {s29.structuralLabel}</span>
+            <span>{s29.historicalLabel}</span>
+            {s29.riskStatus !== "CHECKED" && <span className="scanner-s29-caution">가격·위험 근거를 확인하기 전에는 손익비를 믿고 판단하지 마세요.</span>}
+            {s29.sameRunRankChangeLabel && <small>{s29.sameRunRankChangeLabel}</small>}
+            <small>5·10·20거래일 성과는 별도 사전 기록이 확인된 후보만 평가합니다. 현재 표시 순서가 수익을 예측하지는 않아요.</small>
           </div>
           <div className="scanner-priority-factors">
             {candidate.priority.strengths.map((item) => <span className="positive" key={`strength-${item}`}>✓ {item}</span>)}
@@ -1560,11 +1587,13 @@ export default function ScannerPanel({
   const selectedSampleIndex = selectedCandidate
     ? allCandidates.findIndex((candidate) => candidateKey(candidate) === candidateKey(selectedCandidate))
     : -1;
-  const selectedIsExtra = Boolean(
-    selectedCandidate && result?.more_candidates.some(
-      candidate => candidateKey(candidate) === candidateKey(selectedCandidate),
-    ),
+  const displayLayout = useMemo(
+    () => buildScannerDisplayLayout(allCandidates, result?.candidates.length ?? 0),
+    [allCandidates, result],
   );
+  // The original backend candidate_limit is never changed. A visual extension
+  // of the first tied group is NOT a hidden extra and must not be duplicated.
+  const selectedIsExtra = selectedSampleIndex >= displayLayout.visibleFeaturedCount;
   const selectedRank = selectedSampleIndex >= 0 ? selectedSampleIndex + 1 : 0;
   const [showAuxProgress, setShowAuxProgress] = useState(false);
 
@@ -1944,101 +1973,135 @@ export default function ScannerPanel({
                 <header className="scanner-compare-head">
                   <div>
                     <span>후보 목록</span>
-                    <strong>우선 후보 {result.candidates.length}개</strong>
-                    <small className="scanner-ux5-count">전체 {result.candidates.length + result.more_candidates.length}개 후보</small>
+                    <strong>분석일 기준 후보 {result.candidates.length}개</strong>
+                    <small className="scanner-ux5-count">
+                      전체 {result.candidates.length + result.more_candidates.length}개 후보 · 동률 포함 첫 화면 {displayLayout.visibleFeaturedCount}개
+                    </small>
                   </div>
-                  <small>분석일 기준 검토 순서</small>
+                  <small>분석일 기준 검토 순서 · 예상 수익률 순위 아님</small>
                 </header>
-
+                <p className="scanner-s29-list-note" role="status">{scannerTieSummary(allCandidates)}</p>
+                {displayLayout.expandedToKeepTieTogether && (
+                  <p className="scanner-s30-extension-note">
+                    원래 우선 후보 {displayLayout.originalFeaturedCount}개에 속한 동률 후보를 함께 보여줘요.
+                    다른 후보에서 가져온 종목도 원래 분류는 그대로 유지됩니다.
+                  </p>
+                )}
                 <div className="scanner-compare-labels" aria-hidden="true">
-                  <span>순서</span><span>종목</span><span>조건 충족 · 핵심 확인</span><span>내 종목</span>
+                  <span>순서</span><span>종목</span><span>분석 당시 조건 · 참고 손익비</span><span>내 종목</span>
                 </div>
                 <div className={"scanner-compare-list" + (revealJobId && job?.job_id === revealJobId ? " scanner-motion-reveal" : "")}>
-                  {result.candidates.map((candidate, index) => (
-                    <CandidateCompareRow
-                      key={candidateKey(candidate)}
-                      candidate={candidate}
-                      rank={index + 1}
-                      selected={selectedCandidate ? candidateKey(selectedCandidate) === candidateKey(candidate) : false}
-                      aiReviewEnabled={aiReviewEnabled}
-                      aiReviewAvailable={aiReviewAvailable}
-                      managedStock={managedStockMap.get(candidateKey(candidate)) ?? null}
-                      holdingsLoading={holdingsLoading}
-                      holdingsReady={holdingsReady}
-                      actionBusyKey={holdingActionBusyKey}
-                      aiStatusLabel={storedReviewLoading ? "AI 기록 확인 중" : storedReviewError ? "AI 기록 확인 실패" : scannerAiReviewStatus({
-                        candidate, result, enabled: aiReviewEnabled,
-                        available: aiReviewAvailable, featureStatus: aiReviewFeatureStatus,
-                        review: reviewFor(candidate, index),
-                      }).label}
-                      onSelect={() => selectCandidateForReview(candidate)}
-                      onAddWatch={() => void addCandidateToWatch(candidate)}
-                      onRegisterHeld={() => openHoldingRegistration(candidate)}
-                    />
+                  {displayLayout.featured.map((group) => (
+                    <Fragment key={group.key}>
+                      {group.tie && (
+                        <div className="scanner-s30-group-heading">
+                          <strong>{group.title}</strong>
+                          <span>{group.explanation}</span>
+                        </div>
+                      )}
+                      {group.members.map((member) => {
+                        const candidate = member.candidate;
+                        return (
+                          <Fragment key={candidateKey(candidate)}>
+                            {member.fromOriginalMore && <span className="scanner-s30-included-from-extra">기본 우선 후보 밖의 동률 종목도 함께 표시</span>}
+                            <CandidateCompareRow
+                        
+                        candidate={candidate}
+                        rank={member.originalIndex + 1}
+                        selected={selectedCandidate ? candidateKey(selectedCandidate) === candidateKey(candidate) : false}
+                        aiReviewEnabled={aiReviewEnabled}
+                        aiReviewAvailable={aiReviewAvailable}
+                        managedStock={managedStockMap.get(candidateKey(candidate)) ?? null}
+                        holdingsLoading={holdingsLoading}
+                        holdingsReady={holdingsReady}
+                        actionBusyKey={holdingActionBusyKey}
+                        aiStatusLabel={storedReviewLoading ? "AI 기록 확인 중" : storedReviewError ? "AI 기록 확인 실패" : scannerAiReviewStatus({
+                          candidate: candidate, result, enabled: aiReviewEnabled,
+                          available: aiReviewAvailable, featureStatus: aiReviewFeatureStatus,
+                          review: reviewFor(candidate, member.originalIndex),
+                        }).label}
+                        onSelect={() => selectCandidateForReview(candidate)}
+                        onAddWatch={() => void addCandidateToWatch(candidate)}
+                        onRegisterHeld={() => openHoldingRegistration(candidate)}
+                      />
+                          </Fragment>
+                        );
+                      })}
+                    </Fragment>
                   ))}
                 </div>
 
                 <ScannerRankComparison result={result} />
 
-                {result.more_candidates.length > 0 && (
+                {displayLayout.other.length > 0 && (
                   <div className="scanner-compare-more">
                     <button type="button" onClick={toggleMoreCandidates}>
-                      {showMore ? "다른 후보 숨기기 ▲" : `다른 후보 ${result.more_candidates.length}개 보기 ▼`}
+                      {showMore ? "다른 후보 숨기기 ▲" : `그 외 후보 ${displayLayout.visibleOtherCount}개 보기 ▼`}
                     </button>
                     {!showMore && selectedIsExtra && selectedCandidate && (
                       <div className="scanner-ux5-pinned-extra">
                         <small>선택 중인 추가 후보 · 목록을 접어도 유지돼요</small>
                         <CandidateCompareRow
-                          key={"pinned-" + candidateKey(selectedCandidate)}
-                          candidate={selectedCandidate}
-                          rank={selectedRank}
-                          selected
-                          aiReviewEnabled={aiReviewEnabled}
-                          aiReviewAvailable={aiReviewAvailable}
-                          managedStock={managedStockMap.get(candidateKey(selectedCandidate)) ?? null}
-                          holdingsLoading={holdingsLoading}
-                          holdingsReady={holdingsReady}
-                          actionBusyKey={holdingActionBusyKey}
-                          aiStatusLabel={storedReviewLoading ? "AI 기록 확인 중" : storedReviewError ? "AI 기록 확인 실패" : scannerAiReviewStatus({
-                            candidate: selectedCandidate, result, enabled: aiReviewEnabled,
-                            available: aiReviewAvailable, featureStatus: aiReviewFeatureStatus,
-                            review: reviewFor(selectedCandidate, selectedSampleIndex),
-                          }).label}
-                          onSelect={() => selectCandidateForReview(selectedCandidate)}
-                          onAddWatch={() => void addCandidateToWatch(selectedCandidate)}
-                          onRegisterHeld={() => openHoldingRegistration(selectedCandidate)}
-                        />
+                        key={"pinned-" + candidateKey(selectedCandidate)}
+                        candidate={selectedCandidate}
+                        rank={selectedRank}
+                        selected={true}
+                        aiReviewEnabled={aiReviewEnabled}
+                        aiReviewAvailable={aiReviewAvailable}
+                        managedStock={managedStockMap.get(candidateKey(selectedCandidate)) ?? null}
+                        holdingsLoading={holdingsLoading}
+                        holdingsReady={holdingsReady}
+                        actionBusyKey={holdingActionBusyKey}
+                        aiStatusLabel={storedReviewLoading ? "AI 기록 확인 중" : storedReviewError ? "AI 기록 확인 실패" : scannerAiReviewStatus({
+                          candidate: selectedCandidate, result, enabled: aiReviewEnabled,
+                          available: aiReviewAvailable, featureStatus: aiReviewFeatureStatus,
+                          review: reviewFor(selectedCandidate, selectedSampleIndex),
+                        }).label}
+                        onSelect={() => selectCandidateForReview(selectedCandidate)}
+                        onAddWatch={() => void addCandidateToWatch(selectedCandidate)}
+                        onRegisterHeld={() => openHoldingRegistration(selectedCandidate)}
+                      />
                       </div>
                     )}
                     {showMore && (
                       <div className="scanner-compare-list more">
-                        {result.more_candidates.map((candidate, index) => (
-                          <CandidateCompareRow
-                            key={`more-${candidateKey(candidate)}`}
-                            candidate={candidate}
-                            rank={result.candidates.length + index + 1}
-                            selected={selectedCandidate ? candidateKey(selectedCandidate) === candidateKey(candidate) : false}
-                            aiReviewEnabled={aiReviewEnabled}
-                            aiReviewAvailable={aiReviewAvailable}
-                            managedStock={managedStockMap.get(candidateKey(candidate)) ?? null}
-                            holdingsLoading={holdingsLoading}
-                            holdingsReady={holdingsReady}
-                            actionBusyKey={holdingActionBusyKey}
-                      aiStatusLabel={storedReviewLoading ? "AI 기록 확인 중" : storedReviewError ? "AI 기록 확인 실패" : scannerAiReviewStatus({
-                        candidate, result, enabled: aiReviewEnabled,
-                        available: aiReviewAvailable, featureStatus: aiReviewFeatureStatus,
-                        review: reviewFor(candidate, result.candidates.length + index),
-                      }).label}
-                            onSelect={() => selectCandidateForReview(candidate)}
-                            onAddWatch={() => void addCandidateToWatch(candidate)}
-                            onRegisterHeld={() => openHoldingRegistration(candidate)}
-                          />
+                        {displayLayout.other.map((group) => (
+                          <Fragment key={group.key}>
+                            {group.tie && (
+                              <div className="scanner-s30-group-heading">
+                                <strong>{group.title}</strong>
+                                <span>{group.explanation}</span>
+                              </div>
+                            )}
+                            {group.members.map((member) => {
+                              const candidate = member.candidate;
+                              return (<CandidateCompareRow
+                        
+                        candidate={candidate}
+                        rank={member.originalIndex + 1}
+                        selected={selectedCandidate ? candidateKey(selectedCandidate) === candidateKey(candidate) : false}
+                        aiReviewEnabled={aiReviewEnabled}
+                        aiReviewAvailable={aiReviewAvailable}
+                        managedStock={managedStockMap.get(candidateKey(candidate)) ?? null}
+                        holdingsLoading={holdingsLoading}
+                        holdingsReady={holdingsReady}
+                        actionBusyKey={holdingActionBusyKey}
+                        aiStatusLabel={storedReviewLoading ? "AI 기록 확인 중" : storedReviewError ? "AI 기록 확인 실패" : scannerAiReviewStatus({
+                          candidate: candidate, result, enabled: aiReviewEnabled,
+                          available: aiReviewAvailable, featureStatus: aiReviewFeatureStatus,
+                          review: reviewFor(candidate, member.originalIndex),
+                        }).label}
+                        onSelect={() => selectCandidateForReview(candidate)}
+                        onAddWatch={() => void addCandidateToWatch(candidate)}
+                        onRegisterHeld={() => openHoldingRegistration(candidate)}
+                      />);
+                            })}
+                          </Fragment>
                         ))}
                       </div>
                     )}
                   </div>
                 )}
-
               </section>
 
               {selectedCandidate && (
