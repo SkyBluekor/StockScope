@@ -7,6 +7,7 @@ import { quoteReceivedTime } from "../services/quote";
 import { marketSessionIsPaused } from "../services/marketSession";
 import HoldingsPriceChart from "./HoldingsPriceChart";
 import HoldingDecisionPanel from "./HoldingDecisionPanel";
+import HoldingProtectionOverview from "./HoldingProtectionOverview";
 import HoldingRecoveryPanel from "./HoldingRecoveryPanel";
 import HoldingWatchStatus from "./HoldingWatchStatus";
 import StockNewsPanel from "./StockNewsPanel";
@@ -1958,6 +1959,14 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                 onRefresh={refreshSelectedQuote}
               />
 
+              {detail.is_held && (
+                <HoldingProtectionOverview
+                  stock={detail}
+                  context={workspaceContext}
+                  loading={loadingDetail}
+                />
+              )}
+
               <div className="holdings-data-state" aria-live="polite">
                 <div className="holdings-analysis-state">
                   <span>저장된 분석</span>
@@ -2244,7 +2253,15 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
 
 
                 {workspaceContext && (
-                  <section className="holdings-context-overview" aria-label="현재 보유 상태">
+                  <details
+                    key={detail.stock_id + "-context"}
+                    className="holdings-secondary-details"
+                    open={!detail.is_held || workspaceContext.current_state.review_conditions.some(
+                      code => code === "ACTIVE_PLAN_STOP_BREACHED" || code === "WATCH_GAP_PRESENT"
+                    )}
+                  >
+                    <summary>분석·원장 근거와 추가 확인 항목 보기</summary>
+                    <section className="holdings-context-overview" aria-label="현재 보유 상태">
                     <div>
                       <span>현재 상태</span>
                       <strong>{workspaceContext.current_state.held ? "보유 중" : "관심 종목"}</strong>
@@ -2277,7 +2294,8 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                           : "즉시 확인할 조건 없음"}
                       </strong>
                     </div>
-                  </section>
+                    </section>
+                  </details>
                 )}
 
                 <HoldingDecisionPanel
@@ -2290,15 +2308,26 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                   }}
                 />
 
-                <HoldingRecoveryPanel
-                  positions={detail.positions}
+                <details
+                  key={detail.stock_id + "-recovery"}
+                  className="holdings-secondary-details"
+                  open={Boolean(
+                    workspaceContext?.positions.some(row => row.recovery?.open_review != null)
+                    || (workspaceContext?.source_status.recovery?.status != null
+                      && workspaceContext.source_status.recovery.status !== "AVAILABLE")
+                  )}
+                >
+                  <summary>손실·투자 이유 재검토 (필요하면 펼쳐보기)</summary>
+                  <HoldingRecoveryPanel
+                    positions={detail.positions}
                   contexts={workspaceRecoveryContexts}
                   status={workspaceContext?.source_status.recovery}
                   loading={loadingDetail}
-                  onContextChanged={async () => {
-                    await loadSelected(detail.stock_id);
-                  }}
-                />
+                    onContextChanged={async () => {
+                      await loadSelected(detail.stock_id);
+                    }}
+                  />
+                </details>
 
                 <HoldingWatchStatus
                   positions={detail.positions}
@@ -2308,7 +2337,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                 />
 
                 {management && management.positions.length > 0 && (
-                  <div className="holdings-management-block" aria-label="보유분 관리 기준">
+                  <div id="holdings-management-block" className="holdings-management-block" aria-label="보유분 관리 기준">
                     <div className="holdings-management-head">
                       <div>
                         <strong>보유분 관리 기준</strong>

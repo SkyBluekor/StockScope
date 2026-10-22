@@ -83,6 +83,30 @@ jobs:
         working-directory: frontend
         run: npm run test:sc-ux-motion
 
+      - name: Test S29 rank/evidence
+        working-directory: frontend
+        run: npm run test:sc-s29
+
+      - name: Test S30 tie groups
+        working-directory: frontend
+        run: npm run test:sc-s30
+
+      - name: Test S31-K Risk reference and quote provenance
+        working-directory: frontend
+        run: npm run test:sc-s31k
+
+      - name: Test S31-M Scanner/Holdings boundary
+        working-directory: frontend
+        run: npm run test:sc-s31m
+
+      - name: Test S31-N Holdings protection summary
+        working-directory: frontend
+        run: npm run test:hold-s31n
+
+      - name: Test S31-O Watch policy explanation
+        working-directory: frontend
+        run: npm run test:hold-s31o
+
       - name: Build frontend
         working-directory: frontend
         run: npm run build
@@ -133,6 +157,10 @@ jobs:
       - name: Verify local startup contract without provider credentials
         shell: powershell
         run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_health.py
+
+      - name: Verify P0-02 offline Scanner replay on Windows (no KRX network)
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_02_offline_scanner_replay.py
 
       - name: Verify fresh runtime and no Drive dependency
         shell: powershell

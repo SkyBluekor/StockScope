@@ -2883,6 +2883,14 @@ export type ScannerCandidatePriority = {
   rank: number;
   previous_rank: number;
   rank_change: number;
+  tie_group?: number;
+  tie_size?: number;
+  tie_focus?: boolean;
+  tie_focus_order?: number;
+  tie_breaker?: string;
+  strict_rank?: boolean;
+  structural_target_distance_pct?: number | null;
+  structural_target_basis?: string | null;
 };
 
 export type ScannerAiReviewPresentation = {
@@ -3122,6 +3130,34 @@ export type ScannerDataPlan = {
   date_is_confirmed?: boolean;
   estimated_missing_krx_slots?: number;
   raw_cache_slots_reusable?: number;
+  store_slots_missing?: Record<string, number>;
+  operational_eod?: {
+    source: "OPERATIONAL_MARKET_STORE_READONLY";
+    market_scope: "ALL" | "KOSPI" | "KOSDAQ";
+    inspection_end: string;
+    lookback_start: string;
+    stored_same_day_stock_index_date: string | null;
+    days_behind_inspection_end: number | null;
+    markets: Record<string, {
+      last_stock_rows_date: string | null;
+      last_index_row_date: string | null;
+      last_same_day_rows_date: string | null;
+      same_day_rows_in_lookback: number;
+    }>;
+    verification: string;
+    provider_publication_time_verified: false;
+    official_holiday_calendar_verified: false;
+    full_lookback_ready: false;
+    reason: string;
+  };
+  data_markers_missing_rows?: Record<string, number>;
+  unverified_empty_slots?: Record<string, number>;
+  unverified_status_samples?: Array<{
+    market: "KOSPI" | "KOSDAQ";
+    date: string;
+    kind: "stock" | "index";
+    reason: "DATA_MARKER_WITHOUT_ROWS" | "EMPTY_NOT_PROVEN_HOLIDAY";
+  }>;
   fast_request_limit?: number;
   daily_budget_remaining?: number | null;
   warnings?: string[];

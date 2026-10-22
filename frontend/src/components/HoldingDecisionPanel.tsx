@@ -218,7 +218,7 @@ export default function HoldingDecisionPanel({
 
   if (migrationRequired) {
     return (
-      <section className="holding-decision-panel migration-required" aria-label="보유 판단">
+      <section id="holdings-decision-panel" className="holding-decision-panel migration-required" aria-label="보유 판단">
         <div className="holding-decision-heading">
           <div>
             <span>보유 판단</span>
@@ -235,7 +235,7 @@ export default function HoldingDecisionPanel({
   }
 
   return (
-    <section className="holding-decision-panel" aria-label="보유 판단">
+    <section id="holdings-decision-panel" className="holding-decision-panel" aria-label="보유 판단">
       <div className="holding-decision-heading">
         <div>
           <span>보유 판단</span>

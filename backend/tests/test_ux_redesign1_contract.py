@@ -1649,7 +1649,13 @@ def test_vnp4s1_watch_status_is_observational_and_adds_no_primary_action_buttons
     assert '"정책 검증 중"' in panel
     assert '"감시 공백"' in panel
     assert '"기준 확인됨"' in panel
-    assert '"감시 중"' in panel
+    # S31-O: stored settings must not be presented as live Watch operation.
+    assert '"감시 설정 기록 있음 · 가동 미확인"' in panel
+    assert '"감시 중"' not in panel
+    assert "holdingsWatchPolicyText(systemStatus)" in panel
+    policy_text = Path("frontend/src/components/holdingsWatchPolicyText.ts").read_text(encoding="utf-8")
+    assert '"OPERATING_THRESHOLDS_UNAPPROVED"' in policy_text
+    assert "runtimeConfirmed: false" in policy_text
     assert "알림 보기" in panel
     assert "markWatchNotificationRead" in panel
     assert "감시 시작" not in panel
