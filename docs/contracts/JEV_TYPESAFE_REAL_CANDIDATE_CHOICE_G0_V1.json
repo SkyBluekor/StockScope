@@ -1,0 +1,363 @@
+{
+  "artifact_version": "JEV_TYPESAFE_REAL_CANDIDATE_CHOICE_G0_V1",
+  "audit_date_kst": "2026-10-22",
+  "status": "HOLD_UNAUTHORIZED",
+  "execution_enabled": false,
+  "purpose": "P0-07 G0: freeze the independent candidate Decision Reviewer question and enumerate all unresolved G1 permits; this artifact is NOT a provider request, source rights grant, production activation, or success certificate.",
+  "repo": "SkyBluekor/StockScope",
+  "source_refs": {
+    "remote_main_sha": "4d057183de59fadf841663f3038bdce3a0bb3463",
+    "analyzed_cumulative_sha": "0baacc9e34929b250614c17bf7b7165708f9521e",
+    "user_spec": "STOCKSCOPE_CURRENT_STATE_AND_MVP_ROADMAP_2026-10-22(3).md §6.2–6.7, §7.8",
+    "original_v2_design": "docs/설계/StockScope_JEV_통합설계_v2_2026-10-06.md",
+    "legacy_trial": "docs/contracts/JEV_REVIEWER_TRIAL_PROTOCOL_V1.json",
+    "legacy_evaluation": "docs/contracts/JEV_REVIEWER_EVALUATION_POLICY_V1.json"
+  },
+  "non_reusable_prior_permissions": {
+    "openai_trial_v1": {
+      "provider": "OPENAI_RESPONSES",
+      "model": "gpt-5.6-terra",
+      "legacy_file_field": "spec.source_transmission_approved=true",
+      "applies_to_typesafe": false,
+      "external_market_rights_not_granted": true
+    },
+    "s6_micro_canary": {
+      "scope": "SYNTHETIC_ONLY",
+      "author_created_unique_cases": 5,
+      "reported_actual_attempts": 6,
+      "local_journal_verified_in_this_work": false,
+      "not_a_real_candidate_permit": true
+    },
+    "typesafe_v4": {
+      "role": "LOCAL_SEMANTIC_RESIDUAL_ROUTE",
+      "complete_pass_local_match_normal_skip": true,
+      "legacy_unspecified_provider_eligible": false,
+      "cannot_relabel_local_match_to_residual": true
+    }
+  },
+  "review_question": {
+    "version": "JEV_TYPESAFE_REAL_CANDIDATE_CHOICE_QUESTION_V1_PROPOSAL",
+    "independent_of_v4_residual": true,
+    "scope": "Separate shadow opinion on an authentic ENTRY_CANDIDATE using contemporaneously available and explicitly permitted structured quant facts only.",
+    "question": "Do the approved contemporaneous quant facts support keeping this already returned entry candidate (PASS_THROUGH), reveal a material reason requiring human reconsideration (REVIEW_REQUIRED), or fail to justify a determinate review (ABSTAIN)?",
+    "decisions": [
+      "PASS_THROUGH",
+      "REVIEW_REQUIRED",
+      "ABSTAIN"
+    ],
+    "not_a_new_scanner": true,
+    "no_candidate_generation": true,
+    "no_ranking_change": true,
+    "no_risk_override": true,
+    "no_holdings_or_orders": true,
+    "hypothesis": "On the same authentic candidates, the independent CHOICE review may identify beneficial reconsiderations not already captured by the baseline without excessive missed winning opportunities, latency, errors, or cost.",
+    "falsification": "After eligible prospective cohort maturity under a pre-frozen evaluation policy, nonpositive incremental return per opportunity, missed gains at least as large as avoided losses, worsening retained-candidate loss rate, or violated safety/operational gates reject limited adoption; insufficient sample or unresolved contracts => HOLD rather than performance rejection.",
+    "model_output_limit": "TypeSafe CHOICE returns choice/confidence/probabilities/usage. No generated evidence citation or natural-language reason can be assumed.",
+    "app_authored_explanations": "If an explanation is constructed from source evidence, label it as application-authored, not provider-authored."
+  },
+  "eligibility": {
+    "capture_status": "canonical COMPLETE",
+    "candidate_action": "ENTRY_CANDIDATE",
+    "require": [
+      "source capture ID",
+      "sample index",
+      "snapshot digest matches stored snapshot",
+      "same-market ticker and date identity",
+      "frozen strategy definition and production selection policy identity",
+      "validated baseline risk state not blocked",
+      "source release time evidence",
+      "all outbound field-level permissions",
+      "independent reviewer protocol version and signed approval"
+    ],
+    "include_clean_pass_as_reviewer_control": true,
+    "must_not_change": [
+      "original candidate rank",
+      "baseline decision",
+      "risk plan",
+      "input evidence",
+      "horizon_intent"
+    ],
+    "horizon_policy": "Do not infer or coerce LEGACY_UNSPECIFIED. Short/medium numeric policies remain EVALUATION_PENDING. The independent reviewer horizon support is NOT authorized until specifically frozen.",
+    "first_eligible_real_capture": {
+      "capture_id": null,
+      "sample_index": null,
+      "snapshot_hash": null,
+      "signal_date": null,
+      "verification": "NOT_AVAILABLE_FROM_AUTHORITATIVE_USER_PC_RECORDS"
+    },
+    "invalid_or_ineligible": "Do not call; report reason and retain denominator. WAIT/NO_TRADE, blocked risk, incomplete/duplicate without canonical resolve, unsupported horizon, future/out-of-scope records cannot be promoted."
+  },
+  "field_allowlist": [
+    {
+      "field": "source_ref.canonical_capture_id",
+      "origin": "LOCAL_SIMULATION_RECORD",
+      "asof_requirement": "identity verified",
+      "source_rights_status": "LOCAL_REFERENCE_ONLY",
+      "external_wire": "NEVER",
+      "rule": "use for join locally, not vendor state"
+    },
+    {
+      "field": "candidate_ref.sample_index + snapshot_hash",
+      "origin": "LOCAL_SIMULATION_RECORD",
+      "asof_requirement": "snapshot sha256 verified",
+      "source_rights_status": "LOCAL_REFERENCE_ONLY",
+      "external_wire": "NEVER",
+      "rule": "provider request joined via separate local request identity"
+    },
+    {
+      "field": "baseline_identity.strategy_version_id + definition_hash",
+      "origin": "INTERNAL_STRATEGY_POLICY",
+      "asof_requirement": "point-in-time strategy pin",
+      "source_rights_status": "INTERNAL_POLICY_REVIEW_REQUIRED",
+      "external_wire": "HOLD",
+      "rule": "hashes may remain local if not needed by model"
+    },
+    {
+      "field": "baseline_identity.selection_policy_id + hash",
+      "origin": "INTERNAL_SELECTION_POLICY",
+      "asof_requirement": "frozen candidate policy pin",
+      "source_rights_status": "INTERNAL_POLICY_REVIEW_REQUIRED",
+      "external_wire": "HOLD",
+      "rule": "never treat latest policy as historical policy"
+    },
+    {
+      "field": "baseline_identity.horizon_intent",
+      "origin": "LOCAL_FROZEN_CAPTURE",
+      "asof_requirement": "as frozen, no substitution",
+      "source_rights_status": "INTERNAL_POLICY_REVIEW_REQUIRED",
+      "external_wire": "HOLD",
+      "rule": "non-approved horizons not promoted"
+    },
+    {
+      "field": "as_of.signal_date + source_date + available_at",
+      "origin": "KRX_DERIVED_AND_LOCAL_META",
+      "asof_requirement": "independent exact source-release time; EOD day alone insufficient",
+      "source_rights_status": "KRX_RELEASE_AND_DERIVED_RIGHTS_UNVERIFIED",
+      "external_wire": "HOLD",
+      "rule": "no future values or post-event response leakage"
+    },
+    {
+      "field": "baseline_decision.action + strategy + conditions summary",
+      "origin": "DERIVED_SCANNER_FACT",
+      "asof_requirement": "strategy/source data available by cutoff",
+      "source_rights_status": "KRX_DERIVED_THIRD_PARTY_RIGHTS_UNVERIFIED",
+      "external_wire": "HOLD",
+      "rule": "baseline preserved, do not misrepresent choice probability as stock prediction"
+    },
+    {
+      "field": "evidence_items[].source_condition + observed_meaning",
+      "origin": "DERIVED_KRX_QUANT_AND_AUTHORED_POLICY",
+      "asof_requirement": "each evidence item point-in-time and release verified",
+      "source_rights_status": "KRX_DERIVED_THIRD_PARTY_RIGHTS_UNVERIFIED",
+      "external_wire": "HOLD",
+      "rule": "reject raw OHLCV, quotes, full source documents; minimize to meaning statements only after rights approval"
+    },
+    {
+      "field": "baseline_decision.risk.status + warning",
+      "origin": "DERIVED_LOCAL_RISK",
+      "asof_requirement": "point-in-time risk version and data date",
+      "source_rights_status": "KRX_DERIVED_THIRD_PARTY_RIGHTS_UNVERIFIED",
+      "external_wire": "HOLD",
+      "rule": "Risk blocked must not be overridden"
+    },
+    {
+      "field": "provider question version + choice criteria",
+      "origin": "APP_AUTHORED_PROTOCOL",
+      "asof_requirement": "precommitted before outcomes",
+      "source_rights_status": "APP_AUTHORED_OK_SUBJECT_TO_PROVIDER_TERMS",
+      "external_wire": "ALLOW_AFTER_G1",
+      "rule": "must be a new version; never reuse synthetic packet permit"
+    }
+  ],
+  "never_send": [
+    "KRX raw market rows",
+    "full source OHLCV or tick stream",
+    "user account tokens or credentials",
+    "brokerage account and holdings quantity/average price",
+    "news/event/macro text or derived events in phase one",
+    "future outcome, benchmark after signal, post-signal returns",
+    "unspecified extra keys or implicitly serialized snapshot"
+  ],
+  "source_rights": {
+    "krx_terms_url": "https://openapi.krx.co.kr/contents/OPP/INFO/OPPINFO002.jsp",
+    "krx_public_terms_article": "Article 11(2) restricts provision of information supplied by KRX to third parties; derived fields require separate written scope determination, not silent approval.",
+    "krx_account_specific_permission": "UNVERIFIED",
+    "typesafe_retention_url": "https://help.typesafe.ai/articles/5974925716-how-is-submitted-data-used-or-retained",
+    "typesafe_account_processing_terms": "UNVERIFIED",
+    "typesafe_zdr": "NOT_VERIFIED",
+    "allowed_model_data_storage": "HOLD_UNTIL_CONTRACT_CONFIRMED"
+  },
+  "provider_g1": {
+    "adapter_contract": "JEV_TYPESAFE_REAL_CANDIDATE_CHOICE_ADAPTER_V1_NOT_IMPLEMENTED",
+    "endpoint": "TYPESAFE_SYSTEM_ONE_SEPARATE_FROM_S6",
+    "model_id": null,
+    "model_revision": null,
+    "model_alias_proposal": "jev-latest",
+    "served_model_verification": "REQUIRED",
+    "prompt_hash": null,
+    "question_hash": null,
+    "wire_schema_hash": null,
+    "source_permission_record_id": null,
+    "account_pricing_reference": null,
+    "authorized_max_distinct_cases": null,
+    "proposal_max_distinct_cases": 10,
+    "authorized_max_provider_attempts": null,
+    "authorized_total_budget_usd": null,
+    "authorized_max_cost_per_attempt_usd": null,
+    "timeout_seconds": null,
+    "automatic_retry_count": 0,
+    "concurrency_cap_proposal": 1,
+    "duplicate_reservation_policy": "(canonical_capture_id, sample_index, snapshot_hash, reviewer_protocol_hash, question_hash, returned_model_cohort) unique review identity; ambiguous timeout remains pending/manual audit, never automatic second paid call",
+    "owner_decision_required": true,
+    "implementation_must_fail_closed": true
+  },
+  "output_contract": {
+    "provider_native_fields": [
+      "answers.review_decision.choice",
+      "answers.review_decision.confidence",
+      "answers.review_decision.probabilities",
+      "usage.input_tokens",
+      "usage.output_tokens",
+      "model"
+    ],
+    "decision_mapping": "Same CHOICE semantics as S6 but distinct real-candidate version and separately validated schema.",
+    "persist_locally": [
+      "original capture/sample/snapshot hash",
+      "projected input hash (not full unapproved wire payload)",
+      "review protocol/prompt/question/model identities",
+      "request/response timestamps, latency and source scope",
+      "chosen decision and typed answer",
+      "usage and bounded cost calculation with pricing provenance",
+      "attempt and duplicate/timeout/error state",
+      "authored explanation attribution"
+    ],
+    "must_not_persist": [
+      "api key",
+      "personal brokerage record",
+      "raw proprietary source values without permission"
+    ],
+    "statuses": [
+      "SKIPPED",
+      "HOLD",
+      "REQUESTED",
+      "PENDING",
+      "VALID",
+      "ABSTAIN",
+      "LATE",
+      "ERROR",
+      "INTERRUPTED"
+    ],
+    "fail_closed": "Invalid schema, missing request permission, identity mismatch, response/DB error or unavailable vendor -> preserve baseline unchanged; no trade or ranking effect."
+  },
+  "evaluation": {
+    "comparison_policy": "JEV_DEFER_THIS_OPPORTUNITY_V1",
+    "preexisting_evaluation_file": "docs/contracts/JEV_REVIEWER_EVALUATION_POLICY_V1.json",
+    "baseline": "actual frozen Scanner decision and outcome for same canonical capture/sample/strategy/input cutoff",
+    "shadow_arm": "VALID REVIEW_REQUIRED only skips that virtual opportunity. PASS_THROUGH/ABSTAIN/ERROR/LATE/SKIPPED retain baseline; never modify original candidate.",
+    "cohort_unique_key": "market,ticker,signal_date,strategy_definition_hash,horizon,canonical_capture_id according to predeclared duplicate policy",
+    "metrics": [
+      "capture-to-valid funnel and all missing/failed denominators",
+      "rate of disagreements and unnecessary reviews",
+      "mature matched closed virtual trades with same execution costs",
+      "incremental hypothetical net return per opportunity",
+      "avoided-loss minus missed-gain opportunity impact",
+      "retained-candidate loss rate vs original baseline",
+      "latency,total cost,abstain and technical failure rates",
+      "time clustering, single ticker dominance"
+    ],
+    "event_time": "EOD/entry/exit source must be available at the decision cutoff; future outcomes only used for later evaluation",
+    "main_comparison_set": "CLOSED with actual comparable non-null net result; CENSORED and NOT_EXECUTED remain separate, not imputed zero",
+    "candidate_adoption_gates": "Use a new TypeSafe-approved, prospectively frozen policy. Existing V1 thresholds belong to OPENAI_RESPONSES and may inform but do not automatically authorize TypeSafe.",
+    "pilot_one_request": "Technology connection only, not effectiveness.",
+    "pilot_ten_case_cap": "PROPOSAL_NOT_A_STATISTICAL_POWER_CLAIM",
+    "actual_evaluation_results": "NOT_AVAILABLE"
+  },
+  "evidence_inventory": [
+    {
+      "id": "J0",
+      "type": "CODE_AND_HISTORICAL_CI",
+      "record": "https://github.com/SkyBluekor/StockScope/blob/0baacc9e34929b250614c17bf7b7165708f9521e/backend/app/jev/typesafe_state_v4.py#L148",
+      "scope": "Local route skip, not provider use",
+      "original_execution": "historical CI for cumulative head GitHub Actions 39383087048"
+    },
+    {
+      "id": "J1",
+      "type": "CODE_AND_HISTORICAL_CI",
+      "record": "https://github.com/SkyBluekor/StockScope/blob/0baacc9e34929b250614c17bf7b7165708f9521e/backend/app/jev/decision_reviewer_canary.py#L143",
+      "scope": "Mock/fake transport and save semantics only",
+      "original_execution": "historical CI only; no UAT here"
+    },
+    {
+      "id": "J2",
+      "type": "USER_REPORT_AND_CODE",
+      "record": "https://github.com/SkyBluekor/StockScope/blob/0baacc9e34929b250614c17bf7b7165708f9521e/backend/app/jev/decision_reviewer_micro_canary.py#L337",
+      "scope": "Synthetic-only actual provider claimed 6 attempts/5 unique cases; actual journal/response/cost NOT present in inspected source",
+      "original_execution": "local user research journal not independently available in this environment"
+    },
+    {
+      "id": "J3",
+      "type": "NOT_VERIFIED",
+      "record": null,
+      "scope": "No verified authentic real-market TypeSafe receipt and UI join",
+      "original_execution": null
+    },
+    {
+      "id": "J4",
+      "type": "NOT_VERIFIED",
+      "record": null,
+      "scope": "No prospective paired economic uplift evidence",
+      "original_execution": null
+    }
+  ],
+  "g0_gate": {
+    "status": "HOLD",
+    "validated_without_model_call": [
+      "v2 Decision Reviewer shadow objective",
+      "V4 local skip is separate",
+      "S6 is synthetic-only",
+      "existing OpenAI frozen permission not reusable",
+      "candidate identity and comparison protocol requirements enumerated"
+    ],
+    "unresolved": [
+      {
+        "id": "U01",
+        "requirement": "one real canonical COMPLETE entry candidate snapshot/hash and point-in-time source availability proof",
+        "owner": "local runtime/PC owner"
+      },
+      {
+        "id": "U02",
+        "requirement": "KRX permission for transmitting specific derived quant fields to TypeSafe",
+        "owner": "KRX account/data rights holder"
+      },
+      {
+        "id": "U03",
+        "requirement": "TypeSafe specific account processing/retention/ZDR terms and approved payload",
+        "owner": "TypeSafe account holder/provider"
+      },
+      {
+        "id": "U04",
+        "requirement": "actual TypeSafe model/version support and price basis, question/prompt/adapter hashes",
+        "owner": "developer and account holder"
+      },
+      {
+        "id": "U05",
+        "requirement": "fixed max calls, USD budget, timeout and single-request explicit authorization",
+        "owner": "project owner"
+      },
+      {
+        "id": "U06",
+        "requirement": "pre-frozen same-candidate prospective cohort, observation/evaluation policy and adoption gate",
+        "owner": "project owner/developer"
+      },
+      {
+        "id": "U07",
+        "requirement": "original S6 journal records and request/response/cost evidence, if available",
+        "owner": "local research journal holder"
+      }
+    ],
+    "next_action": "P0-01 independent minimal integration can continue while G1 permits are unresolved; no TypeSafe real-market transmission until U01–U06 cleared.",
+    "no_external_requests_made": true,
+    "no_paid_calls_made": true,
+    "no_orders_made": true
+  }
+}
