@@ -2962,9 +2962,18 @@ export type ScannerCandidateRecheck = {
   new_scanner_input_fingerprint_id: string | null;
   new_eod_advanced: boolean;
   no_trade_inferred: false;
-  independently_evaluated_when_not_returned: false;
-  scope: "RETURNED_SCANNER_CANDIDATES_ONLY";
-  status: "NOT_EVALUABLE" | "NOT_IN_RETURNED_POOL" | "MATCHED_RETURNED_CANDIDATE";
+  independently_evaluated_when_not_returned: boolean;
+  scope: "RETURNED_SCANNER_CANDIDATES_ONLY" | "TARGETED_CORE_NO_GLOBAL_RANK";
+  status: "NOT_EVALUABLE" | "NOT_IN_RETURNED_POOL" | "MATCHED_RETURNED_CANDIDATE"
+    | "TARGET_STOCK_ROW_MISSING" | "TARGET_OUTSIDE_SCANNER_FILTER"
+    | "TARGETED_EVALUATED_OUTSIDE_RANKING";
+  targeted_action?: string | null;
+  targeted_action_label?: string;
+  targeted_strategy?: string;
+  targeted_candidate_state?: string;
+  targeted_risk_status?: string | null;
+  filter_reason?: string;
+  error_class?: string;
   reason: string;
   returned_candidate_count?: number;
   reported_action?: string | null;

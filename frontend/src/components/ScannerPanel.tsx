@@ -2026,9 +2026,13 @@ export default function ScannerPanel({
                   {" · "}
                   {result.candidate_recheck.status === "MATCHED_RETURNED_CANDIDATE"
                     ? "새 Scanner 후보 목록에서 확인"
-                    : result.candidate_recheck.status === "NOT_IN_RETURNED_POOL"
-                      ? "새 Scanner 반환 목록 밖 · 종목 판단 미확정"
-                      : "새 기준일 자료 정합성 확인 필요"}
+                    : result.candidate_recheck.status === "TARGETED_EVALUATED_OUTSIDE_RANKING"
+                      ? "전체 순위 밖 · 종목별 전략·Risk 별도 계산"
+                      : result.candidate_recheck.status === "TARGET_OUTSIDE_SCANNER_FILTER"
+                        ? "기본 필터 범위 밖 · 심층 판단 미실행"
+                        : result.candidate_recheck.status === "NOT_IN_RETURNED_POOL"
+                          ? "새 Scanner 반환 목록 밖 · 종목 판단 미확정"
+                          : "새 기준일 또는 개별 입력 확인 필요"}
                 </strong>
                 <p>
                   이전 기준일 {formatDate(result.candidate_recheck.source_data_date)}
@@ -2039,6 +2043,14 @@ export default function ScannerPanel({
                     : "새 날짜로 이동하지 않음"}
                 </p>
                 <p>{result.candidate_recheck.reason}</p>
+                {result.candidate_recheck.status === "TARGETED_EVALUATED_OUTSIDE_RANKING" && (
+                  <p>순위 밖 개별 계산 · {result.candidate_recheck.targeted_action_label
+                    || result.candidate_recheck.targeted_action || "확인 필요"}
+                    {" · "}전략 {result.candidate_recheck.targeted_strategy || "확인 필요"}
+                    {" · "}Risk {result.candidate_recheck.targeted_risk_status || "확인 필요"}
+                    {" · "}전체 후보 순위·정식 종목 추천과는 별개입니다.
+                  </p>
+                )}
                 {result.candidate_recheck.status === "MATCHED_RETURNED_CANDIDATE" && (
                   <p>새 반환 후보의 판단 · {result.candidate_recheck.reported_action_label
                     || result.candidate_recheck.reported_action

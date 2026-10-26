@@ -124,3 +124,87 @@ def test_invalid_ticker_or_market_rejected_by_schema() -> None:
     from pydantic import ValidationError
     with pytest.raises(ValidationError):
         ScannerRecheckCandidate(market="KOSPI", code="BAD", source_data_date=date(2026, 10, 21))
+
+
+
+def test_targeted_recheck_produces_out_of_rank_signal_without_rewriting_top_n() -> None:
+    from types import SimpleNamespace
+    from app.backtest.scanner_candidate_recheck import independently_recheck_unreturned_candidate
+
+    class Store:
+        def stock_day_rows(self, market, day):
+            return [{"code": "005930", "name": "Example", "trade_value": 2_000_000_000}]
+        def stock_series(self, market, code, start, end):
+            return SimpleNamespace(rows={"20261023": {"date": "20261023"}})
+        def index_series(self, market, start, end):
+            return SimpleNamespace(rows={"20261023": {"date": "20261023"}})
+
+    class Service:
+        market_store = Store()
+        engine = SimpleNamespace(LIQUIDITY_THRESHOLD=100)
+        sector_prefetcher = None
+        FAST_HISTORY_CALENDAR_DAYS = 220
+        def _special_reason(self, row):
+            return None
+        def _quick_current_candidate(self, **kwargs):
+            assert kwargs["selection_policy_pin"] == "PIN"
+            return {"quick_current": True}
+        def _current_candidate(self, quick):
+            return {
+                "action": "NO_TRADE", "action_label": "관망",
+                "strategy": "PULLBACK", "candidate_state": "EXCLUDED",
+                "risk": {"status": "REVIEW"},
+            }
+
+    r = result()
+    x = independently_recheck_unreturned_candidate(
+        service=Service(), previous=previous(), scanner_result=r,
+        selection_policy_pin="PIN",
+    )
+    assert x["status"] == "TARGETED_EVALUATED_OUTSIDE_RANKING"
+    assert x["scope"] == "TARGETED_CORE_NO_GLOBAL_RANK"
+    assert x["targeted_action"] == "NO_TRADE"  # computed, never inferred from omission
+    assert x["no_trade_inferred"] is False
+    assert x["independently_evaluated_when_not_returned"] is True
+    assert len(r["candidates"]) == 1
+    assert r["candidates"][0]["code"] == "000660"
+
+
+def test_targeted_recheck_stops_at_liquidity_before_strategy() -> None:
+    from types import SimpleNamespace
+    from app.backtest.scanner_candidate_recheck import independently_recheck_unreturned_candidate
+
+    class Store:
+        def stock_day_rows(self, market, day):
+            return [{"code": "005930", "name": "Example", "trade_value": 10}]
+
+    class Service:
+        market_store = Store()
+        engine = SimpleNamespace(LIQUIDITY_THRESHOLD=100)
+        def _special_reason(self, row):
+            return None
+        def _quick_current_candidate(self, **kwargs):
+            raise AssertionError("Must not evaluate non-liquid stock")
+
+    x = independently_recheck_unreturned_candidate(
+        service=Service(), previous=previous(), scanner_result=result(),
+        selection_policy_pin=None,
+    )
+    assert x["status"] == "TARGET_OUTSIDE_SCANNER_FILTER"
+    assert x["independently_evaluated_when_not_returned"] is False
+    assert x.get("targeted_action") is None
+
+
+def test_targeted_does_not_run_when_returned_candidate_already_has_real_decision() -> None:
+    from app.backtest.scanner_candidate_recheck import independently_recheck_unreturned_candidate
+    r = result()
+    r["more_candidates"] = [{
+        "market": "KOSPI", "code": "005930", "data_date": "2026-10-23",
+        "action": "WAIT", "risk": {"status": "REVIEW"},
+    }]
+    x = independently_recheck_unreturned_candidate(
+        service=object(), previous=previous(), scanner_result=r,
+        selection_policy_pin=None,
+    )
+    assert x["status"] == "MATCHED_RETURNED_CANDIDATE"
+    assert x["reported_action"] == "WAIT"

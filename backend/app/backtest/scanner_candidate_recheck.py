@@ -6,7 +6,7 @@ This module does not change the frozen Scanner/strategy/Risk implementation.
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 VERSION = "SCANNER_CANDIDATE_RECHECK_V1"
@@ -105,3 +105,107 @@ def compare_scanner_candidate(
             "candidate_state": found.get("candidate_state"),
         },
     }
+
+
+
+def independently_recheck_unreturned_candidate(
+    *,
+    service: Any,
+    previous: dict[str, Any],
+    scanner_result: dict[str, Any],
+    selection_policy_pin: Any,
+) -> dict[str, Any]:
+    """Run the same frozen quick/current evaluator on one stock *outside* global ranking.
+
+    This optional target is never inserted into the official ranked Scanner
+    candidates; its state is not a global rank or a production capture decision.
+    A missing row, liquidity exclusion, or insufficient history is not NO_TRADE.
+    """
+    summary = compare_scanner_candidate(previous=previous, scanner_result=scanner_result)
+    if summary["status"] != "NOT_IN_RETURNED_POOL":
+        return summary
+
+    market = summary["market"]
+    code = summary["code"]
+    date_text = summary["new_data_date"]
+    try:
+        latest = date.fromisoformat(date_text)
+        key = latest.strftime("%Y%m%d")
+        rows = service.market_store.stock_day_rows(market, key)
+        stock = next((row for row in rows if str(row.get("code") or "") == code), None)
+        if stock is None:
+            return {
+                **summary, "status": "TARGET_STOCK_ROW_MISSING",
+                "reason": "이번 분석일의 해당 종목 원본 행이 없습니다. 거래 판단이나 NO_TRADE가 아닙니다.",
+            }
+        special = service._special_reason(stock)
+        if special:
+            return {
+                **summary, "status": "TARGET_OUTSIDE_SCANNER_FILTER",
+                "reason": "일반 주식 필터에서 제외되었습니다. 전략·Risk 심층 판단은 실행하지 않았습니다.",
+                "filter_reason": str(special),
+            }
+        if float(stock.get("trade_value") or 0) < service.engine.LIQUIDITY_THRESHOLD:
+            return {
+                **summary, "status": "TARGET_OUTSIDE_SCANNER_FILTER",
+                "reason": "현재 유동성 필터를 통과하지 못했습니다. 전략·Risk 심층 판단은 실행하지 않았습니다.",
+                "filter_reason": "LOW_LIQUIDITY",
+            }
+        # A configured sector prefetcher could use additional provider inputs.
+        # Never claim an equivalent independent calculation without those inputs.
+        if getattr(service, "sector_prefetcher", None) is not None:
+            return {
+                **summary, "status": "NOT_EVALUABLE",
+                "reason": "개별 종목 재검증에 필요한 섹터 입력을 동일하게 재현하지 못했습니다.",
+            }
+
+        start = latest - timedelta(days=service.FAST_HISTORY_CALENDAR_DAYS)
+        stocks = service.market_store.stock_series(
+            market, code, start.strftime("%Y%m%d"), key,
+        )
+        index = service.market_store.index_series(
+            market, start.strftime("%Y%m%d"), key,
+        )
+        quick = service._quick_current_candidate(
+            market=market,
+            latest_date=key,
+            row=stock,
+            stock_rows=list(stocks.rows.values()),
+            index_rows=list(index.rows.values()),
+            selection_policy_pin=selection_policy_pin,
+        )
+        if quick is None:
+            return {
+                **summary, "status": "NOT_EVALUABLE",
+                "reason": "해당 종목의 개별 기술지표 계산 입력이 부족합니다. NO_TRADE가 아닙니다.",
+            }
+        current = service._current_candidate(quick)
+        if not current:
+            return {
+                **summary, "status": "NOT_EVALUABLE",
+                "reason": "해당 종목의 개별 전략·Risk 계산 결과를 확인할 수 없습니다.",
+            }
+        return {
+            **summary,
+            "status": "TARGETED_EVALUATED_OUTSIDE_RANKING",
+            "scope": "TARGETED_CORE_NO_GLOBAL_RANK",
+            "reason": (
+                "원래 Scanner 반환 목록 밖의 종목을 같은 버전의 전략·Risk 코어로 "
+                "별도 계산했습니다. 전체 시장 순위나 정식 반환 후보 승격은 아닙니다."
+            ),
+            "independently_evaluated_when_not_returned": True,
+            "targeted_action": current.get("action"),
+            "targeted_action_label": current.get("action_label"),
+            "targeted_strategy": current.get("strategy"),
+            "targeted_candidate_state": current.get("candidate_state"),
+            "targeted_risk_status": (current.get("risk") or {}).get("status"),
+        }
+    except Exception as exc:
+        # The primary Scanner result stays valid, but an unverifiable private
+        # targeted check cannot produce a guessed trading verdict.
+        return {
+            **summary,
+            "status": "NOT_EVALUABLE",
+            "reason": "개별 종목 계산 중 오류가 발생해 판단을 보류했습니다.",
+            "error_class": type(exc).__name__,
+        }

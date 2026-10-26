@@ -18,7 +18,7 @@ from app.backtest.exit_policy_validation_runner import (
 )
 from app.backtest.risk_validation import RiskPolicyValidationService
 from app.backtest.scanner import StockScannerService
-from app.backtest.scanner_candidate_recheck import compare_scanner_candidate
+from app.backtest.scanner_candidate_recheck import independently_recheck_unreturned_candidate
 from app.backtest.data_preparation_plan import plan_scanner_data, plan_scanner_evidence_data
 from app.backtest.production_exit_policy import ProductionExitPolicyRegistry
 from app.core.config import PROJECT_ROOT, get_settings
@@ -646,8 +646,11 @@ async def _run_scanner_job(
         if isinstance(result, dict):
             if payload.recheck_candidate is not None:
                 previous = payload.recheck_candidate.model_dump(mode="json")
-                result["candidate_recheck"] = compare_scanner_candidate(
-                    previous=previous, scanner_result=result,
+                result["candidate_recheck"] = independently_recheck_unreturned_candidate(
+                    service=service,
+                    previous=previous,
+                    scanner_result=result,
+                    selection_policy_pin=selection_policy_pin,
                 )
             rank_evidence_rows = extract_rank_evidence_from_audit(result)
             result["horizon_context"] = resolve_horizon_context(
