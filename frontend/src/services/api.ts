@@ -3018,6 +3018,21 @@ export type ScannerRecheckCandidate = {
 
 export type ScannerResponse = {
   candidate_recheck?: ScannerCandidateRecheck;
+  input_fingerprint?: {
+    id?: string | null;
+    markets?: Record<string, {
+      date?: string | null;
+      stock_rows?: number;
+      stock_hash?: string | null;
+      index_hash?: string | null;
+    }>;
+  };
+  strategy_selection_policy?: {
+    policy_id?: string | null;
+    policy_hash?: string | null;
+    policy_source?: string | null;
+    fallback_used?: boolean;
+  };
 
   version: string;
   horizon_context?: {
