@@ -12,6 +12,7 @@ import {
   cancelBacktestJob,
   createScannerEvidenceJob,
   createScannerJob,
+  planScannerEvidenceData,
   planScannerData,
   fetchBacktestJob,
   type BacktestJob,
@@ -19,6 +20,7 @@ import {
   type ScannerFreshnessResponse,
   type ScannerDataPlan,
   type ScannerResponse,
+  type ScannerEvidenceDataPlan,
   type StockSearchItem,
 } from "../services/api";
 import {
@@ -785,6 +787,10 @@ export default function ScannerPanel({
   const [clock, setClock] = useState(Date.now());
   const [freshnessFailure, setFreshnessFailure] = useState<ScannerFreshnessResponse | null>(null);
   const [dataPlanBusy, setDataPlanBusy] = useState(false);
+  const [evidencePlanBusy, setEvidencePlanBusy] = useState(false);
+  const [pendingEvidencePlan, setPendingEvidencePlan] = useState<{
+    candidate: ScannerCandidate; plan: ScannerEvidenceDataPlan;
+  } | null>(null);
   const [pendingDataPlan, setPendingDataPlan] = useState<{ plan: ScannerDataPlan; pinnedAsOfDate: string | null } | null>(null);
   const [dateNotice, setDateNotice] = useState<string | null>(null);
   const [managedStocks, setManagedStocks] = useState<HoldingStock[]>([]);
@@ -846,7 +852,7 @@ export default function ScannerPanel({
   }, [captureId, storedReviewKey, aiReviewEnabled, aiReviewAvailable, aiReviewFeatureStatus, reviewRefresh]);
 
   const jobBusy = job?.status === "queued" || job?.status === "running";
-  const busy = jobBusy || dataPlanBusy;
+  const busy = jobBusy || dataPlanBusy || evidencePlanBusy;
   const progress = job?.progress;
   const managedStockMap = useMemo(
     () => new Map(managedStocks.map((stock) => [managedStockKey(stock.market, stock.ticker), stock])),
@@ -1229,6 +1235,7 @@ export default function ScannerPanel({
       }
     }
     setPendingDataPlan(null);
+    setPendingEvidencePlan(null);
     setRevealJobId(null);
     const observerGeneration = ++pollObserverGenerationRef.current;
     scannerSelectionToPreserveRef.current = result && selectedCandidateKey ? selectedCandidateKey : null;
@@ -1292,8 +1299,40 @@ export default function ScannerPanel({
     }
   }
 
-  async function prepareCandidateEvidence(candidate: ScannerCandidate) {
+  async function prepareCandidateEvidence(candidate: ScannerCandidate, approvedLargeSync = false) {
     if (busy || !result) return;
+    if (!approvedLargeSync) {
+      setEvidencePlanBusy(true);
+      try {
+        const plan = await planScannerEvidenceData({
+          market: candidate.market,
+          code: candidate.code,
+          strategy: candidate.strategy,
+          data_end: candidate.data_date,
+          market_scope: scope,
+          candidate_limit: 5,
+        });
+        if (!mountedRef.current) return;
+        if (plan.status === "APPROVAL_REQUIRED") {
+          setPendingEvidencePlan({ candidate, plan });
+          setError(null);
+          return;
+        }
+        if (plan.status !== "AUTO_ALLOWED") {
+          setPendingEvidencePlan(null);
+          setError(plan.status === "REVIEW_BUDGET"
+            ? "3년 과거 데이터 요청량이 남은 KRX 일일 예산을 초과합니다. 나중에 다시 확인해주세요."
+            : "3년 과거 데이터 저장 상태를 안전하게 확인할 수 없습니다.");
+          return;
+        }
+      } catch (err) {
+        if (mountedRef.current) setError(err instanceof Error ? err.message : "3년 데이터 요청량을 확인하지 못했습니다.");
+        return;
+      } finally {
+        if (mountedRef.current) setEvidencePlanBusy(false);
+      }
+    }
+    setPendingEvidencePlan(null);
     const observerGeneration = ++pollObserverGenerationRef.current;
     scannerSelectionToPreserveRef.current = null;
     if (pollRef.current != null) window.clearTimeout(pollRef.current);
@@ -1315,6 +1354,7 @@ export default function ScannerPanel({
         data_end: candidate.data_date,
         market_scope: scope,
         candidate_limit: 5,
+        allow_large_sync: approvedLargeSync,
       });
       if (!mountedRef.current || pollObserverGenerationRef.current !== observerGeneration) return;
       setJob(created);
@@ -1322,7 +1362,7 @@ export default function ScannerPanel({
         kind: "scanner",
         jobId: created.job_id,
         scope,
-        allowLargeSync: false,
+        allowLargeSync: approvedLargeSync,
         status: created.status,
         stage: created.stage,
         message: created.progress?.message || "3년 검증 데이터 준비를 시작합니다.",
@@ -1506,6 +1546,7 @@ export default function ScannerPanel({
     setRestoredFromSession(false);
     setFreshnessFailure(null);
     setPendingDataPlan(null);
+    setPendingEvidencePlan(null);
     setDateNotice(null);
     savedScrollRef.current = 0;
     didRestoreScrollRef.current = true;
@@ -1679,6 +1720,26 @@ export default function ScannerPanel({
             데이터 준비하고 종목 찾기
           </button>
           <button type="button" disabled={busy} onClick={() => setPendingDataPlan(null)}>취소</button>
+        </section>
+      )}
+
+      {pendingEvidencePlan && !jobBusy && (
+        <section className="scanner-preparation-card" role="status" aria-label="3년 과거 자료 대량 준비 동의">
+          <div>
+            <span>3년 과거 근거 준비 · 사전 승인</span>
+            <strong>{pendingEvidencePlan.candidate.name}의 과거 자료를 준비할까요?</strong>
+            <p>{pendingEvidencePlan.plan.warmup_start}부터 {pendingEvidencePlan.plan.data_end}까지
+              {pendingEvidencePlan.candidate.market} 시장 자료를 확인합니다.
+              예상 KRX 신규 기본 요청은 약 {formatNumber(pendingEvidencePlan.plan.estimated_missing_krx_slots)}회입니다.
+              휴장 확인·실패 재시도로 더 발생할 수 있습니다.</p>
+            <p>3년 과거 검증은 현재 후보 판단과 별개이며, 추가 자료로도 표본이 충분해진다는 보장은 없습니다.
+              해당 시장의 여러 날짜를 가져오므로 요청량과 준비 시간이 커질 수 있습니다.</p>
+          </div>
+          <button type="button" disabled={busy}
+            onClick={() => void prepareCandidateEvidence(pendingEvidencePlan.candidate, true)}>
+            요청량 확인 후 3년 데이터 준비
+          </button>
+          <button type="button" disabled={busy} onClick={() => setPendingEvidencePlan(null)}>취소</button>
         </section>
       )}
 

@@ -9,7 +9,7 @@ import sqlite3
 
 import pytest
 
-from app.backtest.data_preparation_plan import plan_scanner_data
+from app.backtest.data_preparation_plan import plan_scanner_data, plan_scanner_evidence_data
 from app.backtest.scanner import StockScannerService
 from app.market.providers.krx import KrxProvider
 
@@ -231,3 +231,35 @@ def test_operational_eod_preserves_market_file_bytes(tmp_path):
     observed = _plan(tmp_path, db)["operational_eod"]
     assert observed["stored_same_day_stock_index_date"] == "2026-10-08"
     assert db.read_bytes() == before
+
+
+
+def test_three_year_evidence_plan_counts_full_warmup_and_requires_consent(tmp_path):
+    db = _db(tmp_path, complete=True)  # only recent fast-history rows exist
+    before = db.read_bytes()
+    result = plan_scanner_evidence_data(
+        market="KOSPI", data_end="2026-10-09", market_db=db,
+        raw_cache_root=tmp_path / "cache", budget_db=tmp_path / "budget.db", today=TODAY,
+    )
+    assert result["version"] == "SCANNER_EVIDENCE_DATA_PREFLIGHT_V1"
+    assert result["status"] == "APPROVAL_REQUIRED"
+    assert result["requires_explicit_large_sync_approval"] is True
+    assert result["estimated_missing_krx_slots"] > result["fast_request_limit"]
+    assert result["validation_start"] == "2023-10-09"
+    assert date.fromisoformat(result["warmup_start"]) < date(2023, 10, 9)
+    assert result["provider_calls"] == result["db_writes"] == 0
+    assert db.read_bytes() == before
+
+
+def test_three_year_evidence_plan_rejects_future_or_bad_market_before_io(tmp_path):
+    with pytest.raises(ValueError, match="EVIDENCE_DATE_NOT_CONFIRMED_EOD"):
+        plan_scanner_evidence_data(
+            market="KOSPI", data_end="2026-10-12", market_db=tmp_path / "missing.db",
+            today=TODAY,
+        )
+    with pytest.raises(ValueError, match="INVALID_EVIDENCE_MARKET"):
+        plan_scanner_evidence_data(
+            market="ALL", data_end="2026-10-09", market_db=tmp_path / "missing.db",
+            today=TODAY,
+        )
+    assert not (tmp_path / "missing.db").exists()

@@ -17,6 +17,7 @@ from zoneinfo import ZoneInfo
 
 from app.core.config import PROJECT_ROOT
 from app.backtest.scanner import StockScannerService
+from app.backtest.historical_evidence import validation_start_for_years
 from app.market.krx_budget import KrxApiBudget
 from app.market.providers.krx import KrxProvider
 
@@ -64,12 +65,16 @@ def plan_scanner_data(
     raw_cache_root: Path | None = None,
     budget_db: Path | None = None,
     today: date | None = None,
+    history_calendar_days: int | None = None,
 ) -> dict:
     if market_scope not in {"ALL", *MARKETS} or not 1 <= candidate_limit <= 10:
         raise ValueError("INVALID_SCANNER_PLAN_REQUEST")
     current = today or datetime.now(ZoneInfo("Asia/Seoul")).date()
     end = min(date.fromisoformat(as_of_date), current - timedelta(days=1)) if as_of_date else current - timedelta(days=1)
-    start = end - timedelta(days=StockScannerService.FAST_HISTORY_CALENDAR_DAYS)
+    window = StockScannerService.FAST_HISTORY_CALENDAR_DAYS if history_calendar_days is None else history_calendar_days
+    if not isinstance(window, int) or not 1 <= window <= 2000:
+        raise ValueError("INVALID_SCANNER_HISTORY_WINDOW")
+    start = end - timedelta(days=window)
     markets = MARKETS if market_scope == "ALL" else (market_scope,)
     dates = [start + timedelta(days=i) for i in range((end - start).days + 1)
              if (start + timedelta(days=i)).weekday() < 5]
@@ -269,4 +274,48 @@ def plan_scanner_data(
         "requires_explicit_large_sync_approval": result_status == "APPROVAL_REQUIRED",
         "provider_calls": 0,
         "db_writes": 0,
+    }
+
+
+def plan_scanner_evidence_data(
+    *,
+    market: str,
+    data_end: str,
+    market_db: Path | None = None,
+    raw_cache_root: Path | None = None,
+    budget_db: Path | None = None,
+    today: date | None = None,
+) -> dict:
+    """Read-only, fail-closed KRX estimate for explicit 3-year evidence preparation.
+
+    Unlike the fast Scanner plan, this covers the entire validation window and
+    technical-indicator warmup. Empty day markers cannot prove a holiday, so
+    the estimate is intentionally conservative. The actual provider enforces
+    budget limits again when it runs.
+    """
+    current = today or datetime.now(ZoneInfo("Asia/Seoul")).date()
+    if market not in MARKETS:
+        raise ValueError("INVALID_EVIDENCE_MARKET")
+    end = date.fromisoformat(data_end)
+    if end > current - timedelta(days=1):
+        raise ValueError("EVIDENCE_DATE_NOT_CONFIRMED_EOD")
+    validation_start = validation_start_for_years(end)
+    warmup_start = validation_start - timedelta(days=StockScannerService.THREE_YEAR_WARMUP_DAYS)
+    plan = plan_scanner_data(
+        market_scope=market,
+        as_of_date=data_end,
+        market_db=market_db,
+        raw_cache_root=raw_cache_root,
+        budget_db=budget_db,
+        today=current,
+        history_calendar_days=(end - warmup_start).days,
+    )
+    return {
+        **plan,
+        "version": "SCANNER_EVIDENCE_DATA_PREFLIGHT_V1",
+        "market": market,
+        "data_end": end.isoformat(),
+        "validation_start": validation_start.isoformat(),
+        "warmup_start": warmup_start.isoformat(),
+        "requires_explicit_large_sync_approval": plan["status"] == "APPROVAL_REQUIRED",
     }

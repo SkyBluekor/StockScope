@@ -3198,7 +3198,28 @@ export type ScannerEvidencePrepareRequest = {
   data_end: string;
   market_scope: "ALL" | "KOSPI" | "KOSDAQ";
   candidate_limit?: number;
+  allow_large_sync?: boolean;
 };
+
+export type ScannerEvidenceDataPlan = ScannerDataPlan & {
+  market: "KOSPI" | "KOSDAQ";
+  data_end: string;
+  validation_start: string;
+  warmup_start: string;
+  requires_explicit_large_sync_approval?: boolean;
+};
+
+export async function planScannerEvidenceData(
+  payload: ScannerEvidencePrepareRequest,
+): Promise<ScannerEvidenceDataPlan> {
+  return asJson<ScannerEvidenceDataPlan>(
+    await fetch("/api/backtest/scanner/evidence/data-plan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  );
+}
 
 export async function createScannerEvidenceJob(
   payload: ScannerEvidencePrepareRequest,

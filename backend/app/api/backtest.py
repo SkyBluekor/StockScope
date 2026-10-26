@@ -17,7 +17,7 @@ from app.backtest.exit_policy_validation_runner import (
 )
 from app.backtest.risk_validation import RiskPolicyValidationService
 from app.backtest.scanner import StockScannerService
-from app.backtest.data_preparation_plan import plan_scanner_data
+from app.backtest.data_preparation_plan import plan_scanner_data, plan_scanner_evidence_data
 from app.backtest.production_exit_policy import ProductionExitPolicyRegistry
 from app.core.config import PROJECT_ROOT, get_settings
 from app.prospective import (
@@ -92,6 +92,7 @@ class ScannerEvidencePrepareRequest(BaseModel):
     data_end: str = Field(..., min_length=10, max_length=10)
     market_scope: Literal["ALL", "KOSPI", "KOSDAQ"] = "ALL"
     candidate_limit: int = Field(default=5, ge=1, le=10)
+    allow_large_sync: bool = False
 
 
 class ScannerFreshnessRequest(BaseModel):
@@ -727,6 +728,18 @@ def scanner_data_plan(payload: ScannerDataPlanRequest) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.post("/scanner/evidence/data-plan")
+def scanner_evidence_data_plan(payload: ScannerEvidencePrepareRequest) -> dict:
+    """Read-only full-window evidence estimate; no provider or runtime writes."""
+    try:
+        return plan_scanner_evidence_data(
+            market=payload.market,
+            data_end=payload.data_end,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post("/scanner/freshness")
 async def prepare_scanner_freshness(payload: ScannerFreshnessRequest) -> dict:
     """Resolve and persist the latest confirmed EOD before a user starts Scanner analysis."""
@@ -822,6 +835,27 @@ async def _run_scanner_evidence_job(
 
 @router.post("/scanner/evidence/jobs", status_code=202)
 async def create_scanner_evidence_job(payload: ScannerEvidencePrepareRequest) -> dict:
+    # Server-side gate is mandatory: a client may call this route directly,
+    # bypass the UI, or retry after local KRX usage changes. Do not allocate
+    # a job, initialize a provider, or start a long historical fetch before
+    # a read-only evidence plan passes the explicit approval/budget checks.
+    try:
+        estimate = plan_scanner_evidence_data(market=payload.market, data_end=payload.data_end)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    status = estimate["status"]
+    if status in {"BLOCKED_SCHEMA", "REVIEW_BUDGET"}:
+        raise HTTPException(status_code=409, detail={
+            "code": "EVIDENCE_DATA_PREFLIGHT_BLOCKED",
+            "plan_status": status,
+            "message": "3년 자료 준비 전에 저장소와 KRX 일일 예산을 확인해야 합니다.",
+        })
+    if status == "APPROVAL_REQUIRED" and not payload.allow_large_sync:
+        raise HTTPException(status_code=409, detail={
+            "code": "EVIDENCE_LARGE_SYNC_APPROVAL_REQUIRED",
+            "estimated_missing_krx_slots": estimate["estimated_missing_krx_slots"],
+            "message": "3년 과거 데이터 대량 준비에 대한 명시적 동의가 필요합니다.",
+        })
     settings = get_settings()
     job = backtest_jobs.create()
     selection_policy_pin = (
