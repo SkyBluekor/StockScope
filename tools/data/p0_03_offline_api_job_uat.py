@@ -79,6 +79,7 @@ async def _run_api_worker(
     operational_repo: Path,
     scope: str,
     scratch: Path,
+    verify_asgi_http: bool = False,
 ) -> dict[str, Any]:
     from app.backtest.market_store import HistoricalMarketStore
     from app.backtest.scanner import StockScannerService
@@ -205,13 +206,79 @@ async def _run_api_worker(
                 candidate_limit=5, allow_large_sync=False,
                 recheck_candidate=selected,
             )
-            created = await api.create_scanner_job(payload)
-            job_id = created["job_id"]
-            job = api.backtest_jobs.get(job_id)
-            if job is None or job.task is None:
-                return {"status": "HOLD_JOB_NOT_ATTACHED"}
-            await job.task
-            public = await api.get_backtest_job(job_id)
+            http_contract = {
+                "asgi_http_verified": False,
+                "asgi_http_request_mode": "DIRECT_API_FUNCTION",
+            }
+            if verify_asgi_http:
+                # ASGITransport runs the real FastAPI routing, validation and
+                # serialization IN PROCESS without opening a TCP connection.
+                # Do not start app.main.lifespan: that starts unrelated
+                # watchers and could touch operational holdings runtime.
+                import httpx
+                from app.main import app as fastapi_app
+                transport = httpx.ASGITransport(app=fastapi_app, raise_app_exceptions=True)
+                async with httpx.AsyncClient(
+                    transport=transport, base_url="http://p003-isolated.invalid"
+                ) as client:
+                    path = "/api/backtest/scanner/jobs"
+                    body = payload.model_dump(mode="json")
+                    bad = dict(body)
+                    bad["force_refresh"] = False
+                    rejected = await client.post(path, json=bad)
+                    if rejected.status_code != 400 or (
+                        rejected.json().get("detail") or {}
+                    ).get("code") != "RECHECK_REQUIRES_LATEST_EOD":
+                        return {"status": "HOLD_ASGI_GUARD_BYPASS",
+                                "rejected_status": rejected.status_code}
+                    bad = dict(body)
+                    bad["as_of_date"] = previous.isoformat()
+                    fixed = await client.post(path, json=bad)
+                    if fixed.status_code != 400 or (
+                        fixed.json().get("detail") or {}
+                    ).get("code") != "RECHECK_REQUIRES_LATEST_EOD":
+                        return {"status": "HOLD_ASGI_HISTORICAL_RECHECK_ALLOWED",
+                                "rejected_status": fixed.status_code}
+                    created_response = await client.post(path, json=body)
+                    if created_response.status_code != 202:
+                        return {
+                            "status": "HOLD_ASGI_POST_REJECTED",
+                            "http_post_status": created_response.status_code,
+                            "server_detail": str(created_response.json().get("detail") or "")[:240],
+                        }
+                    created = created_response.json()
+                    job_id = created["job_id"]
+                    job = api.backtest_jobs.get(job_id)
+                    if job is None or job.task is None:
+                        return {"status": "HOLD_JOB_NOT_ATTACHED"}
+                    await job.task
+                    public_response = await client.get(
+                        "/api/backtest/jobs/" + job_id
+                    )
+                    if public_response.status_code != 200:
+                        return {
+                            "status": "HOLD_ASGI_GET_FAILED",
+                            "http_get_status": public_response.status_code,
+                        }
+                    public = public_response.json()
+                    http_contract = {
+                        "asgi_http_verified": True,
+                        "asgi_http_request_mode": "FASTAPI_ASGI_TRANSPORT_NO_TCP",
+                        "asgi_post_status": created_response.status_code,
+                        "asgi_get_status": public_response.status_code,
+                        "asgi_guard_false_refresh_status": rejected.status_code,
+                        "asgi_guard_fixed_date_status": fixed.status_code,
+                        "asgi_route_path": "/api/backtest/scanner/jobs",
+                        "asgi_lifespan_started": False,
+                    }
+            else:
+                created = await api.create_scanner_job(payload)
+                job_id = created["job_id"]
+                job = api.backtest_jobs.get(job_id)
+                if job is None or job.task is None:
+                    return {"status": "HOLD_JOB_NOT_ATTACHED"}
+                await job.task
+                public = await api.get_backtest_job(job_id)
             if public["status"] != "completed" or not public["result"]:
                 return {
                     "status": "HOLD_SCANNER_JOB_FAILED",
@@ -257,7 +324,8 @@ async def _run_api_worker(
                 and not blocked
             )
             return {
-                "status": "OFFLINE_API_JOB_CAPTURE_VERIFIED" if passed else "HOLD_API_JOB_CAPTURE_MISMATCH",
+                "status": ("OFFLINE_ASGI_JOB_CAPTURE_VERIFIED" if verify_asgi_http else "OFFLINE_API_JOB_CAPTURE_VERIFIED") if passed else "HOLD_API_JOB_CAPTURE_MISMATCH",
+                **http_contract,
                 "previous_date": previous.isoformat(),
                 "new_date": as_of.isoformat(),
                 "selected_market": selected.market,
@@ -295,6 +363,7 @@ async def _run_api_worker(
 def offline_job_uat(
     *, market_db: Path, as_of: date, market_scope: str = "ALL",
     operational_repo: Path, _snapshot_worker: bool = False,
+    verify_asgi_http: bool = False,
 ) -> dict[str, Any]:
     base = {
         "version": VERSION,
@@ -307,6 +376,7 @@ def offline_job_uat(
         "live_krx_calls": 0,
         "live_typesafe_calls": 0,
         "mode": "HISTORICAL_OFFLINE_REPLAY",
+        "transport_requested": "FASTAPI_ASGI_NO_TCP" if verify_asgi_http else "DIRECT_API_FUNCTION",
     }
     if market_scope not in ("ALL", *MARKETS):
         return {**base, "status": "HOLD_INVALID_SCOPE"}
@@ -336,6 +406,8 @@ def offline_job_uat(
                 "--market-db", str(snapshot), "--as-of", as_of.isoformat(),
                 "--market-scope", market_scope, "--operational-repo", str(operational_repo),
             ]
+            if verify_asgi_http:
+                cmd.append("--verify-asgi-http")
             try:
                 child = subprocess.run(
                     cmd, capture_output=True, text=True, encoding="utf-8",
@@ -355,7 +427,7 @@ def offline_job_uat(
             detail = asyncio.run(_run_api_worker(
                 snapshot=snapshot, as_of=as_of,
                 operational_repo=operational_repo, scope=market_scope,
-                scratch=scratch,
+                scratch=scratch, verify_asgi_http=verify_asgi_http,
             ))
         except Exception as exc:
             detail = {"status": "HOLD_API_JOB_REPLAY_FAILED", "error_class": type(exc).__name__}
@@ -371,6 +443,8 @@ def main() -> int:
     parser.add_argument("--as-of", type=date.fromisoformat, required=True)
     parser.add_argument("--market-scope", choices=("ALL", *MARKETS), default="ALL")
     parser.add_argument("--_snapshot-worker", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--verify-asgi-http", action="store_true",
+                        help="Use real FastAPI POST/GET routing inside isolated process, without TCP")
     args = parser.parse_args()
     output = offline_job_uat(
         market_db=args.market_db,
@@ -378,9 +452,10 @@ def main() -> int:
         market_scope=args.market_scope,
         operational_repo=args.operational_repo,
         _snapshot_worker=args._snapshot_worker,
+        verify_asgi_http=args.verify_asgi_http,
     )
     print(json.dumps(output, indent=2, ensure_ascii=False, sort_keys=True))
-    return 0 if output["status"] == "OFFLINE_API_JOB_CAPTURE_VERIFIED" else 2
+    return 0 if output["status"] in {"OFFLINE_API_JOB_CAPTURE_VERIFIED", "OFFLINE_ASGI_JOB_CAPTURE_VERIFIED"} else 2
 
 
 if __name__ == "__main__":
