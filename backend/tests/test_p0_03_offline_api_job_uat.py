@@ -54,3 +54,37 @@ def test_previous_common_day_is_not_inferred_from_non_overlapping_markers() -> N
         def day_complete(self, market, key, kind):
             return not (market == "KOSDAQ" and kind == "index")
     assert select_previous(Store(), date(2026, 10, 21), ["KOSPI", "KOSDAQ"]) is None
+
+
+
+def test_p0_03_real_frozen_scanner_replay_reaches_explicit_gate(tmp_path: Path) -> None:
+    """A real 220-day MarketStore fixture must not die on a hidden Python error."""
+    from tools.data.p0_02_offline_scanner_replay import snapshot_sqlite_readonly
+    fixture = runpy.run_path(
+        str(Path(__file__).resolve().parent / "test_p0_02_offline_scanner_replay.py"),
+        run_name="p0_02_test_helper",
+    )
+    original = fixture["_db"](
+        tmp_path / "original.db", complete=True, as_of=date(2026, 10, 21),
+    )
+    before = original.read_bytes()
+    result = run(
+        market_db=original,
+        as_of=date(2026, 10, 21),
+        market_scope="ALL",
+        operational_repo=tmp_path,
+    )
+    # The synthetic flat-price universe need not have a qualifying candidate;
+    # an explicit no-prior-candidate HOLD is truthful. But internal errors,
+    # unintended SQL writes and missing marker paths are regressions.
+    assert result["status"] in {
+        "HOLD_NO_PREVIOUS_SCANNER_CANDIDATE",
+        "OFFLINE_API_JOB_CAPTURE_VERIFIED",
+    }, result
+    assert result["original_db_modified"] is False
+    assert original.read_bytes() == before
+    if result["status"] == "OFFLINE_API_JOB_CAPTURE_VERIFIED":
+        assert result["job_id"]
+        assert result["baseline_scanner_capture_id"]
+        assert result["persisted_capture_status"] in {"COMPLETE", "DUPLICATE"}
+        assert result["network_attempts"] == 0
