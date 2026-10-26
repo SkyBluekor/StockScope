@@ -229,6 +229,11 @@ async def _run_api_worker(
             passed = (
                 recheck.get("source_job_id") == job_id
                 and bool(recheck.get("new_eod_advanced"))
+                and recheck.get("status") in {
+                    "MATCHED_RETURNED_CANDIDATE",
+                    "TARGETED_EVALUATED_OUTSIDE_RANKING",
+                    "TARGET_OUTSIDE_SCANNER_FILTER",
+                }
                 and recheck.get("source_data_date") == previous.isoformat()
                 and recheck.get("new_data_date") == as_of.isoformat()
                 and recheck.get("source_input_fingerprint_id") == old_fp.get("id")
