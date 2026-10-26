@@ -17,6 +17,7 @@ from app.backtest.exit_policy_validation_runner import (
 )
 from app.backtest.risk_validation import RiskPolicyValidationService
 from app.backtest.scanner import StockScannerService
+from app.backtest.scanner_candidate_recheck import compare_scanner_candidate
 from app.backtest.data_preparation_plan import plan_scanner_data, plan_scanner_evidence_data
 from app.backtest.production_exit_policy import ProductionExitPolicyRegistry
 from app.core.config import PROJECT_ROOT, get_settings
@@ -75,6 +76,16 @@ def _prospective_reference_capture_service() -> ProspectiveReferenceCaptureServi
 
 
 
+class ScannerRecheckCandidate(BaseModel):
+    """Client-supplied reference, not independently verified historical evidence."""
+    market: Literal["KOSPI", "KOSDAQ"]
+    code: str = Field(..., pattern=r"^[0-9]{6}$")
+    name: str = Field(default="", max_length=120)
+    source_data_date: date
+    source_action: str = Field(default="", max_length=80)
+    source_strategy: str = Field(default="", max_length=80)
+
+
 class ScannerRequest(BaseModel):
     market_scope: Literal["ALL", "KOSPI", "KOSDAQ"] = "ALL"
     as_of_date: str | None = None
@@ -83,6 +94,7 @@ class ScannerRequest(BaseModel):
     force_refresh: bool = False
     allow_large_sync: bool = False
     horizon_intent: str | None = None
+    recheck_candidate: ScannerRecheckCandidate | None = None
 
 
 class ScannerEvidencePrepareRequest(BaseModel):
@@ -631,6 +643,11 @@ async def _run_scanner_job(
             selection_policy_pin=selection_policy_pin,
         )
         if isinstance(result, dict):
+            if payload.recheck_candidate is not None:
+                previous = payload.recheck_candidate.model_dump(mode="json")
+                result["candidate_recheck"] = compare_scanner_candidate(
+                    previous=previous, scanner_result=result,
+                )
             rank_evidence_rows = extract_rank_evidence_from_audit(result)
             result["horizon_context"] = resolve_horizon_context(
                 payload.horizon_intent
@@ -873,8 +890,25 @@ async def create_scanner_evidence_job(payload: ScannerEvidencePrepareRequest) ->
     return job.public()
 
 
+def _validate_scanner_recheck_request(payload: ScannerRequest) -> None:
+    selected = payload.recheck_candidate
+    if selected is None:
+        return
+    if payload.as_of_date is not None or not payload.force_refresh:
+        raise HTTPException(status_code=400, detail={
+            "code": "RECHECK_REQUIRES_LATEST_EOD",
+            "message": "후보 다시 판단은 고정된 과거 날짜가 아니라 최신 확정 EOD 재계산으로만 실행합니다.",
+        })
+    if payload.market_scope not in ("ALL", selected.market):
+        raise HTTPException(status_code=400, detail={
+            "code": "RECHECK_MARKET_SCOPE_MISMATCH",
+            "message": "선택 후보의 시장이 새로운 Scanner 분석 범위에 포함돼야 합니다.",
+        })
+
+
 @router.post("/scanner/jobs", status_code=202)
 async def create_scanner_job(payload: ScannerRequest) -> dict:
+    _validate_scanner_recheck_request(payload)
     try:
         require_horizon_activatable(
             resolve_horizon_context(payload.horizon_intent)
