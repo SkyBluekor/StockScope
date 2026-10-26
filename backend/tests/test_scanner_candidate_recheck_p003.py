@@ -268,3 +268,106 @@ def test_failed_capture_must_not_invent_capture_id() -> None:
     assert outcome["baseline_scanner_capture_id"] is None
     assert outcome["capture_confirmed"] is False
     assert outcome["baseline_scanner_capture_status"] == "SKIPPED_BASE_CAPTURE_NOT_READY"
+
+
+
+def test_real_scanner_job_pipeline_attaches_job_and_capture_lineage(monkeypatch) -> None:
+    """The actual async API workflow binds IDs after capture, not a guessed ID."""
+    import asyncio
+    from types import SimpleNamespace
+    from app.api import backtest as api
+
+    class FakeService:
+        async def prepare_latest_confirmed_data(self, **kwargs):
+            return {
+                "status": "UPDATED", "resolved_as_of_date": "2026-10-23",
+                "message": "confirmed", "date_changed": True, "diagnostics": {},
+            }
+
+        async def run(self, **kwargs):
+            assert kwargs["as_of_date"] == "2026-10-23"
+            assert kwargs["force_refresh"] is True
+            assert kwargs["selection_policy_pin"] == "PIN"
+            return {
+                "version": "0.21.3.9",
+                "requested_as_of": "2026-10-23",
+                "data_dates": {"KOSPI": "2026-10-23"},
+                "partial_data": False,
+                "input_fingerprint": {
+                    "id": "new-fingerprint",
+                    "markets": {
+                        "KOSPI": {
+                            "date": "2026-10-23", "stock_rows": 940,
+                            "stock_hash": "stock-hash", "index_hash": "index-hash",
+                        },
+                    },
+                },
+                "strategy_selection_policy": {
+                    "policy_id": "new-policy", "policy_hash": "new-hash",
+                },
+                "candidates": [
+                    {
+                        "market": "KOSPI", "code": "005930",
+                        "data_date": "2026-10-23",
+                        "strategy": "BREAKOUT", "action": "WAIT",
+                        "candidate_state": "WATCH", "risk": {"status": "OK"},
+                    },
+                ],
+                "more_candidates": [],
+            }
+
+    class FakeProspective:
+        catalog = SimpleNamespace(db_path="fake.db")
+
+        def try_finalize_scanner_capture(self, **kwargs):
+            assert kwargs["source_job_id"] == "real-job-xyz"
+            return {"status": "CAPTURED", "canonical_capture_id": "real-capture-xyz"}
+
+    received = {}
+    monkeypatch.setattr(api, "KrxProvider", lambda _: object())
+    monkeypatch.setattr(api, "StockScannerService", lambda _: FakeService())
+    monkeypatch.setattr(api, "_prospective_service", lambda: FakeProspective())
+    monkeypatch.setattr(
+        api, "_prospective_reference_capture_service",
+        lambda: SimpleNamespace(try_capture=lambda cid: {"capture_id": cid}),
+    )
+    monkeypatch.setattr(api, "extract_rank_evidence_from_audit", lambda _: [])
+    monkeypatch.setattr(api, "persist_rank_evidence", lambda **kwargs: {"status": "SKIPPED_TEST"})
+    monkeypatch.setattr(api, "enrich_scanner_result_with_ai_presentation", lambda _: None)
+    monkeypatch.setattr(api.backtest_jobs, "is_cancelled", lambda _: False)
+    monkeypatch.setattr(api.backtest_jobs, "update_progress", lambda job, progress: None)
+    monkeypatch.setattr(api.backtest_jobs, "complete", lambda job, value: received.update({
+        "job_id": job, "result": value,
+    }))
+    monkeypatch.setattr(api.backtest_jobs, "fail", lambda job, error: (_ for _ in ()).throw(
+        AssertionError("Unexpected API job failure: " + error)
+    ))
+
+    payload = ScannerRequest(
+        market_scope="ALL", force_refresh=True,
+        recheck_candidate=ScannerRecheckCandidate(
+            market="KOSPI", code="005930", name="Example",
+            source_data_date=date(2026, 10, 21),
+            source_action="ENTRY_CANDIDATE",
+            source_strategy="BREAKOUT",
+            source_input_fingerprint_id="old-fingerprint",
+            source_policy_id="old-policy", source_policy_hash="old-hash",
+            source_capture_id="old-capture",
+        ),
+    )
+    asyncio.run(api._run_scanner_job("real-job-xyz", payload, None, "PIN"))
+    assert received["job_id"] == "real-job-xyz"
+    result = received["result"]
+    recheck = result["candidate_recheck"]
+    assert recheck["source_job_id"] == received["job_id"]
+    assert recheck["new_eod_advanced"] is True
+    assert recheck["status"] == "MATCHED_RETURNED_CANDIDATE"
+    assert recheck["reported_action"] == "WAIT"
+    assert recheck["new_scanner_input_fingerprint_id"] == "new-fingerprint"
+    assert recheck["source_input_fingerprint_id"] == "old-fingerprint"
+    assert recheck["policy_changed"] is True
+    assert recheck["baseline_scanner_capture_id"] == result["prospective_capture"]["canonical_capture_id"]
+    assert recheck["baseline_capture_scope"] == "SCANNER_RETURNED_CANDIDATES_ONLY"
+    assert recheck["prior_reference_stored_in_capture"] is False
+    assert recheck["targeted_result_stored_in_capture"] is False
+    assert result["execution_mode"] == "BASELINE_ONLY"
