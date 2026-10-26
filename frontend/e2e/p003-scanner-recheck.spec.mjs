@@ -88,6 +88,7 @@ async function setup(page,{matched=false}={}) {
         progress:{message:"완료",current:1,total:1,percent:100},result:newResult});
     if(req.method()==="GET"&&path==="/api/health")return fulfill(route,{status:"ok"});
     if(req.method()==="GET"&&path==="/api/providers/status")return fulfill(route,{krx:{configured:false,role:"MOCK_BLOCKED"},dart:{configured:false,role:"MOCK_BLOCKED"},naver_news:{configured:false,provider_kind:"MOCK",role:"MOCK_BLOCKED"},kis:{enabled:false,role:"MOCK_BLOCKED"},real_trading:false});
+    if(req.method()==="GET"&&path==="/api/holdings/stocks")return fulfill(route,[]);
     if(req.method()==="GET")return fulfill(route,{items:[],status:"DISABLED",available:false});
     violations.push(path);return fulfill(route,{detail:"Blocked by P0-03 E2E sandbox"},503);
   });
