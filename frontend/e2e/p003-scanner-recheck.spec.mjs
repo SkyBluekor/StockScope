@@ -63,7 +63,9 @@ function fulfill(route,data,status=200) {
     headers:{"cache-control":"no-store"},body:JSON.stringify(data)});
 }
 async function setup(page,{matched=false}={}) {
-  const calls=[],violations=[];
+  const calls=[],violations=[],pageErrors=[];
+  page.on("pageerror",error=>pageErrors.push(String(error)));
+  page.on("console",msg=>{if(msg.type()==="error")pageErrors.push("console: "+msg.text());});
   const oldResult=scanner(previousDate,[priorStock]);
   const newResult=scanner(nextDate,matched?[candidate("KOSPI","145720",nextDate,"가상 이전 후보"),otherStock]:[otherStock],recheck(matched));
   await page.route("**/*",route=>{
@@ -97,8 +99,15 @@ async function setup(page,{matched=false}={}) {
     window.localStorage.setItem("stockscope-jev-review-enabled","off");
   },oldResult);
   await page.goto("/scanner");
+  await page.waitForTimeout(1200);
+  console.log("P0-03 BROWSER DIAGNOSTICS",JSON.stringify({
+    path:page.url(),
+    text:(await page.locator("body").innerText()).slice(0,2700),
+    session:await page.evaluate(()=>window.sessionStorage.getItem("stockscope.scanner.session.v0.21.4-A.3")?.slice(0,200)),
+    pageErrors,calls,violations,
+  }));
   await expect(page.getByRole("button",{name:"이 후보 최신 확정 일봉으로 다시 판단"})).toBeVisible();
-  return {calls,violations};
+  return {calls,violations,pageErrors};
 }
 test("button → job completion → LOW_LIQUIDITY → no unrelated auto-selected stock",async({page})=>{
   const {calls,violations}=await setup(page);
