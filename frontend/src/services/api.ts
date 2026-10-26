@@ -2958,6 +2958,22 @@ export type ScannerCandidateRecheck = {
   source_data_date: string;
   source_action: string;
   source_strategy: string;
+  source_input_fingerprint_id?: string | null;
+  source_policy_id?: string | null;
+  source_policy_hash?: string | null;
+  source_capture_id?: string | null;
+  reference_verified_against_capture?: false;
+  source_job_id?: string;
+  baseline_scanner_capture_status?: string;
+  baseline_scanner_capture_id?: string | null;
+  baseline_capture_scope?: "SCANNER_RETURNED_CANDIDATES_ONLY";
+  targeted_result_stored_in_capture?: false;
+  prior_reference_stored_in_capture?: false;
+  capture_confirmed?: boolean;
+  new_policy_id?: string | null;
+  new_policy_hash?: string | null;
+  policy_changed?: boolean | null;
+  new_quote_checked?: false;
   new_data_date: string | null;
   new_scanner_input_fingerprint_id: string | null;
   new_eod_advanced: boolean;
@@ -2994,6 +3010,10 @@ export type ScannerRecheckCandidate = {
   source_data_date: string;
   source_action: string;
   source_strategy: string;
+  source_input_fingerprint_id?: string | null;
+  source_policy_id?: string | null;
+  source_policy_hash?: string | null;
+  source_capture_id?: string | null;
 };
 
 export type ScannerResponse = {

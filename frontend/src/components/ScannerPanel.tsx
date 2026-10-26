@@ -1994,6 +1994,11 @@ export default function ScannerPanel({
                     source_data_date: selectedCandidate.data_date,
                     source_action: selectedCandidate.action,
                     source_strategy: selectedCandidate.strategy,
+                    source_input_fingerprint_id: result.input_fingerprint?.id ?? null,
+                    source_policy_id: result.strategy_selection_policy?.policy_id ?? null,
+                    source_policy_hash: result.strategy_selection_policy?.policy_hash ?? null,
+                    source_capture_id: result.prospective_capture?.canonical_capture_id
+                      || result.prospective_capture?.capture_id || null,
                   })}
                 >
                   이 후보 최신 확정 일봉으로 다시 판단
@@ -2043,6 +2048,23 @@ export default function ScannerPanel({
                     : "새 날짜로 이동하지 않음"}
                 </p>
                 <p>{result.candidate_recheck.reason}</p>
+                {result.candidate_recheck.policy_changed === true && (
+                  <p>주의 · 이전 분석과 운영 전략 정책이 변경됐습니다.
+                    전략·Risk 차이를 시장 변화만으로 해석할 수 없습니다.</p>
+                )}
+                {result.candidate_recheck.policy_changed == null && (
+                  <p>이전 전략 정책의 일치 여부를 확인할 수 없습니다.</p>
+                )}
+                <div className="scanner-ux2-analysis-body" aria-label="다시 판단 작업 근거">
+                  <small>실행 작업 · {result.candidate_recheck.source_job_id || "ID 확인 불가"}</small>
+                  <small>신규 입력 지문 · {result.candidate_recheck.new_scanner_input_fingerprint_id || "확인 불가"}</small>
+                  <small>기존 참조 입력 지문 · {result.candidate_recheck.source_input_fingerprint_id || "미제공"}</small>
+                  <small>전체 Scanner 캡처 · {result.candidate_recheck.baseline_scanner_capture_status || "미확인"}
+                    {" · "}{result.candidate_recheck.baseline_scanner_capture_id || "저장 ID 없음"}
+                  </small>
+                  <small>개별 순위 밖 재평가와 이전 후보 참조는 이 전체 Scanner 캡처에 저장되지 않습니다.
+                    신규 시세 호가 확인도 별도입니다.</small>
+                </div>
                 {result.candidate_recheck.status === "TARGETED_EVALUATED_OUTSIDE_RANKING" && (
                   <p>순위 밖 개별 계산 · {result.candidate_recheck.targeted_action_label
                     || result.candidate_recheck.targeted_action || "확인 필요"}

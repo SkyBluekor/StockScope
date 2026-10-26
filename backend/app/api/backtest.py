@@ -18,7 +18,10 @@ from app.backtest.exit_policy_validation_runner import (
 )
 from app.backtest.risk_validation import RiskPolicyValidationService
 from app.backtest.scanner import StockScannerService
-from app.backtest.scanner_candidate_recheck import independently_recheck_unreturned_candidate
+from app.backtest.scanner_candidate_recheck import (
+    attach_recheck_execution_lineage,
+    independently_recheck_unreturned_candidate,
+)
 from app.backtest.data_preparation_plan import plan_scanner_data, plan_scanner_evidence_data
 from app.backtest.production_exit_policy import ProductionExitPolicyRegistry
 from app.core.config import PROJECT_ROOT, get_settings
@@ -85,6 +88,10 @@ class ScannerRecheckCandidate(BaseModel):
     source_data_date: date
     source_action: str = Field(default="", max_length=80)
     source_strategy: str = Field(default="", max_length=80)
+    source_input_fingerprint_id: str | None = Field(default=None, max_length=128)
+    source_policy_id: str | None = Field(default=None, max_length=160)
+    source_policy_hash: str | None = Field(default=None, max_length=128)
+    source_capture_id: str | None = Field(default=None, max_length=160)
 
 
 class ScannerRequest(BaseModel):
@@ -685,6 +692,12 @@ async def _run_scanner_job(
                 prospective_capture.get("canonical_capture_id")
                 or prospective_capture.get("capture_id")
             )
+            if payload.recheck_candidate is not None:
+                result["candidate_recheck"] = attach_recheck_execution_lineage(
+                    recheck=result["candidate_recheck"],
+                    source_job_id=job_id,
+                    capture=prospective_capture,
+                )
             enrich_scanner_result_with_ai_presentation(result)
             result["execution_mode"] = "BASELINE_ONLY"
             result["jev_shadow"] = {

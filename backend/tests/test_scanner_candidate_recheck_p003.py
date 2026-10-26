@@ -208,3 +208,63 @@ def test_targeted_does_not_run_when_returned_candidate_already_has_real_decision
     )
     assert x["status"] == "MATCHED_RETURNED_CANDIDATE"
     assert x["reported_action"] == "WAIT"
+
+
+
+def test_recheck_report_carries_unverified_source_and_policy_mismatch() -> None:
+    p = previous()
+    p.update({
+        "source_input_fingerprint_id": "old-hash",
+        "source_policy_id": "POLICY-A",
+        "source_policy_hash": "HASH-A",
+        "source_capture_id": "old-capture",
+    })
+    r = result()
+    r["strategy_selection_policy"] = {
+        "policy_id": "POLICY-B", "policy_hash": "HASH-B",
+    }
+    outcome = compare_scanner_candidate(previous=p, scanner_result=r)
+    assert outcome["source_input_fingerprint_id"] == "old-hash"
+    assert outcome["source_capture_id"] == "old-capture"
+    assert outcome["reference_verified_against_capture"] is False
+    assert outcome["new_policy_id"] == "POLICY-B"
+    assert outcome["policy_changed"] is True
+    assert outcome["new_quote_checked"] is False
+
+
+def test_old_policy_unknown_never_claims_policy_same() -> None:
+    r = result()
+    r["strategy_selection_policy"] = {"policy_id": "NEW", "policy_hash": "HASH"}
+    p = previous()
+    outcome = compare_scanner_candidate(previous=p, scanner_result=r)
+    assert outcome["policy_changed"] is None
+
+
+def test_result_binds_real_job_and_capture_but_not_outside_rank_capture() -> None:
+    from app.backtest.scanner_candidate_recheck import attach_recheck_execution_lineage
+    baseline = {"status": "CAPTURED", "capture_id": "base-capture-id"}
+    outcome = attach_recheck_execution_lineage(
+        recheck={"status": "TARGETED_EVALUATED_OUTSIDE_RANKING", "targeted_action": "WAIT"},
+        source_job_id="job-abc",
+        capture=baseline,
+    )
+    assert outcome["source_job_id"] == "job-abc"
+    assert outcome["baseline_scanner_capture_id"] == "base-capture-id"
+    assert outcome["baseline_scanner_capture_status"] == "CAPTURED"
+    assert outcome["baseline_capture_scope"] == "SCANNER_RETURNED_CANDIDATES_ONLY"
+    assert outcome["targeted_result_stored_in_capture"] is False
+    assert outcome["prior_reference_stored_in_capture"] is False
+    assert outcome["capture_confirmed"] is True
+    assert outcome["targeted_action"] == "WAIT"
+
+
+def test_failed_capture_must_not_invent_capture_id() -> None:
+    from app.backtest.scanner_candidate_recheck import attach_recheck_execution_lineage
+    outcome = attach_recheck_execution_lineage(
+        recheck={"status": "NOT_EVALUABLE"},
+        source_job_id="job-123",
+        capture={"status": "SKIPPED_BASE_CAPTURE_NOT_READY"},
+    )
+    assert outcome["baseline_scanner_capture_id"] is None
+    assert outcome["capture_confirmed"] is False
+    assert outcome["baseline_scanner_capture_status"] == "SKIPPED_BASE_CAPTURE_NOT_READY"

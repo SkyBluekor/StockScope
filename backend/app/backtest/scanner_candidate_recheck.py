@@ -33,10 +33,25 @@ def compare_scanner_candidate(
         "source_data_date": previous_date,
         "source_action": str(previous.get("source_action") or ""),
         "source_strategy": str(previous.get("source_strategy") or ""),
+        # These source details are references supplied from a prior UI result.
+        # They are NOT proven historical records merely by being echoed back.
+        "source_input_fingerprint_id": previous.get("source_input_fingerprint_id"),
+        "source_policy_id": previous.get("source_policy_id"),
+        "source_policy_hash": previous.get("source_policy_hash"),
+        "source_capture_id": previous.get("source_capture_id"),
+        "reference_verified_against_capture": False,
         "new_data_date": latest_date or None,
         "new_scanner_input_fingerprint_id": fingerprint.get("id"),
         "new_eod_advanced": bool(latest_date and latest_date > previous_date),
         "new_result_scanner_version": scanner_result.get("version"),
+        "new_policy_id": (scanner_result.get("strategy_selection_policy") or {}).get("policy_id"),
+        "new_policy_hash": (scanner_result.get("strategy_selection_policy") or {}).get("policy_hash"),
+        "policy_changed": (
+            str(previous["source_policy_hash"]) != str((scanner_result.get("strategy_selection_policy") or {}).get("policy_hash"))
+            if previous.get("source_policy_hash") and (scanner_result.get("strategy_selection_policy") or {}).get("policy_hash")
+            else None
+        ),
+        "new_quote_checked": False,
         "no_trade_inferred": False,
         "independently_evaluated_when_not_returned": False,
         "scope": "RETURNED_SCANNER_CANDIDATES_ONLY",
@@ -209,3 +224,30 @@ def independently_recheck_unreturned_candidate(
             "reason": "개별 종목 계산 중 오류가 발생해 판단을 보류했습니다.",
             "error_class": type(exc).__name__,
         }
+
+
+
+def attach_recheck_execution_lineage(
+    *,
+    recheck: dict[str, Any],
+    source_job_id: str,
+    capture: dict[str, Any],
+) -> dict[str, Any]:
+    """Bind a finished result to its real Job and baseline capture outcome.
+
+    A baseline Scanner prospective capture is *not* a recording of the
+    out-of-pool targeted evaluation or the user's prior candidate reference.
+    Never manufacture a capture ID when the catalog could not persist one.
+    """
+    known_id = capture.get("canonical_capture_id") or capture.get("capture_id")
+    capture_id = str(known_id) if known_id else None
+    return {
+        **recheck,
+        "source_job_id": source_job_id,
+        "baseline_scanner_capture_status": capture.get("status") or "UNKNOWN",
+        "baseline_scanner_capture_id": capture_id,
+        "baseline_capture_scope": "SCANNER_RETURNED_CANDIDATES_ONLY",
+        "targeted_result_stored_in_capture": False,
+        "prior_reference_stored_in_capture": False,
+        "capture_confirmed": bool(capture_id),
+    }
