@@ -93,20 +93,16 @@ async function setup(page,{matched=false}={}) {
     violations.push(path);return fulfill(route,{detail:"Blocked by P0-03 E2E sandbox"},503);
   });
   await page.addInitScript((prior)=>{
-    window.sessionStorage.setItem("stockscope.scanner.session.v0.21.4-A.3",JSON.stringify({
-      schemaVersion:1,scope:"ALL",result:prior,completedAt:Date.now(),scrollY:0,
-      showMore:false,expandedEvidenceIds:[],selectedCandidateKey:"KOSPI-145720",
-    }));
+    const key="stockscope.scanner.session.v0.21.4-A.3";
+    if(!window.sessionStorage.getItem(key)){
+      window.sessionStorage.setItem(key,JSON.stringify({
+        schemaVersion:1,scope:"ALL",result:prior,completedAt:Date.now(),scrollY:0,
+        showMore:false,expandedEvidenceIds:[],selectedCandidateKey:"KOSPI-145720",
+      }));
+    }
     window.localStorage.setItem("stockscope-jev-review-enabled","off");
   },oldResult);
   await page.goto("/scanner");
-  await page.waitForTimeout(1200);
-  console.log("P0-03 BROWSER DIAGNOSTICS",JSON.stringify({
-    path:page.url(),
-    text:(await page.locator("body").innerText()).slice(0,2700),
-    session:await page.evaluate(()=>window.sessionStorage.getItem("stockscope.scanner.session.v0.21.4-A.3")?.slice(0,200)),
-    pageErrors,calls,violations,
-  }));
   await expect(page.getByRole("button",{name:"이 후보 최신 확정 일봉으로 다시 판단"})).toBeVisible();
   return {calls,violations,pageErrors};
 }
