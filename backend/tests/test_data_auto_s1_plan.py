@@ -263,3 +263,68 @@ def test_three_year_evidence_plan_rejects_future_or_bad_market_before_io(tmp_pat
             today=TODAY,
         )
     assert not (tmp_path / "missing.db").exists()
+
+
+
+def test_evidence_api_refuses_bulk_without_consent_before_job_or_provider(monkeypatch):
+    import asyncio
+    from fastapi import HTTPException
+    from app.api import backtest as api
+
+    monkeypatch.setattr(api, "plan_scanner_evidence_data", lambda **_: {
+        "status": "APPROVAL_REQUIRED",
+        "estimated_missing_krx_slots": 1200,
+    })
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("A blocked evidence request must never allocate a job or provider")
+
+    monkeypatch.setattr(api.backtest_jobs, "create", forbidden)
+    monkeypatch.setattr(api, "get_settings", forbidden)
+    payload = api.ScannerEvidencePrepareRequest(
+        market="KOSPI", code="005930", data_end="2026-10-09",
+        market_scope="ALL",
+    )
+    with pytest.raises(HTTPException) as err:
+        asyncio.run(api.create_scanner_evidence_job(payload))
+    assert err.value.status_code == 409
+    assert err.value.detail["code"] == "EVIDENCE_LARGE_SYNC_APPROVAL_REQUIRED"
+    assert err.value.detail["estimated_missing_krx_slots"] == 1200
+
+
+def test_evidence_api_blocks_insufficient_budget_even_with_consent(monkeypatch):
+    import asyncio
+    from fastapi import HTTPException
+    from app.api import backtest as api
+
+    monkeypatch.setattr(api, "plan_scanner_evidence_data", lambda **_: {
+        "status": "REVIEW_BUDGET",
+        "estimated_missing_krx_slots": 1200,
+    })
+    monkeypatch.setattr(api.backtest_jobs, "create", lambda: (_ for _ in ()).throw(
+        AssertionError("Budget block must happen before job creation")
+    ))
+    payload = api.ScannerEvidencePrepareRequest(
+        market="KOSDAQ", code="000001", data_end="2026-10-09",
+        allow_large_sync=True,
+    )
+    with pytest.raises(HTTPException) as err:
+        asyncio.run(api.create_scanner_evidence_job(payload))
+    assert err.value.status_code == 409
+    assert err.value.detail["code"] == "EVIDENCE_DATA_PREFLIGHT_BLOCKED"
+
+
+def test_evidence_api_bad_date_is_rejected_before_job(monkeypatch):
+    import asyncio
+    from fastapi import HTTPException
+    from app.api import backtest as api
+
+    monkeypatch.setattr(api.backtest_jobs, "create", lambda: (_ for _ in ()).throw(
+        AssertionError("Date validation must happen before job creation")
+    ))
+    payload = api.ScannerEvidencePrepareRequest(
+        market="KOSPI", code="005930", data_end="not-a-date",
+    )
+    with pytest.raises(HTTPException) as err:
+        asyncio.run(api.create_scanner_evidence_job(payload))
+    assert err.value.status_code == 400
