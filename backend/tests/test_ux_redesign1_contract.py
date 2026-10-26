@@ -823,7 +823,13 @@ def test_ux_redesign1j5_scanner_defaults_to_reading_and_separates_explicit_work(
     assert "const evidencePreferredKey = preferredCandidateKeyRef.current" in poll
     assert "const preferredKey = evidencePreferredKey ?? scannerSelectionToPreserveRef.current" in poll
     assert "latestCandidates.find" in poll
-    assert "latest.result.candidates[0]" in poll
+    # Candidate restoration is now a tested helper: ordinary Scanner results
+    # retain the old fallback-to-first behavior, but a rechecked candidate
+    # removed by filters must never silently select an unrelated stock.
+    assert "scannerSelectionAfterRecheck(latest.result, preferredKey)" in poll
+    view = Path("frontend/src/components/scannerCandidateRecheckView.ts").read_text(encoding="utf-8")
+    assert "result.candidates?.[0]" in view
+    assert "if (recheck)" in view
 
     # Evidence preparation still keeps its dedicated candidate and is not automatic.
     evidence_start = scanner.index("async function prepareCandidateEvidence")
