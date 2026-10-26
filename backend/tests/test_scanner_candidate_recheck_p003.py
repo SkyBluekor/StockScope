@@ -371,3 +371,28 @@ def test_real_scanner_job_pipeline_attaches_job_and_capture_lineage(monkeypatch)
     assert recheck["prior_reference_stored_in_capture"] is False
     assert recheck["targeted_result_stored_in_capture"] is False
     assert result["execution_mode"] == "BASELINE_ONLY"
+
+
+
+def test_targeted_filter_preserves_exact_frozen_scanner_reason() -> None:
+    from types import SimpleNamespace
+    from app.backtest.scanner_candidate_recheck import independently_recheck_unreturned_candidate
+
+    class Store:
+        def stock_day_rows(self, market, key):
+            return [{"code": "005930", "name": "Synthetic", "trade_value": 100000000}]
+    class Service:
+        market_store = Store()
+        engine = SimpleNamespace(LIQUIDITY_THRESHOLD=100)
+        def _special_reason(self, row):
+            return "ETF/ETN"
+        def _quick_current_candidate(self, **kwargs):
+            raise AssertionError("Excluded before strategy evaluation")
+
+    x = independently_recheck_unreturned_candidate(
+        service=Service(), previous=previous(), scanner_result=result(),
+        selection_policy_pin=None,
+    )
+    assert x["status"] == "TARGET_OUTSIDE_SCANNER_FILTER"
+    assert x["filter_reason"] == "ETF/ETN"
+    assert x.get("targeted_action") is None

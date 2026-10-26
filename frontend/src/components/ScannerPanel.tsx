@@ -48,6 +48,12 @@ import useScannerQuote from "./useScannerQuote";
 import { asOfPriorityLabel } from "./scannerQuoteTruth";
 import { beginnerCandidatePresentation, simpleConditionStatus } from "./scannerDecisionPresentation";
 import { scannerCandidateEvidence, scannerTieSummary } from "./scannerCandidateEvidence";
+import {
+  scannerRecheckFilterDescription,
+  scannerRecheckHeadline,
+  scannerSelectionAfterRecheck,
+  scannerRecheckCaptureDescription,
+} from "./scannerCandidateRecheckView";
 import { buildScannerDisplayLayout } from "./scannerDisplayGroups";
 import ScannerRankComparison from "./ScannerRankComparison";
 import ScannerMotionProgress from "./ScannerMotionProgress";
@@ -778,7 +784,8 @@ export default function ScannerPanel({
   const [revealJobId, setRevealJobId] = useState<string | null>(null);
   const [selectedCandidateKey, setSelectedCandidateKey] = useState<string | null>(
     initialSession?.selectedCandidateKey
-      ?? (initialSession?.result?.candidates?.[0] ? candidateKey(initialSession.result.candidates[0]) : null),
+      ?? (initialSession?.result?.candidate_recheck ? null
+        : (initialSession?.result?.candidates?.[0] ? candidateKey(initialSession.result.candidates[0]) : null)),
   );
   const [error, setError] = useState<string | null>(null);
   const [showMore, setShowMore] = useState(initialSession?.showMore ?? false);
@@ -905,7 +912,8 @@ export default function ScannerPanel({
     setResult(sharedSession.result);
     setSelectedCandidateKey(
       sharedSession.selectedCandidateKey
-        ?? (sharedSession.result.candidates?.[0] ? candidateKey(sharedSession.result.candidates[0]) : null),
+        ?? (sharedSession.result.candidate_recheck ? null
+          : (sharedSession.result.candidates?.[0] ? candidateKey(sharedSession.result.candidates[0]) : null)),
     );
     setShowMore(sharedSession.showMore);
     setExpandedEvidenceIds(sharedSession.expandedEvidenceIds);
@@ -997,9 +1005,7 @@ export default function ScannerPanel({
           const preferredCandidate = preferredKey
             ? latestCandidates.find((candidate) => candidateKey(candidate) === preferredKey) ?? null
             : null;
-          const nextSelectedKey = preferredCandidate
-            ? candidateKey(preferredCandidate)
-            : (latest.result.candidates[0] ? candidateKey(latest.result.candidates[0]) : null);
+          const nextSelectedKey = scannerSelectionAfterRecheck(latest.result, preferredKey);
           const nextExpandedEvidenceIds = preferredCandidate ? [evidenceKey(preferredCandidate)] : [];
           if (!observerIsCurrent()) return;
           writeScannerSession({
@@ -1127,9 +1133,7 @@ export default function ScannerPanel({
         const preferredCandidate = preferredKey
           ? latestCandidates.find((candidate) => candidateKey(candidate) === preferredKey) ?? null
           : null;
-        const nextSelectedKey = preferredCandidate
-          ? candidateKey(preferredCandidate)
-          : (latest.result.candidates[0] ? candidateKey(latest.result.candidates[0]) : null);
+        const nextSelectedKey = scannerSelectionAfterRecheck(latest.result, preferredKey);
         const latestEvidenceKeys = new Set(latestCandidates.map((candidate) => evidenceKey(candidate)));
         const nextExpandedEvidenceIds = evidencePreferredKey && preferredCandidate
           ? [evidenceKey(preferredCandidate)]
@@ -1628,7 +1632,8 @@ export default function ScannerPanel({
     [result],
   );
   const selectedCandidate = useMemo(
-    () => allCandidates.find((candidate) => candidateKey(candidate) === selectedCandidateKey) ?? result?.candidates[0] ?? null,
+    () => allCandidates.find((candidate) => candidateKey(candidate) === selectedCandidateKey)
+      ?? (result?.candidate_recheck ? null : result?.candidates[0] ?? null),
     [allCandidates, selectedCandidateKey, result],
   );
   const selectedSampleIndex = selectedCandidate
@@ -1651,6 +1656,14 @@ export default function ScannerPanel({
     }
     if (allCandidates.length === 0) {
       if (selectedCandidateKey != null) setSelectedCandidateKey(null);
+      return;
+    }
+    // For a recheck with a filtered-out target, do not silently switch to
+    // another stock. A subsequent manual selection of a new stock is respected.
+    if (result.candidate_recheck) {
+      if (selectedCandidateKey && !allCandidates.some((candidate) => candidateKey(candidate) === selectedCandidateKey)) {
+        setSelectedCandidateKey(null);
+      }
       return;
     }
     if (!selectedCandidateKey || !allCandidates.some((candidate) => candidateKey(candidate) === selectedCandidateKey)) {
@@ -2029,15 +2042,7 @@ export default function ScannerPanel({
                 <strong>
                   {result.candidate_recheck.name || result.candidate_recheck.code}
                   {" · "}
-                  {result.candidate_recheck.status === "MATCHED_RETURNED_CANDIDATE"
-                    ? "새 Scanner 후보 목록에서 확인"
-                    : result.candidate_recheck.status === "TARGETED_EVALUATED_OUTSIDE_RANKING"
-                      ? "전체 순위 밖 · 종목별 전략·Risk 별도 계산"
-                      : result.candidate_recheck.status === "TARGET_OUTSIDE_SCANNER_FILTER"
-                        ? "기본 필터 범위 밖 · 심층 판단 미실행"
-                        : result.candidate_recheck.status === "NOT_IN_RETURNED_POOL"
-                          ? "새 Scanner 반환 목록 밖 · 종목 판단 미확정"
-                          : "새 기준일 또는 개별 입력 확인 필요"}
+                  {scannerRecheckHeadline(result.candidate_recheck)}
                 </strong>
                 <p>
                   이전 기준일 {formatDate(result.candidate_recheck.source_data_date)}
@@ -2048,6 +2053,16 @@ export default function ScannerPanel({
                     : "새 날짜로 이동하지 않음"}
                 </p>
                 <p>{result.candidate_recheck.reason}</p>
+                {result.candidate_recheck.status === "TARGET_OUTSIDE_SCANNER_FILTER" && (
+                  <p role="status">
+                    <strong>기본 필터 사유 · </strong>
+                    {scannerRecheckFilterDescription(result.candidate_recheck.filter_reason)}
+                    {" "}이 상태는 NO_TRADE 또는 전략·Risk 심층 계산 결과가 아닙니다.
+                  </p>
+                )}
+                {result.candidate_recheck.status === "TARGET_STOCK_ROW_MISSING" && (
+                  <p>해당 종목의 새 확정일 원본 행이 없어 거래 판단을 보류합니다.</p>
+                )}
                 {result.candidate_recheck.policy_changed === true && (
                   <p>주의 · 이전 분석과 운영 전략 정책이 변경됐습니다.
                     전략·Risk 차이를 시장 변화만으로 해석할 수 없습니다.</p>
@@ -2059,9 +2074,7 @@ export default function ScannerPanel({
                   <small>실행 작업 · {result.candidate_recheck.source_job_id || "ID 확인 불가"}</small>
                   <small>신규 입력 지문 · {result.candidate_recheck.new_scanner_input_fingerprint_id || "확인 불가"}</small>
                   <small>기존 참조 입력 지문 · {result.candidate_recheck.source_input_fingerprint_id || "미제공"}</small>
-                  <small>전체 Scanner 캡처 · {result.candidate_recheck.baseline_scanner_capture_status || "미확인"}
-                    {" · "}{result.candidate_recheck.baseline_scanner_capture_id || "저장 ID 없음"}
-                  </small>
+                  <small>{scannerRecheckCaptureDescription(result.candidate_recheck)}</small>
                   <small>개별 순위 밖 재평가와 이전 후보 참조는 이 전체 Scanner 캡처에 저장되지 않습니다.
                     신규 시세 호가 확인도 별도입니다.</small>
                 </div>
@@ -2081,7 +2094,8 @@ export default function ScannerPanel({
                     {" · "}Risk {result.candidate_recheck.reported_risk_status || "확인 필요"}
                   </p>
                 )}
-                <small>이번 결과는 반환 후보 목록에 대한 비교입니다. 목록에 없다는 사실은 NO_TRADE 판정이 아닙니다.</small>
+                <small>이번 결과는 반환 후보와 별도의 개별 계산을 구분합니다.
+                  필터 제외나 목록 누락만으로 NO_TRADE를 추론하지 않습니다.</small>
               </div>
             </section>
           )}
@@ -2110,6 +2124,13 @@ export default function ScannerPanel({
               <button type="button" onClick={() => void runScanner(true)} disabled={busy}>강제 재계산</button>
             </div>
           </details>
+
+          {result.candidate_recheck && !selectedCandidate && result.candidates.length > 0 && (
+            <p className="scanner-s29-list-note" role="status">
+              재판단 대상 종목이 새 후보 목록에 없습니다. 아래 후보는 다른 종목이므로
+              자동 선택하지 않았습니다. 자세히 보려면 종목을 직접 선택하세요.
+            </p>
+          )}
 
           {(holdingNotice || (holdingError && !holdingDialogCandidate)) && (
             <div className={`scanner-holdings-notice ${holdingError ? "error" : "success"}`} role="status">

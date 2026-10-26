@@ -14,6 +14,7 @@
     "test:sc-ux4-s3": "node --experimental-strip-types --test tests/scannerQuoteTruth.test.mjs",
     "test:sc-s31k": "node --experimental-strip-types --test tests/scannerPriorRiskRecheck.test.mjs",
     "test:sc-s31m": "node --experimental-strip-types --test tests/scannerPositionBoundary.test.mjs",
+    "test:sc-p003": "node --experimental-strip-types --test tests/scannerCandidateRecheckView.test.mjs",
     "test:hold-s31n": "node --experimental-strip-types --test tests/holdingProtectionSummary.test.mjs",
     "test:hold-s31o": "node --experimental-strip-types --test tests/holdingsWatchPolicyText.test.mjs",
     "test:sc-ux-motion": "node --experimental-strip-types --test tests/scannerMotion.test.mjs"

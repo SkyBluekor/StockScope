@@ -234,6 +234,10 @@ async def _run_api_worker(
                     "TARGETED_EVALUATED_OUTSIDE_RANKING",
                     "TARGET_OUTSIDE_SCANNER_FILTER",
                 }
+                and (
+                    recheck.get("status") != "TARGET_OUTSIDE_SCANNER_FILTER"
+                    or bool(recheck.get("filter_reason"))
+                )
                 and recheck.get("source_data_date") == previous.isoformat()
                 and recheck.get("new_data_date") == as_of.isoformat()
                 and recheck.get("source_input_fingerprint_id") == old_fp.get("id")
@@ -262,6 +266,8 @@ async def _run_api_worker(
                 "job_id": job_id,
                 "job_status": public["status"],
                 "recheck_status": recheck.get("status"),
+                "filter_reason": recheck.get("filter_reason"),
+                "recheck_reason": recheck.get("reason"),
                 "new_eod_advanced": recheck.get("new_eod_advanced"),
                 "source_input_fingerprint_id": old_fp.get("id"),
                 "new_input_fingerprint_id": recheck.get("new_scanner_input_fingerprint_id"),

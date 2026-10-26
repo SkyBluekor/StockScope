@@ -88,3 +88,10 @@ def test_p0_03_real_frozen_scanner_replay_reaches_explicit_gate(tmp_path: Path) 
         assert result["baseline_scanner_capture_id"]
         assert result["persisted_capture_status"] in {"COMPLETE", "DUPLICATE"}
         assert result["network_attempts"] == 0
+
+
+
+def test_offline_report_includes_exact_filter_reason_and_rejects_missing_reason() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert '"filter_reason": recheck.get("filter_reason")' in source
+    assert 'or bool(recheck.get("filter_reason"))' in source

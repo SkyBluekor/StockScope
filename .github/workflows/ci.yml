@@ -99,6 +99,10 @@ jobs:
         working-directory: frontend
         run: npm run test:sc-s31m
 
+      - name: Test P0-03 Candidate recheck display and selection
+        working-directory: frontend
+        run: npm run test:sc-p003
+
       - name: Test S31-N Holdings protection summary
         working-directory: frontend
         run: npm run test:hold-s31n
