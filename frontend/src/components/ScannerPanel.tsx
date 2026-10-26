@@ -17,6 +17,7 @@ import {
   fetchBacktestJob,
   type BacktestJob,
   type ScannerCandidate,
+  type ScannerRecheckCandidate,
   type ScannerFreshnessResponse,
   type ScannerDataPlan,
   type ScannerResponse,
@@ -791,7 +792,10 @@ export default function ScannerPanel({
   const [pendingEvidencePlan, setPendingEvidencePlan] = useState<{
     candidate: ScannerCandidate; plan: ScannerEvidenceDataPlan;
   } | null>(null);
-  const [pendingDataPlan, setPendingDataPlan] = useState<{ plan: ScannerDataPlan; pinnedAsOfDate: string | null } | null>(null);
+  const [pendingDataPlan, setPendingDataPlan] = useState<{
+    plan: ScannerDataPlan; pinnedAsOfDate: string | null;
+    recheckCandidate: ScannerRecheckCandidate | null;
+  } | null>(null);
   const [dateNotice, setDateNotice] = useState<string | null>(null);
   const [managedStocks, setManagedStocks] = useState<HoldingStock[]>([]);
   const [holdingsLoading, setHoldingsLoading] = useState(false);
@@ -1199,10 +1203,11 @@ export default function ScannerPanel({
     forceRefresh = false,
     allowLargeSync = false,
     pinnedAsOfDate: string | null = null,
+    recheckCandidate: ScannerRecheckCandidate | null = null,
   ) {
     if (busy || dataPlanInFlightRef.current) return;
     // Large transfer is explicit consent. Small requests proceed automatically.
-    if (!allowLargeSync && !forceRefresh) {
+    if (!allowLargeSync && (!forceRefresh || recheckCandidate !== null)) {
       dataPlanInFlightRef.current = true;
       setDataPlanBusy(true);
       try {
@@ -1213,7 +1218,7 @@ export default function ScannerPanel({
         });
         if (!mountedRef.current) return;
         if (plan.status === "APPROVAL_REQUIRED") {
-          setPendingDataPlan({ plan, pinnedAsOfDate });
+          setPendingDataPlan({ plan, pinnedAsOfDate, recheckCandidate });
           setError(null);
           return;
         }
@@ -1263,8 +1268,9 @@ export default function ScannerPanel({
           ? undefined
           : (result?.requested_as_of ?? latestScannerDataDate(result)),
         candidate_limit: 5,
-        force_refresh: forceRefresh,
+        force_refresh: forceRefresh || recheckCandidate !== null,
         allow_large_sync: allowLargeSync,
+        recheck_candidate: recheckCandidate ?? undefined,
       } as Parameters<typeof createScannerJob>[0] & { known_data_date?: string | null };
       const created = await createScannerJob(request);
       if (!mountedRef.current || pollObserverGenerationRef.current !== observerGeneration) return;
@@ -1716,7 +1722,12 @@ export default function ScannerPanel({
             )}
             <p>준비한 자료는 이 컴퓨터에 저장돼 다음 분석부터 재사용하고, 완료되면 종목 찾기를 자동으로 이어갈게요.</p>
           </div>
-          <button type="button" disabled={busy} onClick={() => void runScanner(false, true, pendingDataPlan.pinnedAsOfDate)}>
+          <button type="button" disabled={busy} onClick={() => void runScanner(
+              pendingDataPlan.recheckCandidate !== null,
+              true,
+              pendingDataPlan.pinnedAsOfDate,
+              pendingDataPlan.recheckCandidate,
+            )}>
             데이터 준비하고 종목 찾기
           </button>
           <button type="button" disabled={busy} onClick={() => setPendingDataPlan(null)}>취소</button>
@@ -1972,6 +1983,22 @@ export default function ScannerPanel({
               <span>{marketText}</span>
             </div>
             <div className="scanner-ux2-result-actions">
+              {selectedCandidate && (
+                <button type="button"
+                  className="scanner-freshness-check-button"
+                  disabled={busy}
+                  onClick={() => void runScanner(true, false, null, {
+                    market: selectedCandidate.market,
+                    code: selectedCandidate.code,
+                    name: selectedCandidate.name,
+                    source_data_date: selectedCandidate.data_date,
+                    source_action: selectedCandidate.action,
+                    source_strategy: selectedCandidate.strategy,
+                  })}
+                >
+                  이 후보 최신 확정 일봉으로 다시 판단
+                </button>
+              )}
               {needsFreshnessCheck && (
                 <button type="button" className="scanner-freshness-check-button" onClick={() => void runScanner(false)} disabled={busy}>
                   최신 확정 시세 확인
@@ -1989,6 +2016,41 @@ export default function ScannerPanel({
               </details>
             </div>
           </section>
+
+           {result.candidate_recheck && (
+            <section className="scanner-preparation-card" role="status" aria-live="polite">
+              <div>
+                <span>선택 후보 · 최신 일봉 재판단 결과</span>
+                <strong>
+                  {result.candidate_recheck.name || result.candidate_recheck.code}
+                  {" · "}
+                  {result.candidate_recheck.status === "MATCHED_RETURNED_CANDIDATE"
+                    ? "새 Scanner 후보 목록에서 확인"
+                    : result.candidate_recheck.status === "NOT_IN_RETURNED_POOL"
+                      ? "새 Scanner 반환 목록 밖 · 종목 판단 미확정"
+                      : "새 기준일 자료 정합성 확인 필요"}
+                </strong>
+                <p>
+                  이전 기준일 {formatDate(result.candidate_recheck.source_data_date)}
+                  {" → "}이번 기준일 {formatDate(result.candidate_recheck.new_data_date)}
+                  {" · "}
+                  {result.candidate_recheck.new_eod_advanced
+                    ? "새 EOD로 이동"
+                    : "새 날짜로 이동하지 않음"}
+                </p>
+                <p>{result.candidate_recheck.reason}</p>
+                {result.candidate_recheck.status === "MATCHED_RETURNED_CANDIDATE" && (
+                  <p>새 반환 후보의 판단 · {result.candidate_recheck.reported_action_label
+                    || result.candidate_recheck.reported_action
+                    || "확인 필요"}
+                    {" · "}전략 {result.candidate_recheck.reported_strategy || "확인 필요"}
+                    {" · "}Risk {result.candidate_recheck.reported_risk_status || "확인 필요"}
+                  </p>
+                )}
+                <small>이번 결과는 반환 후보 목록에 대한 비교입니다. 목록에 없다는 사실은 NO_TRADE 판정이 아닙니다.</small>
+              </div>
+            </section>
+          )}
 
           {preparationItems.length > 0 && (
             <section className="scanner-preparation-card">

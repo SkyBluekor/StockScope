@@ -2949,7 +2949,47 @@ export type ScannerCandidate = {
   };
 };
 
+export type ScannerCandidateRecheck = {
+  version: "SCANNER_CANDIDATE_RECHECK_V1";
+  reference_kind: "USER_SELECTED_PRIOR_SCANNER_CANDIDATE";
+  market: "KOSPI" | "KOSDAQ";
+  code: string;
+  name: string;
+  source_data_date: string;
+  source_action: string;
+  source_strategy: string;
+  new_data_date: string | null;
+  new_scanner_input_fingerprint_id: string | null;
+  new_eod_advanced: boolean;
+  no_trade_inferred: false;
+  independently_evaluated_when_not_returned: false;
+  scope: "RETURNED_SCANNER_CANDIDATES_ONLY";
+  status: "NOT_EVALUABLE" | "NOT_IN_RETURNED_POOL" | "MATCHED_RETURNED_CANDIDATE";
+  reason: string;
+  returned_candidate_count?: number;
+  reported_action?: string | null;
+  reported_candidate_state?: string;
+  reported_strategy?: string;
+  reported_action_label?: string;
+  reported_risk_status?: string | null;
+  new_candidate?: {
+    market: string; code: string; data_date: string;
+    strategy: string; action: string; candidate_state: string;
+  } | null;
+};
+
+export type ScannerRecheckCandidate = {
+  market: "KOSPI" | "KOSDAQ";
+  code: string;
+  name: string;
+  source_data_date: string;
+  source_action: string;
+  source_strategy: string;
+};
+
 export type ScannerResponse = {
+  candidate_recheck?: ScannerCandidateRecheck;
+
   version: string;
   horizon_context?: {
     intent: "SHORT" | "MEDIUM" | "LONG" | "LEGACY_UNSPECIFIED" | string;
@@ -3078,6 +3118,7 @@ export type ScannerResponse = {
 };
 
 export type ScannerRequest = {
+  recheck_candidate?: ScannerRecheckCandidate;
   market_scope?: "ALL" | "KOSPI" | "KOSDAQ";
   as_of_date?: string;
   candidate_limit?: number;
