@@ -57,3 +57,30 @@ if ($LASTEXITCODE -ne 0) { throw 'worktree update failed' }
 P0-04의 이 3차 작업은 **기존 우회 엔드포인트 폐쇄**이지, 사용자 Windows 실보유 데이터 UAT 완료가 아니다. 기존 일봉/원본 DB, 실제 계좌·주문, KRX/유료 provider, 배포/병합은 그대로 금지한다.
 
 P0-04 완료 판정에는 사용자 보유 계좌의 실제 데이터 조회 가능성, 기존 기능의 안전한 migration 준비 상태, 사용자 명시 확정 후 영속 저장·재조회, 충돌 UX 확인이 추가로 필요하다.
+
+## P0-04 4차: 운영 Windows Holdings 저장 상태 읽기 전용 사전 점검
+
+신규 `tools/data/p0_04_holdings_readonly_preflight.py`는 **표준 라이브러리만 사용**한다. 실제 운영 Holdings SQLite와 실제 Market SQLite를 각각 `mode=ro` + `PRAGMA query_only=ON`으로 열고, 기존 DB를 생성하거나 migration하지 않는다. WAL이 남아 있는 SQLite를 잘못 무시할 수 있는 `immutable=1`도 사용하지 않는다. 네트워크, KIS, KRX, JEV, TypeSafe, 서버 시작·계획 적용 호출을 포함하지 않는다.
+
+검사: 두 DB 존재/기본 스키마, Holdings quick_check, P3-S1 decision·P3-S2 recovery·P4-S1 watch 테이블 및 schema version 존재, 등록 계좌/감시 종목/OPEN·CLOSED Position/원장 이벤트/활성 관리 계획/분석 Revision **집계 건수**, 활성 계획이 종료된 Position에 붙거나 없는 Position을 참조하는 등 구조 불일치, 저장된 Market 일봉·지수 행 건수와 마지막 저장일. **계좌명, UUID, 종목코드, 가격·평단·수량은 stdout에 출력하지 않는다.** 날짜·집계 건수는 출력된다.
+
+Windows 사용자가 실제 PC에서 확인할 때의 읽기 전용 명령(기존 Python venv만 재사용):
+
+```powershell
+cd C:\Projects\StockScope
+$repo = (git rev-parse --show-toplevel).Trim()
+$work = Join-Path $env:TEMP "StockScope_P0_02_90745c8d5d49"
+$holdings = Join-Path $repo "backend\runtime\holdings\holdings.db"
+$market = Join-Path $repo "backend\runtime\market_history\market_history.db"
+$python = Join-Path $repo ".venv\Scripts\python.exe"
+git fetch origin codex/p0-01-mvp-c1-c2-integration-20261022
+if ($LASTEXITCODE -ne 0) { throw "fetch failed" }
+$sha = (git rev-parse origin/codex/p0-01-mvp-c1-c2-integration-20261022).Trim()
+git -C $work switch --detach $sha
+if ($LASTEXITCODE -ne 0) { throw "detached worktree update failed" }
+& $python (Join-Path $work "tools\data\p0_04_holdings_readonly_preflight.py") --holdings-db $holdings --market-db $market
+```
+
+CLI는 JSON 보고서를 stdout으로 출력한다. 상태가 `BLOCKED_*` 또는 `HOLD_*`인 경우 exit=2이며, 이는 **자동 복구가 아니라** 추가 검토가 필요함을 의미한다. `READ_ONLY_HOLDINGS_PREFLIGHT_OBSERVED` 또는 `NO_OPEN_POSITIONS_TO_UAT`는 exit=0이나, 이는 **DB 스키마/집계 상태를 읽었다는 의미뿐**이고 라이브 데이터 제공자 승인·완전한 시장 데이터·보유 계획 적용 권한을 뜻하지 않는다.
+
+CI는 Python 전체 백엔드 테스트와 별도 Windows Fresh Clone에서 합성 `tmp_path` SQLite를 사용해 누락 DB, migration 미수행, 정상 schema, 손상/부분 schema, 읽기 전용·개인정보 비출력, 열린 WAL 반영, CLI 경로를 점검한다. 실제 사용자 Windows 운영 DB 결과는 **사용자 PC에서 명령을 실행한 로그가 있어야** 확인된 것으로 인정한다. 운영 마이그레이션·실제 보유 계획 적용은 이 진단으로 절대 자동 수행하지 않는다.
