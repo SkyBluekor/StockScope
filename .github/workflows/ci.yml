@@ -219,7 +219,7 @@ jobs:
 
       - name: Verify P0-05 S16 integrity reason and calendar gap subtype contracts
         shell: powershell
-        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_q7_s16_readonly_maturity.py -k test_g0c
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_q7_s16_readonly_maturity.py -k 'test_g0c or test_g0d'
 
       - name: Verify fresh runtime and no Drive dependency
         shell: powershell
