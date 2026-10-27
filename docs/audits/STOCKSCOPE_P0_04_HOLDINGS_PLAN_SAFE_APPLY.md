@@ -84,3 +84,29 @@ if ($LASTEXITCODE -ne 0) { throw "detached worktree update failed" }
 CLI는 JSON 보고서를 stdout으로 출력한다. 상태가 `BLOCKED_*` 또는 `HOLD_*`인 경우 exit=2이며, 이는 **자동 복구가 아니라** 추가 검토가 필요함을 의미한다. `READ_ONLY_HOLDINGS_PREFLIGHT_OBSERVED` 또는 `NO_OPEN_POSITIONS_TO_UAT`는 exit=0이나, 이는 **DB 스키마/집계 상태를 읽었다는 의미뿐**이고 라이브 데이터 제공자 승인·완전한 시장 데이터·보유 계획 적용 권한을 뜻하지 않는다.
 
 CI는 Python 전체 백엔드 테스트와 별도 Windows Fresh Clone에서 합성 `tmp_path` SQLite를 사용해 누락 DB, migration 미수행, 정상 schema, 손상/부분 schema, 읽기 전용·개인정보 비출력, 열린 WAL 반영, CLI 경로를 점검한다. 실제 사용자 Windows 운영 DB 결과는 **사용자 PC에서 명령을 실행한 로그가 있어야** 확인된 것으로 인정한다. 운영 마이그레이션·실제 보유 계획 적용은 이 진단으로 절대 자동 수행하지 않는다.
+
+## P0-04 4차 Windows 사용자 운영 DB 사전 점검 증거 — 2026-10-27
+
+사용자 Windows에서 `bc75d5636560f2747583376b57df9aee09d37ffd`를 별도 TEMP worktree로 체크아웃하고 **실제 운영 Holdings/Market DB를 mode=ro로 조회**했다. 사용자 로그의 결과는 `READ_ONLY_HOLDINGS_PREFLIGHT_OBSERVED`.
+
+- 2 계좌, 11 감시 종목, 1 OPEN Position, 0 CLOSED Position, 1 ACTIVE Plan, 8 Analysis Revisions, 1 ledger event.
+- Decision / Recovery / Watch domain tables 모두 `READY` (4/4, 3/3, 6/6).
+- 종료 Position의 활성 계획, 없는 Position의 활성 계획, 여러 ACTIVE 계획, ACTIVE 없는 OPEN Position은 각각 **0건**.
+- Market `stock_rows=448301`, `index_rows=324`, 마지막 저장 `20261021` (**공식 최신 EOD 검증 아님**). 2026-10-27 기준 6일 이전의 기록이므로 신규 판단의 현재 사용 가능 여부는 별도 평가 필요.
+- `db_write_calls=0`, `external_requests=0`, `actual_plan_applied=false`, `ready_for_plan_write=false`. 이번 조회 결과만으로 live KIS 계좌 확인이나 신규 계획 적용을 인정하지 않는다.
+
+**판정: 실제 Windows 운영 DB의 저장 구조/관계 점검 통과. 계획 적용 UAT는 미수행.**
+
+## P0-04 5차: 실제 보유 Position의 최신 분석 사용 가능 여부 — 읽기 전용
+
+새 스크립트 `tools/data/p0_04_holdings_workspace_probe.py`는 동일한 두 운영 SQLite를 읽기 전용으로 검사하고, 이미 만들어진 `HoldingsWorkspaceQueryService`가 보유 Position에 대해 반환하는 **저장된 EOD 분석 계약과 활성 계획 보호 상태**를 종목코드·계좌명·가격·Position ID를 출력하지 않고 요약한다. 실제 Position은 스크립트가 내부적으로 조회하되 stdout에는 민감한 원본 객체 대신 allowlist 상태 코드만 표시한다.
+
+핵심 결과: `analysis_contract_status`, `analysis_reason_code`, `analysis_current_use_allowed`, `active_plan_count`, `stored_eod_management_state`(절대로 현재 실시간 가격 판정 아님), `decision_effective_status`, `decision_stale`, `review_conditions`. 모든 `ready_for_plan_write`는 **false**, 외부 호출·migrate·evaluate·apply·거래 기록 없음. 사전 점검이 통과한 경우에만 실행하고, 실제 보유건수와 활성 계획 건수의 변경을 감지하면 결과를 차단한다.
+
+Windows에서 로컬 브랜치 fetch/임시 worktree 업데이트를 완료한 다음, 기존 `$repo`, `$work`, `$python`, `$holdings`, `$market` 변수를 재사용한다:
+
+```powershell
+& $python (Join-Path $work "tools\data\p0_04_holdings_workspace_probe.py") --holdings-db $holdings --market-db $market
+```
+
+CLI 스크립트는 `C:\Projects\StockScope\.venv` 기존 라이브러리를 사용하며 추가 프로그램/서비스 기동·환경 변경 없이 실행된다. 반환 상태가 `READ_ONLY_WORKSPACE_STORED_STATE_OBSERVED`더라도 **현재 분석의 신규 사용 승인 여부는 필드별로 확인해야 한다.** 최종 사용자 승인하에만 앞으로 별도 계획 적용 UAT를 진행한다.
