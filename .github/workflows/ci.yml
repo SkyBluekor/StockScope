@@ -181,6 +181,11 @@ jobs:
         shell: powershell
         run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_03_offline_api_job_uat.py
 
+      - name: Verify P0-03 Windows browser real API runner fail-closed safety
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_03_windows_browser_uat.py
+
+
       - name: Verify fresh runtime and no Drive dependency
         shell: powershell
         run: |
