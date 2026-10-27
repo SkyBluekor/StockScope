@@ -95,3 +95,19 @@ def test_offline_report_includes_exact_filter_reason_and_rejects_missing_reason(
     source = SCRIPT.read_text(encoding="utf-8")
     assert '"filter_reason": recheck.get("filter_reason")' in source
     assert 'or bool(recheck.get("filter_reason"))' in source
+
+
+
+def test_asgi_transport_flag_does_not_skip_original_db_safety(tmp_path: Path) -> None:
+    missing = tmp_path / "missing.sqlite"
+    x = run(market_db=missing, as_of=date(2026, 10, 21),
+            market_scope="ALL", operational_repo=tmp_path,
+            verify_asgi_http=True)
+    assert x["status"] == "HOLD_SNAPSHOT_FAILED"
+    assert x["transport_requested"] == "FASTAPI_ASGI_NO_TCP"
+    assert not missing.exists()
+    worker = run(market_db=tmp_path / "operational.db",
+                 as_of=date(2026, 10, 21),
+                 market_scope="ALL", operational_repo=tmp_path,
+                 _snapshot_worker=True, verify_asgi_http=True)
+    assert worker["status"] == "HOLD_UNSAFE_WORKER_SOURCE"

@@ -396,3 +396,99 @@ def test_targeted_filter_preserves_exact_frozen_scanner_reason() -> None:
     assert x["status"] == "TARGET_OUTSIDE_SCANNER_FILTER"
     assert x["filter_reason"] == "ETF/ETN"
     assert x.get("targeted_action") is None
+
+
+
+@pytest.mark.asyncio
+async def test_actual_fastapi_asgi_post_get_recheck_and_http_validation(monkeypatch) -> None:
+    """True FastAPI routing; no socket and no provider calls."""
+    from types import SimpleNamespace
+    import httpx
+    from app.api import backtest as api
+    from app.main import app as fastapi_app
+    from app.backtest.jobs import BacktestJobManager
+
+    calls = {"started": 0, "finished": 0, "scanner": 0}
+    class Scanner:
+        async def prepare_latest_confirmed_data(self, **kwargs):
+            return {"status": "READY", "resolved_as_of_date": "2026-10-23",
+                    "date_changed": True, "diagnostics": {"network_requests": 0}}
+        async def run(self, **kwargs):
+            calls["scanner"] += 1
+            assert kwargs["force_refresh"] is True
+            assert kwargs["selection_policy_pin"] == "PIN"
+            scan = result()
+            scan["strategy_selection_policy"] = {
+                "policy_id": "CURRENT", "policy_hash": "same",
+            }
+            scan["more_candidates"] = [{
+                "market": "KOSPI", "code": "005930",
+                "data_date": "2026-10-23", "strategy": "BREAKOUT",
+                "action": "WAIT", "candidate_state": "WATCH",
+                "risk": {"status": "OK"},
+            }]
+            return scan
+
+    class Prospective:
+        catalog = SimpleNamespace(db_path="fake-temporary-capture.db")
+        def try_begin_scanner_capture(self, **kwargs):
+            calls["started"] += 1
+            return {"status": "PENDING"}
+        def try_finalize_scanner_capture(self, **kwargs):
+            calls["finished"] += 1
+            return {"status": "COMPLETE", "capture_id": "asgi-temp-capture",
+                    "canonical_capture_id": "asgi-temp-capture"}
+
+    monkeypatch.setattr(api, "KrxProvider", lambda _: object())
+    monkeypatch.setattr(api, "StockScannerService", lambda _: Scanner())
+    monkeypatch.setattr(api, "ProductionStrategySelectionRegistry",
+                        lambda: SimpleNamespace(pin_active_selection_policy=lambda: "PIN"))
+    monkeypatch.setattr(api, "get_settings",
+                        lambda: SimpleNamespace(krx_api_key=None))
+    monkeypatch.setattr(api, "_prospective_service", lambda: Prospective())
+    monkeypatch.setattr(api, "_prospective_reference_capture_service",
+                        lambda: SimpleNamespace(try_capture=lambda cid: {"capture_id": cid}))
+    monkeypatch.setattr(api, "extract_rank_evidence_from_audit", lambda _: [])
+    monkeypatch.setattr(api, "persist_rank_evidence", lambda **_: {"status": "TEST_ONLY"})
+    monkeypatch.setattr(api, "enrich_scanner_result_with_ai_presentation", lambda _: None)
+    monkeypatch.setattr(api, "backtest_jobs", BacktestJobManager())
+
+    request = ScannerRequest(
+        market_scope="ALL", force_refresh=True,
+        recheck_candidate=ScannerRecheckCandidate(
+            market="KOSPI", code="005930", name="Example",
+            source_data_date=date(2026, 10, 21), source_action="WAIT",
+            source_strategy="BREAKOUT", source_policy_hash="same",
+            source_input_fingerprint_id="old-fingerprint",
+        ),
+    ).model_dump(mode="json")
+    transport = httpx.ASGITransport(app=fastapi_app, raise_app_exceptions=True)
+    async with httpx.AsyncClient(transport=transport,
+                                 base_url="http://p003-asgi.invalid") as client:
+        invalid = {**request, "force_refresh": False}
+        forbidden = await client.post("/api/backtest/scanner/jobs", json=invalid)
+        assert forbidden.status_code == 400
+        assert forbidden.json()["detail"]["code"] == "RECHECK_REQUIRES_LATEST_EOD"
+        invalid = {**request, "as_of_date": "2026-10-21"}
+        rejected = await client.post("/api/backtest/scanner/jobs", json=invalid)
+        assert rejected.status_code == 400
+        assert rejected.json()["detail"]["code"] == "RECHECK_REQUIRES_LATEST_EOD"
+        assert calls == {"started": 0, "finished": 0, "scanner": 0}
+        created = await client.post("/api/backtest/scanner/jobs", json=request)
+        assert created.status_code == 202
+        job_id = created.json()["job_id"]
+        job = api.backtest_jobs.get(job_id)
+        assert job is not None and job.task is not None
+        await job.task
+        finished = await client.get("/api/backtest/jobs/" + job_id)
+        assert finished.status_code == 200
+        body = finished.json()
+    assert body["job_id"] == job_id
+    assert body["status"] == "completed"
+    recheck = body["result"]["candidate_recheck"]
+    assert recheck["status"] == "MATCHED_RETURNED_CANDIDATE"
+    assert recheck["source_job_id"] == job_id
+    assert recheck["new_eod_advanced"] is True
+    assert recheck["baseline_scanner_capture_id"] == "asgi-temp-capture"
+    assert recheck["targeted_result_stored_in_capture"] is False
+    assert calls == {"started": 1, "finished": 1, "scanner": 1}
