@@ -165,6 +165,7 @@ def test_wal_committed_holdings_are_visible_without_immutable_snapshot(tmp_path:
             "INSERT INTO position_account(id,provider,account_kind,display_name,status,created_at,updated_at) "
             "VALUES('ac1','MANUAL','MANUAL','PRIVATE_WAL','ACTIVE','now','now')"
         )
+        writer.commit()  # committed WAL data still visible before checkpoint
         report = inspect_holdings_environment(h, m)
         assert report["counts"]["registered_accounts"] == 1
         assert report["domains"]["decision"]["status"] == "READY"
