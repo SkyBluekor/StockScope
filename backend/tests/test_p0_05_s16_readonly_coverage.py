@@ -281,4 +281,52 @@ def test_bad_invalid_diagnostics_do_not_return_partial_output(tmp_path, monkeypa
     _mock_s16(monkeypatch, value)
     result = audit.inspect(sim, market, as_of=date(2026, 10, 23))
     assert result["status"] == "HOLD_S16_INVALID_DIAGNOSTICS_CONTRACT"
+    assert result["diagnostic_failure_class"] == "CHECK_BUCKET_EXCEEDS_INVALID_CANDIDATES"
     assert "on_demand_window_status_counts" not in result
+
+
+def test_g0d_more_than_one_unknown_reason_from_same_invalid_is_never_accepted(
+    tmp_path, monkeypatch,
+):
+    sim, market = _files(tmp_path)
+    value = _payload()
+    value["integrity_counts"] = {
+        "LOCAL_VALIDATED": 0, "LEGACY_LIMITED": 0, "INVALID": 1,
+    }
+    value["invalid_check_failure_counts"]["policy"] = 1
+    value["invalid_reason_code_counts"] = {"OTHER_S7_CODE": 2}
+    value["excluded_reason_counts"] = {"FROZEN_INTEGRITY_INVALID": 1}
+    for win in value["windows"].values():
+        win["readiness_denominator"] = 0
+        win["observed"] = 0
+        win["awaiting_future_trading_days"] = 0
+    _mock_s16(monkeypatch, value)
+    result = audit.inspect(sim, market, as_of=date(2026, 10, 23))
+    assert result["status"] == "HOLD_S16_INVALID_DIAGNOSTICS_CONTRACT"
+    assert result["diagnostic_failure_class"] == "REASON_BUCKET_EXCEEDS_INVALID_CANDIDATES"
+    assert "on_demand_window_status_counts" not in result
+    assert "PRIVATE" not in json.dumps(result)
+    assert result["db_write_calls"] == 0
+
+
+def test_g0d_valid_collapsed_unknown_reason_still_requires_matching_windows(
+    tmp_path, monkeypatch,
+):
+    sim, market = _files(tmp_path)
+    value = _payload()
+    value["integrity_counts"] = {
+        "LOCAL_VALIDATED": 0, "LEGACY_LIMITED": 0, "INVALID": 1,
+    }
+    value["invalid_check_failure_counts"]["policy"] = 1
+    value["invalid_reason_code_counts"] = {"OTHER_S7_CODE": 1}
+    value["excluded_reason_counts"] = {"FROZEN_INTEGRITY_INVALID": 1}
+    for win in value["windows"].values():
+        win["readiness_denominator"] = 0
+        win["observed"] = 0
+        win["awaiting_future_trading_days"] = 0
+    _mock_s16(monkeypatch, value)
+    report = audit.inspect(sim, market, as_of=date(2026, 10, 23))
+    assert report["status"] == "READ_ONLY_S16_OBSERVATION_COVERAGE_OBSERVED"
+    assert report["invalid_reason_code_counts"] == {"OTHER_S7_CODE": 1}
+    assert report["frozen_integrity_categories"]["INVALID"] == 1
+    assert report["on_demand_window_status_counts"]["5d"]["observed"] == 0
