@@ -177,7 +177,13 @@ def _safe_worker_app(*, snapshot: Path, scratch: Path, operational_repo: Path,
 
     @app.get("/__p003/health")
     async def health() -> dict:
-        return {"ready": True, "version": VERSION}
+        return {
+            "ready": True, "version": VERSION,
+            "offline_krx_attempts": provider.attempts,
+            "external_socket_attempts": len(
+                getattr(app.state, "blocked_network_attempts", [])
+            ),
+        }
 
     @app.get("/__p003/seed")
     async def seed() -> dict:
@@ -215,6 +221,7 @@ def _server_worker(args: argparse.Namespace) -> int:
                   + str(exc)[:180], file=sys.stderr, flush=True)
             return 2
         import uvicorn
+        app.state.blocked_network_attempts = attempts
         print("P003_SERVER_STARTING", flush=True)
         uvicorn.run(app, host="127.0.0.1", port=BACKEND_PORT, log_level="warning",
                     access_log=False, lifespan="off")
@@ -296,8 +303,16 @@ def _driver(args: argparse.Namespace) -> dict[str, Any]:
                 report = json.loads(lines[-1]) if lines else {}
             except json.JSONDecodeError:
                 report = {}
+            try:
+                with urlopen("http://127.0.0.1:5280/__p003/health",
+                             timeout=3) as final_response:
+                    final_health = json.loads(final_response.read())
+            except (OSError, URLError, ValueError):
+                final_health = {}
             valid = (
                 run.returncode == 0
+                and final_health.get("offline_krx_attempts") == 0
+                and final_health.get("external_socket_attempts") == 0
                 and report.get("status") == "BROWSER_REAL_API_VERIFIED"
                 and report.get("previous_date") < report.get("new_date")
                 and report.get("job_status") == "completed"
@@ -322,6 +337,8 @@ def _driver(args: argparse.Namespace) -> dict[str, Any]:
                 "status": OK_STATUS if valid else "HOLD_BROWSER_REAL_API_INCOMPLETE",
                 "browser_exit_code": run.returncode,
                 "browser_summary": report,
+                "server_offline_krx_attempts": final_health.get("offline_krx_attempts"),
+                "server_external_socket_attempts": final_health.get("external_socket_attempts"),
                 "browser_log_tail": None if valid else run.stdout[-1800:],
                 "capture_db_writes": "TEMP_ONLY",
                 "official_latest_eod_verified": False,
