@@ -219,10 +219,14 @@ def test_decision_api_blocks_add_and_applies_new_plan_without_ledger_event(api_e
         stop_price="95",
         target1_price="125",
         target2_price="135",
-        scanner_version="test",
-        analysis_engine_version="test",
-        policy_version="test",
-        source_versions={"fixture": "api-2"},
+        scanner_version=StockScannerService.VERSION,
+        analysis_engine_version=ANALYSIS_ENGINE_VERSION,
+        policy_version=production_policy_cache_token(),
+        source_versions={
+            "fixture": "api-2",
+            "fingerprint_contract_version": INPUT_FINGERPRINT_CONTRACT_VERSION,
+            "input_generation": generation,
+        },
         snapshot={"fixture": True},
         computed_at="2026-09-24T01:00:00+00:00",
     )
