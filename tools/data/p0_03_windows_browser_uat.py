@@ -13,6 +13,7 @@ from datetime import date, datetime, timedelta, timezone
 import io
 import json
 import os
+import shutil
 from pathlib import Path
 import socket
 import sqlite3
@@ -52,6 +53,46 @@ def validate_worker_snapshot(market_db: Path) -> bool:
     return (p.name == "market_snapshot.sqlite3"
             and p.parent.name.startswith("StockScope_P0_03_Browser_")
             and p.is_file())
+
+
+def find_system_chrome(*, override: str | None = None) -> Path | None:
+    """Find an installed Google Chrome without downloading any browser.
+
+    The explicit override is useful for a custom Chrome installation.
+    Ignore Chromium, Chrome for Testing, Edge and Playwright caches so the
+    runtime matches the user's requested already-installed regular Chrome.
+    """
+    supplied = (override if override is not None
+                else os.getenv("P003_CHROME_EXECUTABLE", "")).strip()
+    if supplied:
+        candidate = Path(supplied.strip('"')).expanduser()
+        return candidate if candidate.is_file() else None
+
+    candidates: list[Path] = []
+    if sys.platform == "win32":
+        try:
+            import winreg
+            for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+                try:
+                    with winreg.OpenKey(
+                        hive, r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe"
+                    ) as key:
+                        path, _ = winreg.QueryValueEx(key, None)
+                        candidates.append(Path(str(path)))
+                except OSError:
+                    pass
+        except ImportError:
+            pass
+        for key in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA"):
+            directory = os.getenv(key)
+            if directory:
+                candidates.append(Path(directory) / "Google" / "Chrome" /
+                                  "Application" / "chrome.exe")
+    else:
+        which = shutil.which("google-chrome") or shutil.which("google-chrome-stable")
+        if which:
+            candidates.append(Path(which))
+    return next((p for p in candidates if p.is_file()), None)
 
 
 def _port_available(port: int) -> bool:
@@ -238,19 +279,28 @@ def _driver(args: argparse.Namespace) -> dict[str, Any]:
         "operational_db_read_only": True, "original_db_modified": False,
         "external_network_blocked": True, "latest_krx_eod_confirmed": False,
         "real_brokerage_orders": False, "browser_api_mode": "REAL_LOCAL_FASTAPI",
+        "uses_installed_google_chrome": True,
+        "browser_download_required": False,
     }
     if args.as_of >= datetime.now(KST).date():
         return {**result, "status": "HOLD_AS_OF_NOT_HISTORICAL"}
     if args.market_scope not in ("ALL", *MARKETS):
         return {**result, "status": "HOLD_INVALID_SCOPE"}
+    if not args.market_db.is_file():
+        return {**result, "status": "HOLD_OPERATIONAL_DB_MISSING"}
     if not all(_port_available(port) for port in (FRONTEND_PORT, BACKEND_PORT)):
         return {**result, "status": "HOLD_LOOPBACK_PORT_IN_USE"}
     frontend = ROOT / "frontend"
     node_runner = frontend / "node_modules" / "@playwright" / "test" / "cli.js"
     if not node_runner.is_file():
-        return {**result, "status": "HOLD_PLAYWRIGHT_NOT_INSTALLED"}
-    if not args.market_db.is_file():
-        return {**result, "status": "HOLD_OPERATIONAL_DB_MISSING"}
+        return {**result, "status": "HOLD_PLAYWRIGHT_TEST_RUNNER_NOT_INSTALLED",
+                "browser_download_required": False}
+    system_chrome = find_system_chrome()
+    if system_chrome is None:
+        return {**result, "status": "HOLD_INSTALLED_GOOGLE_CHROME_NOT_FOUND",
+                "browser_download_required": False}
+    if shutil.which("node") is None or shutil.which("npm") is None:
+        return {**result, "status": "HOLD_NODE_OR_NPM_NOT_FOUND"}
     with TemporaryDirectory(prefix="StockScope_P0_03_Browser_") as tmp:
         scratch = Path(tmp)
         snapshot = scratch / "market_snapshot.sqlite3"
@@ -291,7 +341,8 @@ def _driver(args: argparse.Namespace) -> dict[str, Any]:
                 run = subprocess.run(cmd, cwd=str(frontend), text=True,
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                     encoding="utf-8", errors="replace", timeout=MAX_RUNTIME_SECONDS,
-                    env={**os.environ, "P003_LOOPBACK_UAT": "1"},
+                    env={**os.environ, "P003_LOOPBACK_UAT": "1",
+                         "P003_CHROME_EXECUTABLE": str(system_chrome)},
                 )
             except (OSError, subprocess.TimeoutExpired) as exc:
                 return {**result, "status": "HOLD_BROWSER_EXECUTION_FAILED",
