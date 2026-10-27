@@ -111,6 +111,10 @@ jobs:
         working-directory: frontend
         run: npm run test:hold-s31o
 
+      - name: Test P0-04 Holdings plan confirmation
+        working-directory: frontend
+        run: npm run test:hold-p004
+
       - name: Build frontend
         working-directory: frontend
         run: npm run build
