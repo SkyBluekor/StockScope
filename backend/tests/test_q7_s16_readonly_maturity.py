@@ -270,3 +270,116 @@ def test_local_completion_clock_groups_are_not_called_verified_backtests(
     assert result["retrospective_or_later_capture_count_deprecated"] is True
     assert result["independently_proven_retroactive_count"] is None
     assert "LATER_LOCAL_COMPLETION_DATE_DOES_NOT_PROVE_RETROSPECTIVE_SELECTION" in result["notes"]
+
+
+# P0-05/G0c: Cross-sectional coverage diagnostics must not weaken S16's
+# independently sourced calendar gate or mark missing weekdays as holidays.
+def test_g0c_invalid_reason_breakdown_from_actual_s7_shape(tmp_path, monkeypatch):
+    sim, market = _db(tmp_path)
+    pairs = _pairs()
+    _mock(monkeypatch, pairs=pairs)
+
+    def classify(_capture, sample):
+        i = sample["sample_index"]
+        if i == 4:
+            return {"category": "REFERENCE_ONLY"}
+        if i in (0, 1):
+            checks = {
+                "policy": {"status": "FAIL", "code": "POLICY_PROVENANCE_UNVERIFIED"},
+                "dates": {"status": "FAIL" if i == 0 else "PASS"},
+                "strict_s3": {"status": "FAIL"},
+            }
+            return {
+                "category": "INVALID", **checks,
+                "codes": [
+                    "POLICY_PROVENANCE_UNVERIFIED", "S3_CONTRACT_UNSATISFIED",
+                    *(["DATE_MISMATCH"] if i == 0 else []),
+                ],
+            }
+        return {
+            "category": "LEGACY_LIMITED" if i == 2 else "LOCAL_VALIDATED",
+            "codes": [],
+        }
+
+    monkeypatch.setattr(s16, "assess_frozen_candidate", classify)
+    report = s16.measure(sim, market, as_of=date(2026, 10, 14))
+    assert report["status"] == "DESCRIPTIVE_OBSERVATIONS_ONLY"
+    assert report["integrity_counts"] == {
+        "LOCAL_VALIDATED": 1, "LEGACY_LIMITED": 1, "INVALID": 2,
+    }
+    assert report["invalid_check_failure_counts"] == {
+        "rank":0, "strategy":0, "policy":2, "engine":0,
+        "dates":1, "risk":0, "strict_s3":2,
+    }
+    assert report["invalid_reason_code_counts"] == {
+        "DATE_MISMATCH":1, "POLICY_PROVENANCE_UNVERIFIED":2,
+        "S3_CONTRACT_UNSATISFIED":2,
+    }
+    assert report["invalid_without_failed_checks"] == 0
+    assert report["invalid_reason_counts_can_overlap"] is True
+    assert report["excluded_reason_counts"]["FROZEN_INTEGRITY_INVALID"] == 2
+    # 5 reason incidences among two invalid samples are NOT five bad samples.
+
+
+def test_g0c_gap_subtypes_do_not_change_conservative_s16_observation_gate(
+    tmp_path, monkeypatch,
+):
+    sim, market = _db(tmp_path)
+    _mock(monkeypatch)
+    class Gapped:
+        def __init__(self, _db):
+            pass
+        def evaluate_sample(self, *, sample, spec):
+            assert spec["require_complete_market_eod"] is True
+            return {
+                "available_trading_days": 5,
+                "evaluated_through": "2026-10-20",
+                "return_5d": 10.0, "return_10d": None, "return_20d": None,
+                "details": {
+                    "reference_price":100,
+                    "observed_market_days": [
+                        "2026-10-13","2026-10-14","2026-10-16",
+                        "2026-10-19","2026-10-20",
+                    ],
+                    "observation_window_end_dates": {"5d":"2026-10-20"},
+                },
+            }
+    monkeypatch.setattr(s16, "ProspectiveEvaluator", Gapped)
+    # Compare against a single 2026-10-12 synthetic signal date.
+    value = s16.measure(sim, market, as_of=date(2026, 10, 23))
+    assert value["status"] == "DESCRIPTIVE_OBSERVATIONS_ONLY"
+    assert value["windows"]["5d"]["observed"] == 0
+    assert value["windows"]["5d"]["unverified_calendar_or_market_gap"] == 3
+    assert value["windows"]["5d"]["gap_with_sufficient_confirmed_sessions"] == 3
+    assert value["windows"]["5d"]["gap_with_insufficient_confirmed_sessions"] == 0
+    assert value["windows"]["10d"]["gap_with_insufficient_confirmed_sessions"] == 3
+    assert value["windows"]["20d"]["gap_with_insufficient_confirmed_sessions"] == 3
+    assert value["gap_subtypes_are_not_independent_calendar_proof"] is True
+
+
+def test_g0c_no_unverified_calendar_gap_means_insufficient_sessions_are_awaiting(
+    tmp_path, monkeypatch,
+):
+    sim, market = _db(tmp_path)
+    _mock(monkeypatch)
+    class Incomplete:
+        def __init__(self, _db):
+            pass
+        def evaluate_sample(self, *, sample, spec):
+            return {
+                "available_trading_days": 4,
+                "evaluated_through": "2026-10-16",
+                "return_5d": None, "return_10d": None, "return_20d": None,
+                "details": {
+                    "reference_price":100,
+                    "observed_market_days": [
+                        "2026-10-13","2026-10-14","2026-10-15","2026-10-16"
+                    ],
+                },
+            }
+    monkeypatch.setattr(s16, "ProspectiveEvaluator", Incomplete)
+    result = s16.measure(sim, market, as_of=date(2026, 10, 16))
+    assert result["status"] == "DESCRIPTIVE_OBSERVATIONS_ONLY"
+    assert result["windows"]["5d"]["awaiting_future_trading_days"] == 3
+    assert result["windows"]["5d"]["gap_with_insufficient_confirmed_sessions"] == 0
+    assert result["windows"]["10d"]["awaiting_future_trading_days"] == 3
