@@ -25,6 +25,9 @@ function Fixture() {
   return (
     <main>
       <h1>P0-04 Synthetic Holdings UAT</h1>
+      <button type="button" onClick={() => refresh().catch((e) => setError(String(e)))}>
+        테스트 데이터 재조회
+      </button>
       {error && <p role="alert">{error}</p>}
       {data && management && (
         <HoldingDecisionPanel
