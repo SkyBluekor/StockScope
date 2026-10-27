@@ -2620,6 +2620,41 @@ button.holdings-direct-value:hover { border-bottom-color: var(--accent-primary);
   color: var(--status-negative);
 }
 
+.holding-decision-plan-review {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-surface-raised);
+}
+
+.holding-decision-plan-review > strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: var(--font-meta);
+}
+
+.holding-decision-plan-review > p {
+  margin: 7px 0;
+  color: var(--text-secondary);
+  font-size: var(--font-meta);
+  line-height: 1.5;
+}
+
+.holding-decision-plan-review .holding-decision-detail-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 760px) {
+  .holding-decision-plan-review .holding-decision-detail-grid {
+    grid-template-columns: 1fr;
+  }
+  .holding-decision-plan-review .holding-decision-detail-grid > div {
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+}
+
 .holding-decision-technical {
   margin-top: 12px;
   border-top: 1px solid var(--border-subtle);
