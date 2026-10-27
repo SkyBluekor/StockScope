@@ -279,7 +279,7 @@ def _driver(args: argparse.Namespace) -> dict[str, Any]:
         "operational_db_read_only": True, "original_db_modified": False,
         "external_network_blocked": True, "latest_krx_eod_confirmed": False,
         "real_brokerage_orders": False, "browser_api_mode": "REAL_LOCAL_FASTAPI",
-        "uses_installed_google_chrome": True,
+        "browser_mode": "EXISTING_GOOGLE_CHROME_ONLY",
         "browser_download_required": False,
     }
     if args.as_of >= datetime.now(KST).date():
@@ -392,6 +392,7 @@ def _driver(args: argparse.Namespace) -> dict[str, Any]:
                 "server_external_socket_attempts": final_health.get("external_socket_attempts"),
                 "browser_log_tail": None if valid else run.stdout[-1800:],
                 "capture_db_writes": "TEMP_ONLY",
+                "used_installed_google_chrome": True,
                 "official_latest_eod_verified": False,
             }
         finally:

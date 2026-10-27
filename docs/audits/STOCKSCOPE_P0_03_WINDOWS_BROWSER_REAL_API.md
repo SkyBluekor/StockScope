@@ -1,4 +1,4 @@
-# P0-03 — Windows 브라우저 ↔ 격리 FastAPI ↔ 실제 Scanner
+# P0-03 — 기존 Google Chrome ↔ 격리 FastAPI ↔ 실제 Scanner
 
 실제 운영 시장 DB의 읽기 전용 SQLite snapshot으로 이전 거래일의 후보를
 동결 Scanner 코어에서 가져온 다음, Chromium 버튼 클릭으로 2026-10-21
@@ -34,12 +34,11 @@ $sha = (git rev-parse origin/codex/p0-01-mvp-c1-c2-integration-20261022).Trim()
 git -C $work switch --detach $sha
 if ($LASTEXITCODE -ne 0) { throw 'Worktree 갱신 실패' }
 cd (Join-Path $work 'frontend')
-npm ci
-if ($LASTEXITCODE -ne 0) { throw 'npm ci 실패' }
-npm install --no-save --package-lock=false @playwright/test@1.56.1
-if ($LASTEXITCODE -ne 0) { throw 'Playwright 설치 실패' }
-npx playwright install chromium
-if ($LASTEXITCODE -ne 0) { throw 'Chromium 설치 실패' }
+# 이전 명령에서 npm 의존성을 이미 설치했다면 추가 설치하지 않는다.
+# Playwright 테스트 실행기만 검사한다. 전용 Chromium은 내려받지 않는다.
+if (-not (Test-Path '.\\node_modules\\@playwright\\test\\cli.js')) {
+    throw 'Playwright 테스트 패키지가 없음. 브라우저 다운로드 없이 실행할 수 있도록 테스트 패키지 상태부터 확인하세요.'
+}
 cd $repo
 & $python (Join-Path $work 'tools\data\p0_03_windows_browser_uat.py') `
   --market-db $db `
@@ -47,6 +46,13 @@ cd $repo
   --as-of 2026-10-21 `
   --market-scope ALL
 ```
+
+브라우저는 컴퓨터에 설치된 Google Chrome만 재사용하며 별도 Chromium
+다운로드가 필요 없다. 기본 설치 경로 또는 Windows App Paths에서
+찾고, 다른 위치에 Chrome이 있으면 실행 전에
+`$env:P003_CHROME_EXECUTABLE = 'C:\Path\To\chrome.exe'`
+환경변수로 지정할 수 있다. Chrome이 없으면
+`HOLD_INSTALLED_GOOGLE_CHROME_NOT_FOUND`로 종료한다.
 
 성공 응답은 OFFLINE_WINDOWS_BROWSER_REAL_FASTAPI_VERIFIED.
 그 외에는 HOLD_* 상태가 반환되며 미검증을 PASS로 바꾸지 않는다.

@@ -37,7 +37,7 @@ def test_worker_accepts_only_named_temporary_market_snapshot(tmp_path: Path) -> 
 def test_missing_original_is_not_created(tmp_path: Path) -> None:
     missing = tmp_path / "missing.db"
     out = driver(args(missing, tmp_path))
-    assert out["status"] in {"HOLD_OPERATIONAL_DB_MISSING", "HOLD_PLAYWRIGHT_NOT_INSTALLED"}
+    assert out["status"] == "HOLD_OPERATIONAL_DB_MISSING"
     assert out["original_db_modified"] is False
     assert not missing.exists()
 
@@ -58,3 +58,29 @@ def test_isolated_app_never_routes_brokerage_or_full_lifespan() -> None:
     assert "app.include_router(api.router" not in src
     assert 'host="127.0.0.1"' in src
     assert "prohibit_external_connections()" in src
+
+
+
+def test_existing_chrome_override_is_accepted_without_download(tmp_path: Path) -> None:
+    chrome = tmp_path / "chrome.exe"
+    chrome.write_bytes(b"mock existing executable only")
+    detected = module["find_system_chrome"](override=str(chrome))
+    assert detected == chrome
+    assert module["find_system_chrome"](override=str(tmp_path / "not-found.exe")) is None
+
+
+def test_loopback_playwright_config_uses_google_chrome_not_managed_chromium() -> None:
+    config = (SCRIPT.parents[2] / "frontend" / "playwright.p003.loopback.config.mjs"
+              ).read_text(encoding="utf-8")
+    assert 'channel: "chrome"' in config
+    assert 'P003_CHROME_EXECUTABLE' in config
+    assert "npx playwright install chromium" not in config
+
+
+def test_runner_never_automatically_installs_browser() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert "find_system_chrome()" in source
+    assert 'HOLD_INSTALLED_GOOGLE_CHROME_NOT_FOUND' in source
+    assert 'browser_download_required' in source
+    assert "playwright install chromium" not in source
+    assert "subprocess.run(cmd" in source
