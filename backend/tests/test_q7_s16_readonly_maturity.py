@@ -383,3 +383,40 @@ def test_g0c_no_unverified_calendar_gap_means_insufficient_sessions_are_awaiting
     assert result["windows"]["5d"]["awaiting_future_trading_days"] == 3
     assert result["windows"]["5d"]["gap_with_insufficient_confirmed_sessions"] == 0
     assert result["windows"]["10d"]["awaiting_future_trading_days"] == 3
+
+
+def test_g0d_multiple_unknown_s7_codes_count_once_per_invalid_candidate(
+    tmp_path, monkeypatch,
+):
+    """Regression: normalized OTHER_S7_CODE must never exceed INVALID count."""
+    sim, market = _db(tmp_path)
+    _mock(monkeypatch)
+
+    def classify(_capture, sample):
+        i = sample["sample_index"]
+        if i in (0, 1):
+            return {
+                "category": "INVALID",
+                "policy": {"status": "FAIL"},
+                "codes": [
+                    "UNRECOGNIZED_PRIVATE_SOURCE_1",
+                    "UNRECOGNIZED_PRIVATE_SOURCE_2",
+                    "UNRECOGNIZED_PRIVATE_SOURCE_2",
+                    "POLICY_PROVENANCE_UNVERIFIED",
+                ],
+            }
+        if i == 4:
+            return {"category": "REFERENCE_ONLY"}
+        return {"category": "LEGACY_LIMITED", "codes": []}
+
+    monkeypatch.setattr(s16, "assess_frozen_candidate", classify)
+    report = s16.measure(sim, market, as_of=date(2026, 10, 14))
+    assert report["status"] == "DESCRIPTIVE_OBSERVATIONS_ONLY"
+    assert report["integrity_counts"]["INVALID"] == 2
+    assert report["invalid_reason_code_counts"] == {
+        "OTHER_S7_CODE": 2, "POLICY_PROVENANCE_UNVERIFIED": 2,
+    }
+    assert report["invalid_check_failure_counts"]["policy"] == 2
+    assert report["excluded_reason_counts"]["FROZEN_INTEGRITY_INVALID"] == 2
+    assert "UNRECOGNIZED_PRIVATE" not in str(report["invalid_reason_code_counts"])
+    assert report["runtime_db_writes"] == 0
