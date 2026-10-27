@@ -98,6 +98,8 @@ def _payload():
                     "awaiting_future_trading_days":1, "price_missing":0,
                     "market_evidence_unavailable":0, "post_as_of_data_rejected":0,
                     "unverified_calendar_or_market_gap":0,
+                    "gap_with_insufficient_confirmed_sessions":0,
+                    "gap_with_sufficient_confirmed_sessions":0,
                     "average_signal_close_change_pct":None},
         },
         "strategy_counts": {"PRIVATE_STRATEGY": {"SECRET":"PRIVATE"}},
