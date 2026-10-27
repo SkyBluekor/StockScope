@@ -7,6 +7,7 @@ the UAT seed/health endpoints. No full app lifespan, KRX or brokerage.
 from __future__ import annotations
 
 import argparse
+import errno
 import asyncio
 from contextlib import closing, redirect_stdout
 from datetime import date, datetime, timedelta, timezone
@@ -19,8 +20,8 @@ import socket
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
-from tempfile import TemporaryDirectory
 from types import MethodType, SimpleNamespace
 from typing import Any
 from urllib.error import URLError
@@ -301,110 +302,183 @@ def _driver(args: argparse.Namespace) -> dict[str, Any]:
                 "browser_download_required": False}
     if shutil.which("node") is None or shutil.which("npm") is None:
         return {**result, "status": "HOLD_NODE_OR_NPM_NOT_FOUND"}
-    with TemporaryDirectory(prefix="StockScope_P0_03_Browser_") as tmp:
-        scratch = Path(tmp)
-        snapshot = scratch / "market_snapshot.sqlite3"
+    return _with_private_scratch(result, lambda scratch: _run_isolated_browser_session(args, scratch, result))
+
+
+def _preferred_private_temp_dir() -> Path | None:
+    """Keep copied market data out of redirected TEMP (e.g. ESTsoft CreatorTemp).
+
+    Prefer the user's own LocalAppData/Temp, not the current TEMP/TMP variable.
+    On Windows, fail closed rather than using an unknown shared temp folder.
+    """
+    if os.name == "nt":
+        roots = [os.environ.get("LOCALAPPDATA"),
+                 str(Path.home() / "AppData" / "Local")]
+        for root in roots:
+            if root:
+                candidate = Path(root) / "Temp"
+                if candidate.is_dir():
+                    return candidate
+        return None
+    return Path(tempfile.gettempdir())
+
+
+def _cleanup_private_scratch(path: Path, *, attempts: int = 10) -> tuple[bool, str | None, int]:
+    """Retry transient WinError 32/33 from AV/indexers after child shutdown.
+
+    Never silently discard sensitive snapshot copies or claim PASS if removal
+    failed. This is only called for a newly-created P0-03 scratch directory.
+    """
+    for i in range(1, attempts + 1):
         try:
-            snapshot_sqlite_readonly(args.market_db, snapshot)
-        except (OSError, sqlite3.DatabaseError) as exc:
-            return {**result, "status": "HOLD_SNAPSHOT_FAILED",
-                    "error_class": type(exc).__name__}
-        worker = subprocess.Popen([
-            sys.executable, str(Path(__file__).resolve()), "--_worker",
-            "--market-db", str(snapshot), "--operational-repo",
-            str(args.operational_repo), "--as-of", args.as_of.isoformat(),
-            "--market-scope", args.market_scope,
-        ], cwd=str(ROOT), stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-           text=True, encoding="utf-8", errors="replace")
-        try:
-            deadline = time.monotonic() + 110
-            ready = False
-            while time.monotonic() < deadline:
-                if worker.poll() is not None:
-                    return {**result, "status": "HOLD_ISOLATED_SERVER_FAILED",
-                            "worker_returncode": worker.returncode,
-                            "worker_stderr": (worker.stderr.read() or "")[-800:]}
-                try:
-                    with urlopen("http://127.0.0.1:5280/__p003/health",
-                                 timeout=2) as response:
-                        ready = json.loads(response.read()).get("ready") is True
-                except (OSError, URLError, ValueError):
-                    pass
-                if ready:
-                    break
-                time.sleep(0.5)
-            if not ready:
-                return {**result, "status": "HOLD_SERVER_NOT_READY"}
-            cmd = ["node", str(node_runner), "test",
-                   "-c", "playwright.p003.loopback.config.mjs"]
-            try:
-                run = subprocess.run(cmd, cwd=str(frontend), text=True,
-                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    encoding="utf-8", errors="replace", timeout=MAX_RUNTIME_SECONDS,
-                    env={**os.environ, "P003_LOOPBACK_UAT": "1",
-                         "P003_CHROME_EXECUTABLE": str(system_chrome)},
-                )
-            except (OSError, subprocess.TimeoutExpired) as exc:
-                return {**result, "status": "HOLD_BROWSER_EXECUTION_FAILED",
-                        "error_class": type(exc).__name__}
-            # Browser emits exactly one minimal summary line, no market rows.
-            lines = [line.split("P003_LOOPBACK_RESULT ", 1)[1] for line in
-                     run.stdout.splitlines() if "P003_LOOPBACK_RESULT " in line]
-            try:
-                report = json.loads(lines[-1]) if lines else {}
-            except json.JSONDecodeError:
-                report = {}
+            shutil.rmtree(path)
+            return True, None, i
+        except FileNotFoundError:
+            return True, None, i
+        except OSError as exc:
+            busy = (getattr(exc, "winerror", None) in (5, 32, 33)
+                    or exc.errno in (errno.EACCES, errno.EBUSY))
+            if not busy or i == attempts:
+                return False, type(exc).__name__, i
+            time.sleep(min(1.0, 0.2 * i))
+    return False, "CleanupRetryExhausted", attempts
+
+
+def _with_private_scratch(base: dict[str, Any], action: Any) -> dict[str, Any]:
+    root = _preferred_private_temp_dir()
+    if root is None:
+        return {**base, "status": "HOLD_PRIVATE_TEMP_UNAVAILABLE"}
+    try:
+        scratch = Path(tempfile.mkdtemp(
+            prefix="StockScope_P0_03_Browser_", dir=str(root)
+        ))
+    except OSError as exc:
+        return {**base, "status": "HOLD_TEMP_CREATION_FAILED",
+                "error_class": type(exc).__name__}
+    try:
+        report = action(scratch)
+    except Exception as exc:
+        report = {**base, "status": "HOLD_UAT_RUNTIME_EXCEPTION",
+                  "error_class": type(exc).__name__}
+    cleaned, error, retries = _cleanup_private_scratch(scratch)
+    if not cleaned:
+        return {**report,
+                "status": "HOLD_TEMP_CLEANUP_FAILED",
+                "previous_status": report.get("status"),
+                "temp_cleanup": "FILE_LOCKED_OR_UNREMOVABLE",
+                "temp_cleanup_error_class": error,
+                "temp_cleanup_attempts": retries,
+                "temp_folder_for_manual_review": str(scratch)}
+    return {**report, "temp_cleanup": "REMOVED",
+            "temp_cleanup_attempts": retries}
+
+
+def _run_isolated_browser_session(
+    args: argparse.Namespace, scratch: Path, result: dict[str, Any]
+) -> dict[str, Any]:
+
+    snapshot = scratch / "market_snapshot.sqlite3"
+    try:
+        snapshot_sqlite_readonly(args.market_db, snapshot)
+    except (OSError, sqlite3.DatabaseError) as exc:
+        return {**result, "status": "HOLD_SNAPSHOT_FAILED",
+                "error_class": type(exc).__name__}
+    worker = subprocess.Popen([
+        sys.executable, str(Path(__file__).resolve()), "--_worker",
+        "--market-db", str(snapshot), "--operational-repo",
+        str(args.operational_repo), "--as-of", args.as_of.isoformat(),
+        "--market-scope", args.market_scope,
+    ], cwd=str(ROOT), stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+       text=True, encoding="utf-8", errors="replace")
+    try:
+        deadline = time.monotonic() + 110
+        ready = False
+        while time.monotonic() < deadline:
+            if worker.poll() is not None:
+                return {**result, "status": "HOLD_ISOLATED_SERVER_FAILED",
+                        "worker_returncode": worker.returncode,
+                        "worker_stderr": (worker.stderr.read() or "")[-800:]}
             try:
                 with urlopen("http://127.0.0.1:5280/__p003/health",
-                             timeout=3) as final_response:
-                    final_health = json.loads(final_response.read())
+                             timeout=2) as response:
+                    ready = json.loads(response.read()).get("ready") is True
             except (OSError, URLError, ValueError):
-                final_health = {}
-            valid = (
-                run.returncode == 0
-                and final_health.get("offline_krx_attempts") == 0
-                and final_health.get("external_socket_attempts") == 0
-                and report.get("status") == "BROWSER_REAL_API_VERIFIED"
-                and report.get("previous_date") < report.get("new_date")
-                and report.get("job_status") == "completed"
-                and report.get("capture_status") in ("COMPLETE", "DUPLICATE")
-                and report.get("capture_id")
-                and report.get("job_id")
-                and report.get("api_post_status") == 202
-                and report.get("api_get_status") == 200
-                and report.get("external_requests") == 0
-                and report.get("recheck_status") in {
-                    "MATCHED_RETURNED_CANDIDATE",
-                    "TARGETED_EVALUATED_OUTSIDE_RANKING",
-                    "TARGET_OUTSIDE_SCANNER_FILTER",
-                }
-                and (
-                    report.get("recheck_status") != "TARGET_OUTSIDE_SCANNER_FILTER"
-                    or bool(report.get("filter_reason"))
-                )
+                pass
+            if ready:
+                break
+            time.sleep(0.5)
+        if not ready:
+            return {**result, "status": "HOLD_SERVER_NOT_READY"}
+        cmd = ["node", str(node_runner), "test",
+               "-c", "playwright.p003.loopback.config.mjs"]
+        try:
+            run = subprocess.run(cmd, cwd=str(frontend), text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                encoding="utf-8", errors="replace", timeout=MAX_RUNTIME_SECONDS,
+                env={**os.environ, "P003_LOOPBACK_UAT": "1",
+                     "P003_CHROME_EXECUTABLE": str(system_chrome)},
             )
-            return {
-                **result,
-                "status": OK_STATUS if valid else "HOLD_BROWSER_REAL_API_INCOMPLETE",
-                "browser_exit_code": run.returncode,
-                "browser_summary": report,
-                "server_offline_krx_attempts": final_health.get("offline_krx_attempts"),
-                "server_external_socket_attempts": final_health.get("external_socket_attempts"),
-                "browser_log_tail": None if valid else run.stdout[-1800:],
-                "capture_db_writes": "TEMP_ONLY",
-                "used_installed_google_chrome": True,
-                "official_latest_eod_verified": False,
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return {**result, "status": "HOLD_BROWSER_EXECUTION_FAILED",
+                    "error_class": type(exc).__name__}
+        # Browser emits exactly one minimal summary line, no market rows.
+        lines = [line.split("P003_LOOPBACK_RESULT ", 1)[1] for line in
+                 run.stdout.splitlines() if "P003_LOOPBACK_RESULT " in line]
+        try:
+            report = json.loads(lines[-1]) if lines else {}
+        except json.JSONDecodeError:
+            report = {}
+        try:
+            with urlopen("http://127.0.0.1:5280/__p003/health",
+                         timeout=3) as final_response:
+                final_health = json.loads(final_response.read())
+        except (OSError, URLError, ValueError):
+            final_health = {}
+        valid = (
+            run.returncode == 0
+            and final_health.get("offline_krx_attempts") == 0
+            and final_health.get("external_socket_attempts") == 0
+            and report.get("status") == "BROWSER_REAL_API_VERIFIED"
+            and report.get("previous_date") < report.get("new_date")
+            and report.get("job_status") == "completed"
+            and report.get("capture_status") in ("COMPLETE", "DUPLICATE")
+            and report.get("capture_id")
+            and report.get("job_id")
+            and report.get("api_post_status") == 202
+            and report.get("api_get_status") == 200
+            and report.get("external_requests") == 0
+            and report.get("recheck_status") in {
+                "MATCHED_RETURNED_CANDIDATE",
+                "TARGETED_EVALUATED_OUTSIDE_RANKING",
+                "TARGET_OUTSIDE_SCANNER_FILTER",
             }
-        finally:
-            if worker.poll() is None:
-                worker.terminate()
-                try:
-                    worker.wait(timeout=8)
-                except subprocess.TimeoutExpired:
-                    worker.kill()
-                    worker.wait(timeout=5)
-            if worker.stderr:
-                worker.stderr.close()
+            and (
+                report.get("recheck_status") != "TARGET_OUTSIDE_SCANNER_FILTER"
+                or bool(report.get("filter_reason"))
+            )
+        )
+        return {
+            **result,
+            "status": OK_STATUS if valid else "HOLD_BROWSER_REAL_API_INCOMPLETE",
+            "browser_exit_code": run.returncode,
+            "browser_summary": report,
+            "server_offline_krx_attempts": final_health.get("offline_krx_attempts"),
+            "server_external_socket_attempts": final_health.get("external_socket_attempts"),
+            "browser_log_tail": None if valid else run.stdout[-1800:],
+            "capture_db_writes": "TEMP_ONLY",
+            "used_installed_google_chrome": True,
+            "official_latest_eod_verified": False,
+        }
+    finally:
+        if worker.poll() is None:
+            worker.terminate()
+            try:
+                worker.wait(timeout=8)
+            except subprocess.TimeoutExpired:
+                worker.kill()
+                worker.wait(timeout=5)
+        if worker.stderr:
+            worker.stderr.close()
 
 
 def main() -> int:
