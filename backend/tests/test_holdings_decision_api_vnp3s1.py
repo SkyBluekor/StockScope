@@ -428,3 +428,328 @@ def test_legacy_plan_route_is_deprecated_but_still_has_clear_upgrade_error(api_e
     )
     assert missing.status_code == 409
     assert missing.json()["detail"]["code"] == "HOLD_PLAN_DECISION_REVIEW_REQUIRED"
+
+
+# P0-04 phase 9: *only* pytest's tmp_path SQLite stores. Real API routing,
+# writes, rollback and a separate GET request per persistence verification.
+from tools.data.migrate_holdings_recovery_vnp3s2 import migrate_holdings_recovery_store
+
+
+def _p004_revision_with_stricter_stop(api_env):
+    """Append a revision to the synthetic fixture (never real holdings)."""
+    catalog = api_env["catalog"]
+    opened = api_env["opened"]
+    with sqlite3.connect(api_env["market_db"]) as conn:
+        conn.row_factory = sqlite3.Row
+        generation = read_input_generation_token(conn, "KOSPI", "005930")
+    day = catalog.get_or_create_analysis_day(
+        monitored_stock_id=opened.stock_id, market_date="2026-09-24",
+    )
+    revision = catalog.append_analysis_revision(
+        analysis_day_id=day.id,
+        input_fingerprint="p004-phase9-new-revision",
+        strategy_key="trend_following",
+        action_state="WATCH",
+        risk_state="READY",
+        reference_price="100",
+        stop_price="95",
+        target1_price="125",
+        target2_price="135",
+        scanner_version=StockScannerService.VERSION,
+        analysis_engine_version=ANALYSIS_ENGINE_VERSION,
+        policy_version=production_policy_cache_token(),
+        source_versions={
+            "fixture": "p004-phase9",
+            "fingerprint_contract_version": INPUT_FINGERPRINT_CONTRACT_VERSION,
+            "input_generation": generation,
+        },
+        snapshot={"synthetic_p004_phase": 9},
+        computed_at="2026-09-24T01:00:00+00:00",
+    )
+    catalog.promote_current_revision(
+        analysis_day_id=day.id, revision_id=revision.id,
+    )
+    return revision
+
+
+def _p004_counts(catalog, position_id):
+    with catalog.connection() as conn:
+        tables = (
+            "holding_management_plan",
+            "holding_management_plan_context_vnp3s1",
+            "holding_decision_resolution",
+            "holding_recovery_review",
+            "holding_recovery_assessment",
+        )
+        result = {
+            name: conn.execute("SELECT COUNT(*) FROM " + name).fetchone()[0]
+            for name in tables
+        }
+        result["active_plan_ids"] = [
+            str(row[0])
+            for row in conn.execute(
+                "SELECT id FROM holding_management_plan "
+                "WHERE position_id=? AND status='ACTIVE' ORDER BY id",
+                (position_id,),
+            )
+        ]
+        result["position_events"] = conn.execute(
+            "SELECT COUNT(*) FROM holding_position_event WHERE position_id=?",
+            (position_id,),
+        ).fetchone()[0]
+    return result
+
+
+def test_p004_phase9_stale_plan_change_refresh_and_recovery_write_requery(api_env):
+    """Real endpoints reproduce the user's ACTIVE_PLAN_CHANGED/OPEN case."""
+    catalog = api_env["catalog"]
+    client = api_env["client"]
+    opened = api_env["opened"]
+    db = api_env["holdings_db"]
+    migrate_holdings_decision_store(db)
+    migrate_holdings_recovery_store(db)
+
+    evaluated = client.post(
+        f"/api/holdings/positions/{opened.position.id}/decisions/evaluate",
+    )
+    assert evaluated.status_code == 200
+    first_decision = evaluated.json()["decision"]
+    events_before = len(catalog.list_position_events(opened.position.id))
+
+    # Direct fixture setup only: simulates an existing plan transition.
+    # The user-facing legacy direct-apply endpoint is still forbidden.
+    first_plan = HoldingManagementService(
+        catalog, market_store_db=api_env["market_db"],
+    ).apply_analysis_plan(
+        position_id=opened.position.id,
+        analysis_revision_id=api_env["revision"].id,
+        applied_at="2026-09-24T10:00:00+09:00",
+    )
+
+    stale = client.get(
+        f"/api/holdings/decisions/{first_decision['decision_id']}",
+    )
+    assert stale.status_code == 200
+    assert stale.json()["decision"]["stale"] is True
+    assert stale.json()["decision"]["stale_reasons"] == ["ACTIVE_PLAN_CHANGED"]
+
+    # Open Recovery stays open through decision refresh: no implicit closure.
+    start = client.post(
+        f"/api/holdings/positions/{opened.position.id}/recovery/start",
+        json={"note": "synthetic review only"},
+    )
+    assert start.status_code == 200
+    review_id = start.json()["review"]["review_id"]
+    before = client.get(
+        f"/api/holdings/positions/{opened.position.id}/recovery",
+    ).json()
+    assert before["open_review"]["review_id"] == review_id
+    assert before["latest_open_assessment"] is None
+
+    refreshed = client.post(
+        f"/api/holdings/positions/{opened.position.id}/decisions/evaluate",
+    )
+    assert refreshed.status_code == 200
+    fresh_id = refreshed.json()["decision"]["decision_id"]
+    assert fresh_id != first_decision["decision_id"]
+    latest = client.get(
+        f"/api/holdings/stocks/{opened.stock_id}/decision-support",
+    ).json()["positions"][0]["decision"]
+    assert latest["decision_id"] == fresh_id
+    assert latest["stale"] is False
+
+    management = client.get(
+        f"/api/holdings/stocks/{opened.stock_id}/management",
+    ).json()["positions"][0]
+    assert management["active_plan"]["plan_id"] == first_plan.id
+    assert management["proposal"]["state"] == "SAME_AS_ACTIVE"
+    assert management["proposal"]["can_apply"] is False
+
+    # Applying the already-current revision must never replace the plan.
+    blocked = client.post(
+        f"/api/holdings/decisions/{fresh_id}/apply-plan",
+        json={"selected_action": "HOLD"},
+    )
+    assert blocked.status_code == 409
+    assert blocked.json()["detail"]["code"] in {
+        "HOLD_DECISION_PLAN_NOT_READY", "HOLD_DECISION_PLAN_UNCHANGED",
+    }
+    assert _p004_counts(catalog, opened.position.id)["active_plan_ids"] == [
+        first_plan.id
+    ]
+
+    assessment = client.post(
+        f"/api/holdings/recovery/{review_id}/assessments",
+        json={
+            "thesis_state": "UNKNOWN",
+            "review_action": "UNDECIDED",
+            "reason_note": "synthetic UAT - defer for missing evidence",
+            "linked_decision_id": fresh_id,
+        },
+    )
+    assert assessment.status_code == 200
+    assessment_id = assessment.json()["assessment"]["assessment_id"]
+    assert assessment.json()["assessment"]["linked_decision_id"] == fresh_id
+
+    # Fresh API read uses a new catalog/service and must restore the form.
+    reread = client.get(
+        f"/api/holdings/positions/{opened.position.id}/recovery",
+    )
+    assert reread.status_code == 200
+    context = reread.json()
+    assert context["open_review"]["review_id"] == review_id
+    assert context["latest_open_assessment"]["assessment_id"] == assessment_id
+    assert context["latest_open_assessment"]["review_action"] == "UNDECIDED"
+    assert context["latest_open_assessment"]["thesis_state"] == "UNKNOWN"
+    assert context["latest_open_assessment"]["source_active_plan_id"] == first_plan.id
+    assert len(catalog.list_position_events(opened.position.id)) == events_before
+    assert _p004_counts(catalog, opened.position.id)["active_plan_ids"] == [
+        first_plan.id
+    ]
+
+
+def test_p004_phase9_atomic_plan_rollback_then_success_and_duplicate_block(api_env, monkeypatch):
+    """Inject a failure AFTER plan SQL writes but BEFORE the transaction commits."""
+    catalog = api_env["catalog"]
+    client = api_env["client"]
+    opened = api_env["opened"]
+    migrate_holdings_decision_store(api_env["holdings_db"])
+    migrate_holdings_recovery_store(api_env["holdings_db"])
+
+    first_plan = HoldingManagementService(
+        catalog, market_store_db=api_env["market_db"],
+    ).apply_analysis_plan(
+        position_id=opened.position.id,
+        analysis_revision_id=api_env["revision"].id,
+        applied_at="2026-09-24T10:00:00+09:00",
+    )
+    _p004_revision_with_stricter_stop(api_env)
+    decision_response = client.post(
+        f"/api/holdings/positions/{opened.position.id}/decisions/evaluate",
+    )
+    assert decision_response.status_code == 200
+    decision = decision_response.json()["decision"]
+    assert decision["evidence"]["proposal_ready"] is True
+    assert decision["stale"] is False
+    endpoint = f"/api/holdings/decisions/{decision['decision_id']}/apply-plan"
+    snapshot = _p004_counts(catalog, opened.position.id)
+
+    original = HoldingManagementService._apply_analysis_plan_in_conn
+    with monkeypatch.context() as patch:
+        def fail_after_plan_sql(self, conn, **kwargs):
+            original(self, conn, **kwargs)
+            raise RuntimeError("SYNTHETIC_POST_PLAN_PRECOMMIT_FAILURE")
+        patch.setattr(
+            HoldingManagementService,
+            "_apply_analysis_plan_in_conn",
+            fail_after_plan_sql,
+        )
+        with pytest.raises(RuntimeError, match="SYNTHETIC_POST_PLAN_PRECOMMIT_FAILURE"):
+            client.post(endpoint, json={"selected_action": "HOLD"})
+
+    # The superseding plan, context and resolution were all rolled back,
+    # *including the old plan's ACTIVE status*. No extra ledger events.
+    assert _p004_counts(catalog, opened.position.id) == snapshot
+    current = client.get(
+        f"/api/holdings/stocks/{opened.stock_id}/management",
+    ).json()["positions"][0]["active_plan"]
+    assert current["plan_id"] == first_plan.id
+    assert current["version"] == 1
+
+    success = client.post(endpoint, json={"selected_action": "HOLD"})
+    assert success.status_code == 200
+    assert success.json()["plan"]["version"] == 2
+    new_plan_id = success.json()["plan"]["plan_id"]
+    after_success = _p004_counts(catalog, opened.position.id)
+    assert after_success["active_plan_ids"] == [new_plan_id]
+    assert after_success["position_events"] == snapshot["position_events"]
+    assert after_success["holding_management_plan"] == snapshot["holding_management_plan"] + 1
+    assert after_success["holding_management_plan_context_vnp3s1"] == 1
+    assert after_success["holding_decision_resolution"] == 1
+
+    duplicate = client.post(endpoint, json={"selected_action": "HOLD"})
+    assert duplicate.status_code == 409
+    assert duplicate.json()["detail"]["code"] == "HOLD_DECISION_STALE"
+    assert _p004_counts(catalog, opened.position.id) == after_success
+    persisted = client.get(
+        f"/api/holdings/stocks/{opened.stock_id}/management",
+    ).json()["positions"][0]
+    assert persisted["active_plan"]["plan_id"] == new_plan_id
+    assert persisted["active_plan"]["stop_price"] == "95"
+    assert persisted["proposal"]["state"] == "SAME_AS_ACTIVE"
+
+
+def test_p004_phase9_failed_recovery_write_preserves_history_and_plan(api_env):
+    """Bad link, invalid payload, and closed review must not change stored state."""
+    catalog, client, opened = (
+        api_env["catalog"], api_env["client"], api_env["opened"],
+    )
+    migrate_holdings_decision_store(api_env["holdings_db"])
+    migrate_holdings_recovery_store(api_env["holdings_db"])
+    first_plan = HoldingManagementService(
+        catalog, market_store_db=api_env["market_db"],
+    ).apply_analysis_plan(
+        position_id=opened.position.id,
+        analysis_revision_id=api_env["revision"].id,
+        applied_at="2026-09-24T10:00:00+09:00",
+    )
+    opened_review = client.post(
+        f"/api/holdings/positions/{opened.position.id}/recovery/start",
+        json={"note": "synthetic manual review"},
+    )
+    assert opened_review.status_code == 200
+    review_id = opened_review.json()["review"]["review_id"]
+    baseline = _p004_counts(catalog, opened.position.id)
+
+    invalid_state = client.post(
+        f"/api/holdings/recovery/{review_id}/assessments",
+        json={"thesis_state": "NOT_A_REAL_STATE", "review_action": "ADD_REVIEW"},
+    )
+    assert invalid_state.status_code == 422
+
+    bad_link = client.post(
+        f"/api/holdings/recovery/{review_id}/assessments",
+        json={
+            "thesis_state": "UNKNOWN", "review_action": "UNDECIDED",
+            "linked_decision_id": "nonexistent-decision-id",
+        },
+    )
+    assert bad_link.status_code in (404, 409)
+    assert _p004_counts(catalog, opened.position.id) == baseline
+
+    valid = client.post(
+        f"/api/holdings/recovery/{review_id}/assessments",
+        json={
+            "thesis_state": "UNKNOWN", "review_action": "ADD_REVIEW",
+            "reason_note": "only a human review intent, no purchase",
+        },
+    )
+    assert valid.status_code == 200
+    after_valid = _p004_counts(catalog, opened.position.id)
+    assert after_valid["holding_recovery_assessment"] == 1
+    assert after_valid["active_plan_ids"] == [first_plan.id]
+    assert after_valid["position_events"] == baseline["position_events"]
+
+    closed = client.post(
+        f"/api/holdings/recovery/{review_id}/close",
+        json={"reason": "MANUAL_REVIEW_COMPLETED", "note": "synthetic close"},
+    )
+    assert closed.status_code == 200
+    assert closed.json()["review"]["status"] == "CLOSED"
+    closed_context = client.get(
+        f"/api/holdings/positions/{opened.position.id}/recovery",
+    ).json()
+    assert closed_context["open_review"] is None
+    assert any(
+        item["review"]["review_id"] == review_id and len(item["assessments"]) == 1
+        for item in closed_context["review_history"]
+    )
+
+    forbidden = client.post(
+        f"/api/holdings/recovery/{review_id}/assessments",
+        json={"thesis_state": "INTACT", "review_action": "HOLD"},
+    )
+    assert forbidden.status_code == 409
+    assert _p004_counts(catalog, opened.position.id)["holding_recovery_assessment"] == 1
+    assert _p004_counts(catalog, opened.position.id)["active_plan_ids"] == [first_plan.id]
+    assert len(catalog.list_position_events(opened.position.id)) == baseline["position_events"]
