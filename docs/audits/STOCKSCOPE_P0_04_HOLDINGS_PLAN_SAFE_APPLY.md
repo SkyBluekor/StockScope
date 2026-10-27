@@ -110,3 +110,22 @@ Windows에서 로컬 브랜치 fetch/임시 worktree 업데이트를 완료한 �
 ```
 
 CLI 스크립트는 `C:\Projects\StockScope\.venv` 기존 라이브러리를 사용하며 추가 프로그램/서비스 기동·환경 변경 없이 실행된다. 반환 상태가 `READ_ONLY_WORKSPACE_STORED_STATE_OBSERVED`더라도 **현재 분석의 신규 사용 승인 여부는 필드별로 확인해야 한다.** 최종 사용자 승인하에만 앞으로 별도 계획 적용 UAT를 진행한다.
+
+## P0-04 6차 — 사용자 실제 Windows 상태 기반 STALE / Recovery 사유만 출력
+
+사용자의 P0-04 5차 원본 데이터 읽기 전용 점검 결과: `analysis_current_use_allowed=true`, `analysis_contract_status=VALID`, `analysis_basis_date=2026-10-21`, 활성 계획 1건 `WITHIN_PLAN`(저장 EOD 기준), 계획 제안 `SAME_AS_ACTIVE`, 현재 판단 `STALE`, `RECOVERY_REVIEW_OPEN`. **신규 계획을 적용하거나 이미 적용된 손절 값을 변경할 이유는 확인되지 않았다.** 이는 실시간 시세나 공식 최신 KRX 게시 데이터의 정확성을 검증한 것은 아니다.
+
+V2 `tools/data/p0_04_holdings_workspace_probe.py`의 허용 출력에 다음을 추가했다.
+- `decision_stale_reasons` 및 `stale_reason_counts`: 서버의 `_stale_reasons`에서 생성된 **정해진 10개 사유 코드**만 출력. 누락 시 `STALE_REASONS_UNAVAILABLE`; 비표준 값은 `UNRECOGNIZED_STALE_REASON`.
+- `recovery.open_review_status`(`OPEN`/`CLOSED`), `opened_date`, `open_review_assessment_count`, `latest_assessment_present`, `latest_assessment_thesis_state`, `latest_assessment_review_action`, `latest_assessment_date`, 이전 평가 당시의 분석/관리 계획이 현재와 일치하는지 여부(둘 중 하나의 source ID가 없다면 `null`). 원본 note/ID/가격/수량은 절대 출력하지 않음.
+- `open_recovery_reviews`, `open_recovery_reviews_without_assessment` 집계. `ready_for_plan_write=false` 유지.
+
+**중요:** `STALE`는 이전 판단의 전제 변경을 뜻한다. 원인 코드가 나오더라도 자동 판단 생성 또는 Recovery 종료 금지. Recovery `thesis_state`/`review_action`은 저장된 사용자의 과거 검토 기록이지 현재 매매 추천이 아니다. `WITHIN_PLAN`은 저장 EOD 근거일 뿐 현재 안전성 보장이 아니다.
+
+동일 Windows PowerShell 변수 (`$work`, `$holdings`, `$market`, `$python`) 및 최신 브랜치 커밋으로 worktree를 교체한 뒤 기존 **동일 스크립트** 재실행:
+
+```powershell
+& $python (Join-Path $work "tools\data\p0_04_holdings_workspace_probe.py") --holdings-db $holdings --market-db $market
+```
+
+테스트는 합성 TEMP SQLite에 기존 판단 평가→보유 수량 정정→STALE 판정, Recovery 개설·평가 저장→별도 읽기 전용 workspace 조회를 수행한다. **이 쓰기 시뮬레이션은 테스트 전용 임시 SQLite에만 적용**된다. Windows 운영 Holdings/Market DB는 읽기 전용 조회만 수행한다.
