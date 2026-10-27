@@ -169,3 +169,18 @@ def test_cleanup_success_preserves_result_and_reports_removed(
     assert report["status"] == "OFFLINE_WINDOWS_BROWSER_REAL_FASTAPI_VERIFIED"
     assert report["temp_cleanup"] == "REMOVED"
     assert not Path(report["private_dir"]).exists()
+
+
+
+def test_isolated_browser_runner_has_explicit_dependency_parameters() -> None:
+    """Prevents a Windows-only NameError after refactoring the scratch context."""
+    import symtable
+    source = SCRIPT.read_text(encoding="utf-8")
+    table = symtable.symtable(source, str(SCRIPT), "exec")
+    function = next(
+        child for child in table.get_children()
+        if child.get_name() == "_run_isolated_browser_session"
+    )
+    for dependency in ("frontend", "node_runner", "system_chrome"):
+        assert function.lookup(dependency).is_parameter(), dependency
+    assert "args, scratch, result, frontend, node_runner, system_chrome" in source

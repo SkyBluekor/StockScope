@@ -60,3 +60,20 @@ cd $repo
 이것은 진짜 Windows 브라우저 ↔ 격리 FastAPI ↔ 과거 데이터 재계산
 검증이지, 최신 공식 KRX EOD 확인이나 전체 운영 앱의 라이브 운용
 검증은 아니다. LEGACY_CURRENT_10_FALLBACK 활성 정책 문제도 남는다.
+## WinError 32 임시 복제본 파일 잠금 대응 (2026-10-27)
+
+이전 PowerShell 실행에서 TEMP/TMP가 `ESTsoft\\CreatorTemp`로 지정되어,
+임시 `market_snapshot.sqlite3` 삭제 시 `PermissionError: [WinError 32]`가 발생했다.
+외부 보안/인덱싱 프로그램의 잠금인지, 자식 프로세스가 종료된 직후의
+짧은 핸들 해제 지연인지는 해당 traceback만으로 확정할 수 없다.
+
+새 실행기는 Windows의 `%LOCALAPPDATA%\\Temp` 폴더를 명시적으로
+사용하여 리디렉션된 `TEMP`를 피한다. FastAPI 자식 프로세스 종료를
+확인한 뒤 임시 파일 삭제를 여러 번 재시도한다. 끝까지 잠겨 있다면
+예외 traceback 대신 `HOLD_TEMP_CLEANUP_FAILED`와
+`temp_folder_for_manual_review` 경로를 JSON으로 남겨 사용자에게 알린다.
+원본 시장 DB를 건드리지 않으며, 삭제 실패 시 성공 판정을 내리지 않는다.
+
+이전에 남은 `ESTsoft\\CreatorTemp` 폴더는 새 실행기가 자동 삭제하지
+않는다. 삭제가 필요한 경우 실행 프로세스가 모두 종료된 뒤 정확한
+`StockScope_P0_03_Browser_*` 폴더만 별도 확인해 정리한다.
