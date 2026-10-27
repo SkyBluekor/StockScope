@@ -74,6 +74,11 @@ def _payload():
             )
         },
         "invalid_reason_code_counts": {},
+        "invalid_rank_source_missing_counts": {
+            "snapshot_priority_rank_missing": 0,
+            "stored_sample_rank_missing": 0,
+            "both_rank_sources_missing": 0,
+        },
         "invalid_without_failed_checks": 0,
         "invalid_reason_counts_can_overlap": True,
         "gap_subtypes_are_not_independent_calendar_proof": True,
@@ -330,3 +335,60 @@ def test_g0d_valid_collapsed_unknown_reason_still_requires_matching_windows(
     assert report["invalid_reason_code_counts"] == {"OTHER_S7_CODE": 1}
     assert report["frozen_integrity_categories"]["INVALID"] == 1
     assert report["on_demand_window_status_counts"]["5d"]["observed"] == 0
+
+
+def test_g0e_known_strict_s3_reason_and_rank_provenance_do_not_leak_raw_ids(
+    tmp_path, monkeypatch,
+):
+    sim, market = _files(tmp_path)
+    value = _payload()
+    value["integrity_counts"] = {
+        "LOCAL_VALIDATED": 0, "LEGACY_LIMITED": 0, "INVALID": 1,
+    }
+    value["invalid_check_failure_counts"]["rank"] = 1
+    value["invalid_check_failure_counts"]["strict_s3"] = 1
+    value["invalid_reason_code_counts"] = {
+        "RANK_MISSING": 1, "BASELINE_RANK_MISMATCH": 1,
+    }
+    value["invalid_rank_source_missing_counts"] = {
+        "snapshot_priority_rank_missing": 1,
+        "stored_sample_rank_missing": 1,
+        "both_rank_sources_missing": 1,
+    }
+    value["excluded_reason_counts"] = {"FROZEN_INTEGRITY_INVALID": 1}
+    for win in value["windows"].values():
+        win["readiness_denominator"] = 0
+        win["observed"] = 0
+        win["awaiting_future_trading_days"] = 0
+    _mock_s16(monkeypatch, value)
+    report = audit.inspect(sim, market, as_of=date(2026, 10, 23))
+    assert report["status"] == "READ_ONLY_S16_OBSERVATION_COVERAGE_OBSERVED"
+    assert report["invalid_reason_code_counts"]["BASELINE_RANK_MISMATCH"] == 1
+    assert report["invalid_rank_source_missing_counts"]["both_rank_sources_missing"] == 1
+    assert report["production_activation_allowed"] is False
+    assert "PRIVATE" not in json.dumps(report)
+    assert report["db_write_calls"] == 0
+
+
+def test_g0e_rank_source_inconsistency_is_safe_hold(tmp_path, monkeypatch):
+    sim, market = _files(tmp_path)
+    value = _payload()
+    value["integrity_counts"] = {
+        "LOCAL_VALIDATED": 0, "LEGACY_LIMITED": 0, "INVALID": 1,
+    }
+    value["invalid_check_failure_counts"]["rank"] = 1
+    value["invalid_rank_source_missing_counts"] = {
+        "snapshot_priority_rank_missing": 1,
+        "stored_sample_rank_missing": 1,
+        "both_rank_sources_missing": 2,
+    }
+    value["excluded_reason_counts"] = {"FROZEN_INTEGRITY_INVALID": 1}
+    for win in value["windows"].values():
+        win["readiness_denominator"] = 0
+        win["observed"] = 0
+        win["awaiting_future_trading_days"] = 0
+    _mock_s16(monkeypatch, value)
+    report = audit.inspect(sim, market, as_of=date(2026, 10, 23))
+    assert report["status"] == "HOLD_S16_INVALID_DIAGNOSTICS_CONTRACT"
+    assert report["diagnostic_failure_class"] == "RANK_SOURCE_COUNTS_INCONSISTENT"
+    assert "on_demand_window_status_counts" not in report
