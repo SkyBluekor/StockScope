@@ -129,6 +129,10 @@ jobs:
         working-directory: frontend
         run: npx playwright test -c playwright.p003.config.mjs
 
+      - name: Test P0-04 Holdings browser confirmation (isolated synthetic HTTP)
+        working-directory: frontend
+        run: npx playwright test -c playwright.p004.config.mjs
+
 
 
   fresh-clone-windows:
