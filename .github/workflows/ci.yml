@@ -193,6 +193,10 @@ jobs:
         shell: powershell
         run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_04_holdings_readonly_preflight.py
 
+      - name: Verify P0-04 Windows Holdings stored workspace read-only probe
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_04_holdings_workspace_probe.py
+
       - name: Verify fresh runtime and no Drive dependency
         shell: powershell
         run: |
