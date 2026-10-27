@@ -98,6 +98,9 @@ function statusTitle(decision: HoldingDecisionRecord) {
 
 function statusSummary(decision: HoldingDecisionRecord) {
   if (decision.stale) {
+    if (decision.stale_reasons?.length === 1 && decision.stale_reasons[0] === "ACTIVE_PLAN_CHANGED") {
+      return "이 판단이 참조한 활성 관리 계획이 현재 계획과 다릅니다. 기존 계획을 확인하고 판단만 다시 생성하세요.";
+    }
     return "수량·평단·분석·적용 계획·확정 EOD 중 하나가 판단 생성 이후 바뀌었습니다.";
   }
   const need = decisionNeedText(decision);
