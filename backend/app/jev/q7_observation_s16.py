@@ -302,8 +302,18 @@ def measure(
                         invalid_without_failed_checks += 1
                     codes = integrity.get("codes")
                     if isinstance(codes, list):
-                        for code in set(str(x) for x in codes):
-                            key = code if code in EXPLAIN else "OTHER_S7_CODE"
+                        # Deduplicate *after* normalization. Several distinct
+                        # unrecognized S7 strings from one INVALID candidate
+                        # collapse into the same privacy-safe OTHER_S7_CODE.
+                        # Counting before normalization can exceed the number
+                        # of INVALID candidates and makes the G0c contract
+                        # falsely fail on an otherwise readable local cohort.
+                        normalized = {
+                            code if type(code) is str and code in EXPLAIN
+                            else "OTHER_S7_CODE"
+                            for code in codes
+                        }
+                        for key in normalized:
                             invalid_reason_codes[key] += 1
                     continue
                 group["integrity_valid"] += 1
