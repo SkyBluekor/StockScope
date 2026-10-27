@@ -21,7 +21,7 @@ from app.strategy.models import StrategyName
 
 from .decision_reviewer_offline import DecisionReviewContractError
 from .q7_diagnosis_s18 import classify_capture_timing
-from .scanner_integrity_s7_1 import assess_frozen_candidate
+from .scanner_integrity_s7_1 import EXPLAIN, assess_frozen_candidate
 from .scanner_shadow_s7 import EVALUATION_SPEC, WINDOWS, load_frozen_candidates
 
 
@@ -78,6 +78,8 @@ def _empty_window(denominator: int) -> dict[str, Any]:
         "market_evidence_unavailable": 0,
         "post_as_of_data_rejected": 0,
         "unverified_calendar_or_market_gap": 0,
+        "gap_with_insufficient_confirmed_sessions": 0,
+        "gap_with_sufficient_confirmed_sessions": 0,
         "average_signal_close_change_pct": None,
         "positive_observations": 0,
         "negative_observations": 0,
@@ -218,6 +220,9 @@ def measure(
 
     evaluator = ProspectiveEvaluator(market_db)
     integrity_counts: Counter[str] = Counter()
+    invalid_check_failures: Counter[str] = Counter()
+    invalid_reason_codes: Counter[str] = Counter()
+    invalid_without_failed_checks = 0
     skipped_reasons: Counter[str] = Counter()
     values: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
     strategy_counts: dict[str, dict[str, Any]] = {}
@@ -283,6 +288,23 @@ def measure(
                 if category == "INVALID":
                     group["invalid"] += 1
                     skipped_reasons["FROZEN_INTEGRITY_INVALID"] += 1
+                    failed = 0
+                    # Counts overlap: one INVALID candidate can have several
+                    # failing checks and reasons. Never reinterpret as distinct
+                    # candidates or expose any policy/source identifiers.
+                    for field in ("rank", "strategy", "policy", "engine",
+                                  "dates", "risk", "strict_s3"):
+                        check = integrity.get(field)
+                        if isinstance(check, dict) and check.get("status") == "FAIL":
+                            invalid_check_failures[field] += 1
+                            failed += 1
+                    if not failed:
+                        invalid_without_failed_checks += 1
+                    codes = integrity.get("codes")
+                    if isinstance(codes, list):
+                        for code in set(str(x) for x in codes):
+                            key = code if code in EXPLAIN else "OTHER_S7_CODE"
+                            invalid_reason_codes[key] += 1
                     continue
                 group["integrity_valid"] += 1
                 try:
@@ -294,12 +316,14 @@ def measure(
                     windows, issue = _record_windows(
                         obs, market_cutoff, signal_date=str(sample.get("signal_date")),
                     )
+                    available_sessions = obs.get("available_trading_days")
                     if issue:
                         skipped_reasons[_code(issue)] += 1
                 except (ProspectiveEvaluationError, sqlite3.Error, ValueError, KeyError, TypeError) as exc:
                     reason = _code(getattr(exc, "code", "MARKET_EVIDENCE_UNAVAILABLE"))
                     skipped_reasons[reason] += 1
                     windows = {w: ("MARKET_EVIDENCE_UNAVAILABLE", None) for w in WINDOWS}
+                    available_sessions = None
 
                 for window in WINDOWS:
                     label = f"{window}d"
@@ -322,6 +346,19 @@ def measure(
                         win["post_as_of_data_rejected"] += 1
                     elif state == "UNVERIFIED_CALENDAR_OR_DATA_GAP":
                         win["unverified_calendar_or_market_gap"] += 1
+                        # Orthogonal subtype, not a relaxation of S16's
+                        # conservative calendar gate. In particular, fewer
+                        # confirmed sessions is NOT proof that the horizon is
+                        # truly immature: an unknown weekday could be a market
+                        # session or an unverified closure.
+                        if type(available_sessions) is not int or available_sessions < 0:
+                            return _base("OBSERVATION_CONTRACT_INVALID", counts_complete=False)
+                        subgroup = (
+                            "gap_with_insufficient_confirmed_sessions"
+                            if available_sessions < window
+                            else "gap_with_sufficient_confirmed_sessions"
+                        )
+                        win[subgroup] += 1
                     else:
                         win["market_evidence_unavailable"] += 1
     except (DecisionReviewContractError, sqlite3.Error, KeyError, ValueError, TypeError):
@@ -341,6 +378,8 @@ def measure(
                 "readiness_denominator", "observed", "awaiting_future_trading_days",
                 "price_missing", "market_evidence_unavailable",
                 "post_as_of_data_rejected", "unverified_calendar_or_market_gap",
+                "gap_with_insufficient_confirmed_sessions",
+                "gap_with_sufficient_confirmed_sessions",
                 "positive_observations",
                 "negative_observations", "unchanged_observations",
             ):
@@ -375,6 +414,15 @@ def measure(
         integrity_counts={
             k: integrity_counts[k] for k in ("LOCAL_VALIDATED", "LEGACY_LIMITED", "INVALID")
         },
+        invalid_check_failure_counts={
+            k: invalid_check_failures[k] for k in (
+                "rank", "strategy", "policy", "engine", "dates", "risk", "strict_s3"
+            )
+        },
+        invalid_reason_code_counts=dict(sorted(invalid_reason_codes.items())),
+        invalid_without_failed_checks=invalid_without_failed_checks,
+        invalid_reason_counts_can_overlap=True,
+        gap_subtypes_are_not_independent_calendar_proof=True,
         excluded_reason_counts=dict(sorted(skipped_reasons.items())),
         windows=summary,
         strategy_counts={k: strategy_counts[k] for k in sorted(strategy_counts)},
