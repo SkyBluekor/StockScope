@@ -150,3 +150,40 @@ npx playwright test -c playwright.p004.config.mjs
 (개발 머신에 Playwright 테스트 러너/Chromium이 이미 설치돼 있을 때만. CI는 기존 P0-03 용 pinned `@playwright/test@1.56.1` 및 Chromium 설치 단계를 재사용.)
 
 본 단계는 기존 Windows 운영 Holdings 파일을 전혀 열지 않고 데이터 변경을 하지 않는다. **실제 Windows 브라우저 전체 HoldingsWorkspace와 실제 FastAPI, Recovery 수동 검토·평가/종료, 운영 DB 기반 Apply UAT는 여전히 미실행**이다. 이 구분을 유지한 상태에서 PR #170 Draft를 보존한다.
+
+## P0-04 8차 — 운영 Windows 데이터 사본 + 실제 FastAPI GET + 실제 Chrome UI UAT
+
+기존 7차는 React 실제 컴포넌트와 모의 HTTP를 연결한 Chromium 3/3 테스트였다. 이번 8차는 두 SQLite **실제 운영 파일을 원본 read-only로 백업**한 일시적 스냅샷과 진짜 Holdings 조회 핸들러를 연결해 한 단계 더 검증한다.
+
+- `tools/data/p0_04_windows_readonly_browser_uat.py`는 운영 `--holdings-db`·`--market-db` 경로를 명시적으로 받는다. 먼저 P0-04 기존 DB preflight(실제 운영 데이터 읽기 전용)가 `READ_ONLY_HOLDINGS_PREFLIGHT_OBSERVED`인지 확인하고 OPEN Position이 정확히 1개일 때만 진행한다.
+- 기존 P0-03에서 검증한 SQLite `mode=ro`/backup API를 재사용하여 committed WAL까지 포함해 Windows 사용자 전용 LocalAppData Temp의 임시 폴더에 `holdings_snapshot.sqlite3`, `market_snapshot.sqlite3`을 만든다. 임시 사본의 데이터는 민감하므로 정상/에러/중단 이후 반드시 삭제를 시도하고 잠금으로 제거 불가 시 **실패 상태 및 수동 정리 위치**를 출력한다. 원본은 전혀 변경하지 않는다.
+- 제한된 FastAPI UAT worker는 `127.0.0.1:5284`에서 실제 `stock_decision_support`, `stock_management`, `holding_recovery_context` **GET 함수만** 노출한다. `/api/holdings/*` 전체 라우터나 FastAPI 앱 lifespan을 기동하지 않는다. 판단 생성/계획 적용/Recovery 평가 기록/종료/잔고 동기화 등 POST는 **등록되지 않는다**. 외부 소켓 연결을 차단한다.
+- `127.0.0.1:5283`의 테스트 Vite 서버는 실사용 `HoldingDecisionPanel`·`HoldingRecoveryPanel`을 데이터 사본에서 가져온 실제 FastAPI GET 결과로 렌더링한다. 기존 사용자의 보유 종목, 계좌명, 손절·목표 가격은 그 로컬 헤드리스 브라우저 메모리에서만 사용한다. Playwright reporter는 검증 부울값만 반환하고 trace/screenshot/video는 **off**, 실패 stdout도 폐기한다.
+- `frontend/playwright.p004.loopback.config.mjs`는 사용자의 이미 설치된 Google Chrome만 사용한다. 브라우저는 localhost GET만 가능하고 외부 요청/POST를 차단한다.
+- 읽기 화면에서 `ACTIVE_PLAN_CHANGED`가 단일 STALE 원인이면 최신 계획과 과거 판단의 불일치 안내를 표시한다. `SAME_AS_ACTIVE`면 새 계획 적용/비교 버튼이 없어야 한다. OPEN Recovery면 진행 중 UI, 아니면 시작 버튼을 표시한다. 새로고침 후에도 3개 실제 GET 모두 성공해야 한다.
+- CI는 `backend/tests/test_p0_04_windows_readonly_browser_uat.py`에서 실제 FastAPI GET·모든 mutating route 차단·임시 SQLite 복제/원본 해시 불변·임의 다른 Position 경로 차단을 검증한다. **CI는 사용자의 Windows 운영 DB에 접근하지 못하고, Windows 시스템 Chrome 운영 환경 UAT는 사용자가 실행해야 확인할 수 있다.**
+
+### 사용자 Windows 명령
+
+기존 `$repo`, `$work`, `$python`, `$holdings`, `$market` 변수를 재설정한 후 P0-04 개발 브랜치를 fetch 및 별도 TEMP worktree로 checkout한다. 로컬 main과 사용자 DB는 수정하지 않는다.
+
+```powershell
+cd C:\Projects\StockScope
+$repo = (git rev-parse --show-toplevel).Trim()
+$work = Join-Path $env:TEMP "StockScope_P0_02_90745c8d5d49"
+$python = Join-Path $repo ".venv\Scripts\python.exe"
+$holdings = Join-Path $repo "backend\runtime\holdings\holdings.db"
+$market = Join-Path $repo "backend\runtime\market_history\market_history.db"
+git fetch origin codex/p0-01-mvp-c1-c2-integration-20261022
+if ($LASTEXITCODE -ne 0) { throw "Fetch failed" }
+$sha = (git rev-parse origin/codex/p0-01-mvp-c1-c2-integration-20261022).Trim()
+git -C $work switch --detach $sha
+if ($LASTEXITCODE -ne 0) { throw "Checkout failed" }
+& $python (Join-Path $work "tools\data\p0_04_windows_readonly_browser_uat.py") `
+  --holdings-db $holdings `
+  --market-db $market
+```
+
+본 도구는 `$work\frontend\node_modules\@playwright\test\cli.js`, Node/npm, 사용자 설치 Chrome이 이미 존재해야 실행한다. 도구는 **브라우저/패키지를 자동 설치하지 않는다**. `HOLD_PLAYWRIGHT_OR_NODE_MISSING` 상태에서는 우선 실행 환경을 점검한다. 임시 DB 삭제가 실패하면 출력되는 `scratch_path`의 삭제 상태를 꼭 수동 검토해야 한다.
+
+판정 `WINDOWS_REAL_HOLDINGS_READONLY_BROWSER_VERIFIED`는 **Windows 운영 파일을 읽기 전용 복사한 임시 사본 + 로컬 실제 GET UI**만 확인한다. 결코 운영 DB에서 신규 판단을 생성/관리 계획을 적용/Recovery 평가하거나 종료한 결과가 아니고, 당일 KRX 최신 공식 EOD 또는 거래 계좌 조회도 아니다. PR은 Draft로 유지하고 승인 없는 실제 데이터 변경을 금지한다.
