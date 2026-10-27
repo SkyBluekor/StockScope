@@ -302,7 +302,9 @@ def _driver(args: argparse.Namespace) -> dict[str, Any]:
                 "browser_download_required": False}
     if shutil.which("node") is None or shutil.which("npm") is None:
         return {**result, "status": "HOLD_NODE_OR_NPM_NOT_FOUND"}
-    return _with_private_scratch(result, lambda scratch: _run_isolated_browser_session(args, scratch, result))
+    return _with_private_scratch(result, lambda scratch: _run_isolated_browser_session(
+        args, scratch, result, frontend, node_runner, system_chrome
+    ))
 
 
 def _preferred_private_temp_dir(*, platform: str | None = None) -> Path | None:
@@ -374,7 +376,12 @@ def _with_private_scratch(base: dict[str, Any], action: Any) -> dict[str, Any]:
 
 
 def _run_isolated_browser_session(
-    args: argparse.Namespace, scratch: Path, result: dict[str, Any]
+    args: argparse.Namespace,
+    scratch: Path,
+    result: dict[str, Any],
+    frontend: Path,
+    node_runner: Path,
+    system_chrome: Path,
 ) -> dict[str, Any]:
 
     snapshot = scratch / "market_snapshot.sqlite3"
