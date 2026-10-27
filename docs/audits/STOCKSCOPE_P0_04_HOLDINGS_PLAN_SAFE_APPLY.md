@@ -45,4 +45,15 @@ if ($LASTEXITCODE -ne 0) { throw 'worktree update failed' }
 
 이 단계의 API 회귀는 운영 DB에 실제 보유분이 있는 사용자 PC UAT의 대체가 아니다. StockScope 생산 환경의 Holdings migration 실행, live KRX/TypeSafe/JEV 요청, 실제 증권 주문, 운영 데이터 변경, PR 병합, 배포는 수행하지 않는다. 특히 실제 사용자 보유 계획 적용은 테스트를 빙자해 자동 실행하지 않는다.
 
+## P0-04 3차: 레거시 직접 적용 엔드포인트 폐쇄
+
+- 기존 `POST /api/holdings/positions/{position_id}/plans/apply`는 `analysis_revision_id`만 받아 활성 계획을 직접 변경했다. 이는 판단 생성→가격 검토→명시 적용 경로를 우회할 수 있었으며, 내부 `HoldingManagementService.apply_analysis_plan()`의 구조적인 가격·Horizon 검증만으로는 최신 data contract의 `current_use_allowed`를 보장하지 못했다.
+- 이 **외부 HTTP 엔드포인트만** `deprecated`로 표시하고 항상 HTTP **409** `HOLD_PLAN_DECISION_REVIEW_REQUIRED`를 반환한다. 실제 DB 초기화/조회/변경, 자동 승인 결정 생성, 계획 적용은 하지 않는다. 요청 형식은 유지해 기존 호출자가 이유를 알 수 있게 한다.
+- 이전 프런트엔드의 더 이상 사용되지 않는 `applyHoldingManagementPlan()` helper를 제거했다. 현재 화면은 원래부터 `applyHoldingDecisionPlan()`만 사용한다.
+- 유일하게 지원하는 쓰기 흐름: `POST /api/holdings/positions/{position_id}/decisions/evaluate` → 저장된 결정/관리 가격 비교 → 사용자가 확정 → `POST /api/holdings/decisions/{decision_id}/apply-plan`. 같은 decision의 중복 적용 및 오래된 분석은 서버에서 거부된다.
+- 내부 `HoldingManagementService.apply_analysis_plan()`은 기존 Fixtures/마이그레이션 테스트의 명시적 운영 서비스로 보존한다. 임시 테스트 DB에서는 기존 계획 버전/위험 차단 테스트가 그대로 유지되어야 한다. **구형 외부 클라이언트는 반드시 호출 경로를 바꿔야 한다.**
+- API 회귀 테스트는 마이그레이션 전/후에 유효한 Revision으로 레거시 URL에 POST해도 `_catalog()` 접근이 없고 Holdings SQLite 바이트가 동일함을 확인한다. OpenAPI deprecated 속성과 409 안내도 확인한다.
+
+P0-04의 이 3차 작업은 **기존 우회 엔드포인트 폐쇄**이지, 사용자 Windows 실보유 데이터 UAT 완료가 아니다. 기존 일봉/원본 DB, 실제 계좌·주문, KRX/유료 provider, 배포/병합은 그대로 금지한다.
+
 P0-04 완료 판정에는 사용자 보유 계좌의 실제 데이터 조회 가능성, 기존 기능의 안전한 migration 준비 상태, 사용자 명시 확정 후 영속 저장·재조회, 충돌 UX 확인이 추가로 필요하다.
