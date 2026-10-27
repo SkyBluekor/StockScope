@@ -383,3 +383,48 @@ def test_contract_revocation_invalidates_already_saved_decision(api_env, monkeyp
         assert conn.execute(
             "SELECT COUNT(*) FROM holding_management_plan"
         ).fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("migrated", [False, True])
+def test_legacy_direct_plan_api_requires_explicit_decision_review(
+    api_env, monkeypatch, migrated
+):
+    """Even a valid revision must never bypass the reviewed decision route."""
+    if migrated:
+        migrate_holdings_decision_store(api_env["holdings_db"])
+
+    client = api_env["client"]
+    opened = api_env["opened"]
+    # Verify byte-for-byte DB preservation. There must be no read-time
+    # initialization, migration, decision creation or plan write on this route.
+    before = api_env["holdings_db"].read_bytes()
+
+    def must_not_open_catalog():
+        raise AssertionError("legacy plan endpoint must not open the holdings DB")
+
+    monkeypatch.setattr(holdings_api, "_catalog", must_not_open_catalog)
+    response = client.post(
+        f"/api/holdings/positions/{opened.position.id}/plans/apply",
+        json={
+            "analysis_revision_id": api_env["revision"].id,
+            "change_reason": "attempt to bypass explicit decision review",
+        },
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "HOLD_PLAN_DECISION_REVIEW_REQUIRED"
+    assert api_env["holdings_db"].read_bytes() == before
+
+
+def test_legacy_plan_route_is_deprecated_but_still_has_clear_upgrade_error(api_env):
+    client = api_env["client"]
+    spec = client.get("/openapi.json")
+    assert spec.status_code == 200
+    route = spec.json()["paths"]["/api/holdings/positions/{position_id}/plans/apply"]["post"]
+    assert route["deprecated"] is True
+
+    missing = client.post(
+        "/api/holdings/positions/arbitrary-position/plans/apply",
+        json={"analysis_revision_id": "arbitrary-revision"},
+    )
+    assert missing.status_code == 409
+    assert missing.json()["detail"]["code"] == "HOLD_PLAN_DECISION_REVIEW_REQUIRED"
