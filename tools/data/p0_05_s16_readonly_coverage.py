@@ -110,13 +110,27 @@ def _summarize(g0: dict[str, Any], s16: dict[str, Any]) -> dict[str, Any]:
     failed_checks = _counts(s16.get("invalid_check_failure_counts"), FAILED_CHECKS)
     invalid_codes = _reason_counts(s16.get("invalid_reason_code_counts"))
     unexplained = s16.get("invalid_without_failed_checks")
-    if (failed_checks is None or invalid_codes is None
-            or type(unexplained) is not int
-            or not 0 <= unexplained <= integrity["INVALID"]
-            or s16.get("invalid_reason_counts_can_overlap") is not True
-            or any(n > integrity["INVALID"] for n in failed_checks.values())
-            or any(n > integrity["INVALID"] for n in invalid_codes.values())):
-        return {**base, "status": "HOLD_S16_INVALID_DIAGNOSTICS_CONTRACT"}
+    # These are fixed, privacy-safe contract failure categories; never echo
+    # the underlying S7 code/string or the original frozen sample.
+    diagnostic_issue = None
+    if failed_checks is None:
+        diagnostic_issue = "CHECK_BUCKET_SHAPE_INVALID"
+    elif invalid_codes is None:
+        diagnostic_issue = "REASON_BUCKET_SHAPE_INVALID"
+    elif type(unexplained) is not int or not 0 <= unexplained <= integrity["INVALID"]:
+        diagnostic_issue = "UNEXPLAINED_COUNT_INVALID"
+    elif s16.get("invalid_reason_counts_can_overlap") is not True:
+        diagnostic_issue = "OVERLAP_CONTRACT_MISSING"
+    elif any(n > integrity["INVALID"] for n in failed_checks.values()):
+        diagnostic_issue = "CHECK_BUCKET_EXCEEDS_INVALID_CANDIDATES"
+    elif any(n > integrity["INVALID"] for n in invalid_codes.values()):
+        diagnostic_issue = "REASON_BUCKET_EXCEEDS_INVALID_CANDIDATES"
+    if diagnostic_issue is not None:
+        return {
+            **base,
+            "status": "HOLD_S16_INVALID_DIAGNOSTICS_CONTRACT",
+            "diagnostic_failure_class": diagnostic_issue,
+        }
 
     windows = s16.get("windows")
     if not isinstance(windows, dict):
