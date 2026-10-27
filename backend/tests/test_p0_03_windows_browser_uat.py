@@ -84,3 +84,89 @@ def test_runner_never_automatically_installs_browser() -> None:
     assert 'browser_download_required' in source
     assert "playwright install chromium" not in source
     assert "subprocess.run(cmd" in source
+
+
+
+def test_windows_redirected_estsoft_temp_is_ignored(monkeypatch, tmp_path: Path) -> None:
+    import os
+    private = tmp_path / "LocalAppData"
+    preferred = private / "Temp"
+    preferred.mkdir(parents=True)
+    monkeypatch.setenv("LOCALAPPDATA", str(private))
+    monkeypatch.setenv("TEMP", str(tmp_path / "ESTsoft" / "CreatorTemp"))
+    monkeypatch.setenv("TMP", str(tmp_path / "ESTsoft" / "CreatorTemp"))
+    monkeypatch.setattr(os, "name", "nt")
+    assert module["_preferred_private_temp_dir"]() == preferred
+
+
+def test_cleanup_retries_transient_windows_file_lock(monkeypatch, tmp_path: Path) -> None:
+    import errno
+    import shutil
+    import time
+    scratch = tmp_path / "StockScope_P0_03_Browser_retry"
+    scratch.mkdir()
+    (scratch / "market_snapshot.sqlite3").write_bytes(b"fixture")
+    real_remove = shutil.rmtree
+    calls = []
+
+    def first_two_locked(path):
+        calls.append(path)
+        if len(calls) <= 2:
+            raise PermissionError(errno.EACCES, "WinError 32 simulated", str(path))
+        return real_remove(path)
+
+    monkeypatch.setattr(shutil, "rmtree", first_two_locked)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+    cleaned, error, retries = module["_cleanup_private_scratch"](scratch)
+    assert cleaned is True
+    assert error is None
+    assert retries == 3
+    assert not scratch.exists()
+
+
+def test_cleanup_failure_returns_explicit_hold_without_masking_original(
+    monkeypatch, tmp_path: Path
+) -> None:
+    import errno
+    import shutil
+    import time
+
+    globals_ref = module["_with_private_scratch"].__globals__
+    with monkeypatch.context() as patch:
+        patch.setitem(globals_ref, "_preferred_private_temp_dir", lambda: tmp_path)
+        patch.setattr(shutil, "rmtree",
+                      lambda path: (_ for _ in ()).throw(
+                          PermissionError(errno.EACCES, "WinError 32 simulated", str(path))
+                      ))
+        patch.setattr(time, "sleep", lambda _: None)
+        outcome = module["_with_private_scratch"](
+            {"version": "P003_TEST"},
+            lambda scratch: {"status": "OFFLINE_WINDOWS_BROWSER_REAL_FASTAPI_VERIFIED",
+                             "scratch_was_private": scratch.parent == tmp_path},
+        )
+
+    assert outcome["status"] == "HOLD_TEMP_CLEANUP_FAILED"
+    assert outcome["previous_status"] == "OFFLINE_WINDOWS_BROWSER_REAL_FASTAPI_VERIFIED"
+    assert outcome["scratch_was_private"] is True
+    assert outcome["temp_cleanup_attempts"] == 10
+    leftover = Path(outcome["temp_folder_for_manual_review"])
+    assert leftover.parent == tmp_path
+    assert leftover.name.startswith("StockScope_P0_03_Browser_")
+    assert leftover.is_dir()
+    shutil.rmtree(leftover)
+
+
+def test_cleanup_success_preserves_result_and_reports_removed(
+    monkeypatch, tmp_path: Path
+) -> None:
+    globals_ref = module["_with_private_scratch"].__globals__
+    with monkeypatch.context() as patch:
+        patch.setitem(globals_ref, "_preferred_private_temp_dir", lambda: tmp_path)
+        report = module["_with_private_scratch"](
+            {"version": "P003_TEST"},
+            lambda scratch: {"status": "OFFLINE_WINDOWS_BROWSER_REAL_FASTAPI_VERIFIED",
+                             "private_dir": str(scratch)},
+        )
+    assert report["status"] == "OFFLINE_WINDOWS_BROWSER_REAL_FASTAPI_VERIFIED"
+    assert report["temp_cleanup"] == "REMOVED"
+    assert not Path(report["private_dir"]).exists()
