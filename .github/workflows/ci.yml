@@ -209,6 +209,10 @@ jobs:
         shell: powershell
         run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_holdings_decision_api_vnp3s1.py -k test_p004_phase9
 
+      - name: Verify P0-05 Prospective operational inventory read-only audit (synthetic DB)
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_05_prospective_readonly_audit.py
+
       - name: Verify fresh runtime and no Drive dependency
         shell: powershell
         run: |
