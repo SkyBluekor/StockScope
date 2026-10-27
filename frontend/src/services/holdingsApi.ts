@@ -342,6 +342,7 @@ export type HoldingDecisionRecord = {
   input_fingerprint: string;
   evidence: {
     plan_state?: string;
+    proposal_ready?: boolean;
     proposal_conflict?: string | null;
     latest_analysis_differs_from_active_plan?: boolean;
     new_plan_horizon_activatable?: boolean;
