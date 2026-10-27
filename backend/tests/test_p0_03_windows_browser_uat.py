@@ -95,8 +95,7 @@ def test_windows_redirected_estsoft_temp_is_ignored(monkeypatch, tmp_path: Path)
     monkeypatch.setenv("LOCALAPPDATA", str(private))
     monkeypatch.setenv("TEMP", str(tmp_path / "ESTsoft" / "CreatorTemp"))
     monkeypatch.setenv("TMP", str(tmp_path / "ESTsoft" / "CreatorTemp"))
-    monkeypatch.setattr(os, "name", "nt")
-    assert module["_preferred_private_temp_dir"]() == preferred
+    assert module["_preferred_private_temp_dir"](platform="nt") == preferred
 
 
 def test_cleanup_retries_transient_windows_file_lock(monkeypatch, tmp_path: Path) -> None:

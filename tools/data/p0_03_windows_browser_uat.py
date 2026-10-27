@@ -305,13 +305,13 @@ def _driver(args: argparse.Namespace) -> dict[str, Any]:
     return _with_private_scratch(result, lambda scratch: _run_isolated_browser_session(args, scratch, result))
 
 
-def _preferred_private_temp_dir() -> Path | None:
+def _preferred_private_temp_dir(*, platform: str | None = None) -> Path | None:
     """Keep copied market data out of redirected TEMP (e.g. ESTsoft CreatorTemp).
 
     Prefer the user's own LocalAppData/Temp, not the current TEMP/TMP variable.
     On Windows, fail closed rather than using an unknown shared temp folder.
     """
-    if os.name == "nt":
+    if (platform or os.name) == "nt":
         roots = [os.environ.get("LOCALAPPDATA"),
                  str(Path.home() / "AppData" / "Local")]
         for root in roots:
