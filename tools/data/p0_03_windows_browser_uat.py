@@ -30,6 +30,8 @@ for item in (ROOT, ROOT / "backend"):
     if str(item) not in sys.path:
         sys.path.insert(0, str(item))
 
+from app.api.backtest import ScannerRequest
+
 from tools.data.p0_02_offline_scanner_replay import (
     OfflineKrx, prohibit_external_connections, snapshot_sqlite_readonly,
 )
@@ -160,7 +162,7 @@ def _safe_worker_app(*, snapshot: Path, scratch: Path, operational_repo: Path,
         }
 
     @app.post("/api/backtest/scanner/jobs", status_code=202)
-    async def create_job(payload: api.ScannerRequest) -> dict:
+    async def create_job(payload: ScannerRequest) -> dict:
         if (payload.market_scope != scope or payload.allow_large_sync
                 or payload.recheck_candidate is None
                 or payload.recheck_candidate.market != selected["market"]
@@ -305,7 +307,15 @@ def _driver(args: argparse.Namespace) -> dict[str, Any]:
                 and report.get("api_post_status") == 202
                 and report.get("api_get_status") == 200
                 and report.get("external_requests") == 0
-                and report.get("filter_reason") is not None
+                and report.get("recheck_status") in {
+                    "MATCHED_RETURNED_CANDIDATE",
+                    "TARGETED_EVALUATED_OUTSIDE_RANKING",
+                    "TARGET_OUTSIDE_SCANNER_FILTER",
+                }
+                and (
+                    report.get("recheck_status") != "TARGET_OUTSIDE_SCANNER_FILTER"
+                    or bool(report.get("filter_reason"))
+                )
             )
             return {
                 **result,
