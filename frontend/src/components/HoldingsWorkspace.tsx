@@ -2301,6 +2301,7 @@ export default function HoldingsWorkspace({ onAnalyzeStock }: Props) {
                 <HoldingDecisionPanel
                   positions={detail.positions}
                   data={workspaceDecisionData}
+                  management={management}
                   status={workspaceContext?.source_status.decision}
                   loading={loadingDetail}
                   onContextChanged={async () => {
