@@ -188,6 +188,7 @@ function assertNoUnexpectedCalls(state) {
 test("STALE ACTIVE_PLAN_CHANGED -> fresh decision -> SAME_AS_ACTIVE; no redundant apply", async ({page}) => {
   const state = await setup(page, "stale");
   await expect(page.getByRole("button", {name: "최신 판단 다시 만들기"})).toBeVisible();
+  await expect(page.getByText("이 판단이 참조한 활성 관리 계획이 현재 계획과 다릅니다. 기존 계획을 확인하고 판단만 다시 생성하세요.")).toBeVisible();
   await expect(page.getByRole("button", {name: "새 분석 계획 비교"})).toHaveCount(0);
   await page.getByRole("button", {name: "최신 판단 다시 만들기"}).click();
   await expect(page.getByText("현재 적용 계획을 유지할 수 있습니다.")).toBeVisible();
