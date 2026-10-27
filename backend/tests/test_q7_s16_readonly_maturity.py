@@ -420,3 +420,61 @@ def test_g0d_multiple_unknown_s7_codes_count_once_per_invalid_candidate(
     assert report["excluded_reason_counts"]["FROZEN_INTEGRITY_INVALID"] == 2
     assert "UNRECOGNIZED_PRIVATE" not in str(report["invalid_reason_code_counts"])
     assert report["runtime_db_writes"] == 0
+
+
+def test_g0e_s3_known_contract_and_rank_source_missing_are_safely_classified(
+    tmp_path, monkeypatch,
+):
+    """S3/S7 literal known reasons must not be collapsed into OTHER_S7_CODE."""
+    sim, market = _db(tmp_path)
+    _mock(monkeypatch)
+
+    def classify(_capture, sample):
+        idx = sample["sample_index"]
+        if idx == 4:
+            return {"category": "REFERENCE_ONLY"}
+        if idx == 0:
+            return {
+                "category": "INVALID",
+                "rank": {
+                    "status": "FAIL", "snapshot_priority": None, "stored": None,
+                },
+                "strict_s3": {"status": "FAIL", "code": "BASELINE_RANK_MISMATCH"},
+                "codes": [
+                    "RANK_MISSING", "BASELINE_RANK_MISMATCH",
+                    "SEMANTIC_SOURCE_V2_BASE_MISSING",
+                    "PRIVATE_DYNAMIC_S3_DIAGNOSTIC",
+                ],
+            }
+        if idx == 1:
+            return {
+                "category": "INVALID",
+                "rank": {
+                    "status": "FAIL", "snapshot_priority": 2, "stored": None,
+                },
+                "strict_s3": {"status": "FAIL", "code": "BASELINE_EVIDENCE_INCOMPLETE"},
+                "codes": ["RANK_MISSING", "BASELINE_EVIDENCE_INCOMPLETE"],
+            }
+        return {"category": "LEGACY_LIMITED", "codes": []}
+
+    monkeypatch.setattr(s16, "assess_frozen_candidate", classify)
+    report = s16.measure(sim, market, as_of=date(2026, 10, 14))
+    assert report["status"] == "DESCRIPTIVE_OBSERVATIONS_ONLY"
+    assert report["integrity_counts"]["INVALID"] == 2
+    assert report["invalid_reason_code_counts"] == {
+        "BASELINE_EVIDENCE_INCOMPLETE": 1,
+        "BASELINE_RANK_MISMATCH": 1,
+        "OTHER_S7_CODE": 1,
+        "RANK_MISSING": 2,
+        "SEMANTIC_SOURCE_V2_BASE_MISSING": 1,
+    }
+    assert report["invalid_rank_source_missing_counts"] == {
+        "snapshot_priority_rank_missing": 1,
+        "stored_sample_rank_missing": 2,
+        "both_rank_sources_missing": 1,
+    }
+    assert all(
+        "PRIVATE" not in code for code in report["invalid_reason_code_counts"]
+    )
+    assert report["runtime_db_writes"] == 0
+    assert report["external_provider_calls"] == 0
