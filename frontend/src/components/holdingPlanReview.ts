@@ -22,7 +22,7 @@ export function holdingPlanReview(
 ): HoldingPlanReview | null {
   if (!decision || !positionManagement || positionManagement.position_id !== decision.position_id) return null;
   if (decision.stale || decision.effective_status === "STALE") return null;
-  if (!decision.source_analysis_revision_id || !decision.evidence.new_plan_horizon_activatable) return null;
+  if (!decision.source_analysis_revision_id || decision.evidence.proposal_ready !== true || !decision.evidence.new_plan_horizon_activatable) return null;
   if (decision.evidence.proposal_conflict) return null;
   if (decision.source_active_plan_id !== null && !decision.evidence.latest_analysis_differs_from_active_plan) return null;
 
