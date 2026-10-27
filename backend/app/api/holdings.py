@@ -822,18 +822,26 @@ def stock_management(stock_id: str) -> dict[str, Any]:
         _raise_holdings_error(error)
 
 
-@router.post("/positions/{position_id}/plans/apply")
+@router.post(
+    "/positions/{position_id}/plans/apply",
+    deprecated=True,
+)
 def apply_management_plan(position_id: str, request: ApplyManagementPlanRequest) -> dict[str, Any]:
-    catalog = _catalog()
-    try:
-        plan = _management_service(catalog).apply_analysis_plan(
-            position_id=position_id,
-            analysis_revision_id=request.analysis_revision_id,
-            change_reason=request.change_reason,
-        )
-        return {"plan": plan.to_dict()}
-    except (HoldingsCatalogError, HoldingsManagementError) as error:
-        _raise_holdings_error(error)
+    # HOLD.1-G6 legacy route accepted a bare analysis revision and wrote a
+    # plan without the P3-S1 current-use decision/evidence review. Do not
+    # upgrade this request into an implicit decision (or touch any database).
+    # Callers must use the explicit evaluate -> review -> apply-plan flow.
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "code": "HOLD_PLAN_DECISION_REVIEW_REQUIRED",
+            "message": (
+                "이전 직접 계획 적용 API는 더 이상 사용할 수 없습니다. "
+                "최신 보유 판단을 생성하고 손절·목표 가격을 확인한 뒤 "
+                "결정 ID로 새 관리 계획을 명시 적용하세요."
+            ),
+        },
+    )
 
 
 @router.get("/stocks/{stock_id}/management/live-proximity")
