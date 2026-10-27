@@ -204,6 +204,11 @@ def test_decision_api_blocks_add_and_applies_new_plan_without_ledger_event(api_e
         monitored_stock_id=opened.stock_id,
         market_date="2026-09-24",
     )
+    with sqlite3.connect(api_env["market_db"]) as source_conn:
+        source_conn.row_factory = sqlite3.Row
+        generation = read_input_generation_token(
+            source_conn, "KOSPI", "005930"
+        )
     second_revision = catalog.append_analysis_revision(
         analysis_day_id=day.id,
         input_fingerprint="api-r2",
