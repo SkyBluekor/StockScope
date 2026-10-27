@@ -164,3 +164,18 @@ CI: `backend/tests/test_p0_05_s16_readonly_coverage.py` (실제 합성 Prospecti
 이전 G0b와 **동일한** 명령(`p0_05_s16_readonly_coverage.py`)을 최신 SHA에서 사용한다. 운영 DB 원본 2개는 read-only로 열고 새 평가 Run을 만들거나 캡처를 추가하지 않는다. 이번 G0c의 1차 CI 테스트는 `backend/tests/test_q7_s16_readonly_maturity.py -k test_g0c`(실제 S16 함수), `backend/tests/test_p0_05_s16_readonly_coverage.py`(개인정보 비출력/계약검사)로 실행한다. 실환경 분포는 **사용자 Windows 출력이 확인되기 전까지 미확정**이다.
 
 **새 결과의 SAFE PASS는 캘린더 진위, 10/20일 성숙, 과거 capture 독립 시각/정책 버전, Q7 운영승인, 실거래 수익률을 증명하지 않는다.** 프로덕션 DB 쓰기·외부 수집·S17 예약 실행·Q7 승격·PR merge는 보류한다.
+
+## P0-05/G0d — Windows `HOLD_S16_INVALID_DIAGNOSTICS_CONTRACT` 진단 및 정상화
+
+2026-10-27 사용자 실제 Windows G0c 실행(HEAD `d184605ff6b8ed53d57a39f5e1905e078286b8ba`)에서 기존 G0/G0b와 동일 운영 DB를 사용했지만 **`HOLD_S16_INVALID_DIAGNOSTICS_CONTRACT`**가 보고됐다. 이는 G0c 추가 진단 집계의 계약 거부이며, 운영 DB 무결성 손상이나 새로운 주가 수집 실패를 의미하지 않는다. 해당 HOLD에선 개별 INVALID 사유/캘린더 하위 분포를 출력하지 않아 원본 수치는 **미확정**이다.
+
+원인 후보 하나를 코드에서 확인했다: 기존 S16 `INVALID` 처리에서 한 후보의 여러 알 수 없는 S7 코드가 **모두 `OTHER_S7_CODE`로 정규화되는데, 정규화 전에 중복을 제거**했다. 따라서 서로 다른 미정의 코드가 여러 개인 한 후보가 동일 범주에서 복수 번 계상돼 `OTHER_S7_CODE > INVALID 전체 후보 수`를 만들 수 있고, wrapper의 올바른 유효성 검사를 거부시킨다. 사용자의 과거 원본 Snapshot 코드를 공개하지 않았으므로 **실제 HOLD의 원인이 이것이었다고 단정하지 않는다**.
+
+G0d 수정:
+- S16의 각 INVALID 후보에서 먼저 원인을 `EXPLAIN` 허용 코드 또는 `OTHER_S7_CODE`로 정규화한 뒤, 정규화된 키 집합을 **후보별 1번씩** 계수한다. 알고 있는 다른 근거 코드는 여전히 서로 겹쳐 계수하며, `INVALID` 후보 자체의 개수·기존 S16 관측 판정은 변경하지 않는다.
+- Wrapper는 허용된 소수의 `diagnostic_failure_class`만 추가로 보고한다(예: `REASON_BUCKET_EXCEEDS_INVALID_CANDIDATES`, `CHECK_BUCKET_SHAPE_INVALID`). 개인별 종목·주가·전체 정책 코드/원문·원본 DB 경로·예외 메시지 비출력, `HOLD_*` 시 부분 분포를 반환하거나 성공 처리하지 않는다.
+- 테스트에 한 후보가 2개 이상의 서로 다른 미정의 S7 코드를 가진 상황과, 변환 전에는 동일 범주 건수가 INVALID 수를 초과하던 상황을 재현한다. 원본 S16과 wrapper, Windows Fresh Clone 모두 검증한다.
+
+이전 G0c와 **동일** `p0_05_s16_readonly_coverage.py` Windows 명령을 최신 HEAD로 다시 실행한다. `READ_ONLY_S16_OBSERVATION_COVERAGE_OBSERVED`이면 무결성 사유와 5/10/20일 gap 하위 집계를 판독한다. 계속 `HOLD_S16_INVALID_DIAGNOSTICS_CONTRACT`라면 안전하게 공개한 `diagnostic_failure_class`만 확인한 후, 근거 없는 S16 정책 완화/운영 DB 수정을 금지한다.
+
+운영 Capture/평가 Run/주문·관리 Plan/Recovery는 G0d 패치에서 변경하지 않고, 신규 수집/공식 최신 EOD/Q7 승인/실거래/PR merge는 HOLD로 유지한다.
