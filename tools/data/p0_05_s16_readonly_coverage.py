@@ -21,7 +21,7 @@ for p in (ROOT, ROOT / "backend"):
 
 from tools.data.p0_05_prospective_readonly_audit import inspect as inspect_g0
 
-VERSION = "STOCKSCOPE_P0_05_G0C_S16_READONLY_COVERAGE_V2"
+VERSION = "STOCKSCOPE_P0_05_G0E_S3_PROVENANCE_READONLY_V3"
 WINDOWS = ("5d", "10d", "20d")
 STATES = (
     "readiness_denominator", "observed", "awaiting_future_trading_days",
@@ -33,6 +33,11 @@ FAILED_CHECKS = ("rank", "strategy", "policy", "engine", "dates", "risk", "stric
 GAP_SUBTYPES = (
     "gap_with_insufficient_confirmed_sessions",
     "gap_with_sufficient_confirmed_sessions",
+)
+RANK_SOURCE_MISSING = (
+    "snapshot_priority_rank_missing",
+    "stored_sample_rank_missing",
+    "both_rank_sources_missing",
 )
 S16_GOOD = "DESCRIPTIVE_OBSERVATIONS_ONLY"
 
@@ -109,6 +114,9 @@ def _summarize(g0: dict[str, Any], s16: dict[str, Any]) -> dict[str, Any]:
     observed_eligible = integrity["LOCAL_VALIDATED"] + integrity["LEGACY_LIMITED"]
     failed_checks = _counts(s16.get("invalid_check_failure_counts"), FAILED_CHECKS)
     invalid_codes = _reason_counts(s16.get("invalid_reason_code_counts"))
+    rank_missing = _counts(
+        s16.get("invalid_rank_source_missing_counts"), RANK_SOURCE_MISSING,
+    )
     unexplained = s16.get("invalid_without_failed_checks")
     # These are fixed, privacy-safe contract failure categories; never echo
     # the underlying S7 code/string or the original frozen sample.
@@ -117,6 +125,14 @@ def _summarize(g0: dict[str, Any], s16: dict[str, Any]) -> dict[str, Any]:
         diagnostic_issue = "CHECK_BUCKET_SHAPE_INVALID"
     elif invalid_codes is None:
         diagnostic_issue = "REASON_BUCKET_SHAPE_INVALID"
+    elif rank_missing is None:
+        diagnostic_issue = "RANK_SOURCE_BUCKET_SHAPE_INVALID"
+    elif (rank_missing["snapshot_priority_rank_missing"] > failed_checks["rank"]
+          or rank_missing["stored_sample_rank_missing"] > failed_checks["rank"]
+          or rank_missing["both_rank_sources_missing"]
+          > min(rank_missing["snapshot_priority_rank_missing"],
+                rank_missing["stored_sample_rank_missing"])):
+        diagnostic_issue = "RANK_SOURCE_COUNTS_INCONSISTENT"
     elif type(unexplained) is not int or not 0 <= unexplained <= integrity["INVALID"]:
         diagnostic_issue = "UNEXPLAINED_COUNT_INVALID"
     elif s16.get("invalid_reason_counts_can_overlap") is not True:
@@ -169,6 +185,7 @@ def _summarize(g0: dict[str, Any], s16: dict[str, Any]) -> dict[str, Any]:
         "integrity_eligible_for_readonly_observation": observed_eligible,
         "invalid_check_failure_counts": failed_checks,
         "invalid_reason_code_counts": invalid_codes,
+        "invalid_rank_source_missing_counts": rank_missing,
         "invalid_without_failed_checks": unexplained,
         "invalid_reason_counts_can_overlap": True,
         "gap_with_insufficient_sessions_is_not_proven_immature": True,
