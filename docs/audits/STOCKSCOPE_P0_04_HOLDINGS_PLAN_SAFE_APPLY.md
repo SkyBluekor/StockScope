@@ -129,3 +129,24 @@ V2 `tools/data/p0_04_holdings_workspace_probe.py`의 허용 출력에 다음을 
 ```
 
 테스트는 합성 TEMP SQLite에 기존 판단 평가→보유 수량 정정→STALE 판정, Recovery 개설·평가 저장→별도 읽기 전용 workspace 조회를 수행한다. **이 쓰기 시뮬레이션은 테스트 전용 임시 SQLite에만 적용**된다. Windows 운영 Holdings/Market DB는 읽기 전용 조회만 수행한다.
+
+## P0-04 7차 — 실제 Holdings React 패널 브라우저 검증 (완전히 합성된 API)
+
+6차 Windows 읽기 전용 확인: `ACTIVE_PLAN_CHANGED`로 이전 판단이 STALE가 되었고, 최신 저장 Analysis/활성 관리 계획은 `SAME_AS_ACTIVE`로 일치한다. Recovery OPEN(2026-10-20), Assessment 0. **이 기존 계획을 다시 적용하지 않고 보존한다.**
+
+신규 `frontend/e2e/p004-holdings-panel.jsx`는 실사용 `HoldingDecisionPanel.tsx`와 실제 `holdingsApi.ts` 클라이언트를 별도의 테스트 전용 Vite 페이지 `p004-test.html`에 렌더링한다. `frontend/e2e/p004-holdings-panel.spec.mjs`의 Playwright 테스트가 실제 Chromium에서 사용자의 버튼 클릭/비동기 응답/새로고침을 확인한다. **HTTP 응답은 브라우저에서 합성 상태로 완전 intercept되며 실제 FastAPI/운영 DB에 연결하지 않는다.** 따라서 UI와 HTTP 계약 연결 검증이지, 운영 백엔드·실제 DB를 통한 전체 E2E라고 표현하지 않는다.
+
+검증 시나리오:
+- `STALE`(`ACTIVE_PLAN_CHANGED`) → 사용자가 **최신 판단 다시 만들기** 선택 → 합성 POST 한 번 → 갱신된 판단이 기존 계획과 `SAME_AS_ACTIVE`일 때 **새 계획 비교/적용 버튼 부재**, 재조회 후에도 v1 ACTIVE 유지.
+- 분석 Revision의 새 제안: 비교 전에 적용 불가 → 손절/목표 가격 표시 → 취소 후 apply 호출 없음 → 재비교 후 **이 가격으로 관리 계획 적용** 명시 클릭 → 합성 응답에서 ACTIVE v2 교체, 이전 판단 STALE → 화면 재조회 후 재적용 차단. 원장 이벤트 변경 0.
+- 비교 승인 중 합성 가격 제안이 변경되면 확인 버튼이 소멸하고 다시 비교해야 함. 기존 승인 fingerprint는 재사용 불가.
+- 브라우저에서 `/api/*` 요청은 항상 mock 응답이며, 타 도메인 요청·예상하지 못한 엔드포인트는 차단. 결제/거래/실 Broker/KRX Provider 호출 불가.
+
+단독 테스트:
+```powershell
+cd C:\Projects\StockScope\frontend
+npx playwright test -c playwright.p004.config.mjs
+```
+(개발 머신에 Playwright 테스트 러너/Chromium이 이미 설치돼 있을 때만. CI는 기존 P0-03 용 pinned `@playwright/test@1.56.1` 및 Chromium 설치 단계를 재사용.)
+
+본 단계는 기존 Windows 운영 Holdings 파일을 전혀 열지 않고 데이터 변경을 하지 않는다. **실제 Windows 브라우저 전체 HoldingsWorkspace와 실제 FastAPI, Recovery 수동 검토·평가/종료, 운영 DB 기반 Apply UAT는 여전히 미실행**이다. 이 구분을 유지한 상태에서 PR #170 Draft를 보존한다.
