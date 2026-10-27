@@ -7,12 +7,15 @@ import {
   type HoldingDecisionRecord,
   type HoldingDecisionSupportResponse,
   type HoldingPosition,
+  type HoldingManagementResponse,
   type HoldingWorkspaceSourceStatus,
 } from "../services/holdingsApi";
+import { holdingPlanReview, type HoldingPlanReview } from "./holdingPlanReview";
 
 type Props = {
   positions: HoldingPosition[];
   data: HoldingDecisionSupportResponse | null;
+  management: HoldingManagementResponse | null;
   status?: HoldingWorkspaceSourceStatus;
   loading?: boolean;
   onContextChanged?: () => Promise<void> | void;
@@ -136,12 +139,14 @@ function optionStateText(state: string) {
 export default function HoldingDecisionPanel({
   positions,
   data,
+  management,
   status,
   loading = false,
   onContextChanged,
   onPlanChanged,
 }: Props) {
   const [busyPositionId, setBusyPositionId] = useState<string | null>(null);
+  const [pendingPlanReview, setPendingPlanReview] = useState<{ positionId: string; key: string } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const migrationRequired = status?.status === "MIGRATION_REQUIRED";
@@ -153,6 +158,8 @@ export default function HoldingDecisionPanel({
   }, [data]);
 
   async function evaluate(positionId: string) {
+    if (busyPositionId !== null) return;
+    setPendingPlanReview(null);
     setBusyPositionId(positionId);
     setMessage(null);
     setError(null);
@@ -172,6 +179,8 @@ export default function HoldingDecisionPanel({
   }
 
   async function acknowledge(decision: HoldingDecisionRecord) {
+    if (busyPositionId !== null) return;
+    setPendingPlanReview(null);
     setBusyPositionId(decision.position_id);
     setMessage(null);
     setError(null);
@@ -195,20 +204,30 @@ export default function HoldingDecisionPanel({
     }
   }
 
-  async function applyPlan(decision: HoldingDecisionRecord) {
+  async function applyPlan(decision: HoldingDecisionRecord, review: HoldingPlanReview) {
+    if (busyPositionId !== null) return;
+    // Confirmation is scoped to the displayed decision and exact price proposal.
+    if (pendingPlanReview?.positionId !== decision.position_id || pendingPlanReview.key !== review.key) return;
+    setPendingPlanReview(null);
     setBusyPositionId(decision.position_id);
     setMessage(null);
     setError(null);
     try {
       await applyHoldingDecisionPlan(decision.decision_id, {
         selected_action: decision.primary_action,
-        note: "보유 판단 화면에서 새 분석 계획을 명시 적용",
+        note: "보유 판단 화면에서 변경 가격을 확인한 뒤 새 분석 계획 명시 적용",
       });
-      setMessage("새 분석의 관리 계획을 적용했습니다. 실제 매수·매도 거래는 발생하지 않았습니다.");
-      await onPlanChanged?.();
-      await onContextChanged?.();
     } catch (applyError) {
       setError(applyError instanceof Error ? applyError.message : "새 관리 계획을 적용하지 못했습니다.");
+      setBusyPositionId(null);
+      return;
+    }
+    setMessage("새 분석의 관리 계획을 적용했습니다. 실제 매수·매도 거래는 발생하지 않았습니다.");
+    try {
+      await onPlanChanged?.();
+      await onContextChanged?.();
+    } catch {
+      setError("계획 적용은 완료됐지만 화면을 새로고침하지 못했습니다. 최신 보유 정보를 다시 확인하세요.");
     } finally {
       setBusyPositionId(null);
     }
@@ -250,7 +269,8 @@ export default function HoldingDecisionPanel({
 
       {!loading && positions.map((position) => {
         const decision = byPosition.get(position.position_id) ?? null;
-        const busy = busyPositionId === position.position_id;
+        const busy = busyPositionId !== null;
+        const thisPositionBusy = busyPositionId === position.position_id;
         const visibleOptions = decision?.alternatives.filter(
           (item) => item.state !== "NOT_TRIGGERED",
         ) ?? [];
@@ -261,12 +281,14 @@ export default function HoldingDecisionPanel({
             || decision.evidence.latest_analysis_differs_from_active_plan
           ),
         );
-        const canApplyPlan = Boolean(
-          decision
-          && !decision.stale
-          && hasApplicableAnalysis
-          && decision.evidence.new_plan_horizon_activatable
-          && !decision.evidence.proposal_conflict,
+        const positionManagement = management?.positions.find(
+          (item) => item.position_id === position.position_id,
+        ) ?? null;
+        const review = holdingPlanReview(decision, positionManagement);
+        const isReviewConfirmed = Boolean(
+          review
+          && pendingPlanReview?.positionId === position.position_id
+          && pendingPlanReview.key === review.key,
         );
 
         return (
@@ -292,7 +314,7 @@ export default function HoldingDecisionPanel({
                 disabled={busy}
                 onClick={() => void evaluate(position.position_id)}
               >
-                {busy ? "확인 중…" : decision?.stale ? "최신 판단 다시 만들기" : "현재 판단 업데이트"}
+                {thisPositionBusy ? "확인 중…" : decision?.stale ? "최신 판단 다시 만들기" : "현재 판단 업데이트"}
               </button>
             </div>
 
@@ -334,20 +356,56 @@ export default function HoldingDecisionPanel({
                       {decision.primary_action === "HOLD" ? "현재 계획 유지 기록" : "이 판단 확인"}
                     </button>
                   )}
-                  {canApplyPlan && (
+                  {review && !isReviewConfirmed && (
                     <button
                       type="button"
                       className="holdings-primary-button"
                       disabled={busy}
-                      onClick={() => void applyPlan(decision)}
+                      onClick={() => {
+                        setPendingPlanReview({ positionId: position.position_id, key: review.key });
+                        setMessage(null);
+                        setError(null);
+                      }}
                     >
-                      새 분석 계획 적용
+                      새 분석 계획 비교
                     </button>
                   )}
-                  {canApplyPlan && (
-                    <small>계획 version만 바뀌며 매수·매도 원장은 변경하지 않습니다.</small>
+                  {hasApplicableAnalysis && !review && !decision.stale && (
+                    <small>{positionManagement?.proposal?.reason ?? "분석과 관리 계획 정보가 일치하지 않아 적용할 수 없습니다. 최신 보유 정보를 확인하세요."}</small>
+                  )}
+                  {review && (
+                    <small>가격 변경을 확인한 다음에만 관리 계획을 적용합니다. 매수·매도 원장은 변경하지 않습니다.</small>
                   )}
                 </div>
+
+                {review && isReviewConfirmed && (
+                  <div className="holding-decision-plan-review" role="group" aria-label="새 관리 계획 적용 확인">
+                    <strong>적용할 손절·목표 가격을 확인하세요.</strong>
+                    <p>분석 기준일 {dateText(review.proposalDate)} · {review.previousVersion == null
+                      ? "첫 관리 계획 적용"
+                      : `기존 계획 v${review.previousVersion} → 새 계획`}</p>
+                    <div className="holding-decision-detail-grid">
+                      <div><span>손절 기준</span><strong>{money(review.previousStop)} → {money(review.nextStop)}</strong></div>
+                      <div><span>1차 목표</span><strong>{money(review.previousTarget1)} → {money(review.nextTarget1)}</strong></div>
+                      <div><span>2차 목표</span><strong>{money(review.previousTarget2)} → {money(review.nextTarget2)}</strong></div>
+                    </div>
+                    <p>확정해도 실제 주문은 발생하지 않습니다. 기존 계획의 기준 가격이 교체됩니다.</p>
+                    <div className="holding-decision-actions">
+                      <button
+                        type="button"
+                        className="holdings-secondary-button"
+                        disabled={busy}
+                        onClick={() => setPendingPlanReview(null)}
+                      >취소</button>
+                      <button
+                        type="button"
+                        className="holdings-primary-button"
+                        disabled={busy}
+                        onClick={() => void applyPlan(decision, review)}
+                      >이 가격으로 관리 계획 적용</button>
+                    </div>
+                  </div>
+                )}
 
                 <details className="holding-decision-technical">
                   <summary>판단 근거 · 제한사항</summary>
