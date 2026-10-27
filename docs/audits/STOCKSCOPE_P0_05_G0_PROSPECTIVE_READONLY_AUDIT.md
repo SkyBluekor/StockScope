@@ -179,3 +179,64 @@ G0d 수정:
 이전 G0c와 **동일** `p0_05_s16_readonly_coverage.py` Windows 명령을 최신 HEAD로 다시 실행한다. `READ_ONLY_S16_OBSERVATION_COVERAGE_OBSERVED`이면 무결성 사유와 5/10/20일 gap 하위 집계를 판독한다. 계속 `HOLD_S16_INVALID_DIAGNOSTICS_CONTRACT`라면 안전하게 공개한 `diagnostic_failure_class`만 확인한 후, 근거 없는 S16 정책 완화/운영 DB 수정을 금지한다.
 
 운영 Capture/평가 Run/주문·관리 Plan/Recovery는 G0d 패치에서 변경하지 않고, 신규 수집/공식 최신 EOD/Q7 승인/실거래/PR merge는 HOLD로 유지한다.
+
+## P0-05/G0e — S3·S7 원본 계약 대비 INVALID 구조적 원인 분리
+
+2026-10-27 실제 Windows G0d에서 `ENTRY=61`, `INVALID=24`,
+`LEGACY_LIMITED=37`, `LOCAL_VALIDATED=0`로 확인됐다. INVALID 24건은
+모두 `rank/policy/strategy/engine/strict_s3` 진단에서 실패했으며,
+`RANK_MISSING`, `POLICY_PROVENANCE_UNVERIFIED`,
+`STRATEGY_IDENTITY_MISSING` 각 24, `ENGINE_EVIDENCE_INCOMPLETE` 9,
+`OTHER_S7_CODE` 24였다. 이 집계만으로 원본이 잘못 생성됐는지,
+레거시 계약에서 생략됐는지, 작성된 파일이 변경됐는지는 확정할 수 없다.
+
+코드 근거:
+- `app.strategy.semantic_identity_bridge.scanner_repro_candidate_key` 및
+  `ProspectiveCatalog.finalize_capture`는 Scanner `priority.rank`와
+  Repro Audit의 상위 rank 키를 비교한다. 검증 키가 없거나 충돌하면
+  **Prospective sample.rank를 NULL로 보존**하고 리스트 순서로 숫자를
+  지어내지 않는다.
+- `app.jev.scanner_integrity_s7_1.assess_frozen_candidate`는 저장
+  `sample.rank`와 frozen `snapshot.priority.rank`를 별도 확인한다.
+- `app.jev.decision_reviewer_offline.build_scanner_review_input`(S3)은
+  필수 frozen priority/risk/conditions/guide, rank 값 및 원본 전략/정책/
+  엔진 근거를 엄격히 검사한다. **첫 위반 시 종료**하기 때문에
+  S3의 반환 사유는 해당 후보의 **모든** 누락 항목 목록이 아니다.
+- `app.prospective.catalog._candidate_snapshot`는 실제 실행
+  selection-policy pin 또는 엔진 PASS 감사가 없으면 semantic
+  strategy identity/version을 인증되지 않은 것으로 보존한다.
+  이후 현재 정책/오늘 엔진 실행 결과를 옛 Snapshot에 끼워 넣지 않는다.
+
+G0e 코드 변경:
+- S16에서 `OTHER_S7_CODE`로 합쳐지는 알려진 S3 projection 실패
+  (`BASELINE_EVIDENCE_INCOMPLETE`, `BASELINE_RANK_MISMATCH`,
+  `SEMANTIC_SOURCE_V2_*`의 명시적 검증 코드 등)를 **문자열 상수
+  허용목록**으로 분리한다. 알 수 없는 코드, 동적 오류 메시지,
+  개인 식별 키는 계속 `OTHER_S7_CODE`로만 출력한다. 후보마다 같은
+  이유는 1번씩 계수하며 이유 간 겹침은 유지한다.
+- `invalid_rank_source_missing_counts`: `snapshot_priority_rank_missing`,
+  `stored_sample_rank_missing`, `both_rank_sources_missing` 3종의
+  **건수만** 반환한다. 실제 rank 값·코드·후보명은 출력하지 않는다.
+  마지막 건수는 두 누락 집합의 교집합이며 별도의 제3 집합으로
+  더하면 안 된다.
+- 신규 S7/S16 회귀 테스트는 known S3 코드/unknown 비공개 fallback,
+  원본 순위와 DB 순위 각각의 누락, 교집합, 잘못된 집계의 HOLD,
+  PRIVACY/원본 DB read-only/승격 금지를 검증한다.
+- 기존 S16 `INVALID/LEGACY_LIMITED/OBSERVED` 분류와 5/10/20일
+  원본 캘린더 차단 기준은 **전혀 완화하지 않는다**. 원본 저장 기록
+  backfill·migration·S17 자동 수집·전략 변경 없음.
+
+### Windows G0e 읽기 전용 확인
+
+지난 G0d와 **같은** `p0_05_s16_readonly_coverage.py` 명령을 Git
+branch 최신 SHA로 실행한다. 출력 `version`은
+`STOCKSCOPE_P0_05_G0E_S3_PROVENANCE_READONLY_V3`이고,
+`invalid_reason_code_counts`, `invalid_rank_source_missing_counts`
+분포를 확인한다. `READ_ONLY_S16_OBSERVATION_COVERAGE_OBSERVED`는
+출력된 근거의 **조회 상태만** 보장하며 재분류·실제 투자 성과·
+정식 정책 승인으로 해석하지 않는다. 실환경 수치는 실제 사용자
+Windows 실행 결과가 있기 전까지 추정하지 않는다.
+
+다음 검증이 S3 코드의 구조적 선행 실패를 규명해도
+재수집·공식 데이터 연결·원본 Capture 수정·PR 병합에 대한 허가를
+의미하지 않는다.
