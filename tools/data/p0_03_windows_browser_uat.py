@@ -359,6 +359,9 @@ def _with_private_scratch(base: dict[str, Any], action: Any) -> dict[str, Any]:
                 "error_class": type(exc).__name__}
     try:
         report = action(scratch)
+    except KeyboardInterrupt:
+        # Ctrl+C must still clean up a TEMP copy of market data.
+        report = {**base, "status": "HOLD_USER_INTERRUPTED"}
     except Exception as exc:
         report = {**base, "status": "HOLD_UAT_RUNTIME_EXCEPTION",
                   "error_class": type(exc).__name__}

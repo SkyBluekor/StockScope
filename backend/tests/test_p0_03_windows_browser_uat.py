@@ -184,3 +184,17 @@ def test_isolated_browser_runner_has_explicit_dependency_parameters() -> None:
     for dependency in ("frontend", "node_runner", "system_chrome"):
         assert function.lookup(dependency).is_parameter(), dependency
     assert "args, scratch, result, frontend, node_runner, system_chrome" in source
+
+
+
+def test_user_ctrl_c_runs_private_scratch_cleanup(monkeypatch, tmp_path: Path) -> None:
+    helper = module["_with_private_scratch"]
+    with monkeypatch.context() as patch:
+        patch.setitem(helper.__globals__, "_preferred_private_temp_dir",
+                      lambda: tmp_path)
+        def interrupted(_scratch):
+            raise KeyboardInterrupt()
+        outcome = helper({"version": "P003_TEST"}, interrupted)
+    assert outcome["status"] == "HOLD_USER_INTERRUPTED"
+    assert outcome["temp_cleanup"] == "REMOVED"
+    assert not list(tmp_path.glob("StockScope_P0_03_Browser_*"))
