@@ -736,6 +736,7 @@ def test_ux_redesign1j4_prioritizes_held_management_and_separates_opening_balanc
     assert "decision.stale || decision.effective_status" in plan_review
     assert "!decision.evidence.new_plan_horizon_activatable" in plan_review
     assert "decision.evidence.proposal_conflict" in plan_review
+    assert "decision.evidence.proposal_ready !== true" in plan_review
     assert "proposal.analysis_revision_id !== decision.source_analysis_revision_id" in plan_review
     assert "stop < Number(active.stop_price)" in plan_review
 
