@@ -255,3 +255,122 @@ def test_decision_api_blocks_add_and_applies_new_plan_without_ledger_event(api_e
     position = catalog.get_position(opened.position.id)
     assert str(position.current_quantity) == "10"
     assert str(position.current_average_price) == "100"
+
+    # Fetch through the actual read endpoints: the updated management plan
+    # must survive a new catalog/service instance and the former plan is kept
+    # as a superseded historical revision, not a new buy/sell transaction.
+    reloaded = client.get(f"/api/holdings/stocks/{opened.stock_id}/management")
+    assert reloaded.status_code == 200
+    current_plan = reloaded.json()["positions"][0]["active_plan"]
+    assert current_plan["plan_id"] == applied.json()["plan"]["plan_id"]
+    assert current_plan["version"] == 2
+    assert current_plan["stop_price"] == "95"
+    assert current_plan["previous_plan_id"] == first_plan.id
+    with catalog.connection() as conn:
+        plan_versions = conn.execute(
+            "SELECT plan_version,status FROM holding_management_plan "
+            "WHERE position_id=? ORDER BY plan_version",
+            (opened.position.id,),
+        ).fetchall()
+        assert [(row["plan_version"], row["status"]) for row in plan_versions] == [
+            (1, "SUPERSEDED"), (2, "ACTIVE")
+        ]
+
+    reloaded_decision = client.get(
+        f"/api/holdings/decisions/{decision['decision_id']}"
+    )
+    assert reloaded_decision.status_code == 200
+    assert reloaded_decision.json()["decision"]["stale"] is True
+    assert len(reloaded_decision.json()["decision"]["resolutions"]) == 1
+
+    duplicate = client.post(
+        f"/api/holdings/decisions/{decision['decision_id']}/apply-plan",
+        json={"selected_action": "HOLD"},
+    )
+    assert duplicate.status_code == 409
+    assert duplicate.json()["detail"]["code"] == "HOLD_DECISION_STALE"
+    assert len(catalog.list_position_events(opened.position.id)) == event_count
+
+
+def _disable_current_use(monkeypatch):
+    """Simulate a revoked read-only data contract without changing EOD/revision."""
+    from types import SimpleNamespace
+    import app.data_contract.builder as contract_builder
+
+    original = contract_builder.build_stock_data_contract
+
+    def blocked_contract(*args, **kwargs):
+        actual = original(*args, **kwargs).resources.analysis_result
+        return SimpleNamespace(
+            resources=SimpleNamespace(
+                analysis_result=SimpleNamespace(
+                    revision_id=actual.revision_id,
+                    current_use_allowed=False,
+                    status=actual.status,
+                    reason_code="P0_04_CURRENT_USE_REVOKED",
+                ),
+            ),
+        )
+    monkeypatch.setattr(contract_builder, "build_stock_data_contract", blocked_contract)
+
+
+def test_apply_fails_closed_when_analysis_current_use_is_not_approved(api_env, monkeypatch):
+    catalog = api_env["catalog"]
+    client = api_env["client"]
+    opened = api_env["opened"]
+    migrate_holdings_decision_store(api_env["holdings_db"])
+    _disable_current_use(monkeypatch)
+
+    response = client.post(
+        f"/api/holdings/positions/{opened.position.id}/decisions/evaluate"
+    )
+    assert response.status_code == 200
+    decision = response.json()["decision"]
+    assert decision["source_analysis_revision_id"] == api_env["revision"].id
+    assert decision["evidence"]["proposal_ready"] is False
+
+    before_events = len(catalog.list_position_events(opened.position.id))
+    denied = client.post(
+        f"/api/holdings/decisions/{decision['decision_id']}/apply-plan",
+        json={"selected_action": "HOLD"},
+    )
+    assert denied.status_code == 409
+    assert denied.json()["detail"]["code"] == "HOLD_DECISION_PLAN_NOT_READY"
+    with catalog.connection() as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM holding_management_plan"
+        ).fetchone()[0] == 0
+        assert conn.execute(
+            "SELECT COUNT(*) FROM holding_decision_resolution"
+        ).fetchone()[0] == 0
+    assert len(catalog.list_position_events(opened.position.id)) == before_events
+
+
+def test_contract_revocation_invalidates_already_saved_decision(api_env, monkeypatch):
+    client = api_env["client"]
+    opened = api_env["opened"]
+    migrate_holdings_decision_store(api_env["holdings_db"])
+
+    approved = client.post(
+        f"/api/holdings/positions/{opened.position.id}/decisions/evaluate"
+    )
+    assert approved.status_code == 200
+    decision = approved.json()["decision"]
+    assert decision["evidence"]["proposal_ready"] is True
+
+    _disable_current_use(monkeypatch)
+    reread = client.get(f"/api/holdings/decisions/{decision['decision_id']}")
+    assert reread.status_code == 200
+    assert reread.json()["decision"]["stale"] is True
+    assert "PROPOSAL_READINESS_CHANGED" in reread.json()["decision"]["stale_reasons"]
+
+    denied = client.post(
+        f"/api/holdings/decisions/{decision['decision_id']}/apply-plan",
+        json={"selected_action": "HOLD"},
+    )
+    assert denied.status_code == 409
+    assert denied.json()["detail"]["code"] == "HOLD_DECISION_STALE"
+    with api_env["catalog"].connection() as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM holding_management_plan"
+        ).fetchone()[0] == 0
