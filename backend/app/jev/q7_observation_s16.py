@@ -20,6 +20,10 @@ from app.market.session_calendar_s21 import CALENDAR_VERSION, unresolved_weekday
 from app.strategy.models import StrategyName
 
 from .decision_reviewer_offline import DecisionReviewContractError
+from .q7_diagnosis_s18 import classify_capture_timing
+from .scanner_integrity_s7_1 import EXPLAIN, assess_frozen_candidate
+from .scanner_shadow_s7 import EVALUATION_SPEC, WINDOWS, load_frozen_candidates
+
 # Only literal, reviewed S3 projection codes from decision_reviewer_offline.py
 # may pass into aggregate reports. No dynamic addition of raw exception text,
 # policy IDs or candidate/source details.
@@ -56,9 +60,6 @@ KNOWN_S3_PROJECTION_CODES = frozenset({
 })
 SAFE_INTEGRITY_REASON_CODES = frozenset(EXPLAIN) | KNOWN_S3_PROJECTION_CODES
 
-from .q7_diagnosis_s18 import classify_capture_timing
-from .scanner_integrity_s7_1 import EXPLAIN, assess_frozen_candidate
-from .scanner_shadow_s7 import EVALUATION_SPEC, WINDOWS, load_frozen_candidates
 
 
 VERSION = "Q7_S16_READONLY_COHORT_MATURITY_V1"
