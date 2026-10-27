@@ -21,7 +21,7 @@ for p in (ROOT, ROOT / "backend"):
 
 from tools.data.p0_05_prospective_readonly_audit import inspect as inspect_g0
 
-VERSION = "STOCKSCOPE_P0_05_G0B_S16_READONLY_COVERAGE_V1"
+VERSION = "STOCKSCOPE_P0_05_G0C_S16_READONLY_COVERAGE_V2"
 WINDOWS = ("5d", "10d", "20d")
 STATES = (
     "readiness_denominator", "observed", "awaiting_future_trading_days",
@@ -29,6 +29,11 @@ STATES = (
     "unverified_calendar_or_market_gap",
 )
 INTEGRITY = ("LOCAL_VALIDATED", "LEGACY_LIMITED", "INVALID")
+FAILED_CHECKS = ("rank", "strategy", "policy", "engine", "dates", "risk", "strict_s3")
+GAP_SUBTYPES = (
+    "gap_with_insufficient_confirmed_sessions",
+    "gap_with_sufficient_confirmed_sessions",
+)
 S16_GOOD = "DESCRIPTIVE_OBSERVATIONS_ONLY"
 
 
@@ -102,6 +107,16 @@ def _summarize(g0: dict[str, Any], s16: dict[str, Any]) -> dict[str, Any]:
     if integrity is None or sum(integrity.values()) != n_entry:
         return {**base, "status": "HOLD_S16_INTEGRITY_DENOMINATOR_MISMATCH"}
     observed_eligible = integrity["LOCAL_VALIDATED"] + integrity["LEGACY_LIMITED"]
+    failed_checks = _counts(s16.get("invalid_check_failure_counts"), FAILED_CHECKS)
+    invalid_codes = _reason_counts(s16.get("invalid_reason_code_counts"))
+    unexplained = s16.get("invalid_without_failed_checks")
+    if (failed_checks is None or invalid_codes is None
+            or type(unexplained) is not int
+            or not 0 <= unexplained <= integrity["INVALID"]
+            or s16.get("invalid_reason_counts_can_overlap") is not True
+            or any(n > integrity["INVALID"] for n in failed_checks.values())
+            or any(n > integrity["INVALID"] for n in invalid_codes.values())):
+        return {**base, "status": "HOLD_S16_INVALID_DIAGNOSTICS_CONTRACT"}
 
     windows = s16.get("windows")
     if not isinstance(windows, dict):
@@ -115,7 +130,12 @@ def _summarize(g0: dict[str, Any], s16: dict[str, Any]) -> dict[str, Any]:
         if (row["readiness_denominator"] != observed_eligible
                 or groups != row["readiness_denominator"]):
             return {**base, "status": "HOLD_S16_WINDOW_DENOMINATOR_MISMATCH"}
-        output[key] = row
+        split = _counts(windows[key], GAP_SUBTYPES)
+        if (split is None
+                or sum(split.values()) != row["unverified_calendar_or_market_gap"]
+                or s16.get("gap_subtypes_are_not_independent_calendar_proof") is not True):
+            return {**base, "status": "HOLD_S16_GAP_SUBTYPE_CONTRACT"}
+        output[key] = {**row, **split}
 
     reasons = _reason_counts(s16.get("excluded_reason_counts"))
     timing = _reason_counts(s16.get("completion_timing_counts"))
@@ -133,6 +153,11 @@ def _summarize(g0: dict[str, Any], s16: dict[str, Any]) -> dict[str, Any]:
         "distinct_signal_keys_g0": g0["distinct_entry_signal_keys"],
         "frozen_integrity_categories": integrity,
         "integrity_eligible_for_readonly_observation": observed_eligible,
+        "invalid_check_failure_counts": failed_checks,
+        "invalid_reason_code_counts": invalid_codes,
+        "invalid_without_failed_checks": unexplained,
+        "invalid_reason_counts_can_overlap": True,
+        "gap_with_insufficient_sessions_is_not_proven_immature": True,
         "on_demand_window_status_counts": output,
         "excluded_reason_counts": reasons,
         "capture_timing_class_counts": timing,
