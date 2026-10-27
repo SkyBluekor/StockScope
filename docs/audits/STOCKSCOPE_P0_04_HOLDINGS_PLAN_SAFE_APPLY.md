@@ -187,3 +187,23 @@ if ($LASTEXITCODE -ne 0) { throw "Checkout failed" }
 본 도구는 `$work\frontend\node_modules\@playwright\test\cli.js`, Node/npm, 사용자 설치 Chrome이 이미 존재해야 실행한다. 도구는 **브라우저/패키지를 자동 설치하지 않는다**. `HOLD_PLAYWRIGHT_OR_NODE_MISSING` 상태에서는 우선 실행 환경을 점검한다. 임시 DB 삭제가 실패하면 출력되는 `scratch_path`의 삭제 상태를 꼭 수동 검토해야 한다.
 
 판정 `WINDOWS_REAL_HOLDINGS_READONLY_BROWSER_VERIFIED`는 **Windows 운영 파일을 읽기 전용 복사한 임시 사본 + 로컬 실제 GET UI**만 확인한다. 결코 운영 DB에서 신규 판단을 생성/관리 계획을 적용/Recovery 평가하거나 종료한 결과가 아니고, 당일 KRX 최신 공식 EOD 또는 거래 계좌 조회도 아니다. PR은 Draft로 유지하고 승인 없는 실제 데이터 변경을 금지한다.
+
+## P0-04 9차 — 종단간 쓰기 경로 트랜잭션 UAT (합성 TEMP SQLite에 한정)
+
+8차 실제 사용자의 Windows 시스템 Chrome+FastAPI GET+운영 DB 원본의 읽기 전용 스냅샷 UAT는 2026-10-27 `WINDOWS_REAL_HOLDINGS_READONLY_BROWSER_VERIFIED`로 PASS. 당시 기존 판단은 `STALE`(`ACTIVE_PLAN_CHANGED`), 활성 계획 존재, Recovery `OPEN`; 해당 운영 상태는 **변경하지 않았다**.
+
+9차는 **Python `pytest.tmp_path`에서만** 운영과 독립된 holdings.db/market.db를 생성하고 실제 `app.api.holdings.router`를 이용해 GET→POST→GET 흐름, SQLite 일관성/원장 보존과 오류 시 rollback을 통합 검증한다. 실제 사용자 운영 Holdings/Market 경로는 접근하지 않는다. 프런트엔드 브라우저 검증은 7·8차에서 별도로 확인했으므로 중복하지 않는다.
+
+`backend/tests/test_holdings_decision_api_vnp3s1.py`의 `test_p004_phase9_*` 세 개 추가:
+1. 최신 판단 생성→임시 첫 관리 계획 적용에 따른 `ACTIVE_PLAN_CHANGED` STALE 재현→Recovery 검토 개시(`OPEN`)→최신 판단 POST 재생성→GET에서 fresh 판단과 `SAME_AS_ACTIVE` 확인→중복 plan apply 409→Recovery `UNKNOWN/UNDECIDED` 평가 POST→새 GET에서 linked decision과 assessment, 기존 active plan/ledger 이벤트 불변 확인. 모든 계획의 임시 초기 상태 생성은 테스트 fixture의 내부 함수를 사용하며, deprecated 직접 apply API는 사용하지 않는다.
+2. 임시 v1 active plan + 신규 분석 revision(손절 기준을 90→95로 강화) → fresh Decision → 실제 apply-plan API 호출 중 저장 SQL 이후, commit 전 인위적 예외 주입→트랜잭션 전체 rollback(기존 v1 ACTIVE 복구, plan v2/plan context/resolution 부재, 원장 불변)→정상 API 재시도→v2/원본 v1 SUPERSEDED가 재조회에서 유지→동일 Decision 재적용 409 `HOLD_DECISION_STALE`; plan·context·resolution·원장 수량은 추가 변경 없음.
+3. Recovery OPEN에서 422 잘못된 투자 가설, 존재하지 않는 연결 Decision의 4xx 거절→assessment·plan·ledger 불변→명시적 ADD_REVIEW 평가 기록은 **검토 의도만 저장**(실제 매수 없음)→수동 검토 종료 POST→GET history 유지→CLOSED 리뷰에 추가 평가 POST 409 차단 및 원장/plan 불변.
+
+전 단계와 마찬가지로 자동 매매·실시간 계좌·KRX 최신 공식 EOD·유료 Provider 호출 없음. **합성 임시 DB에서의 쓰기 경로 PASS를 운영 DB 쓰기 승인으로 오해하면 안 된다.**
+
+CI: Backend 전체 Python 3.11/3.14에서 자동 수행, Windows Fresh Clone은 `test_holdings_decision_api_vnp3s1.py -k test_p004_phase9` 직접 실행. 원본 DB를 대상으로 어떤 write-runner도 생성/실행하지 않음. PR #170 Draft 유지 및 미병합.
+
+재현(개발용 임시 SQLite 자동 생성):
+```powershell
+& $python -m pytest -c (Join-Path $work "backend\pyproject.toml") (Join-Path $work "backend\tests\test_holdings_decision_api_vnp3s1.py") -k test_p004_phase9
+```
