@@ -7,7 +7,7 @@ function fixture() {
     decision_id: "decision-1", position_id: "position-1", input_fingerprint: "fingerprint-1",
     source_analysis_revision_id: "revision-2", source_active_plan_id: "plan-1",
     source_active_plan_version: 1, stale: false,
-    evidence: { new_plan_horizon_activatable: true, latest_analysis_differs_from_active_plan: true, proposal_conflict: null },
+    evidence: { proposal_ready: true, new_plan_horizon_activatable: true, latest_analysis_differs_from_active_plan: true, proposal_conflict: null },
   };
   const management = {
     position_id: "position-1",
