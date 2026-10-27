@@ -20,6 +20,42 @@ from app.market.session_calendar_s21 import CALENDAR_VERSION, unresolved_weekday
 from app.strategy.models import StrategyName
 
 from .decision_reviewer_offline import DecisionReviewContractError
+# Only literal, reviewed S3 projection codes from decision_reviewer_offline.py
+# may pass into aggregate reports. No dynamic addition of raw exception text,
+# policy IDs or candidate/source details.
+KNOWN_S3_PROJECTION_CODES = frozenset({
+    "CAPTURE_OR_PROTOCOL_NOT_READY",
+    "SNAPSHOT_MISSING",
+    "SNAPSHOT_HASH_MISMATCH",
+    "CAPTURE_IDENTITY_MISMATCH",
+    "ACTION_OUT_OF_SCOPE",
+    "CANDIDATE_IDENTITY_MISMATCH",
+    "BASELINE_EVIDENCE_INCOMPLETE",
+    "BASELINE_RANK_MISMATCH",
+    "BASELINE_RISK_MISSING",
+    "RISK_BLOCKED_OUT_OF_SCOPE",
+    "POLICY_PROVENANCE_UNVERIFIED",
+    "POLICY_PIN_MISMATCH",
+    "SEMANTIC_SOURCE_INVALID",
+    "ENGINE_EVIDENCE_INCOMPLETE",
+    "ENGINE_PASS_PROOF_MISMATCH",
+    "STRATEGY_IDENTITY_MISMATCH",
+    "SIGNAL_DATE_INVALID",
+    "FUTURE_OR_MISMATCHED_EVIDENCE_DATE",
+    "HORIZON_OUT_OF_SCOPE",
+    "SEMANTIC_SOURCE_V2_MISSING",
+    "SEMANTIC_SOURCE_V2_VERSION_UNSUPPORTED",
+    "SEMANTIC_SOURCE_V2_CONTRACT_HASH_MISMATCH",
+    "SEMANTIC_SOURCE_V2_HASH_MISMATCH",
+    "SEMANTIC_SOURCE_V2_BASE_MISSING",
+    "SEMANTIC_SOURCE_V2_BASE_IDENTITY_MISMATCH",
+    "SEMANTIC_SOURCE_V2_RELATIONS_MISSING",
+    "SEMANTIC_SOURCE_V2_RELATION_HASH_MISMATCH",
+    "SEMANTIC_SOURCE_V2_CONDITIONS_MISSING",
+    "SEMANTIC_SOURCE_V2_ASSERTION_MAPPING_MISMATCH",
+})
+SAFE_INTEGRITY_REASON_CODES = frozenset(EXPLAIN) | KNOWN_S3_PROJECTION_CODES
+
 from .q7_diagnosis_s18 import classify_capture_timing
 from .scanner_integrity_s7_1 import EXPLAIN, assess_frozen_candidate
 from .scanner_shadow_s7 import EVALUATION_SPEC, WINDOWS, load_frozen_candidates
@@ -223,6 +259,7 @@ def measure(
     invalid_check_failures: Counter[str] = Counter()
     invalid_reason_codes: Counter[str] = Counter()
     invalid_without_failed_checks = 0
+    invalid_rank_source_missing: Counter[str] = Counter()
     skipped_reasons: Counter[str] = Counter()
     values: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
     strategy_counts: dict[str, dict[str, Any]] = {}
@@ -300,6 +337,18 @@ def measure(
                             failed += 1
                     if not failed:
                         invalid_without_failed_checks += 1
+                    rank_check = integrity.get("rank")
+                    if isinstance(rank_check, dict) and rank_check.get("status") == "FAIL":
+                        # Only booleans about where the public Scanner rank
+                        # disappeared. Never export rank values or candidate IDs.
+                        snapshot_missing = rank_check.get("snapshot_priority") is None
+                        stored_missing = rank_check.get("stored") is None
+                        if snapshot_missing:
+                            invalid_rank_source_missing["snapshot_priority_rank_missing"] += 1
+                        if stored_missing:
+                            invalid_rank_source_missing["stored_sample_rank_missing"] += 1
+                        if snapshot_missing and stored_missing:
+                            invalid_rank_source_missing["both_rank_sources_missing"] += 1
                     codes = integrity.get("codes")
                     if isinstance(codes, list):
                         # Deduplicate *after* normalization. Several distinct
@@ -309,7 +358,7 @@ def measure(
                         # of INVALID candidates and makes the G0c contract
                         # falsely fail on an otherwise readable local cohort.
                         normalized = {
-                            code if type(code) is str and code in EXPLAIN
+                            code if type(code) is str and code in SAFE_INTEGRITY_REASON_CODES
                             else "OTHER_S7_CODE"
                             for code in codes
                         }
@@ -430,6 +479,13 @@ def measure(
             )
         },
         invalid_reason_code_counts=dict(sorted(invalid_reason_codes.items())),
+        invalid_rank_source_missing_counts={
+            key: invalid_rank_source_missing[key] for key in (
+                "snapshot_priority_rank_missing",
+                "stored_sample_rank_missing",
+                "both_rank_sources_missing",
+            )
+        },
         invalid_without_failed_checks=invalid_without_failed_checks,
         invalid_reason_counts_can_overlap=True,
         gap_subtypes_are_not_independent_calendar_proof=True,
