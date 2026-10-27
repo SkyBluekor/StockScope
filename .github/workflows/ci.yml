@@ -213,6 +213,10 @@ jobs:
         shell: powershell
         run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_05_prospective_readonly_audit.py
 
+      - name: Verify P0-05 existing S16 readonly observation coverage and redaction
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_05_s16_readonly_coverage.py
+
       - name: Verify fresh runtime and no Drive dependency
         shell: powershell
         run: |
