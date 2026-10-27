@@ -68,6 +68,15 @@ def _payload():
         "entry_candidates": 1,
         "reference_only": 1,
         "integrity_counts": {"LOCAL_VALIDATED": 1,"LEGACY_LIMITED": 0,"INVALID": 0},
+        "invalid_check_failure_counts": {
+            name: 0 for name in (
+                "rank", "strategy", "policy", "engine", "dates", "risk", "strict_s3"
+            )
+        },
+        "invalid_reason_code_counts": {},
+        "invalid_without_failed_checks": 0,
+        "invalid_reason_counts_can_overlap": True,
+        "gap_subtypes_are_not_independent_calendar_proof": True,
         "excluded_reason_counts": {},
         "completion_timing_counts": {"NEXT_CALENDAR_DAY_BEFORE_09_KST_UNVERIFIED": 1},
         "windows": {
@@ -75,11 +84,15 @@ def _payload():
                    "awaiting_future_trading_days":0, "price_missing":0,
                    "market_evidence_unavailable":0, "post_as_of_data_rejected":0,
                    "unverified_calendar_or_market_gap":0,
+                   "gap_with_insufficient_confirmed_sessions":0,
+                   "gap_with_sufficient_confirmed_sessions":0,
                    "average_signal_close_change_pct":13.37},
             "10d": {"readiness_denominator":1, "observed":0,
                     "awaiting_future_trading_days":1, "price_missing":0,
                     "market_evidence_unavailable":0, "post_as_of_data_rejected":0,
                     "unverified_calendar_or_market_gap":0,
+                    "gap_with_insufficient_confirmed_sessions":0,
+                    "gap_with_sufficient_confirmed_sessions":0,
                     "average_signal_close_change_pct":None},
             "20d": {"readiness_denominator":1, "observed":0,
                     "awaiting_future_trading_days":1, "price_missing":0,
@@ -128,6 +141,8 @@ def test_s16_integrity_exclusion_preserves_distinct_denominators(tmp_path, monke
     value = _payload()
     value["integrity_counts"] = {"LOCAL_VALIDATED": 0,"LEGACY_LIMITED": 0,"INVALID": 1}
     value["excluded_reason_counts"] = {"FROZEN_INTEGRITY_INVALID":1}
+    value["invalid_check_failure_counts"]["policy"] = 1
+    value["invalid_reason_code_counts"] = {"POLICY_PROVENANCE_UNVERIFIED":1}
     for win in value["windows"].values():
         win["readiness_denominator"] = 0
         win["observed"] = 0
@@ -214,3 +229,54 @@ def test_network_attempt_is_blocked_and_not_reported_as_success(tmp_path, monkey
     result = audit.inspect(sim, market, as_of=date(2026, 10, 23))
     assert result["status"] in {"HOLD_S16_NETWORK_ATTEMPT_BLOCKED","HOLD_S16_RUNTIME_EXCEPTION"}
     assert result["external_requests"] == 0
+
+
+def test_invalid_check_counts_can_overlap_without_claiming_unique_candidates(tmp_path, monkeypatch):
+    sim, market = _files(tmp_path)
+    value = _payload()
+    value["integrity_counts"] = {"LOCAL_VALIDATED": 0, "LEGACY_LIMITED": 0, "INVALID": 1}
+    value["invalid_check_failure_counts"].update({
+        "policy": 1, "dates": 1, "strict_s3": 1,
+    })
+    value["invalid_reason_code_counts"] = {
+        "POLICY_PROVENANCE_UNVERIFIED": 1,
+        "DATE_MISMATCH": 1,
+        "S3_CONTRACT_UNSATISFIED": 1,
+    }
+    value["excluded_reason_counts"] = {"FROZEN_INTEGRITY_INVALID":1}
+    for win in value["windows"].values():
+        win["readiness_denominator"] = 0
+        win["observed"] = 0
+        win["awaiting_future_trading_days"] = 0
+    _mock_s16(monkeypatch, value)
+    result = audit.inspect(sim, market, as_of=date(2026, 10, 23))
+    assert result["status"] == "READ_ONLY_S16_OBSERVATION_COVERAGE_OBSERVED"
+    assert result["frozen_integrity_categories"]["INVALID"] == 1
+    assert result["invalid_check_failure_counts"]["policy"] == 1
+    assert result["invalid_check_failure_counts"]["dates"] == 1
+    assert result["invalid_reason_counts_can_overlap"] is True
+
+
+def test_gap_subtypes_must_sum_to_gap_and_avoid_immaturity_claim(tmp_path, monkeypatch):
+    sim, market = _files(tmp_path)
+    value = _payload()
+    value["windows"]["5d"]["observed"] = 0
+    value["windows"]["5d"]["unverified_calendar_or_market_gap"] = 1
+    value["windows"]["5d"]["gap_with_insufficient_confirmed_sessions"] = 1
+    _mock_s16(monkeypatch, value)
+    result = audit.inspect(sim, market, as_of=date(2026, 10, 23))
+    assert result["status"] == "READ_ONLY_S16_OBSERVATION_COVERAGE_OBSERVED"
+    assert result["on_demand_window_status_counts"]["5d"]["gap_with_insufficient_confirmed_sessions"] == 1
+    assert result["gap_with_insufficient_sessions_is_not_proven_immature"] is True
+    value["windows"]["5d"]["gap_with_insufficient_confirmed_sessions"] = 0
+    assert audit.inspect(sim, market, as_of=date(2026, 10, 23))["status"] == "HOLD_S16_GAP_SUBTYPE_CONTRACT"
+
+
+def test_bad_invalid_diagnostics_do_not_return_partial_output(tmp_path, monkeypatch):
+    sim, market = _files(tmp_path)
+    value = _payload()
+    value["invalid_check_failure_counts"]["policy"] = 4
+    _mock_s16(monkeypatch, value)
+    result = audit.inspect(sim, market, as_of=date(2026, 10, 23))
+    assert result["status"] == "HOLD_S16_INVALID_DIAGNOSTICS_CONTRACT"
+    assert "on_demand_window_status_counts" not in result
