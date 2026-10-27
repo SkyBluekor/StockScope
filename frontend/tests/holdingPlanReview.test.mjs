@@ -39,6 +39,7 @@ test("mismatched inputs, blocked proposal and stale decisions fail closed", () =
     ({ decision }) => { decision.effective_status = "STALE"; },
     ({ decision }) => { decision.evidence.proposal_conflict = "STOP_LOOSENING"; },
     ({ decision }) => { decision.evidence.new_plan_horizon_activatable = false; },
+    ({ decision }) => { decision.evidence.proposal_ready = false; },
     ({ decision }) => { decision.source_active_plan_id = "different"; },
     ({ decision }) => { decision.source_analysis_revision_id = "old"; },
     ({ management }) => { management.position_id = "another-position"; },
