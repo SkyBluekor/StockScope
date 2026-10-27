@@ -140,3 +140,27 @@ if ($LASTEXITCODE -ne 0) { throw "Checkout failed" }
 CI: `backend/tests/test_p0_05_s16_readonly_coverage.py` (실제 합성 Prospective 스키마 + S16 관측 응답 shape/무결성 오류, 누락·분모/사유 검증, 개인정보 비출력, 불필요 네트워크 시도 차단). 기존 `test_q7_s16_readonly_maturity.py`는 실제 S16 자체의 관측/거래일 미래정보/무결성 동작 검증을 계속 담당한다.
 
 **P0-05 G1 신규 Capture, G2 운영 성과 검증, Q7 승인, S17 Task 등록, 프로덕션 배포/PR merge는 이번 G0b 결과와 별개로 보류한다.**
+
+## P0-05/G0c — INVALID 근거 상세화 및 미성숙/캘린더 공백 이중 분류
+
+사용자 2026-10-27 Windows G0b 실측: ENTRY 61 중 `INVALID=24`,
+`LEGACY_LIMITED=37`, `LOCAL_VALIDATED=0`; 5d S16 observed 13/37,
+캘린더 공백 24/37; 10d/20d 각 캘린더 공백 37/37. S16의 기존 보수적
+`UNVERIFIED_CALENDAR_OR_DATA_GAP` 판정이 `AWAITING_FUTURE_DAYS`
+보다 먼저 적용돼 두 상태의 의미를 혼동하기 쉬웠다.
+
+이번 G0c는 S16 실제 저장 데이터를 **수정하지 않고 출력되는 진단 집계만 확장**한다.
+
+- `invalid_check_failure_counts`: S7 검사 부문 `rank/strategy/policy/engine/dates/risk/strict_s3` 중 실제 `FAIL`이 발생한 INVALID 후보 수. `invalid_reason_code_counts`: 알려진 S7 상태 코드별 발생 후보 수, 예기치 않은 상태 코드는 식별 정보 없이 `OTHER_S7_CODE`로 정규화. **한 후보에 여러 실패가 있으므로 부문별 수치 합산으로 INVALID 24건을 추정하면 안 된다.** `invalid_without_failed_checks`는 S7 검사 결과 자체에 FAIL이 없는 이상 사례의 건수다. 다른 단계의 과거 레거시 식별값을 소급 보정하거나 후보를 무효/유효로 다시 저장하지 않는다.
+- 기존 S16 `unverified_calendar_or_market_gap`의 **부가 설명용 겹치는 하위 상태** 두 개:
+  - `gap_with_insufficient_confirmed_sessions`: 날짜 공백이 남아 있으며 확정된 시장 세션도 해당 window보다 **적음**. 이것만으로 **진짜 미성숙**이 증명되는 것은 아니다. 확인되지 않은 날짜가 실제 거래일이었는지/휴장일이었는지 모른다.
+  - `gap_with_sufficient_confirmed_sessions`: window에 필요한 확정 세션 건수는 충족하나 **구간 내부에 확인되지 않은 평일 날짜가 있음**. 실제 관측/완결 시세라고 인정하면 안 된다.
+- 두 부가 상태는 해당 window의 `unverified_calendar_or_market_gap` 합과 정확히 일치해야 한다. `awaiting_future_trading_days`는 기존과 같이 공백 검사 자체는 통과했으나 해당 window의 확정 세션이 부족한 경우에만 집계한다.
+- 기존 S16의 `OBSERVED`, `INVALID`, `LEGACY_LIMITED`, Q7 approval=false 및 로컬 provider 차단 **판정 자체는 변경하지 않는다**. 결과 비공개 입력(종목·수익률·source job/UUID·정책 전문)은 출력하지 않는다.
+- `tools/data/p0_05_s16_readonly_coverage.py`는 반환 JSON `version=STOCKSCOPE_P0_05_G0C_S16_READONLY_COVERAGE_V2`를 사용하며 S16 원본과 G0의 후보/분모/하위 공백/무결성 건수가 맞지 않으면 `HOLD_*`로 중단한다.
+
+### Windows G0c 실행
+
+이전 G0b와 **동일한** 명령(`p0_05_s16_readonly_coverage.py`)을 최신 SHA에서 사용한다. 운영 DB 원본 2개는 read-only로 열고 새 평가 Run을 만들거나 캡처를 추가하지 않는다. 이번 G0c의 1차 CI 테스트는 `backend/tests/test_q7_s16_readonly_maturity.py -k test_g0c`(실제 S16 함수), `backend/tests/test_p0_05_s16_readonly_coverage.py`(개인정보 비출력/계약검사)로 실행한다. 실환경 분포는 **사용자 Windows 출력이 확인되기 전까지 미확정**이다.
+
+**새 결과의 SAFE PASS는 캘린더 진위, 10/20일 성숙, 과거 capture 독립 시각/정책 버전, Q7 운영승인, 실거래 수익률을 증명하지 않는다.** 프로덕션 DB 쓰기·외부 수집·S17 예약 실행·Q7 승격·PR merge는 보류한다.
