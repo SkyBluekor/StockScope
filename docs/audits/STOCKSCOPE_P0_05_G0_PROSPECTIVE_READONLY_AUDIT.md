@@ -96,3 +96,47 @@ if ($LASTEXITCODE -ne 0) { throw "Checkout failed" }
 
 **P0-04 운영 판단은 여전히 STALE(계획 변경)이며 Recovery OPEN이다.
 이 도구는 보유 계획·원장·Recovery와 무관하고 이를 수정하지 않는다.**
+
+## P0-05/G0b — 기존 S16 read-only 관측 결과 재조회 (실제 종목·수익률 출력 없음)
+
+사용자의 Windows G0 실제 운영 실행(2026-10-27): 전체 21 Capture(8 COMPLETE/13 DUPLICATE), COMPLETE 샘플 120, ENTRY_CANDIDATE 61(고유 신호키 60). 시장 세션만 계산하면 5d 기준 37, 10d 기준 23, 20d 기준 0이었으나, 이는 각 종목의 주가/EOD 완전성 또는 성과 관측 성공으로 인정하지 않는다. 저장 Prospective Evaluation Run/Unit는 모두 0. scanner_baseline과 horizon_policy_version 각 21개 미기재이며 출처 조작/과거 보충은 금지한다.
+
+새 `tools/data/p0_05_s16_readonly_coverage.py`는 실제 운영 DB 원본을 먼저 위 G0로 검사하여 일관성을 확인하고, **기존** `app.jev.q7_observation_s16.measure`를 읽기 전용으로 호출한다. S16은 immutable COMPLETE Capture의 Snapshot 해시 검사, S7 integrity 분류, 기존 `ProspectiveEvaluator`의 `mode=ro` Market Store, 확정 EOD 요구, 신호일 이후 거래일 공백·cutoff 조건을 사용한다. S16은 새 Prospective Evaluation Run/Unit/Report를 저장하지 않고, 기존 0건도 그대로다.
+
+**매우 중요한 구분**:
+- `captured_entry_rows`: 원본 COMPLETE frozen Capture에서 나온 후보 수.
+- `integrity_eligible_for_readonly_observation`: S7의 `LOCAL_VALIDATED`/ `LEGACY_LIMITED`인 후보 수. 무결성 `INVALID` 후보는 분모에서 제외하고 별도 집계한다. LEGACY_LIMITED는 현재 전략 버전/선정정책 정식 검증이 아니라 제한된 로컬 근거다.
+- `on_demand_window_status_counts[5d|10d|20d].observed`: 기존 Market DB의 저장된 각 종목 EOD를 이용한 **신호일 종가 대비 로컬 기술 관측 수**. 이는 실매매·독립 표본·투자 전략 성과 검증이 아니다. 관측 수익률 수치 및 종목별 내용은 출력하지 않는다.
+- `awaiting_future_trading_days`, `price_missing`, `unverified_calendar_or_market_gap`, `post_as_of_data_rejected`, `market_evidence_unavailable`로 누락·미성숙·공백·미래 정보 거부를 분리한다. 분모/사유 집계 불일치는 `HOLD_*`로 fail-closed.
+- `source_missing_field_counts`는 G0에서 발견된 기재 누락의 **집계만** 재현하며 과거 Scanner baseline·Horizon numeric policy를 자동 보완하지 않는다.
+
+**안전성/기한**: 표준 G0 스크립트와 같은 두 DB를 `mode=ro`로 열며, 외부 TCP를 허용하지 않는 wrapper로 S16을 감싼다. 입력 부족/실제 S16 오류/명시적 네트워크 시도/날짜 오류는 `HOLD_*`로 출력한다. 예외 원본 메시지나 종목/계좌/가격/종목코드/원본 JSON/관측 수익률 퍼센트는 stdout에 출력하지 않는다. on-demand 임시 계산만 하고 파일 저장/DB 쓰기/Scanner Job/스케줄 등록/외부 KRX/유료 API/거래는 수행하지 않는다.
+
+### 사용자 Windows PowerShell 실행
+
+위 G0가 성공했던 것과 동일한 `$repo`, `$work`, `$python`, `$simulation`, `$market` 및 최신 detached HEAD를 사용한다:
+
+```powershell
+cd C:\Projects\StockScope
+$repo = (git rev-parse --show-toplevel).Trim()
+$work = Join-Path $env:TEMP "StockScope_P0_02_90745c8d5d49"
+$python = Join-Path $repo ".venv\Scripts\python.exe"
+$simulation = Join-Path $repo "backend\runtime\simulation\simulation.db"
+$market = Join-Path $repo "backend\runtime\market_history\market_history.db"
+
+git fetch origin codex/p0-01-mvp-c1-c2-integration-20261022
+if ($LASTEXITCODE -ne 0) { throw "Fetch failed" }
+$sha = (git rev-parse origin/codex/p0-01-mvp-c1-c2-integration-20261022).Trim()
+git -C $work switch --detach $sha
+if ($LASTEXITCODE -ne 0) { throw "Checkout failed" }
+
+& $python (Join-Path $work "tools\data\p0_05_s16_readonly_coverage.py") `
+  --simulation-db $simulation `
+  --market-db $market
+```
+
+`READ_ONLY_S16_OBSERVATION_COVERAGE_OBSERVED`면 구조 일관성/로컬 S16 기술 관측 상태를 확인한 것이다. `HOLD_*`가 나오면 구체적인 값·시세를 억지로 채우지 않고 상태와 사유만으로 후속 문제를 분석한다. Python 런타임 tzdata/ZoneInfo가 없는 Windows에서는 `HOLD_S16_RUNTIME_NOT_READY`가 나올 수 있다. 사용자 운영 DB는 도구 실행으로 변경되지 않으며 2026-10-27 최신 KRX EOD 보장도 없다.
+
+CI: `backend/tests/test_p0_05_s16_readonly_coverage.py` (실제 합성 Prospective 스키마 + S16 관측 응답 shape/무결성 오류, 누락·분모/사유 검증, 개인정보 비출력, 불필요 네트워크 시도 차단). 기존 `test_q7_s16_readonly_maturity.py`는 실제 S16 자체의 관측/거래일 미래정보/무결성 동작 검증을 계속 담당한다.
+
+**P0-05 G1 신규 Capture, G2 운영 성과 검증, Q7 승인, S17 Task 등록, 프로덕션 배포/PR merge는 이번 G0b 결과와 별개로 보류한다.**
