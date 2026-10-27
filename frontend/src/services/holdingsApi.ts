@@ -927,16 +927,6 @@ export function getLiveHoldingManagementProximity(
   );
 }
 
-export function applyHoldingManagementPlan(
-  positionId: string,
-  analysisRevisionId: string,
-): Promise<{ plan: HoldingManagementPlan }> {
-  return requestJson<{ plan: HoldingManagementPlan }>(
-    `/api/holdings/positions/${encodeURIComponent(positionId)}/plans/apply`,
-    jsonInit("POST", { analysis_revision_id: analysisRevisionId, change_reason: null }),
-  );
-}
-
 export function getHoldingPerformance(
   stockId: string,
   options: { signal?: AbortSignal } = {},
