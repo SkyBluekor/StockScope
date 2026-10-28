@@ -252,3 +252,22 @@ def test_g1_approved_provider_uses_explicit_operational_root_not_temp_worktree(t
         ))
     assert _sha(db) == old_sha
     assert not (tmp_path / "backend" / "runtime" / "krx" / "budget.sqlite3").exists()
+
+
+def test_g1_approved_real_provider_import_is_safe_but_missing_key_blocks(tmp_path, monkeypatch):
+    import shutil
+
+    root = tmp_path / "operational"
+    db = root / "backend" / "runtime" / "market_history" / "market_history.db"
+    db.parent.mkdir(parents=True)
+    shutil.copy2(_db(tmp_path), db)
+    before = _sha(db)
+    monkeypatch.delenv("KRX_API_KEY", raising=False)
+    with pytest.raises(repair.RecoveryHold, match="HOLD_KRX_KEY_MISSING"):
+        asyncio.run(repair.recover_approved(
+            db=db, raw_dates=["2026-10-22"], today=TODAY,
+            approved_requests=True, approved_write=True, rights_confirmed=True,
+            max_requests=4, operational_repo=root,
+        ))
+    assert _sha(db) == before
+    assert not (root / "backend" / "runtime" / "krx" / "budget.sqlite3").exists()
