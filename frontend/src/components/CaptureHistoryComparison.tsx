@@ -50,10 +50,11 @@ export default function CaptureHistoryComparison({
 }) {
   const eligible = useMemo(() => {
     const current = captures.find(c => c.id === currentId);
-    if (!current?.actual_data_date) return [];
+    const currentDataDate = current?.actual_data_date;
+    if (!currentDataDate) return [];
     return captures
       .filter(c => c.id !== currentId && c.actual_data_date &&
-        c.actual_data_date < current.actual_data_date)
+        c.actual_data_date < currentDataDate)
       .sort((a, b) => (b.actual_data_date || "").localeCompare(a.actual_data_date || "")
         || (b.created_at || "").localeCompare(a.created_at || ""));
   }, [captures, currentId]);
