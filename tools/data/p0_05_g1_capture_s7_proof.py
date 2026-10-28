@@ -116,6 +116,7 @@ def _inspect_rows(capture: dict[str, Any], rows: list[sqlite3.Row]) -> dict[str,
     structural_failed = 0
     categories: Counter[str] = Counter()
     codes: Counter[str] = Counter()
+    reference_exclusions: Counter[str] = Counter()
     entry_count = 0
     reference_count = 0
     expected_indices = set(range(len(rows)))
@@ -165,9 +166,21 @@ def _inspect_rows(capture: dict[str, Any], rows: list[sqlite3.Row]) -> dict[str,
             category = judgement.get("category")
             if category not in {"REFERENCE_ONLY", "LOCAL_VALIDATED", "LEGACY_LIMITED", "INVALID"}:
                 raise DecisionReviewContractError("S7_INVALID_CATEGORY")
+            if category == "REFERENCE_ONLY":
+                # S7 emits NOT_ENTRY_CANDIDATE for normal reference-only
+                # samples. It is not a failed entry diagnostic and is not
+                # included in EXPLAIN, so do not call it S7_UNCLASSIFIED.
+                if sample["action"] == "ENTRY_CANDIDATE":
+                    raise DecisionReviewContractError("S7_REFERENCE_CATEGORY_CONFLICT")
+                categories[category] += 1
+                reference_exclusions["NOT_ENTRY_CANDIDATE"] += 1
+                continue
+            if sample["action"] != "ENTRY_CANDIDATE":
+                raise DecisionReviewContractError("S7_ENTRY_CATEGORY_CONFLICT")
             categories[category] += 1
             for code in judgement.get("codes", []):
-                # Never emit raw error contents or candidate/private data.
+                # Entry-candidate S7 diagnostic codes only. Unknown codes
+                # still fail into a redacted, separately visible bucket.
                 codes[code if code in S7_CODES else "S7_UNCLASSIFIED"] += 1
         except (DecisionReviewContractError, KeyError, TypeError, ValueError):
             categories["INVALID"] += 1
@@ -208,6 +221,7 @@ def _inspect_rows(capture: dict[str, Any], rows: list[sqlite3.Row]) -> dict[str,
         s7_reference_rows_inspected=reference_count,
         s7_category_counts=dict(sorted(categories.items())),
         s7_reason_code_counts=dict(sorted(codes.items())),
+        s7_reference_exclusion_counts=dict(sorted(reference_exclusions.items())),
         local_validated_entry_count=categories["LOCAL_VALIDATED"],
         s7_invalid_count=categories["INVALID"],
         s7_invalid_does_not_imply_snapshot_corruption=True,
