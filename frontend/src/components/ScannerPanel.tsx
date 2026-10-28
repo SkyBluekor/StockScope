@@ -57,6 +57,7 @@ import {
 import { buildScannerDisplayLayout } from "./scannerDisplayGroups";
 import ScannerRankComparison from "./ScannerRankComparison";
 import ScannerMotionProgress from "./ScannerMotionProgress";
+import { scannerPolicyReadiness } from "./scannerPolicyReadiness";
 import AiReviewProgress from "./AiReviewProgress";
 import ScannerAiReview from "./ScannerAiReview";
 import { historicalReviewStatus, matchStoredJevReview, scannerAiReviewStatus } from "./scannerAiReviewStatus";
@@ -2033,6 +2034,23 @@ export default function ScannerPanel({
                 </div>
               </details>
             </div>
+          </section>
+
+          <section className="scanner-preparation-card" aria-label="후보 원본 전략 식별 근거">
+            {(() => {
+              const evidence = scannerPolicyReadiness(
+                result.strategy_selection_policy,
+                [...result.candidates, ...result.more_candidates],
+                result.scanner_cache_hit,
+              );
+              return (
+                <div>
+                  <span>신규 후보 원본 근거 · {evidence.label}</span>
+                  <p>{evidence.message}</p>
+                  <small>진입 후보 {evidence.candidateEntryCount}개 · 원본 전략 버전/정의 해시 없는 진입 후보 {evidence.missingOriginalIdentityCount}개 · 저장 무결성 및 실제 S7 판정은 별도 검증</small>
+                </div>
+              );
+            })()}
           </section>
 
            {result.candidate_recheck && (
