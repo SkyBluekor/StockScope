@@ -188,3 +188,25 @@ def test_budget_and_evidence_are_required_before_db_creation(tmp_path):
             evidence={},
         )
     assert not (tmp_path / "only-synthetic-jev.db").exists()
+
+
+@pytest.mark.asyncio
+async def test_live_cli_rejects_mock_evidence_before_db_or_http(monkeypatch):
+    """A confirmation phrase and API key alone must not authorize placeholder evidence."""
+    from argparse import Namespace
+    from tools.data import jev_live_01_synthetic_smoke as cli
+
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.setenv("JEV_API_KEY", "local-test-placeholder-not-a-real-key")
+    monkeypatch.setattr(cli, "load_typesafe_jev_api_key", lambda: "local-test-placeholder-not-a-real-key")
+    args = Namespace(
+        mode="live", confirm=cli.LIVE_APPROVAL,
+        expected_returned_model="jev-explicit-pin",
+        provider_policy_checked_at="MOCK_ONLY",
+        retention_status="checked",
+        model_discovery_ref="checked",
+        model_discovery_hash="checked",
+        model="jev-latest", budget_usd=1.0, reservation_usd=0.10,
+    )
+    with pytest.raises(ValueError, match="REAL_PROVIDER_EVIDENCE_REQUIRED"):
+        await cli._run(args)
