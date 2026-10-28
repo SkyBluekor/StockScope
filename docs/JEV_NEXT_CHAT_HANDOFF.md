@@ -107,3 +107,10 @@ git -C $work log -1 --oneline
 - Local offline commands after pulling branch: `python -m tools.data.jev_live_01_synthetic_smoke --mode preflight`, `python -m tools.data.jev_live_01_synthetic_smoke --mode mock`. Both use a newly-created isolated temp DB; mock makes no network calls. Actual live requires one-call explicit approval and verified provider/model evidence, never an operational dataset.
 
 - **Additional CI/WIN CLI verified:** [run #40710701393](https://github.com/SkyBluekor/StockScope/actions/runs/40710701393) on `6d6c35a`, 4/4 PASS. Actual Windows Fresh Clone `preflight` + `mock` CLI returned stored `VALID` / `REVIEW_REQUIRED` / model identity `MATCHED` / billed requests `0`. This remains a **mock** endpoint run, not live TypeSafe or user-PC validation.
+
+
+## 2026-10-29 LIVE-01 코드 보완
+
+- 작업 브랜치 동일, Draft PR #170 유지. `01f27ba`에서 synthetic live CLI의 Mock/미검증 provider 증빙 거부, `77bdefd`에서 회귀 테스트 추가.
+- 새 커밋의 CI 상태는 **미확인/대기**, 실제 TypeSafe 유료 1회 요청과 사용자 Windows 수동 검증은 **미실시**. 기존 4/4 PASS를 이번 커밋의 CI 결과로 표시하면 안 됨.
+- LIVE-01 최종 완료 판정은 계속 보류. 별도 승인된 실제 synthetic-only provider 요청 및 저장 검증 후 완료 처리. S7.4 실시장 데이터 전송 금지, G2-05 보류 유지.
