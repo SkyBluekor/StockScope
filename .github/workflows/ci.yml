@@ -261,6 +261,24 @@ jobs:
         shell: powershell
         run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_05_g1_operator_capture.py
 
+      - name: Verify G2-03 per-stock timeline and isolated SQLite preview
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_stock_capture_timeline_g2_03.py
+
+      - name: Verify G2-03 Windows preview launcher syntax without execution
+        shell: powershell
+        run: |
+          $tokens = $null
+          $errorsFound = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path .\tools\data\g2_03_run_preview.ps1).Path,
+            [ref]$tokens, [ref]$errorsFound
+          ) | Out-Null
+          if ($errorsFound.Count -gt 0) {
+            $errorsFound | Out-String | Write-Error
+            exit 1
+          }
+
       - name: Verify G2-02 cross-date saved Scanner change comparison
         shell: powershell
         run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_saved_capture_comparison_g2_02.py
