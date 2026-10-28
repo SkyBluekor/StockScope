@@ -3444,3 +3444,54 @@ export async function compareSavedCaptureHistory(
     ),
   );
 }
+
+// G2-03: per-stock immutable Scanner history, separate from managed holdings/tracking.
+export type SavedStockTimelineEntry = {
+  capture_id: string;
+  signal_date: string;
+  captured_at: string | null;
+  sample_index: number;
+  name: string;
+  market: "KOSPI" | "KOSDAQ";
+  ticker: string;
+  strategy: string | null;
+  action: string | null;
+  candidate_state: string | null;
+  rank: number | null;
+  integrity_category: string;
+  scanner_version: string | null;
+  market_scope: string | null;
+  candidate_limit: number | null;
+  windows: Record<"5d" | "10d" | "20d", SavedCaptureWindow>;
+};
+export type SavedStockTimeline = {
+  version: string;
+  status: string;
+  read_only: boolean;
+  market?: "KOSPI" | "KOSDAQ";
+  ticker?: string;
+  name?: string | null;
+  summary?: {
+    capture_appearances: number;
+    distinct_signal_days: number;
+    first_signal_date: string | null;
+    latest_signal_date: string | null;
+  };
+  entries?: SavedStockTimelineEntry[];
+  next_offset?: number | null;
+  limit?: number;
+  offset?: number;
+  market_eod_cutoff_date?: string;
+  observation_basis?: string;
+};
+export async function getSavedStockTimeline(
+  market: "KOSPI" | "KOSDAQ", ticker: string, offset = 0,
+): Promise<SavedStockTimeline> {
+  return asJson<SavedStockTimeline>(
+    await fetch(
+      "/api/simulation/prospective/stock-history/" +
+      encodeURIComponent(market) + "/" + encodeURIComponent(ticker) +
+      "?limit=20&offset=" + offset,
+    ),
+  );
+}
