@@ -46,14 +46,14 @@ Write-Host 'The local presence of an API key does NOT establish service permissi
 $rights = Read-Host 'Only if all four are approved and your use is authorized, type KRX4_APPROVED'
 if ($rights -cne 'KRX4_APPROVED') {
     Write-Host 'HOLD_SERVICE_ENTITLEMENT_UNCONFIRMED (no API calls or writes)'
-    exit 2
+    throw 'Operator aborted or recovery failed; inspect the previous status.'
 }
 Write-Host 'Action: max 16 KRX attempts (incl retries), then ALL-or-NOTHING insertion of 8 missing market-days.'
 Write-Host 'Existing days cannot be overwritten; Scanner, Prospective Capture, orders and scheduler are not run.'
 $approval = Read-Host 'Approve these external requests AND operational Market DB writes: type RESTORE_16_WRITE'
 if ($approval -cne 'RESTORE_16_WRITE') {
     Write-Host 'HOLD_EXECUTION_NOT_APPROVED (no API calls or writes)'
-    exit 2
+    throw 'Operator aborted or recovery failed; inspect the previous status.'
 }
 
 # SQLite online backup is WAL-safe; create outside Git repository.
@@ -89,7 +89,7 @@ $runArgs = @('--run-approved', '--operational-repo', $repo) + $commonArgs + @(
 if ($LASTEXITCODE -ne 0) {
     Write-Host 'HOLD_REPAIR_FAILED. No Scanner/Capture was executed.'
     Write-Host "Pre-repair backup retained: $backup"
-    exit 2
+    throw 'Operator aborted or recovery failed; inspect the previous status.'
 }
 
 Write-Host 'Read-only audit of actual persisted rows:'
@@ -97,7 +97,7 @@ Write-Host 'Read-only audit of actual persisted rows:'
 if ($LASTEXITCODE -ne 0) {
     Write-Host 'HOLD_POST_REPAIR_AUDIT_FAILED. Do not launch Scanner/G1.'
     Write-Host "Pre-repair backup retained: $backup"
-    exit 2
+    throw 'Operator aborted or recovery failed; inspect the previous status.'
 }
 Write-Host 'Audit completed; check stock AND index latest date in KOSPI and KOSDAQ.'
 Write-Host 'Prospective Capture, scheduler and real trading were NOT started.'
