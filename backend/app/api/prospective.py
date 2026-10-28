@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from app.core.config import PROJECT_ROOT
 from app.prospective.rank_comparison import compare_capture_candidates
 from app.prospective.capture_observation_journal import list_journal, capture_journal
+from app.prospective.saved_capture_comparison import compare_saved_captures
 from app.prospective import (
     ProspectiveCatalogError,
     ProspectiveEvaluationError,
@@ -125,6 +126,19 @@ def get_scanner_capture_observation_journal(capture_id: str):
     return capture_journal(
         service.catalog.db_path, service.evaluator.market.db_path,
         capture_id=capture_id,
+    )
+
+
+@router.get("/captures/{capture_id}/compare-history")
+def compare_scanner_capture_history(
+    capture_id: str,
+    previous_capture_id: str = Query(min_length=1, max_length=128),
+):
+    """Compare recorded candidate lists from two COMPLETE Scanner runs."""
+    return compare_saved_captures(
+        _service().catalog.db_path,
+        previous_capture_id=previous_capture_id,
+        current_capture_id=capture_id,
     )
 
 
