@@ -5,7 +5,6 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 import sqlite3
-from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -24,7 +23,7 @@ def _separate_s16_clock_from_synthetic_future_day(monkeypatch):
     )
 
 
-KST = ZoneInfo("Asia/Seoul")
+KST = daily.KST
 MONDAY = datetime(2026, 10, 19, 7, 0, tzinfo=KST)
 
 
