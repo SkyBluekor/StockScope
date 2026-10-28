@@ -31,7 +31,8 @@ def fixture(tmp_path: Path) -> tuple[Path, Path]:
             market_scope TEXT,created_at TEXT,completed_at TEXT,
             returned_candidate_count INTEGER,source_execution_key TEXT,
             scanner_version TEXT,scanner_baseline TEXT,input_fingerprint TEXT,
-            horizon_intent TEXT,horizon_policy_version TEXT,request_json TEXT
+            horizon_intent TEXT,horizon_policy_version TEXT,request_json TEXT,
+            canonical_capture_id TEXT
         );
         CREATE TABLE prospective_recommendation_sample (
             capture_run_id TEXT,sample_index INTEGER,snapshot_json TEXT,
@@ -41,11 +42,11 @@ def fixture(tmp_path: Path) -> tuple[Path, Path]:
         );
         """)
         db.execute(
-            "INSERT INTO prospective_capture_run VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO prospective_capture_run VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (CAPTURE_ID, "COMPLETE", SIGNAL_DATE, "ALL",
              "2026-10-28T04:51:18+00:00", "2026-10-28T04:52:00+00:00", 2,
              "f" * 64, "v", "base", "fingerprint", "LEGACY_UNSPECIFIED",
-             None, json.dumps({"market_scope": "ALL"})),
+             None, json.dumps({"market_scope": "ALL"}), None),
         )
         for index, action in enumerate(("ENTRY_CANDIDATE", "WAIT")):
             snap = {"data_date": SIGNAL_DATE, "code": f"{index:06d}",
