@@ -44,15 +44,10 @@ class KrxApiBudget:
     """
 
     DEFAULT_SAFE_LIMIT = 8_000
-    # Only set for an isolated G1 single-worker process. Every provider
-    # instance and every retry in that worker shares this upper bound.
-    _g1_guard = threading.RLock()
-    _g1_consumed = 0
     _default_db = Path(__file__).resolve().parents[2] / "runtime" / "krx" / "budget.sqlite3"
 
     def __init__(self, db_path: Path | None = None, safe_limit: int | None = None) -> None:
-        configured_db = (os.getenv("STOCKSCOPE_KRX_BUDGET_DB") or "").strip()
-        self.db_path = Path(db_path) if db_path is not None else (Path(configured_db) if configured_db else self._default_db)
+        self.db_path = db_path or self._default_db
         configured = safe_limit
         if configured is None:
             raw = os.getenv("KRX_DAILY_SAFE_LIMIT", str(self.DEFAULT_SAFE_LIMIT)).strip()
@@ -110,26 +105,7 @@ class KrxApiBudget:
         return snapshot
 
     def consume(self, *, retry: bool = False) -> KrxBudgetSnapshot:
-        """Atomically reserve a network attempt with optional single-worker G1 cap."""
-        raw_cap = os.getenv("STOCKSCOPE_G1_MAX_KRX_CALLS")
-        if raw_cap is None:
-            return self._consume_underlying(retry=retry)
-        try:
-            cap = int(raw_cap)
-        except (TypeError, ValueError) as exc:
-            raise KrxBudgetExceeded("G1 KRX request cap is not valid.") from exc
-        if not 1 <= cap <= 1_024:
-            raise KrxBudgetExceeded("G1 KRX request cap is out of range.")
-        cls = type(self)
-        with cls._g1_guard:
-            if cls._g1_consumed >= cap:
-                raise KrxBudgetExceeded("Approved G1 KRX request cap reached. Stop without more calls.")
-            receipt = self._consume_underlying(retry=retry)
-            cls._g1_consumed += 1
-            return receipt
-
-    def _consume_underlying(self, *, retry: bool = False) -> KrxBudgetSnapshot:
-        """Existing persistent ledger gate; never bypass its safe limit."""
+        """Atomically reserve one real HTTP attempt before it is sent."""
         day = self._today_key()
         now = now_kst().isoformat()
         with self._lock, self._connect() as conn:
