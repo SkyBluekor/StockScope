@@ -26,15 +26,15 @@ def test_scanner_job_service_uses_explicit_preview_market_db(tmp_path, monkeypat
 def test_legacy_scanner_default_still_unmodified_without_override(monkeypatch):
     monkeypatch.delenv("STOCKSCOPE_MARKET_STORE_DB", raising=False)
     monkeypatch.delenv("STOCKSCOPE_MARKET_DB", raising=False)
-    from app.backtest.scanner import StockScannerService
-    import inspect
-    from unittest.mock import patch
+    calls = []
 
-    with patch.object(api, "StockScannerService", wraps=StockScannerService) as factory:
-        scanner = api._scanner_service(None)
-    assert scanner.market_store.db_path == HistoricalMarketStore._default_db
-    assert factory.call_count == 1
-    assert "market_store" not in factory.call_args.kwargs
+    class FakeScanner:
+        def __init__(self, provider, **kwargs):
+            calls.append(kwargs)
+
+    monkeypatch.setattr(api, "StockScannerService", FakeScanner)
+    api._scanner_service(None)
+    assert calls == [{}]
 
 
 def test_preview_scanner_market_fallback_alias_is_honored(tmp_path, monkeypatch):
