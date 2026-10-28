@@ -45,6 +45,57 @@ $sim = QuotePs (Join-Path $preview "simulation.db")
 $market = QuotePs (Join-Path $preview "market_history.db")
 $holdings = QuotePs (Join-Path $preview "holdings.db")
 
+# Detached worktrees have no .env. Read ONLY the KRX token, never copy .env
+# or real brokerage credentials. The launched backend inherits this key.
+$originalKrxKey = [Environment]::GetEnvironmentVariable("KRX_API_KEY", "Process")
+$previewKrxKey = $originalKrxKey
+$envFile = Join-Path $repo ".env"
+if ([string]::IsNullOrWhiteSpace($previewKrxKey) -and (Test-Path -LiteralPath $envFile)) {
+    $line = Get-Content -LiteralPath $envFile |
+        Where-Object { $_ -match '^\s*(?:export\s+)?KRX_API_KEY\s*=' } |
+        Select-Object -First 1
+    if ($line -and $line -match '^\s*(?:export\s+)?KRX_API_KEY\s*=(.*)
+
+# Main app startup can update pending statuses; use COPIES for every operational store.
+$backendCommand = (
+    "`$env:PYTHONUTF8='1'; " +
+    "`$env:PYTHONIOENCODING='utf-8'; " +
+    "`$env:STOCKSCOPE_SIM_DB=$sim; " +
+    "`$env:STOCKSCOPE_MARKET_STORE_DB=$market; " +
+    "`$env:STOCKSCOPE_HOLDINGS_DB=$holdings; " +
+    "Set-Location $backendDir; " +
+    "& $python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000"
+)
+$frontendCommand = "Set-Location $frontendDir; npm run dev -- --host 127.0.0.1"
+try {
+    if (-not [string]::IsNullOrWhiteSpace($previewKrxKey)) {
+        $env:KRX_API_KEY = $previewKrxKey
+    }
+    Start-Process powershell -ArgumentList @("-NoExit", "-Command", $backendCommand)
+    Start-Process powershell -ArgumentList @("-NoExit", "-Command", $frontendCommand)
+} finally {
+    [Environment]::SetEnvironmentVariable("KRX_API_KEY", $originalKrxKey, "Process")
+}
+Write-Host "G2-03 isolated preview servers started" -ForegroundColor Green
+Write-Host "Web: http://127.0.0.1:5173"
+Write-Host "Backend: http://127.0.0.1:8000"
+Write-Host "Operational Simulation/Market DB paths are not connected." -ForegroundColor Yellow
+Write-Host "Captures saved after this snapshot require a new preview backup."
+) {
+        $previewKrxKey = $Matches[1].Trim()
+        if ($previewKrxKey.Length -ge 2 -and (
+            ($previewKrxKey.StartsWith("'") -and $previewKrxKey.EndsWith("'")) -or
+            ($previewKrxKey.StartsWith('"') -and $previewKrxKey.EndsWith('"'))
+        )) {
+            $previewKrxKey = $previewKrxKey.Substring(1, $previewKrxKey.Length - 2)
+        }
+    }
+}
+if ([string]::IsNullOrWhiteSpace($previewKrxKey)) {
+    Write-Warning "KRX_API_KEY not available; new Scanner network requests may fail."
+}
+
+
 # Main app startup can update pending statuses; use COPIES for every operational store.
 $backendCommand = (
     "`$env:PYTHONUTF8='1'; " +
