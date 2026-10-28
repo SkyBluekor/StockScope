@@ -225,6 +225,10 @@ jobs:
         shell: powershell
         run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_prospective_daily_s17.py -k test_p005_g1
 
+      - name: Verify P0-05 G1 read-only local readiness preflight (synthetic Windows stores)
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_05_g1_local_preflight.py
+
       - name: Verify fresh runtime and no Drive dependency
         shell: powershell
         run: |
