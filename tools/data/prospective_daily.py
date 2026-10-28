@@ -10,7 +10,7 @@ A future observed market bar is not a real trade return or a Q7 approval.
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from datetime import date, datetime, time, timedelta, timezone
 import json
 import os
@@ -31,6 +31,7 @@ for p in (ROOT, BACKEND):
         sys.path.insert(0, str(p))
 
 from app.jev.q7_observation_s16 import measure as observe_outcomes
+from app.prospective.models import digest_json
 from tools.data.common import market_db_path, simulation_db_path
 
 VERSION = "STOCKSCOPE_PROSPECTIVE_DAILY_S17_V1"
@@ -113,6 +114,95 @@ def _existing_capture(db: Path, *, market_scope: str, data_date: date) -> dict[s
     except sqlite3.Error as exc:
         raise DailyError("CAPTURE_READ_UNAVAILABLE") from exc
     return dict(row) if row else None
+
+
+def _verify_persisted_capture(
+    db: Path, *, source_job_id: str, capture: dict[str, Any],
+    signal_date: date, market_scope: str,
+) -> dict[str, Any]:
+    """Fail closed if HTTP COMPLETE is not the exact immutable SQLite evidence.
+
+    This is read-only, including on a live WAL DB. A COMPLETE capture is not
+    itself S7-valid or investment-performance evidence.
+    """
+    capture_id = capture.get("capture_id")
+    status = capture.get("status")
+    canonical_id = capture.get("canonical_capture_id")
+    if (type(capture_id) is not str or not capture_id
+            or status not in ("COMPLETE", "DUPLICATE")
+            or (canonical_id is not None and (type(canonical_id) is not str or not canonical_id))
+            or not db.is_file()):
+        raise DailyError("FROZEN_CAPTURE_PROOF_UNAVAILABLE")
+    try:
+        with closing(sqlite3.connect(
+            db.resolve().as_uri() + "?mode=ro", uri=True, timeout=10,
+        )) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA query_only=ON")
+            conn.execute("BEGIN")
+            row = conn.execute(
+                "SELECT id,status,source_job_id,market_scope,actual_data_date,"
+                "canonical_capture_id,returned_candidate_count,"
+                "source_execution_key,source_snapshot_hash,result_hash "
+                "FROM prospective_capture_run WHERE id=?", (capture_id,),
+            ).fetchone()
+            if (row is None or row["source_job_id"] != source_job_id
+                    or row["status"] != status
+                    or row["market_scope"] != market_scope
+                    or row["actual_data_date"] != signal_date.isoformat()
+                    or row["canonical_capture_id"] != canonical_id
+                    or not row["source_execution_key"] or not row["source_snapshot_hash"]
+                    or not row["result_hash"]):
+                raise DailyError("FROZEN_CAPTURE_DB_PROOF_MISMATCH")
+            if status == "COMPLETE":
+                if canonical_id is not None:
+                    raise DailyError("FROZEN_CAPTURE_DB_PROOF_MISMATCH")
+                canonical = row
+            else:
+                if not canonical_id or canonical_id == capture_id:
+                    raise DailyError("FROZEN_CAPTURE_DB_PROOF_MISMATCH")
+                canonical = conn.execute(
+                    "SELECT id,status,market_scope,actual_data_date,"
+                    "returned_candidate_count,source_execution_key,"
+                    "source_snapshot_hash,result_hash "
+                    "FROM prospective_capture_run WHERE id=?", (canonical_id,),
+                ).fetchone()
+                if (canonical is None or canonical["status"] != "COMPLETE"
+                        or canonical["market_scope"] != market_scope
+                        or canonical["actual_data_date"] != signal_date.isoformat()
+                        or any(row[k] != canonical[k] for k in (
+                            "returned_candidate_count", "source_execution_key",
+                            "source_snapshot_hash", "result_hash",
+                        ))):
+                    raise DailyError("FROZEN_CAPTURE_DB_PROOF_MISMATCH")
+            expected = canonical["returned_candidate_count"]
+            if (type(expected) is not int or not 0 <= expected <= 100
+                    or capture.get("returned_candidate_count") != expected):
+                raise DailyError("FROZEN_CAPTURE_COUNT_MISMATCH")
+            samples = conn.execute(
+                "SELECT sample_index,signal_date,snapshot_json,snapshot_hash "
+                "FROM prospective_recommendation_sample "
+                "WHERE capture_run_id=? ORDER BY sample_index", (canonical["id"],),
+            ).fetchall()
+            if len(samples) != expected:
+                raise DailyError("FROZEN_CAPTURE_COUNT_MISMATCH")
+            for index, item in enumerate(samples):
+                try:
+                    valid = digest_json(json.loads(item["snapshot_json"])) == item["snapshot_hash"]
+                except (ValueError, TypeError, UnicodeError):
+                    valid = False
+                if (item["sample_index"] != index
+                        or item["signal_date"] != signal_date.isoformat()
+                        or not valid):
+                    raise DailyError("FROZEN_CAPTURE_SNAPSHOT_MISMATCH")
+            return {
+                "persisted_capture_verified": True,
+                "persisted_snapshot_hashes_verified": True,
+                "persisted_sample_count": len(samples),
+                "performance_verified": False,
+            }
+    except sqlite3.Error as exc:
+        raise DailyError("FROZEN_CAPTURE_DB_READ_UNAVAILABLE") from exc
 
 
 class _NoRedirect(HTTPRedirectHandler):
@@ -298,6 +388,10 @@ def run_once(*, scope: str = "KOSPI", candidate_limit: int = 5,
             if not capture_id:
                 raise DailyError("FROZEN_CAPTURE_ID_MISSING")
 
+            persisted_proof = _verify_persisted_capture(
+                sim, source_job_id=job_id, capture=capture,
+                signal_date=signal_date, market_scope=scope,
+            )
             observed_finished_at = _now()
             observations = observe_outcomes(sim, market, as_of=today)
             outcome = _report(
@@ -311,6 +405,7 @@ def run_once(*, scope: str = "KOSPI", candidate_limit: int = 5,
                 scanner_job_id=job_id, capture_id=capture_id,
                 capture_status=capture["status"],
                 captured_candidate_count=capture.get("returned_candidate_count"),
+                **persisted_proof,
                 outcome_status=observations["status"],
                 outcome_windows=observations.get("windows"),
                 historical_evaluation_is_descriptive_only=True,
