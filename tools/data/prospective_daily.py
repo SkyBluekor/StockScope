@@ -22,7 +22,6 @@ import time as time_module
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener, ProxyHandler
-from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[2]
 BACKEND = ROOT / "backend"
@@ -35,7 +34,7 @@ from app.prospective.models import digest_json
 from tools.data.common import market_db_path, simulation_db_path
 
 VERSION = "STOCKSCOPE_PROSPECTIVE_DAILY_S17_V1"
-KST = ZoneInfo("Asia/Seoul")
+KST = timezone(timedelta(hours=9), name="KST")
 BASE_URL = "http://127.0.0.1:8000"
 DEFAULT_LOG_ROOT = ROOT / "data" / "prospective_daily"
 MORNING_START = time(5, 0)
