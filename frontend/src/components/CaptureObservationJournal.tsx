@@ -6,6 +6,7 @@ import {
 } from "../services/api";
 import "./captureObservationJournal.css";
 import CaptureHistoryComparison from "./CaptureHistoryComparison";
+import SavedStockTimelinePanel, { type SelectedScannerStock } from "./SavedStockTimelinePanel";
 
 function dateLabel(value: string | null | undefined) {
   if (!value) return "날짜 미확인";
@@ -47,6 +48,7 @@ export default function CaptureObservationJournal({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
+  const [selectedStock, setSelectedStock] = useState<SelectedScannerStock | null>(null);
 
   useEffect(() => {
     if (!opened) return;
@@ -157,7 +159,19 @@ export default function CaptureObservationJournal({
                     {detail.candidates.map(candidate => (
                       <tr key={candidate.sample_index}>
                         <th scope="row" id={"scanner-capture-observation-" + candidate.sample_index}>
-                          {candidate.name || candidate.ticker}
+                          <button type="button" className="scanner-capture-stock-link"
+                            disabled={candidate.market !== "KOSPI" && candidate.market !== "KOSDAQ"}
+                            onClick={() => {
+                              if (candidate.market === "KOSPI" || candidate.market === "KOSDAQ") {
+                                setSelectedStock({
+                                  market: candidate.market,
+                                  ticker: candidate.ticker,
+                                  name: candidate.name || candidate.ticker,
+                                });
+                              }
+                            }}
+                            aria-label={(candidate.name || candidate.ticker) + " 추천 이력 열기"}
+                          >{candidate.name || candidate.ticker}</button>
                           <small>{candidate.market} · {candidate.ticker}
                             {candidate.rank != null ? " · 순위 " + candidate.rank : ""}
                           </small>
@@ -184,7 +198,9 @@ export default function CaptureObservationJournal({
                 captures={captures}
                 detail={detail}
                 revision={revision}
+                onSelectStock={setSelectedStock}
               />
+              <SavedStockTimelinePanel stock={selectedStock} onClose={() => setSelectedStock(null)} />
               <p className="scanner-capture-journal-note">
                 관찰 수치는 추천 당일 종가 대비 이후 확정 종가의 변화입니다.
                 당일 이후에 생성된 기록은 장전 추천 성과로 인정하지 않으며, 누락된 거래일·시세는 수익률로 추정하지 않습니다.
