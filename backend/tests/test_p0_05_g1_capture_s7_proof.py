@@ -41,7 +41,8 @@ def _digest(path: Path) -> str:
 
 
 def _fixture(tmp_path: Path, *, count: int = 15, status: str = "COMPLETE",
-             action: str = "REFERENCE", corrupt: int | None = None) -> Path:
+             action: str = "REFERENCE", corrupt: int | None = None,
+             entries: int = 0) -> Path:
     db = tmp_path / "operational_simulation.db"
     with sqlite3.connect(db) as conn:
         conn.execute("CREATE TABLE prospective_capture_run (" + ",".join(
@@ -76,7 +77,9 @@ def _fixture(tmp_path: Path, *, count: int = 15, status: str = "COMPLETE",
                     "capture_run_id": CID, "sample_index": idx,
                     "market": "KOSPI" if idx % 2 == 0 else "KOSDAQ",
                     "ticker": f"{idx:06d}", "name": "SENSITIVE",
-                    "strategy": "pullback", "action": action, "rank": idx + 1,
+                    "strategy": "pullback",
+                    "action": "ENTRY_CANDIDATE" if idx < entries else action,
+                    "rank": idx + 1,
                     "decision_status": "WATCH", "candidate_state": "WATCH",
                     "signal_date": DATE, "snapshot_json": json.dumps(item),
                     "snapshot_hash": ("0" * 64 if idx == corrupt else digest_json(item)),
@@ -101,6 +104,8 @@ def test_g1_exact_operational_capture_15_of_15_hashes_and_reference_s7(tmp_path)
     assert result["snapshot_hash_verified"] == 15
     assert result["snapshot_hash_failed"] == result["row_identity_failed"] == 0
     assert result["s7_category_counts"] == {"REFERENCE_ONLY": 15}
+    assert result["s7_reason_code_counts"] == {}
+    assert result["s7_reference_exclusion_counts"] == {"NOT_ENTRY_CANDIDATE": 15}
     assert result["capture_created_at_kst"].startswith("2026-10-28T13:51:18")
     assert result["was_created_after_signal_day"] is True
     assert result["premarket_recommendation_eligible"] is False
@@ -109,6 +114,34 @@ def test_g1_exact_operational_capture_15_of_15_hashes_and_reference_s7(tmp_path)
     assert result["db_writes"] == result["external_requests"] == 0
     assert "SENSITIVE" not in json.dumps(result)
     assert "never-disclose" not in json.dumps(result)
+    assert _digest(db) == before
+
+
+def test_g1_reference_exclusions_not_misclassified_as_s7_failure(tmp_path, monkeypatch):
+    db = _fixture(tmp_path, count=15, entries=9)
+    before = _digest(db)
+    real_assess = proof.assess_frozen_candidate
+
+    def assess(capture, sample):
+        if sample["action"] == "ENTRY_CANDIDATE":
+            return {"category": "LEGACY_LIMITED",
+                    "codes": ["LEGACY_DERIVED_IDENTITY", "STRATEGY_IDENTITY_MISMATCH"]}
+        return real_assess(capture, sample)
+
+    monkeypatch.setattr(proof, "assess_frozen_candidate", assess)
+    result = proof.inspect(db, capture_id=CID)
+    assert result["status"] == "CAPTURE_STORAGE_VERIFIED_S7_REVIEWED"
+    assert result["expected_samples"] == result["actual_samples"] == 15
+    assert result["snapshot_hash_verified"] == 15
+    assert result["s7_category_counts"] == {"LEGACY_LIMITED": 9, "REFERENCE_ONLY": 6}
+    assert result["s7_reason_code_counts"] == {
+        "LEGACY_DERIVED_IDENTITY": 9,
+        "STRATEGY_IDENTITY_MISMATCH": 9,
+    }
+    assert result["s7_reference_exclusion_counts"] == {"NOT_ENTRY_CANDIDATE": 6}
+    assert "S7_UNCLASSIFIED" not in result["s7_reason_code_counts"]
+    assert result["s7_invalid_count"] == 0
+    assert result["local_validated_entry_count"] == 0
     assert _digest(db) == before
 
 
