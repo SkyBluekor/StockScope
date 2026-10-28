@@ -32,8 +32,10 @@ for p in (ROOT, BACKEND):
 from app.jev.q7_observation_s16 import measure as observe_outcomes
 from app.prospective.models import digest_json
 from tools.data.common import market_db_path, simulation_db_path
+from tools.data.p0_02_operational_store_audit import inspect_operational_store
 
 VERSION = "STOCKSCOPE_PROSPECTIVE_DAILY_S17_V1"
+G1_PREFLIGHT_VERSION = "STOCKSCOPE_P0_05_G1_LOCAL_PREFLIGHT_V1"
 KST = timezone(timedelta(hours=9), name="KST")
 BASE_URL = "http://127.0.0.1:8000"
 DEFAULT_LOG_ROOT = ROOT / "data" / "prospective_daily"
@@ -202,6 +204,91 @@ def _verify_persisted_capture(
             }
     except sqlite3.Error as exc:
         raise DailyError("FROZEN_CAPTURE_DB_READ_UNAVAILABLE") from exc
+
+
+def preflight_local_g1(
+    *, scope: str = "KOSPI", candidate_limit: int = 5,
+    simulation_db: Path | None = None, market_db: Path | None = None,
+    log_root: Path = DEFAULT_LOG_ROOT, now: datetime | None = None,
+) -> dict[str, Any]:
+    """Inspect local G1 prerequisites without API, Scheduler, writes or KRX calls.
+
+    Existing locally stored rows are not official publication proof. Even the
+    positive result requires separate user approval, provider rights and budget.
+    """
+    if scope not in ("KOSPI", "KOSDAQ", "ALL") or type(candidate_limit) is not int or not 1 <= candidate_limit <= 10:
+        raise DailyError("DAILY_ARGUMENT_INVALID")
+    checked_at = now or _now()
+    today, window_denied = _accepted_clock(checked_at)
+    result = {
+        "version": G1_PREFLIGHT_VERSION,
+        "status": "HOLD_UNVERIFIED_G1_PREREQUISITES",
+        "local_date": today.isoformat(),
+        "market_scope": scope,
+        "candidate_limit": candidate_limit,
+        "execution_window_open": window_denied is None,
+        "execution_window_reason": window_denied,
+        "stored_common_data_date": None,
+        "stored_eod_calendar_lag": None,
+        "stored_eod_recent": False,
+        "existing_capture_status": None,
+        "operational_dbs_read_only": True,
+        "db_write_calls": 0,
+        "external_requests": 0,
+        "server_started": False,
+        "scanner_job_started": False,
+        "new_capture_created": False,
+        "scheduler_registered_or_triggered": False,
+        "official_latest_eod_verified": False,
+        "external_source_rights_verified": False,
+        "provider_budget_approved": False,
+        "production_capture_approved": False,
+        "realized_strategy_performance_verified": False,
+    }
+    # Inspect existing storage, not the freshness API: the latter is capable
+    # of KRX/data-provider synchronization and is not a read-only preflight.
+    market = Path(market_db or market_db_path())
+    evidence = inspect_operational_store(
+        market, as_of=today - timedelta(days=1),
+        market_scope=scope, lookback_calendar_days=10,
+    )
+    if evidence["status"].startswith("BLOCKED_"):
+        result["status"] = "HOLD_MARKET_STORE_UNAVAILABLE"
+        return result
+    local_date = evidence.get("last_common_marked_stock_index_date")
+    result["stored_common_data_date"] = local_date
+    if not local_date:
+        result["status"] = "HOLD_NO_COMMON_STORED_EOD"
+        return result
+    lag = (today - date.fromisoformat(local_date)).days
+    result["stored_eod_calendar_lag"] = lag
+    result["stored_eod_recent"] = 1 <= lag <= 4
+    if not result["stored_eod_recent"]:
+        result["status"] = "HOLD_STALE_LOCAL_EOD"
+        return result
+    try:
+        # _existing_capture uses SQLite mode=ro and does not create DB files.
+        existing = _existing_capture(
+            Path(simulation_db or simulation_db_path()),
+            market_scope=scope, data_date=date.fromisoformat(local_date),
+        )
+    except DailyError:
+        result["status"] = "HOLD_SIMULATION_STORE_UNAVAILABLE"
+        return result
+    if existing is not None:
+        result["existing_capture_status"] = existing["status"]
+        result["status"] = "HOLD_EXISTING_CAPTURE_OR_PENDING"
+        return result
+    lock = Path(log_root) / (today.isoformat() + "_" + scope.lower() + ".lock")
+    if lock.exists():
+        result["status"] = "HOLD_EXISTING_RUN_LOCK"
+        return result
+    if window_denied is not None:
+        result["status"] = "HOLD_EXECUTION_WINDOW_CLOSED"
+        return result
+    # This is never an authorization to invoke the API or the S17 scheduler.
+    result["status"] = "LOCAL_STORED_EOD_READY_APPROVAL_REQUIRED"
+    return result
 
 
 class _NoRedirect(HTTPRedirectHandler):
@@ -429,9 +516,33 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="StockScope S17 optional daily prospective collector")
     parser.add_argument("--scope", choices=("KOSPI", "KOSDAQ", "ALL"), default="KOSPI")
     parser.add_argument("--candidate-limit", type=int, default=5)
-    parser.add_argument("--dry-run", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true")
+    mode.add_argument("--preflight", action="store_true",
+                      help="Read-only G1 local inputs; never contacts FastAPI/KRX")
+    parser.add_argument("--simulation-db", type=Path,
+                        help="Optional local Simulation DB (preflight only)")
+    parser.add_argument("--market-db", type=Path,
+                        help="Optional local Market DB (preflight only)")
     args = parser.parse_args(argv)
-    if args.dry_run:
+    if (args.simulation_db is not None or args.market_db is not None) and not args.preflight:
+        parser.error("--simulation-db and --market-db require --preflight")
+    if args.preflight:
+        try:
+            result = preflight_local_g1(
+                scope=args.scope, candidate_limit=args.candidate_limit,
+                simulation_db=args.simulation_db, market_db=args.market_db,
+            )
+        except (DailyError, OSError, sqlite3.Error, ValueError):
+            result = {
+                "version": G1_PREFLIGHT_VERSION,
+                "status": "HOLD_LOCAL_PREFLIGHT_UNAVAILABLE",
+                "operational_dbs_read_only": True, "db_write_calls": 0,
+                "external_requests": 0, "scanner_job_started": False,
+                "new_capture_created": False, "official_latest_eod_verified": False,
+                "production_capture_approved": False,
+            }
+    elif args.dry_run:
         day, reason = _accepted_clock(_now())
         result = _report("DRY_RUN_NO_SIDE_EFFECTS", local_date=day.isoformat(),
                          eligibility=reason or "PREMARKET_WINDOW_OK",
@@ -442,7 +553,7 @@ def main(argv: list[str] | None = None) -> int:
         except DailyError as exc:
             result = _report("HOLD_MANUAL_REVIEW", error_code=exc.code)
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0 if result["status"] in (
+    return 0 if (args.preflight and result["status"] == "LOCAL_STORED_EOD_READY_APPROVAL_REQUIRED") or result["status"] in (
         "SCANNER_CAPTURED_AND_OUTCOME_CHECKED",
         "SKIPPED_WEEKEND", "SKIPPED_OUTSIDE_PREMARKET_WINDOW",
         "SKIPPED_NO_FRESH_CONFIRMED_EOD", "SKIPPED_ALREADY_CAPTURED_OR_PENDING",
