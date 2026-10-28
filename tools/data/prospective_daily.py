@@ -22,6 +22,7 @@ import time as time_module
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener, ProxyHandler
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[2]
 BACKEND = ROOT / "backend"
@@ -309,6 +310,17 @@ def _http(path: str, *, method: str = "GET", payload: dict[str, Any] | None = No
     """Loopback only, no credentials, proxies or remote host overrides."""
     if not path.startswith("/") or path.startswith("//"):
         raise DailyError("INVALID_LOCAL_API_PATH")
+    parsed = urlsplit(base_url)
+    if (parsed.scheme != "http" or parsed.hostname != "127.0.0.1"
+            or parsed.username is not None or parsed.password is not None
+            or parsed.path or parsed.query or parsed.fragment):
+        raise DailyError("INVALID_LOOPBACK_BACKEND_URL")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise DailyError("INVALID_LOOPBACK_BACKEND_URL") from exc
+    if port is None or not 1 <= port <= 65535 or parsed.netloc != f"127.0.0.1:{port}":
+        raise DailyError("INVALID_LOOPBACK_BACKEND_URL")
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
     request = Request(
         base_url + path, data=data, method=method,
