@@ -11,6 +11,7 @@ import asyncio
 from contextlib import closing
 from datetime import date, datetime, timedelta, timezone
 import json
+import os
 from pathlib import Path
 import sqlite3
 import sys
@@ -121,6 +122,106 @@ def plan(*, db: Path, raw_dates: list[str], today: date | None = None) -> dict[s
         "scheduler_registered": False,
         "actual_orders": 0,
     }
+
+
+def inspect_local_krx_setup(
+    *, db: Path, operational_repo: Path, raw_dates: list[str],
+    max_requests: int = 16, today: date | None = None,
+) -> dict[str, Any]:
+    """Read operational KRX credential presence and shared request ledger.
+
+    No Provider/Budget construction: both can create runtime files. No key,
+    account ID, path, or source row is emitted. Local evidence cannot prove
+    entitlement to any of the four KRX endpoint services.
+    """
+    root = Path(operational_repo).resolve()
+    expected_db = root / "backend" / "runtime" / "market_history" / "market_history.db"
+    if Path(db).resolve() != expected_db.resolve():
+        raise RecoveryHold("HOLD_OPERATIONAL_DB_PATH_MISMATCH")
+    evidence = plan(db=db, raw_dates=raw_dates, today=today)
+    needed = evidence["required_provider_endpoint_calls_without_retries"]
+    if not needed <= max_requests <= 64:
+        raise RecoveryHold("HOLD_NETWORK_REQUEST_CAP_INVALID")
+
+    result = {
+        "version": VERSION,
+        "status": "HOLD_LOCAL_KRX_SETUP_UNVERIFIED",
+        "dates": evidence["requested_dates"],
+        "missing_market_days": evidence["missing_market_days"],
+        "provider_request_floor": needed,
+        "requested_network_cap": max_requests,
+        "krx_credential_configured": False,
+        "krx_credential_validated_remotely": False,
+        "source_rights_verified": False,
+        "service_entitlements_verified": False,
+        "official_trading_calendar_verified": False,
+        "market_db_write_approved": False,
+        "provider_requests_approved": False,
+        "krx_budget_ledger_state": "UNVERIFIED",
+        "local_budget_allows_cap": None,
+        "db_writes": 0,
+        "external_requests": 0,
+        "operational_db_read_only": True,
+        "scanner_job_started": False,
+        "new_prospective_capture_created": False,
+        "scheduler_registered": False,
+        "actual_orders": 0,
+    }
+    # Settings is inert, unlike KrxApiBudget.__init__ which creates a DB.
+    # Never print Settings, Pydantic errors, .env contents or the credential.
+    try:
+        from app.core.config import Settings
+        settings = Settings(_env_file=root / ".env")
+        result["krx_credential_configured"] = bool(
+            isinstance(settings.krx_api_key, str) and settings.krx_api_key.strip()
+        )
+    except Exception:
+        result["status"] = "HOLD_KRX_LOCAL_CONFIGURATION_UNREADABLE"
+        return result
+
+    raw_limit = os.getenv("KRX_DAILY_SAFE_LIMIT", "8000").strip()
+    try:
+        safe_limit = max(1, int(raw_limit))
+    except ValueError:
+        safe_limit = 8000
+
+    budget_path = root / "backend" / "runtime" / "krx" / "budget.sqlite3"
+    day = (today or _today()).isoformat()
+    if not budget_path.is_file():
+        # First-ever authorized use may initialize the ledger. Do not
+        # synthesize a known remaining balance from an absent ledger.
+        result["krx_budget_ledger_state"] = "NOT_INITIALIZED"
+    else:
+        try:
+            with closing(sqlite3.connect(
+                budget_path.resolve().as_uri() + "?mode=ro", uri=True, timeout=10,
+            )) as conn:
+                conn.execute("PRAGMA query_only=ON")
+                columns = {str(row[1]) for row in conn.execute(
+                    "PRAGMA table_info(krx_daily_usage)"
+                )}
+                if not {"day", "requests", "retries"}.issubset(columns):
+                    raise RecoveryHold("HOLD_KRX_BUDGET_LEDGER_INVALID")
+                row = conn.execute(
+                    "SELECT requests,retries FROM krx_daily_usage WHERE day=?",
+                    (day,),
+                ).fetchone()
+                used = int(row[0]) if row else 0
+                retries = int(row[1]) if row else 0
+                if used < 0 or retries < 0 or retries > used:
+                    raise RecoveryHold("HOLD_KRX_BUDGET_LEDGER_INVALID")
+                result["krx_budget_ledger_state"] = "EXISTING_READ_ONLY"
+                result["local_budget_allows_cap"] = used + max_requests <= safe_limit
+        except sqlite3.Error as exc:
+            raise RecoveryHold("HOLD_KRX_BUDGET_LEDGER_UNREADABLE") from exc
+
+    if not result["krx_credential_configured"]:
+        result["status"] = "HOLD_KRX_CREDENTIAL_NOT_CONFIGURED"
+    elif result["local_budget_allows_cap"] is False:
+        result["status"] = "HOLD_KRX_LOCAL_BUDGET_INSUFFICIENT"
+    else:
+        result["status"] = "LOCAL_KRX_CONFIGURATION_PRESENT_APPROVAL_REQUIRED"
+    return result
 
 
 def _validate_stock(rows: Any, market: str, key: str) -> list[dict[str, Any]]:
@@ -298,12 +399,23 @@ def main(argv: list[str] | None = None) -> int:
                         help="YYYY-MM-DD; repeat for up to four dated gaps")
     parser.add_argument("--max-requests", type=int, default=16)
     parser.add_argument("--run-approved", action="store_true")
+    parser.add_argument("--check-local-setup", action="store_true",
+                        help="Read-only KRX key-presence and persistent budget check")
     parser.add_argument("--approve-krx-requests", action="store_true")
     parser.add_argument("--approve-market-write", action="store_true")
     parser.add_argument("--confirm-source-rights", action="store_true")
     args = parser.parse_args(argv)
     try:
-        if args.run_approved:
+        if args.check_local_setup and args.run_approved:
+            raise RecoveryHold("HOLD_INVALID_EXECUTION_MODE")
+        if args.check_local_setup:
+            if args.operational_repo is None:
+                raise RecoveryHold("HOLD_OPERATIONAL_REPO_REQUIRED")
+            result = inspect_local_krx_setup(
+                db=args.market_db, operational_repo=args.operational_repo,
+                raw_dates=args.dates, max_requests=args.max_requests,
+            )
+        elif args.run_approved:
             result = asyncio.run(recover_approved(
                 db=args.market_db, raw_dates=args.dates,
                 max_requests=args.max_requests,
@@ -336,7 +448,9 @@ def main(argv: list[str] | None = None) -> int:
         }
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result["status"] in {
-        "READY_TO_REQUEST_SEPARATE_APPROVAL", "MISSING_MARKET_DAYS_RESTORED",
+        "READY_TO_REQUEST_SEPARATE_APPROVAL",
+        "LOCAL_KRX_CONFIGURATION_PRESENT_APPROVAL_REQUIRED",
+        "MISSING_MARKET_DAYS_RESTORED",
     } else 2
 
 
