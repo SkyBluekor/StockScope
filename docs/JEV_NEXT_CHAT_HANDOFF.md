@@ -83,7 +83,7 @@ git -C $work log -1 --oneline
 | 단계 | 상태 | 다음 행동 |
 |---|---|---|
 | JEV-LIVE-00 | 완료: 문서 기준점 설정 | 브랜치 HEAD·로컬 환경만 확인 |
-| **JEV-LIVE-01** | **미착수 / 최우선** | 실제 TypeSafe provider → V4 서비스까지 synthetic live smoke |
+| **JEV-LIVE-01** | **코드·HTTP mock 통합 PASS / 유료 합성 live 미실시** | 실제 TypeSafe 1회 실행 승인과 사용자 PC에서 합성 live smoke, 저장 검증이 남음. 2026-10-28 코드 커밋 `90f3d5d`, [CI 4/4 PASS](https://github.com/SkyBluekor/StockScope/actions/runs/40709954313) |
 | JEV-LIVE-02 | 미착수 | 실후보 로컬 검토 준비도 화면 |
 | JEV-LIVE-03 | 미착수: 실제 시장 외부 전송 HOLD | source 권한/시점/수신자/실 outbound body 검증 |
 | JEV-LIVE-04 | 미착수, 실 market 호출은 LIVE-03 권한 결과 필요 | 사용자 선택 후보 1건 end-to-end 실제 review |
@@ -98,3 +98,11 @@ git -C $work log -1 --oneline
 - User는 기숙사 PC 화면에서 G2-04 적용을 확인했고, JEV를 소극적으로 쓰는 이유를 질책함. 이제 UI 장식보다 실제 JEV 추가 검토가 핵심.
 - 원래 JEV 설계의 책임 제한(Decision Reviewer)은 비용 때문이 아니라 기본 분석과 사용자를 보호하기 위한 명시적 제품 경계다. **기본 분석을 유지하면서 실제 유료 TypeSafe를 연결하는 일은 양립한다.**
 - 실 외부 시장 데이터의 권한은 계정·원천·수신자·목적별로 다르며 `JEV_API_KEY` 보유가 전송허가가 아니다. 사용자에게 '모두 활성화됨'이라고 추측하지 말 것.
+
+## 8. JEV-LIVE-01 actual progress (2026-10-28)
+
+- Code SHA [`90f3d5d`](https://github.com/SkyBluekor/StockScope/commit/90f3d5d5e2b1ae010cbeca8bf8da4d786e2a03b0); [CI #40709954313](https://github.com/SkyBluekor/StockScope/actions/runs/40709954313) **4/4 PASS**, Backend Python 3.11/3.14 each **2,589 passed / 2 skipped**; Frontend and Fresh Clone Windows PASS.
+- New developer-only source: `backend/app/jev/synthetic_live_01.py`, `tools/data/jev_live_01_synthetic_smoke.py`, `backend/tests/test_jev_live_01_synthetic_service.py`. It uses the real TypeSafe adapter (HTTP mock in CI), existing V4 manual review service and TypeSafe catalog. Only fixed, authored synthetic sample, fresh temporary SQLite and masked preview; Scanner/API default OFF unchanged.
+- User Windows runtime check still **NOT DONE**. Paid TypeSafe live smoke still **NOT DONE** (no billable authorization and no local API credential accessible to CI). Both remain explicitly pending before LIVE-01 DONE. Real market input source-rights gate remains HOLD/NO-GO. Do not describe CI/mocked TypeSafe as an actual billable model review.
+- Local offline commands after pulling branch: `python -m tools.data.jev_live_01_synthetic_smoke --mode preflight`, `python -m tools.data.jev_live_01_synthetic_smoke --mode mock`. Both use a newly-created isolated temp DB; mock makes no network calls. Actual live requires one-call explicit approval and verified provider/model evidence, never an operational dataset.
+
