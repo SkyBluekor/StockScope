@@ -147,7 +147,14 @@ def test_changed_market_scope_warning_and_missing_policy_warning(tmp_path):
     assert result["status"] == "READY"
     assert "MARKET_SCOPE_CHANGED" in result["comparability"]["warnings"]
     assert result["comparability"]["rank_comparable"] is False
-    db2 = _db(tmp_path / "other", altered="missing_policy") if False else None
+
+
+def test_missing_original_selection_policy_suppresses_rank_comparison(tmp_path):
+    db = _db(tmp_path, altered="missing_policy")
+    result = diff.compare_saved_captures(db, previous_capture_id=OLD, current_capture_id=NEW)
+    assert result["status"] == "READY"
+    assert result["comparability"]["rank_comparable"] is False
+    assert "SELECTION_POLICY_UNVERIFIED" in result["comparability"]["warnings"]
 
 
 def test_capture_date_pair_must_be_distinct_and_in_order(tmp_path):
