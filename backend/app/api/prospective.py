@@ -11,6 +11,7 @@ from app.core.config import PROJECT_ROOT
 from app.prospective.rank_comparison import compare_capture_candidates
 from app.prospective.capture_observation_journal import list_journal, capture_journal
 from app.prospective.saved_capture_comparison import compare_saved_captures
+from app.prospective.stock_capture_timeline import stock_capture_timeline
 from app.prospective import (
     ProspectiveCatalogError,
     ProspectiveEvaluationError,
@@ -117,6 +118,21 @@ def list_scanner_capture_journal(
     """User-facing saved Scanner history; never starts another Scanner job."""
     service = _service()
     return list_journal(service.catalog.db_path, limit=limit)
+
+
+@router.get("/stock-history/{market}/{ticker}")
+def get_scanner_stock_timeline(
+    market: Literal["KOSPI", "KOSDAQ"],
+    ticker: str,
+    limit: int = Query(default=20, ge=1, le=30),
+    offset: int = Query(default=0, ge=0, le=100000),
+):
+    """Per-stock, saved-only Scanner timeline. No Scanner/market writes."""
+    service = _service()
+    return stock_capture_timeline(
+        service.catalog.db_path, service.evaluator.market.db_path,
+        market=market, ticker=ticker, limit=limit, offset=offset,
+    )
 
 
 @router.get("/captures/{capture_id}/observation-journal")
