@@ -49,12 +49,13 @@ if ($approve -cne 'G1_CAPTURE_APPROVED') {
     throw 'HOLD_G1_CAPTURE_NOT_APPROVED: no network requests or DB writes.'
 }
 
-# WAL-consistent online backup of the operational Simulation DB, NOT a
-# bytewise copy while a live SQLite WAL may contain pending committed rows.
-$backupDir = Join-Path $env:LOCALAPPDATA 'StockScope\simulation_backups'
+# WAL-consistent online backup of both operational Simulation and Market
+# DBs. Scanner can update either; never do a raw copy of an open WAL database.
+$backupDir = Join-Path $env:LOCALAPPDATA 'StockScope\g1_capture_backups'
 New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
 $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss_ffff'
 $backup = Join-Path $backupDir ("simulation_before_G1_" + $timestamp + '.db')
+$marketBackup = Join-Path $backupDir ("market_before_G1_" + $timestamp + '.db')
 $backupScript = @'
 import sqlite3, sys
 from pathlib import Path
@@ -72,7 +73,12 @@ with sqlite3.connect(dst.resolve().as_uri() + "?mode=ro", uri=True) as checked:
 if ($LASTEXITCODE -ne 0) {
     throw 'HOLD_G1_BACKUP_FAILED: Scanner not started.'
 }
+& $python -c $backupScript $market $marketBackup
+if ($LASTEXITCODE -ne 0) {
+    throw 'HOLD_G1_MARKET_BACKUP_FAILED: Scanner not started.'
+}
 Write-Host "Verified pre-capture Simulation backup: $backup"
+Write-Host "Verified pre-capture Market backup: $marketBackup"
 
 $approvedArgs = $preflightArgs + @(
     '--run-approved', '--approve-krx-requests',
@@ -80,9 +86,9 @@ $approvedArgs = $preflightArgs + @(
 )
 & $python $script @approvedArgs
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "Simulation backup retained: $backup"
+    Write-Host "Simulation backup retained: $backup; Market backup retained: $marketBackup"
     throw 'HOLD_G1_CAPTURE_FAILED: inspect the JSON status; never auto-retry.'
 }
 Write-Host 'Inspect returned s17 persisted_capture_verified, snapshot hashes, dates and capture status.'
 Write-Host 'No recurring schedule or strategy approval was registered.'
-Write-Host "Simulation backup retained: $backup"
+Write-Host "Simulation backup retained: $backup; Market backup retained: $marketBackup"
