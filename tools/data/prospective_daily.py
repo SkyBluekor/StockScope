@@ -305,13 +305,13 @@ class _NoRedirect(HTTPRedirectHandler):
 
 
 def _http(path: str, *, method: str = "GET", payload: dict[str, Any] | None = None,
-          timeout: int = 30) -> dict[str, Any]:
+          timeout: int = 30, base_url: str = BASE_URL) -> dict[str, Any]:
     """Loopback only, no credentials, proxies or remote host overrides."""
     if not path.startswith("/") or path.startswith("//"):
         raise DailyError("INVALID_LOCAL_API_PATH")
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
     request = Request(
-        BASE_URL + path, data=data, method=method,
+        base_url + path, data=data, method=method,
         headers={"Content-Type": "application/json"} if data else {},
     )
     opener = build_opener(ProxyHandler({}), _NoRedirect())
