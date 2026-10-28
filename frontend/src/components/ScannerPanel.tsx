@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import {
   clearScannerSession,
   latestScannerDataDate,
@@ -1546,6 +1546,16 @@ export default function ScannerPanel({
     onAnalyzeStock(stockItem(candidate));
   }
 
+  function onWorkspaceTabKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
+    let target: "analysis" | "history" | null = null;
+    if (event.key === "ArrowRight" || event.key === "End") target = "history";
+    if (event.key === "ArrowLeft" || event.key === "Home") target = "analysis";
+    if (!target) return;
+    event.preventDefault();
+    setWorkspaceTab(target);
+    document.getElementById("scanner-tab-" + target)?.focus();
+  }
+
   function changeScope(value: MarketScope) {
     if (busy || value === scope) return;
     if (pollRef.current != null) window.clearTimeout(pollRef.current);
@@ -1969,14 +1979,16 @@ export default function ScannerPanel({
           aria-controls="scanner-panel-analysis"
           aria-selected={workspaceTab === "analysis"}
           tabIndex={workspaceTab === "analysis" ? 0 : -1}
-          onClick={() => setWorkspaceTab("analysis")}>
+          onClick={() => setWorkspaceTab("analysis")}
+          onKeyDown={onWorkspaceTabKeyDown}>
           이번 분석{result ? ` · ${result.candidates.length}개` : ""}
         </button>
         <button type="button" id="scanner-tab-history" role="tab"
           aria-controls="scanner-panel-history"
           aria-selected={workspaceTab === "history"}
           tabIndex={workspaceTab === "history" ? 0 : -1}
-          onClick={() => setWorkspaceTab("history")}>
+          onClick={() => setWorkspaceTab("history")}
+          onKeyDown={onWorkspaceTabKeyDown}>
           저장 기록
         </button>
       </nav>
