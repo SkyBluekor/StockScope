@@ -1,0 +1,50 @@
+/* G2-04: current Scanner analysis always wins screen space. */
+.scanner-workspace-tabs {
+  display: flex;
+  align-items: stretch;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0 14px;
+  padding: 5px;
+  border: 1px solid var(--border-color, #52606b65);
+  border-radius: 12px;
+  background: var(--panel-bg, transparent);
+}
+.scanner-workspace-tabs button {
+  flex: 1 1 170px;
+  min-height: 42px;
+  padding: 10px 16px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  color: inherit;
+  background: transparent;
+  font-size: .92rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.scanner-workspace-tabs button:hover { background: var(--surface-bg, #52606b20); }
+.scanner-workspace-tabs button[aria-selected="true"] {
+  border-color: var(--border-color, #52606b75);
+  background: var(--surface-bg, #52606b35);
+  box-shadow: 0 1px 4px #0000000c;
+}
+.scanner-workspace-tabs button:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+#scanner-panel-analysis[hidden], #scanner-panel-history[hidden] {
+  display: none !important;
+}
+#scanner-panel-analysis, #scanner-panel-history { min-width: 0; }
+.scanner-recheck-note {
+  display: block;
+  max-width: 380px;
+  font-size: .78rem;
+  opacity: .8;
+  line-height: 1.45;
+}
+@media (max-width: 680px) {
+  .scanner-workspace-tabs { gap: 4px; }
+  .scanner-workspace-tabs button { flex-basis: 120px; padding: 9px 7px; }
+  .scanner-recheck-note { max-width: unset; }
+}
