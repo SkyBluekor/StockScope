@@ -82,6 +82,17 @@ def test_fresh_next_trading_day_produces_job_and_observations(tmp_path, monkeypa
         lambda db, m, **kw: {"status": "DESCRIPTIVE_OBSERVATIONS_ONLY",
                              "windows": {"5d": {"observed": 0}}})
     http, calls = _client()
+    proof_calls = []
+    monkeypatch.setattr(
+        daily, "_verify_persisted_capture",
+        lambda db, **kw: (
+            proof_calls.append((db, kw)) or
+            {"persisted_capture_verified": True,
+             "persisted_snapshot_hashes_verified": True,
+             "persisted_sample_count": 15,
+             "performance_verified": False}
+        ),
+    )
     before = sim.read_bytes()
     report = daily.run_once(
         now=MONDAY, simulation_db=sim, market_db=market,
@@ -91,6 +102,8 @@ def test_fresh_next_trading_day_produces_job_and_observations(tmp_path, monkeypa
     assert report["status"] == "SCANNER_CAPTURED_AND_OUTCOME_CHECKED"
     assert report["source_data_date"] == "2026-10-16"
     assert report["outcome_status"] == "DESCRIPTIVE_OBSERVATIONS_ONLY"
+    assert report["persisted_capture_verified"] is True
+    assert proof_calls[0][1]["source_job_id"] == "abc123ef01"
     assert report["actual_orders"] == report["external_ai_calls"] == 0
     assert calls[1][0] == "/api/backtest/scanner/jobs"
     assert calls[1][2] == {
@@ -204,3 +217,121 @@ def test_backend_is_started_locally_only_and_preexisting_is_not_owned(monkeypatc
         assert calls[0][0][-4:] == ["--host", "127.0.0.1", "--port", "8000"]
         assert calls[0][1]["cwd"] == daily.BACKEND
     assert process.stopped
+
+
+def _real_capture(tmp_path):
+    """Generate the real VN-P2-S2 schema and a genuine Catalog COMPLETE row."""
+    from app.prospective.catalog import ProspectiveCatalog
+    from app.prospective.models import ProspectiveCaptureRequest
+    from app.strategy.models import StrategyName
+    from tools.data.migrate_prospective_vnp2s2 import migrate_prospective_store
+
+    db = tmp_path / "real_prospective.db"
+    sqlite3.connect(db).close()
+    migrate_prospective_store(db)
+    catalog = ProspectiveCatalog(db)
+    request = ProspectiveCaptureRequest(
+        market_scope="KOSPI", requested_as_of="2026-10-16",
+        candidate_limit=5, horizon_intent="LEGACY_UNSPECIFIED",
+        horizon_policy_version=None,
+    )
+    result = {
+        "version": "synthetic-only", "requested_as_of": "2026-10-16",
+        "market_scope": "KOSPI", "input_fingerprint": "synthetic",
+        "partial_data": False, "summary": {"candidate_count": 1},
+        "candidates": [{
+            "market": "KOSPI", "code": "000001", "name": "synthetic",
+            "priority": {"rank": 1}, "strategy": StrategyName.TREND_FOLLOWING.value,
+            "data_date": "2026-10-16", "action": "ENTRY_CANDIDATE",
+            "risk": {"status": "READY", "warning": False},
+            "conditions": {"passed": 0, "total": 0, "missing": 0},
+            "entry_risk_guide": {},
+        }],
+        "more_candidates": [],
+    }
+    catalog.begin_capture(source_job_id="proof-job-123", request=request)
+    first = catalog.finalize_capture(
+        source_job_id="proof-job-123", request=request, result=result,
+    )
+    return db, catalog, request, result, first
+
+
+def _proof(db, capture, job="proof-job-123"):
+    return daily._verify_persisted_capture(
+        db, source_job_id=job,
+        capture={
+            "status": capture["status"],
+            "capture_id": capture["id"],
+            "canonical_capture_id": capture["canonical_capture_id"],
+            "returned_candidate_count": capture["returned_candidate_count"],
+        },
+        signal_date=datetime(2026, 10, 16).date(), market_scope="KOSPI",
+    )
+
+
+def test_p005_g1_real_sqlite_capture_proof_and_duplicate_are_readonly(tmp_path):
+    import hashlib
+
+    db, catalog, request, result, first = _real_capture(tmp_path)
+    before = hashlib.sha256(db.read_bytes()).hexdigest()
+    verified = _proof(db, first)
+    assert verified["persisted_capture_verified"] is True
+    assert verified["persisted_snapshot_hashes_verified"] is True
+    assert verified["persisted_sample_count"] == 1
+    assert verified["performance_verified"] is False
+    assert hashlib.sha256(db.read_bytes()).hexdigest() == before
+
+    catalog.begin_capture(source_job_id="proof-job-456", request=request)
+    duplicate = catalog.finalize_capture(
+        source_job_id="proof-job-456", request=request, result=result,
+    )
+    assert duplicate["status"] == "DUPLICATE"
+    assert duplicate["canonical_capture_id"] == first["id"]
+    before_duplicate = hashlib.sha256(db.read_bytes()).hexdigest()
+    assert _proof(db, duplicate, "proof-job-456")["persisted_sample_count"] == 1
+    assert hashlib.sha256(db.read_bytes()).hexdigest() == before_duplicate
+
+
+def test_p005_g1_http_complete_without_sqlite_proof_is_hold(tmp_path):
+    db, _, _, _, capture = _real_capture(tmp_path)
+    with pytest.raises(daily.DailyError, match="FROZEN_CAPTURE_DB_PROOF_MISMATCH"):
+        _proof(db, capture, "fabricated-job")
+    claim = {
+        "status": "COMPLETE", "capture_id": "not-stored",
+        "canonical_capture_id": None, "returned_candidate_count": 1,
+    }
+    with pytest.raises(daily.DailyError, match="FROZEN_CAPTURE_DB_PROOF_MISMATCH"):
+        daily._verify_persisted_capture(
+            db, source_job_id="fabricated-job", capture=claim,
+            signal_date=datetime(2026, 10, 16).date(), market_scope="KOSPI",
+        )
+    with pytest.raises(daily.DailyError, match="FROZEN_CAPTURE_PROOF_UNAVAILABLE"):
+        _proof(tmp_path / "missing.db", capture)
+    assert not (tmp_path / "missing.db").exists()
+
+
+def test_p005_g1_tampered_snapshot_hash_never_claims_persisted_proof(tmp_path):
+    db, _, _, _, capture = _real_capture(tmp_path)
+    # Deliberately corrupt *only* a synthetic DB after dropping its fixture
+    # protection trigger. Never touch the user's immutable historical rows.
+    with sqlite3.connect(db) as conn:
+        conn.execute("DROP TRIGGER trg_prospective_sample_immutable")
+        conn.execute(
+            "UPDATE prospective_recommendation_sample SET snapshot_hash=? "
+            "WHERE capture_run_id=?", ("tampered", capture["id"]),
+        )
+    with pytest.raises(daily.DailyError, match="FROZEN_CAPTURE_SNAPSHOT_MISMATCH"):
+        _proof(db, capture)
+
+
+def test_p005_g1_fake_http_success_cannot_pass_without_sqlite_capture(tmp_path):
+    sim = _db(tmp_path)
+    http, _ = _client()
+    report = daily.run_once(
+        now=MONDAY, simulation_db=sim, market_db=tmp_path / "market.db",
+        log_root=tmp_path / "daily", http=http, server=_server,
+    )
+    assert report["status"] == "HOLD_MANUAL_REVIEW"
+    assert report["error_code"] == "FROZEN_CAPTURE_DB_READ_UNAVAILABLE"
+    assert report["q7_approval_eligible"] is False
+
