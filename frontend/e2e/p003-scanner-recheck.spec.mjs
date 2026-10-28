@@ -135,3 +135,30 @@ test("matching target remains selected after a real browser Job",async({page})=>
   expect(calls.find(x=>x.path==="/api/backtest/scanner/jobs")?.body?.recheck_candidate?.code).toBe("145720");
   expect(violations).toEqual([]);
 });
+
+test("G2-04 analysis/history tabs preserve current Scanner selection and rerun only on click",async({page})=>{
+  const {calls,violations,pageErrors}=await setup(page,{matched:true});
+  const analysis=page.getByRole("tab",{name:/이번 분석/});
+  const history=page.getByRole("tab",{name:"저장 기록"});
+  await expect(analysis).toHaveAttribute("aria-selected","true");
+  await expect(page.getByRole("button",{name:/가상 이전 후보 선택/})).toHaveAttribute("aria-pressed","true");
+  await history.click();
+  await expect(history).toHaveAttribute("aria-selected","true");
+  await expect(page.getByRole("region",{name:"저장 후보 날짜별 관찰"})).toBeVisible();
+  await expect(page.getByRole("button",{name:/가상 이전 후보 선택/})).toBeHidden();
+  expect(calls.filter(x=>x.method==="POST"&&x.path==="/api/backtest/scanner/jobs")).toHaveLength(0);
+  await history.press("Home");
+  await expect(analysis).toHaveAttribute("aria-selected","true");
+  await expect(analysis).toBeFocused();
+  await expect(page.getByRole("button",{name:/가상 이전 후보 선택/})).toHaveAttribute("aria-pressed","true");
+  await expect(page.getByRole("button",{name:"후보 다시 찾기"})).toBeVisible();
+  await page.getByRole("button",{name:"후보 다시 찾기"}).click();
+  await expect.poll(()=>calls.filter(x=>x.method==="POST"&&x.path==="/api/backtest/scanner/jobs").length).toBe(1);
+  const post=calls.find(x=>x.method==="POST"&&x.path==="/api/backtest/scanner/jobs");
+  expect(post?.body?.force_refresh).toBe(false);
+  expect(post?.body?.allow_large_sync).toBe(false);
+  await expect(analysis).toHaveAttribute("aria-selected","true");
+  expect(violations).toEqual([]);
+  expect(pageErrors).toEqual([]);
+});
+
