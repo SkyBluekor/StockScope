@@ -456,3 +456,24 @@ Windows Fresh Clone CI에도 넣었다. 실제 운영 KRX 호출이나 DB
 이 명령의 성공 결과만으로 실제 복구 `--run-approved`를 실행하거나
 서비스 이용권한을 가정하지 않는다. 권한 확인/운영 갱신/실제 G1
 새 Capture는 별도 승인 대상이다.
+
+## P0-05/G1 — 복구 후 실제 신규 S17 캡처를 위한 별도 운영 실행 경계 (2026-10-28)
+
+사용자의 Windows 운영 DB에서 2026-10-22/23/26/27 KOSPI·KOSDAQ 결측 8개 market-day의 KRX 원본 데이터 복구가 성공하였다. 사후 read-only 검사에서 2026-10-27 KOSPI stock 940/index 1, KOSDAQ stock 1825/index 1, 최근 검사구간 미저장 평일 0일을 확인했다. 이는 공식 장종료 공표 시각이나 미래 전략 성과를 증명하지 않는다.
+
+기존 S17의 S17 전용 Python 경로가 detached TEMP worktree의 기본 Market Store와 KRX budget ledger를 생성할 수 있는 위험이 발견되어, 기존 예약 실행 흐름을 변경하지 않고 다음 별도의 운영자 승인형 경로를 추가하였다:
+
+- tools/data/p0_05_g1_capture_once.py: 기본 실행은 KST 장전 05:00~08:45, 읽기 전용 운영 Simulation/Market, 최근 EOD, 중복 캡처/Lock 및 영속 KRX 장부 상한만 확인. 운영 DB와 사용량 장부가 없으면 HOLD한다.
+- 해당 실행기의 --run-approved는 추가 KRX 호출, Simulation/Market DB 쓰기, 해당 Scanner의 KRX 서비스 활용 권한에 대한 각각의 독립 승인 플래그를 요구한다. 이전 시장 결측 복구 동의는 신규 Scanner 캡처에 대한 동의가 아니다.
+- 승인 후에는 운영 .env의 KRX API Key를 코드 worktree가 아닌 실제 운영 저장소에서 읽고, STOCKSCOPE_SIM_DB, STOCKSCOPE_MARKET_STORE_DB, STOCKSCOPE_KRX_BUDGET_DB 및 STOCKSCOPE_G1_MAX_KRX_CALLS를 단일 자식 서버에 주입한다. Key 값은 출력하지 않는다.
+- HistoricalMarketStore는 이제 환경변수 STOCKSCOPE_MARKET_STORE_DB를 사용하여 TEMP worktree 대신 실제 운영 Market DB에 연결한다. KrxApiBudget는 운영 영속 요청량 장부 및 child process 전체 공급자 인스턴스에 걸친 요청 상한을 함께 사용한다. 요청 재시도도 한도에 포함된다.
+- 새로운 백엔드는 127.0.0.1의 임시 포트와 고유 식별 nonce로 검증하며, 기존 8000번 포트의 불명확한 서버를 재사용하지 않는다. 운영 Holdings DB는 수정하지 않으며, 별도 코드 worktree의 격리 Holdings DB만 사용한다.
+- S17의 run_once가 마지막 확정일·기존 캡처 중복·서버 반환 날짜·SQLite persisted capture 및 모든 스냅샷 해시를 다시 검사한다. 실패하면 자동 재시도하지 않는다. 과거 날짜 소급 캡처, 스케줄 등록, G2/Q7 성과 인증, 실거래를 수행하지 않는다.
+- tools/data/p0_05_run_g1_capture_once.ps1은 KRX 권리와 DB 쓰기 승인 문구를 사람이 직접 입력한 뒤 실제 운영 Simulation DB와 Market Store에 각각 WAL-safe SQLite online backup과 quick_check를 수행하고 승인형 일회성 실행기를 호출한다.
+- 운영자 실행기의 기본 KRX 최대 호출은 128회(16~1024 조정 가능)이며 이는 승인된 상한이지 실행 횟수 확정이나 데이터 완전성 증명이 아니다. 백업 경로는 %LOCALAPPDATA%/StockScope/g1_capture_backups 이다.
+
+운영자가 직접 다음 적격 KST 장전 창에 실행할 명령:
+
+    & (Join-Path $work 'tools/data/p0_05_run_g1_capture_once.ps1') -OperationalRepo $repo -Scope ALL -MaxKrxRequests 128
+
+이것은 사용자 Windows에서만 실행되며 ChatGPT/GitHub CI가 운영 KRX 네트워크를 호출하거나 실제 Simulation DB에 캡처를 생성한 것이 아니다. 공식 서비스별 활용 권리 및 신규 실행 승인은 사용자가 별도로 확인해야 한다. PR #170은 Draft로 유지한다.
