@@ -58,6 +58,7 @@ import { buildScannerDisplayLayout } from "./scannerDisplayGroups";
 import ScannerRankComparison from "./ScannerRankComparison";
 import ScannerMotionProgress from "./ScannerMotionProgress";
 import CaptureObservationJournal from "./CaptureObservationJournal";
+import "./scannerWorkspaceTabs.css";
 import { scannerPolicyReadiness } from "./scannerPolicyReadiness";
 import AiReviewProgress from "./AiReviewProgress";
 import ScannerAiReview from "./ScannerAiReview";
@@ -782,6 +783,7 @@ export default function ScannerPanel({
   const [scope, setScope] = useState<MarketScope>(initialSession?.scope ?? "ALL");
   const [job, setJob] = useState<BacktestJob<ScannerResponse> | null>(null);
   const [result, setResult] = useState<ScannerResponse | null>(initialSession?.result ?? null);
+  const [workspaceTab, setWorkspaceTab] = useState<"analysis" | "history">("analysis");
   // Only a newly completed foreground job animates. Restored results stay still.
   const [revealJobId, setRevealJobId] = useState<string | null>(null);
   const [selectedCandidateKey, setSelectedCandidateKey] = useState<string | null>(
@@ -1153,6 +1155,7 @@ export default function ScannerPanel({
         });
         setScope(jobScope);
         setResult(latest.result);
+        setWorkspaceTab("analysis");
         setRevealJobId(latest.job_id);
         setSelectedCandidateKey(nextSelectedKey);
         setShowMore(false);
@@ -1212,6 +1215,7 @@ export default function ScannerPanel({
     recheckCandidate: ScannerRecheckCandidate | null = null,
   ) {
     if (busy || dataPlanInFlightRef.current) return;
+    setWorkspaceTab("analysis");
     // Large transfer is explicit consent. Small requests proceed automatically.
     if (!allowLargeSync && (!forceRefresh || recheckCandidate !== null)) {
       dataPlanInFlightRef.current = true;
@@ -1695,15 +1699,11 @@ export default function ScannerPanel({
           ))}
         </div>
         <div className="scanner-control-actions">
-          {result && !busy ? (
-            <div className="scanner-result-held">
-              <strong>✓ 분석 결과 유지 중</strong>
-              <span>같은 설정에서는 다시 찾지 않습니다.</span>
-            </div>
-          ) : (
-            <button type="button" className="scanner-run-button" onClick={() => void runScanner(false)} disabled={busy}>
-              {dataPlanBusy ? "시장 데이터 확인 중..." : evidenceJobStage ? "3년 검증 데이터 준비 중..." : jobBusy && String(job?.stage || "").startsWith("scanner_prepare") ? "최신 시세 확인 중..." : jobBusy ? "후보 찾는 중..." : "후보 찾기"}
-            </button>
+          <button type="button" className="scanner-run-button" onClick={() => void runScanner(false)} disabled={busy}>
+            {dataPlanBusy ? "시장 데이터 확인 중..." : evidenceJobStage ? "3년 검증 데이터 준비 중..." : jobBusy && String(job?.stage || "").startsWith("scanner_prepare") ? "최신 시세 확인 중..." : jobBusy ? "후보 찾는 중..." : result ? "후보 다시 찾기" : "후보 찾기"}
+          </button>
+          {result && !busy && (
+            <span className="scanner-recheck-note">기존 분석은 새 결과가 준비될 때까지 유지합니다. 같은 확정 일봉의 저장 결과를 재사용할 수 있어요.</span>
           )}
           {jobBusy && <button type="button" className="scanner-cancel-button" onClick={() => void cancel()}>중지</button>}
         </div>
@@ -1964,7 +1964,24 @@ export default function ScannerPanel({
         </section>
       )}
 
-      <CaptureObservationJournal currentCaptureId={captureId} />
+      <nav className="scanner-workspace-tabs" role="tablist" aria-label="Scanner 화면 메뉴">
+        <button type="button" id="scanner-tab-analysis" role="tab"
+          aria-controls="scanner-panel-analysis"
+          aria-selected={workspaceTab === "analysis"}
+          tabIndex={workspaceTab === "analysis" ? 0 : -1}
+          onClick={() => setWorkspaceTab("analysis")}>
+          이번 분석{result ? ` · ${result.candidates.length}개` : ""}
+        </button>
+        <button type="button" id="scanner-tab-history" role="tab"
+          aria-controls="scanner-panel-history"
+          aria-selected={workspaceTab === "history"}
+          tabIndex={workspaceTab === "history" ? 0 : -1}
+          onClick={() => setWorkspaceTab("history")}>
+          저장 기록
+        </button>
+      </nav>
+      <div id="scanner-panel-analysis" role="tabpanel" aria-labelledby="scanner-tab-analysis"
+        hidden={workspaceTab !== "analysis"}>
 
       {!result && !busy && !error && !freshnessFailure && (
         <section className="scanner-empty-start ux13-scanner-empty">
@@ -2385,6 +2402,11 @@ export default function ScannerPanel({
           </details>
         </>
       )}
+      </div>
+      <div id="scanner-panel-history" role="tabpanel" aria-labelledby="scanner-tab-history"
+        hidden={workspaceTab !== "history"}>
+        <CaptureObservationJournal active={workspaceTab === "history"} currentCaptureId={captureId} />
+      </div>
 
       {holdingDialogCandidate && (
         <div
