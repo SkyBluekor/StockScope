@@ -397,3 +397,17 @@ FakeKRX 테스트는 승인 누락, 날짜/예산 한도, 기존 자료 보존, 
 응답에서 원본 해시 보존, 중간 SQLite 트리거 실패 전체 롤백을 검사한다.
 Windows Fresh Clone CI에도 넣었다. 실제 운영 KRX 호출이나 DB
 복구 성공으로 과장하지 않는다.
+
+### TEMP worktree와 운영 KRX 인증/요청량 장부의 경계
+
+실제 `run-approved`는 검증 코드가 TEMP detached worktree에서 실행되더라도
+`--operational-repo C:\Projects\StockScope`를 **반드시** 받는다.
+해당 경로의 `backend/runtime/market_history/market_history.db`가
+`--market-db`와 정확히 일치해야 하고, 실제 `.env`에서 KRX 인증을
+읽으며, 동일 운영 저장소 `backend/runtime/krx/budget.sqlite3`에
+요청량을 기록한다. 확인되지 않은 TEMP 작업 디렉터리에 별도 ledger를
+만들어 운영 요청 제한을 우회하지 않는다.
+
+합성 테스트에서 누락/불일치 `--operational-repo`는 외부 요청,
+운영 Market DB 쓰기, 장부 생성 전에 HOLD하는 것을 확인한다.
+이것은 **실제 복구 실행 승인**을 부여하지 않는다.
