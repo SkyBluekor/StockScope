@@ -143,3 +143,10 @@ StockScope의 기본 `Scanner → 정량 전략/Risk 판단 → Prospective COMP
 - Outstanding LIVE-01 acceptance requirement: actual TypeSafe response on this **strictly authored synthetic sample**, through the same V4 service and persisted review row. It needs explicit separate approval for one billable request, API key in the user's local environment, verified expected returned model identity and provider-policy/retention/model catalog metadata. Do not mark LIVE-01 DONE until that receipt is inspected. S7.4 real market data outbound remains **HOLD/NO-GO**; don't use this synthetic-only harness to re-label market-derived inputs.
 
 - **Additional Windows CLI proof (code + CI workflow SHA `6d6c35a`):** [GitHub Actions #40710701393](https://github.com/SkyBluekor/StockScope/actions/runs/40710701393) **4/4 PASS** (Python 3.11/3.14, Frontend, Windows Fresh Clone). The newly added Windows job directly ran `python -m tools.data.jev_live_01_synthetic_smoke --mode preflight` and `--mode mock` on an isolated SQLite store. Windows job log verified `result.status=REVIEW_REQUIRED`, `stored_status=VALID`, `stored_disposition=REVIEW_REQUIRED`, `model_identity_status=MATCHED`, `usage.input_tokens=120`, `usage.output_tokens=10`, `cost_unknown=true`, `billable_provider_requests=0`. This is HTTP mock **NOT** real provider E2E. No user Windows manual validation; paid TypeSafe response remains the sole LIVE-01 provider acceptance blocker.
+
+
+### 2026-10-29 LIVE-01 추가 보완 (실모델 완료 판정 아님)
+
+- [`01f27ba`](https://github.com/SkyBluekor/StockScope/commit/01f27badf2c626830e23db3d24df01d37ef26092): developer-only 유료 합성 CLI에서 `MOCK_ONLY`, `MOCK_OR_PREFLIGHT_ONLY`, `UNVERIFIED`, `UNKNOWN`, `TBD`, `NONE` 또는 빈 provider 증빙값을 네트워크 실행 전에 거부하도록 변경.
+- [`77bdefd`](https://github.com/SkyBluekor/StockScope/commit/77bdefd268600b16e374f04d64266640a80426b9): 해당 사전 차단 회귀 테스트 추가. **이 변경의 CI는 확인 대기**(기존 4/4 PASS는 이전 커밋의 증거이며 새 커밋 검증으로 재사용하지 않음).
+- 실제 유료 TypeSafe 요청: **0회 (이번 작업)**. 사용자의 로컬 API 키 및 별도의 1회 유료 실행 승인 부재. LIVE-01은 **NOT DONE**, LIVE-02는 아직 진행하지 않음. G2-01~04 유지, G2-05 보류, 실시장 외부 전송 HOLD 유지.
