@@ -223,6 +223,7 @@ async def recover_approved(
     *, db: Path, raw_dates: list[str], max_requests: int,
     approved_requests: bool, approved_write: bool, rights_confirmed: bool,
     provider: Any | None = None, today: date | None = None,
+    operational_repo: Path | None = None,
 ) -> dict[str, Any]:
     # Flags require a separate conscious command; we never call this in plan.
     if not all((approved_requests, approved_write, rights_confirmed)):
@@ -234,14 +235,25 @@ async def recover_approved(
     if not required <= max_requests <= 64:
         raise RecoveryHold("HOLD_NETWORK_REQUEST_CAP_INVALID")
     if provider is None:
-        from app.core.config import get_settings
+        from app.core.config import Settings
         from app.market.krx_budget import KrxApiBudget
         from app.market.providers.krx import KrxProvider
 
-        credential = get_settings().krx_api_key
+        # Detached TEMP worktrees do not own the operational .env or the
+        # project-wide persistent provider budget. Require an explicit source
+        # root and validate the corresponding Market Store identity.
+        if operational_repo is None:
+            raise RecoveryHold("HOLD_OPERATIONAL_REPO_REQUIRED")
+        actual_root = Path(operational_repo).resolve()
+        market_path = actual_root / "backend" / "runtime" / "market_history" / "market_history.db"
+        if Path(db).resolve() != market_path.resolve():
+            raise RecoveryHold("HOLD_OPERATIONAL_DB_PATH_MISMATCH")
+        credential = Settings(_env_file=actual_root / ".env").krx_api_key
         if not credential:
             raise RecoveryHold("HOLD_KRX_KEY_MISSING")
-        budget = KrxApiBudget()
+        budget = KrxApiBudget(
+            db_path=actual_root / "backend" / "runtime" / "krx" / "budget.sqlite3",
+        )
         budget.assert_can_start(max_requests)
         capped = _CappedBudget(budget, max_requests)
         provider = KrxProvider(credential, budget=capped)
@@ -275,6 +287,8 @@ async def recover_approved(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Bounded P0-05 G1 missing-day KRX recovery")
     parser.add_argument("--market-db", type=Path, default=market_db_path())
+    parser.add_argument("--operational-repo", type=Path,
+                        help="Required for approved run; pins .env and KRX budget ledger")
     parser.add_argument("--date", action="append", required=True, dest="dates",
                         help="YYYY-MM-DD; repeat for up to four dated gaps")
     parser.add_argument("--max-requests", type=int, default=16)
@@ -291,6 +305,7 @@ def main(argv: list[str] | None = None) -> int:
                 approved_requests=args.approve_krx_requests,
                 approved_write=args.approve_market_write,
                 rights_confirmed=args.confirm_source_rights,
+                operational_repo=args.operational_repo,
             ))
         elif any((args.approve_krx_requests, args.approve_market_write,
                   args.confirm_source_rights)):
