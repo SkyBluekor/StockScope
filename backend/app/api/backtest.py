@@ -18,6 +18,7 @@ from app.backtest.exit_policy_validation_runner import (
 )
 from app.backtest.risk_validation import RiskPolicyValidationService
 from app.backtest.scanner import StockScannerService
+from app.backtest.market_store import HistoricalMarketStore
 from app.backtest.scanner_candidate_recheck import (
     attach_recheck_execution_lineage,
     independently_recheck_unreturned_candidate,
@@ -45,6 +46,20 @@ from app.strategy.production_selection_policy import (
 )
 
 router = APIRouter(prefix="/backtest", tags=["backtest"])
+
+
+def _scanner_service(api_key: str | None) -> StockScannerService:
+    """Use the explicitly configured market DB for UI preview and live Scanner.
+
+    Without an override preserve the pinned production Scanner defaults.
+    """
+    store_path = os.getenv("STOCKSCOPE_MARKET_STORE_DB") or os.getenv("STOCKSCOPE_MARKET_DB")
+    if store_path:
+        return StockScannerService(
+            KrxProvider(api_key),
+            market_store=HistoricalMarketStore(Path(store_path)),
+        )
+    return StockScannerService(KrxProvider(api_key))
 
 
 def _prospective_service() -> ProspectiveService:
@@ -569,7 +584,7 @@ async def _run_scanner_job(
     api_key: str | None,
     selection_policy_pin: SelectionPolicyPin,
 ) -> None:
-    service = StockScannerService(KrxProvider(api_key))
+    service = _scanner_service(api_key)
     prospective = _prospective_service()
     progress_context: dict[str, object] = {
         "completed_stages": [],
@@ -778,7 +793,7 @@ def scanner_evidence_data_plan(payload: ScannerEvidencePrepareRequest) -> dict:
 async def prepare_scanner_freshness(payload: ScannerFreshnessRequest) -> dict:
     """Resolve and persist the latest confirmed EOD before a user starts Scanner analysis."""
     settings = get_settings()
-    service = StockScannerService(KrxProvider(settings.krx_api_key))
+    service = _scanner_service(settings.krx_api_key)
     try:
         return await service.prepare_latest_confirmed_data(
             market_scope=payload.market_scope,
@@ -794,7 +809,7 @@ async def prepare_scanner_freshness(payload: ScannerFreshnessRequest) -> dict:
 async def scanner_data_integrity_audit(payload: ScannerDataIntegrityAuditRequest) -> dict:
     """Force-read KRX for one EOD day, compare local cache/store, and correct the exact snapshot."""
     settings = get_settings()
-    service = StockScannerService(KrxProvider(settings.krx_api_key))
+    service = _scanner_service(settings.krx_api_key)
     try:
         return await service.audit_input_data(
             market_scope=payload.market_scope,
@@ -815,7 +830,7 @@ async def _run_scanner_evidence_job(
     api_key: str | None,
     selection_policy_pin: SelectionPolicyPin,
 ) -> None:
-    service = StockScannerService(KrxProvider(api_key))
+    service = _scanner_service(api_key)
 
     def update_progress(progress_payload: dict) -> None:
         if backtest_jobs.is_cancelled(job_id):
