@@ -261,6 +261,10 @@ jobs:
         shell: powershell
         run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_05_g1_operator_capture.py
 
+      - name: Verify G2-02 cross-date saved Scanner change comparison
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_saved_capture_comparison_g2_02.py
+
       - name: Verify G2 saved Scanner capture journal and rolling observations
         shell: powershell
         run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_capture_observation_journal_g2.py
