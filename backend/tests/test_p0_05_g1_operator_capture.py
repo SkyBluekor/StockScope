@@ -210,3 +210,31 @@ def test_market_store_default_respects_explicit_operational_env(tmp_path, monkey
     explicit = HistoricalMarketStore(db_path=override)
     assert explicit.db_path == override
     assert override.exists()
+
+
+@pytest.mark.parametrize("forbidden", [
+    "https://127.0.0.1:8000",
+    "http://localhost:8000",
+    "http://example.com:8000",
+    "http://127.0.0.1:8000/extra",
+    "http://user@127.0.0.1:8000",
+    "http://127.0.0.1:99999",
+])
+def test_s17_http_backend_cannot_escape_numeric_loopback(forbidden):
+    with pytest.raises(s17.DailyError, match="INVALID_LOOPBACK_BACKEND_URL"):
+        s17._http("/", base_url=forbidden)
+
+
+def test_g1_operator_cli_is_no_side_effects_outside_morning(tmp_path):
+    import subprocess
+    import sys
+
+    script = Path(g1.__file__)
+    result = subprocess.run([
+        sys.executable, str(script), "--operational-repo", str(tmp_path),
+        "--scope", "ALL",
+    ], capture_output=True, text=True, check=False)
+    report = json.loads(result.stdout)
+    # Regardless of the actual runner clock this uses no KRX or server:
+    assert report["status"].startswith("HOLD_")
+    assert not (tmp_path / "backend").exists()
