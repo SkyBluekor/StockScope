@@ -2912,6 +2912,9 @@ export type ScannerCandidate = {
   candidate_state: "READY" | "WATCH" | "VALIDATION" | "EXCLUDED" | string;
   candidate_label: string;
   strategy: string;
+  /** Original scanner-pinned version/definition; null on legacy fallback. */
+  strategy_version_id?: string | null;
+  strategy_definition_hash?: string | null;
   strategy_easy_name: string;
   strategy_name: string;
   strategy_description: string;
