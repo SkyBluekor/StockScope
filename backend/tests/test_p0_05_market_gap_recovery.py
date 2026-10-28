@@ -271,3 +271,132 @@ def test_g1_approved_real_provider_import_is_safe_but_missing_key_blocks(tmp_pat
         ))
     assert _sha(db) == before
     assert not (root / "backend" / "runtime" / "krx" / "budget.sqlite3").exists()
+
+
+def _operational_setup(tmp_path, monkeypatch, *, key=True, ledger=True,
+                       used=2, safe_limit=20):
+    import shutil
+
+    root = tmp_path / "operational"
+    db = root / "backend" / "runtime" / "market_history" / "market_history.db"
+    db.parent.mkdir(parents=True)
+    shutil.copy2(_db(tmp_path), db)
+    monkeypatch.delenv("KRX_API_KEY", raising=False)
+    monkeypatch.setenv("KRX_DAILY_SAFE_LIMIT", str(safe_limit))
+    if key:
+        (root / ".env").write_text("KRX_API_KEY=synthetic_token_do_not_print\n")
+    if ledger:
+        budget = root / "backend" / "runtime" / "krx" / "budget.sqlite3"
+        budget.parent.mkdir(parents=True)
+        with sqlite3.connect(budget) as conn:
+            conn.execute(
+                "CREATE TABLE krx_daily_usage("
+                "day TEXT PRIMARY KEY,requests INTEGER,retries INTEGER,updated_at TEXT)"
+            )
+            conn.execute(
+                "INSERT INTO krx_daily_usage VALUES(?,?,?,?)",
+                ("2026-10-28", used, 1 if used else 0, "2026-10-28"),
+            )
+    return root, db
+
+
+def test_g1_setup_with_local_key_and_ledger_still_requires_separate_approval(
+    tmp_path, monkeypatch,
+):
+    root, db = _operational_setup(tmp_path, monkeypatch)
+    ledger = root / "backend/runtime/krx/budget.sqlite3"
+    before = (_sha(db), _sha(ledger))
+    result = repair.inspect_local_krx_setup(
+        db=db, operational_repo=root, raw_dates=DATES, today=TODAY,
+    )
+    assert result["status"] == "LOCAL_KRX_CONFIGURATION_PRESENT_APPROVAL_REQUIRED"
+    assert result["krx_credential_configured"] is True
+    assert result["local_budget_allows_cap"] is True
+    assert result["krx_budget_ledger_state"] == "EXISTING_READ_ONLY"
+    assert result["service_entitlements_verified"] is False
+    assert result["source_rights_verified"] is False
+    assert result["external_requests"] == result["db_writes"] == 0
+    assert (_sha(db), _sha(ledger)) == before
+    payload = json.dumps(result)
+    for private in ("synthetic_token", "PRIVATE", str(root), str(db)):
+        assert private not in payload
+
+
+def test_g1_setup_absent_credential_is_hold_no_side_effects(tmp_path, monkeypatch):
+    root, db = _operational_setup(tmp_path, monkeypatch, key=False, ledger=False)
+    before = _sha(db)
+    result = repair.inspect_local_krx_setup(
+        db=db, operational_repo=root, raw_dates=DATES, today=TODAY,
+    )
+    assert result["status"] == "HOLD_KRX_CREDENTIAL_NOT_CONFIGURED"
+    assert result["krx_budget_ledger_state"] == "NOT_INITIALIZED"
+    assert result["local_budget_allows_cap"] is None
+    assert _sha(db) == before
+    assert not (root / "backend/runtime/krx/budget.sqlite3").exists()
+
+
+def test_g1_setup_existing_budget_insufficient_is_hold(tmp_path, monkeypatch):
+    root, db = _operational_setup(tmp_path, monkeypatch, used=5, safe_limit=18)
+    before = _sha(db)
+    result = repair.inspect_local_krx_setup(
+        db=db, operational_repo=root, raw_dates=DATES, today=TODAY,
+    )
+    assert result["status"] == "HOLD_KRX_LOCAL_BUDGET_INSUFFICIENT"
+    assert result["local_budget_allows_cap"] is False
+    assert _sha(db) == before
+
+
+def test_g1_setup_missing_budget_does_not_claim_known_capacity(tmp_path, monkeypatch):
+    root, db = _operational_setup(tmp_path, monkeypatch, ledger=False)
+    result = repair.inspect_local_krx_setup(
+        db=db, operational_repo=root, raw_dates=DATES, today=TODAY,
+    )
+    assert result["status"] == "LOCAL_KRX_CONFIGURATION_PRESENT_APPROVAL_REQUIRED"
+    assert result["krx_budget_ledger_state"] == "NOT_INITIALIZED"
+    assert result["local_budget_allows_cap"] is None
+    assert not (root / "backend/runtime/krx/budget.sqlite3").exists()
+
+
+def test_g1_setup_rejects_corrupt_budget_schema_and_wrong_db(tmp_path, monkeypatch):
+    root, db = _operational_setup(tmp_path, monkeypatch, ledger=False)
+    budget = root / "backend/runtime/krx/budget.sqlite3"
+    budget.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(budget) as conn:
+        conn.execute("CREATE TABLE wrong_table(col TEXT)")
+    with pytest.raises(repair.RecoveryHold, match="HOLD_KRX_BUDGET_LEDGER_INVALID"):
+        repair.inspect_local_krx_setup(
+            db=db, operational_repo=root, raw_dates=DATES, today=TODAY,
+        )
+    with pytest.raises(repair.RecoveryHold, match="HOLD_OPERATIONAL_DB_PATH_MISMATCH"):
+        repair.inspect_local_krx_setup(
+            db=tmp_path / "wrong.db", operational_repo=root,
+            raw_dates=DATES, today=TODAY,
+        )
+
+
+def test_g1_setup_cli_never_discloses_key_or_runs_provider(tmp_path, monkeypatch):
+    import subprocess
+    import sys
+
+    root, db = _operational_setup(tmp_path, monkeypatch)
+    code = Path(repair.__file__)
+    argv = [
+        sys.executable, str(code), "--check-local-setup",
+        "--operational-repo", str(root), "--market-db", str(db),
+        "--date", "2026-10-22", "--date", "2026-10-23",
+        "--date", "2026-10-26", "--date", "2026-10-27",
+    ]
+    completed = subprocess.run(argv, capture_output=True, text=True, check=False)
+    assert completed.returncode == 0
+    payload = json.loads(completed.stdout)
+    assert payload["status"] == "LOCAL_KRX_CONFIGURATION_PRESENT_APPROVAL_REQUIRED"
+    assert payload["external_requests"] == 0 and payload["db_writes"] == 0
+    for private in ("synthetic_token", "PRIVATE", str(root)):
+        assert private not in completed.stdout + completed.stderr
+
+    unsafe = subprocess.run(
+        argv + ["--confirm-source-rights"],
+        capture_output=True, text=True, check=False,
+    )
+    assert unsafe.returncode == 2
+    assert json.loads(unsafe.stdout)["status"] == "HOLD_APPROVAL_FLAGS_WITHOUT_RUN"
