@@ -235,10 +235,8 @@ async def recover_approved(
     if not required <= max_requests <= 64:
         raise RecoveryHold("HOLD_NETWORK_REQUEST_CAP_INVALID")
     if provider is None:
-        from app.core.config import Settings
-        from app.market.krx_budget import KrxApiBudget
-        from app.market.providers.krx import KrxProvider
-
+        # Do not import provider/budget modules when an operational root is
+        # absent: the plan and path refusal must be completely inert.
         # Detached TEMP worktrees do not own the operational .env or the
         # project-wide persistent provider budget. Require an explicit source
         # root and validate the corresponding Market Store identity.
@@ -248,6 +246,13 @@ async def recover_approved(
         market_path = actual_root / "backend" / "runtime" / "market_history" / "market_history.db"
         if Path(db).resolve() != market_path.resolve():
             raise RecoveryHold("HOLD_OPERATIONAL_DB_PATH_MISMATCH")
+        # Import the provider before the budget: importing the budget first
+        # may reach providers/__init__ through providers.base and create a
+        # circular import on a fresh Python interpreter.
+        from app.market.providers.krx import KrxProvider
+        from app.market.krx_budget import KrxApiBudget
+        from app.core.config import Settings
+
         credential = Settings(_env_file=actual_root / ".env").krx_api_key
         if not credential:
             raise RecoveryHold("HOLD_KRX_KEY_MISSING")
