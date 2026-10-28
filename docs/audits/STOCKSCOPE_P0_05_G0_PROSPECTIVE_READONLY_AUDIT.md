@@ -411,3 +411,48 @@ Windows Fresh Clone CI에도 넣었다. 실제 운영 KRX 호출이나 DB
 합성 테스트에서 누락/불일치 `--operational-repo`는 외부 요청,
 운영 Market DB 쓰기, 장부 생성 전에 HOLD하는 것을 확인한다.
 이것은 **실제 복구 실행 승인**을 부여하지 않는다.
+
+## P0-05/G1: 로컬 KRX 설정 및 영속 요청량 장부 읽기 전용 확인 (2026-10-28)
+
+사용자 Windows `READY_TO_REQUEST_SEPARATE_APPROVAL` 실측 이후, 또 다른
+시장 자료 검색/PLAN 재실행을 요구하지 않고 **로컬 KRX 키 설정 여부 및
+요청량 장부만 확인**할 수 있도록 기존
+`tools/data/p0_05_market_gap_recovery.py`에
+`--check-local-setup`을 추가했다.
+
+- 승인형 복구에서 필수인 `--operational-repo`를 확인하고, 실제
+  `--market-db` 파일이 정확히 그 운영 저장소의 Market Store인지 비교한다.
+  TEMP worktree의 `.env`나 별도 KRX ledger를 읽지 않는다.
+- 실제 운영 `.env` 및 Python 환경변수를 기존 Settings 구성 방식으로
+  읽되, **키 내용 자체는 출력·전송하지 않고**
+  `krx_credential_configured: true/false`만 제공한다.
+  계정/키 원격 유효성, KRX API 4개 개별 활용 승인과 사용 권리는
+  `false`로 남긴다.
+- `backend/runtime/krx/budget.sqlite3`는 파일이 존재할 때에만
+  `mode=ro` 및 `PRAGMA query_only=ON`으로 검사한다. 사용한 횟수와
+  안전 상한으로 이번 `--max-requests` 수용 여부를 true/false로
+  표시하며, 부재 시 **`NOT_INITIALIZED` + `local_budget_allows_cap=null`**을
+  반환한다. 미생성 장부를 임의로 0회 사용 증거라고 주장하거나
+  도구가 새 장부를 만들지 않는다.
+- `--check-local-setup`에 `--run-approved` 또는 이용 권리·KRX
+  요청·DB 쓰기 승인 플래그를 함께 주면 HOLD한다.
+  네트워크 요청·Provider 인스턴스 생성·Market DB/ledger 쓰기·
+  Scanner Job·신규 Prospective Capture·Scheduler 등록은 0회.
+- 결과 `LOCAL_KRX_CONFIGURATION_PRESENT_APPROVAL_REQUIRED`는
+  **로컬 KRX 키 구성이 있는 것**만 뜻하며 KRX 활용 승인/공식 공표/
+  실제 API 성공을 보증하지 않는다.
+
+### Windows 읽기 전용 명령
+
+```powershell
+& $python (Join-Path $work "tools\data\p0_05_market_gap_recovery.py") `
+  --check-local-setup --operational-repo $repo `
+  --market-db (Join-Path $repo "backend\runtime\market_history\market_history.db") `
+  --date 2026-10-22 --date 2026-10-23 `
+  --date 2026-10-26 --date 2026-10-27 `
+  --max-requests 16
+```
+
+이 명령의 성공 결과만으로 실제 복구 `--run-approved`를 실행하거나
+서비스 이용권한을 가정하지 않는다. 권한 확인/운영 갱신/실제 G1
+새 Capture는 별도 승인 대상이다.
