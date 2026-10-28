@@ -1,0 +1,82 @@
+.scanner-capture-journal {
+  border: 1px solid var(--border-color, #52606b55);
+  background: var(--panel-bg, transparent);
+  border-radius: 14px;
+  margin: 16px 0;
+  padding: 16px;
+}
+.scanner-capture-journal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.scanner-capture-journal-head strong {
+  display: block;
+  font-size: 1rem;
+}
+.scanner-capture-journal-head p,
+.scanner-capture-journal-note {
+  margin: 5px 0 0;
+  font-size: .86rem;
+  line-height: 1.6;
+  color: var(--text-secondary, inherit);
+}
+.scanner-capture-journal button {
+  cursor: pointer;
+  border-radius: 9px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color, #52606b70);
+  background: var(--surface-bg, transparent);
+  color: inherit;
+}
+.scanner-capture-journal button:disabled { opacity: .6; cursor: default; }
+.scanner-capture-journal-content { margin-top: 16px; }
+.scanner-capture-journal-toolbar {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.scanner-capture-journal-toolbar label {
+  display: flex;
+  flex: 1 1 310px;
+  flex-direction: column;
+  gap: 5px;
+  font-size: .83rem;
+}
+.scanner-capture-journal select {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--border-color, #52606b80);
+  color: inherit;
+  background: var(--surface-bg, #252e38);
+  border-radius: 8px;
+  padding: 6px;
+}
+.scanner-capture-journal-error { color: var(--error-color, #d45f61); }
+.scanner-capture-journal-meta { font-size: .88rem; margin: 12px 0; }
+.scanner-capture-journal-table-wrap { overflow-x: auto; }
+.scanner-capture-journal table {
+  width: 100%;
+  min-width: 600px;
+  border-collapse: collapse;
+  font-size: .84rem;
+}
+.scanner-capture-journal th,
+.scanner-capture-journal td {
+  padding: 9px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color, #52606b35);
+  white-space: nowrap;
+}
+.scanner-capture-journal thead th { font-weight: 650; }
+.scanner-capture-journal tbody th { font-weight: 550; }
+.scanner-capture-journal tbody th small {
+  font-weight: 400;
+  display: block;
+  opacity: .7;
+  font-size: .75rem;
+  margin-top: 4px;
+}
