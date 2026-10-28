@@ -233,3 +233,22 @@ def test_g1_missing_db_and_missing_schema_do_not_create_or_mutate(tmp_path):
     with pytest.raises(repair.RecoveryHold, match="HOLD_MARKET_SCHEMA_MISSING"):
         repair.plan(db=db, raw_dates=DATES, today=TODAY)
     assert _sha(db) == before
+
+
+def test_g1_approved_provider_uses_explicit_operational_root_not_temp_worktree(tmp_path):
+    db = _db(tmp_path)
+    old_sha = _sha(db)
+    with pytest.raises(repair.RecoveryHold, match="HOLD_OPERATIONAL_REPO_REQUIRED"):
+        asyncio.run(repair.recover_approved(
+            db=db, raw_dates=["2026-10-22"], today=TODAY,
+            approved_requests=True, approved_write=True, rights_confirmed=True,
+            max_requests=4,
+        ))
+    with pytest.raises(repair.RecoveryHold, match="HOLD_OPERATIONAL_DB_PATH_MISMATCH"):
+        asyncio.run(repair.recover_approved(
+            db=db, raw_dates=["2026-10-22"], today=TODAY,
+            approved_requests=True, approved_write=True, rights_confirmed=True,
+            max_requests=4, operational_repo=tmp_path,
+        ))
+    assert _sha(db) == old_sha
+    assert not (tmp_path / "backend" / "runtime" / "krx" / "budget.sqlite3").exists()
