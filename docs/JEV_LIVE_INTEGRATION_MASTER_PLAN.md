@@ -114,7 +114,7 @@ StockScope의 기본 `Scanner → 정량 전략/Risk 판단 → Prospective COMP
 | 단계 | 상태 | GitHub 커밋/PR | 확인 증거 또는 차단 사유 |
 |---|---|---|---|
 | LIVE-00 현 상태 기준 정리 | **DONE (docs only)** | 이 계획 문서 커밋 참조 | TypeSafe transport 존재·user review feature OFF·S7.4 시장 전송 HOLD 확인 |
-| LIVE-01 실제 provider 합성 E2E 연결 | **TODO — NEXT** | — | 기존 provider와 service integration, 합성 live smoke |
+| LIVE-01 실제 provider 합성 E2E 연결 | **CODE + HTTP MOCK E2E VERIFIED / PAID LIVE PENDING (not DONE)** | [`90f3d5d`](https://github.com/SkyBluekor/StockScope/commit/90f3d5d5e2b1ae010cbeca8bf8da4d786e2a03b0) · [CI 4/4 PASS](https://github.com/SkyBluekor/StockScope/actions/runs/40709954313) · [Draft PR #170](https://github.com/SkyBluekor/StockScope/pull/170) | 기존 TypeSafeSystemOneProvider→V4 JevManualReviewService→기존 catalog 저장, 합성 fixture/HTTP MockTransport 200·401·422·429·500·timeout·invalid JSON·model mismatch·usage invalid·duplicate·baseline 불변 확인. Python 3.11/3.14 각 2,589 passed / 2 skipped; Frontend / Windows Fresh Clone PASS. **실제 유료 요청 0, Windows 사용자 수동 호출 미검증, 실모델 응답 미확인**. |
 | LIVE-02 실종목 로컬 준비도 화면 | **TODO** | — | 외부 전송 0, 근거별 차단 상태 |
 | LIVE-03 실제 입력 권한·시점 증거 | **TODO / 현재 시장 전송 HOLD** | — | 허용된 입력만 검증; 불가 시 해당 outbound만 보류 |
 | LIVE-04 선택 후보 1건 수동 실검토 | **TODO / 실제 시장 전송은 LIVE-03 결과에 따름** | — | saved verified response + UI |
@@ -133,3 +133,12 @@ StockScope의 기본 `Scanner → 정량 전략/Risk 판단 → Prospective COMP
 - [S7.4 source-rights authority](./설계/JEV-ACT2-S7.4_데이터_출처_권한_및_시점_분류_기준.md)
 - [Original JEV v2 design](./설계/StockScope_JEV_통합설계_v2_2026-10-06.md)
 - [Synthetic micro canary](../tools/data/jev_s6_micro_canary.py)
+
+### JEV-LIVE-01 implementation evidence (2026-10-28, not final acceptance)
+
+- Added [authored synthetic-only fixture and isolated service harness](../backend/app/jev/synthetic_live_01.py), [developer CLI](../tools/data/jev_live_01_synthetic_smoke.py), and [service/HTTP mock tests](../backend/tests/test_jev_live_01_synthetic_service.py). No G2-01~04, Scanner, trading, or default user JEV API behavior was changed. G2-05 remains paused.
+- One call path: isolated new SQLite -> synthetic Prospective COMPLETE capture -> V4 residual semantic sample -> frozen V4 protocol -> `provider_from_typesafe_spec` / `TypeSafeSystemOneProvider` -> `JevManualReviewService.request_review` -> existing TypeSafe catalog. Provider injection here is **developer-only** and the user HTTP review endpoint remains disabled. The preflight prints a masked, canonical payload preview and body digest; it is **not** a verified HTTP byte-for-byte outbound receipt (LIVE-03 remains separate).
+- Windows offline check after pulling branch: ` .\\.venv\\Scripts\\python.exe -m tools.data.jev_live_01_synthetic_smoke --mode preflight ` (no credential access or network), then ` .\\.venv\\Scripts\\python.exe -m tools.data.jev_live_01_synthetic_smoke --mode mock ` (MockTransport only, writes one new isolated temp DB). Existing operational DBs are never loaded. Do not copy the synthetic review into operational performance history.
+- Validated CI (code SHA `90f3d5d`): [run #40709954313](https://github.com/SkyBluekor/StockScope/actions/runs/40709954313) **4/4 jobs PASS**. Backend Python 3.11 and 3.14: **2,589 passed, 2 skipped** each; Frontend and Windows Fresh Clone jobs PASS. Tests make **zero real billed TypeSafe calls**. Existing user Windows UI manual test **NOT RUN** (future LIVE-04); Windows Fresh Clone CI is not a substitute.
+- Outstanding LIVE-01 acceptance requirement: actual TypeSafe response on this **strictly authored synthetic sample**, through the same V4 service and persisted review row. It needs explicit separate approval for one billable request, API key in the user's local environment, verified expected returned model identity and provider-policy/retention/model catalog metadata. Do not mark LIVE-01 DONE until that receipt is inspected. S7.4 real market data outbound remains **HOLD/NO-GO**; don't use this synthetic-only harness to re-label market-derived inputs.
+
