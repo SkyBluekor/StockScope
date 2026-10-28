@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import type { SelectedScannerStock } from "./SavedStockTimelinePanel";
 import {
   compareSavedCaptureHistory,
   type SavedCaptureComparison,
@@ -42,11 +43,13 @@ export default function CaptureHistoryComparison({
   captures,
   detail,
   revision,
+  onSelectStock,
 }: {
   currentId: string | null;
   captures: SavedCaptureJournalItem[];
   detail: SavedCaptureJournalDetail | null;
   revision: number;
+  onSelectStock: (stock: SelectedScannerStock) => void;
 }) {
   const eligible = useMemo(() => {
     const current = captures.find(c => c.id === currentId);
@@ -172,7 +175,20 @@ export default function CaptureHistoryComparison({
                       ].filter(Boolean);
                       return (
                         <tr key={item.market + ":" + item.ticker}>
-                          <th scope="row">{item.name}<small>{item.market} · {item.ticker}</small></th>
+                          <th scope="row">
+                            <button
+                              type="button"
+                              className="scanner-capture-stock-link"
+                              onClick={() => {
+                                if (item.market === "KOSPI" || item.market === "KOSDAQ") {
+                                  onSelectStock({ market: item.market, ticker: item.ticker, name: item.name });
+                                }
+                              }}
+                              disabled={item.market !== "KOSPI" && item.market !== "KOSDAQ"}
+                              aria-label={item.name + " 추천 이력 열기"}
+                            >{item.name}</button>
+                            <small>{item.market} · {item.ticker}</small>
+                          </th>
                           <td>
                             {item.presence === "NEW" ? "신규" :
                               item.presence === "RETAINED" ? "연속" : "목록 제외"}
