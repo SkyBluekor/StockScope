@@ -23,11 +23,29 @@ if (-not (Test-Path (Join-Path $frontend "package-lock.json"))) { throw "package
 
 $srcSim = Join-Path $repo "backend\runtime\simulation\simulation.db"
 $srcMarket = Join-Path $repo "backend\runtime\market_history\market_history.db"
-& $py (Join-Path $work "tools\data\g2_03_prepare_preview_stores.py") `
-  --operational-simulation $srcSim `
-  --operational-market $srcMarket `
-  --preview-dir $preview
+$srcKrxDir = Join-Path $repo "backend\runtime\krx"
+$dstKrxDir = Join-Path $work "backend\runtime\krx"
+$srcBudget = Join-Path $srcKrxDir "budget.sqlite3"
+$dstBudget = Join-Path $dstKrxDir "budget.sqlite3"
+$backupArgs = @(
+  "--operational-simulation", $srcSim,
+  "--operational-market", $srcMarket,
+  "--preview-dir", $preview
+)
+if (Test-Path -LiteralPath $srcBudget) {
+    $backupArgs += @("--operational-krx-budget", $srcBudget, "--preview-krx-budget", $dstBudget)
+}
+& $py (Join-Path $work "tools\data\g2_03_prepare_preview_stores.py") @backupArgs
 if ($LASTEXITCODE -ne 0) { throw "SQLite snapshot backup failed" }
+
+# Restore only public KRX raw-response caches into the isolated worktree.
+# Without these, the Scanner preflight incorrectly estimates every cached
+# historical day as a new network request.
+if (Test-Path -LiteralPath $srcKrxDir) {
+    New-Item -ItemType Directory -Path $dstKrxDir -Force | Out-Null
+    & robocopy.exe $srcKrxDir $dstKrxDir *.json.gz /S /XO /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
+    if ($LASTEXITCODE -gt 7) { throw "KRX cached public data preview copy failed" }
+}
 
 if (-not (Test-Path (Join-Path $frontend "node_modules"))) {
     Push-Location $frontend
