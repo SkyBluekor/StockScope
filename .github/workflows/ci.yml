@@ -229,6 +229,10 @@ jobs:
         shell: powershell
         run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_05_g1_local_preflight.py
 
+      - name: Verify P0-05 G1 bounded KRX gap recovery (synthetic data; no network)
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_05_market_gap_recovery.py
+
       - name: Verify fresh runtime and no Drive dependency
         shell: powershell
         run: |
