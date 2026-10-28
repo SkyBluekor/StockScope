@@ -190,6 +190,8 @@ def capture_approved(
         "STOCKSCOPE_KRX_BUDGET_DB": str(budget.resolve()),
         "STOCKSCOPE_G1_MAX_KRX_CALLS": str(max_krx_requests),
         "STOCKSCOPE_G1_WORKER_NONCE": nonce,
+        # The single-purpose Scanner worker must not open quote websockets.
+        "KIS_WS_ENABLED": "false",
     })
     # Avoid modifying the operational Holdings DB just to start a Scanner
     # worker; it uses its code worktree's independent transient DB instead.
