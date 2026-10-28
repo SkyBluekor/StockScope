@@ -71,6 +71,16 @@ async def _run(args: argparse.Namespace) -> int:
             "model_discovery_ref": args.model_discovery_ref,
             "model_discovery_hash": args.model_discovery_hash,
         }
+        # Mock/preflight sentinel values never count as live provider evidence.
+        # Reject before creating an isolated DB or issuing any HTTP request.
+        if any(
+            not value.strip() or value.strip().upper() in {
+                "MOCK_ONLY", "MOCK_OR_PREFLIGHT_ONLY", "UNVERIFIED",
+                "UNKNOWN", "TBD", "NONE",
+            }
+            for value in evidence.values()
+        ):
+            raise ValueError("JEV_LIVE01_REAL_PROVIDER_EVIDENCE_REQUIRED")
     else:
         evidence = dict.fromkeys((
             "provider_policy_checked_at", "retention_status",
