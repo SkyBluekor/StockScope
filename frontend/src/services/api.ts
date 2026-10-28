@@ -3386,3 +3386,61 @@ export async function getSavedCaptureJournalDetail(
     ),
   );
 }
+
+// G2-02: cross-date Scanner result lists (not strategy-performance ranking).
+export type SavedCaptureDiffStock = {
+  sample_index: number;
+  market: string;
+  ticker: string;
+  name: string;
+  strategy: string | null;
+  action: string | null;
+  candidate_state: string | null;
+  rank: number | null;
+};
+export type SavedCaptureDiffItem = {
+  market: string;
+  ticker: string;
+  name: string;
+  presence: "NEW" | "RETAINED" | "REMOVED";
+  previous: SavedCaptureDiffStock | null;
+  current: SavedCaptureDiffStock | null;
+  rank_movement: "UP" | "DOWN" | "SAME" | "NOT_COMPARABLE" | "NOT_APPLICABLE";
+  rank_delta: number | null;
+  strategy_changed: boolean;
+  action_changed: boolean;
+  state_changed: boolean;
+};
+export type SavedCaptureComparison = {
+  version: string;
+  status: string;
+  read_only: boolean;
+  previous_capture?: SavedCaptureJournalItem;
+  current_capture?: SavedCaptureJournalItem;
+  comparability?: { rank_comparable: boolean; warnings: string[] };
+  summary?: {
+    previous_total: number;
+    current_total: number;
+    new: number;
+    retained: number;
+    removed_from_returned_list: number;
+    rank_up: number;
+    rank_down: number;
+    rank_same: number;
+    rank_not_comparable: number;
+    strategy_changed: number;
+    action_changed: number;
+    state_changed: number;
+  };
+  items?: SavedCaptureDiffItem[];
+};
+export async function compareSavedCaptureHistory(
+  currentId: string, previousId: string,
+): Promise<SavedCaptureComparison> {
+  return asJson<SavedCaptureComparison>(
+    await fetch(
+      "/api/simulation/prospective/captures/" + encodeURIComponent(currentId) +
+      "/compare-history?previous_capture_id=" + encodeURIComponent(previousId),
+    ),
+  );
+}
