@@ -115,6 +115,10 @@ jobs:
         working-directory: frontend
         run: npm run test:hold-p004
 
+      - name: Verify Scanner policy identity provenance and legacy guard
+        working-directory: frontend
+        run: npm run test:sc-provenance
+
       - name: Build frontend
         working-directory: frontend
         run: npm run build
