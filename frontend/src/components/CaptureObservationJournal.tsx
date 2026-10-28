@@ -5,6 +5,7 @@ import {
   type SavedCaptureWindow,
 } from "../services/api";
 import "./captureObservationJournal.css";
+import CaptureHistoryComparison from "./CaptureHistoryComparison";
 
 function dateLabel(value: string | null | undefined) {
   if (!value) return "날짜 미확인";
@@ -155,7 +156,7 @@ export default function CaptureObservationJournal({
                   <tbody>
                     {detail.candidates.map(candidate => (
                       <tr key={candidate.sample_index}>
-                        <th scope="row">
+                        <th scope="row" id={"scanner-capture-observation-" + candidate.sample_index}>
                           {candidate.name || candidate.ticker}
                           <small>{candidate.market} · {candidate.ticker}
                             {candidate.rank != null ? " · 순위 " + candidate.rank : ""}
@@ -178,6 +179,12 @@ export default function CaptureObservationJournal({
                   </tbody>
                 </table>
               </div>
+              <CaptureHistoryComparison
+                currentId={selected}
+                captures={captures}
+                detail={detail}
+                revision={revision}
+              />
               <p className="scanner-capture-journal-note">
                 관찰 수치는 추천 당일 종가 대비 이후 확정 종가의 변화입니다.
                 당일 이후에 생성된 기록은 장전 추천 성과로 인정하지 않으며, 누락된 거래일·시세는 수익률로 추정하지 않습니다.
