@@ -46,6 +46,8 @@ def main() -> int:
     parser.add_argument("--operational-simulation", type=Path, required=True)
     parser.add_argument("--operational-market", type=Path, required=True)
     parser.add_argument("--preview-dir", type=Path, required=True)
+    parser.add_argument("--operational-krx-budget", type=Path)
+    parser.add_argument("--preview-krx-budget", type=Path)
     args = parser.parse_args()
     sources = [args.operational_simulation.resolve(), args.operational_market.resolve()]
     targets = [args.preview_dir.resolve() / "simulation.db",
@@ -58,11 +60,22 @@ def main() -> int:
         backup_readonly(source, target)
         for source, target in zip(sources, targets)
     ]
+    if bool(args.operational_krx_budget) != bool(args.preview_krx_budget):
+        raise ValueError("PREVIEW_BUDGET_ARGUMENTS_INCOMPLETE")
+    budget = None
+    if args.operational_krx_budget and args.preview_krx_budget:
+        budget_source = args.operational_krx_budget.resolve()
+        budget_target = args.preview_krx_budget.resolve()
+        if budget_source in targets or budget_target in sources:
+            raise ValueError("PREVIEW_BUDGET_SOURCE_PATH_CONFLICT")
+        if budget_source.is_file():
+            budget = backup_readonly(budget_source, budget_target)
     print(json.dumps({
         "status": "G2_PREVIEW_SNAPSHOT_READY", "operational_db_writes": 0,
         "preview_simulation": str(targets[0]),
         "preview_market": str(targets[1]),
         "copies": report,
+        "budget_snapshot": budget,
     }, ensure_ascii=False))
     return 0
 
