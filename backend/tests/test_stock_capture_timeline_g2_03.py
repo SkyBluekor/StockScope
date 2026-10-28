@@ -190,3 +190,23 @@ def test_http_route_timeline_is_get_only_and_uses_existing_db(tmp_path, monkeypa
     result = api.get_scanner_stock_timeline("KOSPI", TICKER, limit=20, offset=0)
     assert result["status"] == "READY"
     assert result["summary"]["capture_appearances"] == 3
+
+
+def test_preview_backup_copies_committed_sqlite_and_preserves_source(tmp_path):
+    from tools.data.g2_03_prepare_preview_stores import backup_readonly
+
+    source = _fixture(tmp_path)
+    original = _hash(source)
+    preview = tmp_path / "preview" / "simulation.db"
+    result = backup_readonly(source, preview)
+    assert result["status"] == "COPIED_TO_PREVIEW"
+    assert preview.is_file()
+    assert _hash(source) == original
+    assert timeline.stock_capture_timeline(
+        preview, tmp_path / "missing_market.db", market="KOSPI", ticker=TICKER,
+    )["status"] == "READY"
+    with sqlite3.connect(preview) as con:
+        con.execute("UPDATE prospective_capture_run SET status='DUPLICATE' WHERE id='c1'")
+    with sqlite3.connect(source) as con:
+        assert con.execute("SELECT status FROM prospective_capture_run WHERE id='c1'").fetchone()[0] == "COMPLETE"
+    assert _hash(source) == original
