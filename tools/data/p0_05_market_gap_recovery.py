@@ -409,6 +409,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.check_local_setup and args.run_approved:
             raise RecoveryHold("HOLD_INVALID_EXECUTION_MODE")
         if args.check_local_setup:
+            if any((args.approve_krx_requests, args.approve_market_write,
+                    args.confirm_source_rights)):
+                raise RecoveryHold("HOLD_APPROVAL_FLAGS_WITHOUT_RUN")
             if args.operational_repo is None:
                 raise RecoveryHold("HOLD_OPERATIONAL_REPO_REQUIRED")
             result = inspect_local_krx_setup(
