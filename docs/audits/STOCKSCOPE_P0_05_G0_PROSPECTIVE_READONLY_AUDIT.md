@@ -240,3 +240,46 @@ Windows 실행 결과가 있기 전까지 추정하지 않는다.
 다음 검증이 S3 코드의 구조적 선행 실패를 규명해도
 재수집·공식 데이터 연결·원본 Capture 수정·PR 병합에 대한 허가를
 의미하지 않는다.
+
+## P0-05/G1 준비 — S17 실제 저장 증거 대조 (운영 실행 미승인)
+
+2026-10-28 KST. 사용자 G0e Windows read-only 실측은
+`READ_ONLY_S16_OBSERVATION_COVERAGE_OBSERVED`: ENTRY 61, INVALID 24
+(24개 모두 `sample.rank` 결측), LEGACY_LIMITED 37, 5d 기술 관측 13/37,
+10d·20d 0/37이다. 별도 순위 회귀 테스트에서 새 입력의 정당한 rank 저장과
+충돌 rank 거부를 확인했으나 **G1 운영 새 Capture가 생성된 것은 아니다.**
+
+이번 후속 코드는 이미 존재하는 **S17 선택 설치형**
+`tools/data/prospective_daily.py`의 '성공' 판정을 강화한다.
+예전에는 Scanner 작업 JSON에 `prospective_capture.status=COMPLETE/DUPLICATE`
+값이 있으면 성공 로그로 넘어갈 수 있었다. 지금은 성공 반환 전에
+기존 실제 Simulation SQLite를 **mode=ro + query_only**로 확인한다.
+
+- HTTP 응답의 Capture ID·상태·source_job_id, 요청한 시장과 실제 기준일이
+  `prospective_capture_run`의 저장 행과 일치해야 한다.
+- COMPLETE는 자기 캡처를, DUPLICATE는 정당한 canonical COMPLETE를 확인한다.
+  동일 실행 key / source snapshot hash / result hash / 반환 후보 수가
+  canonical과 맞지 않으면 HOLD한다.
+- 저장된 실제 샘플 수 및 연속된 sample index, 신호일, 원본 Snapshot
+  해시를 조회 시점의 DB에서 확인한다. 불일치·누락·불일치 스키마 등은
+  `HOLD_MANUAL_REVIEW` 및 고정 `FROZEN_CAPTURE_*` 오류 코드로 반환하며
+  개별 주가·종목·원본 Snapshot·SQL 에러를 출력하지 않는다.
+- 정상 저장 증거를 확인한 성공 보고에만
+  `persisted_capture_verified=true`,
+  `persisted_snapshot_hashes_verified=true`,
+  `persisted_sample_count`를 표시한다. 이는 저장 근거 증명이지
+  S7 LOCAL_VALIDATED, 정책 승인, 투자 성과·공식 공표 시점 증명은 아니다.
+- S17 한국시간 계산은 고정 UTC+09:00을 사용해 Windows에 Python
+  `tzdata`가 없어도 동작한다. 원래 장전 실행창/중복 차단/Scanner
+  및 S16 처리/사용자 선택 설치 원칙은 변경하지 않았다.
+
+`backend/tests/test_prospective_daily_s17.py`에는 실제 VN-P2-S2 **합성**
+SQLite에서 COMPLETE/정당한 DUPLICATE의 읽기 전용 검증, 없는 HTTP ID,
+잘못된 job, 변조된 Snapshot hash 거부, 미저장 상태의 성공 거부가 포함된다.
+CI `Fresh Clone / Windows`에도 이 새 시나리오를 연결했다.
+
+**범위 및 HOLD:** 실제 Windows 사용자 운영 DB에 쓰거나 새 Scanner job,
+KRX/TypeSafe/JEV 연결, S17 예약작업 설치, 실주문, 비공개 실행 정보 업로드,
+PR merge를 수행하지 않았다. 기존 Capture를 역산 수정하거나 INVALID 24건을
+승격하지 않는다. 실제 G1은 별도 승인 하에 최신 공식 EOD·수집 권리·요청
+예산을 확보한 뒤 **새 Capture 실행 및 증거 대조**가 완료돼야 PASS다.
