@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from app.core.config import PROJECT_ROOT
 from app.prospective.rank_comparison import compare_capture_candidates
+from app.prospective.capture_observation_journal import list_journal, capture_journal
 from app.prospective import (
     ProspectiveCatalogError,
     ProspectiveEvaluationError,
@@ -106,6 +107,25 @@ def list_prospective_captures(
         return _service().catalog.list_captures(limit=limit)
     except ProspectiveCatalogError as error:
         _raise(error)
+
+
+@router.get("/capture-journal")
+def list_scanner_capture_journal(
+    limit: int = Query(default=20, ge=1, le=50),
+):
+    """User-facing saved Scanner history; never starts another Scanner job."""
+    service = _service()
+    return list_journal(service.catalog.db_path, limit=limit)
+
+
+@router.get("/captures/{capture_id}/observation-journal")
+def get_scanner_capture_observation_journal(capture_id: str):
+    """Frozen 5/10/20-session EOD follow-up, read-only and non-executable."""
+    service = _service()
+    return capture_journal(
+        service.catalog.db_path, service.evaluator.market.db_path,
+        capture_id=capture_id,
+    )
 
 
 @router.get("/captures/{capture_id}/candidate-comparison")
