@@ -257,6 +257,10 @@ jobs:
         shell: powershell
         run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_05_g1_operator_capture.py
 
+      - name: Verify P0-05 G1 captured 15-snapshot S7 proof (read-only synthetic)
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_05_g1_capture_s7_proof.py
+
       - name: Verify P0-05 G1 bounded KRX gap recovery (synthetic data; no network)
         shell: powershell
         run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_05_market_gap_recovery.py
