@@ -38,10 +38,11 @@ function timeLabel(value: string | null | undefined) {
 
 export default function CaptureObservationJournal({
   currentCaptureId,
+  active,
 }: {
   currentCaptureId: string | null;
+  active: boolean;
 }) {
-  const [opened, setOpened] = useState(false);
   const [captures, setCaptures] = useState<SavedCaptureJournalItem[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<SavedCaptureJournalDetail | null>(null);
@@ -51,7 +52,7 @@ export default function CaptureObservationJournal({
   const [selectedStock, setSelectedStock] = useState<SelectedScannerStock | null>(null);
 
   useEffect(() => {
-    if (!opened) return;
+    if (!active) return;
     let alive = true;
     setBusy(true);
     setError(null);
@@ -75,10 +76,11 @@ export default function CaptureObservationJournal({
       if (alive) setBusy(false);
     });
     return () => { alive = false; };
-  }, [opened, revision, currentCaptureId]);
+  }, [active, revision, currentCaptureId]);
 
   useEffect(() => {
-    if (!opened || !selected) {
+    if (!active) return;
+    if (!selected) {
       setDetail(null);
       return;
     }
@@ -99,7 +101,7 @@ export default function CaptureObservationJournal({
       if (alive) setBusy(false);
     });
     return () => { alive = false; };
-  }, [opened, selected, revision]);
+  }, [active, selected, revision]);
 
   return (
     <section className="scanner-capture-journal" aria-label="저장 후보 날짜별 관찰">
@@ -108,12 +110,9 @@ export default function CaptureObservationJournal({
           <strong>저장 후보 · 날짜별 관찰</strong>
           <p>전에 찾은 후보를 다시 볼 수 있어요. 이후 확정 일봉이 쌓이면 5·10·20거래일 종가 변화를 표시합니다.</p>
         </div>
-        <button type="button" onClick={() => setOpened(was => !was)}>
-          {opened ? "수집 기록 닫기" : "수집 기록 보기"}
-        </button>
+        <span className="scanner-capture-journal-subtitle">G2-01 · G2-02 · G2-03</span>
       </div>
-      {opened && (
-        <div className="scanner-capture-journal-content">
+      <div className="scanner-capture-journal-content">
           <div className="scanner-capture-journal-toolbar">
             <label>
               분석 기록
@@ -209,7 +208,6 @@ export default function CaptureObservationJournal({
             </>
           )}
         </div>
-      )}
     </section>
   );
 }
