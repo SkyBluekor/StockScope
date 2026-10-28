@@ -283,3 +283,50 @@ KRX/TypeSafe/JEV 연결, S17 예약작업 설치, 실주문, 비공개 실행 �
 PR merge를 수행하지 않았다. 기존 Capture를 역산 수정하거나 INVALID 24건을
 승격하지 않는다. 실제 G1은 별도 승인 하에 최신 공식 EOD·수집 권리·요청
 예산을 확보한 뒤 **새 Capture 실행 및 증거 대조**가 완료돼야 PASS다.
+
+## P0-05/G1 다음 게이트 — 로컬 입력·실행시각·중복 상태 읽기 전용 preflight
+
+기존 S17 일일 수집기는 `--dry-run`에서 실행 가능 시각만 확인하고
+실제 Simulation/Market 파일의 데이터 존재 여부는 보지 않았다.
+추가된 `--preflight`는 이 간격을 메운다. **기존 `--dry-run`,
+`run_once()` 및 정상 S17 수집 동작 자체는 변경하지 않는다.**
+
+- `tools/data/prospective_daily.py --preflight --scope ALL`:
+  이전 G0와 P0-02 감사 도구의 **SQLite mode=ro** 읽기 경로를 재사용해
+  저장된 양 시장의 종목·지수 날짜 교집합, 1~4일 내 로컬 자료 유무를 조회한다.
+  저장 날짜만으로 **KRX 공식 최신 EOD 공표** 또는 실제 휴장 달력 확인을
+  주장하지 않는다.
+- 기존 Simulator Prospect Capture의 동일 날짜 `PENDING/COMPLETE/PARTIAL/DUPLICATE`
+  행 존재 여부, S17 잠금 파일 유무 및 장전 05:00–08:45 KST 여부를 본다.
+  기존 소스 ID·종목명·가격·원본 SQLite 경로·잠금 내용은 출력하지 않는다.
+- 모든 결과에 `external_requests=0`, `db_write_calls=0`,
+  `scanner_job_started=false`, `scheduler_registered_or_triggered=false`,
+  `production_capture_approved=false`를 표시한다. 준비가 돼도
+  `LOCAL_STORED_EOD_READY_APPROVAL_REQUIRED`이고 G1 실행 승인은 아니다.
+  시간창 종료·기존 Capture·없는 DB·10일 검색범위 밖 자료·불완전한 시장
+  날짜 교집합은 명시적 `HOLD_*`를 반환한다.
+- API `/scanner/freshness`는 호출하지 않는다. 해당 경로가 Provider
+  동기화를 수행할 수 있기 때문이다. 로컬 FastAPI 서버 기동, KRX/유료
+  API 호출, DB 파일 생성, 동결 캡처 쓰기, Scheduler 설치 모두 0회.
+- 합성 SQLite 회귀 및 Windows CI는 정상/오래된 EOD, 양 시장 불일치,
+  중복된 날짜 캡처, 시간창 밖, 실행 잠금, 파일 부재, 민감정보 비출력과
+  파일 해시 불변을 확인한다.
+
+### 사용자 Windows 실측 명령 (승인이나 쓰기 없이 사용 가능)
+
+```powershell
+cd C:\Projects\StockScope
+$repo = (git rev-parse --show-toplevel).Trim()
+$work = Join-Path $env:TEMP "StockScope_P0_02_90745c8d5d49"
+$python = Join-Path $repo ".venv\Scripts\python.exe"
+git -C $work fetch origin codex/p0-01-mvp-c1-c2-integration-20261022
+$sha = (git -C $work rev-parse origin/codex/p0-01-mvp-c1-c2-integration-20261022).Trim()
+git -C $work switch --detach $sha
+& $python (Join-Path $work "tools\data\prospective_daily.py") --preflight --scope ALL `
+  --simulation-db (Join-Path $repo "backend\runtime\simulation\simulation.db") `
+  --market-db (Join-Path $repo "backend\runtime\market_history\market_history.db")
+```
+
+이번 결과는 **G1 실행 준비 판단**에만 사용한다. 공식 데이터 최신성,
+라이선스/권리, 예산 승인, 신규 운영 Capture 기록은 별도 HOLD이며,
+추가 사용자 동의 없이 S17 실제 수집·스케줄·PR 병합을 실행하지 않는다.
