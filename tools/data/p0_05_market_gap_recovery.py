@@ -257,9 +257,11 @@ async def recover_approved(
                 _validate_stock(stock.get("rows"), market, key),
                 _validate_index(index.get("rows"), market, key),
             )
-        written = _atomic_insert(db, slots, prepared)
     finally:
+        # Close the external session *before* the sole operational DB commit.
+        # A close failure must not turn an already-committed repair into HOLD.
         await provider.close_session()
+    written = _atomic_insert(db, slots, prepared)
     return {
         "version": VERSION, "status": "MISSING_MARKET_DAYS_RESTORED",
         "market_days_written": written, "dates": evidence["requested_dates"],
