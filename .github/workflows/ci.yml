@@ -339,3 +339,11 @@ jobs:
               "google_drive_required": False,
           }))
           '@ | .\.venv\Scripts\python.exe -
+
+      - name: Verify JEV-LIVE-01 authored synthetic preflight (Windows, no network)
+        shell: powershell
+        run: .\\.venv\\Scripts\\python.exe -m tools.data.jev_live_01_synthetic_smoke --mode preflight
+
+      - name: Verify JEV-LIVE-01 TypeSafe V4 service integration (Windows HTTP mock, no network)
+        shell: powershell
+        run: .\\.venv\\Scripts\\python.exe -m tools.data.jev_live_01_synthetic_smoke --mode mock
