@@ -87,7 +87,7 @@ def test_g1_stored_both_markets_ready_but_cannot_authorize_capture(tmp_path, mon
 
 @pytest.mark.parametrize("dates,expected", [
     ({"KOSPI":"20261021","KOSDAQ":"20261021"}, "HOLD_STALE_LOCAL_EOD"),
-    ({"KOSPI":"20261027","KOSDAQ":"20261021"}, "HOLD_STALE_LOCAL_EOD"),
+    ({"KOSPI":"20261027","KOSDAQ":"20261021"}, "HOLD_MARKET_DATES_MISMATCH"),
     ({"KOSPI":"20261027"}, "HOLD_NO_COMMON_STORED_EOD"),
 ])
 def test_g1_stale_or_cross_market_mismatch_never_claims_ready(
