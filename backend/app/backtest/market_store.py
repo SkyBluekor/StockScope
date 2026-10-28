@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import sqlite3
 import threading
 from dataclasses import dataclass
@@ -31,10 +30,7 @@ class HistoricalMarketStore:
     _default_db = Path(__file__).resolve().parents[2] / "runtime" / "market_history" / "market_history.db"
 
     def __init__(self, db_path: Path | None = None) -> None:
-        # Isolated G1 Scanner workers must use the *operational* Market Store,
-        # not a fresh DB located under their detached code worktree.
-        configured = (os.getenv("STOCKSCOPE_MARKET_STORE_DB") or os.getenv("STOCKSCOPE_MARKET_DB") or "").strip()
-        self.db_path = Path(db_path) if db_path is not None else (Path(configured) if configured else self._default_db)
+        self.db_path = db_path or self._default_db
         self._lock = threading.RLock()
         self._ensure_schema()
 
