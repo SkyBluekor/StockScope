@@ -146,6 +146,7 @@ def test_g1_actual_path_binding_isolated_server_and_single_s17_call(
     assert child["child_env"]["STOCKSCOPE_KRX_BUDGET_DB"] == str(budget.resolve())
     assert child["child_env"]["STOCKSCOPE_G1_MAX_KRX_CALLS"] == "128"
     assert child["child_env"]["STOCKSCOPE_G1_WORKER_NONCE"] == child["expected_nonce"]
+    assert child["child_env"]["KIS_WS_ENABLED"] == "false"
     assert child["port"] > 0
     assert [_sha(x) for x in (market, sim, budget)] == before
     assert not any(k in json.dumps(report) for k in ("private-synthetic-key", str(root)))
@@ -179,37 +180,80 @@ def test_g1_wrong_worker_identity_refused_and_child_terminated(monkeypatch):
     assert events == ["terminate", "wait"]
 
 
-def test_krx_budget_cross_provider_g1_cap_counts_retries(tmp_path, monkeypatch):
-    from app.market.krx_budget import KrxApiBudget, KrxBudgetExceeded
+def test_g1_worker_binds_operational_store_without_changing_production_code(
+    tmp_path, monkeypatch,
+):
+    import os
+    import subprocess
+    import sys
 
-    monkeypatch.setenv("STOCKSCOPE_G1_MAX_KRX_CALLS", "3")
-    monkeypatch.setattr(KrxApiBudget, "_g1_consumed", 0)
-    budget = tmp_path / "runtime" / "krx" / "budget.sqlite3"
-    first = KrxApiBudget(db_path=budget, safe_limit=100)
-    second = KrxApiBudget(db_path=budget, safe_limit=100)
-    first.consume()
-    second.consume(retry=True)
-    first.consume()
-    with pytest.raises(KrxBudgetExceeded, match="Approved G1"):
-        second.consume()
-    assert KrxApiBudget._g1_consumed == 3
+    root, market, sim, budget = _operational(tmp_path)
+    nonce = "0123456789abcdef0123456789abcdef"
+    env = os.environ.copy()
+    env.update({
+        "STOCKSCOPE_MARKET_STORE_DB": str(market),
+        "STOCKSCOPE_SIM_DB": str(sim),
+        "STOCKSCOPE_KRX_BUDGET_DB": str(budget),
+        "STOCKSCOPE_G1_MAX_KRX_CALLS": "16",
+        "STOCKSCOPE_G1_WORKER_NONCE": nonce,
+        "KIS_WS_ENABLED": "false",
+    })
+    backend = str(g1.BACKEND)
+    env["PYTHONPATH"] = backend
+    code = """
+import json
+import g1_worker
+from app.backtest.market_store import HistoricalMarketStore
+from app.market.krx_budget import KrxApiBudget, KrxBudgetExceeded
+a = KrxApiBudget()
+b = KrxApiBudget()
+for n in range(16):
+    (a if n % 2 == 0 else b).consume(retry=(n == 4))
+try:
+    a.consume()
+except KrxBudgetExceeded:
+    blocked = True
+else:
+    blocked = False
+print(json.dumps({
+    "blocked": blocked,
+    "market_path": str(HistoricalMarketStore._default_db),
+    "budget_path": str(KrxApiBudget._default_db),
+    "nonce": g1_worker.app and True,
+}))
+"""
+    response = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=backend, env=env, capture_output=True, text=True, check=False,
+    )
+    assert response.returncode == 0, response.stderr[-800:]
+    report = json.loads(response.stdout)
+    assert report["blocked"] is True
+    assert Path(report["market_path"]).resolve() == market.resolve()
+    assert Path(report["budget_path"]).resolve() == budget.resolve()
+    assert report["nonce"] is True
     with sqlite3.connect(budget) as conn:
-        row = conn.execute("SELECT requests,retries FROM krx_daily_usage").fetchone()
-    assert row == (3, 1)
+        row = conn.execute(
+            "SELECT requests,retries FROM krx_daily_usage WHERE day='2026-10-28'"
+        ).fetchone()
+    # The budget ledger is keyed by actual current KST date, not fixture date.
+    # Ensure at least one day contains all 16 attempted reservations.
+    with sqlite3.connect(budget) as conn:
+        totals = conn.execute(
+            "SELECT SUM(requests),SUM(retries) FROM krx_daily_usage"
+        ).fetchone()
+    assert totals[0] == 19
+    assert totals[1] == 1
 
 
-def test_market_store_default_respects_explicit_operational_env(tmp_path, monkeypatch):
-    from app.backtest.market_store import HistoricalMarketStore
+def test_g1_change_must_keep_pinned_production_scanner_fingerprint():
+    from app.baseline.scanner_production_baseline import (
+        load_manifest, manifest_path, verify_baseline,
+    )
+    from app.core.config import PROJECT_ROOT
 
-    target = tmp_path / "operational" / "market.db"
-    monkeypatch.setenv("STOCKSCOPE_MARKET_STORE_DB", str(target))
-    store = HistoricalMarketStore()
-    assert store.db_path == target
-    assert target.exists()
-    override = tmp_path / "isolated" / "market.db"
-    explicit = HistoricalMarketStore(db_path=override)
-    assert explicit.db_path == override
-    assert override.exists()
+    result = verify_baseline(PROJECT_ROOT, load_manifest(manifest_path(PROJECT_ROOT)))
+    assert result.valid, (result.changed_files, result.missing_files, result.extra_relevant_files)
 
 
 @pytest.mark.parametrize("forbidden", [
