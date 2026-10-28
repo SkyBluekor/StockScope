@@ -258,7 +258,15 @@ def preflight_local_g1(
     local_date = evidence.get("last_common_marked_stock_index_date")
     result["stored_common_data_date"] = local_date
     if not local_date:
-        result["status"] = "HOLD_NO_COMMON_STORED_EOD"
+        per_market = [
+            value.get("latest_same_day_stock_index_date")
+            for value in evidence.get("markets", {}).values()
+        ]
+        result["status"] = (
+            "HOLD_MARKET_DATES_MISMATCH"
+            if len(per_market) > 1 and all(per_market) and len(set(per_market)) > 1
+            else "HOLD_NO_COMMON_STORED_EOD"
+        )
         return result
     lag = (today - date.fromisoformat(local_date)).days
     result["stored_eod_calendar_lag"] = lag
