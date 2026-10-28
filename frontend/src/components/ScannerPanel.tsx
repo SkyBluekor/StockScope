@@ -57,6 +57,7 @@ import {
 import { buildScannerDisplayLayout } from "./scannerDisplayGroups";
 import ScannerRankComparison from "./ScannerRankComparison";
 import ScannerMotionProgress from "./ScannerMotionProgress";
+import CaptureObservationJournal from "./CaptureObservationJournal";
 import { scannerPolicyReadiness } from "./scannerPolicyReadiness";
 import AiReviewProgress from "./AiReviewProgress";
 import ScannerAiReview from "./ScannerAiReview";
@@ -1962,6 +1963,8 @@ export default function ScannerPanel({
           <button type="button" onClick={() => void runScanner(false)}>다시 시도</button>
         </section>
       )}
+
+      <CaptureObservationJournal currentCaptureId={captureId} />
 
       {!result && !busy && !error && !freshnessFailure && (
         <section className="scanner-empty-start ux13-scanner-empty">
