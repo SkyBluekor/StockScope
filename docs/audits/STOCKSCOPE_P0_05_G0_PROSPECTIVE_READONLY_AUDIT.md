@@ -330,3 +330,70 @@ git -C $work switch --detach $sha
 이번 결과는 **G1 실행 준비 판단**에만 사용한다. 공식 데이터 최신성,
 라이선스/권리, 예산 승인, 신규 운영 Capture 기록은 별도 HOLD이며,
 추가 사용자 동의 없이 S17 실제 수집·스케줄·PR 병합을 실행하지 않는다.
+
+## P0-05/G1 대상 날짜 복구 구현 — 기본 PLAN / 명시적 승인형 KRX 복구
+
+2026-10-28 사용자 Windows P0-02 실제 Market Store 감사:
+
+- KOSPI 종목 940·지수 1, KOSDAQ 종목 1822·지수 1의 마지막 공통 날짜는 `2026-10-21`.
+- `2026-10-22`, `2026-10-23`, `2026-10-26`, `2026-10-27`의
+  **양 시장 종목/지수 데이터가 모두 미저장** (date marker 없음).
+- 이 결과는 KRX 미공표/휴장 또는 네트워크 설정 장애를 판정하지 않음.
+  공식 API는 과거 날짜별 종목/지수 조회를 제공하지만 사용자의
+  네 가지 개별 서비스 활용 권한과 실제 응답은 별도 확인 필요.
+
+### 기능
+
+`tools/data/p0_05_market_gap_recovery.py`는 누락된 4일을 지정하여
+**기본적으로 읽기 전용 계획을 출력**한다. 계획상 4일 × KOSPI/KOSDAQ ×
+종목/지수 = 기본 endpoint 요청 16회이며, 인증 오류·429/5xx 재시도는
+추가 호출을 발생시킬 수 있어 정확한 실제 사용량이 아니다.
+일일 KRX budget ledger는 사용량을 기록하지만 사용자 외부 사용량은
+알 수 없다.
+
+별도 명시적 승인 후에만 가능한 `--run-approved` 경로는 다음 계약을
+적용한다:
+
+1. 사용 권리, KRX 호출 및 Market DB 쓰기의 **서로 독립된 세 승인 플래그**
+   필요. 1~4개 과거 평일 날짜, 14일 이내 구간만 허용. 요청량 상한
+   `--max-requests`(기본 16, 최대 64)을 강제하고 KRX API 사용량 장부를
+   그대로 사용한다. 호출/재시도 전부 상한에 포함한다.
+2. 기존 Market Store 원본에서 해당 날짜의 종목·지수·상태 표식이
+   **모두 없는 경우에만** 허용한다. `data`/ `empty` 또는 행 하나라도
+   이미 있으면 중단. 의도적으로 기존 날짜의 교정·수정은 하지 않는다.
+3. 해당 날짜 2개 시장의 **종목 전체 목록과 대표지수**를 기존
+   `KrxProvider`의 날짜별 요청으로 가져와 저장 전에 데이터 날짜,
+   최소 종목 수, 중복 코드, 대표지수 이름과 종가를 검사한다. API가
+   당일 휴장/게시 미완료로 비어 있거나 오류·사용량 한도가 발생하면
+   Market Store는 **전혀 쓰지 않는다.** Provider의 독립 캐시/사용량
+   장부는 해당 호출 횟수대로 기록될 수 있다.
+4. 모든 데이터가 검증된 뒤 SQLite `BEGIN IMMEDIATE` 단일 트랜잭션에서
+   저장일 선점·동시 실행 변경을 재검사하고 4일 전부를 `INSERT`한다.
+   한 종목/지수라도 실패하면 전체 롤백. `DELETE`, `REPLACE`, 기존
+   레거시 데이터 덮어쓰기는 없다. Prospective·Holdings·Simulation DB,
+   Scanner Job 또는 Q7 전략 승인 데이터는 변경하지 않는다.
+5. 출력은 날짜·시장·개수·고정 HOLD 이유로 제한한다. KRX API Key,
+   개인정보/종목 코드·가격·원본 공급자 페이로드를 출력하지 않는다.
+   복구된 자료가 실제 한국거래소의 공인 발행 시각/재배포 권리·
+   전체 3년 전략 검증을 증명하지 않는다는 사실은 명시적으로 유지한다.
+
+### 승인 전에 실행 가능한 Windows PLAN
+
+```powershell
+& $python (Join-Path $work "tools\data\p0_05_market_gap_recovery.py") `
+  --market-db (Join-Path $repo "backend\runtime\market_history\market_history.db") `
+  --date 2026-10-22 --date 2026-10-23 `
+  --date 2026-10-26 --date 2026-10-27
+```
+
+위 명령에는 `--run-approved`가 **없으므로** 외부 KRX 요청,
+현행 Market/Prospective DB 쓰기, 새 캡처가 발생하지 않는다.
+사용자 승인 없이 실제 fetch/apply 명령을 실행하지 않는다. 계획
+출력에서 `READY_TO_REQUEST_SEPARATE_APPROVAL`가 나와도
+KRX API 권한·실거래일·향후 운용 승인이 검증됐다는 뜻은 아니다.
+
+별도 `backend/tests/test_p0_05_market_gap_recovery.py`의 합성 SQLite와
+FakeKRX 테스트는 승인 누락, 날짜/예산 한도, 기존 자료 보존, 잘못된
+응답에서 원본 해시 보존, 중간 SQLite 트리거 실패 전체 롤백을 검사한다.
+Windows Fresh Clone CI에도 넣었다. 실제 운영 KRX 호출이나 DB
+복구 성공으로 과장하지 않는다.
