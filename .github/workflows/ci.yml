@@ -261,6 +261,10 @@ jobs:
         shell: powershell
         run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_05_g1_operator_capture.py
 
+      - name: Verify Scanner preview market store binding
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_scanner_preview_market_db.py
+
       - name: Verify G2-03 per-stock timeline and isolated SQLite preview
         shell: powershell
         run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_stock_capture_timeline_g2_03.py
