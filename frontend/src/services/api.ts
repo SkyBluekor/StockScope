@@ -3320,3 +3320,69 @@ export async function createScannerEvidenceJob(
     }),
   );
 }
+
+// Saved Scanner captures: observational EOD follow-up, not trading performance.
+export type SavedCaptureJournalItem = {
+  id: string;
+  status: "COMPLETE";
+  market_scope: string;
+  actual_data_date: string | null;
+  created_at: string | null;
+  completed_at: string | null;
+  returned_candidate_count: number;
+};
+
+export type SavedCaptureJournalIndex = {
+  version: string;
+  status: string;
+  read_only: boolean;
+  captures: SavedCaptureJournalItem[];
+};
+
+export type SavedCaptureWindow = {
+  status: string;
+  signal_close_change_pct: number | null;
+};
+
+export type SavedCaptureObservation = {
+  sample_index: number;
+  market: string;
+  ticker: string;
+  name: string;
+  strategy: string | null;
+  action: string | null;
+  rank: number | null;
+  integrity_category: string;
+  available_confirmed_trading_days: number | null;
+  windows: Record<"5d" | "10d" | "20d", SavedCaptureWindow>;
+};
+
+export type SavedCaptureJournalDetail = {
+  version: string;
+  status: string;
+  read_only: boolean;
+  q7_approved: false;
+  execution_returns_measured: false;
+  market_eod_cutoff_date?: string;
+  capture?: SavedCaptureJournalItem & { sample_count: number };
+  observation_basis?: string;
+  integrity_counts?: Record<string, number>;
+  candidates: SavedCaptureObservation[];
+};
+
+export async function listSavedCaptureJournal(): Promise<SavedCaptureJournalIndex> {
+  return asJson<SavedCaptureJournalIndex>(
+    await fetch("/api/simulation/prospective/capture-journal?limit=20"),
+  );
+}
+
+export async function getSavedCaptureJournalDetail(
+  captureId: string,
+): Promise<SavedCaptureJournalDetail> {
+  return asJson<SavedCaptureJournalDetail>(
+    await fetch(
+      "/api/simulation/prospective/captures/" +
+      encodeURIComponent(captureId) + "/observation-journal",
+    ),
+  );
+}
