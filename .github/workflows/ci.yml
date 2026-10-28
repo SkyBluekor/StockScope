@@ -223,7 +223,7 @@ jobs:
 
       - name: Verify P0-05 G1 S17 persisted capture proof (synthetic Windows SQLite)
         shell: powershell
-        run: .\\.venv\\Scripts\\python.exe -m pytest -c .\\backend\\pyproject.toml .\\backend\\tests\\test_prospective_daily_s17.py -k test_p005_g1
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_prospective_daily_s17.py -k test_p005_g1
 
       - name: Verify fresh runtime and no Drive dependency
         shell: powershell
