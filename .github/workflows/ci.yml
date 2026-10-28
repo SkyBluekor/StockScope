@@ -229,6 +229,18 @@ jobs:
         shell: powershell
         run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_05_g1_local_preflight.py
 
+      - name: Parse P0-05 operator recovery script without execution
+        shell: powershell
+        run: |
+          $tokens = $null
+          $errors = $null
+          $script = (Resolve-Path .\tools\data\p0_05_run_authorized_recovery.ps1).Path
+          [System.Management.Automation.Language.Parser]::ParseFile($script, [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Host $_.Message }
+            exit 1
+          }
+
       - name: Verify P0-05 G1 bounded KRX gap recovery (synthetic data; no network)
         shell: powershell
         run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_05_market_gap_recovery.py
