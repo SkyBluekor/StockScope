@@ -120,7 +120,7 @@ def _isolated_backend(*, child_env: dict[str, str],
     """Always spawn a *new* worker, never reuse an unidentified local server."""
     with open(os.devnull, "wb") as quiet:
         process = subprocess.Popen(
-            [sys.executable, "-m", "uvicorn", "app.main:app",
+            [sys.executable, "-m", "uvicorn", "g1_worker:app",
              "--host", "127.0.0.1", "--port", str(port)],
             cwd=daily.BACKEND, env=child_env,
             stdin=subprocess.DEVNULL, stdout=quiet, stderr=quiet,
