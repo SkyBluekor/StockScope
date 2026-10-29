@@ -97,6 +97,11 @@ def load_frozen_candidates(
                 "completed_at", "request_json",
             )
         }
+        # Some old research fixtures have no source-job id or start timestamp.
+        # Only copy actual frozen columns; never backfill historical identities.
+        capture["source_job_id"] = (
+            row["source_job_id"] if "source_job_id" in row.keys() else None
+        )
         # Old isolated research fixtures do not carry these optional event
         # columns. Missing is UNKNOWN, never a fabricated source timestamp.
         for event in ("created_at", "started_at"):
