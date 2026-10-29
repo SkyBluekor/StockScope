@@ -8,11 +8,13 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+import sqlite3
 from typing import Any
 
 from app.horizon import HorizonPolicyError, resolve_horizon_context
 from app.jev.scanner_integrity_s7_1 import assess_frozen_candidate
-from app.jev.scanner_shadow_s7 import load_frozen_candidates
+from app.jev.scanner_shadow_s7 import _connect_readonly, load_frozen_candidates
+from app.jev.decision_reviewer_offline import DecisionReviewContractError
 from app.jev.scanner_v4_readiness_s7_5 import diagnose_candidate as diagnose_v4
 from app.jev.scanner_eligibility_s8 import diagnose_candidate as diagnose_s8
 from app.strategy.semantic_source_v2 import verify_semantic_source_v2
@@ -28,6 +30,46 @@ def _utc_timestamp(raw: str | None) -> datetime | None:
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         return None
     return parsed.astimezone(timezone.utc)
+
+
+def discover_new_capture_ids(
+    simulation_db: Path, *, captured_after: str, limit: int = 10,
+) -> list[dict[str, str]]:
+    """List metadata for new COMPLETE captures, never automatically choose one.
+
+    Explicitly supply an id to the separate inspector. No market rows, raw
+    payloads, account keys or timestamps from external sources are exported.
+    """
+    after = _utc_timestamp(captured_after)
+    if after is None:
+        raise ValueError("P3_CAPTURED_AFTER_REQUIRES_TIMEZONE")
+    if type(limit) is not int or not 1 <= limit <= 10:
+        raise ValueError("P3_DISCOVERY_LIMIT_INVALID")
+    try:
+        with _connect_readonly(simulation_db) as conn:
+            rows = conn.execute(
+                "SELECT r.id, r.source_job_id, r.created_at "
+                "FROM prospective_capture_run r "
+                "WHERE r.status='COMPLETE' AND EXISTS ("
+                "SELECT 1 FROM prospective_recommendation_sample s "
+                "WHERE s.capture_run_id=r.id AND s.action='ENTRY_CANDIDATE') "
+                "ORDER BY r.created_at DESC LIMIT 100"
+            ).fetchall()
+    except sqlite3.Error as exc:
+        raise DecisionReviewContractError("P3_CAPTURE_DISCOVERY_SCHEMA_UNAVAILABLE") from exc
+    output = []
+    for row in rows:
+        created = _utc_timestamp(row["created_at"])
+        if created is None or created < after:
+            continue
+        output.append({
+            "capture_id": row["id"],
+            "created_at": row["created_at"],
+            "source_job_id": row["source_job_id"],
+        })
+        if len(output) == limit:
+            break
+    return output
 
 
 def _first_blocker(
