@@ -209,6 +209,18 @@ class JevManualReviewRequest(BaseModel):
     review_epoch: int = Field(default=0, ge=0, le=1_000_000)
 
 
+def _captured_horizon_status(capture: dict[str, object]) -> tuple[str, str | None]:
+    """Interpret stored policy only; do not backfill, activate or write."""
+    try:
+        context = resolve_horizon_context(
+            capture.get("horizon_intent"),
+            policy_version=capture.get("horizon_policy_version"),
+        )
+        return context.support_status, context.reason_code
+    except HorizonPolicyError:
+        return "UNSUPPORTED", "HORIZON_INTENT_INVALID"
+
+
 @router.get("/local-readiness")
 def jev_local_readiness(
     capture_id: str = Query(min_length=1, max_length=200),
@@ -238,16 +250,7 @@ def jev_local_readiness(
         v4 = diagnose_v4_candidate(capture, sample)
         s8 = diagnose_s8_candidate(capture, sample)
         integrity = assess_frozen_candidate(capture, sample)
-        try:
-            horizon_context = resolve_horizon_context(
-                capture["horizon_intent"], policy_version=capture["horizon_policy_version"],
-            )
-            horizon_status = horizon_context.support_status
-            horizon_reason = horizon_context.reason_code
-        except HorizonPolicyError:
-            # A malformed historical record cannot create review eligibility.
-            horizon_status = "UNSUPPORTED"
-            horizon_reason = "HORIZON_INTENT_INVALID"
+        horizon_status, horizon_reason = _captured_horizon_status(capture)
     except DecisionReviewContractError as exc:
         raise HTTPException(
             status_code=422,
