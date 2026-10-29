@@ -3035,6 +3035,7 @@ export type ScannerResponse = {
     policy_hash?: string | null;
     policy_source?: string | null;
     fallback_used?: boolean;
+    fallback_reason?: string | null;
   };
 
   version: string;
