@@ -49,15 +49,15 @@ def _first_blocker(
             }
     if not v2_ok:
         return {"stage": "SEMANTIC_SOURCE_V2", "code": v2_reason or "V2_NOT_VERIFIED"}
-    if horizon_status != "SUPPORTED":
-        return {
-            "stage": "HORIZON_POLICY",
-            "code": horizon_code or "HORIZON_POLICY_NOT_APPROVED",
-        }
     if v4["local_v4_status"] != "LOCAL_V4_PROJECTABLE":
         return {
             "stage": "LOCAL_V4",
             "code": str(v4["local_v4_status"]),
+        }
+    if horizon_status != "SUPPORTED":
+        return {
+            "stage": "HORIZON_POLICY",
+            "code": horizon_code or "HORIZON_POLICY_NOT_APPROVED",
         }
     return None
 
@@ -160,7 +160,7 @@ def inspect_one_capture(
     return {
         "version": "JEV_LIVE_04R_P3_ONE_CAPTURE_V1",
         "read_only": True,
-        "synthetic_fixture": False,
+        "source_kind": "NOT_INDEPENDENTLY_ATTESTED",
         "capture": {
             "requested_capture_id": capture_id,
             "canonical_capture_id": capture["id"],
@@ -207,6 +207,7 @@ def inspect_one_capture(
             "lineage_status": v4["lineage_analysis_status"],
         },
         "first_blocker": first,
+        "horizon_execution_blocked": horizon_status != "SUPPORTED",
         "outbound": {
             "decision": "HOLD",
             "source_rights_status": s8["rights_status"],
