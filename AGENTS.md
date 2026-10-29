@@ -12,7 +12,7 @@ Read:
 3. [Existing JEV v2 design](docs/설계/StockScope_JEV_통합설계_v2_2026-10-06.md).
 4. [S7.4 source/rights/time boundary](docs/설계/JEV-ACT2-S7.4_데이터_출처_권한_및_시점_분류_기준.md).
 
-**JEV-LIVE-01 DONE (synthetic-only):** User's Windows `C:\\Projects\\StockScope` completed exactly one real TypeSafe `jev-1.14.0` request through existing V4 service and catalog (`PASS_THROUGH`, `VALID`, `MATCHED`, 1073 input/23 output tokens, cost unknown); full prior CI 4/4 PASS. This does **not** authorize market-derived payloads or turn on user reviews. **Next unfinished stage: JEV-LIVE-02** — read-only per-candidate readiness API and Scanner tab were coded and CI 4/4 passed; Windows real-capture browser acceptance still pending. Read the master plan's current status before further work.
+**LIVE-01 DONE (synthetic actual model) and LIVE-02 DONE (read-only actual Windows Scanner candidate UI). NEXT: LIVE-03 source-rights/time/wire scope validation.** The user executed exactly one real TypeSafe `jev-1.14.0` call on strictly authored synthetic input (stored `VALID`, model `MATCHED`), and later confirmed the actual saved Scanner candidate 셀트리온(KOSPI 068270) displays local readiness, original rank/strategy/Risk checks, explicit `BLOCKED_HORIZON` and `SOURCE_RIGHTS_HOLD` reasons on Windows. See master plan's updated DONE row and PR #170 evidence. This does **not** authorize market-derived input to TypeSafe: `SOURCE_RIGHTS_HOLD`, no new paid live calls, and default `POST /reviews` still OFF.
 
 ## Non-negotiable development behavior
 
