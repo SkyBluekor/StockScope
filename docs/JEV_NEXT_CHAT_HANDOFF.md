@@ -143,3 +143,11 @@ git -C $work log -1 --oneline
 - **LIVE-02는 아직 DONE 아님.** 사용자 실제 Windows `C:\\Projects\\StockScope`의 COMPLETE 캡처에 대해 실제 Browser + FastAPI 읽기 전용 상태 표시, 후보를 바꿨을 때 신원과 차단 코드의 변화 확인 필요. 특정 real 15-snapshot 통과를 가정하지 마라. 운영 원본 DB를 덮거나 새 마이그레이션하지 말고 격리 preview / 기존 snapshot 사용.
 - 이미 승인한 **TypeSafe 합성 유료 1회 소진**, 추가 과금 요청 금지. 시장 유래 원천 데이터 전송 NO-GO 유지; 기존 POST reviews 기본 OFF. G2-05 보류; G2-01~04 유지, Draft PR #170 merge 금지.
 - 예전 `C:\\Projects\\StockScope-G2` 경로는 해당 사용자 현재 Windows PC에 없고, 사용자가 실제 확인한 경로는 `C:\\Projects\\StockScope`. 새 worktree를 강제 만들지 말 것. `git status --short`가 깨끗하면 최신 개발 브랜치 `git pull --ff-only` 후 기존 가상환경 재사용.
+
+
+## 2026-10-29 사용자 Windows LIVE-02 API 테스트 결과 추가
+
+- 사용자 `C:\Projects\StockScope` checkout은 `git pull --ff-only` 정상 적용, HEAD `7d99e6a`.
+- 새 `backend/tests/test_jev_live_02_local_readiness_api.py`를 사용자 Windows `.venv`에서 실행해 **2 passed, 0 failed**; Starlette/AnyIO deprecation warning은 비차단.
+- 동일 HEAD GitHub [CI #40796193659](https://github.com/SkyBluekor/StockScope/actions/runs/40796193659) **4/4 SUCCESS**.
+- 다음 미완료 인수는 **실제 사용자 COMPLETE 캡처를 격리 SQLite snapshot에서 조회하고 선택 종목 브라우저 AI 탭의 준비도·NO_GO/미실행 사유가 맞는지 확인**. API 테스트만으로 LIVE-02 DONE 처리하지 말 것. 데이터/키 출력 금지, TypeSafe 추가 유료 요청 0, G2-05 보류.
