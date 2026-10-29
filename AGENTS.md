@@ -1,6 +1,6 @@
 # StockScope agent/developer continuation guide
 
-> Updated 2026-10-28. **Read before starting further StockScope development.** This is a routing note for Codex/other ChatGPT sessions, not a license to ignore product safety or the user's instructions.
+> Updated 2026-10-29. **Read before starting further StockScope development.** This is a routing note for Codex/other ChatGPT sessions, not a license to ignore product safety or the user's instructions.
 
 ## Current user priority
 
@@ -12,7 +12,7 @@ Read:
 3. [Existing JEV v2 design](docs/설계/StockScope_JEV_통합설계_v2_2026-10-06.md).
 4. [S7.4 source/rights/time boundary](docs/설계/JEV-ACT2-S7.4_데이터_출처_권한_및_시점_분류_기준.md).
 
-**Next uncompleted stage:** JEV-LIVE-01 — connect the *existing* `TypeSafeSystemOneProvider` and V4 `JevManualReviewService` using synthetic-only real provider E2E, then continue sequentially. Before work, read the master plan's current status: it may have been updated after this AGENTS file.
+**JEV-LIVE-01 DONE (synthetic-only):** User's Windows `C:\\Projects\\StockScope` completed exactly one real TypeSafe `jev-1.14.0` request through existing V4 service and catalog (`PASS_THROUGH`, `VALID`, `MATCHED`, 1073 input/23 output tokens, cost unknown); full prior CI 4/4 PASS. This does **not** authorize market-derived payloads or turn on user reviews. **Next unfinished stage: JEV-LIVE-02** — read-only per-candidate readiness API and Scanner tab were coded and CI 4/4 passed; Windows real-capture browser acceptance still pending. Read the master plan's current status before further work.
 
 ## Non-negotiable development behavior
 
