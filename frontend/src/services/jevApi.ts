@@ -286,3 +286,43 @@ export function getJevOutboundPreflight(captureId: string, sampleIndex: number) 
     "/api/simulation/jev/outbound-preflight?" + params.toString(),
   );
 }
+
+
+/** Localhost-only LIVE-04 demonstration. Fixed fake stock; never selected ticker. */
+export type JevSyntheticDemoStatus = {
+  enabled: boolean;
+  synthetic_only: true;
+  status: "DISABLED" | "NOT_REQUESTED" | "QUEUED" | "RUNNING" | "VALID" | "ERROR" | "INTERRUPTED";
+  fixture?: string;
+  job_id?: string;
+  reused?: boolean;
+  capture_id?: string;
+  sample_index?: number;
+  mock_provider_requests?: number;
+  actual_provider_calls: 0;
+  result?: {
+    review_id?: string | null;
+    disposition?: "PASS_THROUGH" | "REVIEW_REQUIRED" | "ABSTAIN" | null;
+    model_returned?: string | null;
+    model_identity_status?: string;
+    cost_usd?: number | null;
+    cost_unknown?: boolean;
+    failure_code?: string | null;
+    reason_codes?: string[];
+    usage?: { input_tokens: number; output_tokens: number } | null;
+  };
+};
+
+export function getJevSyntheticDemoStatus() {
+  return jevJson<JevSyntheticDemoStatus>("/api/simulation/jev/synthetic-demo/status");
+}
+
+export function startJevSyntheticDemo() {
+  return jevJson<JevSyntheticDemoStatus>(
+    "/api/simulation/jev/synthetic-demo/start",
+    {
+      method: "POST",
+      headers: { "X-StockScope-Synthetic-Demo": "confirmed" },
+    },
+  );
+}
