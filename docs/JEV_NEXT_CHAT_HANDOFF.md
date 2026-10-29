@@ -311,3 +311,11 @@ git -C $work log -1 --oneline
 
 - [Actions #40838635212](https://github.com/SkyBluekor/StockScope/actions/runs/40838635212) **4/4 PASS**: Python 3.11, Python 3.14, Frontend Node22, Windows Fresh Clone. 코드 포함 동일 브랜치에서 실시장 TypeSafe 호출/승인 없음.
 - LIVE-04R-P4 **코드/CI PASS, 사용자 Windows 실사용 신규 Scanner Horizon UAT PENDING**, 신규 시장 V4 LOCAL_V4_PROJECTABLE 미검증. MASTER [P4 상태](https://github.com/SkyBluekor/StockScope/commit/3bee14e09b225efaa7c995d57825275067c0d50b). 다시 같은 날 LEGACY 후보 검사 반복 금지.
+
+
+## 2026-10-29 P4 실제 사용자 스크린샷: UI 붕괴 긴급 수정
+
+- 사용자 `localhost_5173_scanner(4).png`에서 Scanner 헤더 아래 '시장 선택' 부분이 **한글 한 글자씩 세로**로 표시되고 큰 공백 컨트롤 카드 발생. **원인 확정:** 기존 `.scanner-control-card`는 CSS 3열, P4 신규 Horizon 블록을 3번째 직접 자식으로 삽입하고 원래 검색 버튼을 4번째로 밀어 그리드가 꼬였음.
+- **수정 `90d4dfa` + `d701638`:** 기존 시장 설명·시장 버튼·검색 버튼을 원래 1행의 3개 그리드 자식으로 복원. Horizon은 2행 네 번째 자식이면서 `grid-column:1/-1` 전체 폭을 사용, 화면 폭 <=1180 CSS 1열 대응. 이 기능은 사용자의 P4 Horizon 의도 선택·동결 기능을 제거하지 않음.
+- **실제 Chromium 테스트 추가 `17f7d43`:** `frontend/e2e/p003-scanner-recheck.spec.mjs`에 1400/900/420 뷰포트의 레이아웃/글자폭/스크롤 검사 및 SHORT 목적 `LOCAL_REVIEW_ONLY` POST·새로고침 유지 검증. [CI #40840131900](https://github.com/SkyBluekor/StockScope/actions/runs/40840131900) Backend 3.11/3.14 + Frontend Playwright + Windows Fresh Clone **4/4 PASS**. 화면 복구의 실제 사용자 Windows UAT는 아직 미확인.
+- **사용자 명령:** `cd C:\Projects\StockScope; git pull --ff-only` 후 Vite 개발 서버에서 Ctrl+Shift+R 강력 새로고침, Scanner 컨트롤 첫 줄이 자연스럽게 보이고 다음 줄에 검토 기간 선택이 있는지 확인. 실제 시장 후보 재검색/TypeSafe API 호출은 UI 수정 확인에 필요 없음. KRX 원천권한 HOLD/숫자 Horizon 미승인/LEGACY identity는 그대로.
