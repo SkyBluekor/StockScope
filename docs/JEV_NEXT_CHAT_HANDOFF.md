@@ -151,3 +151,11 @@ git -C $work log -1 --oneline
 - 새 `backend/tests/test_jev_live_02_local_readiness_api.py`를 사용자 Windows `.venv`에서 실행해 **2 passed, 0 failed**; Starlette/AnyIO deprecation warning은 비차단.
 - 동일 HEAD GitHub [CI #40796193659](https://github.com/SkyBluekor/StockScope/actions/runs/40796193659) **4/4 SUCCESS**.
 - 다음 미완료 인수는 **실제 사용자 COMPLETE 캡처를 격리 SQLite snapshot에서 조회하고 선택 종목 브라우저 AI 탭의 준비도·NO_GO/미실행 사유가 맞는지 확인**. API 테스트만으로 LIVE-02 DONE 처리하지 말 것. 데이터/키 출력 금지, TypeSafe 추가 유료 요청 0, G2-05 보류.
+
+
+## 2026-10-29 LIVE-02 사용자 브라우저 첫 UAT 실패와 정확한 수정
+
+- 사용자 2026-10-28 Scanner 저장 후보 `셀트리온/KOSPI 068270` 선택 화면에서 LIVE-02 카드가 렌더링되었으나 `저장 캡처와 선택 종목의 식별 정보가 다릅니다`가 표시됨. 실제 후보 선택/브라우저 로딩은 확인되었으나 **LIVE-02 미완료**.
+- 원인: `backend/app/prospective/catalog.py` 저장 `sample_index`는 0-based, LIVE-02의 React 표시 `rank`는 1-based. 1번 후보 선택 때 API에서 1번 저장 행(두 번째 후보)을 조회해 ticker mismatch 차단됨. 데이터가 망가진 게 아닌 UI/API index 연결 버그.
+- 해결: `ScannerPanel.tsx`에서 `sampleIndex={rank-1}`, `ScannerAiReview.tsx`에서 인덱스 0 허용, `backend/app/api/jev.py` GET에서 Query ge=0 허용, TS API 주석 보완. `backend/tests/test_jev_live_02_local_readiness_api.py`에 첫 후보 index0/다음 후보 index1 distinct hash 및 진단 DB 바이트 불변 검증 추가. 수정 마지막 코드 커밋 `52d680480508b9aea857dc71436e5227fee53d55`, [CI #40797590774](https://github.com/SkyBluekor/StockScope/actions/runs/40797590774) **4/4 SUCCESS**.
+- 다음은 사용자 로컬 checkout pull 후 **기존 격리 SQLite preview를 물고 있는 backend 서버를 재시작**하고 (PowerShell 환경변수를 날리지 말 것), frontend 강력 새로고침하여 선택한 후보의 readiness/no-go 이유 표시 확인. 재확인 전 LIVE-02 DONE 아님. LIVE-01 합성 유료 1회는 완료·추가 호출 불가; 실종목 전송 HOLD.
