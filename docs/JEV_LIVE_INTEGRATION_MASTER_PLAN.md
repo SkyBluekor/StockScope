@@ -152,3 +152,13 @@ StockScope의 기본 `Scanner → 정량 전략/Risk 판단 → Prospective COMP
 - 실제 유료 TypeSafe 요청: **0회 (이번 작업)**. 사용자의 로컬 API 키 및 별도의 1회 유료 실행 승인 부재. LIVE-01은 **NOT DONE**, LIVE-02는 아직 진행하지 않음. G2-01~04 유지, G2-05 보류, 실시장 외부 전송 HOLD 유지.
 
 - **2026-10-29 CI 확인:** [GitHub Actions #40713831348](https://github.com/SkyBluekor/StockScope/actions/runs/40713831348) **4/4 SUCCESS** (Backend Python 3.11/3.14, Frontend Node 22, Windows Fresh Clone). Windows synthetic preflight 및 HTTP Mock V4 integration 단계 성공. 이전 #40713750927은 **CANCELLED**이며 실패 테스트의 근거가 아님. 실제 유료 TypeSafe 요청·사용자 Windows 확인 **미실시**, LIVE-01 **NOT DONE**, 시장 원천 외부 전송 **HOLD**.
+
+
+### 2026-10-29 사용자 Windows CLI 실검증 (LIVE-01 아직 NOT DONE)
+
+- 사용자 PC `C:\Projects\StockScope`에서 기존 개발 브랜치 `codex/p0-01-mvp-c1-c2-integration-20261022` 및 HEAD `8b50afd` 확인, `tools/data/jev_live_01_synthetic_smoke.py` 존재 확인.
+- `--mode preflight` 성공: `synthetic_only=true`, `market_data_outbound_allowed=false`, `wire_bytes=2906`, `max_calls=1`, `billable_provider_requests=0`.
+- `--mode mock` 성공: `result.status=REVIEW_REQUIRED`, `stored_status=VALID`, `stored_disposition=REVIEW_REQUIRED`, `model_identity_status=MATCHED`, `failure_code=null`, `usage=120/10`, `cost_unknown=true`, `billable_provider_requests=0`. 사용자 실제 Windows 실행 결과 기반이지만 HTTP mock이며 **실제 TypeSafe 응답이 아니다**.
+- **사용자가 합성 유료 호출 1회 승인함**. 그러나 사용자 shell의 `JEV_API_KEY` 환경변수는 NOT SET으로 확인되었고 프로젝트 루트 `.env` 로딩 성공 여부는 아직 미확인. 실제 API 호출/DB 재조회는 미실시.
+- TypeSafe 공식 공개 문서 조회(2026-10-29): `jev-1.14.0` 최신 안정 버전, `jev-latest` 별칭은 이를 가리킴. 합성 live 시 버전 pin, authenticated `GET /v1/models`의 결과/hash와 공급자 정책 증빙을 고정해서 실행 필요. 실 시장 외부 전송 HOLD, Scanner API default OFF.
+- 다음 조건: 로컬에서 API 키 사용 가능 확인 → 모델 목록 조회 및 증빙 결합 → **승인된 합성 단 1회** 실행 → 기존 V4 catalog에 `VALID` 저장·모델 신원/usage 검증. 실패 시 자동 재시도하지 않음.
