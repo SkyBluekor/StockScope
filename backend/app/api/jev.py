@@ -209,7 +209,7 @@ class JevManualReviewRequest(BaseModel):
 @router.get("/local-readiness")
 def jev_local_readiness(
     capture_id: str = Query(min_length=1, max_length=200),
-    sample_index: int = Query(ge=1, le=500),
+    sample_index: int = Query(ge=0, le=499),
 ) -> dict[str, object]:
     """LIVE-02 read-only diagnostics of one immutable Scanner sample.
 
