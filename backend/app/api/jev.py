@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from app.core.config import PROJECT_ROOT
@@ -18,6 +18,7 @@ from app.jev.scanner_v4_readiness_s7_5 import diagnose_candidate as diagnose_v4_
 from app.jev.scanner_eligibility_s8 import diagnose_candidate as diagnose_s8_candidate
 from app.jev.scanner_outbound_gate_live_03 import diagnose_outbound_candidate
 from app.jev.review_service import JevManualReviewService
+from app.jev import synthetic_live_04_demo as live04_demo
 from app.jev.typesafe_catalog import (
     TypeSafeJevCatalog,
     TypeSafeJevCatalogError,
@@ -334,6 +335,50 @@ def jev_outbound_preflight(
         "ticker": sample["ticker"],
         **diagnostic,
     }
+
+
+@router.get("/synthetic-demo/status")
+def jev_synthetic_demo_status(request: Request) -> dict[str, object]:
+    """Only a locally enabled, authored-synthetic development demonstration."""
+    client = request.client.host if request.client else None
+    if not live04_demo.demo_enabled(client, request.url.hostname):
+        return {
+            "enabled": False, "status": "DISABLED",
+            "synthetic_only": True, "actual_provider_calls": 0,
+        }
+    try:
+        return live04_demo.status()
+    except (OSError, ValueError):
+        raise HTTPException(status_code=409, detail={
+            "code": "JEV04_DEMO_STATE_INVALID",
+            "message": "격리된 합성 체험 작업 상태를 확인할 수 없습니다.",
+        })
+
+
+@router.post("/synthetic-demo/start", status_code=202)
+def jev_synthetic_demo_start(request: Request, tasks: BackgroundTasks) -> dict[str, object]:
+    """Explicit click only; no candidate data, credentials or real TypeSafe HTTP."""
+    client = request.client.host if request.client else None
+    if not live04_demo.demo_enabled(client, request.url.hostname):
+        raise HTTPException(status_code=403, detail={
+            "code": "JEV04_SYNTHETIC_DEMO_DISABLED",
+            "message": "합성 체험은 로컬 개발 서버에서만 사용할 수 있습니다.",
+        })
+    if request.headers.get("X-StockScope-Synthetic-Demo") != "confirmed":
+        raise HTTPException(status_code=403, detail={
+            "code": "JEV04_DEMO_EXPLICIT_ACTION_REQUIRED",
+            "message": "합성 체험 요청 확인이 필요합니다.",
+        })
+    try:
+        result = live04_demo.start()
+    except (OSError, ValueError):
+        raise HTTPException(status_code=409, detail={
+            "code": "JEV04_DEMO_SINGLE_SHOT_UNAVAILABLE",
+            "message": "이전 합성 체험을 다시 실행할 수 없습니다. 자동 재시도하지 않습니다.",
+        })
+    if not result["reused"]:
+        tasks.add_task(live04_demo.run_mock, result["job_id"])
+    return result
 
 
 @router.get("/review-feature")
