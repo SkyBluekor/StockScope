@@ -1731,6 +1731,15 @@ export default function ScannerPanel({
             </button>
           ))}
         </div>
+        <div className="scanner-control-actions">
+          <button type="button" className="scanner-run-button" onClick={() => void runScanner(false)} disabled={busy}>
+            {dataPlanBusy ? "시장 데이터 확인 중..." : evidenceJobStage ? "3년 검증 데이터 준비 중..." : jobBusy && String(job?.stage || "").startsWith("scanner_prepare") ? "최신 시세 확인 중..." : jobBusy ? "후보 찾는 중..." : result ? "후보 다시 찾기" : "후보 찾기"}
+          </button>
+          {result && !busy && (
+            <span className="scanner-recheck-note">기존 분석은 새 결과가 준비될 때까지 유지합니다. 같은 확정 일봉의 저장 결과를 재사용할 수 있어요.</span>
+          )}
+          {jobBusy && <button type="button" className="scanner-cancel-button" onClick={() => void cancel()}>중지</button>}
+        </div>
         <div className="scanner-horizon-control">
           <label htmlFor="scanner-horizon-choice">검토 기간</label>
           <select id="scanner-horizon-choice" value={horizonChoice} disabled={busy}
@@ -1757,15 +1766,6 @@ export default function ScannerPanel({
               {result.strategy_selection_policy.fallback_reason && " · 정책 확인 필요"}
             </small>
           )}
-        </div>
-        <div className="scanner-control-actions">
-          <button type="button" className="scanner-run-button" onClick={() => void runScanner(false)} disabled={busy}>
-            {dataPlanBusy ? "시장 데이터 확인 중..." : evidenceJobStage ? "3년 검증 데이터 준비 중..." : jobBusy && String(job?.stage || "").startsWith("scanner_prepare") ? "최신 시세 확인 중..." : jobBusy ? "후보 찾는 중..." : result ? "후보 다시 찾기" : "후보 찾기"}
-          </button>
-          {result && !busy && (
-            <span className="scanner-recheck-note">기존 분석은 새 결과가 준비될 때까지 유지합니다. 같은 확정 일봉의 저장 결과를 재사용할 수 있어요.</span>
-          )}
-          {jobBusy && <button type="button" className="scanner-cancel-button" onClick={() => void cancel()}>중지</button>}
         </div>
       </section>
 
