@@ -85,7 +85,7 @@ git -C $work log -1 --oneline
 | JEV-LIVE-00 | 완료: 문서 기준점 설정 | 브랜치 HEAD·로컬 환경만 확인 |
 | **JEV-LIVE-01** | **DONE — 합성 실제 TypeSafe 1회 E2E 성공** | 사용자 Windows `C:\\Projects\\StockScope`에서 `jev-1.14.0` 실제 응답 `PASS_THROUGH`, SQLite `VALID`, `MATCHED`, 1회 호출, CLI 0; 기존 CI 4/4 PASS. 실종목 UI는 아직 별도 단계. |
 | **JEV-LIVE-02** | **DONE — 코드/CI + 사용자 실제 Windows AI 검토 탭 확인** | 셀트리온(KOSPI 068270) 저장 Scanner 2026-10-28 후보의 입력 근거·V4 차단·출처/권한 사유가 표시됨. index 0 수정 후 선택 종목 불일치 오류 없음. 코드 CI 4/4 PASS, Windows pytest 3/3 PASS. |
-| JEV-LIVE-03 | 미착수: 실제 시장 외부 전송 HOLD | source 권한/시점/수신자/실 outbound body 검증 |
+| **JEV-LIVE-03** | **로컬 차단·wire 감사 코드/CI 4/4 PASS, 사용자 Windows UI 미확인 · MARKET RIGHTS HOLD** | `GET /outbound-preflight`, S8 fail-closed rights, V4 field origins, actual httpx JSON SHA256 binding helper. 실제 계정/원천 권한 증거와 HTTP 발송 승인 없음 → 모든 real market outbound HOLD. |
 | JEV-LIVE-04 | 미착수, 실 market 호출은 LIVE-03 권한 결과 필요 | 사용자 선택 후보 1건 end-to-end 실제 review |
 | JEV-LIVE-05 | 미착수 | 명시 opt-in 소수 배치/자동 review, rollback |
 | JEV-LIVE-06 | 미착수 | 후속 outcome·유용성·비용 평가 |
@@ -168,3 +168,13 @@ git -C $work log -1 --oneline
 - 사용자 Windows pytest `backend/tests/test_jev_live_02_local_readiness_api.py` **3 passed**. 마지막 코드 SHA `52d680480508b9aea857dc71436e5227fee53d55`; [코드 CI #40797590774](https://github.com/SkyBluekor/StockScope/actions/runs/40797590774) 4/4 SUCCESS. [직전 문서 CI #40797912620](https://github.com/SkyBluekor/StockScope/actions/runs/40797912620) 4/4 SUCCESS.
 - **LIVE-02 DONE** (개별 실제 후보를 선택하면 읽기 전용 준비도와 차단 이유가 표시되는 단계의 완료 기준 충족). 이전 섹션의 `PENDING` 표기는 시점별 과거 이력이며 현재 완료 판정이 아님. 다른 종목 선택 후 상태변경 검증은 추가로 유용하지만 이 단계 범위의 단일 실제 후보 UI 인수를 막지 않는다.
 - **NEXT LIVE-03**: 실 시장 원천 KRX 및 조건 PASS·Risk·순위 등 파생 판단의 TypeSafe 외부 제공 권한, 소스·시점·사용자 계정 범위를 검증. S7.4/S8 기존 자료 재사용, 허가 없는 market-derived 전송 금지. 환경 및 화면이 정상이라도 실모델 실종목 사용 가능 상태가 아니다. API default review OFF 및 G2-01~04 보존, G2-05 pause, PR #170 Draft 유지. 추가 유료 TypeSafe 호출 미승인.
+
+ 
+## 2026-10-29 LIVE-03 신규 구현과 다음 인수 (반드시 읽기)
+
+- 코드 `backend/app/jev/scanner_outbound_gate_live_03.py` [`226af65`](https://github.com/SkyBluekor/StockScope/commit/226af65b8b839477d721cdeed33185811a86701c): S7.4/S8 불변, 원천 종목의 V4 field-by-field 경로·부모 KRX/내부 조건, 권한/시점/수신자·모델 처리 조건의 미확인 결과와 HOLD reason 코드. 프로젝트가 보유하지 않은 개별 KRX source/revision 승인·공개 시각을 스스로 만들어내지 않음.
+- 요청 검사: `inspect_wire_body`는 형태를 엄격 검증한 구조의 httpx 실제 `json=body` serialization 바이트 지문 SHA256/길이를 로컬에서 계산함 (기존 canonical sort JSON hash와 구별). `verify_http_request_binding`은 재구성된 HTTP 요청의 byte/URL/메서드/model 변조를 탐지하는 helper이며 **권한 인증 및 provider 런타임 발송 승인을 부여하지 않는다**. 현재 실제 market API 발송 경로는 OFF.
+- [Backend GET `df19037`](https://github.com/SkyBluekor/StockScope/commit/df190373150e6f5e65c59cfc1eb8625f92cd29f1), [Frontend TS API `4a5da68`](https://github.com/SkyBluekor/StockScope/commit/4a5da6840b895ead8f676f4b4d1d5efbb94cc384), [Scanner UI `9ad76ad`](https://github.com/SkyBluekor/StockScope/commit/9ad76adbb4ed7270bead838e18898f5667eb6daa). 실제 캡처 identity 일치 시 로컬 HOLD/시점·권한 사유 표시, TypeSafe calls 0, DB writes 0.
+- [합성 API/HTTP mutation 테스트 `3f3bb62`](https://github.com/SkyBluekor/StockScope/commit/3f3bb62d8dcb1efc3e37c3dabf6a60c5e2c50c0f), [실제 코드 HEAD CI #40805284863](https://github.com/SkyBluekor/StockScope/actions/runs/40805284863) **4/4 SUCCESS**: Python 3.11/3.14 backend, frontend Node22/Chromium, Windows Fresh Clone. CI 유료 TypeSafe 0. 사용자 실제 Windows `C:\Projects\StockScope` 신규 LIVE-03 UI 수동 검증은 아직 수행하지 않았음.
+- **다음:** 같은 개발 브랜치 `git pull --ff-only` 후 기존 격리 preview backend/frontend에서 사용자가 실제 저장 후보(셀트리온 2026-10-28) 선택 → AI 검토 탭 LIVE-03 외부 전송 상태/권한 사유, 증거 없는 `HOLD`와 0 호출 확인. 실서버 외부 전송 허가가 없으므로 LIVE-03 전체 DONE 아님. TypeSafe 담당자/계약 및 KRX 계정 상품별 원천·파생 사용권 증거, 수집 revision/시점, 신뢰된 RA01~10 검증자/approved scope 준비가 추가 과제로 남음.
+- **명확한 경계:** 원시/파생 시장데이터를 실모델로 보내지 말 것. 현재 HOLD가 안전한 정확한 판정이고 hash, 사용자 클릭/키 또는 편의상 flag만으로 허가로 바꾸지 말 것. LIVE-04 실제 실종목 API 호출은 이 조건 충족 후 별도 실행 승인. G2-01~04 유지, G2-05 보류, PR #170 Draft, 운영 sqlite 불변, LIVE-01/02 DONE.
