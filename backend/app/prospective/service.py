@@ -35,6 +35,7 @@ class ProspectiveService:
             candidate_limit=int(getattr(payload, "candidate_limit", 5) or 5),
             horizon_intent=horizon.intent,
             horizon_policy_version=horizon.policy_version,
+            horizon_purpose=str(getattr(payload, "horizon_purpose", "PRODUCTION_POLICY")),
             selection_policy_id=(
                 selection_policy_pin.policy_id
                 if selection_policy_pin is not None
