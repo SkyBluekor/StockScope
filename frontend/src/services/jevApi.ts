@@ -239,3 +239,50 @@ export function getJevLocalReadiness(captureId: string, sampleIndex: number) {
     "/api/simulation/jev/local-readiness?" + params.toString(),
   );
 }
+
+
+/** LIVE-03 audit metadata only: NEVER a transport grant or real model result. */
+export type JevOutboundPreflight = {
+  version: string;
+  capture_id: string;
+  sample_index: number;
+  snapshot_hash: string;
+  market: string;
+  ticker: string;
+  decision: "HOLD" | "DENY" | "NOT_APPLICABLE" | string;
+  data_eligibility: string;
+  execution_status: "NOT_AUTHORIZED";
+  evaluation_mode: string;
+  v4_local_status: string;
+  recipient: string;
+  purpose: string;
+  requested_model: string;
+  wire_ready: boolean;
+  wire_audit: null | {
+    model_id: string;
+    field_count: number;
+    http_body_sha256: string;
+    http_body_bytes: number;
+    outbound_projection_hash: string;
+    all_actual_parent_revisions_verified: false;
+    body_was_transmitted: false;
+    field_verdicts: Array<{path: string; expected_parents: string[]; origin_verified: false;
+      rights_status: string; time_status: string;}>;
+  };
+  trusted_rights_resolver: string;
+  time_authenticity: string;
+  reason_codes: string[];
+  provider_eligible: false;
+  actual_provider_calls: 0;
+  db_writes: 0;
+};
+
+export function getJevOutboundPreflight(captureId: string, sampleIndex: number) {
+  const params = new URLSearchParams({
+    capture_id: captureId,
+    sample_index: String(sampleIndex),
+  });
+  return jevJson<JevOutboundPreflight>(
+    "/api/simulation/jev/outbound-preflight?" + params.toString(),
+  );
+}
