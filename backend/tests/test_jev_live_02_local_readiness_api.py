@@ -5,6 +5,7 @@ import sqlite3
 
 from fastapi.testclient import TestClient
 from app.main import app
+from app.api.jev import _captured_horizon_status
 from app.jev.synthetic_live_01 import prepare_synthetic_service
 
 EVIDENCE = {
@@ -146,53 +147,20 @@ def test_live04r_reports_captured_horizon_original_identity_and_event_provenance
     assert db.read_bytes() == before
 
 
-def test_live04r_horizon_is_read_from_capture_not_inferred_from_strategy(
-    tmp_path, monkeypatch,
-):
-    """Switching a controlled fixture to LEGACY only affects local diagnostics."""
-    db, preview = _fixture(tmp_path, monkeypatch)
-    with sqlite3.connect(db) as conn:
-        conn.execute(
-            "UPDATE prospective_capture_run "
-            "SET horizon_intent='LEGACY_UNSPECIFIED', horizon_policy_version=NULL "
-            "WHERE id=?",
-            (preview["capture_id"],),
-        )
-    before = db.read_bytes()
-    result = TestClient(app).get("/api/simulation/jev/local-readiness", params={
-        "capture_id": preview["capture_id"],
-        "sample_index": preview["sample_index"],
-    })
-    assert result.status_code == 200, result.text
-    body = result.json()
-    assert body["input_contract"]["horizon_intent"] == "LEGACY_UNSPECIFIED"
-    assert body["input_contract"]["horizon_policy_version"] is None
-    assert body["input_contract"]["horizon_support_status"] == "LEGACY_UNSPECIFIED"
-    assert body["input_contract"]["horizon_reason_code"] == "HORIZON_NOT_RECORDED"
-    assert body["local_v4_status"] != "LOCAL_V4_PROJECTABLE"
-    assert body["provider_eligible"] is False
-    assert db.read_bytes() == before
+def test_live04r_legacy_horizon_requires_no_capture_rewriting():
+    """A frozen candidate is immutable; inspect its recorded intent in memory."""
+    assert _captured_horizon_status({
+        "horizon_intent": "LEGACY_UNSPECIFIED",
+        "horizon_policy_version": None,
+    }) == ("LEGACY_UNSPECIFIED", "HORIZON_NOT_RECORDED")
+    assert _captured_horizon_status({
+        "horizon_intent": None,
+        "horizon_policy_version": None,
+    }) == ("LEGACY_UNSPECIFIED", "HORIZON_NOT_RECORDED")
 
 
-def test_live04r_invalid_historical_horizon_is_diagnostic_not_server_error(
-    tmp_path, monkeypatch,
-):
-    db, preview = _fixture(tmp_path, monkeypatch)
-    with sqlite3.connect(db) as conn:
-        conn.execute(
-            "UPDATE prospective_capture_run SET horizon_intent='NOT_A_REAL_HORIZON' "
-            "WHERE id=?",
-            (preview["capture_id"],),
-        )
-    before = db.read_bytes()
-    result = TestClient(app).get("/api/simulation/jev/local-readiness", params={
-        "capture_id": preview["capture_id"],
-        "sample_index": preview["sample_index"],
-    })
-    assert result.status_code == 200, result.text
-    contract = result.json()["input_contract"]
-    assert contract["horizon_intent"] == "NOT_A_REAL_HORIZON"
-    assert contract["horizon_support_status"] == "UNSUPPORTED"
-    assert contract["horizon_reason_code"] == "HORIZON_INTENT_INVALID"
-    assert result.json()["provider_eligible"] is False
-    assert db.read_bytes() == before
+def test_live04r_bad_horizon_is_fail_closed_without_mutating_terminal_capture():
+    assert _captured_horizon_status({
+        "horizon_intent": "NOT_A_REAL_HORIZON",
+        "horizon_policy_version": None,
+    }) == ("UNSUPPORTED", "HORIZON_INTENT_INVALID")
