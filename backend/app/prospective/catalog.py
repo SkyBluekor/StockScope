@@ -245,6 +245,9 @@ class ProspectiveCatalog:
                 "input_fingerprint": result.get("input_fingerprint"),
                 "selection_policy_id": request.selection_policy_id,
                 "selection_policy_hash": request.selection_policy_hash,
+                "horizon_intent": request.horizon_intent,
+                "horizon_policy_version": request.horizon_policy_version,
+                "horizon_purpose": request.horizon_purpose,
                 "source_snapshot_hash": source_snapshot_hash,
             }
         )
