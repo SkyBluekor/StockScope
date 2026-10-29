@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ScannerCandidate, ScannerResponse } from "../services/api";
-import { getJevLocalReadiness, type JevLocalReadiness, type JevMonitorItem } from "../services/jevApi";
+import { getJevLocalReadiness, getJevOutboundPreflight, type JevLocalReadiness, type JevOutboundPreflight, type JevMonitorItem } from "../services/jevApi";
 import { scannerAiReviewStatus } from "./scannerAiReviewStatus";
 
 type Props = {
@@ -25,6 +25,32 @@ export default function ScannerAiReview({
   const captureId = result.prospective_capture?.canonical_capture_id
     || result.prospective_capture?.capture_id || null;
   const [readiness, setReadiness] = useState<JevLocalReadiness | null>(null);
+  const [outbound, setOutbound] = useState<JevOutboundPreflight | null>(null);
+  const [outboundError, setOutboundError] = useState<string | null>(null);
+  const [outboundLoading, setOutboundLoading] = useState(false);
+  useEffect(() => {
+    let active = true;
+    setOutbound(null);
+    setOutboundError(null);
+    if (!captureId || sampleIndex < 0) {
+      setOutboundLoading(false);
+      return () => { active = false; };
+    }
+    setOutboundLoading(true);
+    void getJevOutboundPreflight(captureId, sampleIndex)
+      .then(value => {
+        if (!active) return;
+        if (value.capture_id !== captureId || value.sample_index !== sampleIndex
+          || value.market !== candidate.market || value.ticker !== candidate.code) {
+          setOutboundError("외부 전송 검사 결과가 현재 후보와 일치하지 않아 표시하지 않습니다.");
+        } else {
+          setOutbound(value);
+        }
+      })
+      .catch(() => { if (active) setOutboundError("외부 전송 근거를 조회할 수 없습니다."); })
+      .finally(() => { if (active) setOutboundLoading(false); });
+    return () => { active = false; };
+  }, [captureId, sampleIndex, candidate.market, candidate.code]);
   const [readinessLoading, setReadinessLoading] = useState(false);
   const [readinessError, setReadinessError] = useState<string | null>(null);
   useEffect(() => {
@@ -112,6 +138,31 @@ export default function ScannerAiReview({
                   </details>
                 </>
               ) : <p>로컬 준비도 결과 없음</p>}
+      </div>
+      <div className="scanner-jev-local-readiness" data-outbound-gate="live-03">
+        <strong>실제 데이터의 외부 AI 전송 자격 · LIVE-03</strong>
+        {!captureId ? <p>저장된 캡처가 없어 외부 전송 검사를 수행할 수 없습니다.</p>
+          : outboundLoading ? <p>로컬 필드·권한·전송 본문 검사 중…</p>
+            : outboundError ? <p role="alert">{outboundError}</p>
+              : outbound ? (
+                <>
+                  <p><b>외부 전송 {outbound.decision === "HOLD" ? "보류" : outbound.decision === "NOT_APPLICABLE" ? "비대상" : "차단"}</b> · 실제 JEV 모델 호출 없음</p>
+                  <p>{outbound.wire_ready
+                    ? "V4 요청 형식·바이트 지문을 로컬에서 확인했습니다. 전송 권한을 의미하지 않습니다."
+                    : "검토 입력 또는 권한 근거가 부족하여 요청 본문은 생성하지 않았습니다."}</p>
+                  <details>
+                    <summary>전송 권한·데이터 시점 근거</summary>
+                    <p>실행 권한: {outbound.execution_status} · 공급자: {outbound.recipient}</p>
+                    <p>원천 시각 진위: {outbound.time_authenticity} · 계정 권한 검증: {outbound.trusted_rights_resolver}</p>
+                    {outbound.wire_audit && (
+                      <p>전송 예정 필드 {outbound.wire_audit.field_count}개 · 본문 {outbound.wire_audit.http_body_bytes}바이트 · SHA-256 {outbound.wire_audit.http_body_sha256}</p>
+                    )}
+                    {outbound.reason_codes.length > 0 && (
+                      <ul>{outbound.reason_codes.slice(0, 8).map(code => <li key={code}>{reasonLabel[code] ?? code}</li>)}</ul>
+                    )}
+                  </details>
+                </>
+              ) : <p>외부 전송 검사 미실행</p>}
       </div>
       <details className="scanner-jev-motion-details">
         <summary>검토 출처와 근거 자세히 보기</summary>
