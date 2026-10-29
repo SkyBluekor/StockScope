@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { ScannerCandidate, ScannerResponse } from "../services/api";
 import { getJevLocalReadiness, getJevOutboundPreflight, type JevLocalReadiness, type JevOutboundPreflight, type JevMonitorItem } from "../services/jevApi";
 import { scannerAiReviewStatus } from "./scannerAiReviewStatus";
+import JevSyntheticDemo from "./JevSyntheticDemo";
 
 type Props = {
   candidate: ScannerCandidate;
@@ -199,6 +200,7 @@ export default function ScannerAiReview({
         </button>
       )}
       <small>새로운 Jev 모델 호출은 실행하지 않습니다.</small>
+      <JevSyntheticDemo />
     </section>
   );
 }
