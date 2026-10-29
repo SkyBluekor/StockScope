@@ -84,7 +84,7 @@ git -C $work log -1 --oneline
 |---|---|---|
 | JEV-LIVE-00 | 완료: 문서 기준점 설정 | 브랜치 HEAD·로컬 환경만 확인 |
 | **JEV-LIVE-01** | **DONE — 합성 실제 TypeSafe 1회 E2E 성공** | 사용자 Windows `C:\\Projects\\StockScope`에서 `jev-1.14.0` 실제 응답 `PASS_THROUGH`, SQLite `VALID`, `MATCHED`, 1회 호출, CLI 0; 기존 CI 4/4 PASS. 실종목 UI는 아직 별도 단계. |
-| **JEV-LIVE-02** | **다음 개발 단계** | 실후보 로컬 검토 준비도 API·화면 구현, 외부 전송 0 |
+| **JEV-LIVE-02** | **코드·CI 4/4 PASS / 사용자 Windows 실제 후보 UI 미검증** | FastAPI read-only endpoint와 Scanner AI 탭 연결됨. 격리된 사용자 캡처·브라우저에서 선택 후보의 상태/차단 사유 직접 확인 필요. |
 | JEV-LIVE-03 | 미착수: 실제 시장 외부 전송 HOLD | source 권한/시점/수신자/실 outbound body 검증 |
 | JEV-LIVE-04 | 미착수, 실 market 호출은 LIVE-03 권한 결과 필요 | 사용자 선택 후보 1건 end-to-end 실제 review |
 | JEV-LIVE-05 | 미착수 | 명시 opt-in 소수 배치/자동 review, rollback |
@@ -133,3 +133,13 @@ git -C $work log -1 --oneline
 - 개발자 CLI·코드·CI 4/4 통과([#40713831348](https://github.com/SkyBluekor/StockScope/actions/runs/40713831348)) 및 사용자 Windows 실제 합성 E2E를 기준으로 **LIVE-01 완료**. 실제 시장 후보 모델 검토가 완료됐다는 뜻은 아님. 이번 실호출 승인은 **1회 사용 완료**, 별도 승인 없이 추가 과금 호출 금지.
 - **NEXT: JEV-LIVE-02**. `backend/app/jev/scanner_lineage_s7_4.py`, `scanner_v4_readiness_s7_5.py`, `scanner_eligibility_s8.py`, `backend/app/api/jev.py`, `frontend/src/components/ScannerPanel.tsx`의 기존 read-only 데이터 흐름을 재사용해 사용자 후보별 준비/차단 이유를 표시. 외부 호출/DB write 없이 구현 및 CI. 실제 사용자 데이터 테스트는 로컬 격리 스냅샷에서.
 - LIVE-03의 KRX·시장 파생 데이터 전송권한은 여전히 HOLD. `GET /review-feature` 고정 OFF 및 `POST /reviews` 기본 OFF 유지. PR #170 Draft, G2-01~04 유지, G2-05 보류.
+
+
+## 2026-10-29 LIVE-02 구현 현황 — 다음 채팅 반드시 반영
+
+- Backend `GET /api/simulation/jev/local-readiness?capture_id=<id>&sample_index=<1-based>` 구현: 기존 `load_frozen_candidates` (canonical COMPLETE, SQLite mode=ro)와 S7.5/S8 및 S7.1 integrity 검증을 그대로 사용. 전송 허가/모델 호출·DB 쓰기 없이 `status` (`SOURCE_RIGHTS_HOLD`, `LOCAL_ONLY`, `NEEDS_EVIDENCE`, `NOT_ENTRY_CANDIDATE`), `local_readiness` (`LOCAL_READY` 포함), 순위·전략·Risk·정책·시점/권한 신원 및 이유 코드 반환.
+- Frontend `ScannerAiReview`가 사용자가 선택한 후보의 1-based sample index와 capture id로 이 API를 조회하고, market/ticker/capture/sample 신원이 다르면 표시 금지. AI 검토가 완료됐다고 가장하지 않고 로컬 진단·모델 미실행을 구별하며 기존 G2 UI 보존.
+- Backend 합성 HTTP 계약/원본 SQLite 불변성/비활성 user review-feature 테스트 + 전체 Frontend build/Chromium, Windows Fresh Clone CI **4/4 SUCCESS**, HEAD `17212739a7d317a0344a6b6a17e9ecd7662b53e4`, [GitHub Actions #40795790479](https://github.com/SkyBluekor/StockScope/actions/runs/40795790479). 다음 커밋 문서 CI는 별도 추적.
+- **LIVE-02는 아직 DONE 아님.** 사용자 실제 Windows `C:\\Projects\\StockScope`의 COMPLETE 캡처에 대해 실제 Browser + FastAPI 읽기 전용 상태 표시, 후보를 바꿨을 때 신원과 차단 코드의 변화 확인 필요. 특정 real 15-snapshot 통과를 가정하지 마라. 운영 원본 DB를 덮거나 새 마이그레이션하지 말고 격리 preview / 기존 snapshot 사용.
+- 이미 승인한 **TypeSafe 합성 유료 1회 소진**, 추가 과금 요청 금지. 시장 유래 원천 데이터 전송 NO-GO 유지; 기존 POST reviews 기본 OFF. G2-05 보류; G2-01~04 유지, Draft PR #170 merge 금지.
+- 예전 `C:\\Projects\\StockScope-G2` 경로는 해당 사용자 현재 Windows PC에 없고, 사용자가 실제 확인한 경로는 `C:\\Projects\\StockScope`. 새 worktree를 강제 만들지 말 것. `git status --short`가 깨끗하면 최신 개발 브랜치 `git pull --ff-only` 후 기존 가상환경 재사용.
