@@ -85,8 +85,8 @@ git -C $work log -1 --oneline
 | JEV-LIVE-00 | 완료: 문서 기준점 설정 | 브랜치 HEAD·로컬 환경만 확인 |
 | **JEV-LIVE-01** | **DONE — 합성 실제 TypeSafe 1회 E2E 성공** | 사용자 Windows `C:\\Projects\\StockScope`에서 `jev-1.14.0` 실제 응답 `PASS_THROUGH`, SQLite `VALID`, `MATCHED`, 1회 호출, CLI 0; 기존 CI 4/4 PASS. 실종목 UI는 아직 별도 단계. |
 | **JEV-LIVE-02** | **DONE — 코드/CI + 사용자 실제 Windows AI 검토 탭 확인** | 셀트리온(KOSPI 068270) 저장 Scanner 2026-10-28 후보의 입력 근거·V4 차단·출처/권한 사유가 표시됨. index 0 수정 후 선택 종목 불일치 오류 없음. 코드 CI 4/4 PASS, Windows pytest 3/3 PASS. |
-| **JEV-LIVE-03** | **로컬 차단·wire 감사 코드/CI 4/4 PASS, 사용자 Windows UI 미확인 · MARKET RIGHTS HOLD** | `GET /outbound-preflight`, S8 fail-closed rights, V4 field origins, actual httpx JSON SHA256 binding helper. 실제 계정/원천 권한 증거와 HTTP 발송 승인 없음 → 모든 real market outbound HOLD. |
-| JEV-LIVE-04 | 미착수, 실 market 호출은 LIVE-03 권한 결과 필요 | 사용자 선택 후보 1건 end-to-end 실제 review |
+| **JEV-LIVE-03** | **로컬 검사/차단 DONE — 사용자 Windows 실제 후보 화면 검증, 결과 HOLD** | `GET /outbound-preflight` + AI 탭의 셀트리온(KOSPI 068270) LIVE-03 외부 전송 보류 및 사유 표시 확인. 모델 호출 0, 권한 진위/공개 시점 `UNVERIFIED`, resolver `NOT_CONFIGURED`. 실제 시장 데이터 전송 권한 미확보. |
+| **JEV-LIVE-04** | **NEXT — 실종목 유료 호출 BLOCKED, 합성 Mock 단일 후보 UI/job 개발 가능** | 사용자 opt-in, 비동기 검토, 중복·실패·비용 상한은 합성 Mock으로 구현 가능. 실시장 provider HTTP 전송은 공식 원천/계정 권한 및 exact wire 승인 결합 전까지 금지. |
 | JEV-LIVE-05 | 미착수 | 명시 opt-in 소수 배치/자동 review, rollback |
 | JEV-LIVE-06 | 미착수 | 후속 outcome·유용성·비용 평가 |
 
@@ -178,3 +178,12 @@ git -C $work log -1 --oneline
 - [합성 API/HTTP mutation 테스트 `3f3bb62`](https://github.com/SkyBluekor/StockScope/commit/3f3bb62d8dcb1efc3e37c3dabf6a60c5e2c50c0f), [실제 코드 HEAD CI #40805284863](https://github.com/SkyBluekor/StockScope/actions/runs/40805284863) **4/4 SUCCESS**: Python 3.11/3.14 backend, frontend Node22/Chromium, Windows Fresh Clone. CI 유료 TypeSafe 0. 사용자 실제 Windows `C:\Projects\StockScope` 신규 LIVE-03 UI 수동 검증은 아직 수행하지 않았음.
 - **다음:** 같은 개발 브랜치 `git pull --ff-only` 후 기존 격리 preview backend/frontend에서 사용자가 실제 저장 후보(셀트리온 2026-10-28) 선택 → AI 검토 탭 LIVE-03 외부 전송 상태/권한 사유, 증거 없는 `HOLD`와 0 호출 확인. 실서버 외부 전송 허가가 없으므로 LIVE-03 전체 DONE 아님. TypeSafe 담당자/계약 및 KRX 계정 상품별 원천·파생 사용권 증거, 수집 revision/시점, 신뢰된 RA01~10 검증자/approved scope 준비가 추가 과제로 남음.
 - **명확한 경계:** 원시/파생 시장데이터를 실모델로 보내지 말 것. 현재 HOLD가 안전한 정확한 판정이고 hash, 사용자 클릭/키 또는 편의상 flag만으로 허가로 바꾸지 말 것. LIVE-04 실제 실종목 API 호출은 이 조건 충족 후 별도 실행 승인. G2-01~04 유지, G2-05 보류, PR #170 Draft, 운영 sqlite 불변, LIVE-01/02 DONE.
+
+
+## 2026-10-29 LIVE-03 사용자 Windows 스크린샷 인수 — 최신 상태
+
+- 사용자가 C:\Projects\StockScope 브랜치 최신 pull (0873079), targeted backend/tests/test_jev_live_03_outbound_gate.py **4 passed** 실행 로그 제공. 실제 localhost:5173 Scanner 2026-10-28 셀트리온(KOSPI 068270) 선택 AI 검토 스크린샷에는 새로운 LIVE-03 카드가 정상 렌더됨. 후보 ticker mismatch 없음.
+- 화면 판정은 **외부 전송 보류**이며 실제 TypeSafe 호출 없음. NOT_AUTHORIZED, time_authenticity=UNVERIFIED, trusted_rights_resolver=NOT_CONFIGURED, OUTBOUND_BODY_NOT_VERIFIABLE, EXECUTION_APPROVAL_NOT_GRANTED, LEGACY_HORIZON_UNDEFINED 등 실제 부족한 근거 표시. LIVE-02에서 이 셀트리온 후보가 BLOCKED_HORIZON이었으므로 V4 body 미생성/전송 차단이 올바르다.
+- [LIVE-03 코드 CI #40805284863](https://github.com/SkyBluekor/StockScope/actions/runs/40805284863) **4/4 PASS**, [직전 문서 CI #40805668772](https://github.com/SkyBluekor/StockScope/actions/runs/40805668772) **4/4 PASS**. 본 사용자 화면은 실제 HTTP 발송 테스트가 아니며 합성 wire hash 변조 시험과 구분한다.
+- **최신 LIVE-03 상태: LOCAL GATE + WINDOWS UI DONE, outbound authorization=HOLD/NO-GO.** 당초 단계의 ALLOW 또는 HOLD/DENY + 이유 요구에서 현재 실제 후보는 HOLD로 정확히 검증됨. 기존 NOT DONE / 화면 미검증 문장은 이전 시점 기록이다. 단 KRX 원천/파생 외부 AI 처리 권한·계정별 TypeSafe 보관조건·source revision/공개시간·RA01-RA10 신뢰된 증빙 확보는 아직 미완료이며 실종목 호출 가능하다는 의미는 아니다.
+- **NEXT: LIVE-04 실종목 HTTP provider 실행은 권한·시점·execution approval 확보까지 BLOCKED.** 합성/Mock 단일 후보 UI opt-in, background job 및 중복과금/오류 경계 구현은 가능. 실제 TypeSafe provider adapter에 trusted resolver + byte-exact binding을 send 경계에 붙이지 않고 실종목 전송 활성화 금지. 추가 유료 TypeSafe 호출 승인 없음. G2-01~04 유지, G2-05 보류, PR #170 Draft, 정상 Scanner/Risk/DB 불변.
