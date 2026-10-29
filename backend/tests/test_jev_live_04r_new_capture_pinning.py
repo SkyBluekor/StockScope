@@ -136,3 +136,30 @@ def test_invalid_original_begin_contract_fails_closed(tmp_path):
             source_job_id="new-fresh-scanner", request=request, result=_result(),
         )
     assert error.value.code == "PROSPECTIVE_CAPTURE_REQUEST_INVALID"
+
+
+def test_auxiliary_capture_begin_drift_does_not_throw_into_baseline_scanner(tmp_path):
+    from types import SimpleNamespace
+    from app.prospective.service import ProspectiveService
+
+    catalog, db = _catalog(tmp_path)
+    original = _request()
+    initial = catalog.begin_capture(
+        source_job_id="new-fresh-scanner", request=original,
+    )
+    service = ProspectiveService(db, tmp_path / "not-opened-market-store.db")
+    changed = SimpleNamespace(
+        market_scope="KOSPI", as_of_date=original.requested_as_of,
+        candidate_limit=original.candidate_limit, horizon_intent="MEDIUM",
+    )
+    # Policy pin omitted as an additional mismatch: the Scanner's analysis
+    # must still be able to finish; the sidecar capture remains PENDING.
+    result = service.try_begin_scanner_capture(
+        source_job_id="new-fresh-scanner", payload=changed,
+        selection_policy_pin=None,
+    )
+    assert result["status"] == "FAILED"
+    assert result["code"] == "PROSPECTIVE_CAPTURE_REQUEST_DRIFT"
+    preserved = catalog.get_capture(initial["id"])
+    assert preserved["status"] == "PENDING"
+    assert preserved["request"] == original.to_dict()
