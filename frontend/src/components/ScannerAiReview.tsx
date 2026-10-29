@@ -97,7 +97,10 @@ export default function ScannerAiReview({
               : readiness ? (
                 <>
                   <p><b>{readinessLabel[readiness.status] ?? readiness.status}</b> · {readinessLabel[readiness.local_readiness] ?? readiness.local_readiness}</p>
-                  <p>실제 TypeSafe 전송: 금지 ({readiness.transmission_decision}) · 이 조회에서 모델 요청 0회</p>
+                  <p>{readiness.transmission_decision === "NO_GO"
+                    ? "실제 TypeSafe 전송: 금지 (SOURCE_RIGHTS_HOLD)"
+                    : "이 후보는 현 단계에서 TypeSafe 호출 대상이 아닙니다."} · 이 조회에서 모델 요청 0회</p>
+                  <p>원본 신원 확인 · 순위 {readiness.baseline_checks.rank.status} / 전략 {readiness.baseline_checks.strategy.status} / Risk {readiness.baseline_checks.risk.status} / 정책 {readiness.baseline_checks.policy.status}</p>
                   <details>
                     <summary>미실행 사유와 검사 근거</summary>
                     <p>V4 상태: {readiness.local_v4_status} · 출처 연결: {readiness.lineage_analysis_status}</p>
