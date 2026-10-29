@@ -107,7 +107,7 @@ def test_scanner_fresh_active_candidate_source_chain_only_accepts_matching_evide
         policy_verified=policy_verified,
         policy_reason=policy_reason,
     )
-    assert snapshot["priority"] == candidate.get("priority")
+    assert snapshot.get("priority") == candidate.get("priority")
     assert snapshot["rank"] == candidate["rank"]
     assert snapshot["risk"] == candidate["risk"]
     assert snapshot["strategy_version_id"] == candidate["strategy_version_id"]
