@@ -93,7 +93,8 @@ def load_frozen_candidates(
             key: row[key] for key in (
                 "id", "status", "source_execution_key", "scanner_version",
                 "scanner_baseline", "input_fingerprint", "actual_data_date",
-                "horizon_intent", "horizon_policy_version", "completed_at",
+                "horizon_intent", "horizon_policy_version",
+                "created_at", "started_at", "completed_at",
                 "request_json",
             )
         }
