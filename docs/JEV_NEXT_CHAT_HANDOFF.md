@@ -114,3 +114,5 @@ git -C $work log -1 --oneline
 - 작업 브랜치 동일, Draft PR #170 유지. `01f27ba`에서 synthetic live CLI의 Mock/미검증 provider 증빙 거부, `77bdefd`에서 회귀 테스트 추가.
 - 새 커밋의 CI 상태는 **미확인/대기**, 실제 TypeSafe 유료 1회 요청과 사용자 Windows 수동 검증은 **미실시**. 기존 4/4 PASS를 이번 커밋의 CI 결과로 표시하면 안 됨.
 - LIVE-01 최종 완료 판정은 계속 보류. 별도 승인된 실제 synthetic-only provider 요청 및 저장 검증 후 완료 처리. S7.4 실시장 데이터 전송 금지, G2-05 보류 유지.
+
+- **2026-10-29 CI 확인:** [GitHub Actions #40713831348](https://github.com/SkyBluekor/StockScope/actions/runs/40713831348) **4/4 SUCCESS** (Backend Python 3.11/3.14, Frontend Node 22, Windows Fresh Clone). Windows synthetic preflight 및 HTTP Mock V4 integration 단계 성공. 이전 #40713750927은 **CANCELLED**이며 실패 테스트의 근거가 아님. 실제 유료 TypeSafe 요청·사용자 Windows 확인 **미실시**, LIVE-01 **NOT DONE**, 시장 원천 외부 전송 **HOLD**.
