@@ -190,3 +190,47 @@ export function requestJevReview(payload: JevManualReviewRequest) {
     }),
   });
 }
+
+
+/** LIVE-02: read-only local Scanner candidate diagnosis, never a model request. */
+export type JevLocalReadiness = {
+  version: string;
+  capture_id: string;
+  sample_index: number;
+  identity: {
+    snapshot_hash: string;
+    signal_date: string | null;
+    market: string;
+    ticker: string;
+    rank: number | null;
+    strategy: string;
+    action: string;
+  };
+  status: "LOCAL_READY" | "LOCAL_ONLY" | "NEEDS_EVIDENCE" | "SOURCE_RIGHTS_HOLD" | "NOT_ENTRY_CANDIDATE";
+  local_readiness: string;
+  local_v4_status: string;
+  v4_semantic_status: string | null;
+  integrity_reason_codes: string[];
+  lineage_analysis_status: string;
+  v4_outbound_lineage_status: string;
+  source_origin_status: string;
+  source_revision_status: string;
+  publication_time_status: string;
+  rights_status: string;
+  transmission_decision: "NO_GO" | "NOT_REQUIRED" | "NOT_APPLICABLE";
+  reason_codes: string[];
+  model_review_executed: false;
+  provider_eligible: false;
+  actual_provider_calls: 0;
+  db_writes: 0;
+};
+
+export function getJevLocalReadiness(captureId: string, sampleIndex: number) {
+  const params = new URLSearchParams({
+    capture_id: captureId,
+    sample_index: String(sampleIndex),
+  });
+  return jevJson<JevLocalReadiness>(
+    "/api/simulation/jev/local-readiness?" + params.toString(),
+  );
+}
