@@ -162,3 +162,50 @@ test("G2-04 analysis/history tabs preserve current Scanner selection and rerun o
   expect(pageErrors).toEqual([]);
 });
 
+
+
+test("P4 Horizon selector keeps the original Scanner control grid readable at desktop and mobile sizes",async({page})=>{
+  const {calls,violations,pageErrors}=await setup(page,{matched:true});
+  const card=page.locator(".scanner-control-card");
+  const intro=card.locator(":scope > div:first-child p");
+  const market=card.locator(".scanner-market-tabs");
+  const actions=card.locator(".scanner-control-actions");
+  const horizon=card.locator(".scanner-horizon-control");
+  const choice=page.getByLabel("검토 기간");
+
+  for (const {width,maxHeight,minIntroWidth} of [
+    {width:1400,maxHeight:330,minIntroWidth:170},
+    {width:900,maxHeight:450,minIntroWidth:150},
+    {width:420,maxHeight:550,minIntroWidth:130},
+  ]) {
+    await page.setViewportSize({width,height:800});
+    await expect(card).toBeVisible();
+    await expect(choice).toBeVisible();
+    const [cardBox,introBox,marketBox,actionsBox,horizonBox]=await Promise.all([
+      card.boundingBox(),intro.boundingBox(),market.boundingBox(),
+      actions.boundingBox(),horizon.boundingBox(),
+    ]);
+    expect(cardBox?.height, "Scanner control card must not become a towering grid at "+width).toBeLessThan(maxHeight);
+    expect(introBox?.width, "Market description must not collapse into one-character lines at "+width).toBeGreaterThan(minIntroWidth);
+    expect(horizonBox.y, "Horizon must sit below the first row at "+width).toBeGreaterThan(actionsBox.y);
+    expect(horizonBox.y, "Horizon must sit below the market row at "+width).toBeGreaterThan(marketBox.y);
+    expect(horizonBox.width, "Horizon must span the control card width at "+width).toBeGreaterThan(cardBox.width*0.75);
+    const overflow=await card.evaluate(el=>el.scrollWidth-el.clientWidth);
+    expect(overflow,"The controls must not overflow horizontally at "+width).toBeLessThanOrEqual(2);
+  }
+
+  await page.setViewportSize({width:1400,height:800});
+  await choice.selectOption("SHORT");
+  await expect(choice).toHaveValue("SHORT");
+  await page.getByRole("button",{name:"후보 다시 찾기"}).click();
+  await expect.poll(()=>calls.filter(c=>c.path==="/api/backtest/scanner/jobs"&&c.method==="POST").length).toBe(1);
+  const request=calls.find(c=>c.path==="/api/backtest/scanner/jobs"&&c.method==="POST");
+  expect(request.body).toMatchObject({
+    horizon_intent:"SHORT",
+    horizon_purpose:"LOCAL_REVIEW_ONLY",
+  });
+  await page.reload();
+  await expect(page.getByLabel("검토 기간")).toHaveValue("SHORT");
+  expect(violations).toEqual([]);
+  expect(pageErrors).toEqual([]);
+});
