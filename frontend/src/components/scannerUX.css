@@ -973,15 +973,49 @@
   outline-offset: 2px;
 }
 
-/* JEV-LIVE-04R-P4: understated horizon context, not a trading-policy toggle. */
-.scanner-horizon-control { display: flex; flex-wrap: wrap; align-items: center; gap: 7px 12px; margin: 8px 0 3px; }
-.scanner-horizon-control label { font-size: 13px; font-weight: 600; color: var(--text-strong); }
+/* JEV-LIVE-04R-P4: keep the original three control columns intact.
+   The optional Horizon selector occupies a dedicated full-width *second* row.
+   Without this span, CSS Grid auto-creates an extra narrow column and the
+   existing description becomes a 1-character-wide vertical column. */
+.scanner-workspace .scanner-control-card > .scanner-horizon-control {
+  grid-column: 1 / -1;
+  min-width: 0;
+  margin: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+.scanner-horizon-control label { font-size: 13px; font-weight: 600; color: var(--text-strong); white-space: nowrap; }
 .scanner-horizon-control select {
-  min-width: 155px; max-width: 100%; padding: 8px 10px;
-  color: var(--text-strong); background: var(--surface);
-  border: 1px solid var(--line); border-radius: 5px; font: inherit; font-size: 13px;
+  min-width: 155px;
+  max-width: 100%;
+  padding: 7px 10px;
+  color: var(--text-strong);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font: inherit;
+  font-size: 13px;
 }
 .scanner-horizon-control select:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .scanner-horizon-control select:disabled { opacity: .6; }
-.scanner-horizon-control small { color: var(--text-subtle); font-size: 12px; line-height: 1.5; }
-.scanner-horizon-control .scanner-horizon-captured { flex-basis: 100%; font-weight: 600; }
+.scanner-horizon-control small {
+  flex: 1 1 250px;
+  min-width: 0;
+  overflow-wrap: break-word;
+  color: var(--text-subtle);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.scanner-horizon-control .scanner-horizon-captured {
+  flex: 1 1 100%;
+  font-weight: 600;
+}
+@media (max-width: 1180px) {
+  .scanner-workspace .scanner-control-card > .scanner-horizon-control {
+    grid-column: 1;
+  }
+}
