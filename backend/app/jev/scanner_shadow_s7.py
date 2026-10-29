@@ -94,10 +94,13 @@ def load_frozen_candidates(
                 "id", "status", "source_execution_key", "scanner_version",
                 "scanner_baseline", "input_fingerprint", "actual_data_date",
                 "horizon_intent", "horizon_policy_version",
-                "created_at", "started_at", "completed_at",
-                "request_json",
+                "completed_at", "request_json",
             )
         }
+        # Old isolated research fixtures do not carry these optional event
+        # columns. Missing is UNKNOWN, never a fabricated source timestamp.
+        for event in ("created_at", "started_at"):
+            capture[event] = row[event] if event in row.keys() else None
         sample = {
             key: row[key] for key in (
                 "sample_index", "snapshot_hash", "capture_run_id",
