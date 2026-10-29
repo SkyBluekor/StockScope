@@ -29,3 +29,8 @@ Read:
 ## Reference
 
 GitHub repo: https://github.com/SkyBluekor/StockScope · PR: https://github.com/SkyBluekor/StockScope/pull/170 .
+
+
+## Latest LIVE-04R execution (2026-10-29)
+
+CODE + CI 4/4 PASS ([Actions #40823176776](https://github.com/SkyBluekor/StockScope/actions/runs/40823176776), code HEAD `9dac50d`); **user Windows browser UAT not yet done, real-market TypeSafe outbound HOLD**. Read-only `/local-readiness` returns actual captured Horizon/policy, source event timestamps (missing stays null), and original-versus-legacy-derived strategy identity without modifying frozen capture. Actual Scanner AI tab now prioritizes selected real stock readiness/rights HOLD and folds verbose diagnostics and synthetic demo. Previous numeric Horizon policy remains `EVALUATION_PENDING`; no historical backfill and no newly approved data source or real-market V4 model call. Next: `C:\Projects\StockScope` pull + `.\run-dev.ps1` Windows browser UAT; validate that legacy candidates remain blocked. Preserve LIVE-04R partial state, G2-05 paused, Draft PR #170, no paid calls.
