@@ -12,7 +12,9 @@ from pathlib import Path
 import pytest
 
 from app.jev.decision_reviewer_offline import DecisionReviewContractError
-from app.jev.live_04r_p3_capture_probe import inspect_one_capture
+from app.jev.live_04r_p3_capture_probe import (
+    inspect_one_capture, discover_new_capture_ids,
+)
 from app.jev.synthetic_live_01 import prepare_synthetic_service
 from tools.data.jev_live_04r_p3_one_capture import main
 
@@ -129,3 +131,39 @@ def test_cli_fail_closed_has_no_exception_traceback_or_data_dump(tmp_path, capsy
     assert report["reason_code"] == "S7_SOURCE_DB_NOT_FOUND"
     assert report["actual_provider_calls"] == 0
     assert not path.exists()
+
+
+def test_new_capture_discovery_is_readonly_and_never_attests_market_origin(tmp_path, capsys):
+    db, preview = _fixture(tmp_path)
+    before = db.read_bytes()
+    found = discover_new_capture_ids(db, captured_after=_cutoff())
+    assert len(found) == 1
+    assert found[0]["capture_id"] == preview["capture_id"]
+    assert found[0]["source_job_id"]
+
+    code = main([
+        "--find-new",
+        "--captured-after", _cutoff(),
+        "--simulation-db", str(db),
+    ])
+    assert code == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["status"] == "FOUND"
+    assert len(report["new_complete_entry_captures"]) == 1
+    assert report["new_complete_entry_captures"][0]["capture_id"] == preview["capture_id"]
+    assert report["actual_provider_calls"] == 0
+    assert "snapshot" not in report
+    assert db.read_bytes() == before
+
+
+def test_new_capture_discovery_rejects_historical_and_conflicting_ids(tmp_path, capsys):
+    db, preview = _fixture(tmp_path)
+    assert discover_new_capture_ids(
+        db, captured_after=_cutoff(timedelta(days=1))
+    ) == []
+    assert main([
+        "--find-new", "--capture-id", preview["capture_id"],
+        "--captured-after", _cutoff(), "--simulation-db", str(db),
+    ]) == 2
+    error = json.loads(capsys.readouterr().out)
+    assert error["reason_code"] == "P3_DISCOVER_AND_EXPLICIT_ID_CONFLICT"
