@@ -16,6 +16,7 @@ from app.jev.scanner_shadow_s7 import load_frozen_candidates
 from app.jev.scanner_integrity_s7_1 import assess_frozen_candidate
 from app.jev.scanner_v4_readiness_s7_5 import diagnose_candidate as diagnose_v4_candidate
 from app.jev.scanner_eligibility_s8 import diagnose_candidate as diagnose_s8_candidate
+from app.jev.scanner_outbound_gate_live_03 import diagnose_outbound_candidate
 from app.jev.review_service import JevManualReviewService
 from app.jev.typesafe_catalog import (
     TypeSafeJevCatalog,
@@ -292,6 +293,46 @@ def jev_local_readiness(
         "provider_eligible": False,
         "actual_provider_calls": 0,
         "db_writes": 0,
+    }
+
+
+@router.get("/outbound-preflight")
+def jev_outbound_preflight(
+    capture_id: str = Query(min_length=1, max_length=200),
+    sample_index: int = Query(ge=0, le=499),
+) -> dict[str, object]:
+    """LIVE-03: read-only external disclosure gate, always HOLD for real data.
+
+    No caller-provided rights or approval fields.  No provider or market
+    store can be instantiated from this route.
+    """
+    try:
+        pairs = load_frozen_candidates(_db(), capture_id=capture_id, limit=500)
+        match = next(
+            ((capture, sample) for capture, sample in pairs
+             if sample["sample_index"] == sample_index),
+            None,
+        )
+        if match is None:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "JEV_LIVE03_SAMPLE_NOT_FOUND",
+                        "message": "동결된 COMPLETE 후보를 찾지 못했습니다."},
+            )
+        capture, sample = match
+        diagnostic = diagnose_outbound_candidate(capture, sample)
+    except DecisionReviewContractError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": exc.code, "message": "실제 시장 자료의 전송 자격 검사 불가"},
+        ) from exc
+    return {
+        "capture_id": capture["id"],
+        "sample_index": int(sample["sample_index"]),
+        "snapshot_hash": sample["snapshot_hash"],
+        "market": sample["market"],
+        "ticker": sample["ticker"],
+        **diagnostic,
     }
 
 
