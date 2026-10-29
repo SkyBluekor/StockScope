@@ -108,6 +108,29 @@ class ProspectiveCatalog:
         except ProspectiveCatalogError:
             return False
 
+    @staticmethod
+    def _assert_capture_request_unchanged(
+        stored_request_json: str, request: ProspectiveCaptureRequest,
+    ) -> None:
+        """Bind Scanner begin/finalize to one immutable horizon + policy pin.
+
+        A source job may outlive a policy switch or a client's changed horizon.
+        Never complete the old capture with a new selection policy or period.
+        Compare the captured complete request, not only the policy ID.
+        """
+        try:
+            previous = json.loads(stored_request_json)
+        except (ValueError, TypeError) as exc:
+            raise ProspectiveCatalogError(
+                "PROSPECTIVE_CAPTURE_REQUEST_INVALID",
+                "캡처 시작 당시 요청 계약을 복구할 수 없습니다.",
+            ) from exc
+        if not isinstance(previous, dict) or previous != request.to_dict():
+            raise ProspectiveCatalogError(
+                "PROSPECTIVE_CAPTURE_REQUEST_DRIFT",
+                "Scanner 시작과 완료 시점의 기간·선택 정책 요청이 다릅니다.",
+            )
+
     def begin_capture(
         self,
         *,
@@ -123,6 +146,10 @@ class ProspectiveCatalog:
                 (source_job_id,),
             ).fetchone()
             if existing is not None:
+                if str(existing["status"]) == "PENDING":
+                    self._assert_capture_request_unchanged(
+                        existing["request_json"], request,
+                    )
                 return self._capture_from_row(existing)
             capture_id = str(uuid4())
             conn.execute(
@@ -397,6 +424,12 @@ class ProspectiveCatalog:
                 if str(row["status"]) in {"COMPLETE", "DUPLICATE", "PARTIAL"}:
                     conn.rollback()
                     return self._capture_from_row(row)
+                # Validate the *stored* begin request before writing samples.
+                # A newly chosen active policy or horizon may never be used to
+                # finalize a capture started under a different contract.
+                self._assert_capture_request_unchanged(
+                    row["request_json"], request,
+                )
 
             partial = bool(result.get("partial_data"))
             partial_error_code = "SCANNER_PARTIAL_DATA" if partial else None
