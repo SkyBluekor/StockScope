@@ -3172,6 +3172,7 @@ export type ScannerRequest = {
   force_refresh?: boolean;
   allow_large_sync?: boolean;
   horizon_intent?: "SHORT" | "MEDIUM" | "LONG";
+  horizon_purpose?: "PRODUCTION_POLICY" | "LOCAL_REVIEW_ONLY";
 };
 
 export type ScannerFreshnessResponse = {
