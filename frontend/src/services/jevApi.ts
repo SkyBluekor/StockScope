@@ -210,6 +210,19 @@ export type JevLocalReadiness = {
   local_readiness: string;
   local_v4_status: string;
   v4_semantic_status: string | null;
+  input_contract: {
+    horizon_intent: string | null;
+    horizon_policy_version: string | null;
+    horizon_support_status: string;
+    horizon_reason_code: string | null;
+    strategy_identity_status: string;
+    original_strategy_identity: "CAPTURED_ORIGINAL" | "LEGACY_DERIVED_NOT_ORIGINAL" | "NOT_VERIFIED";
+    capture_created_at: string | null;
+    capture_started_at: string | null;
+    capture_completed_at: string | null;
+    source_first_published_at: null;
+    source_publication_evidence: "UNVERIFIED";
+  };
   integrity_reason_codes: string[];
   baseline_checks: Record<"rank" | "strategy" | "policy" | "engine" | "risk" | "dates", {
     status: string;
