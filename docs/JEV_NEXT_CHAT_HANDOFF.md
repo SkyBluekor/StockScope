@@ -84,7 +84,7 @@ git -C $work log -1 --oneline
 |---|---|---|
 | JEV-LIVE-00 | 완료: 문서 기준점 설정 | 브랜치 HEAD·로컬 환경만 확인 |
 | **JEV-LIVE-01** | **DONE — 합성 실제 TypeSafe 1회 E2E 성공** | 사용자 Windows `C:\\Projects\\StockScope`에서 `jev-1.14.0` 실제 응답 `PASS_THROUGH`, SQLite `VALID`, `MATCHED`, 1회 호출, CLI 0; 기존 CI 4/4 PASS. 실종목 UI는 아직 별도 단계. |
-| **JEV-LIVE-02** | **코드·CI 4/4 PASS / 사용자 Windows 실제 후보 UI 미검증** | FastAPI read-only endpoint와 Scanner AI 탭 연결됨. 격리된 사용자 캡처·브라우저에서 선택 후보의 상태/차단 사유 직접 확인 필요. |
+| **JEV-LIVE-02** | **DONE — 코드/CI + 사용자 실제 Windows AI 검토 탭 확인** | 셀트리온(KOSPI 068270) 저장 Scanner 2026-10-28 후보의 입력 근거·V4 차단·출처/권한 사유가 표시됨. index 0 수정 후 선택 종목 불일치 오류 없음. 코드 CI 4/4 PASS, Windows pytest 3/3 PASS. |
 | JEV-LIVE-03 | 미착수: 실제 시장 외부 전송 HOLD | source 권한/시점/수신자/실 outbound body 검증 |
 | JEV-LIVE-04 | 미착수, 실 market 호출은 LIVE-03 권한 결과 필요 | 사용자 선택 후보 1건 end-to-end 실제 review |
 | JEV-LIVE-05 | 미착수 | 명시 opt-in 소수 배치/자동 review, rollback |
@@ -159,3 +159,12 @@ git -C $work log -1 --oneline
 - 원인: `backend/app/prospective/catalog.py` 저장 `sample_index`는 0-based, LIVE-02의 React 표시 `rank`는 1-based. 1번 후보 선택 때 API에서 1번 저장 행(두 번째 후보)을 조회해 ticker mismatch 차단됨. 데이터가 망가진 게 아닌 UI/API index 연결 버그.
 - 해결: `ScannerPanel.tsx`에서 `sampleIndex={rank-1}`, `ScannerAiReview.tsx`에서 인덱스 0 허용, `backend/app/api/jev.py` GET에서 Query ge=0 허용, TS API 주석 보완. `backend/tests/test_jev_live_02_local_readiness_api.py`에 첫 후보 index0/다음 후보 index1 distinct hash 및 진단 DB 바이트 불변 검증 추가. 수정 마지막 코드 커밋 `52d680480508b9aea857dc71436e5227fee53d55`, [CI #40797590774](https://github.com/SkyBluekor/StockScope/actions/runs/40797590774) **4/4 SUCCESS**.
 - 다음은 사용자 로컬 checkout pull 후 **기존 격리 SQLite preview를 물고 있는 backend 서버를 재시작**하고 (PowerShell 환경변수를 날리지 말 것), frontend 강력 새로고침하여 선택한 후보의 readiness/no-go 이유 표시 확인. 재확인 전 LIVE-02 DONE 아님. LIVE-01 합성 유료 1회는 완료·추가 호출 불가; 실종목 전송 HOLD.
+
+
+## 2026-10-29 최종 우선순위 갱신 — LIVE-02 DONE, 다음은 LIVE-03
+
+- 사용자가 2026-10-28 저장 Scanner 후보 **셀트리온(KOSPI 068270)** 를 선택한 실제 Windows 브라우저 `http://127.0.0.1:5173` AI 검토 탭 스크린샷을 제시함. **이전 다른 후보 식별 정보 오류가 해소**되고, 해당 선택 종목의 로컬 준비도 결과와 구체적 차단 이유가 화면에 표시됨.
+- 표시된 상태: 입력 근거 확인 필요, `V4 BLOCKED_HORIZON`, 출처 연결 `COMPLETE`, 순위·Risk·정책 `PASS`, 전략 `LEGACY_DERIVED`, 원천 공개 시각 `UNKNOWN`, 권한 `UNVERIFIED`, TypeSafe 전송 금지 (`SOURCE_RIGHTS_HOLD`), 실제 모델 요청 0회. 준비도 결과는 AI 판정이 아니며 PASS를 전송 허가로 해석 금지.
+- 사용자 Windows pytest `backend/tests/test_jev_live_02_local_readiness_api.py` **3 passed**. 마지막 코드 SHA `52d680480508b9aea857dc71436e5227fee53d55`; [코드 CI #40797590774](https://github.com/SkyBluekor/StockScope/actions/runs/40797590774) 4/4 SUCCESS. [직전 문서 CI #40797912620](https://github.com/SkyBluekor/StockScope/actions/runs/40797912620) 4/4 SUCCESS.
+- **LIVE-02 DONE** (개별 실제 후보를 선택하면 읽기 전용 준비도와 차단 이유가 표시되는 단계의 완료 기준 충족). 이전 섹션의 `PENDING` 표기는 시점별 과거 이력이며 현재 완료 판정이 아님. 다른 종목 선택 후 상태변경 검증은 추가로 유용하지만 이 단계 범위의 단일 실제 후보 UI 인수를 막지 않는다.
+- **NEXT LIVE-03**: 실 시장 원천 KRX 및 조건 PASS·Risk·순위 등 파생 판단의 TypeSafe 외부 제공 권한, 소스·시점·사용자 계정 범위를 검증. S7.4/S8 기존 자료 재사용, 허가 없는 market-derived 전송 금지. 환경 및 화면이 정상이라도 실모델 실종목 사용 가능 상태가 아니다. API default review OFF 및 G2-01~04 보존, G2-05 pause, PR #170 Draft 유지. 추가 유료 TypeSafe 호출 미승인.
