@@ -211,6 +211,10 @@ export type JevLocalReadiness = {
   local_v4_status: string;
   v4_semantic_status: string | null;
   integrity_reason_codes: string[];
+  baseline_checks: Record<"rank" | "strategy" | "policy" | "engine" | "risk" | "dates", {
+    status: string;
+    code: string | null;
+  }>;
   lineage_analysis_status: string;
   v4_outbound_lineage_status: string;
   source_origin_status: string;
