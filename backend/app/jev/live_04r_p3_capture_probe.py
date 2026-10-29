@@ -72,6 +72,92 @@ def discover_new_capture_ids(
     return output
 
 
+
+def explain_new_capture_attempts(
+    simulation_db: Path, *, captured_after: str, limit: int = 10,
+) -> dict[str, Any]:
+    """Read status of ALL new Scanner capture attempts, not only eligible ones.
+
+    COMPLETE-without-entry, DUPLICATE, PARTIAL, PENDING and FAILED otherwise
+    looked identical to 'Scanner never ran'. Preserve the strict eligible
+    list separately. No terminal changes, raw prices or outgoing requests.
+    """
+    after = _utc_timestamp(captured_after)
+    if after is None:
+        raise ValueError("P3_CAPTURED_AFTER_REQUIRES_TIMEZONE")
+    if type(limit) is not int or not 1 <= limit <= 10:
+        raise ValueError("P3_DISCOVERY_LIMIT_INVALID")
+    try:
+        with _connect_readonly(simulation_db) as conn:
+            rows = conn.execute(
+                "SELECT r.id,r.source_job_id,r.created_at,r.status,"
+                "r.canonical_capture_id,r.error_code,"
+                "COUNT(s.sample_index) AS total_candidates,"
+                "SUM(CASE WHEN s.action='ENTRY_CANDIDATE' THEN 1 ELSE 0 END) AS entry_candidates "
+                "FROM prospective_capture_run r "
+                "LEFT JOIN prospective_recommendation_sample s ON s.capture_run_id=r.id "
+                "GROUP BY r.id "
+                "ORDER BY r.created_at DESC LIMIT 500"
+            ).fetchall()
+    except sqlite3.Error as exc:
+        raise DecisionReviewContractError("P3_CAPTURE_DISCOVERY_SCHEMA_UNAVAILABLE") from exc
+
+    attempts = []
+    valid = []
+    last_recorded_at = rows[0]["created_at"] if rows else None
+    for row in rows:
+        created = _utc_timestamp(row["created_at"])
+        if created is None or created < after:
+            continue
+        state = str(row["status"] or "")
+        entries = int(row["entry_candidates"] or 0)
+        total = int(row["total_candidates"] or 0)
+        if state == "COMPLETE":
+            diagnosis = "READY_FOR_P3" if entries > 0 else "COMPLETE_NO_ENTRY_CANDIDATE"
+        elif state == "DUPLICATE":
+            diagnosis = "DUPLICATE_REUSED_CANONICAL"
+        elif state == "PARTIAL":
+            diagnosis = "PARTIAL_DATA"
+        elif state == "PENDING":
+            diagnosis = "SCANNER_JOB_PENDING"
+        elif state in ("FAILED", "CANCELLED", "INTERRUPTED"):
+            diagnosis = "SCANNER_" + state
+        else:
+            diagnosis = "CAPTURE_STATUS_UNRECOGNIZED"
+        attempt = {
+            "capture_id": row["id"],
+            "created_at": row["created_at"],
+            "source_job_id": row["source_job_id"],
+            "capture_status": state,
+            "diagnosis": diagnosis,
+            "entry_candidate_count": entries,
+            "stored_candidate_count": total,
+            "canonical_capture_id": row["canonical_capture_id"] if state == "DUPLICATE" else None,
+            "error_code": row["error_code"] if state in ("FAILED", "PARTIAL", "INTERRUPTED", "CANCELLED") else None,
+        }
+        attempts.append(attempt)
+        if state == "COMPLETE" and entries > 0:
+            valid.append({
+                "capture_id": row["id"],
+                "created_at": row["created_at"],
+                "source_job_id": row["source_job_id"],
+            })
+        if len(attempts) >= limit:
+            break
+    return {
+        "version": "JEV_LIVE_04R_P3_CAPTURE_DISCOVERY_V2",
+        "read_only": True,
+        "status": "FOUND" if valid else ("NOT_ELIGIBLE" if attempts else "NO_CAPTURE_AFTER_START"),
+        "new_complete_entry_captures": valid,
+        "new_scanner_capture_attempts": attempts,
+        "last_recorded_capture_at": last_recorded_at,
+        "new_attempts_exist": bool(attempts),
+        "actual_provider_calls": 0,
+        "db_writes": 0,
+    }
+
+
+
 def _first_blocker(
     *, fresh: bool, sample: dict[str, Any], checks: dict[str, Any],
     v2_ok: bool, v2_reason: str | None, v4: dict[str, Any],
