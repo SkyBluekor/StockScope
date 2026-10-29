@@ -332,3 +332,11 @@ StockScope의 기본 `Scanner → 정량 전략/Risk 판단 → Prospective COMP
 
 - [GitHub Actions #40838635212](https://github.com/SkyBluekor/StockScope/actions/runs/40838635212): **4/4 SUCCESS**, Backend Python 3.11/3.14, Frontend Node22, Fresh Clone Windows 모두 PASS.
 - P4 사용자 Windows 브라우저 선택→Scanner 신규 캡처 저장→V4 구조 입력 인수는 **아직 진행되지 않았으므로 별도 PENDING**. 과거 LEGACY 원본 version/hash 문제를 해결했다고 주장하지 말 것. 실종목 TypeSafe 전송 HOLD 및 numeric Horizon `EVALUATION_PENDING` 유지.
+
+
+### 2026-10-29 P4 사용자 화면 배치 회귀 긴급 수정
+
+- **사용자 실제 Windows 스크린샷** `localhost_5173_scanner(4).png`: 상단 Scanner '시장 선택' 설명·후보 재검색 안내가 세로 한 글자씩 표시되고 첫 컨트롤 카드가 비정상적으로 길어짐. 이는 P4에서 기존 `.scanner-control-card` **3열 Grid**에 `.scanner-horizon-control`을 3번째 직계 자식으로 삽입하여 4개 자식을 3열 그리드에 자동 배치하고 기존 콘텐츠 폭을 축소한 레이아웃 회귀.
+- **실제 UI 코드 수정:** [`ScannerPanel.tsx` `90d4dfa`](https://github.com/SkyBluekor/StockScope/commit/90d4dfa90d37c4ca51024b78a06bb63551721db5)에서 기존 '시장 설명 / 시장 버튼 / 후보 찾기'를 원래 순서와 3열로 복원, Horizon은 네 번째 자식인 2행으로 이동. [`scannerUX.css` `d701638`](https://github.com/SkyBluekor/StockScope/commit/d7016389daff93181b9af880d5d4e2ba252b6cce)에서 신규 Horizon 2행의 `grid-column:1/-1` 전체 너비 보장, 미디어쿼리 모바일 1열 보호 및 긴 문구 wrap 적용. P4 기능·백엔드·투자 판단 변경 없음.
+- **브라우저 회귀 테스트:** [`p003-scanner-recheck.spec.mjs` `17f7d43`](https://github.com/SkyBluekor/StockScope/commit/17f7d4394c8bd9ea094d90a7ca260bd72fbf816f) 신규 테스트는 실제 Chromium에서 폭 1400/900/420 카드 높이, 첫 설명 텍스트 최소 너비, 전체 폭 Horizon 후행, 수평 스크롤 방지, SHORT 클릭→`LOCAL_REVIEW_ONLY` 서버 요청, 새로고침 선택 유지 및 외부 네트워크 차단까지 검증. [Actions #40840131900](https://github.com/SkyBluekor/StockScope/actions/runs/40840131900) **4/4 PASS** (Backend 3.11/3.14, Frontend Node22 Playwright, Windows Fresh Clone).
+- **인수 상태:** 원인·코드·CI Chromium 정량 회귀 PASS. **동일 사용자 Windows 실제 화면이 정상으로 복구되었는지는 아직 재촬영/확인 전**. 기존 `C:\Projects\StockScope`에서 `git pull --ff-only`, 브라우저 강력 새로고침 후 Scanner 상단 카드 다시 확인. 이 UI 수정은 P4 실제 신규 시장 V4 입증이나 TypeSafe 권한 변동이 아님; real outbound HOLD, LEGACY 원본 신원 미확정 유지.
