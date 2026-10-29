@@ -180,3 +180,11 @@ StockScope의 기본 `Scanner → 정량 전략/Risk 판단 → Prospective COMP
 - **검증:** [격리 합성 캡처 HTTP GET 테스트](https://github.com/SkyBluekor/StockScope/commit/d41e79eb1937784cb405cee2778f59ff451dc2f9) (시작 수명주기의 운영 write를 거치지 않음, snapshot 해시 및 원본 SQLite 바이트 불변, 기본 review-feature OFF, 없는 캡처/샘플 fail-closed). [동일 구현 HEAD CI #40795790479](https://github.com/SkyBluekor/StockScope/actions/runs/40795790479) **4/4 SUCCESS**: Python 3.11/3.14 backend, Node22 frontend/build/Chromium, Windows fresh clone. CI는 **사용자 실제 Windows 브라우저 검증을 대체하지 않는다**.
 - **결과 API:** `GET /api/simulation/jev/local-readiness?capture_id=<UUID>&sample_index=<1-based>` (읽기만), `status` ∈ `SOURCE_RIGHTS_HOLD/LOCAL_ONLY/NEEDS_EVIDENCE/NOT_ENTRY_CANDIDATE`, 별도 `local_readiness=LOCAL_READY` 등 구분. `model_review_executed=false`는 **이 진단 조회가 모델을 호출하지 않았다는 뜻**이며, 기존 저장된 AI 검토 이력을 지우거나 재판정하지 않는다. 캡처·샘플 신원 불일치 시 UI에 다른 후보의 증거를 표시하지 않는다.
 - **LIVE-02 미완료 판정 근거:** 사용자 PC의 실제 COMPLETE 캡처를 격리/읽기 전용으로 연결한 FastAPI와 브라우저에서 선택 종목별 상태·코드를 확인하지 못함. 실제 원본 DB write/market provider 호출 0. 사용자 UI 검증 후만 DONE 전환; G2-01~04 유지, G2-05 보류, JEV-LIVE-03 전까지 실종목 외부 전송 NO-GO.
+
+
+### 2026-10-29 LIVE-02 사용자 Windows API 회귀 확인 (브라우저 UAT는 대기)
+
+- 사용자가 `C:\Projects\StockScope`에서 `git pull --ff-only`로 개발 브랜치 HEAD `7d99e6a`까지 fast-forward 확인 (기존 작업 트리 경로 재사용, 별도 worktree 없음).
+- `.\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_jev_live_02_local_readiness_api.py -q` 사용자 Windows 실행 결과: **2 passed, 0 failed**. Starlette/AnyIO `DeprecationWarning` 1건은 비차단 경고이며 해당 기능 실패 증거가 아님.
+- [HEAD `7d99e6a` CI #40796193659](https://github.com/SkyBluekor/StockScope/actions/runs/40796193659) **4/4 SUCCESS**, backend Python 3.11/3.14, frontend, Windows Fresh Clone 완료.
+- **완료 판정은 여전히 LIVE-02 CODE+CI+USER WINDOWS API TEST PASS / 실제 저장 COMPLETE 후보의 브라우저 UAT PENDING**. 운영 DB 복제·격리와 브라우저 선택 후보의 `local-readiness` 원인 코드 검증이 남았음. TypeSafe/시장 데이터 외부 전송 허용 아님.
