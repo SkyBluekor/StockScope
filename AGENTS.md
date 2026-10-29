@@ -12,7 +12,7 @@ Read:
 3. [Existing JEV v2 design](docs/설계/StockScope_JEV_통합설계_v2_2026-10-06.md).
 4. [S7.4 source/rights/time boundary](docs/설계/JEV-ACT2-S7.4_데이터_출처_권한_및_시점_분류_기준.md).
 
-**LIVE-01 DONE (synthetic actual model) and LIVE-02 DONE (read-only actual Windows Scanner candidate UI). NEXT: LIVE-03 source-rights/time/wire scope validation.** The user executed exactly one real TypeSafe `jev-1.14.0` call on strictly authored synthetic input (stored `VALID`, model `MATCHED`), and later confirmed the actual saved Scanner candidate 셀트리온(KOSPI 068270) displays local readiness, original rank/strategy/Risk checks, explicit `BLOCKED_HORIZON` and `SOURCE_RIGHTS_HOLD` reasons on Windows. See master plan's updated DONE row and PR #170 evidence. This does **not** authorize market-derived input to TypeSafe: `SOURCE_RIGHTS_HOLD`, no new paid live calls, and default `POST /reviews` still OFF.
+**LIVE-01 DONE (real model on authored synthetic), LIVE-02 DONE (actual Scanner local readiness UI), LIVE-03 LOCAL GATE + WINDOWS UI DONE (actual real-candidate decision HOLD/NO-GO). NEXT: LIVE-04 synthetic/Mock opt-in single-candidate review UI/job and trusted-rights-gated transport preparation.** Actual Windows screenshot confirms LIVE-03 card for 셀트리온(KOSPI 068270): external disclosure HOLD, NOT_AUTHORIZED, source-time UNVERIFIED, rights resolver NOT_CONFIGURED, no model calls. This fulfills local HOLD/DENY explanation; **real KRX or market-derived material has no demonstrated TypeSafe transmission license**. Do not turn on live market HTTP or infer a license from API key, local hash, opt-in, or synthetic tests. Refer to master plan and handoff latest sections.
 
 ## Non-negotiable development behavior
 
