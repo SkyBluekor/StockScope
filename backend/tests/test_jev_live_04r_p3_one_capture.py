@@ -13,7 +13,7 @@ import pytest
 
 from app.jev.decision_reviewer_offline import DecisionReviewContractError
 from app.jev.live_04r_p3_capture_probe import (
-    inspect_one_capture, discover_new_capture_ids,
+    inspect_one_capture, discover_new_capture_ids, explain_new_capture_attempts,
 )
 from app.jev.synthetic_live_01 import prepare_synthetic_service
 from tools.data.jev_live_04r_p3_one_capture import main
@@ -180,3 +180,83 @@ def test_cli_stale_capture_returns_nonzero_even_with_valid_snapshot(tmp_path, ca
     assert report["first_blocker"]["code"] == "P3_NEW_CAPTURE_TIME_NOT_VERIFIED"
     assert report["capture"]["freshness_time_consistent"] is False
     assert report["outbound"]["actual_provider_calls"] == 0
+
+
+def _pending_capture(catalog, job):
+    from app.prospective.models import ProspectiveCaptureRequest
+    request = ProspectiveCaptureRequest(
+        market_scope="KOSPI", requested_as_of="2026-10-28",
+        candidate_limit=1, horizon_intent="LEGACY_UNSPECIFIED",
+        horizon_policy_version=None,
+    )
+    created = catalog.begin_capture(source_job_id=job, request=request)
+    return created, request
+
+
+def test_discovery_distinguishes_pending_failure_duplicate_and_no_entry(tmp_path, capsys):
+    """All statuses must be visible on a fresh isolated test DB only."""
+    from app.prospective.catalog import ProspectiveCatalog
+    db, preview = _fixture(tmp_path)
+    catalog = ProspectiveCatalog(db)
+    pending, _ = _pending_capture(catalog, "authored-p3-pending")
+    failed, _ = _pending_capture(catalog, "authored-p3-failed")
+    catalog.mark_capture_terminal(
+        failed["source_job_id"], status="FAILED",
+        error_code="AUTHORED_TEST_SCANNER_FAILED",
+    )
+    empty1, request = _pending_capture(catalog, "authored-p3-empty")
+    empty_result = {
+        "version": "authored-p3-empty", "market_scope": "KOSPI",
+        "requested_as_of": "2026-10-28", "input_fingerprint": "test-only",
+        "summary": {"candidate_count": 0}, "candidates": [],
+        "more_candidates": [], "partial_data": False,
+    }
+    first = catalog.finalize_capture(
+        source_job_id=empty1["source_job_id"], request=request,
+        result=empty_result,
+    )
+    assert first["status"] == "COMPLETE"
+    empty2, request = _pending_capture(catalog, "authored-p3-duplicate")
+    second = catalog.finalize_capture(
+        source_job_id=empty2["source_job_id"], request=request,
+        result=empty_result,
+    )
+    assert second["status"] == "DUPLICATE"
+    assert second["canonical_capture_id"] == first["id"]
+
+    before = db.read_bytes()
+    detail = explain_new_capture_attempts(db, captured_after=_cutoff())
+    records = {row["source_job_id"]: row for row in detail["new_scanner_capture_attempts"]}
+    assert detail["status"] == "FOUND"
+    assert detail["new_complete_entry_captures"][0]["capture_id"] == preview["capture_id"]
+    assert records["authored-p3-pending"]["diagnosis"] == "SCANNER_JOB_PENDING"
+    assert records["authored-p3-failed"]["diagnosis"] == "SCANNER_FAILED"
+    assert records["authored-p3-failed"]["error_code"] == "AUTHORED_TEST_SCANNER_FAILED"
+    assert records["authored-p3-empty"]["diagnosis"] == "COMPLETE_NO_ENTRY_CANDIDATE"
+    assert records["authored-p3-duplicate"]["diagnosis"] == "DUPLICATE_REUSED_CANONICAL"
+    assert records["authored-p3-duplicate"]["canonical_capture_id"] == first["id"]
+
+    assert main([
+        "--find-new", "--captured-after", _cutoff(),
+        "--simulation-db", str(db),
+    ]) == 0
+    actual_cli = json.loads(capsys.readouterr().out)
+    assert actual_cli["status"] == "FOUND"
+    assert len(actual_cli["new_scanner_capture_attempts"]) >= 5
+    assert actual_cli["db_writes"] == 0
+    assert actual_cli["actual_provider_calls"] == 0
+    assert db.read_bytes() == before
+
+
+def test_discovery_empty_window_is_explicit_no_capture_after_start(tmp_path, capsys):
+    db, _ = _fixture(tmp_path)
+    before = db.read_bytes()
+    report = explain_new_capture_attempts(
+        db, captured_after=_cutoff(timedelta(days=1)),
+    )
+    assert report["status"] == "NO_CAPTURE_AFTER_START"
+    assert report["new_complete_entry_captures"] == []
+    assert report["new_scanner_capture_attempts"] == []
+    assert report["new_attempts_exist"] is False
+    assert report["last_recorded_capture_at"] is not None
+    assert db.read_bytes() == before
