@@ -68,6 +68,23 @@ import "./scannerProgress.css";
 import "./scannerUX.css";
 
 type MarketScope = "ALL" | "KOSPI" | "KOSDAQ";
+type HorizonChoice = "LEGACY_UNSPECIFIED" | "SHORT" | "MEDIUM" | "LONG";
+const HORIZON_STORAGE_KEY = "stockscope.scanner.local-review-horizon.v1";
+function initialHorizonChoice(): HorizonChoice {
+  try {
+    const value = window.sessionStorage.getItem(HORIZON_STORAGE_KEY);
+    if (value === "SHORT" || value === "MEDIUM" || value === "LONG") return value;
+  } catch {
+    // Browser storage is optional; never block the baseline Scanner.
+  }
+  return "LEGACY_UNSPECIFIED";
+}
+function horizonChoiceLabel(value: string | null | undefined): string {
+  if (value === "SHORT") return "단기";
+  if (value === "MEDIUM") return "중기";
+  if (value === "LONG") return "장기";
+  return "미지정";
+}
 
 type Props = {
   aiReviewEnabled: boolean;
@@ -782,6 +799,7 @@ export default function ScannerPanel({
   const initialSession = useMemo(() => readScannerSession(), []);
   const sharedSession = useScannerSession();
   const [scope, setScope] = useState<MarketScope>(initialSession?.scope ?? "ALL");
+  const [horizonChoice, setHorizonChoice] = useState<HorizonChoice>(initialHorizonChoice);
   const [job, setJob] = useState<BacktestJob<ScannerResponse> | null>(null);
   const [result, setResult] = useState<ScannerResponse | null>(initialSession?.result ?? null);
   const [workspaceTab, setWorkspaceTab] = useState<"analysis" | "history">("analysis");
@@ -1279,6 +1297,10 @@ export default function ScannerPanel({
           ? undefined
           : (result?.requested_as_of ?? latestScannerDataDate(result)),
         candidate_limit: 5,
+        ...(horizonChoice !== "LEGACY_UNSPECIFIED" ? {
+          horizon_intent: horizonChoice,
+          horizon_purpose: "LOCAL_REVIEW_ONLY" as const,
+        } : {}),
         force_refresh: forceRefresh || recheckCandidate !== null,
         allow_large_sync: allowLargeSync,
         recheck_candidate: recheckCandidate ?? undefined,
@@ -1708,6 +1730,27 @@ export default function ScannerPanel({
               {value === "ALL" ? "전체" : value}
             </button>
           ))}
+        </div>
+        <div className="scanner-horizon-control">
+          <label htmlFor="scanner-horizon-choice">검토 기간</label>
+          <select id="scanner-horizon-choice" value={horizonChoice} disabled={busy}
+            onChange={(event) => {
+              const value = event.target.value as HorizonChoice;
+              setHorizonChoice(value);
+              try { window.sessionStorage.setItem(HORIZON_STORAGE_KEY, value); } catch { /* optional */ }
+            }}>
+            <option value="LEGACY_UNSPECIFIED">미지정 (기존 방식)</option>
+            <option value="SHORT">단기</option>
+            <option value="MEDIUM">중기</option>
+            <option value="LONG">장기 · V4 미지원</option>
+          </select>
+          <small>로컬 AI 입력 검토용 선택이며 기존 전략·순위·위험 판단은 그대로예요. 실제 기간별 수치 정책은 미승인 상태예요.</small>
+          {result?.horizon_context && (
+            <small className="scanner-horizon-captured">
+              저장된 분석의 선택 기간: {horizonChoiceLabel(result.horizon_context.intent)}
+              {result.horizon_context.support_status === "EVALUATION_PENDING" && " · 수치 정책 미승인"}
+            </small>
+          )}
         </div>
         <div className="scanner-control-actions">
           <button type="button" className="scanner-run-button" onClick={() => void runScanner(false)} disabled={busy}>
