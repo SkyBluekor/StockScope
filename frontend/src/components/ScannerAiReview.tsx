@@ -116,6 +116,9 @@ export default function ScannerAiReview({
           <p>{loading ? "종목과 분석 시점에 연결된 검토 기록을 확인하고 있어요." : loadError ?? state.detail}</p>
         </div>
       </div>
+      <JevSyntheticDemo />
+      <details className="scanner-jev-motion-details">
+        <summary>로컬 입력 준비도와 외부 전송 차단 근거 자세히 보기</summary>
       <div className="scanner-jev-local-readiness" role="status" data-local-readiness={readiness?.status ?? "UNAVAILABLE"}>
         <strong>이 후보의 JEV 실행 준비도 · 로컬 읽기 전용</strong>
         {!captureId ? <p>확정된 COMPLETE 저장 캡처가 없어 후보별 준비도를 확인할 수 없습니다.</p>
@@ -165,6 +168,7 @@ export default function ScannerAiReview({
                 </>
               ) : <p>외부 전송 검사 미실행</p>}
       </div>
+      </details>
       <details className="scanner-jev-motion-details">
         <summary>검토 출처와 근거 자세히 보기</summary>
         <dl>
@@ -200,7 +204,6 @@ export default function ScannerAiReview({
         </button>
       )}
       <small>새로운 Jev 모델 호출은 실행하지 않습니다.</small>
-      <JevSyntheticDemo />
     </section>
   );
 }
