@@ -12,7 +12,7 @@ Read:
 3. [Existing JEV v2 design](docs/설계/StockScope_JEV_통합설계_v2_2026-10-06.md).
 4. [S7.4 source/rights/time boundary](docs/설계/JEV-ACT2-S7.4_데이터_출처_권한_및_시점_분류_기준.md).
 
-**LIVE-01 real synthetic paid model DONE, LIVE-02 actual Scanner local readiness DONE, LIVE-03 local HOLD/wire audit DONE. LIVE-04 synthetic-only manual Mock API + UI + persisted job CODE/CI PASS, Windows user click-through still PENDING; real market TypeSafe transmission BLOCKED.** The new demo is disabled by default and can only be enabled on a loopback development server using OS environment variable `STOCKSCOPE_JEV04_SYNTHETIC_DEMO=1`. It generates original authored fixture ticker `999991` inside OS temp isolated SQLite, calls `FakeTypeSafeJevProvider` through the existing V4 `JevManualReviewService` and catalog via one-shot FastAPI BackgroundTasks, never genuine TypeSafe HTTP or actual-market data. The public `/reviews` path and actual market provider remain OFF. The next acceptance is the user's Windows synthetic demo checkbox/button, terminal result and reload verification. Do not claim this completes real-market LIVE-04. Preserve rights HOLD, G2-01~04 and paused G2-05.
+**LIVE-01 real authored-synthetic provider PASS; LIVE-02 real Scanner local-readiness UI PASS; LIVE-03 actual-market HOLD diagnostic UI PASS; LIVE-04 authored-synthetic Mock manual request + catalog display USER WINDOWS UI PASS. REAL-MARKET TypeSafe REVIEW REMAINS BLOCKED.** The user supplied a real Windows screenshot showing isolated virtual ticker `999991` with `VALID` saved result, Mock disposition `REVIEW_REQUIRED`, returned model `jev-mock-returned` identity `MATCHED`, one mock call, zero actual provider calls and saved review ID. This is not an AI verdict on selected real ticker 셀트리온 (068270), where the UI still states `AI 검토 미제공`. The screenshot does not independently establish user refresh/double-click behavior, although the existing CI/API tests verify the underlying contract. Preserve KRX raw/derived rights HOLD and default real review OFF. LIVE-04 real-market E2E is NOT DONE. Continue existing V4 Provider and catalog; G2-01~04 preserved, G2-05 paused; PR #170 remains Draft.
 
 ## Non-negotiable development behavior
 
@@ -23,7 +23,7 @@ Read:
 - Never commit or print `.env`, `JEV_API_KEY`, provider/brokerage credentials, raw user-market datasets or sensitive provider payloads.
 - No paid live provider requests in CI, no implicit auto-trigger upon UI visits; explicit opt-in with meaningful cap for pilot usage.
 - Use the existing development branch `codex/p0-01-mvp-c1-c2-integration-20261022` and Draft PR #170 unless the user requests otherwise. Never silently merge to `main`.
-- User dorm PC: old data in `C:\TAEWOO\CapstonDesign\StockScope`; new dev clone in `C:\Projects\StockScope-G2`. Other PCs have different paths. Use copy-isolated preview for existing local DBs.
+- User's currently verified Windows development folder is `C:\Projects\StockScope`, and the ordinary startup command is `.\run-dev.ps1`. Do not assume `C:\Projects\StockScope-G2` exists on this PC. Other PCs may use different paths. Use copy-isolated preview for existing local DBs.
 - Every completed stage: update the master plan status table and handoff with commit SHA, CI and real Windows UI state. Do not claim CI equals actual live JEV review.
 
 ## Reference
