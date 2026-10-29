@@ -340,3 +340,10 @@ StockScope의 기본 `Scanner → 정량 전략/Risk 판단 → Prospective COMP
 - **실제 UI 코드 수정:** [`ScannerPanel.tsx` `90d4dfa`](https://github.com/SkyBluekor/StockScope/commit/90d4dfa90d37c4ca51024b78a06bb63551721db5)에서 기존 '시장 설명 / 시장 버튼 / 후보 찾기'를 원래 순서와 3열로 복원, Horizon은 네 번째 자식인 2행으로 이동. [`scannerUX.css` `d701638`](https://github.com/SkyBluekor/StockScope/commit/d7016389daff93181b9af880d5d4e2ba252b6cce)에서 신규 Horizon 2행의 `grid-column:1/-1` 전체 너비 보장, 미디어쿼리 모바일 1열 보호 및 긴 문구 wrap 적용. P4 기능·백엔드·투자 판단 변경 없음.
 - **브라우저 회귀 테스트:** [`p003-scanner-recheck.spec.mjs` `17f7d43`](https://github.com/SkyBluekor/StockScope/commit/17f7d4394c8bd9ea094d90a7ca260bd72fbf816f) 신규 테스트는 실제 Chromium에서 폭 1400/900/420 카드 높이, 첫 설명 텍스트 최소 너비, 전체 폭 Horizon 후행, 수평 스크롤 방지, SHORT 클릭→`LOCAL_REVIEW_ONLY` 서버 요청, 새로고침 선택 유지 및 외부 네트워크 차단까지 검증. [Actions #40840131900](https://github.com/SkyBluekor/StockScope/actions/runs/40840131900) **4/4 PASS** (Backend 3.11/3.14, Frontend Node22 Playwright, Windows Fresh Clone).
 - **인수 상태:** 원인·코드·CI Chromium 정량 회귀 PASS. **동일 사용자 Windows 실제 화면이 정상으로 복구되었는지는 아직 재촬영/확인 전**. 기존 `C:\Projects\StockScope`에서 `git pull --ff-only`, 브라우저 강력 새로고침 후 Scanner 상단 카드 다시 확인. 이 UI 수정은 P4 실제 신규 시장 V4 입증이나 TypeSafe 권한 변동이 아님; real outbound HOLD, LEGACY 원본 신원 미확정 유지.
+
+
+### 2026-10-29 P4 사용자 Windows 화면 재확인 — UI 붕괴 복구 PASS
+
+- 사용자 후속 **실제 Windows 브라우저 스크린샷** `localhost_5173_scanner (5)(1).png` 확인: 전날 수정한 Scanner `시장 설명 / 시장 선택 / 후보 다시 찾기` 첫 행 정상 배치, `검토 기간` 별도 2행 정상 표시, 기존 종목 리스트/우측 상세 패널 정상. 앞서 발생한 세로 한 글자 배치·과도한 빈 카드 높이는 나타나지 않음. **사용자 화면 레이아웃 UAT PASS**(스냅샷 범위).
+- 스크린샷에는 현재 검토 기간 선택 **단기(SHORT)** 및 `저장된 분석의 선택 기간: 단기 · 수치 정책 미승인` 표시. 또한 `이 분석의 전략 기준: 기존 10개 전략 · 승인된 원본 버전 미확인` 유지. 이는 **프런트 화면에서 저장된 분석의 SHORT 컨텍스트가 표시되는 증거**이며 DB 원본 capture ID/정본 SHA·V4 준비도나 실제 시장 JEV 호출을 증명하지 않음.
+- P4 최종 상태 구분: **UI 레이아웃 복구 실제 사용자 Windows PASS**, 코드/Playwright CI PASS, Local Horizon 저장 화면 라벨 PASS; 신규 실제 COMPLETE 캡처와 `LOCAL_V4_PROJECTABLE`은 여전히 진단 미확정. 다음은 기존 P3 read-only CLI로 최신 실제 캡처 ID/진입 후보의 V4 상태만 확인하고, 또다시 동일 날 동일 시장 Scanner를 반복 실행하지 않는다. 시장 데이터 TypeSafe outbound HOLD, 숫자 Horizon `EVALUATION_PENDING`, 전략 원본 LEGACY 신원 미확정.
