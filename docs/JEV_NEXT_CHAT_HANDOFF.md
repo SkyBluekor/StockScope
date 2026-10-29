@@ -305,3 +305,9 @@ git -C $work log -1 --oneline
 - **자동 tests:** [`test_jev_live_04r_p4_local_horizon.py` `8e71cd8`](https://github.com/SkyBluekor/StockScope/commit/8e71cd8b1f652d748abfc0d3b4e4719dc7f07b18)에서 모드별 FastAPI 202/409/422, 로컬·숫자 policy 분리, 작성 합성 DB의 freeze/dedup/drift, Governance와 runtime path 일치 확인. 실제 데이터 Provider 호출 0; Windows 실제 선택/검색 E2E는 별도.
 - **Windows 검증 지시:** 기존 `C:\Projects\StockScope`에서 `git pull --ff-only`, `.\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_jev_live_04r_p4_local_horizon.py -q`, `.\run-dev.ps1`; UI의 '살펴볼 종목 찾기' → '검토 기간' SHORT/MEDIUM 선택 → 기존 버튼 실행. 내부 `horizon_context.intent`, `purpose`, `prospective_capture`의 캡처 ID와 LIVE-04R P3 읽기 전용 도구 결과 확인. 같은 시장 EOD의 cached Scanner가 재사용되면 P4 UI 경로 및 capture pin 검증은 가능하나 새 엔진 재현성/신규 V4 projectable 성공으로 과대해석하지 말 것. `strategy-governance/production-policy` GET만으로 실제 ACTIVE/LEGACY 상태 점검 가능하며 별도 승인 없이 activate POST 사용 금지.
 - **완료 단계 구분:** 코드와 자동 CI는 전파 가능하나, **사용자 Windows 브라우저 UAT 미수행**, 신규 real `LOCAL_V4_PROJECTABLE` 미입증, ORIGINAL strategy version/hash 확보 미완료. 계속 LIVE-04R-P4 PARTIAL로 인계, 기존 PR #170 Draft/G2-01~04 유지/G2-05 보류.
+
+
+### P4 코드 CI 검증 확정
+
+- [Actions #40838635212](https://github.com/SkyBluekor/StockScope/actions/runs/40838635212) **4/4 PASS**: Python 3.11, Python 3.14, Frontend Node22, Windows Fresh Clone. 코드 포함 동일 브랜치에서 실시장 TypeSafe 호출/승인 없음.
+- LIVE-04R-P4 **코드/CI PASS, 사용자 Windows 실사용 신규 Scanner Horizon UAT PENDING**, 신규 시장 V4 LOCAL_V4_PROJECTABLE 미검증. MASTER [P4 상태](https://github.com/SkyBluekor/StockScope/commit/3bee14e09b225efaa7c995d57825275067c0d50b). 다시 같은 날 LEGACY 후보 검사 반복 금지.
