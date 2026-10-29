@@ -28,12 +28,14 @@ def _fixture(tmp_path, monkeypatch):
 def test_local_readiness_is_readonly_and_never_grants_model_call(tmp_path, monkeypatch):
     db, preview = _fixture(tmp_path, monkeypatch)
     before = db.read_bytes()
-    with TestClient(app) as client:
-        response = client.get("/api/simulation/jev/local-readiness", params={
-            "capture_id": preview["capture_id"],
-            "sample_index": preview["sample_index"],
-        })
-        feature = client.get("/api/simulation/jev/review-feature")
+    # No ASGI startup: application lifespan legitimately manages other runtime
+    # stores; isolate this test to the pure GET endpoint's read-only behavior.
+    client = TestClient(app)
+    response = client.get("/api/simulation/jev/local-readiness", params={
+        "capture_id": preview["capture_id"],
+        "sample_index": preview["sample_index"],
+    })
+    feature = client.get("/api/simulation/jev/review-feature")
     assert response.status_code == 200, response.text
     record = response.json()
     assert record["version"] == "JEV_LIVE_02_LOCAL_READINESS_V1"
@@ -60,16 +62,16 @@ def test_local_readiness_is_readonly_and_never_grants_model_call(tmp_path, monke
 
 def test_local_readiness_fails_closed_for_missing_capture_and_sample(tmp_path, monkeypatch):
     db, preview = _fixture(tmp_path, monkeypatch)
-    with TestClient(app) as client:
-        missing_capture = client.get("/api/simulation/jev/local-readiness", params={
-            "capture_id": "not-a-capture", "sample_index": 1,
-        })
-        missing_sample = client.get("/api/simulation/jev/local-readiness", params={
-            "capture_id": preview["capture_id"], "sample_index": 99,
-        })
-        invalid = client.get("/api/simulation/jev/local-readiness", params={
-            "capture_id": preview["capture_id"], "sample_index": 0,
-        })
+    client = TestClient(app)
+    missing_capture = client.get("/api/simulation/jev/local-readiness", params={
+        "capture_id": "not-a-capture", "sample_index": 1,
+    })
+    missing_sample = client.get("/api/simulation/jev/local-readiness", params={
+        "capture_id": preview["capture_id"], "sample_index": 99,
+    })
+    invalid = client.get("/api/simulation/jev/local-readiness", params={
+        "capture_id": preview["capture_id"], "sample_index": 0,
+    })
     assert missing_capture.status_code == 422
     assert missing_capture.json()["detail"]["code"] == "S7_CAPTURE_NOT_COMPLETE"
     assert missing_sample.status_code == 404
