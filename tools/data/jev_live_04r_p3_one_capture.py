@@ -76,6 +76,9 @@ def main(argv: list[str] | None = None) -> int:
         }, ensure_ascii=False, indent=2))
         return 2
     print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+    if not args.find_new and not result["capture"]["freshness_time_consistent"]:
+        # Do not count an old COMPLETE capture as a successful new-run audit.
+        return 3
     return 0
 
 
