@@ -128,3 +128,89 @@ def test_scanner_fresh_active_candidate_source_chain_only_accepts_matching_evide
             snapshot["semantic_policy_provenance"]["status"] == "UNVERIFIED"
             if tamper == "wrong-policy" else True
         )
+
+
+def test_begin_finalize_fresh_active_candidate_preserves_v2_snapshot_end_to_end(
+    tmp_path, monkeypatch,
+):
+    """Actual Prospective begin/finalize/list calls on authored local SQLite.
+
+    Fresh repro reader is substituted with a controlled authored row, not a
+    fake real-market audit or evidence of external disclosure permission.
+    """
+    import app.prospective.catalog as catalog_module
+    from app.jev.synthetic_live_01 import prepare_synthetic_service
+    from app.prospective.models import digest_json
+
+    db = tmp_path / "authored-fresh-active.db"
+    prepare_synthetic_service(
+        db, model_requested="jev-latest",
+        expected_model_returned="jev-mock-returned",
+        evidence={
+            "provider_policy_checked_at": "MOCK_ONLY",
+            "retention_status": "MOCK_ONLY",
+            "model_discovery_ref": "MOCK_ONLY",
+            "model_discovery_hash": "MOCK_ONLY",
+        },
+    )
+    candidate = _candidate()
+    pin = _pin(candidate)
+    key = scanner_repro_candidate_key(candidate)
+    monkeypatch.setattr(
+        catalog_module, "verified_scanner_repro_rows",
+        lambda _result: {key: _audited(candidate)},
+    )
+    request = ProspectiveCaptureRequest(
+        market_scope="KOSPI", requested_as_of=FIXTURE_DATE,
+        candidate_limit=1, horizon_intent="SHORT",
+        horizon_policy_version="VN_P1_S2_HORIZON_CONTEXT_V1",
+        selection_policy_id=pin.policy_id,
+        selection_policy_hash=pin.policy_hash,
+    )
+    source_job = "authored-active-fresh"
+    catalog = ProspectiveCatalog(db)
+    initial = catalog.begin_capture(source_job_id=source_job, request=request)
+    result = {
+        "version": "AUTHORED-NEW-SCANNER",
+        "scanner_cache_hit": False,
+        "market_scope": "KOSPI",
+        "requested_as_of": FIXTURE_DATE,
+        "input_fingerprint": "authored-test-original-input",
+        "summary": {"candidate_count": 1},
+        "candidates": [candidate],
+        "more_candidates": [],
+        "partial_data": False,
+        "strategy_selection_policy": pin.metadata(),
+        "diagnostics": {
+            "reproducibility_audit": {"production_baseline": "authored-baseline"}
+        },
+    }
+    frozen = catalog.finalize_capture(
+        source_job_id=source_job, request=request, result=result,
+        selection_policy_pin=pin,
+    )
+    assert frozen["id"] == initial["id"]
+    assert frozen["status"] == "COMPLETE"
+    assert frozen["horizon_intent"] == "SHORT"
+    assert frozen["request"]["selection_policy_id"] == pin.policy_id
+    assert frozen["request"]["selection_policy_hash"] == pin.policy_hash
+    rows = catalog.list_samples(capture_run_id=frozen["id"])
+    assert len(rows) == 1
+    saved = rows[0]
+    snap = saved["snapshot"]
+    assert saved["snapshot_hash"] == digest_json(snap)
+    assert snap["strategy_version_id"] == candidate["strategy_version_id"]
+    assert snap["strategy_definition_hash"] == candidate["strategy_definition_hash"]
+    assert snap["semantic_policy_provenance"]["status"] == "VERIFIED_PINNED_EXECUTION"
+    assert snap["semantic_condition_evidence"]["source"] == "SCANNER_REPRO_ENGINE_PASSED_CONDITIONS_V1"
+    assert verify_semantic_source_v2(snap["semantic_source_v2"]) == (True, None)
+    assert snap["risk"] == candidate["risk"]
+    assert saved["rank"] == 1
+
+    # Exact historical capture idempotence, with no snapshot rewrite.
+    replayed = catalog.finalize_capture(
+        source_job_id=source_job, request=request, result=result,
+        selection_policy_pin=pin,
+    )
+    assert replayed["id"] == frozen["id"]
+    assert catalog.list_samples(capture_run_id=frozen["id"])[0]["snapshot_hash"] == saved["snapshot_hash"]
