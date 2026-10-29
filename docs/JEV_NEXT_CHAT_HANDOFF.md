@@ -1,6 +1,6 @@
 # StockScope — 다음 ChatGPT/Codex 채팅 HANDOFF (JEV LIVE 우선)
 
-**기준 시각:** 2026-10-28 (Asia/Seoul). 이 문서는 **다음 채팅의 첫 페이지**다.
+**기준 시각:** 2026-10-29 (Asia/Seoul), LIVE-01 사용자 실모델 성공 반영. 이 문서는 **다음 채팅의 첫 페이지**다.
 
 ## 반드시 가장 먼저 읽을 것
 
@@ -78,13 +78,13 @@ git -C $work log -1 --oneline
 
 > **'StockScope JEV-LIVE-01을 지금 구현해. GitHub의 `docs/JEV_NEXT_CHAT_HANDOFF.md`와 `docs/JEV_LIVE_INTEGRATION_MASTER_PLAN.md`를 먼저 읽고, 브랜치 `codex/p0-01-mvp-c1-c2-integration-20261022`의 최신 HEAD에 이어서 작업해. G2-05는 보류하고, 기존 `TypeSafeSystemOneProvider` / V4 `JevManualReviewService` / `typesafe_service`를 재사용해 synthetic-only 실모델 E2E를 서비스 경계까지 연결해. 데이터 권한 없는 실종목 payload를 전송하지 말고, user API 기본 OFF·기존 Scanner 불변을 지켜. fake/mock 관련 테스트와 필요하면 명시적 소수 live smoke를 수행하고, 변경 코드·CI·검증 증거를 GitHub PR #170 및 마스터 진행표에 남겨. 새로운 전체 기획/반복 감사로 우회하지 말고 실제 기능부터 완성해.'**
 
-## 6. 단계별 상태표 (2026-10-28)
+## 6. 단계별 상태표 (최신: 2026-10-29)
 
 | 단계 | 상태 | 다음 행동 |
 |---|---|---|
 | JEV-LIVE-00 | 완료: 문서 기준점 설정 | 브랜치 HEAD·로컬 환경만 확인 |
-| **JEV-LIVE-01** | **코드·HTTP mock 통합 PASS / 유료 합성 live 미실시** | 실제 TypeSafe 1회 실행 승인과 사용자 PC에서 합성 live smoke, 저장 검증이 남음. 2026-10-28 코드 커밋 `90f3d5d`, [CI 4/4 PASS](https://github.com/SkyBluekor/StockScope/actions/runs/40709954313) |
-| JEV-LIVE-02 | 미착수 | 실후보 로컬 검토 준비도 화면 |
+| **JEV-LIVE-01** | **DONE — 합성 실제 TypeSafe 1회 E2E 성공** | 사용자 Windows `C:\\Projects\\StockScope`에서 `jev-1.14.0` 실제 응답 `PASS_THROUGH`, SQLite `VALID`, `MATCHED`, 1회 호출, CLI 0; 기존 CI 4/4 PASS. 실종목 UI는 아직 별도 단계. |
+| **JEV-LIVE-02** | **다음 개발 단계** | 실후보 로컬 검토 준비도 API·화면 구현, 외부 전송 0 |
 | JEV-LIVE-03 | 미착수: 실제 시장 외부 전송 HOLD | source 권한/시점/수신자/실 outbound body 검증 |
 | JEV-LIVE-04 | 미착수, 실 market 호출은 LIVE-03 권한 결과 필요 | 사용자 선택 후보 1건 end-to-end 실제 review |
 | JEV-LIVE-05 | 미착수 | 명시 opt-in 소수 배치/자동 review, rollback |
@@ -124,3 +124,12 @@ git -C $work log -1 --oneline
 - Mock 검증 저장값: `VALID` / `REVIEW_REQUIRED` / `MATCHED`; billable provider 요청 0. G2-01~04 및 Scanner baseline 유지, G2-05 계속 보류.
 - 사용자가 실제 합성 유료 호출 1회 승인했지만 실행되지 않았음. PowerShell 환경변수 `JEV_API_KEY`가 NOT SET; provider 코드가 프로젝트 루트 `.env` fallback을 지원하므로 다음에 로컬 키 존재 여부를 출력 없이 확인할 것.
 - TypeSafe 공식 문서에서 `jev-1.14.0` 및 `jev-latest` 매핑 확인(2026-10-29); authenticated model catalog + hash/retention 증빙 고정 후 synthetic-only 1회 호출. LIVE-01은 그 검증 전까지 NOT DONE.
+
+
+## 2026-10-29 LIVE-01 **DONE** 인수 및 다음 실제 개발
+
+이전 문서의 LIVE-01 `PENDING` / `NOT DONE` 문장은 해당 시점의 과거 기록이며 **최신 상태를 대체하지 않는다**. 사용자 PC `C:\\Projects\\StockScope` 브랜치 `codex/p0-01-mvp-c1-c2-integration-20261022`, 호출 당시 HEAD `10af121`에서 **실제 유료 TypeSafe 1회 성공**. 단일 작성 합성 fixture, 원천시장 데이터 0; V4 request `jev-1.14.0` / returned `jev-1.14.0`, `model_identity_status=MATCHED`. 결과 `PASS_THROUGH` / `NO_ADDITIONAL_RELATION_CONFLICT`, 기존 catalog 조회 `stored_status=VALID`, `review_id=ff4f5134-a65f-485c-87ca-c163c8a9dad0`, input/output 1073/23, 비용 미확정, `failure_code=null`, `billable_provider_requests=1`, exit code 0. Mock은 REVIEW_REQUIRED였으나 실제 응답은 PASS_THROUGH였음을 구분한다.
+
+- 개발자 CLI·코드·CI 4/4 통과([#40713831348](https://github.com/SkyBluekor/StockScope/actions/runs/40713831348)) 및 사용자 Windows 실제 합성 E2E를 기준으로 **LIVE-01 완료**. 실제 시장 후보 모델 검토가 완료됐다는 뜻은 아님. 이번 실호출 승인은 **1회 사용 완료**, 별도 승인 없이 추가 과금 호출 금지.
+- **NEXT: JEV-LIVE-02**. `backend/app/jev/scanner_lineage_s7_4.py`, `scanner_v4_readiness_s7_5.py`, `scanner_eligibility_s8.py`, `backend/app/api/jev.py`, `frontend/src/components/ScannerPanel.tsx`의 기존 read-only 데이터 흐름을 재사용해 사용자 후보별 준비/차단 이유를 표시. 외부 호출/DB write 없이 구현 및 CI. 실제 사용자 데이터 테스트는 로컬 격리 스냅샷에서.
+- LIVE-03의 KRX·시장 파생 데이터 전송권한은 여전히 HOLD. `GET /review-feature` 고정 OFF 및 `POST /reviews` 기본 OFF 유지. PR #170 Draft, G2-01~04 유지, G2-05 보류.
