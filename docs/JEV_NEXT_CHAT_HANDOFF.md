@@ -116,3 +116,11 @@ git -C $work log -1 --oneline
 - LIVE-01 최종 완료 판정은 계속 보류. 별도 승인된 실제 synthetic-only provider 요청 및 저장 검증 후 완료 처리. S7.4 실시장 데이터 전송 금지, G2-05 보류 유지.
 
 - **2026-10-29 CI 확인:** [GitHub Actions #40713831348](https://github.com/SkyBluekor/StockScope/actions/runs/40713831348) **4/4 SUCCESS** (Backend Python 3.11/3.14, Frontend Node 22, Windows Fresh Clone). Windows synthetic preflight 및 HTTP Mock V4 integration 단계 성공. 이전 #40713750927은 **CANCELLED**이며 실패 테스트의 근거가 아님. 실제 유료 TypeSafe 요청·사용자 Windows 확인 **미실시**, LIVE-01 **NOT DONE**, 시장 원천 외부 전송 **HOLD**.
+
+
+### 2026-10-29 사용자 PC 실제 Windows 확인 (HTTP mock; paid live 아님)
+
+- `C:\Projects\StockScope`에서 올바른 개발 브랜치 `codex/p0-01-mvp-c1-c2-integration-20261022`와 `8b50afd` 확인. `--mode preflight` 및 `--mode mock` 사용자 실행 PASS.
+- Mock 검증 저장값: `VALID` / `REVIEW_REQUIRED` / `MATCHED`; billable provider 요청 0. G2-01~04 및 Scanner baseline 유지, G2-05 계속 보류.
+- 사용자가 실제 합성 유료 호출 1회 승인했지만 실행되지 않았음. PowerShell 환경변수 `JEV_API_KEY`가 NOT SET; provider 코드가 프로젝트 루트 `.env` fallback을 지원하므로 다음에 로컬 키 존재 여부를 출력 없이 확인할 것.
+- TypeSafe 공식 문서에서 `jev-1.14.0` 및 `jev-latest` 매핑 확인(2026-10-29); authenticated model catalog + hash/retention 증빙 고정 후 synthetic-only 1회 호출. LIVE-01은 그 검증 전까지 NOT DONE.
