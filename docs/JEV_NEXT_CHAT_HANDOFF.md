@@ -216,3 +216,12 @@ git -C $work log -1 --oneline
 - **CI:** 신규 저장 캡처 경계/구형 DB/invalid Horizon 안전 테스트 포함 [코드 HEAD `9dac50d`](https://github.com/SkyBluekor/StockScope/commit/9dac50da0227a42c44adc8e943d1fc6ab2ef2f45), [Actions #40823176776](https://github.com/SkyBluekor/StockScope/actions/runs/40823176776) **4/4 SUCCESS** (Backend Python 3.11/3.14, Frontend Node22/Chromium, Windows Fresh Clone). 첫 CI 실패는 구형 fixture에 생성/시작 timestamp 컬럼이 없던 점 및 터미널 불변 캡처 변경을 시도한 새 테스트; 둘 다 코드를 방어적으로 수정하고 테스트를 순수 함수로 옮겨 해결. 실제 TypeSafe 유료 호출 0.
 - **다음 인수:** 사용자 Windows `C:\Projects\StockScope` `git pull --ff-only`, 기존 서버 중지 후 `.\run-dev.ps1` 재시작, Scanner > 실제 종목 > AI 검토 요약/전략·Horizon·권한 정보 및 합성 Mock 접힌 화면 확인. 해당 브라우저 UAT 전 LIVE-04R DONE 판정 금지. 실제 소스 KRX 원본/파생 권한과 TypeSafe 계정 처리조건, 수치 Horizon 승인·원본 전략 신규 생성 경로는 아직 미해결이고 실종목 TypeSafe 호출 NO-GO.
 - **보존:** G2-01~04 유지, G2-05 보류, Draft PR #170 유지, LIVE-01 합성 유료 실행 1회 완료, LIVE-02/03 및 LIVE-04 Mock 기존 인수 보존, 실제 시장 provider 0 호출 유지.
+
+
+## 2026-10-29 LIVE-04R Windows screenshot — visual layout PASS, backend UAT NOT PASS
+
+- 사용자 실제 `http://127.0.0.1:5173` Scanner 스크린샷에서 셀트리온(068270) AI 검토 요약, 비활성 실종목 JEV 검토 버튼, 접힌 LIVE-02/03 상세, 접힌 합성 개발용 체험이 정상 표시됨. **UI 배치 확인됨.**
+- 그러나 **서버 준비도/전송 자격 결과는 실제로 받아오지 못함**. 화면: `후보 신원 검증 실패 · 결과 표시 차단`, `로컬 준비도를 확인하지 못했습니다. 저장 캡처와 DB 상태를 확인하세요`, `외부 전송 근거를 조회할 수 없습니다`. 이는 응답된 `HOLD`가 아니라 클라이언트의 `catch`에 따른 **API 조회 실패**임. `LOCAL_V4_PROJECTABLE` 또는 실종목 정책 판정 검증으로 기록하지 말 것.
+- 공통 의존성: 두 GET 경로 `/api/simulation/jev/local-readiness`, `/api/simulation/jev/outbound-preflight`는 `backend/app/api/jev.py`의 `_db()` = `STOCKSCOPE_SIM_DB` 또는 `backend/runtime/simulation/simulation.db`와 요청 `capture_id`, `sample_index`로 동일 COMPLETE 캡처를 읽음. 오류 원인은 **미확정**; 과거 Windows에서 임시 DB 경로 환경변수를 설정한 적 있어 경로 실재/서버 상속 여부 검사 필요. 프런트의 공통 catch가 HTTP 응답 코드/세부 reason을 감추므로 브라우저 Network의 두 요청 status+response JSON 및 backend 콘솔 확인.
+- 최소 재현: `http://127.0.0.1:8000/` 접속 및 backend 8000 동작 확인; 서버를 시작한 창에서 `$env:STOCKSCOPE_SIM_DB`와 `Test-Path` 확인. Chrome F12 → Network → `local-readiness`, `outbound-preflight` Response 코드 확인. **운영 DB 변경·캡처 재작성·TypeSafe 유료 호출 금지**. 정확한 실패 응답을 확인하기 전에는 이전 UAT PASS 주장 금지.
+- 기존 [코드 CI #40823176776](https://github.com/SkyBluekor/StockScope/actions/runs/40823176776) 4/4 PASS는 유지하되, **Windows 실제 후보 API UAT 실패/진단 대기**로 상태 분리. 평소 실행 `.\run-dev.ps1`, 기존 `C:\Projects\StockScope`, Draft PR #170, G2-05 보류 유지.
