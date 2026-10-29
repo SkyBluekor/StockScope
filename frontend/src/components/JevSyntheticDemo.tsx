@@ -62,6 +62,8 @@ export default function JevSyntheticDemo() {
   };
 
   return (
+    <details className="scanner-jev-motion-details" data-jev-synthetic-only="true">
+      <summary>개발용 합성 JEV 테스트 기록 · 실제 종목과 무관</summary>
     <section className="scanner-jev-local-readiness" aria-label="개발 전용 JEV 합성 수동 검토">
       <strong>JEV 수동 검토 체험 · 순수 합성 데이터 (개발 전용)</strong>
       <p><b>{summary[session.status] ?? session.status}</b></p>
@@ -94,5 +96,6 @@ export default function JevSyntheticDemo() {
       {error && <p role="alert">{error}</p>}
       <small>이 체험은 한 번만 실행되며 새로고침·중복 클릭·서버 재시작으로 추가 요청되지 않습니다.</small>
     </section>
+    </details>
   );
 }
