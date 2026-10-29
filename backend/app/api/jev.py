@@ -17,7 +17,7 @@ from app.jev.scanner_integrity_s7_1 import assess_frozen_candidate
 from app.jev.scanner_v4_readiness_s7_5 import diagnose_candidate as diagnose_v4_candidate
 from app.jev.scanner_eligibility_s8 import diagnose_candidate as diagnose_s8_candidate
 from app.jev.scanner_outbound_gate_live_03 import diagnose_outbound_candidate
-from app.horizon import resolve_horizon_context
+from app.horizon import HorizonPolicyError, resolve_horizon_context
 from app.jev.review_service import JevManualReviewService
 from app.jev import synthetic_live_04_demo as live04_demo
 from app.jev.typesafe_catalog import (
@@ -238,6 +238,16 @@ def jev_local_readiness(
         v4 = diagnose_v4_candidate(capture, sample)
         s8 = diagnose_s8_candidate(capture, sample)
         integrity = assess_frozen_candidate(capture, sample)
+        try:
+            horizon_context = resolve_horizon_context(
+                capture["horizon_intent"], policy_version=capture["horizon_policy_version"],
+            )
+            horizon_status = horizon_context.support_status
+            horizon_reason = horizon_context.reason_code
+        except HorizonPolicyError:
+            # A malformed historical record cannot create review eligibility.
+            horizon_status = "UNSUPPORTED"
+            horizon_reason = "HORIZON_INTENT_INVALID"
     except DecisionReviewContractError as exc:
         raise HTTPException(
             status_code=422,
@@ -278,18 +288,16 @@ def jev_local_readiness(
         "input_contract": {
             "horizon_intent": capture["horizon_intent"],
             "horizon_policy_version": capture["horizon_policy_version"],
-            "horizon_support_status": resolve_horizon_context(
-                capture["horizon_intent"],
-                policy_version=capture["horizon_policy_version"],
-            ).support_status,
-            "horizon_reason_code": resolve_horizon_context(
-                capture["horizon_intent"],
-                policy_version=capture["horizon_policy_version"],
-            ).reason_code,
+            "horizon_support_status": horizon_status,
+            "horizon_reason_code": horizon_reason,
             "strategy_identity_status": integrity["strategy"]["status"],
             "original_strategy_identity": (
                 "CAPTURED_ORIGINAL"
-                if integrity["strategy"]["status"] == "PASS"
+                if (
+                    integrity["strategy"]["status"] == "PASS"
+                    and integrity["policy"]["status"] == "PASS"
+                    and integrity["engine"]["status"] == "PASS"
+                )
                 else "LEGACY_DERIVED_NOT_ORIGINAL"
                 if integrity["strategy"]["status"] == "LEGACY_DERIVED"
                 else "NOT_VERIFIED"
