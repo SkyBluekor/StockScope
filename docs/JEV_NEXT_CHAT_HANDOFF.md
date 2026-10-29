@@ -256,3 +256,10 @@ git -C $work log -1 --oneline
 - **CI:** [Code HEAD `c3198ac`](https://github.com/SkyBluekor/StockScope/commit/c3198ac4ee36448ec6e980a5520ecea09825f947), [Actions #40826721313](https://github.com/SkyBluekor/StockScope/actions/runs/40826721313) **4/4 PASS** (Python 3.11, 3.14, Frontend Node22, Windows Fresh Clone; 3.11 전체 2623 passed/2 skipped). 서버/실시장 provider 요청·과금 0.
 - **현재 판정:** LIVE-04R-P2 **code/CI PASS; 실제 신규 후보 생성 및 Windows UAT 대기**. 현장 원본 Scanner fresh 재현성 artifact, ACTIVE/ROLLBACK policy Pin/후보 hash 결합·평가 Horizon 수치 정책의 `EVALUATION_PENDING` 해소는 미완료. `LOCAL_V4_PROJECTABLE`에 신규 실제 후보가 도달했다고 말하지 말 것. Market raw/derived TypeSafe source-rights HOLD는 변경 없음, 실종목 provider HTTP BLOCKED. LIVE-05 보류, G2-01~04 유지/G2-05 보류, Draft PR #170.
 - **Windows 진행:** 사용자는 기존 `C:\Projects\StockScope`의 현재 개발 브랜치를 `git pull --ff-only` 하고 `.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_jev_live_04r_new_capture_pinning.py .\backend\tests\test_jev_live_04r_fresh_scanner_evidence.py -q`로 격리 검증 가능. 사용자 PC의 **기존 실 DB/과거 COMPLETE 캡처를 수정하지 않는다**. 신규 실제 캡처 E2E는 사용자가 별도 승인한 격리 환경에서 확인하고, 기존 평소 실행은 `.\run-dev.ps1`.
+
+
+## 2026-10-29 LIVE-04R-P2 Windows 테스트 사용자 확인
+
+- 사용자가 이전 안내한 2개 대상 pytest를 **전부 통과했다고 직접 보고**함. 출력 원문·정확한 통과 개수는 미제출. 이 인수는 **작성 합성 기반 변경/불변성 테스트에 대한 Windows 성공**이며 실제 시장 신규 캡처 생성·모델 전송 성공을 뜻하지 않음.
+- GitHub [코드 CI #40826721313](https://github.com/SkyBluekor/StockScope/actions/runs/40826721313) **4/4 PASS**, [후속 문서 CI #40827102901](https://github.com/SkyBluekor/StockScope/actions/runs/40827102901) **SUCCESS**. 따라서 LIVE-04R-P2 **코드/CI/사용자 Windows 자동 테스트 PASS**로 기록.
+- 다음 반드시 별도 수행할 일: 운영 DB·기존 COMPLETE 불변으로 **신규 실제 Scanner 캡처 1건**의 원본 Selection Policy Pin, fresh Scanner 재현성 감사, 원본 전략 버전/해시, Semantic Source V2, 고정 Horizon 상태를 확인하고 `LOCAL_V4_PROJECTABLE` 가능 여부를 실증. 실제 market TypeSafe HTTP는 원천/파생 데이터 외부 제공권 및 처리 조건 부재로 **HOLD/NO-GO**; 수치 Horizon `EVALUATION_PENDING`이며 LIVE-04 실모델/ LIVE-05 배치로 넘어가지 말 것. 프로젝트 `C:\Projects\StockScope`, 실행 `.\run-dev.ps1`, Draft PR #170 및 G2 상태 유지.
