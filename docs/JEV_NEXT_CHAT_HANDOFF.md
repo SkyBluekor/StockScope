@@ -319,3 +319,10 @@ git -C $work log -1 --oneline
 - **수정 `90d4dfa` + `d701638`:** 기존 시장 설명·시장 버튼·검색 버튼을 원래 1행의 3개 그리드 자식으로 복원. Horizon은 2행 네 번째 자식이면서 `grid-column:1/-1` 전체 폭을 사용, 화면 폭 <=1180 CSS 1열 대응. 이 기능은 사용자의 P4 Horizon 의도 선택·동결 기능을 제거하지 않음.
 - **실제 Chromium 테스트 추가 `17f7d43`:** `frontend/e2e/p003-scanner-recheck.spec.mjs`에 1400/900/420 뷰포트의 레이아웃/글자폭/스크롤 검사 및 SHORT 목적 `LOCAL_REVIEW_ONLY` POST·새로고침 유지 검증. [CI #40840131900](https://github.com/SkyBluekor/StockScope/actions/runs/40840131900) Backend 3.11/3.14 + Frontend Playwright + Windows Fresh Clone **4/4 PASS**. 화면 복구의 실제 사용자 Windows UAT는 아직 미확인.
 - **사용자 명령:** `cd C:\Projects\StockScope; git pull --ff-only` 후 Vite 개발 서버에서 Ctrl+Shift+R 강력 새로고침, Scanner 컨트롤 첫 줄이 자연스럽게 보이고 다음 줄에 검토 기간 선택이 있는지 확인. 실제 시장 후보 재검색/TypeSafe API 호출은 UI 수정 확인에 필요 없음. KRX 원천권한 HOLD/숫자 Horizon 미승인/LEGACY identity는 그대로.
+
+
+### 2026-10-29 사용자 화면 확인 — P4 상단 검색 카드 수정 성공
+
+- 사용자 후속 스크린샷 `localhost_5173_scanner (5)(1).png`: 상단 Scanner 기존 시장·버튼 배열 정상 복구, Horizon 하단 별도 줄 정상, 세로 한 글자 글꼴 문제/과도한 공백 사라짐; **실제 Windows UI 배치 검증 PASS**.
+- 같은 화면의 콤보박스 **단기**, 실행 당시 저장된 분석 라벨 **단기 · 수치 정책 미승인** 표시. 즉 이전 P4에서 기록한 Horizon 결과가 UI에 보이지만, 실제 신규 COMPLETE 정본 DB/P3 진단 없이 FULL P4 E2E 통과라고 주장하지 말 것.
+- `LEGACY_CURRENT_10_FALLBACK` 안내도 여전히 존재하며 원본 version/hash 없는 점은 미해결. 실종목 TypeSafe outbound HOLD. **다음 실질 검사**는 추가 Scanner 반복 실행이 아니라 기존 isolated DB의 최신 SHORT 캡처에 대해 P3 read-only probe로 `checks/v4` 확인.
