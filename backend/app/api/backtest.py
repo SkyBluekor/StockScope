@@ -117,6 +117,9 @@ class ScannerRequest(BaseModel):
     force_refresh: bool = False
     allow_large_sync: bool = False
     horizon_intent: str | None = None
+    # Default preserves the old Scanner execution contract. This explicit
+    # mode records a user-selected time horizon for local V4 inspection ONLY.
+    horizon_purpose: Literal["PRODUCTION_POLICY", "LOCAL_REVIEW_ONLY"] = "PRODUCTION_POLICY"
     recheck_candidate: ScannerRecheckCandidate | None = None
 
 
@@ -675,9 +678,11 @@ async def _run_scanner_job(
                     selection_policy_pin=selection_policy_pin,
                 )
             rank_evidence_rows = extract_rank_evidence_from_audit(result)
-            result["horizon_context"] = resolve_horizon_context(
-                payload.horizon_intent
-            ).to_dict()
+            horizon_context = resolve_horizon_context(payload.horizon_intent).to_dict()
+            horizon_context["purpose"] = payload.horizon_purpose
+            # Record context only; the Scanner's baseline scoring, risk and
+            # selection policy remain exactly as they were.
+            result["horizon_context"] = horizon_context
             prospective_capture = prospective.try_finalize_scanner_capture(
                 source_job_id=job_id,
                 payload=payload,
@@ -942,9 +947,16 @@ def _validate_scanner_recheck_request(payload: ScannerRequest) -> None:
 async def create_scanner_job(payload: ScannerRequest) -> dict:
     _validate_scanner_recheck_request(payload)
     try:
-        require_horizon_activatable(
-            resolve_horizon_context(payload.horizon_intent)
-        )
+        horizon = resolve_horizon_context(payload.horizon_intent)
+        if payload.horizon_purpose == "LOCAL_REVIEW_ONLY":
+            if horizon.is_legacy:
+                raise HorizonPolicyError(
+                    "HORIZON_LOCAL_REVIEW_REQUIRES_EXPLICIT_INTENT",
+                    "로컬 의미 검토에는 단기·중기·장기 중 하나를 명시해야 합니다.",
+                )
+            # Not activation: unapproved numeric rules must stay pending.
+        else:
+            require_horizon_activatable(horizon)
     except HorizonPolicyError as exc:
         raise HTTPException(
             status_code=409,
