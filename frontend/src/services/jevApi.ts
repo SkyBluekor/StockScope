@@ -232,6 +232,7 @@ export type JevLocalReadiness = {
 export function getJevLocalReadiness(captureId: string, sampleIndex: number) {
   const params = new URLSearchParams({
     capture_id: captureId,
+    // ProspectiveCatalog persists sample_index as zero-based; UI rank is one-based.
     sample_index: String(sampleIndex),
   });
   return jevJson<JevLocalReadiness>(
