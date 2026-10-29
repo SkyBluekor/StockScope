@@ -95,6 +95,39 @@ export default function ScannerAiReview({
     NOT_ENTRY_CANDIDATE: "기존 Scanner의 진입 후보가 아닙니다.",
     S7_4_LINEAGE_NOT_COMPLETE: "기초 데이터의 출처 연결이 충분하지 않습니다.",
   };
+  const contract = readiness?.input_contract;
+  const localSummary = readinessError
+    ? "후보 신원 검증 실패 · 결과 표시 차단"
+    : readinessLoading ? "로컬 입력 확인 중"
+    : !readiness ? "저장 캡처 확인 필요"
+    : readiness.local_v4_status === "BLOCKED_HORIZON"
+      ? "평가 기간 지정 없음 · 원본을 임의 수정하지 않음"
+    : readiness.local_v4_status === "LOCAL_V4_PROJECTABLE"
+      ? "V4 입력 형식 준비 · 외부 전송 승인과 별개"
+    : readiness.local_v4_status === "SKIPPED_LOCAL"
+      ? "로컬 의미 검토만 가능"
+    : "V4 입력 근거 확인 필요";
+  const strategySummary = contract?.original_strategy_identity === "CAPTURED_ORIGINAL"
+    ? "원본 전략 신원 확인"
+    : contract?.original_strategy_identity === "LEGACY_DERIVED_NOT_ORIGINAL"
+      ? "레거시 유도 전략 · 원본 신원 아님"
+      : "원본 전략 신원 미확인";
+  const policySummary = contract?.horizon_support_status === "EVALUATION_PENDING"
+    ? "기간 수치 정책 승인 전"
+    : contract?.horizon_support_status === "LEGACY_UNSPECIFIED"
+      ? "평가 기간 기록 없음"
+      : contract?.horizon_support_status === "UNSUPPORTED"
+        ? "평가 기간 정책 미지원"
+        : contract?.horizon_support_status === "SUPPORTED"
+          ? "평가 기간 정책 확인됨"
+          : "평가 기간 상태 확인 필요";
+  const outboundSummary = outboundError
+    ? "전송 자격 조회 실패 · 요청 차단"
+    : outboundLoading ? "외부 전송 자격 확인 중"
+    : outbound?.decision === "HOLD" ? "외부 제공 권한 미확인 · 전송 보류"
+    : outbound?.decision === "NOT_APPLICABLE" ? "검토 대상 아님"
+    : outbound?.decision === "DENY" ? "외부 전송 금지"
+    : "전송 승인 없음";
   const verifiedModel = state.source === "STORED_JEV";
   const modelRunning = state.state === "RUNNING"
     && review?.operational_status === "RUNNING" && Boolean(review?.review_id);
@@ -116,6 +149,17 @@ export default function ScannerAiReview({
           <p>{loading ? "종목과 분석 시점에 연결된 검토 기록을 확인하고 있어요." : loadError ?? state.detail}</p>
         </div>
       </div>
+      <div className="scanner-jev-local-readiness" data-jev-real-summary="live-04r">
+        <strong>선택 종목 · {candidate.name ?? candidate.code} ({candidate.code})</strong>
+        <p>기존 Scanner 판단 유지 · AI 추가 검토는 별도 판단입니다.</p>
+        <p><b>로컬 입력:</b> {localSummary}</p>
+        <p><b>전략:</b> {strategySummary} · <b>기간:</b> {policySummary}</p>
+        <p><b>외부 TypeSafe:</b> {outboundSummary}</p>
+        <button type="button" disabled title="원천 데이터 이용권과 실행 승인이 확인되지 않았습니다.">
+          실제 종목 JEV 추가 검토 (현재 사용 불가)
+        </button>
+        <small>저장된 실모델 검토가 없는 경우 AI 의견은 생성되지 않았습니다. 이 조회는 추가 모델 요청을 하지 않습니다.</small>
+      </div>
       <JevSyntheticDemo />
       <details className="scanner-jev-motion-details">
         <summary>로컬 입력 준비도와 외부 전송 차단 근거 자세히 보기</summary>
@@ -135,6 +179,10 @@ export default function ScannerAiReview({
                     <summary>미실행 사유와 검사 근거</summary>
                     <p>V4 상태: {readiness.local_v4_status} · 출처 연결: {readiness.lineage_analysis_status}</p>
                     <p>원천 공개 시각: {readiness.publication_time_status} · 사용 권한: {readiness.rights_status}</p>
+                    <p>Horizon 원본: {readiness.input_contract.horizon_intent ?? "미지정"} · 정책 버전: {readiness.input_contract.horizon_policy_version ?? "미확인"} · 상태: {readiness.input_contract.horizon_support_status}</p>
+                    <p>전략 신원: {readiness.input_contract.original_strategy_identity} · 원천 공개 시각: 검증되지 않음</p>
+                    <p>캡처 생성: {readiness.input_contract.capture_created_at ?? "미확인"} · 시작: {readiness.input_contract.capture_started_at ?? "미확인"} · 완료: {readiness.input_contract.capture_completed_at ?? "미확인"}</p>
+                    <small>캡처 자체 시각은 원천 데이터 공개·최초 확보 시각을 증명하지 않습니다.</small>
                     {readiness.reason_codes.length > 0
                       ? <ul>{readiness.reason_codes.slice(0, 8).map(code => <li key={code}>{reasonLabel[code] ?? code} ({code})</li>)}</ul>
                       : <p>추가 사유 코드가 없습니다.</p>}
