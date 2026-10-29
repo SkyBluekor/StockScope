@@ -31,7 +31,7 @@ export default function ScannerAiReview({
     let active = true;
     setReadiness(null);
     setReadinessError(null);
-    if (!captureId || sampleIndex < 1) {
+    if (!captureId || sampleIndex < 0) {
       setReadinessLoading(false);
       return () => { active = false; };
     }
