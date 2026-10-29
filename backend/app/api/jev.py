@@ -11,6 +11,10 @@ from app.jev.review_models import (
     BASELINE_WITH_JEV,
     JEV_USER_FEATURE_DISABLED,
 )
+from app.jev.decision_reviewer_offline import DecisionReviewContractError
+from app.jev.scanner_shadow_s7 import load_frozen_candidates
+from app.jev.scanner_v4_readiness_s7_5 import diagnose_candidate as diagnose_v4_candidate
+from app.jev.scanner_eligibility_s8 import diagnose_candidate as diagnose_s8_candidate
 from app.jev.review_service import JevManualReviewService
 from app.jev.typesafe_catalog import (
     TypeSafeJevCatalog,
@@ -199,6 +203,87 @@ class JevManualReviewRequest(BaseModel):
     capture_id: str = Field(..., min_length=1, max_length=200)
     sample_index: int = Field(default=0, ge=0, le=100)
     review_epoch: int = Field(default=0, ge=0, le=1_000_000)
+
+
+@router.get("/local-readiness")
+def jev_local_readiness(
+    capture_id: str = Query(min_length=1, max_length=200),
+    sample_index: int = Query(ge=1, le=500),
+) -> dict[str, object]:
+    """LIVE-02 read-only diagnostics of one immutable Scanner sample.
+
+    Never authorizes TypeSafe transmission, initializes a provider, or changes
+    the canonical Scanner capture. User-facing review POST stays disabled.
+    """
+    try:
+        pairs = load_frozen_candidates(
+            _db(), capture_id=capture_id, limit=500,
+        )
+        match = next(
+            ((capture, sample) for capture, sample in pairs
+             if sample["sample_index"] == sample_index),
+            None,
+        )
+        if match is None:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "JEV_LIVE02_SAMPLE_NOT_FOUND",
+                        "message": "저장된 COMPLETE 캡처에서 해당 후보를 찾지 못했습니다."},
+            )
+        capture, sample = match
+        v4 = diagnose_v4_candidate(capture, sample)
+        s8 = diagnose_s8_candidate(capture, sample)
+    except DecisionReviewContractError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": exc.code, "message": "저장된 후보의 검토 준비도 확인 불가"},
+        ) from exc
+
+    local = v4["local_v4_status"]
+    if v4["category"] == "REFERENCE_ONLY":
+        status = "NOT_ENTRY_CANDIDATE"
+        local_readiness = "NOT_APPLICABLE"
+    elif local == "LOCAL_V4_PROJECTABLE":
+        status = "SOURCE_RIGHTS_HOLD"
+        local_readiness = "LOCAL_READY"
+    elif local == "SKIPPED_LOCAL":
+        status = "LOCAL_ONLY"
+        local_readiness = "LOCAL_ONLY"
+    else:
+        status = "NEEDS_EVIDENCE"
+        local_readiness = "NEEDS_EVIDENCE"
+
+    return {
+        "version": "JEV_LIVE_02_LOCAL_READINESS_V1",
+        "capture_id": capture["id"],
+        "sample_index": int(sample["sample_index"]),
+        "identity": {
+            "snapshot_hash": sample["snapshot_hash"],
+            "signal_date": sample["signal_date"],
+            "market": sample["market"],
+            "ticker": sample["ticker"],
+            "rank": sample["rank"],
+            "strategy": sample["strategy"],
+            "action": sample["action"],
+        },
+        "status": status,
+        "local_readiness": local_readiness,
+        "local_v4_status": local,
+        "v4_semantic_status": v4["v4_local_semantic_status"],
+        "integrity_reason_codes": v4["integrity_reason_codes"],
+        "lineage_analysis_status": v4["lineage_analysis_status"],
+        "v4_outbound_lineage_status": s8["v4_outbound_lineage_status"],
+        "source_origin_status": s8["source_origin_status"],
+        "source_revision_status": s8["source_revision_status"],
+        "publication_time_status": s8["publication_time_status"],
+        "rights_status": s8["rights_status"],
+        "transmission_decision": s8["transmission_decision"],
+        "reason_codes": s8["reason_codes"],
+        "model_review_executed": False,
+        "provider_eligible": False,
+        "actual_provider_calls": 0,
+        "db_writes": 0,
+    }
 
 
 @router.get("/review-feature")
