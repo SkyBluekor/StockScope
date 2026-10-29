@@ -167,3 +167,16 @@ def test_new_capture_discovery_rejects_historical_and_conflicting_ids(tmp_path, 
     ]) == 2
     error = json.loads(capsys.readouterr().out)
     assert error["reason_code"] == "P3_DISCOVER_AND_EXPLICIT_ID_CONFLICT"
+
+
+def test_cli_stale_capture_returns_nonzero_even_with_valid_snapshot(tmp_path, capsys):
+    db, preview = _fixture(tmp_path)
+    assert main([
+        "--capture-id", preview["capture_id"],
+        "--captured-after", _cutoff(timedelta(days=1)),
+        "--simulation-db", str(db),
+    ]) == 3
+    report = json.loads(capsys.readouterr().out)
+    assert report["first_blocker"]["code"] == "P3_NEW_CAPTURE_TIME_NOT_VERIFIED"
+    assert report["capture"]["freshness_time_consistent"] is False
+    assert report["outbound"]["actual_provider_calls"] == 0
