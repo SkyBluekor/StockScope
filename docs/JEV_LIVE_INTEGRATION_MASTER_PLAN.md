@@ -114,7 +114,7 @@ StockScope의 기본 `Scanner → 정량 전략/Risk 판단 → Prospective COMP
 | 단계 | 상태 | GitHub 커밋/PR | 확인 증거 또는 차단 사유 |
 |---|---|---|---|
 | LIVE-00 현 상태 기준 정리 | **DONE (docs only)** | 이 계획 문서 커밋 참조 | TypeSafe transport 존재·user review feature OFF·S7.4 시장 전송 HOLD 확인 |
-| LIVE-01 실제 provider 합성 E2E 연결 | **CODE + HTTP MOCK E2E VERIFIED / PAID LIVE PENDING (not DONE)** | [`90f3d5d`](https://github.com/SkyBluekor/StockScope/commit/90f3d5d5e2b1ae010cbeca8bf8da4d786e2a03b0) · [CI 4/4 PASS](https://github.com/SkyBluekor/StockScope/actions/runs/40709954313) · [Draft PR #170](https://github.com/SkyBluekor/StockScope/pull/170) | 기존 TypeSafeSystemOneProvider→V4 JevManualReviewService→기존 catalog 저장, 합성 fixture/HTTP MockTransport 200·401·422·429·500·timeout·invalid JSON·model mismatch·usage invalid·duplicate·baseline 불변 확인. Python 3.11/3.14 각 2,589 passed / 2 skipped; Frontend / Windows Fresh Clone PASS. **실제 유료 요청 0, Windows 사용자 수동 호출 미검증, 실모델 응답 미확인**. |
+| LIVE-01 실제 provider 합성 E2E 연결 | **DONE — synthetic-only real TypeSafe V4 E2E (2026-10-29)** | [`90f3d5d`](https://github.com/SkyBluekor/StockScope/commit/90f3d5d5e2b1ae010cbeca8bf8da4d786e2a03b0) · [CI 4/4 PASS](https://github.com/SkyBluekor/StockScope/actions/runs/40713831348) · [Draft PR #170](https://github.com/SkyBluekor/StockScope/pull/170) | **사용자 Windows `C:\\Projects\\StockScope` 실제 유료 합성 호출 1회 PASS** (HEAD `10af121`): `jev-1.14.0` 요청/반환 일치 `MATCHED`, `PASS_THROUGH` / `NO_ADDITIONAL_RELATION_CONFLICT`, 저장 후 조회 `VALID`, review ID `ff4f5134-a65f-485c-87ca-c163c8a9dad0`, 사용량 1,073 input / 23 output, `cost_unknown=true`, `failure_code=null`, CLI exit 0. 데이터 `JEV-LIVE-01-AUTHORED-SYNTHETIC`만 전송; 실제 시장 정보 아님. **사용자용 실종목 UI·outbound 권한은 아직 미검증 및 HOLD**. |
 | LIVE-02 실종목 로컬 준비도 화면 | **TODO** | — | 외부 전송 0, 근거별 차단 상태 |
 | LIVE-03 실제 입력 권한·시점 증거 | **TODO / 현재 시장 전송 HOLD** | — | 허용된 입력만 검증; 불가 시 해당 outbound만 보류 |
 | LIVE-04 선택 후보 1건 수동 실검토 | **TODO / 실제 시장 전송은 LIVE-03 결과에 따름** | — | saved verified response + UI |
@@ -154,7 +154,7 @@ StockScope의 기본 `Scanner → 정량 전략/Risk 판단 → Prospective COMP
 - **2026-10-29 CI 확인:** [GitHub Actions #40713831348](https://github.com/SkyBluekor/StockScope/actions/runs/40713831348) **4/4 SUCCESS** (Backend Python 3.11/3.14, Frontend Node 22, Windows Fresh Clone). Windows synthetic preflight 및 HTTP Mock V4 integration 단계 성공. 이전 #40713750927은 **CANCELLED**이며 실패 테스트의 근거가 아님. 실제 유료 TypeSafe 요청·사용자 Windows 확인 **미실시**, LIVE-01 **NOT DONE**, 시장 원천 외부 전송 **HOLD**.
 
 
-### 2026-10-29 사용자 Windows CLI 실검증 (LIVE-01 아직 NOT DONE)
+### 2026-10-29 사용자 Windows CLI 사전 검증 (이후 실제 live 성공, 아래 최신 기록 참고)
 
 - 사용자 PC `C:\Projects\StockScope`에서 기존 개발 브랜치 `codex/p0-01-mvp-c1-c2-integration-20261022` 및 HEAD `8b50afd` 확인, `tools/data/jev_live_01_synthetic_smoke.py` 존재 확인.
 - `--mode preflight` 성공: `synthetic_only=true`, `market_data_outbound_allowed=false`, `wire_bytes=2906`, `max_calls=1`, `billable_provider_requests=0`.
@@ -162,3 +162,13 @@ StockScope의 기본 `Scanner → 정량 전략/Risk 판단 → Prospective COMP
 - **사용자가 합성 유료 호출 1회 승인함**. 그러나 사용자 shell의 `JEV_API_KEY` 환경변수는 NOT SET으로 확인되었고 프로젝트 루트 `.env` 로딩 성공 여부는 아직 미확인. 실제 API 호출/DB 재조회는 미실시.
 - TypeSafe 공식 공개 문서 조회(2026-10-29): `jev-1.14.0` 최신 안정 버전, `jev-latest` 별칭은 이를 가리킴. 합성 live 시 버전 pin, authenticated `GET /v1/models`의 결과/hash와 공급자 정책 증빙을 고정해서 실행 필요. 실 시장 외부 전송 HOLD, Scanner API default OFF.
 - 다음 조건: 로컬에서 API 키 사용 가능 확인 → 모델 목록 조회 및 증빙 결합 → **승인된 합성 단 1회** 실행 → 기존 V4 catalog에 `VALID` 저장·모델 신원/usage 검증. 실패 시 자동 재시도하지 않음.
+
+
+### 2026-10-29 LIVE-01 최종 인수 증거 — 사용자 실제 TypeSafe 호출
+
+- **DONE 범위: 작성된 순수 합성 fixture의 실제 TypeSafe System One → 기존 V4 `JevManualReviewService` → 기존 `TypeSafeJevCatalog` 검증·저장·재조회.** 사용자 Windows 경로 `C:\\Projects\\StockScope`; 확인된 HEAD `10af121`. `GET /v1/models` 계정 모델 목록 조회 후 `--mode live --model jev-1.14.0 --expected-returned-model jev-1.14.0` 1회 실행, 종료 코드 0.
+- 실측: `fixture=JEV-LIVE-01-AUTHORED-SYNTHETIC`, `market_data_outbound_allowed=false`, `wire_bytes=2906`, `wire_sha256=4057b796c308389d5a92f44b328dc6d56986acffd0a36d22f9158e0bb9932570`, `snapshot_hash=0149b561a8bf406bae227492486268394dba4df136df88fd31ee0b611febb3a3`, `protocol_hash=f566633cd9581a10bf5c9c0b86841cb54afdbacd66222ec79b5cfd88afe1ebd5`. 출처는 사용자가 제시한 CLI 출력이며 공급자 HTTP 원문을 보유한 것은 아님.
+- 검토: `capture_id=d0812012-fa48-426a-a6fc-4dedbf2dae3b`, `review_id=ff4f5134-a65f-485c-87ca-c163c8a9dad0`, `result.status=PASS_THROUGH`, `reason_codes=[NO_ADDITIONAL_RELATION_CONFLICT]`, `stored_status=VALID`, `stored_disposition=PASS_THROUGH`, `model_returned=jev-1.14.0`, `model_identity_status=MATCHED`, `usage=1073 input / 23 output`, `cost_usd=null`, `cost_unknown=true`, `failure_code=null`, `billable_provider_requests=1`.
+- API 호출을 통한 **합성 실모델 연동은 검증됨**. Mock의 `REVIEW_REQUIRED`와 실제 `PASS_THROUGH`는 서로 다른 응답으로, 실제 응답을 보존한 결과다. 비용의 실제 청구액은 미확인. 별도 서버 사용량 영수증/로그 검증 없음.
+- 구현 코드·CLI·Windows Mock CI는 이전 커밋에서 통과: [CI #40713831348](https://github.com/SkyBluekor/StockScope/actions/runs/40713831348) 4/4 PASS. **본 문서 갱신 SHA의 CI는 별도 확인**.
+- **다음 가장 이른 단계 LIVE-02**: 실제 Scanner 캡처를 로컬 READ-ONLY로 분석해 후보별 준비/차단 이유를 API·UI에 표시. LIVE-03 실제 시장 외부 전송 증빙 전까지 실종목 TypeSafe 호출은 NO-GO. 사용자 브라우저 실제 후보 UI 검증은 아직 수행하지 않았고 LIVE-02/04 인수 범위다. G2-01~04 유지, G2-05 보류.
