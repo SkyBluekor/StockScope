@@ -150,3 +150,5 @@ StockScope의 기본 `Scanner → 정량 전략/Risk 판단 → Prospective COMP
 - [`01f27ba`](https://github.com/SkyBluekor/StockScope/commit/01f27badf2c626830e23db3d24df01d37ef26092): developer-only 유료 합성 CLI에서 `MOCK_ONLY`, `MOCK_OR_PREFLIGHT_ONLY`, `UNVERIFIED`, `UNKNOWN`, `TBD`, `NONE` 또는 빈 provider 증빙값을 네트워크 실행 전에 거부하도록 변경.
 - [`77bdefd`](https://github.com/SkyBluekor/StockScope/commit/77bdefd268600b16e374f04d64266640a80426b9): 해당 사전 차단 회귀 테스트 추가. **이 변경의 CI는 확인 대기**(기존 4/4 PASS는 이전 커밋의 증거이며 새 커밋 검증으로 재사용하지 않음).
 - 실제 유료 TypeSafe 요청: **0회 (이번 작업)**. 사용자의 로컬 API 키 및 별도의 1회 유료 실행 승인 부재. LIVE-01은 **NOT DONE**, LIVE-02는 아직 진행하지 않음. G2-01~04 유지, G2-05 보류, 실시장 외부 전송 HOLD 유지.
+
+- **2026-10-29 CI 확인:** [GitHub Actions #40713831348](https://github.com/SkyBluekor/StockScope/actions/runs/40713831348) **4/4 SUCCESS** (Backend Python 3.11/3.14, Frontend Node 22, Windows Fresh Clone). Windows synthetic preflight 및 HTTP Mock V4 integration 단계 성공. 이전 #40713750927은 **CANCELLED**이며 실패 테스트의 근거가 아님. 실제 유료 TypeSafe 요청·사용자 Windows 확인 **미실시**, LIVE-01 **NOT DONE**, 시장 원천 외부 전송 **HOLD**.
