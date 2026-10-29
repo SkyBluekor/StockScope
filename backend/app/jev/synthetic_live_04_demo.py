@@ -23,9 +23,17 @@ from uuid import uuid4
 from app.core.config import PROJECT_ROOT
 from app.jev.review_models import JEV_USER_FEATURE_ACTIVE
 from app.jev.review_service import JevManualReviewService
-from app.jev.synthetic_live_01 import (
-    FIXTURE_ID, prepare_synthetic_service,
-)
+# The original synthetic fixture imports developer-only tools.data migrators.
+# Never import it at application startup; load only after explicit local opt-in.
+FIXTURE_ID = "JEV-LIVE-01-AUTHORED-SYNTHETIC"
+
+def _prepare_synthetic_service(*args, **kwargs):
+    import sys
+    if str(PROJECT_ROOT) not in sys.path:
+        sys.path.insert(0, str(PROJECT_ROOT))
+    from app.jev.synthetic_live_01 import prepare_synthetic_service
+    return prepare_synthetic_service(*args, **kwargs)
+
 from app.jev.typesafe_catalog import TypeSafeJevCatalog
 from app.jev.typesafe_provider import FakeTypeSafeJevProvider
 from app.jev.typesafe_questions_v4 import STRATEGY_RELATION_CONFLICT
@@ -129,7 +137,7 @@ def start() -> dict:
         except FileExistsError as exc:
             raise ValueError("JEV04_DEMO_ALREADY_CLAIMED_OR_INTERRUPTED") from exc
 
-        _service, preview = prepare_synthetic_service(
+        _service, preview = _prepare_synthetic_service(
             root / "synthetic.db",
             model_requested="jev-latest",
             expected_model_returned="jev-mock-returned",
