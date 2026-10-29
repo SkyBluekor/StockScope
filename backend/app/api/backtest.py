@@ -62,6 +62,18 @@ def _scanner_service(api_key: str | None) -> StockScannerService:
     return StockScannerService(KrxProvider(api_key))
 
 
+def _selection_policy_registry() -> ProductionStrategySelectionRegistry:
+    """Use the same policy runtime binding as Strategy Governance.
+
+    No automatic policy activation: missing or invalid refs still resolve to
+    the existing verified LEGACY/ROLLBACK fallbacks.
+    """
+    override = (os.getenv("STOCKSCOPE_STRATEGY_SELECTION_RUNTIME_DIR") or "").strip()
+    if override:
+        return ProductionStrategySelectionRegistry(runtime_dir=Path(override))
+    return ProductionStrategySelectionRegistry()
+
+
 def _prospective_service() -> ProspectiveService:
     simulation_db = Path(
         os.getenv("STOCKSCOPE_SIM_DB")
@@ -913,7 +925,7 @@ async def create_scanner_evidence_job(payload: ScannerEvidencePrepareRequest) ->
     settings = get_settings()
     job = backtest_jobs.create()
     selection_policy_pin = (
-        ProductionStrategySelectionRegistry().pin_active_selection_policy()
+        _selection_policy_registry().pin_active_selection_policy()
     )
     task = asyncio.create_task(
         _run_scanner_evidence_job(
@@ -966,7 +978,7 @@ async def create_scanner_job(payload: ScannerRequest) -> dict:
     settings = get_settings()
     job = backtest_jobs.create()
     selection_policy_pin = (
-        ProductionStrategySelectionRegistry().pin_active_selection_policy()
+        _selection_policy_registry().pin_active_selection_policy()
     )
     _prospective_service().try_begin_scanner_capture(
         source_job_id=job.job_id,
