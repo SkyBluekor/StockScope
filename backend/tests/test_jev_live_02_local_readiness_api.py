@@ -1,6 +1,8 @@
 """LIVE-02 immutable candidate readiness HTTP contract; never call providers."""
 from __future__ import annotations
 
+import sqlite3
+
 from fastapi.testclient import TestClient
 from app.main import app
 from app.jev.synthetic_live_01 import prepare_synthetic_service
@@ -70,10 +72,42 @@ def test_local_readiness_fails_closed_for_missing_capture_and_sample(tmp_path, m
         "capture_id": preview["capture_id"], "sample_index": 99,
     })
     invalid = client.get("/api/simulation/jev/local-readiness", params={
-        "capture_id": preview["capture_id"], "sample_index": 0,
+        "capture_id": preview["capture_id"], "sample_index": -1,
     })
     assert missing_capture.status_code == 422
     assert missing_capture.json()["detail"]["code"] == "S7_CAPTURE_NOT_COMPLETE"
     assert missing_sample.status_code == 404
     assert missing_sample.json()["detail"]["code"] == "JEV_LIVE02_SAMPLE_NOT_FOUND"
     assert invalid.status_code == 422
+
+
+def test_first_displayed_candidate_resolves_persisted_zero_index(tmp_path, monkeypatch):
+    """Regression: UI rank 1 must resolve sample_index 0, never next stock."""
+    db, preview = _fixture(tmp_path, monkeypatch)
+    with sqlite3.connect(db) as conn:
+        first = conn.execute(
+            "SELECT snapshot_hash, ticker FROM prospective_recommendation_sample "
+            "WHERE capture_run_id=? AND sample_index=0",
+            (preview["capture_id"],),
+        ).fetchone()
+        second = conn.execute(
+            "SELECT snapshot_hash FROM prospective_recommendation_sample "
+            "WHERE capture_run_id=? AND sample_index=1",
+            (preview["capture_id"],),
+        ).fetchone()
+    assert first is not None and second is not None
+    assert first[0] != second[0]
+    before = db.read_bytes()
+    client = TestClient(app)
+    response = client.get("/api/simulation/jev/local-readiness", params={
+        "capture_id": preview["capture_id"], "sample_index": 0,
+    })
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["sample_index"] == 0
+    assert result["identity"]["snapshot_hash"] == first[0]
+    assert result["identity"]["ticker"] == first[1]
+    assert result["identity"]["snapshot_hash"] != second[0]
+    assert result["actual_provider_calls"] == 0
+    assert result["db_writes"] == 0
+    assert db.read_bytes() == before
