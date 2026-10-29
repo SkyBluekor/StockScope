@@ -172,3 +172,27 @@ def test_live04r_horizon_is_read_from_capture_not_inferred_from_strategy(
     assert body["local_v4_status"] != "LOCAL_V4_PROJECTABLE"
     assert body["provider_eligible"] is False
     assert db.read_bytes() == before
+
+
+def test_live04r_invalid_historical_horizon_is_diagnostic_not_server_error(
+    tmp_path, monkeypatch,
+):
+    db, preview = _fixture(tmp_path, monkeypatch)
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "UPDATE prospective_capture_run SET horizon_intent='NOT_A_REAL_HORIZON' "
+            "WHERE id=?",
+            (preview["capture_id"],),
+        )
+    before = db.read_bytes()
+    result = TestClient(app).get("/api/simulation/jev/local-readiness", params={
+        "capture_id": preview["capture_id"],
+        "sample_index": preview["sample_index"],
+    })
+    assert result.status_code == 200, result.text
+    contract = result.json()["input_contract"]
+    assert contract["horizon_intent"] == "NOT_A_REAL_HORIZON"
+    assert contract["horizon_support_status"] == "UNSUPPORTED"
+    assert contract["horizon_reason_code"] == "HORIZON_INTENT_INVALID"
+    assert result.json()["provider_eligible"] is False
+    assert db.read_bytes() == before
