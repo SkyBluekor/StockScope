@@ -111,3 +111,64 @@ def test_first_displayed_candidate_resolves_persisted_zero_index(tmp_path, monke
     assert result["actual_provider_calls"] == 0
     assert result["db_writes"] == 0
     assert db.read_bytes() == before
+
+
+def test_live04r_reports_captured_horizon_original_identity_and_event_provenance(
+    tmp_path, monkeypatch,
+):
+    """Immutable real-capture contract fields are labels, never made-up licenses."""
+    db, preview = _fixture(tmp_path, monkeypatch)
+    before = db.read_bytes()
+    client = TestClient(app)
+    response = client.get("/api/simulation/jev/local-readiness", params={
+        "capture_id": preview["capture_id"],
+        "sample_index": preview["sample_index"],
+    })
+    assert response.status_code == 200, response.text
+    data = response.json()
+    contract = data["input_contract"]
+    assert contract["horizon_intent"] in ("SHORT", "MEDIUM", "LONG", "LEGACY_UNSPECIFIED")
+    assert contract["horizon_support_status"] in (
+        "LEGACY_UNSPECIFIED", "EVALUATION_PENDING", "UNSUPPORTED", "SUPPORTED",
+    )
+    assert contract["original_strategy_identity"] in (
+        "CAPTURED_ORIGINAL", "LEGACY_DERIVED_NOT_ORIGINAL", "NOT_VERIFIED",
+    )
+    if data["baseline_checks"]["strategy"]["status"] == "LEGACY_DERIVED":
+        assert contract["original_strategy_identity"] == "LEGACY_DERIVED_NOT_ORIGINAL"
+    if data["baseline_checks"]["strategy"]["status"] != "PASS":
+        assert contract["original_strategy_identity"] != "CAPTURED_ORIGINAL"
+    assert contract["source_first_published_at"] is None
+    assert contract["source_publication_evidence"] == "UNVERIFIED"
+    assert contract["capture_completed_at"] is not None
+    assert data["provider_eligible"] is False
+    assert data["model_review_executed"] is False
+    assert db.read_bytes() == before
+
+
+def test_live04r_horizon_is_read_from_capture_not_inferred_from_strategy(
+    tmp_path, monkeypatch,
+):
+    """Switching a controlled fixture to LEGACY only affects local diagnostics."""
+    db, preview = _fixture(tmp_path, monkeypatch)
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "UPDATE prospective_capture_run "
+            "SET horizon_intent='LEGACY_UNSPECIFIED', horizon_policy_version=NULL "
+            "WHERE id=?",
+            (preview["capture_id"],),
+        )
+    before = db.read_bytes()
+    result = TestClient(app).get("/api/simulation/jev/local-readiness", params={
+        "capture_id": preview["capture_id"],
+        "sample_index": preview["sample_index"],
+    })
+    assert result.status_code == 200, result.text
+    body = result.json()
+    assert body["input_contract"]["horizon_intent"] == "LEGACY_UNSPECIFIED"
+    assert body["input_contract"]["horizon_policy_version"] is None
+    assert body["input_contract"]["horizon_support_status"] == "LEGACY_UNSPECIFIED"
+    assert body["input_contract"]["horizon_reason_code"] == "HORIZON_NOT_RECORDED"
+    assert body["local_v4_status"] != "LOCAL_V4_PROJECTABLE"
+    assert body["provider_eligible"] is False
+    assert db.read_bytes() == before
