@@ -17,12 +17,17 @@ from pathlib import Path
 
 from app.core.config import PROJECT_ROOT
 from app.jev.decision_reviewer_offline import DecisionReviewContractError
-from app.jev.live_04r_p3_capture_probe import inspect_one_capture
+from app.jev.live_04r_p3_capture_probe import (
+    discover_new_capture_ids,
+    inspect_one_capture,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--capture-id", required=True, help="New COMPLETE capture UUID")
+    parser.add_argument("--capture-id", help="Explicit new COMPLETE capture UUID")
+    parser.add_argument("--find-new", action="store_true",
+                        help="List new COMPLETE capture IDs since --captured-after (read only)")
     parser.add_argument("--captured-after", required=True,
                         help="Timezone-aware time saved BEFORE launching the new Scanner run")
     parser.add_argument("--sample-index", type=int, default=None,
@@ -33,12 +38,29 @@ def main(argv: list[str] | None = None) -> int:
                         help="Existing isolated or operational simulation DB, mode=ro only")
     args = parser.parse_args(argv)
     try:
-        result = inspect_one_capture(
-            args.simulation_db,
-            capture_id=args.capture_id,
-            captured_after=args.captured_after,
-            sample_index=args.sample_index,
-        )
+        if args.find_new:
+            if args.capture_id or args.sample_index is not None:
+                raise ValueError("P3_DISCOVER_AND_EXPLICIT_ID_CONFLICT")
+            found = discover_new_capture_ids(
+                args.simulation_db, captured_after=args.captured_after,
+            )
+            result = {
+                "version": "JEV_LIVE_04R_P3_CAPTURE_DISCOVERY_V1",
+                "read_only": True,
+                "status": "FOUND" if found else "NONE_FOUND",
+                "new_complete_entry_captures": found,
+                "actual_provider_calls": 0,
+                "db_writes": 0,
+            }
+        else:
+            if not args.capture_id:
+                raise ValueError("P3_CAPTURE_ID_REQUIRED")
+            result = inspect_one_capture(
+                args.simulation_db,
+                capture_id=args.capture_id,
+                captured_after=args.captured_after,
+                sample_index=args.sample_index,
+            )
     except (ValueError, DecisionReviewContractError, OSError) as exc:
         # Codes only: never dump SQL, file paths, tokens, candidate raw data.
         code = getattr(exc, "code", None)
