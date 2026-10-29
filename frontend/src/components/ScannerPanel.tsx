@@ -1751,6 +1751,12 @@ export default function ScannerPanel({
               {result.horizon_context.support_status === "EVALUATION_PENDING" && " · 수치 정책 미승인"}
             </small>
           )}
+          {result?.strategy_selection_policy?.policy_source === "LEGACY_CURRENT_10_FALLBACK" && (
+            <small className="scanner-horizon-captured">
+              이 분석의 전략 기준: 기존 10개 전략 · 승인된 원본 버전 미확인
+              {result.strategy_selection_policy.fallback_reason && " · 정책 확인 필요"}
+            </small>
+          )}
         </div>
         <div className="scanner-control-actions">
           <button type="button" className="scanner-run-button" onClick={() => void runScanner(false)} disabled={busy}>
