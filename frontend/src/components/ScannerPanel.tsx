@@ -633,6 +633,7 @@ function CandidateDetail({
         )}
         {activeTab === "ai" && (
           <ScannerAiReview candidate={candidate} result={result}
+            sampleIndex={rank}
             enabled={aiReviewEnabled} available={aiReviewAvailable}
             featureStatus={aiReviewFeatureStatus} review={storedReview}
             loading={storedReviewLoading} loadError={storedReviewError}
