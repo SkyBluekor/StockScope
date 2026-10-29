@@ -206,3 +206,13 @@ git -C $work log -1 --oneline
 - **LIVE-04 실제 실종목 real TypeSafe E2E는 계속 BLOCKED**: S7.4/S8 원천 및 파생권·공개시간·revision/계정별 처리조건·송신 직전 trusted authorization, 지원 Horizon 및 전략 신원 미확보. 합성 Mock 성공은 실종목의 전송 승인이나 JEV 의견이 절대 아님. 무료 Mock 1회 외 새 유료 API 호출·시장 정보 전송 금지. Draft PR #170, G2-01~04 유지, G2-05 보류.
 - 다음 개발에서는 실종목 JEV 허용에 필요한 증거가 외부 조건으로 막힌 현실을 명시하고, **근거 없는 반복적인 HOLD 진단/긴 로그 UI** 대신 사용자 실사용 가치가 있는 대안을 검토. 단 권한 없는 외부 전송·승인 플래그 우회를 하지 말 것.
 - **사용자 PC 개발 실행 명령은 명확히 `.\run-dev.ps1`**. 과거 문서의 `.\dev` 표기는 잘못된 안내로 간주. 기존 `C:\Projects\StockScope` 폴더 사용, 사용자가 불필요한 새 worktree 원치 않음.
+
+
+## 2026-10-29 LIVE-04R CODE/CI PASS · 사용자 Windows UAT PENDING
+
+- **새 기능(코드 구현):** `GET /api/simulation/jev/local-readiness`에 `input_contract` 추가. 저장된 `horizon_intent`/정책 버전 및 실제 승인 상태(`EVALUATION_PENDING`, `LEGACY_UNSPECIFIED`, `UNSUPPORTED`)를 구분, 원본 전략은 `strategy + policy + engine PASS`일 때만 `CAPTURED_ORIGINAL`로 표시하고 레거시 유도 신원은 `LEGACY_DERIVED_NOT_ORIGINAL`로 남김. 캡처 생성/시작/완료 시각과 **입증되지 않은 실제 원천 최초 공개시각(null)** 구분. 구형 캡처 DB 시각 컬럼이 없으면 null; 원본 SQLite/snapshot 변경 없음.
+- **UI:** `ScannerAiReview.tsx`에 선택한 실제 종목의 로컬 V4 준비도·전략 원본 신원·기간 정책 상태·TypeSafe 권한 HOLD를 짧게 표시하고 실제 JEV 버튼 비활성화. 내부 원인/hash는 접힌 상세에 유지. `JevSyntheticDemo.tsx` Mock 결과는 접힌 개발자 영역으로 이동. 사용자가 이전 합성 Mock 결과를 실제 종목 의견으로 오해하지 않도록 구분.
+- **핵심 구조 사실:** `ProspectiveService.capture_request_from_scanner_payload`는 이미 명시된 Horizon을 기록하고 미지정은 `LEGACY_UNSPECIFIED`로 보존한다. `verify_candidate_policy_binding`는 실제 ACTIVE 실행 Pin의 전략 버전/hash가 후보 원본과 일치해야만 승인한다. **이 방어를 우회해 LEGACY 신원을 원본으로 만들지 말 것**. `resolve_horizon_context`의 수치 정책은 아직 `EVALUATION_PENDING`; 임의로 활성화하거나 기간을 부여하면 안 된다. 신규 실후보 V4 구조적 준비 완료는 **입증 안 됨**.
+- **CI:** 신규 저장 캡처 경계/구형 DB/invalid Horizon 안전 테스트 포함 [코드 HEAD `9dac50d`](https://github.com/SkyBluekor/StockScope/commit/9dac50da0227a42c44adc8e943d1fc6ab2ef2f45), [Actions #40823176776](https://github.com/SkyBluekor/StockScope/actions/runs/40823176776) **4/4 SUCCESS** (Backend Python 3.11/3.14, Frontend Node22/Chromium, Windows Fresh Clone). 첫 CI 실패는 구형 fixture에 생성/시작 timestamp 컬럼이 없던 점 및 터미널 불변 캡처 변경을 시도한 새 테스트; 둘 다 코드를 방어적으로 수정하고 테스트를 순수 함수로 옮겨 해결. 실제 TypeSafe 유료 호출 0.
+- **다음 인수:** 사용자 Windows `C:\Projects\StockScope` `git pull --ff-only`, 기존 서버 중지 후 `.\run-dev.ps1` 재시작, Scanner > 실제 종목 > AI 검토 요약/전략·Horizon·권한 정보 및 합성 Mock 접힌 화면 확인. 해당 브라우저 UAT 전 LIVE-04R DONE 판정 금지. 실제 소스 KRX 원본/파생 권한과 TypeSafe 계정 처리조건, 수치 Horizon 승인·원본 전략 신규 생성 경로는 아직 미해결이고 실종목 TypeSafe 호출 NO-GO.
+- **보존:** G2-01~04 유지, G2-05 보류, Draft PR #170 유지, LIVE-01 합성 유료 실행 1회 완료, LIVE-02/03 및 LIVE-04 Mock 기존 인수 보존, 실제 시장 provider 0 호출 유지.
