@@ -13,6 +13,7 @@ from app.jev.review_models import (
 )
 from app.jev.decision_reviewer_offline import DecisionReviewContractError
 from app.jev.scanner_shadow_s7 import load_frozen_candidates
+from app.jev.scanner_integrity_s7_1 import assess_frozen_candidate
 from app.jev.scanner_v4_readiness_s7_5 import diagnose_candidate as diagnose_v4_candidate
 from app.jev.scanner_eligibility_s8 import diagnose_candidate as diagnose_s8_candidate
 from app.jev.review_service import JevManualReviewService
@@ -233,6 +234,7 @@ def jev_local_readiness(
         capture, sample = match
         v4 = diagnose_v4_candidate(capture, sample)
         s8 = diagnose_s8_candidate(capture, sample)
+        integrity = assess_frozen_candidate(capture, sample)
     except DecisionReviewContractError as exc:
         raise HTTPException(
             status_code=422,
@@ -271,6 +273,13 @@ def jev_local_readiness(
         "local_v4_status": local,
         "v4_semantic_status": v4["v4_local_semantic_status"],
         "integrity_reason_codes": v4["integrity_reason_codes"],
+        "baseline_checks": {
+            name: {
+                "status": integrity[name]["status"],
+                "code": integrity[name]["code"],
+            }
+            for name in ("rank", "strategy", "policy", "engine", "risk", "dates")
+        },
         "lineage_analysis_status": v4["lineage_analysis_status"],
         "v4_outbound_lineage_status": s8["v4_outbound_lineage_status"],
         "source_origin_status": s8["source_origin_status"],
