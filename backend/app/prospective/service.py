@@ -73,6 +73,18 @@ class ProspectiveService:
                     "code": exc.code,
                     "message": exc.message,
                 }
+            if exc.code in {
+                "PROSPECTIVE_CAPTURE_REQUEST_DRIFT",
+                "PROSPECTIVE_CAPTURE_REQUEST_INVALID",
+            }:
+                # Capture journaling is auxiliary to the production Scanner.
+                # Reject the inconsistent prospective request without failing
+                # the user's baseline scan or altering terminal snapshots.
+                return {
+                    "status": "FAILED",
+                    "code": exc.code,
+                    "message": exc.message,
+                }
             raise
         return {
             "status": capture["status"],
