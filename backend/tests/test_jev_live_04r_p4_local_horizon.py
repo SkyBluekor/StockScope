@@ -183,3 +183,15 @@ def test_service_preserves_purpose_and_numeric_policy_stays_unapproved():
         assert request.horizon_purpose == "LOCAL_REVIEW_ONLY"
         assert resolve_horizon_context(intent).review_cycle_trading_days is None
         assert resolve_horizon_context(intent).time_stop_trading_days is None
+
+
+def test_scanner_selection_registry_uses_governance_runtime_binding(
+    tmp_path, monkeypatch,
+):
+    # No policy activation; this only verifies both paths resolve the same
+    # explicit runtime when configured, rather than silently using defaults.
+    from app.api import strategy_governance
+    monkeypatch.setenv("STOCKSCOPE_STRATEGY_SELECTION_RUNTIME_DIR", str(tmp_path))
+    assert scanner_api._selection_policy_registry().runtime_dir == tmp_path
+    assert strategy_governance._selection_registry().runtime_dir == tmp_path
+    assert scanner_api._selection_policy_registry().pin_active_selection_policy().policy_source == "LEGACY_CURRENT_10_FALLBACK"
