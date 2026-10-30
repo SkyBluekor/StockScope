@@ -1019,3 +1019,56 @@
     grid-column: 1;
   }
 }
+
+/* JEV plan A: a compact user-facing summary; all technical diagnostics are opt-in. */
+.scanner-jev-compact-summary {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 2px 0 8px;
+}
+.scanner-jev-compact-stock {
+  color: var(--text-strong);
+  font-size: 16px;
+  font-weight: 650;
+}
+.scanner-jev-compact-summary dl {
+  margin: 0;
+  border-top: 1px solid var(--line-soft);
+}
+.scanner-jev-compact-summary dl > div {
+  display: grid;
+  grid-template-columns: minmax(108px, 0.4fr) minmax(0, 1fr);
+  padding: 7px 0;
+  gap: 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.scanner-jev-compact-summary dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.scanner-jev-compact-summary .scanner-jev-compact-note {
+  color: var(--text-subtle);
+  font-size: 12px;
+}
+.scanner-jev-compact-summary button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+.scanner-jev-developer-details {
+  border-top: 1px solid var(--line-soft);
+  padding-top: 8px;
+}
+.scanner-jev-developer-details > summary {
+  font-size: 12px;
+  color: var(--text-subtle) !important;
+}
+.scanner-jev-developer-details > .scanner-jev-review {
+  padding-top: 12px;
+}
+@media (max-width: 650px) {
+  .scanner-jev-compact-summary dl > div {
+    grid-template-columns: minmax(96px, 0.4fr) minmax(0, 1fr);
+    gap: 8px;
+  }
+}
