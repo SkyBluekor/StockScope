@@ -411,3 +411,11 @@ StockScope의 기본 `Scanner → 정량 전략/Risk 판단 → Prospective COMP
 - 그러므로 `LOCAL_MATCH=7`을 모델 불필요/전략 우수성/미래 수익률의 독립 증명으로 해석하지 않음. **현 설계는 이미 PASS 된 정량 신호를 동일 계약으로 다시 확인하는 데 치우쳐 JEV 부가가치를 드러내지 못함**. 임의로 FAIL을 UNRESOLVED로 바꾸거나 근거 없이 `RESIDUAL_SEMANTIC_REVIEW`로 전환해 유료 호출을 늘리지 말 것.
 
 **다음 구현 우선순위 (새 LIVE-05 자동 배치 아님):** 본래 정량 PASS와 독립된 **증거가 있는 잔여 의미 판단 대상**을 정의. 예: 원천 시각·뉴스/공시 관계·조건 정의 간 실제 모순, 출처 검증, 불확실한 자연어 의미 관계(실제 출처와 판단 시각 입증 시에만) 등. 유효한 반대/불확실성 정보가 없는 경우 `LOCAL_MATCH` 자체는 정직하게 유지. 새 버전의 source/composition contract, 정본 시간·권한 원칙, 실제/합성 검증 구분, 사용자 가치 확인까지 설계·구현하고, 기존 IMMUTABLE source v2 hash/이력은 소급 변경하지 않음. 실종목 TypeSafe 전송은 여전히 `HOLD` (소스 권리·수치 Horizon·ACTIVE reference 미승인); 승인 전 실시장 모델 실행 경로에 붙이지 않음. 브라우저 P5 화면 실물 확인은 별개 PENDING.
+
+
+### 2026-10-30 P6-A: EventEvidence as-of 읽기 전용 참고 경로 추가
+
+- 실제 7개 SHORT ENTRY 후보의 P5 구조적 로컬 경로는 모두 LOCAL_MATCH여서 기본 V4 잔여 Reviewer 요청이 0건이다. 기존 PASS assertion을 억지로 WEAKENS/CONTRADICTS로 전환하지 않고 독립 이벤트 근거의 별도 경로를 열었다.
+- 독립 데이터의 실제 source는 기존 app.event_evidence/asof.py만 재사용한다. P6-A API는 기존 COMPLETE capture/sample identity를 검증하고 캡처 생성시각까지 관측된 참조만 읽는다. UI에는 참고 근거 없음/있음(충돌 미판정)/근거 불가 상태만 표시한다. 위 결과는 개별 종목 매수·매도 또는 외부 JEV 응답이 아니다.
+- 현재 코드가 보유한 Naver/OpenDART 정책의 AI_TRANSFORM 권한은 false이며, stock-specific TypeSafe outbound permit을 자동 부여하지 않는다. 기존 external_model_call_allowed=false를 유지한다. P6-A API는 안전한 readonly 구현이지 LIVE-04 실종목 유료 호출 완료 증명이 아니다.
+- 코드와 테스트 파일/최종 인수는 최신 JEV_NEXT_CHAT_HANDOFF.md를 기준으로 확인한다. Windows 실제 이벤트 DB UAT는 별도 미완료. 다음 P6-B는 timestamp/source·human-approved independent assertion 계약, P6-C는 V4와 다른 새 question version 및 실제 provider 전송권한 gate를 필요로 한다.
