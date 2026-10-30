@@ -312,6 +312,45 @@ export function getJevIndependentEventReference(captureId: string, sampleIndex: 
 }
 
 
+/** P6-B is an operator-local event-assertion assessment, NOT a JEV result. */
+export type JevIndependentEventAssessment = {
+  version: string;
+  read_only: true;
+  capture_id: string;
+  sample_index: number;
+  snapshot_hash: string;
+  market: string;
+  ticker: string;
+  status: "NO_INDEPENDENT_EVIDENCE" | "EVIDENCE_CONFLICT" |
+    "EVIDENCE_COMPATIBLE" | "EVIDENCE_UNCERTAIN" | "EVIDENCE_NOT_USABLE";
+  reason_codes: string[];
+  decision_cutoff: string | null;
+  reference_count: number;
+  assertion_status: string;
+  approved_assertion_count: number;
+  reviewed_event_count: number;
+  retrospective_assertion_count: number;
+  local_review_required: boolean;
+  independent_review_candidate: boolean;
+  assessment_origin: "OPERATOR_AUTHORED_LOCAL_ONLY";
+  ai_input_rights: "NOT_APPROVED";
+  independent_conflict_proven: false;
+  model_review_executed: false;
+  external_model_call_allowed: false;
+  actual_provider_calls: 0;
+  db_writes: 0;
+};
+
+export function getJevIndependentEventAssessment(captureId: string, sampleIndex: number) {
+  const params = new URLSearchParams({
+    capture_id: captureId, sample_index: String(sampleIndex),
+  });
+  return jevJson<JevIndependentEventAssessment>(
+    "/api/simulation/jev/independent-event-assessment?" + params.toString(),
+  );
+}
+
+
 export function getJevEntryRouting(captureId: string) {
   const params = new URLSearchParams({ capture_id: captureId });
   return jevJson<JevEntryRouting>(
