@@ -274,13 +274,27 @@ def _persist_authorized(
             "corp_code": prepared.corp_code,
         },
     ))
-    assessment = quality.assess_event_entity(
-        event_id=prepared.event_id,
-        entity_id=company["entity_id"],
-        assessment_scope=EvidenceQualityScope.REFERENCE,
-        assessment_as_of=temporal.available_at,
-        relevance_id=relevance["relevance_id"],
-    )
+    previous = [
+        entry for entry in quality.list_assessments(
+            event_id=prepared.event_id, entity_id=company["entity_id"],
+        )
+        if entry["assessment_scope"] == EvidenceQualityScope.REFERENCE.value
+        and entry["relevance_id"] == relevance["relevance_id"]
+    ]
+    if previous:
+        assessment = previous[0]
+        if quality.verify_assessment(assessment["assessment_id"])["status"] != "MATCH":
+            raise ValueError("P6F_PREEXISTING_QUALITY_INTEGRITY_FAILURE")
+    else:
+        # Assessment must not pretend to have existed before its event and
+        # relevance records were actually created.
+        assessment = quality.assess_event_entity(
+            event_id=prepared.event_id,
+            entity_id=company["entity_id"],
+            assessment_scope=EvidenceQualityScope.REFERENCE,
+            assessment_as_of=datetime.now(timezone.utc).isoformat(),
+            relevance_id=relevance["relevance_id"],
+        )
     return {
         "contract_version": VERSION,
         "event_id": prepared.event_id,
