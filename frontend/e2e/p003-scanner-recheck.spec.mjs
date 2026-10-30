@@ -101,6 +101,11 @@ async function setup(page,{matched=false}={}) {
         source_publication_time_verified:false,time_quality:"DATE_ONLY",
         event_evidence_storage:"NOT_PERSISTED_RIGHTS_UNVERIFIED",
         external_ai_transfer:"BLOCKED",db_writes:0,model_calls:0,
+        p6f_ingest_preview:{contract_version:"JEV_P6F_DISCLOSURE_INGEST_CONTRACT_V1",
+          validated_metadata_count:1,invalid_metadata_count:0,reason_counts:{},
+          stock_code:"145720",market:"KOSPI",market_verified_by_source:false,
+          storage_allowed:false,event_evidence_writes:0,ai_transmission_allowed:false,
+          status:"PREVIEW_ONLY_NOT_PERSISTED"},
       });
     }
     if(req.method()==="GET"&&path==="/api/simulation/jev/event-data-audit"){
@@ -342,6 +347,8 @@ test("P6-E actual DART display requires explicit click; no evidence storage or m
   await disclosure.locator("summary").click();
   await disclosure.getByRole("button",{name:"공시 새로 조회"}).click();
   await expect(disclosure.locator('[data-jev-live-dart-count="true"]')).toContainText("실제 조회 1건");
+  await expect(disclosure.locator('[data-jev-p6f-ingest-preview="true"]')).toContainText("정규화 후보 1건");
+  await expect(disclosure.locator('[data-jev-p6f-ingest-preview="true"]')).toContainText("실제 DB 저장 0건");
   await expect(disclosure.getByRole("link",{name:/검증용 공시/})).toHaveAttribute(
     "href","https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20261022000001"
   );
