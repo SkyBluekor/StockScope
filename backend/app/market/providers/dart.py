@@ -419,13 +419,16 @@ class OpenDartProvider:
         code = corp_code.strip()
         if len(code) != 8 or not code.isdigit():
             raise ValueError("OpenDART corp_code는 8자리 숫자여야 합니다.")
+        def parse_day(raw: str) -> date:
+            if not isinstance(raw, str) or not (
+                re.fullmatch(r"\\d{8}", raw) or re.fullmatch(r"\\d{4}-\\d{2}-\\d{2}", raw)
+            ):
+                raise ValueError("공시 조회일은 정확한 YYYY-MM-DD 또는 YYYYMMDD여야 합니다.")
+            return date.fromisoformat(raw)
+
         try:
-            begin_day = date.fromisoformat(begin_date.replace("-", "")[:4] + "-"
-                                          + begin_date.replace("-", "")[4:6] + "-"
-                                          + begin_date.replace("-", "")[6:8])
-            end_day = date.fromisoformat(end_date.replace("-", "")[:4] + "-"
-                                        + end_date.replace("-", "")[4:6] + "-"
-                                        + end_date.replace("-", "")[6:8])
+            begin_day = parse_day(begin_date)
+            end_day = parse_day(end_date)
         except ValueError as exc:
             raise ValueError("공시 조회일은 유효한 YYYY-MM-DD 또는 YYYYMMDD여야 합니다.") from exc
         if begin_day > end_day:
