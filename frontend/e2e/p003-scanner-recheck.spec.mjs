@@ -86,6 +86,21 @@ async function setup(page,{matched=false}={}) {
     if(path==="/api/backtest/jobs/"+jobId&&req.method()==="GET")
       return fulfill(route,{job_id:jobId,status:"completed",stage:"complete",
         progress:{message:"완료",current:1,total:1,percent:100},result:newResult});
+    if(req.method()==="GET"&&path==="/api/simulation/jev/entry-routing"){
+      const capture=new URL(req.url()).searchParams.get("capture_id");
+      return fulfill(route,{
+        version:"JEV_LIVE_04R_P5_ENTRY_ROUTING_V1",read_only:true,
+        capture_id:capture,canonical_capture_id:capture,
+        status:"COMPLETE",entry_count:1,
+        counts:{LOCAL_MATCH:1,LOCAL_CONFLICT:0,LOCAL_INCOMPLETE:0,LOCAL_AMBIGUOUS:0,
+          RESIDUAL_READY:0,RESIDUAL_BLOCKED:0,BLOCKED_EVIDENCE:0},
+        rows:[{sample_index:0,market:"KOSPI",ticker:"145720",rank:1,
+          snapshot_hash:"authored-snapshot",routing:"LOCAL_MATCH",semantic_status:"LOCAL_MATCH",
+          local_v4_status:"SKIPPED_LOCAL",v4_state_hash:null,strategy_identity:"LEGACY_DERIVED",
+          source_v2_valid:true,provider_decision:"HOLD",reason_codes:[]}],
+        review_eligible_count:0,external_model_call_allowed:false,actual_provider_calls:0,db_writes:0,
+      });
+    }
     if(req.method()==="GET"&&path==="/api/health")return fulfill(route,{status:"ok"});
     if(req.method()==="GET"&&path==="/api/providers/status")return fulfill(route,{krx:{configured:false,role:"MOCK_BLOCKED"},dart:{configured:false,role:"MOCK_BLOCKED"},naver_news:{configured:false,provider_kind:"MOCK",role:"MOCK_BLOCKED"},kis:{enabled:false,role:"MOCK_BLOCKED"},real_trading:false});
     if(req.method()==="GET"&&path==="/api/holdings/stocks")return fulfill(route,[]);
@@ -206,6 +221,24 @@ test("P4 Horizon selector keeps the original Scanner control grid readable at de
   });
   await page.reload();
   await expect(page.getByLabel("검토 기간")).toHaveValue("SHORT");
+  expect(violations).toEqual([]);
+  expect(pageErrors).toEqual([]);
+});
+
+
+test("P5 selected candidate shows local-only batch verdict without any model POST or grid regression",async({page})=>{
+  const {calls,violations,pageErrors}=await setup(page);
+  await page.getByRole("tab",{name:"AI 검토"}).click();
+  const summary=page.locator('[data-jev-entry-summary="p5"]');
+  await expect(summary).toBeVisible();
+  await expect(summary).toContainText("진입 후보:");
+  await expect(summary).toContainText("의미 일치 1개");
+  await expect(page.locator('[data-jev-entry-route="LOCAL_MATCH"]')).toContainText("JEV 추가 검토 불필요");
+  await expect(page.getByRole("button",{name:"로컬 검토 완료 · JEV 호출 불필요"})).toBeDisabled();
+  expect(calls.filter(x=>x.method==="POST"&&x.path.includes("/jev/reviews"))).toHaveLength(0);
+  expect(calls.filter(x=>x.method==="POST"&&x.path==="/api/backtest/scanner/jobs")).toHaveLength(0);
+  const card=page.locator(".scanner-control-card");
+  expect((await card.boundingBox()).height).toBeLessThan(330);
   expect(violations).toEqual([]);
   expect(pageErrors).toEqual([]);
 });
