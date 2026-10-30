@@ -1,5 +1,5 @@
 # StockScope — JEV 실사용 복구 **단일 실행계획서**
-> 문서 상태: **승인 대기(DRAFT)** · 작성: 2026-10-30 · 범위 변경: **사용자 명시 승인 필요**
+> 문서 상태: **사용자 실행 승인(2026-10-30) · A단계 Windows 인수 대기** · 작성: 2026-10-30 · 범위 변경: **사용자 명시 승인 필요**
 >
 > 저장소 `SkyBluekor/StockScope` · 브랜치 `codex/p0-01-mvp-c1-c2-integration-20261022` · Draft PR #170
 >
@@ -69,7 +69,7 @@
 
 | 순서 | 범위 | 현재 상태 | 다음 단계로 넘어갈 최소 증거 |
 |---|---|---|---|
-| **A** | AI 검토 화면 정리 | **대기** | 한 종목 화면이 최소 정보만 표시, 기존 기능/DIAG 데이터 보존, Chromium+Windows 스크린샷 |
+| **A** | AI 검토 화면 정리 | **코드 구현·CI 검증 진행, Windows 인수 대기** | 한 종목 화면이 최소 정보만 표시, 기존 기능/DIAG 데이터 보존, Chromium+Windows 스크린샷 |
 | **B** | 실제 종목 1건 JEV 수동 실행 | **대기** | 허용된 실입력 → 1회 실제 TypeSafe 응답 → 저장·재조회, API 비용/오류/중복 명확 |
 | **C** | 실제 결과 사용성 비교 | **대기** | 로컬 결과 대조, JEV 추가 확인의 실효성 및 비용/오류 기록, 유지/중단 결정 |
 
@@ -134,8 +134,8 @@
 
 | 단계 | 상태 | 코드 커밋 | CI | 사용자 Windows UAT | 다음 |
 |---|---|---|---|---|---|
-| A | NOT_STARTED | — | — | — | AI 검토 UI 간소화 |
-| B | NOT_STARTED | — | — | — | 비합성·허용 입력을 TypeSafe 1건에 연결 |
+| A | IMPLEMENTED_UAT_PENDING | `d923c06d` (코드·CSS·Chromium 테스트) | 진행 중 (최종 결과 확인 후 갱신) | 미확인 | 사용자 Windows UI 확인 후 A 완료 판단 |
+| B | BLOCKED_BY_A_UAT | — | — | — | A 인수 후 실제 입력·전송승인 경계 구현 |
 | C | NOT_STARTED | — | — | — | 실제 결과 실용성 비교 |
 
 ## 7. 보류 목록 (현 단계에 구현 금지)
@@ -148,3 +148,13 @@
 ## 8. 다음 채팅의 고정 지시
 
 > GitHub의 `docs/JEV_SINGLE_EXECUTION_PLAN.md`를 먼저 읽는다. 사용자 승인 전에는 코드 작업을 시작하지 않는다. 승인 후 현재 진행표에서 가장 이른 미완료 단계 **A**만 구현하고, 기존 Scanner/파생권한/TypeSafe 계약을 보존한다. '추가로 할 수 있는 기능'을 스스로 기획하지 않는다. A의 CI 및 Windows UAT 완료 후 사용자가 진행을 지시하면 B로 이동한다. 이 문서만 진행 상태를 갱신하며 새 장문의 기획 문서를 추가하지 않는다.
+
+
+### 2026-10-30 A단계 실제 구현 기록 (Windows 수동 인수 대기)
+
+- 사용자 "순서대로 진행해" 승인에 따라 계획 A만 작업. 기존 Scanner·JEV 백엔드 계약, KRX/DART 고정 production fingerprint와 실제 API 실행 정책 변경 없음.
+- `frontend/src/components/ScannerAiReview.tsx`: 기존 489줄 기술 진단을 `ScannerAiDiagnostics`로 보존하고 `ScannerAiReview` 사용자 영역을 종목/Scanner 기존 판정/JEV 검토 실제 상태/비활성 실행 버튼/검증된 결과 시각만 표시하도록 정리. 상단 Mock이나 P6 상세 라벨 기본 노출 제거. 기술 진단은 `개발자 진단 및 공시 조회`를 열 때만 mount되어 P5/P6/EventEvidence 자동 API 호출을 평소 발생시키지 않음. 세부 뷰에 저장된 결과 무결성 확인, 기존 공시 수동조회·Fake 데모는 보존.
+- `frontend/src/components/scannerUX.css`: 카드 추가 없이 간결한 2열 행과 모바일 폭 대응.
+- `frontend/e2e/p003-scanner-recheck.spec.mjs`: 기존 P5/P6 상세 회귀는 진단 영역을 연 후 실행, 신규 A 테스트로 초기 화면 요약, 기본 진단 GET 미실행, 비활성 버튼, 390px 화면 넘침 방지, 수동 진단 펼침/닫힘, 추가 모델 POST 0 검증.
+- **완료 주의:** CI와 사용자 실제 Windows 브라우저 확인은 별도. 현재까지 사용자 Windows A 화면은 아직 확인되지 않았으므로 A를 DONE 처리하지 않고, B 실모델 실행도 시작하지 않는다.
+- 기존 P6 단계 추가 또는 신규 공시 저장, Mock 개발, 실제 모델 API 호출 전부 없음.
