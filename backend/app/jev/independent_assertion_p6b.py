@@ -51,6 +51,7 @@ def _base(reference: dict[str, Any]) -> dict[str, Any]:
         "assertion_status": "NOT_EVALUATED",
         "approved_assertion_count": 0,
         "reviewed_event_count": 0,
+        "reviewed_assertion_refs": [],
         "retrospective_assertion_count": 0,
         "assessment_origin": "OPERATOR_AUTHORED_LOCAL_ONLY",
         "local_review_required": False,
@@ -170,6 +171,7 @@ def evaluate_local_assertions(
         verified[key] = (item, pin)
 
     selected: dict[tuple[str, int], str] = {}
+    selected_detail: dict[tuple[str, int], dict[str, Any]] = {}
     retrospective_count = 0
     invalid_count = 0
     for raw in records:
@@ -255,6 +257,17 @@ def evaluate_local_assertions(
         event_key = (canonical, int(pin["event_version"]))
         existing = selected.get(event_key)
         selected[event_key] = relation if existing is None or existing == relation else "UNRESOLVED"
+        selected_detail[event_key] = {
+            "event_id": str(pin["event_id"]),
+            "event_version": int(pin["event_version"]),
+            "quality_hash": str(pin["quality_hash"]),
+            "source_ref_id": str(raw["source_ref_id"]),
+            "source_ref_hash": str(raw["source_ref_hash"]),
+            "assertion_hash": str(given_hash),
+            "claim_id": str(claim_id),
+            "relation": selected[event_key],
+            "approved_at": str(raw["approved_at"]),
+        }
 
     vals = set(selected.values())
     if invalid_count:
@@ -276,6 +289,10 @@ def evaluate_local_assertions(
         reason_codes=sorted(reasons),
         approved_assertion_count=len(selected),
         reviewed_event_count=len(selected),
+        reviewed_assertion_refs=(
+            [selected_detail[key] for key in sorted(selected_detail)]
+            if not invalid_count else []
+        ),
         retrospective_assertion_count=retrospective_count,
         local_review_required=status in {"EVIDENCE_CONFLICT", "EVIDENCE_UNCERTAIN"} and bool(selected),
         independent_review_candidate=status == "EVIDENCE_UNCERTAIN" and bool(selected),
