@@ -129,7 +129,19 @@ export default function ScannerAiReview({
     S7_4_LINEAGE_NOT_COMPLETE: "기초 데이터의 출처 연결이 충분하지 않습니다.",
   };
   const contract = readiness?.input_contract;
-  const localSummary = readinessError
+  const localSummary = matchedRouting?.routing === "LOCAL_MATCH"
+    ? "의미 분석 일치 · 모델 검토 불필요"
+    : matchedRouting?.routing === "LOCAL_CONFLICT"
+      ? "의미 조건 충돌 · 검토 근거 확인"
+      : matchedRouting?.routing === "LOCAL_INCOMPLETE"
+        ? "의미 증거 부족 · 로컬 검토 미완료"
+        : matchedRouting?.routing === "LOCAL_AMBIGUOUS"
+          ? "의미 판단 불명확 · 로컬 검토 미완료"
+          : matchedRouting?.routing === "RESIDUAL_READY"
+            ? "V4 구조 입력 준비 · 실제 시장 외부 검토는 보류"
+            : matchedRouting?.routing === "RESIDUAL_BLOCKED"
+              ? "추가 검토 필요 · V4 입력/무결성 증거 부족"
+    : readinessError
     ? "후보 신원 검증 실패 · 결과 표시 차단"
     : readinessLoading ? "로컬 입력 확인 중"
     : !readiness ? "저장 캡처 확인 필요"
