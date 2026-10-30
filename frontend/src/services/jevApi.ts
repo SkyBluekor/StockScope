@@ -422,6 +422,50 @@ export function getJevRealEventAudit(captureId: string) {
 }
 
 
+/** Live OpenDART display only; source receipt date is NOT a publication timestamp. */
+export type JevDartDisclosure = {
+  receipt_no: string;
+  corp_name: string | null;
+  report_name: string | null;
+  filer_name: string | null;
+  receipt_date: string;
+  remark: string | null;
+  corp_code: string;
+  stock_code: string | null;
+  viewer_url: string;
+  source_time_quality: "DATE_ONLY";
+  source_published_at: null;
+};
+export type JevDartLiveResponse = {
+  provider: "OpenDART";
+  stock_code: string;
+  corp_code: string;
+  begin_date: string;
+  end_date: string;
+  count: number;
+  rows: JevDartDisclosure[];
+  total_count: number;
+  total_page: number;
+  pages_fetched: number;
+  truncated: boolean;
+  duplicate_receipt_count: number;
+  fetched_at: string;
+  source_publication_time_verified: false;
+  time_quality: "DATE_ONLY";
+  event_evidence_storage: "NOT_PERSISTED_RIGHTS_UNVERIFIED";
+  external_ai_transfer: "BLOCKED";
+  db_writes: 0;
+  model_calls: 0;
+};
+
+export function fetchJevLiveDartDisclosures(code: string, signal?: AbortSignal) {
+  return jevJson<JevDartLiveResponse>(
+    "/api/dart/stocks/" + encodeURIComponent(code) + "/disclosures?max_pages=2&page_count=20",
+    { signal, cache: "no-store" },
+  );
+}
+
+
 export function getJevEventV5Routing(captureId: string, sampleIndex: number) {
   const params = new URLSearchParams({
     capture_id: captureId, sample_index: String(sampleIndex),
