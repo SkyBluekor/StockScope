@@ -190,3 +190,443 @@ export function requestJevReview(payload: JevManualReviewRequest) {
     }),
   });
 }
+
+
+/** LIVE-02: read-only local Scanner candidate diagnosis, never a model request. */
+export type JevLocalReadiness = {
+  version: string;
+  capture_id: string;
+  sample_index: number;
+  identity: {
+    snapshot_hash: string;
+    signal_date: string | null;
+    market: string;
+    ticker: string;
+    rank: number | null;
+    strategy: string;
+    action: string;
+  };
+  status: "LOCAL_READY" | "LOCAL_ONLY" | "NEEDS_EVIDENCE" | "SOURCE_RIGHTS_HOLD" | "NOT_ENTRY_CANDIDATE";
+  local_readiness: string;
+  local_v4_status: string;
+  v4_semantic_status: string | null;
+  input_contract: {
+    horizon_intent: string | null;
+    horizon_policy_version: string | null;
+    horizon_support_status: string;
+    horizon_reason_code: string | null;
+    strategy_identity_status: string;
+    original_strategy_identity: "CAPTURED_ORIGINAL" | "LEGACY_DERIVED_NOT_ORIGINAL" | "NOT_VERIFIED";
+    capture_created_at: string | null;
+    capture_started_at: string | null;
+    capture_completed_at: string | null;
+    source_first_published_at: null;
+    source_publication_evidence: "UNVERIFIED";
+  };
+  integrity_reason_codes: string[];
+  baseline_checks: Record<"rank" | "strategy" | "policy" | "engine" | "risk" | "dates", {
+    status: string;
+    code: string | null;
+  }>;
+  lineage_analysis_status: string;
+  v4_outbound_lineage_status: string;
+  source_origin_status: string;
+  source_revision_status: string;
+  publication_time_status: string;
+  rights_status: string;
+  transmission_decision: "NO_GO" | "NOT_REQUIRED" | "NOT_APPLICABLE";
+  reason_codes: string[];
+  model_review_executed: false;
+  provider_eligible: false;
+  actual_provider_calls: 0;
+  db_writes: 0;
+};
+
+/** P5 local-only summary: these are NOT TypeSafe model results or permission. */
+export type JevEntryRouting = {
+  version: string;
+  read_only: true;
+  capture_id: string;
+  canonical_capture_id: string | null;
+  status: "COMPLETE" | "NO_ENTRY_CANDIDATE";
+  entry_count: number;
+  counts: Record<
+    "LOCAL_MATCH" | "LOCAL_CONFLICT" | "LOCAL_INCOMPLETE" |
+    "LOCAL_AMBIGUOUS" | "RESIDUAL_READY" | "RESIDUAL_BLOCKED" |
+    "BLOCKED_EVIDENCE", number
+  >;
+  rows: Array<{
+    sample_index: number;
+    market: string;
+    ticker: string;
+    rank: number | null;
+    snapshot_hash: string;
+    routing: string;
+    semantic_status: string | null;
+    local_v4_status: string;
+    v4_state_hash: string | null;
+    strategy_identity: string;
+    source_v2_valid: boolean;
+    provider_decision: "HOLD";
+    reason_codes: string[];
+  }>;
+  review_eligible_count: number;
+  external_model_call_allowed: false;
+  actual_provider_calls: 0;
+  db_writes: 0;
+};
+
+/** P6-A local EventEvidence reference. Not a model response or event verdict. */
+export type JevIndependentEventReference = {
+  version: string;
+  read_only: true;
+  capture_id: string;
+  sample_index: number;
+  snapshot_hash: string;
+  market: string;
+  ticker: string;
+  status: "NO_INDEPENDENT_EVIDENCE" | "EVIDENCE_UNCERTAIN" | "EVIDENCE_NOT_USABLE";
+  reason_codes: string[];
+  decision_cutoff: string | null;
+  cutoff_source: string;
+  event_reference_status: string;
+  projection_hash: string | null;
+  reference_count: number;
+  source_kinds: string[];
+  ai_input_rights: "NOT_APPROVED";
+  independent_conflict_proven: false;
+  review_needed: false;
+  model_review_executed: false;
+  external_model_call_allowed: false;
+  actual_provider_calls: 0;
+  db_writes: 0;
+};
+
+export function getJevIndependentEventReference(captureId: string, sampleIndex: number) {
+  const params = new URLSearchParams({
+    capture_id: captureId, sample_index: String(sampleIndex),
+  });
+  return jevJson<JevIndependentEventReference>(
+    "/api/simulation/jev/independent-event-reference?" + params.toString(),
+  );
+}
+
+
+/** P6-B is an operator-local event-assertion assessment, NOT a JEV result. */
+export type JevIndependentEventAssessment = {
+  version: string;
+  read_only: true;
+  capture_id: string;
+  sample_index: number;
+  snapshot_hash: string;
+  market: string;
+  ticker: string;
+  status: "NO_INDEPENDENT_EVIDENCE" | "EVIDENCE_CONFLICT" |
+    "EVIDENCE_COMPATIBLE" | "EVIDENCE_UNCERTAIN" | "EVIDENCE_NOT_USABLE";
+  reason_codes: string[];
+  decision_cutoff: string | null;
+  reference_count: number;
+  assertion_status: string;
+  approved_assertion_count: number;
+  reviewed_event_count: number;
+  reviewed_assertion_refs: Array<{event_id: string; event_version: number; quality_hash: string; source_ref_id: string; source_ref_hash: string; assertion_hash: string; claim_id: string; relation: string; approved_at: string}>;
+  retrospective_assertion_count: number;
+  local_review_required: boolean;
+  independent_review_candidate: boolean;
+  assessment_origin: "OPERATOR_AUTHORED_LOCAL_ONLY";
+  ai_input_rights: "NOT_APPROVED";
+  independent_conflict_proven: false;
+  model_review_executed: false;
+  external_model_call_allowed: false;
+  actual_provider_calls: 0;
+  db_writes: 0;
+};
+
+export function getJevIndependentEventAssessment(captureId: string, sampleIndex: number) {
+  const params = new URLSearchParams({
+    capture_id: captureId, sample_index: String(sampleIndex),
+  });
+  return jevJson<JevIndependentEventAssessment>(
+    "/api/simulation/jev/independent-event-assessment?" + params.toString(),
+  );
+}
+
+
+/** P6-C real-data routing is always read-only and never permits transport. */
+export type JevEventV5Routing = {
+  version: "JEV_EVENT_REVIEW_STATE_V5";
+  capture_id: string;
+  sample_index: number;
+  snapshot_hash: string;
+  market: string;
+  ticker: string;
+  event_reference_hash: string | null;
+  assertion_identity_hash: string;
+  event_assessment_status: string;
+  routing: "SKIPPED_NO_EVIDENCE" | "SKIPPED_LOCALLY_RESOLVED" |
+    "LOCAL_REVIEW_REQUIRED" | "BLOCKED_EVIDENCE" |
+    "REVIEW_CANDIDATE_PROVIDER_HOLD" | "BLOCKED_NOT_REVIEW_CANDIDATE";
+  semantic_review_candidate: boolean;
+  external_model_call_allowed: false;
+  transmission_status: "PROVIDER_HOLD";
+  model_review_executed: false;
+  model_result: null;
+  reason_codes: string[];
+  actual_provider_calls: 0;
+  db_writes: 0;
+};
+
+/** P6-D actual DB inventory. Stored row counts are NOT retrospective proof. */
+export type JevRealEventAudit = {
+  version: "JEV_P6D_REAL_EVENT_INVENTORY_V1";
+  read_only: true;
+  capture_id: string;
+  canonical_capture_id: string | null;
+  entry_count: number;
+  store: {
+    status: "READY" | "SCHEMA_MISSING" | "SCHEMA_INCOMPLETE";
+    schema_ready: boolean;
+    stored_counts_not_asof: {
+      source_refs: number | null;
+      event_revisions: number | null;
+      entities: number | null;
+      entity_relevances: number | null;
+      quality_assessments: number | null;
+    };
+  };
+  registry_status: string;
+  cause_counts: Record<string, number>;
+  rows: Array<{
+    sample_index: number;
+    ticker: string;
+    market: string;
+    snapshot_hash: string;
+    reference_status: string;
+    assertion_status: string;
+    v5_route: string;
+    cause: string;
+    reference_count: number | null;
+    approved_assertions: number | null;
+  }>;
+  ready_for_live_jev: false;
+  real_market_model_calls: 0;
+  mock_model_calls: 0;
+  db_writes: 0;
+};
+
+export function getJevRealEventAudit(captureId: string) {
+  const params = new URLSearchParams({ capture_id: captureId });
+  return jevJson<JevRealEventAudit>(
+    "/api/simulation/jev/event-data-audit?" + params.toString(),
+  );
+}
+
+
+/** Live OpenDART display only; source receipt date is NOT a publication timestamp. */
+export type JevDartDisclosure = {
+  receipt_no: string;
+  corp_name: string | null;
+  report_name: string | null;
+  filer_name: string | null;
+  receipt_date: string;
+  remark: string | null;
+  corp_code: string;
+  stock_code: string | null;
+  viewer_url: string;
+  source_time_quality: "DATE_ONLY";
+  source_published_at: null;
+};
+export type JevDartLiveResponse = {
+  provider: "OpenDART";
+  stock_code: string;
+  corp_code: string;
+  begin_date: string;
+  end_date: string;
+  count: number;
+  rows: JevDartDisclosure[];
+  total_count: number;
+  total_page: number;
+  pages_fetched: number;
+  truncated: boolean;
+  duplicate_receipt_count: number;
+  fetched_at: string;
+  source_publication_time_verified: false;
+  time_quality: "DATE_ONLY";
+  event_evidence_storage: "NOT_PERSISTED_RIGHTS_UNVERIFIED";
+  external_ai_transfer: "BLOCKED";
+  db_writes: 0;
+  model_calls: 0;
+  p6f_ingest_preview: null | {
+    contract_version: "JEV_P6F_DISCLOSURE_INGEST_CONTRACT_V1";
+    validated_metadata_count: number;
+    invalid_metadata_count: number;
+    reason_counts: Record<string, number>;
+    stock_code: string;
+    market: "KOSPI" | "KOSDAQ";
+    market_verified_by_source: false;
+    storage_allowed: false;
+    event_evidence_writes: 0;
+    ai_transmission_allowed: false;
+    status: "PREVIEW_ONLY_NOT_PERSISTED";
+  };
+};
+
+export function fetchJevLiveDartDisclosures(code: string, market: string, signal?: AbortSignal) {
+  const params = new URLSearchParams({
+    max_pages: "2", page_count: "20", market,
+  });
+  return jevJson<JevDartLiveResponse>(
+    "/api/dart/stocks/" + encodeURIComponent(code) + "/disclosures?" + params.toString(),
+    { signal, cache: "no-store" },
+  );
+}
+
+
+export function getJevEventV5Routing(captureId: string, sampleIndex: number) {
+  const params = new URLSearchParams({
+    capture_id: captureId, sample_index: String(sampleIndex),
+  });
+  return jevJson<JevEventV5Routing>(
+    "/api/simulation/jev/event-v5-routing?" + params.toString(),
+  );
+}
+
+/** V5 one-shot local synthetic demo, never uses selected Scanner candidate. */
+export type JevEventV5Demo = {
+  enabled: boolean;
+  synthetic_only: true;
+  status: "DISABLED" | "NOT_REQUESTED" | "QUEUED" | "RUNNING" |
+    "VALID" | "ERROR" | "INTERRUPTED";
+  fixture_id?: string;
+  reused?: boolean;
+  mock_provider_calls?: number;
+  actual_provider_calls: 0;
+  result?: null | {
+    status?: string;
+    disposition?: "REVIEW_REQUIRED" | "PASS_THROUGH" | "ABSTAIN";
+    review_id?: string;
+    model_returned?: string;
+    failure_code?: string;
+    cost_usd?: number | null;
+    cost_unknown?: boolean;
+    reason_codes?: string[];
+  };
+};
+
+export function getJevEventV5DemoStatus() {
+  return jevJson<JevEventV5Demo>("/api/simulation/jev/event-v5-demo/status");
+}
+
+export function startJevEventV5Demo() {
+  return jevJson<JevEventV5Demo>("/api/simulation/jev/event-v5-demo/start", {
+    method: "POST",
+    headers: { "X-StockScope-V5-Synthetic": "confirmed" },
+  });
+}
+
+
+export function getJevEntryRouting(captureId: string) {
+  const params = new URLSearchParams({ capture_id: captureId });
+  return jevJson<JevEntryRouting>(
+    "/api/simulation/jev/entry-routing?" + params.toString(),
+  );
+}
+
+
+export function getJevLocalReadiness(captureId: string, sampleIndex: number) {
+  const params = new URLSearchParams({
+    capture_id: captureId,
+    // ProspectiveCatalog persists sample_index as zero-based; UI rank is one-based.
+    sample_index: String(sampleIndex),
+  });
+  return jevJson<JevLocalReadiness>(
+    "/api/simulation/jev/local-readiness?" + params.toString(),
+  );
+}
+
+
+/** LIVE-03 audit metadata only: NEVER a transport grant or real model result. */
+export type JevOutboundPreflight = {
+  version: string;
+  capture_id: string;
+  sample_index: number;
+  snapshot_hash: string;
+  market: string;
+  ticker: string;
+  decision: "HOLD" | "DENY" | "NOT_APPLICABLE" | string;
+  data_eligibility: string;
+  execution_status: "NOT_AUTHORIZED";
+  evaluation_mode: string;
+  v4_local_status: string;
+  recipient: string;
+  purpose: string;
+  requested_model: string;
+  wire_ready: boolean;
+  wire_audit: null | {
+    model_id: string;
+    field_count: number;
+    http_body_sha256: string;
+    http_body_bytes: number;
+    outbound_projection_hash: string;
+    all_actual_parent_revisions_verified: false;
+    body_was_transmitted: false;
+    field_verdicts: Array<{path: string; expected_parents: string[]; origin_verified: false;
+      rights_status: string; time_status: string;}>;
+  };
+  trusted_rights_resolver: string;
+  time_authenticity: string;
+  reason_codes: string[];
+  provider_eligible: false;
+  actual_provider_calls: 0;
+  db_writes: 0;
+};
+
+export function getJevOutboundPreflight(captureId: string, sampleIndex: number) {
+  const params = new URLSearchParams({
+    capture_id: captureId,
+    sample_index: String(sampleIndex),
+  });
+  return jevJson<JevOutboundPreflight>(
+    "/api/simulation/jev/outbound-preflight?" + params.toString(),
+  );
+}
+
+
+/** Localhost-only LIVE-04 demonstration. Fixed fake stock; never selected ticker. */
+export type JevSyntheticDemoStatus = {
+  enabled: boolean;
+  synthetic_only: true;
+  status: "DISABLED" | "NOT_REQUESTED" | "QUEUED" | "RUNNING" | "VALID" | "ERROR" | "INTERRUPTED";
+  fixture?: string;
+  job_id?: string;
+  reused?: boolean;
+  capture_id?: string;
+  sample_index?: number;
+  mock_provider_requests?: number;
+  actual_provider_calls: 0;
+  result?: {
+    review_id?: string | null;
+    disposition?: "PASS_THROUGH" | "REVIEW_REQUIRED" | "ABSTAIN" | null;
+    model_returned?: string | null;
+    model_identity_status?: string;
+    cost_usd?: number | null;
+    cost_unknown?: boolean;
+    failure_code?: string | null;
+    reason_codes?: string[];
+    usage?: { input_tokens: number; output_tokens: number } | null;
+  };
+};
+
+export function getJevSyntheticDemoStatus() {
+  return jevJson<JevSyntheticDemoStatus>("/api/simulation/jev/synthetic-demo/status");
+}
+
+export function startJevSyntheticDemo() {
+  return jevJson<JevSyntheticDemoStatus>(
+    "/api/simulation/jev/synthetic-demo/start",
+    {
+      method: "POST",
+      headers: { "X-StockScope-Synthetic-Demo": "confirmed" },
+    },
+  );
+}

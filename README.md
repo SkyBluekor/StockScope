@@ -5,6 +5,14 @@
 > **중요:** StockScope는 실제 매수·매도·정정·취소 주문을 수행하지 않습니다. 증권사 주문 API를 구현하지 않으며, 모든 가격·전략·손절·목표 값은 분석/시뮬레이션 참고용입니다.
 
 
+## 현재 최우선 작업 — JEV 실제 연동 (2026-10-28)
+
+**G2-05 과거 추천 변화 UI는 보류하고, TypeSafe JEV System One을 Scanner의 보조 Decision Reviewer로 실사용 연결하는 개발을 우선합니다.** 기존 JEV provider와 V4 reviewer를 재사용하며, 합성 데이터의 유료 모델 E2E부터 시작하고 실 시장 유래 데이터의 외부 전송은 S7.4 권한·시점 증거가 확인된 입력에만 허용합니다. 작업 상태는 다음 고정 문서가 기준입니다.
+
+- **[JEV 마스터 단계별 개발계획](docs/JEV_LIVE_INTEGRATION_MASTER_PLAN.md)** — JEV-LIVE-00~06, 가장 먼저 할 코드·완료 조건·진행 기록
+- **[다음 ChatGPT/Codex 채팅 HANDOFF](docs/JEV_NEXT_CHAT_HANDOFF.md)** — 정확한 코드/브랜치/Windows 경로·이어가기 지시
+- [Codex 진입 안내](AGENTS.md)
+
 ## 문서 읽기 순서
 
 현재 설계/개발 상태를 확인할 때 과거 task spec을 순서대로 읽지 않습니다.

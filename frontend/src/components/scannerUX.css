@@ -774,3 +774,301 @@
   }
   .scanner-jev-motion-status.is-running .scanner-jev-motion-icon::after { content: none; }
 }
+
+
+/* S29: inline source-evidence, not artificial investment-rank badges. */
+.scanner-workspace .scanner-s29-list-note {
+  margin: 0; padding: 10px 14px; color: var(--text-subtle);
+  font-size: 13px; line-height: 1.5; border-bottom: 1px solid var(--line-soft);
+}
+.scanner-workspace .scanner-s29-tie-label {
+  display: inline-block; color: var(--text-strong); font-weight: 600;
+}
+.scanner-workspace .scanner-s29-metric,
+.scanner-workspace .scanner-s29-history {
+  display: block; color: var(--text-subtle); font-size: 12px;
+  line-height: 1.45; word-break: keep-all;
+}
+.scanner-workspace .scanner-s29-evidence {
+  display: grid; gap: 6px; margin: 10px 0; padding: 12px 14px;
+  border: 1px solid var(--line-soft); border-radius: 10px;
+  color: var(--text-strong); font-size: 13px; line-height: 1.5;
+}
+.scanner-workspace .scanner-s29-evidence small {
+  color: var(--text-subtle); line-height: 1.5;
+}
+.scanner-workspace .scanner-s29-caution {
+  color: var(--text-subtle); font-size: 12px; line-height: 1.5;
+}
+
+
+/* S30 — group integrity and analysis-date/current-price truth.
+   The Scanner ranking is unchanged; no color denotes a live buy signal. */
+.scanner-workspace .scanner-s30-group-heading {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 13px 14px; border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--surface-muted);
+  color: var(--text-strong); line-height: 1.5;
+}
+.scanner-workspace .scanner-s30-group-heading strong { font-size: 15px; }
+.scanner-workspace .scanner-s30-group-heading span {
+  color: var(--text-subtle); font-size: 13px; line-height: 1.5;
+}
+.scanner-workspace .scanner-s30-extension-note {
+  margin: 0; padding: 9px 14px; font-size: 13px; line-height: 1.5;
+  color: var(--text-subtle); border-bottom: 1px solid var(--line-soft);
+}
+.scanner-workspace .scanner-s30-included-from-extra {
+  display: block; padding: 5px 14px; color: var(--text-subtle);
+  font-size: 12px; line-height: 1.5; background: var(--surface-muted);
+}
+.scanner-workspace .scanner-s30-order {
+  color: var(--text-subtle); font-weight: 500; font-size: 13px;
+}
+.scanner-workspace .scanner-compare-judgement .scanner-s29-metric {
+  font-size: 14px; line-height: 1.5; font-weight: 550;
+}
+.scanner-workspace .scanner-compare-judgement .scanner-s29-history {
+  font-size: 13px; line-height: 1.5;
+}
+.scanner-workspace .scanner-s30-current-unchecked {
+  color: var(--text-subtle); border: 1px solid var(--line-soft);
+  border-radius: 6px; padding: 4px 8px; font-size: 13px; line-height: 1.5;
+}
+.scanner-workspace .scanner-s30-quote-hold {
+  color: var(--text-strong); border: 1px solid var(--line);
+  border-radius: 8px; padding: 10px 12px; margin: 8px 0 12px;
+  background: var(--surface-muted); font-size: 14px; line-height: 1.55;
+}
+@media (max-width: 820px) {
+  .scanner-workspace .scanner-s30-group-heading {
+    padding: 12px; gap: 4px;
+  }
+  .scanner-workspace .scanner-s30-group-heading strong { font-size: 14px; }
+  .scanner-workspace .scanner-s30-current-unchecked {
+    display: block; width: max-content; max-width: 100%;
+    white-space: normal; overflow-wrap: anywhere;
+  }
+}
+
+/* S31-K: risk reference display overlays old Scanner records, never alters ranks. */
+.scanner-prior-risk {
+  margin: 12px 0;
+  padding: 13px 15px;
+  border: 1px solid var(--line-soft);
+  border-left: 3px solid var(--text-subtle);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+}
+.scanner-prior-risk-breach {
+  border-left-color: var(--danger);
+}
+.scanner-prior-risk-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 7px 14px;
+}
+.scanner-prior-risk-heading strong {
+  color: var(--text-strong);
+  font-size: 14px;
+}
+.scanner-prior-risk small {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-subtle);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.scanner-prior-risk p {
+  margin: 7px 0;
+  line-height: 1.6;
+  font-size: 13px;
+  word-break: keep-all;
+}
+.scanner-prior-risk-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 7px 0;
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 12px;
+}
+.scanner-prior-risk .scanner-prior-risk-next {
+  font-weight: 600;
+}
+.scanner-prior-risk button {
+  cursor: pointer;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: transparent;
+  padding: 6px 9px;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 12px;
+}
+.scanner-prior-risk button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* S31-M: explicit Scanner vs Holdings source boundary, no inferred execution. */
+.scanner-position-boundary {
+  margin: 8px 0 14px;
+  padding: 13px 15px;
+  border: 1px solid var(--line-soft);
+  border-left: 3px solid var(--text-subtle);
+  border-radius: 6px;
+}
+.scanner-position-boundary-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 5px 14px;
+  align-items: baseline;
+}
+.scanner-position-boundary-head strong {
+  color: var(--text-strong);
+  font-size: 14px;
+}
+.scanner-position-boundary-head span {
+  font-size: 12px;
+  color: var(--text-subtle);
+}
+.scanner-position-boundary p {
+  font-size: 12px;
+  line-height: 1.6;
+  word-break: keep-all;
+  margin: 7px 0;
+}
+.scanner-position-boundary .scanner-position-boundary-market {
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+}
+.scanner-position-boundary-market strong { color: var(--text-strong); }
+.scanner-position-boundary .scanner-position-boundary-next { font-weight: 600; }
+.scanner-position-boundary small {
+  display: block;
+  margin-top: 5px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-subtle);
+}
+.scanner-position-boundary button {
+  margin: 5px 0;
+  cursor: pointer;
+  color: var(--primary);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+.scanner-position-boundary button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* JEV-LIVE-04R-P4: keep the original three control columns intact.
+   The optional Horizon selector occupies a dedicated full-width *second* row.
+   Without this span, CSS Grid auto-creates an extra narrow column and the
+   existing description becomes a 1-character-wide vertical column. */
+.scanner-workspace .scanner-control-card > .scanner-horizon-control {
+  grid-column: 1 / -1;
+  min-width: 0;
+  margin: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+.scanner-horizon-control label { font-size: 13px; font-weight: 600; color: var(--text-strong); white-space: nowrap; }
+.scanner-horizon-control select {
+  min-width: 155px;
+  max-width: 100%;
+  padding: 7px 10px;
+  color: var(--text-strong);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font: inherit;
+  font-size: 13px;
+}
+.scanner-horizon-control select:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.scanner-horizon-control select:disabled { opacity: .6; }
+.scanner-horizon-control small {
+  flex: 1 1 250px;
+  min-width: 0;
+  overflow-wrap: break-word;
+  color: var(--text-subtle);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.scanner-horizon-control .scanner-horizon-captured {
+  flex: 1 1 100%;
+  font-weight: 600;
+}
+@media (max-width: 1180px) {
+  .scanner-workspace .scanner-control-card > .scanner-horizon-control {
+    grid-column: 1;
+  }
+}
+
+/* JEV plan A: a compact user-facing summary; all technical diagnostics are opt-in. */
+.scanner-jev-compact-summary {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 2px 0 8px;
+}
+.scanner-jev-compact-stock {
+  color: var(--text-strong);
+  font-size: 16px;
+  font-weight: 650;
+}
+.scanner-jev-compact-summary dl {
+  margin: 0;
+  border-top: 1px solid var(--line-soft);
+}
+.scanner-jev-compact-summary dl > div {
+  display: grid;
+  grid-template-columns: minmax(108px, 0.4fr) minmax(0, 1fr);
+  padding: 7px 0;
+  gap: 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.scanner-jev-compact-summary dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.scanner-jev-compact-summary .scanner-jev-compact-note {
+  color: var(--text-subtle);
+  font-size: 12px;
+}
+.scanner-jev-compact-summary button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+.scanner-jev-developer-details {
+  border-top: 1px solid var(--line-soft);
+  padding-top: 8px;
+}
+.scanner-jev-developer-details > summary {
+  font-size: 12px;
+  color: var(--text-subtle) !important;
+}
+.scanner-jev-developer-details > .scanner-jev-review {
+  padding-top: 12px;
+}
+@media (max-width: 650px) {
+  .scanner-jev-compact-summary dl > div {
+    grid-template-columns: minmax(96px, 0.4fr) minmax(0, 1fr);
+    gap: 8px;
+  }
+}

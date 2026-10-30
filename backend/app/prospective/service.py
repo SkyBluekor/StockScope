@@ -35,6 +35,7 @@ class ProspectiveService:
             candidate_limit=int(getattr(payload, "candidate_limit", 5) or 5),
             horizon_intent=horizon.intent,
             horizon_policy_version=horizon.policy_version,
+            horizon_purpose=str(getattr(payload, "horizon_purpose", "PRODUCTION_POLICY")),
             selection_policy_id=(
                 selection_policy_pin.policy_id
                 if selection_policy_pin is not None
@@ -70,6 +71,18 @@ class ProspectiveService:
             }:
                 return {
                     "status": "NOT_READY",
+                    "code": exc.code,
+                    "message": exc.message,
+                }
+            if exc.code in {
+                "PROSPECTIVE_CAPTURE_REQUEST_DRIFT",
+                "PROSPECTIVE_CAPTURE_REQUEST_INVALID",
+            }:
+                # Capture journaling is auxiliary to the production Scanner.
+                # Reject the inconsistent prospective request without failing
+                # the user's baseline scan or altering terminal snapshots.
+                return {
+                    "status": "FAILED",
                     "code": exc.code,
                     "message": exc.message,
                 }

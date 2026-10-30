@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import {
   clearScannerSession,
   latestScannerDataDate,
@@ -12,13 +12,16 @@ import {
   cancelBacktestJob,
   createScannerEvidenceJob,
   createScannerJob,
+  planScannerEvidenceData,
   planScannerData,
   fetchBacktestJob,
   type BacktestJob,
   type ScannerCandidate,
+  type ScannerRecheckCandidate,
   type ScannerFreshnessResponse,
   type ScannerDataPlan,
   type ScannerResponse,
+  type ScannerEvidenceDataPlan,
   type StockSearchItem,
 } from "../services/api";
 import {
@@ -39,12 +42,24 @@ import {
 } from "../services/dataTask";
 import StockNewsPanel from "./StockNewsPanel";
 import ScannerDecisionSummary from "./ScannerDecisionSummary";
+import ScannerPositionBoundaryCard from "./ScannerPositionBoundaryCard";
 import ScannerPriceStatus from "./ScannerPriceStatus";
 import useScannerQuote from "./useScannerQuote";
 import { asOfPriorityLabel } from "./scannerQuoteTruth";
 import { beginnerCandidatePresentation, simpleConditionStatus } from "./scannerDecisionPresentation";
+import { scannerCandidateEvidence, scannerTieSummary } from "./scannerCandidateEvidence";
+import {
+  scannerRecheckFilterDescription,
+  scannerRecheckHeadline,
+  scannerSelectionAfterRecheck,
+  scannerRecheckCaptureDescription,
+} from "./scannerCandidateRecheckView";
+import { buildScannerDisplayLayout } from "./scannerDisplayGroups";
 import ScannerRankComparison from "./ScannerRankComparison";
 import ScannerMotionProgress from "./ScannerMotionProgress";
+import CaptureObservationJournal from "./CaptureObservationJournal";
+import "./scannerWorkspaceTabs.css";
+import { scannerPolicyReadiness } from "./scannerPolicyReadiness";
 import AiReviewProgress from "./AiReviewProgress";
 import ScannerAiReview from "./ScannerAiReview";
 import { historicalReviewStatus, matchStoredJevReview, scannerAiReviewStatus } from "./scannerAiReviewStatus";
@@ -53,6 +68,23 @@ import "./scannerProgress.css";
 import "./scannerUX.css";
 
 type MarketScope = "ALL" | "KOSPI" | "KOSDAQ";
+type HorizonChoice = "LEGACY_UNSPECIFIED" | "SHORT" | "MEDIUM" | "LONG";
+const HORIZON_STORAGE_KEY = "stockscope.scanner.local-review-horizon.v1";
+function initialHorizonChoice(): HorizonChoice {
+  try {
+    const value = window.sessionStorage.getItem(HORIZON_STORAGE_KEY);
+    if (value === "SHORT" || value === "MEDIUM" || value === "LONG") return value;
+  } catch {
+    // Browser storage is optional; never block the baseline Scanner.
+  }
+  return "LEGACY_UNSPECIFIED";
+}
+function horizonChoiceLabel(value: string | null | undefined): string {
+  if (value === "SHORT") return "단기";
+  if (value === "MEDIUM") return "중기";
+  if (value === "LONG") return "장기";
+  return "미지정";
+}
 
 type Props = {
   aiReviewEnabled: boolean;
@@ -310,6 +342,7 @@ function CandidateCompareRow({
   const tone = candidateTone(candidate);
   const key = candidateKey(candidate);
   const view = beginnerCandidatePresentation(candidate);
+  const evidenceView = scannerCandidateEvidence(candidate, rank - 1);
   const watchBusy = actionBusyKey === "watch:" + key;
   const heldBusy = actionBusyKey === "held:" + key;
   const isWatched = managedStock?.watch_enabled === true;
@@ -320,15 +353,19 @@ function CandidateCompareRow({
       <button
         type="button" className="scanner-ux-row-select" onClick={onSelect}
         aria-pressed={selected}
-        aria-label={candidate.name + " 선택, 먼저 살펴볼 순서 " + rank}
+        aria-label={candidate.name + " 선택. " + evidenceView.orderLabel}
       >
-        <span className="scanner-compare-rank">{rank}</span>
+        <span className="scanner-compare-rank scanner-s30-order" title={evidenceView.orderLabel}>{candidate.priority?.strict_rank === false && (candidate.priority.tie_size ?? 0) > 1 ? "·" : rank}</span>
         <span className="scanner-compare-stock">
           <strong>{candidate.name}</strong>
           <small>{candidate.market}</small>
+          {candidate.priority?.tie_size && candidate.priority.tie_size > 1 && candidate.priority.strict_rank === false
+            && <small className="scanner-s29-tie-label">표시 {rank}번 · 동률</small>}
         </span>
         <span className="scanner-compare-judgement">
           <strong>{candidate.conditions.passed}/{candidate.conditions.total} 충족</strong>
+          <small className="scanner-s29-metric">{evidenceView.riskLabel}</small>
+          <small className="scanner-s29-history">{evidenceView.historicalLabel}</small>
           <span className="scanner-ux2-row-next">
             <span>{view.nextActionLabel}</span>
           </span>
@@ -414,6 +451,7 @@ function CandidateDetail({
   const evidenceSummary = evidenceSummaryText(candidate);
   const canPrepareEvidence = evidencePreparationAvailable(candidate);
   const targetCap = targetCapExplanation(candidate);
+  const s29 = scannerCandidateEvidence(candidate, rank - 1);
   const [activeTab, setActiveTab] = useState<"summary" | "strategy" | "ai" | "history" | "news">("summary");
   // Lives above tab panels so a manual quote survives tab switches, never stock switches.
   const { snapshot: quoteSnapshot, checkPrice } = useScannerQuote(candidate);
@@ -435,13 +473,14 @@ function CandidateDetail({
     <article className={`scanner-selected-detail tone-${tone}`}>
       <header className="scanner-selected-head">
         <div>
-          <span className="scanner-selected-kicker">선택한 후보 · 살펴볼 순서 {rank}</span>
+          <span className="scanner-selected-kicker">선택한 후보 · {s29.orderLabel}</span>
           <div className="scanner-stock-line">
             <h3>{candidate.name}</h3>
             <span>{candidate.market} · {candidate.code}</span>
           </div>
           <div className="scanner-selected-tags">
             <span className={`scanner-state-badge ${tone}`}>분석일 · {simpleConditionStatus(candidate)}</span>
+            <span className="scanner-s30-current-unchecked">현재 진입 판단 별도 · 새 시세·전략 재검증 필요</span>
             <span>{candidate.strategy_easy_name}</span>
 
           </div>
@@ -476,6 +515,14 @@ function CandidateDetail({
         aria-labelledby={"scanner-tab-" + activeTab} tabIndex={0}>
         {activeTab === "summary" && (
           <div className="scanner-ux3-summary">
+            <ScannerPositionBoundaryCard
+              candidate={candidate}
+              result={result}
+              managedStock={managedStock}
+              holdingsLoading={holdingsLoading}
+              holdingsReady={holdingsReady}
+              onOpenHoldings={onOpenHoldings}
+            />
             <ScannerDecisionSummary
               candidate={candidate}
               quoteSnapshot={quoteSnapshot}
@@ -552,10 +599,19 @@ function CandidateDetail({
         <section className={`scanner-priority-card priority-${candidate.priority.tier.toLowerCase()}`}>
           <div className="scanner-priority-head">
             <div>
-              <small>분석일 기준 후보 순위 · {rank}순위</small>
+              <small>분석일 기준 후보 순위는 표시용 · {s29.orderLabel}</small>
               <strong>{asOfPriorityLabel(candidate)}</strong>
               <p>{candidate.priority.reason}</p>
+              {s29.tieExplanation && <p className="scanner-s29-caution">{s29.tieExplanation}</p>}
             </div>
+          </div>
+          <div className="scanner-s29-evidence" aria-label="동률 및 위험·검증 근거">
+            <strong>분석일 기준 근거 · 실제 주문 기준 아님</strong>
+            <span>{s29.riskLabel} · {s29.structuralLabel}</span>
+            <span>{s29.historicalLabel}</span>
+            {s29.riskStatus !== "CHECKED" && <span className="scanner-s29-caution">가격·위험 근거를 확인하기 전에는 손익비를 믿고 판단하지 마세요.</span>}
+            {s29.sameRunRankChangeLabel && <small>{s29.sameRunRankChangeLabel}</small>}
+            <small>5·10·20거래일 성과는 별도 사전 기록이 확인된 후보만 평가합니다. 현재 표시 순서가 수익을 예측하지는 않아요.</small>
           </div>
           <div className="scanner-priority-factors">
             {candidate.priority.strengths.map((item) => <span className="positive" key={`strength-${item}`}>✓ {item}</span>)}
@@ -594,6 +650,7 @@ function CandidateDetail({
         )}
         {activeTab === "ai" && (
           <ScannerAiReview candidate={candidate} result={result}
+            sampleIndex={rank - 1}
             enabled={aiReviewEnabled} available={aiReviewAvailable}
             featureStatus={aiReviewFeatureStatus} review={storedReview}
             loading={storedReviewLoading} loadError={storedReviewError}
@@ -742,13 +799,16 @@ export default function ScannerPanel({
   const initialSession = useMemo(() => readScannerSession(), []);
   const sharedSession = useScannerSession();
   const [scope, setScope] = useState<MarketScope>(initialSession?.scope ?? "ALL");
+  const [horizonChoice, setHorizonChoice] = useState<HorizonChoice>(initialHorizonChoice);
   const [job, setJob] = useState<BacktestJob<ScannerResponse> | null>(null);
   const [result, setResult] = useState<ScannerResponse | null>(initialSession?.result ?? null);
+  const [workspaceTab, setWorkspaceTab] = useState<"analysis" | "history">("analysis");
   // Only a newly completed foreground job animates. Restored results stay still.
   const [revealJobId, setRevealJobId] = useState<string | null>(null);
   const [selectedCandidateKey, setSelectedCandidateKey] = useState<string | null>(
     initialSession?.selectedCandidateKey
-      ?? (initialSession?.result?.candidates?.[0] ? candidateKey(initialSession.result.candidates[0]) : null),
+      ?? (initialSession?.result?.candidate_recheck ? null
+        : (initialSession?.result?.candidates?.[0] ? candidateKey(initialSession.result.candidates[0]) : null)),
   );
   const [error, setError] = useState<string | null>(null);
   const [showMore, setShowMore] = useState(initialSession?.showMore ?? false);
@@ -758,7 +818,14 @@ export default function ScannerPanel({
   const [clock, setClock] = useState(Date.now());
   const [freshnessFailure, setFreshnessFailure] = useState<ScannerFreshnessResponse | null>(null);
   const [dataPlanBusy, setDataPlanBusy] = useState(false);
-  const [pendingDataPlan, setPendingDataPlan] = useState<{ plan: ScannerDataPlan; pinnedAsOfDate: string | null } | null>(null);
+  const [evidencePlanBusy, setEvidencePlanBusy] = useState(false);
+  const [pendingEvidencePlan, setPendingEvidencePlan] = useState<{
+    candidate: ScannerCandidate; plan: ScannerEvidenceDataPlan;
+  } | null>(null);
+  const [pendingDataPlan, setPendingDataPlan] = useState<{
+    plan: ScannerDataPlan; pinnedAsOfDate: string | null;
+    recheckCandidate: ScannerRecheckCandidate | null;
+  } | null>(null);
   const [dateNotice, setDateNotice] = useState<string | null>(null);
   const [managedStocks, setManagedStocks] = useState<HoldingStock[]>([]);
   const [holdingsLoading, setHoldingsLoading] = useState(false);
@@ -819,7 +886,7 @@ export default function ScannerPanel({
   }, [captureId, storedReviewKey, aiReviewEnabled, aiReviewAvailable, aiReviewFeatureStatus, reviewRefresh]);
 
   const jobBusy = job?.status === "queued" || job?.status === "running";
-  const busy = jobBusy || dataPlanBusy;
+  const busy = jobBusy || dataPlanBusy || evidencePlanBusy;
   const progress = job?.progress;
   const managedStockMap = useMemo(
     () => new Map(managedStocks.map((stock) => [managedStockKey(stock.market, stock.ticker), stock])),
@@ -868,7 +935,8 @@ export default function ScannerPanel({
     setResult(sharedSession.result);
     setSelectedCandidateKey(
       sharedSession.selectedCandidateKey
-        ?? (sharedSession.result.candidates?.[0] ? candidateKey(sharedSession.result.candidates[0]) : null),
+        ?? (sharedSession.result.candidate_recheck ? null
+          : (sharedSession.result.candidates?.[0] ? candidateKey(sharedSession.result.candidates[0]) : null)),
     );
     setShowMore(sharedSession.showMore);
     setExpandedEvidenceIds(sharedSession.expandedEvidenceIds);
@@ -960,9 +1028,7 @@ export default function ScannerPanel({
           const preferredCandidate = preferredKey
             ? latestCandidates.find((candidate) => candidateKey(candidate) === preferredKey) ?? null
             : null;
-          const nextSelectedKey = preferredCandidate
-            ? candidateKey(preferredCandidate)
-            : (latest.result.candidates[0] ? candidateKey(latest.result.candidates[0]) : null);
+          const nextSelectedKey = scannerSelectionAfterRecheck(latest.result, preferredKey);
           const nextExpandedEvidenceIds = preferredCandidate ? [evidenceKey(preferredCandidate)] : [];
           if (!observerIsCurrent()) return;
           writeScannerSession({
@@ -1090,9 +1156,7 @@ export default function ScannerPanel({
         const preferredCandidate = preferredKey
           ? latestCandidates.find((candidate) => candidateKey(candidate) === preferredKey) ?? null
           : null;
-        const nextSelectedKey = preferredCandidate
-          ? candidateKey(preferredCandidate)
-          : (latest.result.candidates[0] ? candidateKey(latest.result.candidates[0]) : null);
+        const nextSelectedKey = scannerSelectionAfterRecheck(latest.result, preferredKey);
         const latestEvidenceKeys = new Set(latestCandidates.map((candidate) => evidenceKey(candidate)));
         const nextExpandedEvidenceIds = evidencePreferredKey && preferredCandidate
           ? [evidenceKey(preferredCandidate)]
@@ -1110,6 +1174,7 @@ export default function ScannerPanel({
         });
         setScope(jobScope);
         setResult(latest.result);
+        setWorkspaceTab("analysis");
         setRevealJobId(latest.job_id);
         setSelectedCandidateKey(nextSelectedKey);
         setShowMore(false);
@@ -1166,10 +1231,12 @@ export default function ScannerPanel({
     forceRefresh = false,
     allowLargeSync = false,
     pinnedAsOfDate: string | null = null,
+    recheckCandidate: ScannerRecheckCandidate | null = null,
   ) {
     if (busy || dataPlanInFlightRef.current) return;
+    setWorkspaceTab("analysis");
     // Large transfer is explicit consent. Small requests proceed automatically.
-    if (!allowLargeSync && !forceRefresh) {
+    if (!allowLargeSync && (!forceRefresh || recheckCandidate !== null)) {
       dataPlanInFlightRef.current = true;
       setDataPlanBusy(true);
       try {
@@ -1180,7 +1247,7 @@ export default function ScannerPanel({
         });
         if (!mountedRef.current) return;
         if (plan.status === "APPROVAL_REQUIRED") {
-          setPendingDataPlan({ plan, pinnedAsOfDate });
+          setPendingDataPlan({ plan, pinnedAsOfDate, recheckCandidate });
           setError(null);
           return;
         }
@@ -1202,6 +1269,7 @@ export default function ScannerPanel({
       }
     }
     setPendingDataPlan(null);
+    setPendingEvidencePlan(null);
     setRevealJobId(null);
     const observerGeneration = ++pollObserverGenerationRef.current;
     scannerSelectionToPreserveRef.current = result && selectedCandidateKey ? selectedCandidateKey : null;
@@ -1229,8 +1297,13 @@ export default function ScannerPanel({
           ? undefined
           : (result?.requested_as_of ?? latestScannerDataDate(result)),
         candidate_limit: 5,
-        force_refresh: forceRefresh,
+        ...(horizonChoice !== "LEGACY_UNSPECIFIED" ? {
+          horizon_intent: horizonChoice,
+          horizon_purpose: "LOCAL_REVIEW_ONLY" as const,
+        } : {}),
+        force_refresh: forceRefresh || recheckCandidate !== null,
         allow_large_sync: allowLargeSync,
+        recheck_candidate: recheckCandidate ?? undefined,
       } as Parameters<typeof createScannerJob>[0] & { known_data_date?: string | null };
       const created = await createScannerJob(request);
       if (!mountedRef.current || pollObserverGenerationRef.current !== observerGeneration) return;
@@ -1265,8 +1338,40 @@ export default function ScannerPanel({
     }
   }
 
-  async function prepareCandidateEvidence(candidate: ScannerCandidate) {
+  async function prepareCandidateEvidence(candidate: ScannerCandidate, approvedLargeSync = false) {
     if (busy || !result) return;
+    if (!approvedLargeSync) {
+      setEvidencePlanBusy(true);
+      try {
+        const plan = await planScannerEvidenceData({
+          market: candidate.market,
+          code: candidate.code,
+          strategy: candidate.strategy,
+          data_end: candidate.data_date,
+          market_scope: scope,
+          candidate_limit: 5,
+        });
+        if (!mountedRef.current) return;
+        if (plan.status === "APPROVAL_REQUIRED") {
+          setPendingEvidencePlan({ candidate, plan });
+          setError(null);
+          return;
+        }
+        if (plan.status !== "AUTO_ALLOWED") {
+          setPendingEvidencePlan(null);
+          setError(plan.status === "REVIEW_BUDGET"
+            ? "3년 과거 데이터 요청량이 남은 KRX 일일 예산을 초과합니다. 나중에 다시 확인해주세요."
+            : "3년 과거 데이터 저장 상태를 안전하게 확인할 수 없습니다.");
+          return;
+        }
+      } catch (err) {
+        if (mountedRef.current) setError(err instanceof Error ? err.message : "3년 데이터 요청량을 확인하지 못했습니다.");
+        return;
+      } finally {
+        if (mountedRef.current) setEvidencePlanBusy(false);
+      }
+    }
+    setPendingEvidencePlan(null);
     const observerGeneration = ++pollObserverGenerationRef.current;
     scannerSelectionToPreserveRef.current = null;
     if (pollRef.current != null) window.clearTimeout(pollRef.current);
@@ -1288,6 +1393,7 @@ export default function ScannerPanel({
         data_end: candidate.data_date,
         market_scope: scope,
         candidate_limit: 5,
+        allow_large_sync: approvedLargeSync,
       });
       if (!mountedRef.current || pollObserverGenerationRef.current !== observerGeneration) return;
       setJob(created);
@@ -1295,7 +1401,7 @@ export default function ScannerPanel({
         kind: "scanner",
         jobId: created.job_id,
         scope,
-        allowLargeSync: false,
+        allowLargeSync: approvedLargeSync,
         status: created.status,
         stage: created.stage,
         message: created.progress?.message || "3년 검증 데이터 준비를 시작합니다.",
@@ -1463,6 +1569,16 @@ export default function ScannerPanel({
     onAnalyzeStock(stockItem(candidate));
   }
 
+  function onWorkspaceTabKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
+    let target: "analysis" | "history" | null = null;
+    if (event.key === "ArrowRight" || event.key === "End") target = "history";
+    if (event.key === "ArrowLeft" || event.key === "Home") target = "analysis";
+    if (!target) return;
+    event.preventDefault();
+    setWorkspaceTab(target);
+    document.getElementById("scanner-tab-" + target)?.focus();
+  }
+
   function changeScope(value: MarketScope) {
     if (busy || value === scope) return;
     if (pollRef.current != null) window.clearTimeout(pollRef.current);
@@ -1479,6 +1595,7 @@ export default function ScannerPanel({
     setRestoredFromSession(false);
     setFreshnessFailure(null);
     setPendingDataPlan(null);
+    setPendingEvidencePlan(null);
     setDateNotice(null);
     savedScrollRef.current = 0;
     didRestoreScrollRef.current = true;
@@ -1554,17 +1671,20 @@ export default function ScannerPanel({
     [result],
   );
   const selectedCandidate = useMemo(
-    () => allCandidates.find((candidate) => candidateKey(candidate) === selectedCandidateKey) ?? result?.candidates[0] ?? null,
+    () => allCandidates.find((candidate) => candidateKey(candidate) === selectedCandidateKey)
+      ?? (result?.candidate_recheck ? null : result?.candidates[0] ?? null),
     [allCandidates, selectedCandidateKey, result],
   );
   const selectedSampleIndex = selectedCandidate
     ? allCandidates.findIndex((candidate) => candidateKey(candidate) === candidateKey(selectedCandidate))
     : -1;
-  const selectedIsExtra = Boolean(
-    selectedCandidate && result?.more_candidates.some(
-      candidate => candidateKey(candidate) === candidateKey(selectedCandidate),
-    ),
+  const displayLayout = useMemo(
+    () => buildScannerDisplayLayout(allCandidates, result?.candidates.length ?? 0),
+    [allCandidates, result],
   );
+  // The original backend candidate_limit is never changed. A visual extension
+  // of the first tied group is NOT a hidden extra and must not be duplicated.
+  const selectedIsExtra = selectedSampleIndex >= displayLayout.visibleFeaturedCount;
   const selectedRank = selectedSampleIndex >= 0 ? selectedSampleIndex + 1 : 0;
   const [showAuxProgress, setShowAuxProgress] = useState(false);
 
@@ -1575,6 +1695,14 @@ export default function ScannerPanel({
     }
     if (allCandidates.length === 0) {
       if (selectedCandidateKey != null) setSelectedCandidateKey(null);
+      return;
+    }
+    // For a recheck with a filtered-out target, do not silently switch to
+    // another stock. A subsequent manual selection of a new stock is respected.
+    if (result.candidate_recheck) {
+      if (selectedCandidateKey && !allCandidates.some((candidate) => candidateKey(candidate) === selectedCandidateKey)) {
+        setSelectedCandidateKey(null);
+      }
       return;
     }
     if (!selectedCandidateKey || !allCandidates.some((candidate) => candidateKey(candidate) === selectedCandidateKey)) {
@@ -1604,17 +1732,40 @@ export default function ScannerPanel({
           ))}
         </div>
         <div className="scanner-control-actions">
-          {result && !busy ? (
-            <div className="scanner-result-held">
-              <strong>✓ 분석 결과 유지 중</strong>
-              <span>같은 설정에서는 다시 찾지 않습니다.</span>
-            </div>
-          ) : (
-            <button type="button" className="scanner-run-button" onClick={() => void runScanner(false)} disabled={busy}>
-              {dataPlanBusy ? "시장 데이터 확인 중..." : evidenceJobStage ? "3년 검증 데이터 준비 중..." : jobBusy && String(job?.stage || "").startsWith("scanner_prepare") ? "최신 시세 확인 중..." : jobBusy ? "후보 찾는 중..." : "후보 찾기"}
-            </button>
+          <button type="button" className="scanner-run-button" onClick={() => void runScanner(false)} disabled={busy}>
+            {dataPlanBusy ? "시장 데이터 확인 중..." : evidenceJobStage ? "3년 검증 데이터 준비 중..." : jobBusy && String(job?.stage || "").startsWith("scanner_prepare") ? "최신 시세 확인 중..." : jobBusy ? "후보 찾는 중..." : result ? "후보 다시 찾기" : "후보 찾기"}
+          </button>
+          {result && !busy && (
+            <span className="scanner-recheck-note">기존 분석은 새 결과가 준비될 때까지 유지합니다. 같은 확정 일봉의 저장 결과를 재사용할 수 있어요.</span>
           )}
           {jobBusy && <button type="button" className="scanner-cancel-button" onClick={() => void cancel()}>중지</button>}
+        </div>
+        <div className="scanner-horizon-control">
+          <label htmlFor="scanner-horizon-choice">검토 기간</label>
+          <select id="scanner-horizon-choice" value={horizonChoice} disabled={busy}
+            onChange={(event) => {
+              const value = event.target.value as HorizonChoice;
+              setHorizonChoice(value);
+              try { window.sessionStorage.setItem(HORIZON_STORAGE_KEY, value); } catch { /* optional */ }
+            }}>
+            <option value="LEGACY_UNSPECIFIED">미지정 (기존 방식)</option>
+            <option value="SHORT">단기</option>
+            <option value="MEDIUM">중기</option>
+            <option value="LONG">장기 · V4 미지원</option>
+          </select>
+          <small>로컬 AI 입력 검토용 선택이며 기존 전략·순위·위험 판단은 그대로예요. 실제 기간별 수치 정책은 미승인 상태예요.</small>
+          {result?.horizon_context && (
+            <small className="scanner-horizon-captured">
+              저장된 분석의 선택 기간: {horizonChoiceLabel(result.horizon_context.intent)}
+              {result.horizon_context.support_status === "EVALUATION_PENDING" && " · 수치 정책 미승인"}
+            </small>
+          )}
+          {result?.strategy_selection_policy?.policy_source === "LEGACY_CURRENT_10_FALLBACK" && (
+            <small className="scanner-horizon-captured">
+              이 분석의 전략 기준: 기존 10개 전략 · 승인된 원본 버전 미확인
+              {result.strategy_selection_policy.fallback_reason && " · 정책 확인 필요"}
+            </small>
+          )}
         </div>
       </section>
 
@@ -1624,12 +1775,57 @@ export default function ScannerPanel({
             <span>처음 필요한 시장 데이터 준비</span>
             <strong>종목을 찾기 전에 시장 데이터를 준비해야 해요.</strong>
             <p>현재 컴퓨터에 없는 자료를 준비할게요. 예상 기본 요청은 약 {formatNumber(pendingDataPlan.plan.estimated_missing_krx_slots ?? 0)}회예요. 거래일 확인이나 오류 재시도로 요청이 더 발생할 수 있어요.</p>
+            {pendingDataPlan.plan.operational_eod && (
+              <div>
+                <p>운영 DB에 종목·지수 행이 같은 날짜로 존재하는 최신 공통일: <strong>{pendingDataPlan.plan.operational_eod.stored_same_day_stock_index_date ? formatDate(pendingDataPlan.plan.operational_eod.stored_same_day_stock_index_date) : "확인 불가"}</strong> (조회 상한 {formatDate(pendingDataPlan.plan.operational_eod.inspection_end)})</p>
+                {Object.entries(pendingDataPlan.plan.operational_eod.markets).map(([market, details]) => (
+                  <p key={market}>{market} · 종목 {details.last_stock_rows_date ? formatDate(details.last_stock_rows_date) : "없음"} · 지수 {details.last_index_row_date ? formatDate(details.last_index_row_date) : "없음"} · 동일일 {details.last_same_day_rows_date ? formatDate(details.last_same_day_rows_date) : "없음"}</p>
+                ))}
+                <small>로컬 저장 행의 존재만 확인한 결과예요. 공식 휴장·KRX 공표 시각·전체 과거 데이터·실제 Scanner 분석 성공을 증명하지 않아요.</small>
+              </div>
+            )}
+            {(Object.values(pendingDataPlan.plan.data_markers_missing_rows ?? {}).some((count) => count > 0)) && (
+              <p>저장된 '데이터 있음' 표시와 실제 종목·지수 기록이 일치하지 않는 항목이 있어 다시 확인이 필요해요.</p>
+            )}
+            {(Object.values(pendingDataPlan.plan.unverified_empty_slots ?? {}).some((count) => count > 0)) && (
+              <p>빈 응답만 남은 날짜는 실제 휴장으로 증명된 것이 아니어서, 준비 요청 추정에 포함했어요.</p>
+            )}
+            {(pendingDataPlan.plan.unverified_status_samples?.length ?? 0) > 0 && (
+              <p>확인할 날짜·자료(최대 12건): {(pendingDataPlan.plan.unverified_status_samples ?? []).map((item) =>
+                `${item.market} ${formatDate(item.date)} ${item.kind === "stock" ? "종목" : "지수"}`
+              ).join(" · ")}</p>
+            )}
             <p>준비한 자료는 이 컴퓨터에 저장돼 다음 분석부터 재사용하고, 완료되면 종목 찾기를 자동으로 이어갈게요.</p>
           </div>
-          <button type="button" disabled={busy} onClick={() => void runScanner(false, true, pendingDataPlan.pinnedAsOfDate)}>
+          <button type="button" disabled={busy} onClick={() => void runScanner(
+              pendingDataPlan.recheckCandidate !== null,
+              true,
+              pendingDataPlan.pinnedAsOfDate,
+              pendingDataPlan.recheckCandidate,
+            )}>
             데이터 준비하고 종목 찾기
           </button>
           <button type="button" disabled={busy} onClick={() => setPendingDataPlan(null)}>취소</button>
+        </section>
+      )}
+
+      {pendingEvidencePlan && !jobBusy && (
+        <section className="scanner-preparation-card" role="status" aria-label="3년 과거 자료 대량 준비 동의">
+          <div>
+            <span>3년 과거 근거 준비 · 사전 승인</span>
+            <strong>{pendingEvidencePlan.candidate.name}의 과거 자료를 준비할까요?</strong>
+            <p>{pendingEvidencePlan.plan.warmup_start}부터 {pendingEvidencePlan.plan.data_end}까지
+              {pendingEvidencePlan.candidate.market} 시장 자료를 확인합니다.
+              예상 KRX 신규 기본 요청은 약 {formatNumber(pendingEvidencePlan.plan.estimated_missing_krx_slots)}회입니다.
+              휴장 확인·실패 재시도로 더 발생할 수 있습니다.</p>
+            <p>3년 과거 검증은 현재 후보 판단과 별개이며, 추가 자료로도 표본이 충분해진다는 보장은 없습니다.
+              해당 시장의 여러 날짜를 가져오므로 요청량과 준비 시간이 커질 수 있습니다.</p>
+          </div>
+          <button type="button" disabled={busy}
+            onClick={() => void prepareCandidateEvidence(pendingEvidencePlan.candidate, true)}>
+            요청량 확인 후 3년 데이터 준비
+          </button>
+          <button type="button" disabled={busy} onClick={() => setPendingEvidencePlan(null)}>취소</button>
         </section>
       )}
 
@@ -1828,6 +2024,27 @@ export default function ScannerPanel({
         </section>
       )}
 
+      <nav className="scanner-workspace-tabs" role="tablist" aria-label="Scanner 화면 메뉴">
+        <button type="button" id="scanner-tab-analysis" role="tab"
+          aria-controls="scanner-panel-analysis"
+          aria-selected={workspaceTab === "analysis"}
+          tabIndex={workspaceTab === "analysis" ? 0 : -1}
+          onClick={() => setWorkspaceTab("analysis")}
+          onKeyDown={onWorkspaceTabKeyDown}>
+          이번 분석{result ? ` · ${result.candidates.length}개` : ""}
+        </button>
+        <button type="button" id="scanner-tab-history" role="tab"
+          aria-controls="scanner-panel-history"
+          aria-selected={workspaceTab === "history"}
+          tabIndex={workspaceTab === "history" ? 0 : -1}
+          onClick={() => setWorkspaceTab("history")}
+          onKeyDown={onWorkspaceTabKeyDown}>
+          저장 기록
+        </button>
+      </nav>
+      <div id="scanner-panel-analysis" role="tabpanel" aria-labelledby="scanner-tab-analysis"
+        hidden={workspaceTab !== "analysis"}>
+
       {!result && !busy && !error && !freshnessFailure && (
         <section className="scanner-empty-start ux13-scanner-empty">
           <strong>후보 결과</strong>
@@ -1862,6 +2079,27 @@ export default function ScannerPanel({
               <span>{marketText}</span>
             </div>
             <div className="scanner-ux2-result-actions">
+              {selectedCandidate && (
+                <button type="button"
+                  className="scanner-freshness-check-button"
+                  disabled={busy}
+                  onClick={() => void runScanner(true, false, null, {
+                    market: selectedCandidate.market,
+                    code: selectedCandidate.code,
+                    name: selectedCandidate.name,
+                    source_data_date: selectedCandidate.data_date,
+                    source_action: selectedCandidate.action,
+                    source_strategy: selectedCandidate.strategy,
+                    source_input_fingerprint_id: result.input_fingerprint?.id ?? null,
+                    source_policy_id: result.strategy_selection_policy?.policy_id ?? null,
+                    source_policy_hash: result.strategy_selection_policy?.policy_hash ?? null,
+                    source_capture_id: result.prospective_capture?.canonical_capture_id
+                      || result.prospective_capture?.capture_id || null,
+                  })}
+                >
+                  이 후보 최신 확정 일봉으로 다시 판단
+                </button>
+              )}
               {needsFreshnessCheck && (
                 <button type="button" className="scanner-freshness-check-button" onClick={() => void runScanner(false)} disabled={busy}>
                   최신 확정 시세 확인
@@ -1879,6 +2117,88 @@ export default function ScannerPanel({
               </details>
             </div>
           </section>
+
+          <section className="scanner-preparation-card" aria-label="후보 원본 전략 식별 근거">
+            {(() => {
+              const evidence = scannerPolicyReadiness(
+                result.strategy_selection_policy,
+                [...result.candidates, ...result.more_candidates],
+                result.scanner_cache_hit,
+              );
+              return (
+                <div>
+                  <span>신규 후보 원본 근거 · {evidence.label}</span>
+                  <p>{evidence.message}</p>
+                  <small>진입 후보 {evidence.candidateEntryCount}개 · 원본 전략 버전/정의 해시 없는 진입 후보 {evidence.missingOriginalIdentityCount}개 · 저장 무결성 및 실제 S7 판정은 별도 검증</small>
+                </div>
+              );
+            })()}
+          </section>
+
+           {result.candidate_recheck && (
+            <section className="scanner-preparation-card" role="status" aria-live="polite">
+              <div>
+                <span>선택 후보 · 최신 일봉 재판단 결과</span>
+                <strong>
+                  {result.candidate_recheck.name || result.candidate_recheck.code}
+                  {" · "}
+                  {scannerRecheckHeadline(result.candidate_recheck)}
+                </strong>
+                <p>
+                  이전 기준일 {formatDate(result.candidate_recheck.source_data_date)}
+                  {" → "}이번 기준일 {formatDate(result.candidate_recheck.new_data_date)}
+                  {" · "}
+                  {result.candidate_recheck.new_eod_advanced
+                    ? "새 EOD로 이동"
+                    : "새 날짜로 이동하지 않음"}
+                </p>
+                <p>{result.candidate_recheck.reason}</p>
+                {result.candidate_recheck.status === "TARGET_OUTSIDE_SCANNER_FILTER" && (
+                  <p role="status">
+                    <strong>기본 필터 사유 · </strong>
+                    {scannerRecheckFilterDescription(result.candidate_recheck.filter_reason)}
+                    {" "}이 상태는 NO_TRADE 또는 전략·Risk 심층 계산 결과가 아닙니다.
+                  </p>
+                )}
+                {result.candidate_recheck.status === "TARGET_STOCK_ROW_MISSING" && (
+                  <p>해당 종목의 새 확정일 원본 행이 없어 거래 판단을 보류합니다.</p>
+                )}
+                {result.candidate_recheck.policy_changed === true && (
+                  <p>주의 · 이전 분석과 운영 전략 정책이 변경됐습니다.
+                    전략·Risk 차이를 시장 변화만으로 해석할 수 없습니다.</p>
+                )}
+                {result.candidate_recheck.policy_changed == null && (
+                  <p>이전 전략 정책의 일치 여부를 확인할 수 없습니다.</p>
+                )}
+                <div className="scanner-ux2-analysis-body" aria-label="다시 판단 작업 근거">
+                  <small>실행 작업 · {result.candidate_recheck.source_job_id || "ID 확인 불가"}</small>
+                  <small>신규 입력 지문 · {result.candidate_recheck.new_scanner_input_fingerprint_id || "확인 불가"}</small>
+                  <small>기존 참조 입력 지문 · {result.candidate_recheck.source_input_fingerprint_id || "미제공"}</small>
+                  <small>{scannerRecheckCaptureDescription(result.candidate_recheck)}</small>
+                  <small>개별 순위 밖 재평가와 이전 후보 참조는 이 전체 Scanner 캡처에 저장되지 않습니다.
+                    신규 시세 호가 확인도 별도입니다.</small>
+                </div>
+                {result.candidate_recheck.status === "TARGETED_EVALUATED_OUTSIDE_RANKING" && (
+                  <p>순위 밖 개별 계산 · {result.candidate_recheck.targeted_action_label
+                    || result.candidate_recheck.targeted_action || "확인 필요"}
+                    {" · "}전략 {result.candidate_recheck.targeted_strategy || "확인 필요"}
+                    {" · "}Risk {result.candidate_recheck.targeted_risk_status || "확인 필요"}
+                    {" · "}전체 후보 순위·정식 종목 추천과는 별개입니다.
+                  </p>
+                )}
+                {result.candidate_recheck.status === "MATCHED_RETURNED_CANDIDATE" && (
+                  <p>새 반환 후보의 판단 · {result.candidate_recheck.reported_action_label
+                    || result.candidate_recheck.reported_action
+                    || "확인 필요"}
+                    {" · "}전략 {result.candidate_recheck.reported_strategy || "확인 필요"}
+                    {" · "}Risk {result.candidate_recheck.reported_risk_status || "확인 필요"}
+                  </p>
+                )}
+                <small>이번 결과는 반환 후보와 별도의 개별 계산을 구분합니다.
+                  필터 제외나 목록 누락만으로 NO_TRADE를 추론하지 않습니다.</small>
+              </div>
+            </section>
+          )}
 
           {preparationItems.length > 0 && (
             <section className="scanner-preparation-card">
@@ -1904,6 +2224,13 @@ export default function ScannerPanel({
               <button type="button" onClick={() => void runScanner(true)} disabled={busy}>강제 재계산</button>
             </div>
           </details>
+
+          {result.candidate_recheck && !selectedCandidate && result.candidates.length > 0 && (
+            <p className="scanner-s29-list-note" role="status">
+              재판단 대상 종목이 새 후보 목록에 없습니다. 아래 후보는 다른 종목이므로
+              자동 선택하지 않았습니다. 자세히 보려면 종목을 직접 선택하세요.
+            </p>
+          )}
 
           {(holdingNotice || (holdingError && !holdingDialogCandidate)) && (
             <div className={`scanner-holdings-notice ${holdingError ? "error" : "success"}`} role="status">
@@ -1944,101 +2271,135 @@ export default function ScannerPanel({
                 <header className="scanner-compare-head">
                   <div>
                     <span>후보 목록</span>
-                    <strong>우선 후보 {result.candidates.length}개</strong>
-                    <small className="scanner-ux5-count">전체 {result.candidates.length + result.more_candidates.length}개 후보</small>
+                    <strong>분석일 기준 후보 {result.candidates.length}개</strong>
+                    <small className="scanner-ux5-count">
+                      전체 {result.candidates.length + result.more_candidates.length}개 후보 · 동률 포함 첫 화면 {displayLayout.visibleFeaturedCount}개
+                    </small>
                   </div>
-                  <small>분석일 기준 검토 순서</small>
+                  <small>분석일 기준 검토 순서 · 예상 수익률 순위 아님</small>
                 </header>
-
+                <p className="scanner-s29-list-note" role="status">{scannerTieSummary(allCandidates)}</p>
+                {displayLayout.expandedToKeepTieTogether && (
+                  <p className="scanner-s30-extension-note">
+                    원래 우선 후보 {displayLayout.originalFeaturedCount}개에 속한 동률 후보를 함께 보여줘요.
+                    다른 후보에서 가져온 종목도 원래 분류는 그대로 유지됩니다.
+                  </p>
+                )}
                 <div className="scanner-compare-labels" aria-hidden="true">
-                  <span>순서</span><span>종목</span><span>조건 충족 · 핵심 확인</span><span>내 종목</span>
+                  <span>순서</span><span>종목</span><span>분석 당시 조건 · 참고 손익비</span><span>내 종목</span>
                 </div>
                 <div className={"scanner-compare-list" + (revealJobId && job?.job_id === revealJobId ? " scanner-motion-reveal" : "")}>
-                  {result.candidates.map((candidate, index) => (
-                    <CandidateCompareRow
-                      key={candidateKey(candidate)}
-                      candidate={candidate}
-                      rank={index + 1}
-                      selected={selectedCandidate ? candidateKey(selectedCandidate) === candidateKey(candidate) : false}
-                      aiReviewEnabled={aiReviewEnabled}
-                      aiReviewAvailable={aiReviewAvailable}
-                      managedStock={managedStockMap.get(candidateKey(candidate)) ?? null}
-                      holdingsLoading={holdingsLoading}
-                      holdingsReady={holdingsReady}
-                      actionBusyKey={holdingActionBusyKey}
-                      aiStatusLabel={storedReviewLoading ? "AI 기록 확인 중" : storedReviewError ? "AI 기록 확인 실패" : scannerAiReviewStatus({
-                        candidate, result, enabled: aiReviewEnabled,
-                        available: aiReviewAvailable, featureStatus: aiReviewFeatureStatus,
-                        review: reviewFor(candidate, index),
-                      }).label}
-                      onSelect={() => selectCandidateForReview(candidate)}
-                      onAddWatch={() => void addCandidateToWatch(candidate)}
-                      onRegisterHeld={() => openHoldingRegistration(candidate)}
-                    />
+                  {displayLayout.featured.map((group) => (
+                    <Fragment key={group.key}>
+                      {group.tie && (
+                        <div className="scanner-s30-group-heading">
+                          <strong>{group.title}</strong>
+                          <span>{group.explanation}</span>
+                        </div>
+                      )}
+                      {group.members.map((member) => {
+                        const candidate = member.candidate;
+                        return (
+                          <Fragment key={candidateKey(candidate)}>
+                            {member.fromOriginalMore && <span className="scanner-s30-included-from-extra">기본 우선 후보 밖의 동률 종목도 함께 표시</span>}
+                            <CandidateCompareRow
+                        
+                        candidate={candidate}
+                        rank={member.originalIndex + 1}
+                        selected={selectedCandidate ? candidateKey(selectedCandidate) === candidateKey(candidate) : false}
+                        aiReviewEnabled={aiReviewEnabled}
+                        aiReviewAvailable={aiReviewAvailable}
+                        managedStock={managedStockMap.get(candidateKey(candidate)) ?? null}
+                        holdingsLoading={holdingsLoading}
+                        holdingsReady={holdingsReady}
+                        actionBusyKey={holdingActionBusyKey}
+                        aiStatusLabel={storedReviewLoading ? "AI 기록 확인 중" : storedReviewError ? "AI 기록 확인 실패" : scannerAiReviewStatus({
+                          candidate: candidate, result, enabled: aiReviewEnabled,
+                          available: aiReviewAvailable, featureStatus: aiReviewFeatureStatus,
+                          review: reviewFor(candidate, member.originalIndex),
+                        }).label}
+                        onSelect={() => selectCandidateForReview(candidate)}
+                        onAddWatch={() => void addCandidateToWatch(candidate)}
+                        onRegisterHeld={() => openHoldingRegistration(candidate)}
+                      />
+                          </Fragment>
+                        );
+                      })}
+                    </Fragment>
                   ))}
                 </div>
 
                 <ScannerRankComparison result={result} />
 
-                {result.more_candidates.length > 0 && (
+                {displayLayout.other.length > 0 && (
                   <div className="scanner-compare-more">
                     <button type="button" onClick={toggleMoreCandidates}>
-                      {showMore ? "다른 후보 숨기기 ▲" : `다른 후보 ${result.more_candidates.length}개 보기 ▼`}
+                      {showMore ? "다른 후보 숨기기 ▲" : `그 외 후보 ${displayLayout.visibleOtherCount}개 보기 ▼`}
                     </button>
                     {!showMore && selectedIsExtra && selectedCandidate && (
                       <div className="scanner-ux5-pinned-extra">
                         <small>선택 중인 추가 후보 · 목록을 접어도 유지돼요</small>
                         <CandidateCompareRow
-                          key={"pinned-" + candidateKey(selectedCandidate)}
-                          candidate={selectedCandidate}
-                          rank={selectedRank}
-                          selected
-                          aiReviewEnabled={aiReviewEnabled}
-                          aiReviewAvailable={aiReviewAvailable}
-                          managedStock={managedStockMap.get(candidateKey(selectedCandidate)) ?? null}
-                          holdingsLoading={holdingsLoading}
-                          holdingsReady={holdingsReady}
-                          actionBusyKey={holdingActionBusyKey}
-                          aiStatusLabel={storedReviewLoading ? "AI 기록 확인 중" : storedReviewError ? "AI 기록 확인 실패" : scannerAiReviewStatus({
-                            candidate: selectedCandidate, result, enabled: aiReviewEnabled,
-                            available: aiReviewAvailable, featureStatus: aiReviewFeatureStatus,
-                            review: reviewFor(selectedCandidate, selectedSampleIndex),
-                          }).label}
-                          onSelect={() => selectCandidateForReview(selectedCandidate)}
-                          onAddWatch={() => void addCandidateToWatch(selectedCandidate)}
-                          onRegisterHeld={() => openHoldingRegistration(selectedCandidate)}
-                        />
+                        key={"pinned-" + candidateKey(selectedCandidate)}
+                        candidate={selectedCandidate}
+                        rank={selectedRank}
+                        selected={true}
+                        aiReviewEnabled={aiReviewEnabled}
+                        aiReviewAvailable={aiReviewAvailable}
+                        managedStock={managedStockMap.get(candidateKey(selectedCandidate)) ?? null}
+                        holdingsLoading={holdingsLoading}
+                        holdingsReady={holdingsReady}
+                        actionBusyKey={holdingActionBusyKey}
+                        aiStatusLabel={storedReviewLoading ? "AI 기록 확인 중" : storedReviewError ? "AI 기록 확인 실패" : scannerAiReviewStatus({
+                          candidate: selectedCandidate, result, enabled: aiReviewEnabled,
+                          available: aiReviewAvailable, featureStatus: aiReviewFeatureStatus,
+                          review: reviewFor(selectedCandidate, selectedSampleIndex),
+                        }).label}
+                        onSelect={() => selectCandidateForReview(selectedCandidate)}
+                        onAddWatch={() => void addCandidateToWatch(selectedCandidate)}
+                        onRegisterHeld={() => openHoldingRegistration(selectedCandidate)}
+                      />
                       </div>
                     )}
                     {showMore && (
                       <div className="scanner-compare-list more">
-                        {result.more_candidates.map((candidate, index) => (
-                          <CandidateCompareRow
-                            key={`more-${candidateKey(candidate)}`}
-                            candidate={candidate}
-                            rank={result.candidates.length + index + 1}
-                            selected={selectedCandidate ? candidateKey(selectedCandidate) === candidateKey(candidate) : false}
-                            aiReviewEnabled={aiReviewEnabled}
-                            aiReviewAvailable={aiReviewAvailable}
-                            managedStock={managedStockMap.get(candidateKey(candidate)) ?? null}
-                            holdingsLoading={holdingsLoading}
-                            holdingsReady={holdingsReady}
-                            actionBusyKey={holdingActionBusyKey}
-                      aiStatusLabel={storedReviewLoading ? "AI 기록 확인 중" : storedReviewError ? "AI 기록 확인 실패" : scannerAiReviewStatus({
-                        candidate, result, enabled: aiReviewEnabled,
-                        available: aiReviewAvailable, featureStatus: aiReviewFeatureStatus,
-                        review: reviewFor(candidate, result.candidates.length + index),
-                      }).label}
-                            onSelect={() => selectCandidateForReview(candidate)}
-                            onAddWatch={() => void addCandidateToWatch(candidate)}
-                            onRegisterHeld={() => openHoldingRegistration(candidate)}
-                          />
+                        {displayLayout.other.map((group) => (
+                          <Fragment key={group.key}>
+                            {group.tie && (
+                              <div className="scanner-s30-group-heading">
+                                <strong>{group.title}</strong>
+                                <span>{group.explanation}</span>
+                              </div>
+                            )}
+                            {group.members.map((member) => {
+                              const candidate = member.candidate;
+                              return (<CandidateCompareRow
+                        
+                        candidate={candidate}
+                        rank={member.originalIndex + 1}
+                        selected={selectedCandidate ? candidateKey(selectedCandidate) === candidateKey(candidate) : false}
+                        aiReviewEnabled={aiReviewEnabled}
+                        aiReviewAvailable={aiReviewAvailable}
+                        managedStock={managedStockMap.get(candidateKey(candidate)) ?? null}
+                        holdingsLoading={holdingsLoading}
+                        holdingsReady={holdingsReady}
+                        actionBusyKey={holdingActionBusyKey}
+                        aiStatusLabel={storedReviewLoading ? "AI 기록 확인 중" : storedReviewError ? "AI 기록 확인 실패" : scannerAiReviewStatus({
+                          candidate: candidate, result, enabled: aiReviewEnabled,
+                          available: aiReviewAvailable, featureStatus: aiReviewFeatureStatus,
+                          review: reviewFor(candidate, member.originalIndex),
+                        }).label}
+                        onSelect={() => selectCandidateForReview(candidate)}
+                        onAddWatch={() => void addCandidateToWatch(candidate)}
+                        onRegisterHeld={() => openHoldingRegistration(candidate)}
+                      />);
+                            })}
+                          </Fragment>
                         ))}
                       </div>
                     )}
                   </div>
                 )}
-
               </section>
 
               {selectedCandidate && (
@@ -2103,6 +2464,11 @@ export default function ScannerPanel({
           </details>
         </>
       )}
+      </div>
+      <div id="scanner-panel-history" role="tabpanel" aria-labelledby="scanner-tab-history"
+        hidden={workspaceTab !== "history"}>
+        <CaptureObservationJournal active={workspaceTab === "history"} currentCaptureId={captureId} />
+      </div>
 
       {holdingDialogCandidate && (
         <div

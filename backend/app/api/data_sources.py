@@ -1,7 +1,7 @@
 import asyncio
 import json
 import os
-from datetime import datetime
+from datetime import datetime, date, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
@@ -13,6 +13,8 @@ from app.core.config import get_settings
 from app.holdings.chart import HoldingsChartError, HoldingsChartService
 from app.holdings.chart_prepare import HoldingsChartPrepareError, HoldingsChartPrepareService
 from app.market.providers import KrxProvider, OpenDartProvider
+from app.market.providers.dart_disclosure_p6e import fetch_bounded_disclosures
+from app.event_evidence.dart_ingest_p6f import prepare_disclosure, live_storage_decision
 from app.market.providers.base import ProviderError, ProviderNotConfigured
 from app.market.service import MarketDataService
 from app.strategy.service import StrategyAnalysisService
@@ -301,12 +303,97 @@ async def dart_disclosures(
     begin_date: str = Query(...),
     end_date: str = Query(...),
     page_count: int = Query(default=20, ge=1, le=100),
+    max_pages: int = Query(default=1, ge=1, le=5),
 ) -> dict[str, Any]:
     _, dart = _providers()
     try:
-        return await dart.disclosures(corp_code, begin_date, end_date, page_count)
+        return (await dart.disclosures(corp_code, begin_date, end_date, page_count)
+                if max_pages == 1 else
+                await fetch_bounded_disclosures(dart, corp_code, begin_date, end_date,
+                                                page_count=page_count, max_pages=max_pages))
     except (ProviderError, ValueError) as exc:
         _raise_provider_error(exc)
+
+
+@router.get("/dart/stocks/{stock_code}/disclosures")
+async def dart_stock_disclosures(
+    stock_code: str,
+    begin_date: str | None = Query(default=None),
+    end_date: str | None = Query(default=None),
+    page_count: int = Query(default=20, ge=1, le=50),
+    max_pages: int = Query(default=2, ge=1, le=3),
+    market: Literal["KOSPI", "KOSDAQ"] | None = Query(default=None),
+) -> dict[str, Any]:
+    """P6-E: bounded live OpenDART listing only, never an EventEvidence write.
+
+    Receipt date is date-only and cannot be used as an earlier as-of signal.
+    This endpoint deliberately has no persistence or AI-review options.
+    """
+    from app.core.stock_code import normalize_stock_code
+    today = datetime.now(ZoneInfo("Asia/Seoul")).date()
+    try:
+        code = normalize_stock_code(stock_code)
+        begin = date.fromisoformat(begin_date) if begin_date else today - timedelta(days=29)
+        end = date.fromisoformat(end_date) if end_date else today
+        if end < begin or end > today or (end - begin).days > 30:
+            raise ValueError("공시 조회 기간은 현재까지 최대 31일로 제한합니다.")
+        _, dart = _providers()
+        corp_code = await dart.resolve_corp_code(code)
+        disclosed = await fetch_bounded_disclosures(
+            dart, corp_code, begin.isoformat(), end.isoformat(),
+            page_count=page_count, max_pages=max_pages,
+        )
+    except (ProviderError, ValueError) as exc:
+        _raise_provider_error(exc)
+    checked_rows = []
+    for item in disclosed["rows"]:
+        upstream_stock = item.get("stock_code")
+        if upstream_stock and str(upstream_stock).strip().upper() != code:
+            raise HTTPException(status_code=502, detail={
+                "code": "P6E_DART_STOCK_IDENTITY_MISMATCH",
+                "message": "공시 종목 신원 불일치로 결과를 표시하지 않습니다.",
+            })
+        checked_rows.append(item)
+    observed = datetime.now(timezone.utc).isoformat()
+    # This is a non-persisting preview only. The market comes from the UI
+    # and is NOT independently proven by this OpenDART API.
+    preview = None
+    if market is not None:
+        valid = 0
+        invalid_reasons: dict[str, int] = {}
+        for item in checked_rows:
+            try:
+                prepare_disclosure(
+                    item, ticker=code, market=market, corp_code=corp_code,
+                    first_seen_at=observed,
+                )
+                valid += 1
+            except ValueError as exc:
+                key = str(exc) if str(exc).startswith("P6F_") else "P6F_SOURCE_ROW_INVALID"
+                invalid_reasons[key] = invalid_reasons.get(key, 0) + 1
+        rights = live_storage_decision()
+        preview = {
+            "contract_version": rights["contract_version"],
+            "validated_metadata_count": valid,
+            "invalid_metadata_count": sum(invalid_reasons.values()),
+            "reason_counts": invalid_reasons,
+            "stock_code": code, "market": market,
+            "market_verified_by_source": False,
+            "storage_allowed": False, "event_evidence_writes": 0,
+            "ai_transmission_allowed": False,
+            "status": "PREVIEW_ONLY_NOT_PERSISTED",
+        }
+    return {
+        **disclosed,
+        "stock_code": code, "rows": checked_rows,
+        "p6f_ingest_preview": preview,
+        "fetched_at": observed,
+        "source_publication_time_verified": False,
+        "time_quality": "DATE_ONLY",
+        "event_evidence_storage": "NOT_PERSISTED_RIGHTS_UNVERIFIED",
+        "external_ai_transfer": "BLOCKED",
+        "model_calls": 0, "db_writes": 0,
+    }
 
 
 @router.get("/stocks/search")

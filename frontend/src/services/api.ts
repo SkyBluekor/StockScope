@@ -2883,6 +2883,14 @@ export type ScannerCandidatePriority = {
   rank: number;
   previous_rank: number;
   rank_change: number;
+  tie_group?: number;
+  tie_size?: number;
+  tie_focus?: boolean;
+  tie_focus_order?: number;
+  tie_breaker?: string;
+  strict_rank?: boolean;
+  structural_target_distance_pct?: number | null;
+  structural_target_basis?: string | null;
 };
 
 export type ScannerAiReviewPresentation = {
@@ -2904,6 +2912,9 @@ export type ScannerCandidate = {
   candidate_state: "READY" | "WATCH" | "VALIDATION" | "EXCLUDED" | string;
   candidate_label: string;
   strategy: string;
+  /** Original scanner-pinned version/definition; null on legacy fallback. */
+  strategy_version_id?: string | null;
+  strategy_definition_hash?: string | null;
   strategy_easy_name: string;
   strategy_name: string;
   strategy_description: string;
@@ -2941,7 +2952,92 @@ export type ScannerCandidate = {
   };
 };
 
+export type ScannerCandidateRecheck = {
+  version: "SCANNER_CANDIDATE_RECHECK_V1";
+  reference_kind: "USER_SELECTED_PRIOR_SCANNER_CANDIDATE";
+  market: "KOSPI" | "KOSDAQ";
+  code: string;
+  name: string;
+  source_data_date: string;
+  source_action: string;
+  source_strategy: string;
+  source_input_fingerprint_id?: string | null;
+  source_policy_id?: string | null;
+  source_policy_hash?: string | null;
+  source_capture_id?: string | null;
+  reference_verified_against_capture?: false;
+  source_job_id?: string;
+  baseline_scanner_capture_status?: string;
+  baseline_scanner_capture_id?: string | null;
+  baseline_capture_scope?: "SCANNER_RETURNED_CANDIDATES_ONLY";
+  targeted_result_stored_in_capture?: false;
+  prior_reference_stored_in_capture?: false;
+  capture_confirmed?: boolean;
+  new_policy_id?: string | null;
+  new_policy_hash?: string | null;
+  policy_changed?: boolean | null;
+  new_quote_checked?: false;
+  new_data_date: string | null;
+  new_scanner_input_fingerprint_id: string | null;
+  new_eod_advanced: boolean;
+  no_trade_inferred: false;
+  independently_evaluated_when_not_returned: boolean;
+  scope: "RETURNED_SCANNER_CANDIDATES_ONLY" | "TARGETED_CORE_NO_GLOBAL_RANK";
+  status: "NOT_EVALUABLE" | "NOT_IN_RETURNED_POOL" | "MATCHED_RETURNED_CANDIDATE"
+    | "TARGET_STOCK_ROW_MISSING" | "TARGET_OUTSIDE_SCANNER_FILTER"
+    | "TARGETED_EVALUATED_OUTSIDE_RANKING";
+  targeted_action?: string | null;
+  targeted_action_label?: string;
+  targeted_strategy?: string;
+  targeted_candidate_state?: string;
+  targeted_risk_status?: string | null;
+  filter_reason?: string;
+  error_class?: string;
+  reason: string;
+  returned_candidate_count?: number;
+  reported_action?: string | null;
+  reported_candidate_state?: string;
+  reported_strategy?: string;
+  reported_action_label?: string;
+  reported_risk_status?: string | null;
+  new_candidate?: {
+    market: string; code: string; data_date: string;
+    strategy: string; action: string; candidate_state: string;
+  } | null;
+};
+
+export type ScannerRecheckCandidate = {
+  market: "KOSPI" | "KOSDAQ";
+  code: string;
+  name: string;
+  source_data_date: string;
+  source_action: string;
+  source_strategy: string;
+  source_input_fingerprint_id?: string | null;
+  source_policy_id?: string | null;
+  source_policy_hash?: string | null;
+  source_capture_id?: string | null;
+};
+
 export type ScannerResponse = {
+  candidate_recheck?: ScannerCandidateRecheck;
+  input_fingerprint?: {
+    id?: string | null;
+    markets?: Record<string, {
+      date?: string | null;
+      stock_rows?: number;
+      stock_hash?: string | null;
+      index_hash?: string | null;
+    }>;
+  };
+  strategy_selection_policy?: {
+    policy_id?: string | null;
+    policy_hash?: string | null;
+    policy_source?: string | null;
+    fallback_used?: boolean;
+    fallback_reason?: string | null;
+  };
+
   version: string;
   horizon_context?: {
     intent: "SHORT" | "MEDIUM" | "LONG" | "LEGACY_UNSPECIFIED" | string;
@@ -3070,12 +3166,14 @@ export type ScannerResponse = {
 };
 
 export type ScannerRequest = {
+  recheck_candidate?: ScannerRecheckCandidate;
   market_scope?: "ALL" | "KOSPI" | "KOSDAQ";
   as_of_date?: string;
   candidate_limit?: number;
   force_refresh?: boolean;
   allow_large_sync?: boolean;
   horizon_intent?: "SHORT" | "MEDIUM" | "LONG";
+  horizon_purpose?: "PRODUCTION_POLICY" | "LOCAL_REVIEW_ONLY";
 };
 
 export type ScannerFreshnessResponse = {
@@ -3122,6 +3220,34 @@ export type ScannerDataPlan = {
   date_is_confirmed?: boolean;
   estimated_missing_krx_slots?: number;
   raw_cache_slots_reusable?: number;
+  store_slots_missing?: Record<string, number>;
+  operational_eod?: {
+    source: "OPERATIONAL_MARKET_STORE_READONLY";
+    market_scope: "ALL" | "KOSPI" | "KOSDAQ";
+    inspection_end: string;
+    lookback_start: string;
+    stored_same_day_stock_index_date: string | null;
+    days_behind_inspection_end: number | null;
+    markets: Record<string, {
+      last_stock_rows_date: string | null;
+      last_index_row_date: string | null;
+      last_same_day_rows_date: string | null;
+      same_day_rows_in_lookback: number;
+    }>;
+    verification: string;
+    provider_publication_time_verified: false;
+    official_holiday_calendar_verified: false;
+    full_lookback_ready: false;
+    reason: string;
+  };
+  data_markers_missing_rows?: Record<string, number>;
+  unverified_empty_slots?: Record<string, number>;
+  unverified_status_samples?: Array<{
+    market: "KOSPI" | "KOSDAQ";
+    date: string;
+    kind: "stock" | "index";
+    reason: "DATA_MARKER_WITHOUT_ROWS" | "EMPTY_NOT_PROVEN_HOLIDAY";
+  }>;
   fast_request_limit?: number;
   daily_budget_remaining?: number | null;
   warnings?: string[];
@@ -3162,7 +3288,28 @@ export type ScannerEvidencePrepareRequest = {
   data_end: string;
   market_scope: "ALL" | "KOSPI" | "KOSDAQ";
   candidate_limit?: number;
+  allow_large_sync?: boolean;
 };
+
+export type ScannerEvidenceDataPlan = ScannerDataPlan & {
+  market: "KOSPI" | "KOSDAQ";
+  data_end: string;
+  validation_start: string;
+  warmup_start: string;
+  requires_explicit_large_sync_approval?: boolean;
+};
+
+export async function planScannerEvidenceData(
+  payload: ScannerEvidencePrepareRequest,
+): Promise<ScannerEvidenceDataPlan> {
+  return asJson<ScannerEvidenceDataPlan>(
+    await fetch("/api/backtest/scanner/evidence/data-plan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  );
+}
 
 export async function createScannerEvidenceJob(
   payload: ScannerEvidencePrepareRequest,
@@ -3173,5 +3320,180 @@ export async function createScannerEvidenceJob(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }),
+  );
+}
+
+// Saved Scanner captures: observational EOD follow-up, not trading performance.
+export type SavedCaptureJournalItem = {
+  id: string;
+  status: "COMPLETE";
+  market_scope: string;
+  actual_data_date: string | null;
+  created_at: string | null;
+  completed_at: string | null;
+  returned_candidate_count: number;
+};
+
+export type SavedCaptureJournalIndex = {
+  version: string;
+  status: string;
+  read_only: boolean;
+  captures: SavedCaptureJournalItem[];
+};
+
+export type SavedCaptureWindow = {
+  status: string;
+  signal_close_change_pct: number | null;
+};
+
+export type SavedCaptureObservation = {
+  sample_index: number;
+  market: string;
+  ticker: string;
+  name: string;
+  strategy: string | null;
+  action: string | null;
+  rank: number | null;
+  integrity_category: string;
+  available_confirmed_trading_days: number | null;
+  windows: Record<"5d" | "10d" | "20d", SavedCaptureWindow>;
+};
+
+export type SavedCaptureJournalDetail = {
+  version: string;
+  status: string;
+  read_only: boolean;
+  q7_approved: false;
+  execution_returns_measured: false;
+  market_eod_cutoff_date?: string;
+  capture?: SavedCaptureJournalItem & { sample_count: number };
+  observation_basis?: string;
+  integrity_counts?: Record<string, number>;
+  candidates: SavedCaptureObservation[];
+};
+
+export async function listSavedCaptureJournal(): Promise<SavedCaptureJournalIndex> {
+  return asJson<SavedCaptureJournalIndex>(
+    await fetch("/api/simulation/prospective/capture-journal?limit=20"),
+  );
+}
+
+export async function getSavedCaptureJournalDetail(
+  captureId: string,
+): Promise<SavedCaptureJournalDetail> {
+  return asJson<SavedCaptureJournalDetail>(
+    await fetch(
+      "/api/simulation/prospective/captures/" +
+      encodeURIComponent(captureId) + "/observation-journal",
+    ),
+  );
+}
+
+// G2-02: cross-date Scanner result lists (not strategy-performance ranking).
+export type SavedCaptureDiffStock = {
+  sample_index: number;
+  market: string;
+  ticker: string;
+  name: string;
+  strategy: string | null;
+  action: string | null;
+  candidate_state: string | null;
+  rank: number | null;
+};
+export type SavedCaptureDiffItem = {
+  market: string;
+  ticker: string;
+  name: string;
+  presence: "NEW" | "RETAINED" | "REMOVED";
+  previous: SavedCaptureDiffStock | null;
+  current: SavedCaptureDiffStock | null;
+  rank_movement: "UP" | "DOWN" | "SAME" | "NOT_COMPARABLE" | "NOT_APPLICABLE";
+  rank_delta: number | null;
+  strategy_changed: boolean;
+  action_changed: boolean;
+  state_changed: boolean;
+};
+export type SavedCaptureComparison = {
+  version: string;
+  status: string;
+  read_only: boolean;
+  previous_capture?: SavedCaptureJournalItem;
+  current_capture?: SavedCaptureJournalItem;
+  comparability?: { rank_comparable: boolean; warnings: string[] };
+  summary?: {
+    previous_total: number;
+    current_total: number;
+    new: number;
+    retained: number;
+    removed_from_returned_list: number;
+    rank_up: number;
+    rank_down: number;
+    rank_same: number;
+    rank_not_comparable: number;
+    strategy_changed: number;
+    action_changed: number;
+    state_changed: number;
+  };
+  items?: SavedCaptureDiffItem[];
+};
+export async function compareSavedCaptureHistory(
+  currentId: string, previousId: string,
+): Promise<SavedCaptureComparison> {
+  return asJson<SavedCaptureComparison>(
+    await fetch(
+      "/api/simulation/prospective/captures/" + encodeURIComponent(currentId) +
+      "/compare-history?previous_capture_id=" + encodeURIComponent(previousId),
+    ),
+  );
+}
+
+// G2-03: per-stock immutable Scanner history, separate from managed holdings/tracking.
+export type SavedStockTimelineEntry = {
+  capture_id: string;
+  signal_date: string;
+  captured_at: string | null;
+  sample_index: number;
+  name: string;
+  market: "KOSPI" | "KOSDAQ";
+  ticker: string;
+  strategy: string | null;
+  action: string | null;
+  candidate_state: string | null;
+  rank: number | null;
+  integrity_category: string;
+  scanner_version: string | null;
+  market_scope: string | null;
+  candidate_limit: number | null;
+  windows: Record<"5d" | "10d" | "20d", SavedCaptureWindow>;
+};
+export type SavedStockTimeline = {
+  version: string;
+  status: string;
+  read_only: boolean;
+  market?: "KOSPI" | "KOSDAQ";
+  ticker?: string;
+  name?: string | null;
+  summary?: {
+    capture_appearances: number;
+    distinct_signal_days: number;
+    first_signal_date: string | null;
+    latest_signal_date: string | null;
+  };
+  entries?: SavedStockTimelineEntry[];
+  next_offset?: number | null;
+  limit?: number;
+  offset?: number;
+  market_eod_cutoff_date?: string;
+  observation_basis?: string;
+};
+export async function getSavedStockTimeline(
+  market: "KOSPI" | "KOSDAQ", ticker: string, offset = 0,
+): Promise<SavedStockTimeline> {
+  return asJson<SavedStockTimeline>(
+    await fetch(
+      "/api/simulation/prospective/stock-history/" +
+      encodeURIComponent(market) + "/" + encodeURIComponent(ticker) +
+      "?limit=20&offset=" + offset,
+    ),
   );
 }

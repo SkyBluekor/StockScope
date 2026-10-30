@@ -10,7 +10,7 @@ A future observed market bar is not a real trade return or a Q7 approval.
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from datetime import date, datetime, time, timedelta, timezone
 import json
 import os
@@ -22,7 +22,7 @@ import time as time_module
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener, ProxyHandler
-from zoneinfo import ZoneInfo
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[2]
 BACKEND = ROOT / "backend"
@@ -31,10 +31,13 @@ for p in (ROOT, BACKEND):
         sys.path.insert(0, str(p))
 
 from app.jev.q7_observation_s16 import measure as observe_outcomes
+from app.prospective.models import digest_json
 from tools.data.common import market_db_path, simulation_db_path
+from tools.data.p0_02_operational_store_audit import inspect_operational_store
 
 VERSION = "STOCKSCOPE_PROSPECTIVE_DAILY_S17_V1"
-KST = ZoneInfo("Asia/Seoul")
+G1_PREFLIGHT_VERSION = "STOCKSCOPE_P0_05_G1_LOCAL_PREFLIGHT_V1"
+KST = timezone(timedelta(hours=9), name="KST")
 BASE_URL = "http://127.0.0.1:8000"
 DEFAULT_LOG_ROOT = ROOT / "data" / "prospective_daily"
 MORNING_START = time(5, 0)
@@ -115,19 +118,212 @@ def _existing_capture(db: Path, *, market_scope: str, data_date: date) -> dict[s
     return dict(row) if row else None
 
 
+def _verify_persisted_capture(
+    db: Path, *, source_job_id: str, capture: dict[str, Any],
+    signal_date: date, market_scope: str,
+) -> dict[str, Any]:
+    """Fail closed if HTTP COMPLETE is not the exact immutable SQLite evidence.
+
+    This is read-only, including on a live WAL DB. A COMPLETE capture is not
+    itself S7-valid or investment-performance evidence.
+    """
+    capture_id = capture.get("capture_id")
+    status = capture.get("status")
+    canonical_id = capture.get("canonical_capture_id")
+    if (type(capture_id) is not str or not capture_id
+            or status not in ("COMPLETE", "DUPLICATE")
+            or (canonical_id is not None and (type(canonical_id) is not str or not canonical_id))
+            or not db.is_file()):
+        raise DailyError("FROZEN_CAPTURE_PROOF_UNAVAILABLE")
+    try:
+        with closing(sqlite3.connect(
+            db.resolve().as_uri() + "?mode=ro", uri=True, timeout=10,
+        )) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA query_only=ON")
+            conn.execute("BEGIN")
+            row = conn.execute(
+                "SELECT id,status,source_job_id,market_scope,actual_data_date,"
+                "canonical_capture_id,returned_candidate_count,"
+                "source_execution_key,source_snapshot_hash,result_hash "
+                "FROM prospective_capture_run WHERE id=?", (capture_id,),
+            ).fetchone()
+            if (row is None or row["source_job_id"] != source_job_id
+                    or row["status"] != status
+                    or row["market_scope"] != market_scope
+                    or row["actual_data_date"] != signal_date.isoformat()
+                    or row["canonical_capture_id"] != canonical_id
+                    or not row["source_execution_key"] or not row["source_snapshot_hash"]
+                    or not row["result_hash"]):
+                raise DailyError("FROZEN_CAPTURE_DB_PROOF_MISMATCH")
+            if status == "COMPLETE":
+                if canonical_id is not None:
+                    raise DailyError("FROZEN_CAPTURE_DB_PROOF_MISMATCH")
+                canonical = row
+            else:
+                if not canonical_id or canonical_id == capture_id:
+                    raise DailyError("FROZEN_CAPTURE_DB_PROOF_MISMATCH")
+                canonical = conn.execute(
+                    "SELECT id,status,market_scope,actual_data_date,"
+                    "returned_candidate_count,source_execution_key,"
+                    "source_snapshot_hash,result_hash "
+                    "FROM prospective_capture_run WHERE id=?", (canonical_id,),
+                ).fetchone()
+                if (canonical is None or canonical["status"] != "COMPLETE"
+                        or canonical["market_scope"] != market_scope
+                        or canonical["actual_data_date"] != signal_date.isoformat()
+                        or any(row[k] != canonical[k] for k in (
+                            "returned_candidate_count", "source_execution_key",
+                            "source_snapshot_hash", "result_hash",
+                        ))):
+                    raise DailyError("FROZEN_CAPTURE_DB_PROOF_MISMATCH")
+            expected = canonical["returned_candidate_count"]
+            if (type(expected) is not int or not 0 <= expected <= 100
+                    or capture.get("returned_candidate_count") != expected):
+                raise DailyError("FROZEN_CAPTURE_COUNT_MISMATCH")
+            samples = conn.execute(
+                "SELECT sample_index,signal_date,snapshot_json,snapshot_hash "
+                "FROM prospective_recommendation_sample "
+                "WHERE capture_run_id=? ORDER BY sample_index", (canonical["id"],),
+            ).fetchall()
+            if len(samples) != expected:
+                raise DailyError("FROZEN_CAPTURE_COUNT_MISMATCH")
+            for index, item in enumerate(samples):
+                try:
+                    valid = digest_json(json.loads(item["snapshot_json"])) == item["snapshot_hash"]
+                except (ValueError, TypeError, UnicodeError):
+                    valid = False
+                if (item["sample_index"] != index
+                        or item["signal_date"] != signal_date.isoformat()
+                        or not valid):
+                    raise DailyError("FROZEN_CAPTURE_SNAPSHOT_MISMATCH")
+            return {
+                "persisted_capture_verified": True,
+                "persisted_snapshot_hashes_verified": True,
+                "persisted_sample_count": len(samples),
+                "performance_verified": False,
+            }
+    except sqlite3.Error as exc:
+        raise DailyError("FROZEN_CAPTURE_DB_READ_UNAVAILABLE") from exc
+
+
+def preflight_local_g1(
+    *, scope: str = "KOSPI", candidate_limit: int = 5,
+    simulation_db: Path | None = None, market_db: Path | None = None,
+    log_root: Path = DEFAULT_LOG_ROOT, now: datetime | None = None,
+) -> dict[str, Any]:
+    """Inspect local G1 prerequisites without API, Scheduler, writes or KRX calls.
+
+    Existing locally stored rows are not official publication proof. Even the
+    positive result requires separate user approval, provider rights and budget.
+    """
+    if scope not in ("KOSPI", "KOSDAQ", "ALL") or type(candidate_limit) is not int or not 1 <= candidate_limit <= 10:
+        raise DailyError("DAILY_ARGUMENT_INVALID")
+    checked_at = now or _now()
+    today, window_denied = _accepted_clock(checked_at)
+    result = {
+        "version": G1_PREFLIGHT_VERSION,
+        "status": "HOLD_UNVERIFIED_G1_PREREQUISITES",
+        "local_date": today.isoformat(),
+        "market_scope": scope,
+        "candidate_limit": candidate_limit,
+        "execution_window_open": window_denied is None,
+        "execution_window_reason": window_denied,
+        "stored_common_data_date": None,
+        "stored_eod_calendar_lag": None,
+        "stored_eod_recent": False,
+        "existing_capture_status": None,
+        "operational_dbs_read_only": True,
+        "db_write_calls": 0,
+        "external_requests": 0,
+        "server_started": False,
+        "scanner_job_started": False,
+        "new_capture_created": False,
+        "scheduler_registered_or_triggered": False,
+        "official_latest_eod_verified": False,
+        "external_source_rights_verified": False,
+        "provider_budget_approved": False,
+        "production_capture_approved": False,
+        "realized_strategy_performance_verified": False,
+    }
+    # Inspect existing storage, not the freshness API: the latter is capable
+    # of KRX/data-provider synchronization and is not a read-only preflight.
+    market = Path(market_db or market_db_path())
+    evidence = inspect_operational_store(
+        market, as_of=today - timedelta(days=1),
+        market_scope=scope, lookback_calendar_days=10,
+    )
+    if evidence["status"].startswith("BLOCKED_"):
+        result["status"] = "HOLD_MARKET_STORE_UNAVAILABLE"
+        return result
+    local_date = evidence.get("last_common_marked_stock_index_date")
+    result["stored_common_data_date"] = local_date
+    if not local_date:
+        per_market = [
+            value.get("latest_same_day_stock_index_date")
+            for value in evidence.get("markets", {}).values()
+        ]
+        result["status"] = (
+            "HOLD_MARKET_DATES_MISMATCH"
+            if len(per_market) > 1 and all(per_market) and len(set(per_market)) > 1
+            else "HOLD_NO_COMMON_STORED_EOD"
+        )
+        return result
+    lag = (today - date.fromisoformat(local_date)).days
+    result["stored_eod_calendar_lag"] = lag
+    result["stored_eod_recent"] = 1 <= lag <= 4
+    if not result["stored_eod_recent"]:
+        result["status"] = "HOLD_STALE_LOCAL_EOD"
+        return result
+    try:
+        # _existing_capture uses SQLite mode=ro and does not create DB files.
+        existing = _existing_capture(
+            Path(simulation_db or simulation_db_path()),
+            market_scope=scope, data_date=date.fromisoformat(local_date),
+        )
+    except DailyError:
+        result["status"] = "HOLD_SIMULATION_STORE_UNAVAILABLE"
+        return result
+    if existing is not None:
+        result["existing_capture_status"] = existing["status"]
+        result["status"] = "HOLD_EXISTING_CAPTURE_OR_PENDING"
+        return result
+    lock = Path(log_root) / (today.isoformat() + "_" + scope.lower() + ".lock")
+    if lock.exists():
+        result["status"] = "HOLD_EXISTING_RUN_LOCK"
+        return result
+    if window_denied is not None:
+        result["status"] = "HOLD_EXECUTION_WINDOW_CLOSED"
+        return result
+    # This is never an authorization to invoke the API or the S17 scheduler.
+    result["status"] = "LOCAL_STORED_EOD_READY_APPROVAL_REQUIRED"
+    return result
+
+
 class _NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         raise DailyError("LOCAL_API_REDIRECT_FORBIDDEN")
 
 
 def _http(path: str, *, method: str = "GET", payload: dict[str, Any] | None = None,
-          timeout: int = 30) -> dict[str, Any]:
+          timeout: int = 30, base_url: str = BASE_URL) -> dict[str, Any]:
     """Loopback only, no credentials, proxies or remote host overrides."""
     if not path.startswith("/") or path.startswith("//"):
         raise DailyError("INVALID_LOCAL_API_PATH")
+    parsed = urlsplit(base_url)
+    if (parsed.scheme != "http" or parsed.hostname != "127.0.0.1"
+            or parsed.username is not None or parsed.password is not None
+            or parsed.path or parsed.query or parsed.fragment):
+        raise DailyError("INVALID_LOOPBACK_BACKEND_URL")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise DailyError("INVALID_LOOPBACK_BACKEND_URL") from exc
+    if port is None or not 1 <= port <= 65535 or parsed.netloc != f"127.0.0.1:{port}":
+        raise DailyError("INVALID_LOOPBACK_BACKEND_URL")
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
     request = Request(
-        BASE_URL + path, data=data, method=method,
+        base_url + path, data=data, method=method,
         headers={"Content-Type": "application/json"} if data else {},
     )
     opener = build_opener(ProxyHandler({}), _NoRedirect())
@@ -298,6 +494,10 @@ def run_once(*, scope: str = "KOSPI", candidate_limit: int = 5,
             if not capture_id:
                 raise DailyError("FROZEN_CAPTURE_ID_MISSING")
 
+            persisted_proof = _verify_persisted_capture(
+                sim, source_job_id=job_id, capture=capture,
+                signal_date=signal_date, market_scope=scope,
+            )
             observed_finished_at = _now()
             observations = observe_outcomes(sim, market, as_of=today)
             outcome = _report(
@@ -311,6 +511,7 @@ def run_once(*, scope: str = "KOSPI", candidate_limit: int = 5,
                 scanner_job_id=job_id, capture_id=capture_id,
                 capture_status=capture["status"],
                 captured_candidate_count=capture.get("returned_candidate_count"),
+                **persisted_proof,
                 outcome_status=observations["status"],
                 outcome_windows=observations.get("windows"),
                 historical_evaluation_is_descriptive_only=True,
@@ -335,9 +536,33 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="StockScope S17 optional daily prospective collector")
     parser.add_argument("--scope", choices=("KOSPI", "KOSDAQ", "ALL"), default="KOSPI")
     parser.add_argument("--candidate-limit", type=int, default=5)
-    parser.add_argument("--dry-run", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true")
+    mode.add_argument("--preflight", action="store_true",
+                      help="Read-only G1 local inputs; never contacts FastAPI/KRX")
+    parser.add_argument("--simulation-db", type=Path,
+                        help="Optional local Simulation DB (preflight only)")
+    parser.add_argument("--market-db", type=Path,
+                        help="Optional local Market DB (preflight only)")
     args = parser.parse_args(argv)
-    if args.dry_run:
+    if (args.simulation_db is not None or args.market_db is not None) and not args.preflight:
+        parser.error("--simulation-db and --market-db require --preflight")
+    if args.preflight:
+        try:
+            result = preflight_local_g1(
+                scope=args.scope, candidate_limit=args.candidate_limit,
+                simulation_db=args.simulation_db, market_db=args.market_db,
+            )
+        except (DailyError, OSError, sqlite3.Error, ValueError):
+            result = {
+                "version": G1_PREFLIGHT_VERSION,
+                "status": "HOLD_LOCAL_PREFLIGHT_UNAVAILABLE",
+                "operational_dbs_read_only": True, "db_write_calls": 0,
+                "external_requests": 0, "scanner_job_started": False,
+                "new_capture_created": False, "official_latest_eod_verified": False,
+                "production_capture_approved": False,
+            }
+    elif args.dry_run:
         day, reason = _accepted_clock(_now())
         result = _report("DRY_RUN_NO_SIDE_EFFECTS", local_date=day.isoformat(),
                          eligibility=reason or "PREMARKET_WINDOW_OK",
@@ -348,7 +573,7 @@ def main(argv: list[str] | None = None) -> int:
         except DailyError as exc:
             result = _report("HOLD_MANUAL_REVIEW", error_code=exc.code)
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0 if result["status"] in (
+    return 0 if (args.preflight and result["status"] == "LOCAL_STORED_EOD_READY_APPROVAL_REQUIRED") or result["status"] in (
         "SCANNER_CAPTURED_AND_OUTCOME_CHECKED",
         "SKIPPED_WEEKEND", "SKIPPED_OUTSIDE_PREMARKET_WINDOW",
         "SKIPPED_NO_FRESH_CONFIRMED_EOD", "SKIPPED_ALREADY_CAPTURED_OR_PENDING",

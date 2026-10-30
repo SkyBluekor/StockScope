@@ -186,4 +186,8 @@ async def root() -> dict[str, object]:
         "version": settings.app_version,
         "status": "running",
         "real_trading": False,
+        # Only an isolated opt-in G1 child exposes this random local nonce.
+        # S17 verifies its own spawned service, never adopts a running backend.
+        **({"g1_worker_nonce": os.environ["STOCKSCOPE_G1_WORKER_NONCE"]}
+           if os.getenv("STOCKSCOPE_G1_WORKER_NONCE") else {}),
     }

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from app.core.config import PROJECT_ROOT
@@ -11,7 +12,22 @@ from app.jev.review_models import (
     BASELINE_WITH_JEV,
     JEV_USER_FEATURE_DISABLED,
 )
+from app.jev.decision_reviewer_offline import DecisionReviewContractError
+from app.jev.scanner_shadow_s7 import load_frozen_candidates
+from app.jev.live_04r_p5_batch import inspect_frozen_entry_batch
+from app.jev.independent_event_reference_p6 import inspect_frozen_event_reference
+from app.jev.independent_assertion_p6b import inspect_frozen_event_assertions
+from app.jev.real_event_audit_p6d import audit_existing_capture
+from app.jev.event_v5 import route_event_v5
+from app.jev import synthetic_event_v5_demo as v5_demo
+from app.core.config import get_settings
+from app.jev.scanner_integrity_s7_1 import assess_frozen_candidate
+from app.jev.scanner_v4_readiness_s7_5 import diagnose_candidate as diagnose_v4_candidate
+from app.jev.scanner_eligibility_s8 import diagnose_candidate as diagnose_s8_candidate
+from app.jev.scanner_outbound_gate_live_03 import diagnose_outbound_candidate
+from app.horizon import HorizonPolicyError, resolve_horizon_context
 from app.jev.review_service import JevManualReviewService
+from app.jev import synthetic_live_04_demo as live04_demo
 from app.jev.typesafe_catalog import (
     TypeSafeJevCatalog,
     TypeSafeJevCatalogError,
@@ -199,6 +215,396 @@ class JevManualReviewRequest(BaseModel):
     capture_id: str = Field(..., min_length=1, max_length=200)
     sample_index: int = Field(default=0, ge=0, le=100)
     review_epoch: int = Field(default=0, ge=0, le=1_000_000)
+
+
+def _captured_horizon_status(capture: dict[str, object]) -> tuple[str, str | None]:
+    """Interpret stored policy only; do not backfill, activate or write."""
+    try:
+        context = resolve_horizon_context(
+            capture.get("horizon_intent"),
+            policy_version=capture.get("horizon_policy_version"),
+        )
+        return context.support_status, context.reason_code
+    except HorizonPolicyError:
+        return "UNSUPPORTED", "HORIZON_INTENT_INVALID"
+
+
+@router.get("/local-readiness")
+def jev_local_readiness(
+    capture_id: str = Query(min_length=1, max_length=200),
+    sample_index: int = Query(ge=0, le=499),
+) -> dict[str, object]:
+    """LIVE-02 read-only diagnostics of one immutable Scanner sample.
+
+    Never authorizes TypeSafe transmission, initializes a provider, or changes
+    the canonical Scanner capture. User-facing review POST stays disabled.
+    """
+    try:
+        pairs = load_frozen_candidates(
+            _db(), capture_id=capture_id, limit=500,
+        )
+        match = next(
+            ((capture, sample) for capture, sample in pairs
+             if sample["sample_index"] == sample_index),
+            None,
+        )
+        if match is None:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "JEV_LIVE02_SAMPLE_NOT_FOUND",
+                        "message": "저장된 COMPLETE 캡처에서 해당 후보를 찾지 못했습니다."},
+            )
+        capture, sample = match
+        v4 = diagnose_v4_candidate(capture, sample)
+        s8 = diagnose_s8_candidate(capture, sample)
+        integrity = assess_frozen_candidate(capture, sample)
+        horizon_status, horizon_reason = _captured_horizon_status(capture)
+    except DecisionReviewContractError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": exc.code, "message": "저장된 후보의 검토 준비도 확인 불가"},
+        ) from exc
+
+    local = v4["local_v4_status"]
+    if v4["category"] == "REFERENCE_ONLY":
+        status = "NOT_ENTRY_CANDIDATE"
+        local_readiness = "NOT_APPLICABLE"
+    elif local == "LOCAL_V4_PROJECTABLE":
+        status = "SOURCE_RIGHTS_HOLD"
+        local_readiness = "LOCAL_READY"
+    elif local == "SKIPPED_LOCAL":
+        # A local semantic match/conflict is resolved without a model.
+        # Incomplete or ambiguous evidence is NOT a completed local review;
+        # keep the public status enums and fail closed to NEEDS_EVIDENCE.
+        if v4["v4_local_semantic_status"] in ("LOCAL_INCOMPLETE", "LOCAL_AMBIGUOUS"):
+            status = "NEEDS_EVIDENCE"
+            local_readiness = "NEEDS_EVIDENCE"
+        else:
+            status = "LOCAL_ONLY"
+            local_readiness = "LOCAL_ONLY"
+    else:
+        status = "NEEDS_EVIDENCE"
+        local_readiness = "NEEDS_EVIDENCE"
+
+    return {
+        "version": "JEV_LIVE_02_LOCAL_READINESS_V1",
+        "capture_id": capture["id"],
+        "sample_index": int(sample["sample_index"]),
+        "identity": {
+            "snapshot_hash": sample["snapshot_hash"],
+            "signal_date": sample["signal_date"],
+            "market": sample["market"],
+            "ticker": sample["ticker"],
+            "rank": sample["rank"],
+            "strategy": sample["strategy"],
+            "action": sample["action"],
+        },
+        "status": status,
+        "local_readiness": local_readiness,
+        "local_v4_status": local,
+        "v4_semantic_status": v4["v4_local_semantic_status"],
+        "input_contract": {
+            "horizon_intent": capture["horizon_intent"],
+            "horizon_policy_version": capture["horizon_policy_version"],
+            "horizon_support_status": horizon_status,
+            "horizon_reason_code": horizon_reason,
+            "strategy_identity_status": integrity["strategy"]["status"],
+            "original_strategy_identity": (
+                "CAPTURED_ORIGINAL"
+                if (
+                    integrity["strategy"]["status"] == "PASS"
+                    and integrity["policy"]["status"] == "PASS"
+                    and integrity["engine"]["status"] == "PASS"
+                )
+                else "LEGACY_DERIVED_NOT_ORIGINAL"
+                if integrity["strategy"]["status"] == "LEGACY_DERIVED"
+                else "NOT_VERIFIED"
+            ),
+            "capture_created_at": capture["created_at"],
+            "capture_started_at": capture["started_at"],
+            "capture_completed_at": capture["completed_at"],
+            "source_first_published_at": None,
+            "source_publication_evidence": "UNVERIFIED",
+        },
+        "integrity_reason_codes": v4["integrity_reason_codes"],
+        "baseline_checks": {
+            name: {
+                "status": integrity[name]["status"],
+                "code": integrity[name]["code"],
+            }
+            for name in ("rank", "strategy", "policy", "engine", "risk", "dates")
+        },
+        "lineage_analysis_status": v4["lineage_analysis_status"],
+        "v4_outbound_lineage_status": s8["v4_outbound_lineage_status"],
+        "source_origin_status": s8["source_origin_status"],
+        "source_revision_status": s8["source_revision_status"],
+        "publication_time_status": s8["publication_time_status"],
+        "rights_status": s8["rights_status"],
+        "transmission_decision": s8["transmission_decision"],
+        "reason_codes": s8["reason_codes"],
+        "model_review_executed": False,
+        "provider_eligible": False,
+        "actual_provider_calls": 0,
+        "db_writes": 0,
+    }
+
+
+@router.get("/entry-routing")
+def jev_entry_routing(
+    capture_id: str = Query(min_length=1, max_length=200),
+) -> dict[str, object]:
+    """P5 aggregate of frozen ENTRY candidates; no new scan or model request.
+
+    The same canonical P4/S7 read-only checks are used per sample.
+    A residual review classification NEVER grants actual market-data transport.
+    """
+    try:
+        return inspect_frozen_entry_batch(_db(), capture_id=capture_id)
+    except DecisionReviewContractError as exc:
+        status = 404 if exc.code == "S7_CAPTURE_NOT_COMPLETE" else 422
+        raise HTTPException(
+            status_code=status,
+            detail={"code": exc.code, "message": "저장된 분석 후보의 로컬 분기 결과를 확인할 수 없습니다."},
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": str(exc) if str(exc).startswith("P4_") or str(exc).startswith("P5_") else "P5_ENTRY_INSPECTION_FAILED",
+                    "message": "저장된 후보의 입력 계약을 확인할 수 없습니다."},
+        ) from exc
+
+
+@router.get("/independent-event-reference")
+def jev_independent_event_reference(
+    capture_id: str = Query(min_length=1, max_length=200),
+    sample_index: int = Query(ge=0, le=499),
+) -> dict[str, object]:
+    """P6-A: frozen candidate + observed EventEvidence, no JEV/model requests.
+
+    Missing EventEvidence schema is reported as NOT_USABLE, never as a fake
+    independent contradiction. This route has no source-permit override.
+    """
+    try:
+        return inspect_frozen_event_reference(
+            _db(), capture_id=capture_id, sample_index=sample_index,
+            naver_provider_kind=get_settings().naver_news_provider_kind,
+        )
+    except DecisionReviewContractError as exc:
+        raise HTTPException(status_code=422, detail={
+            "code": exc.code,
+            "message": "동결된 후보의 원본 근거를 읽을 수 없습니다.",
+        }) from exc
+    except ValueError as exc:
+        code = str(exc)
+        raise HTTPException(
+            status_code=404 if code == "P6_SAMPLE_NOT_FOUND" else 422,
+            detail={
+                "code": code if code.startswith("P6_") else "P6_INPUT_INVALID",
+                "message": "지정한 저장 후보를 확인할 수 없습니다.",
+            },
+        ) from exc
+
+
+@router.get("/independent-event-assessment")
+def jev_independent_event_assessment(
+    capture_id: str = Query(min_length=1, max_length=200),
+    sample_index: int = Query(ge=0, le=499),
+) -> dict[str, object]:
+    """P6-B: operator-authored local assertions only; never sends TypeSafe data."""
+    try:
+        return inspect_frozen_event_assertions(
+            _db(), capture_id=capture_id, sample_index=sample_index,
+            naver_provider_kind=get_settings().naver_news_provider_kind,
+        )
+    except DecisionReviewContractError as exc:
+        raise HTTPException(status_code=422, detail={
+            "code": exc.code,
+            "message": "원본 Scanner 후보 신원 검증 실패",
+        }) from exc
+    except ValueError as exc:
+        code = str(exc)
+        raise HTTPException(
+            status_code=404 if code == "P6_SAMPLE_NOT_FOUND" else 422,
+            detail={"code": code if code.startswith("P6_") else "P6B_INPUT_INVALID",
+                    "message": "독립 이벤트 검토 대상을 확인할 수 없습니다."},
+        ) from exc
+
+
+@router.get("/event-data-audit")
+def jev_event_data_audit(
+    capture_id: str = Query(min_length=1, max_length=200),
+) -> dict[str, object]:
+    """P6-D: count existing real EventEvidence + Scanner links, read-only.
+
+    Unlike the synthetic V5 demo, this never constructs a provider or alters
+    the user's database. Missing schema does not imply an empty dataset.
+    """
+    try:
+        return audit_existing_capture(
+            _db(), capture_id=capture_id,
+            naver_provider_kind=get_settings().naver_news_provider_kind,
+        )
+    except DecisionReviewContractError as exc:
+        raise HTTPException(status_code=422, detail={
+            "code": exc.code, "message": "저장된 정본 Scanner 캡처가 준비되지 않았습니다.",
+        }) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail={
+            "code": "P6D_SIMULATION_DB_NOT_FOUND",
+            "message": "기존 SQLite 파일을 찾지 못했습니다. 새 DB를 생성하지 않습니다.",
+        }) from exc
+    except (ValueError, sqlite3.Error) as exc:
+        raise HTTPException(status_code=422, detail={
+            "code": "P6D_REAL_AUDIT_FAILED",
+            "message": "실제 이벤트 저장 자료의 상태를 확인할 수 없습니다.",
+        }) from exc
+
+
+@router.get("/event-v5-routing")
+def jev_event_v5_routing(
+    capture_id: str = Query(min_length=1, max_length=200),
+    sample_index: int = Query(ge=0, le=499),
+) -> dict[str, object]:
+    """Read-only P6-C independent-event eligibility; never builds provider wire."""
+    try:
+        assessment = inspect_frozen_event_assertions(
+            _db(), capture_id=capture_id, sample_index=sample_index,
+            naver_provider_kind=get_settings().naver_news_provider_kind,
+        )
+        return route_event_v5(assessment)
+    except DecisionReviewContractError as exc:
+        raise HTTPException(status_code=422, detail={
+            "code": exc.code, "message": "저장된 이벤트 검토 후보를 읽을 수 없습니다.",
+        }) from exc
+    except ValueError as exc:
+        code = str(exc)
+        raise HTTPException(
+            status_code=404 if code == "P6_SAMPLE_NOT_FOUND" else 422,
+            detail={"code": code if code.startswith("P6_") else "P6C_INPUT_INVALID",
+                    "message": "대상 후보를 확인할 수 없습니다."},
+        ) from exc
+
+
+@router.get("/event-v5-demo/status")
+def jev_event_v5_demo_status(request: Request) -> dict[str, object]:
+    client = request.client.host if request.client else None
+    if not v5_demo.demo_enabled(client, request.url.hostname):
+        return {"enabled": False, "synthetic_only": True, "status": "DISABLED",
+                "actual_provider_calls": 0}
+    try:
+        return v5_demo.status()
+    except (ValueError, OSError):
+        raise HTTPException(status_code=409, detail={
+            "code": "P6C_DEMO_STATUS_INVALID", "message": "격리된 합성 결과를 읽을 수 없습니다.",
+        })
+
+
+@router.post("/event-v5-demo/start", status_code=202)
+def jev_event_v5_demo_start(request: Request, tasks: BackgroundTasks) -> dict[str, object]:
+    client = request.client.host if request.client else None
+    if not v5_demo.demo_enabled(client, request.url.hostname):
+        raise HTTPException(status_code=403, detail={
+            "code": "P6C_DEMO_DISABLED", "message": "로컬 개발용 합성 검토만 지원합니다.",
+        })
+    if request.headers.get("X-StockScope-V5-Synthetic") != "confirmed":
+        raise HTTPException(status_code=403, detail={
+            "code": "P6C_EXPLICIT_CONFIRMATION_REQUIRED",
+            "message": "합성 전용 실행 확인이 필요합니다.",
+        })
+    try:
+        result = v5_demo.start()
+    except (ValueError, OSError):
+        raise HTTPException(status_code=409, detail={
+            "code": "P6C_DEMO_ALREADY_CLAIMED",
+            "message": "합성 실행을 중복 요청할 수 없습니다.",
+        })
+    if not result["reused"]:
+        tasks.add_task(v5_demo.run_mock)
+    return result
+
+
+@router.get("/outbound-preflight")
+def jev_outbound_preflight(
+    capture_id: str = Query(min_length=1, max_length=200),
+    sample_index: int = Query(ge=0, le=499),
+) -> dict[str, object]:
+    """LIVE-03: read-only external disclosure gate, always HOLD for real data.
+
+    No caller-provided rights or approval fields.  No provider or market
+    store can be instantiated from this route.
+    """
+    try:
+        pairs = load_frozen_candidates(_db(), capture_id=capture_id, limit=500)
+        match = next(
+            ((capture, sample) for capture, sample in pairs
+             if sample["sample_index"] == sample_index),
+            None,
+        )
+        if match is None:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "JEV_LIVE03_SAMPLE_NOT_FOUND",
+                        "message": "동결된 COMPLETE 후보를 찾지 못했습니다."},
+            )
+        capture, sample = match
+        diagnostic = diagnose_outbound_candidate(capture, sample)
+    except DecisionReviewContractError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": exc.code, "message": "실제 시장 자료의 전송 자격 검사 불가"},
+        ) from exc
+    return {
+        "capture_id": capture["id"],
+        "sample_index": int(sample["sample_index"]),
+        "snapshot_hash": sample["snapshot_hash"],
+        "market": sample["market"],
+        "ticker": sample["ticker"],
+        **diagnostic,
+    }
+
+
+@router.get("/synthetic-demo/status")
+def jev_synthetic_demo_status(request: Request) -> dict[str, object]:
+    """Only a locally enabled, authored-synthetic development demonstration."""
+    client = request.client.host if request.client else None
+    if not live04_demo.demo_enabled(client, request.url.hostname):
+        return {
+            "enabled": False, "status": "DISABLED",
+            "synthetic_only": True, "actual_provider_calls": 0,
+        }
+    try:
+        return live04_demo.status()
+    except (OSError, ValueError):
+        raise HTTPException(status_code=409, detail={
+            "code": "JEV04_DEMO_STATE_INVALID",
+            "message": "격리된 합성 체험 작업 상태를 확인할 수 없습니다.",
+        })
+
+
+@router.post("/synthetic-demo/start", status_code=202)
+def jev_synthetic_demo_start(request: Request, tasks: BackgroundTasks) -> dict[str, object]:
+    """Explicit click only; no candidate data, credentials or real TypeSafe HTTP."""
+    client = request.client.host if request.client else None
+    if not live04_demo.demo_enabled(client, request.url.hostname):
+        raise HTTPException(status_code=403, detail={
+            "code": "JEV04_SYNTHETIC_DEMO_DISABLED",
+            "message": "합성 체험은 로컬 개발 서버에서만 사용할 수 있습니다.",
+        })
+    if request.headers.get("X-StockScope-Synthetic-Demo") != "confirmed":
+        raise HTTPException(status_code=403, detail={
+            "code": "JEV04_DEMO_EXPLICIT_ACTION_REQUIRED",
+            "message": "합성 체험 요청 확인이 필요합니다.",
+        })
+    try:
+        result = live04_demo.start()
+    except (OSError, ValueError):
+        raise HTTPException(status_code=409, detail={
+            "code": "JEV04_DEMO_SINGLE_SHOT_UNAVAILABLE",
+            "message": "이전 합성 체험을 다시 실행할 수 없습니다. 자동 재시도하지 않습니다.",
+        })
+    if not result["reused"]:
+        tasks.add_task(live04_demo.run_mock, result["job_id"])
+    return result
 
 
 @router.get("/review-feature")
