@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from app.market.providers.base import ProviderError
 from app.market.providers.dart import OpenDartProvider
+from app.market.providers.dart_disclosure_p6e import fetch_bounded_disclosures
 
 
 def entry(no: int, *, stock_code="068270", corp_code="12345678", receipt_date="20261029"):
@@ -25,8 +26,8 @@ async def test_live_disclosure_paging_dedup_preserves_legacy_fields(monkeypatch)
     provider = OpenDartProvider("test-key")
     seen = []
 
-    async def fake_get(path, params, *, allow_no_data=False):
-        seen.append((path, params, allow_no_data))
+    async def fake_get(path, params):
+        seen.append((path, params))
         page = params["page_no"]
         return {
             "status": "000", "total_count": 3, "total_page": 2,
@@ -35,7 +36,7 @@ async def test_live_disclosure_paging_dedup_preserves_legacy_fields(monkeypatch)
         }
 
     monkeypatch.setattr(provider, "_get", fake_get)
-    result = await provider.disclosures(
+    result = await fetch_bounded_disclosures(provider,
         "12345678", "2026-10-28", "2026-10-30", page_count=2, max_pages=3,
     )
     assert [v["receipt_no"] for v in result["rows"]] == [
@@ -52,17 +53,15 @@ async def test_live_disclosure_paging_dedup_preserves_legacy_fields(monkeypatch)
     assert result["rows"][0]["viewer_url"].endswith("rcpNo=00000000000101")
     assert result["model_calls"] == 0 and result["persisted"] is False
     assert [x[1]["page_no"] for x in seen] == [1, 2]
-    assert all(x[2] is True for x in seen)
 
 
 @pytest.mark.asyncio
 async def test_no_disclosures_status_013_is_empty_not_provider_crash(monkeypatch):
     p = OpenDartProvider("key")
-    async def fake_get(path, params, *, allow_no_data=False):
-        assert allow_no_data
-        return {"status": "013", "message": "데이터 없음"}
+    async def fake_get(path, params):
+        raise ProviderError("OpenDART 오류 013: 데이터 없음")
     monkeypatch.setattr(p, "_get", fake_get)
-    out = await p.disclosures("12345678", "20261001", "20261030")
+    out = await fetch_bounded_disclosures(p, "12345678", "20261001", "20261030")
     assert out["count"] == out["total_count"] == 0
     assert out["pages_fetched"] == 1
 
@@ -75,7 +74,7 @@ async def test_no_disclosures_status_013_is_empty_not_provider_crash(monkeypatch
 def test_dates_must_be_real_and_ordered(start, end):
     p = OpenDartProvider("fake")
     with pytest.raises(ValueError):
-        asyncio.run(p.disclosures("12345678", start, end))
+        asyncio.run(fetch_bounded_disclosures(p, "12345678", start, end))
 
 
 @pytest.mark.asyncio
@@ -87,21 +86,21 @@ def test_dates_must_be_real_and_ordered(start, end):
 ])
 async def test_invalid_source_identity_date_fails_closed(monkeypatch, badrow):
     p = OpenDartProvider("fake")
-    async def fake_get(path, params, *, allow_no_data=False):
+    async def fake_get(path, params):
         return {"status": "000", "total_count": 1, "total_page": 1, "list": [badrow]}
     monkeypatch.setattr(p, "_get", fake_get)
     with pytest.raises(ProviderError):
-        await p.disclosures("12345678", "20261028", "20261030")
+        await fetch_bounded_disclosures(p, "12345678", "20261028", "20261030")
 
 
 @pytest.mark.asyncio
 async def test_incomplete_paging_explicitly_marks_truncated(monkeypatch):
     p = OpenDartProvider("fake")
-    async def fake_get(path, params, *, allow_no_data=False):
+    async def fake_get(path, params):
         return {"status": "000", "total_count": 9, "total_page": 9,
                 "list": [entry(params["page_no"])]}
     monkeypatch.setattr(p, "_get", fake_get)
-    r = await p.disclosures("12345678", "20261028", "20261030", max_pages=2)
+    r = await fetch_bounded_disclosures(p, "12345678", "20261028", "20261030", max_pages=2)
     assert r["truncated"] is True and r["count"] == 2 and r["total_count"] == 9
 
 
@@ -131,7 +130,7 @@ def test_live_by_stock_api_uses_existing_provider_read_only(monkeypatch):
             }],
         }
     monkeypatch.setattr(p, "resolve_corp_code", fake_map)
-    monkeypatch.setattr(p, "disclosures", fake_disclosures)
+    monkeypatch.setattr(api, "fetch_bounded_disclosures", lambda provider, *a, **k: fake_disclosures(*a, **k))
     monkeypatch.setattr(api, "_providers", lambda: (None, p))
     from app.main import app
     response = TestClient(app).get(
@@ -163,7 +162,7 @@ def test_live_by_stock_api_rejects_future_and_wrong_stock_without_persistence(mo
     async def wrong(corp_code, begin_date, end_date, page_count=20, *, max_pages=1):
         return {"rows": [{"stock_code": "999999"}], "provider": "OpenDART"}
     monkeypatch.setattr(p, "resolve_corp_code", mapping)
-    monkeypatch.setattr(p, "disclosures", wrong)
+    monkeypatch.setattr(api, "fetch_bounded_disclosures", lambda provider, *a, **k: wrong(*a, **k))
     monkeypatch.setattr(api, "_providers", lambda: (None, p))
     from app.main import app
     client = TestClient(app)
