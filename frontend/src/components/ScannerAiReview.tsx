@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ScannerCandidate, ScannerResponse } from "../services/api";
-import { getJevEntryRouting, getJevIndependentEventReference, getJevLocalReadiness, getJevOutboundPreflight, type JevEntryRouting, type JevIndependentEventReference, type JevLocalReadiness, type JevOutboundPreflight, type JevMonitorItem } from "../services/jevApi";
+import { getJevEntryRouting, getJevIndependentEventReference, getJevIndependentEventAssessment, getJevLocalReadiness, getJevOutboundPreflight, type JevEntryRouting, type JevIndependentEventReference, type JevIndependentEventAssessment, type JevLocalReadiness, type JevOutboundPreflight, type JevMonitorItem } from "../services/jevApi";
 import { scannerAiReviewStatus } from "./scannerAiReviewStatus";
 import JevSyntheticDemo from "./JevSyntheticDemo";
 
@@ -82,6 +82,44 @@ export default function ScannerAiReview({
       : eventReference.status === "EVIDENCE_UNCERTAIN"
         ? "이벤트 참고 근거 " + eventReference.reference_count + "건 · 전략 충돌 여부 미판정"
         : "이벤트 근거 확인 불가 · 출처 또는 시점 점검 필요";
+  const [assessment, setAssessment] = useState<JevIndependentEventAssessment | null>(null);
+  const [assessmentError, setAssessmentError] = useState(false);
+  useEffect(() => {
+    let active = true;
+    setAssessment(null);
+    setAssessmentError(false);
+    if (!captureId || sampleIndex < 0) return () => { active = false; };
+    void getJevIndependentEventAssessment(captureId, sampleIndex)
+      .then(value => {
+        if (!active) return;
+        if (value.capture_id !== captureId || value.sample_index !== sampleIndex
+          || value.market !== candidate.market || value.ticker !== candidate.code
+          || value.model_review_executed !== false
+          || value.external_model_call_allowed !== false) {
+          setAssessmentError(true);
+          return;
+        }
+        setAssessment(value);
+      })
+      .catch(() => { if (active) setAssessmentError(true); });
+    return () => { active = false; };
+  }, [captureId, sampleIndex, candidate.market, candidate.code]);
+  const assessmentMatches = assessment
+    && (!matchedRouting || matchedRouting.snapshot_hash === assessment.snapshot_hash)
+    && (!eventReference || eventReference.snapshot_hash === assessment.snapshot_hash);
+  const assessmentSummary = !captureId ? "저장 캡처 없음"
+    : assessmentError ? "검토 상태 조회 실패"
+    : assessment && !assessmentMatches ? "후보 원본 해시 불일치 · 표시 차단"
+    : !assessment ? "검토 상태 확인 중"
+    : assessment.status === "EVIDENCE_CONFLICT"
+      ? "로컬 검토된 충돌 주장 · 사용자 확인 필요"
+    : assessment.status === "EVIDENCE_COMPATIBLE"
+      ? "로컬 검토된 양립 주장 · 실제 모델 검토 아님"
+    : assessment.status === "EVIDENCE_UNCERTAIN"
+      ? "의미 관계 미확정 · " + (assessment.independent_review_candidate ? "추가 검토 후보" : "확인 가능한 검토 주장 없음")
+    : assessment.status === "NO_INDEPENDENT_EVIDENCE"
+      ? "확인된 이벤트 근거 없음"
+    : "이벤트 판정 불가 · 신원·시점·이용권 점검 필요";
   const routeExplanation: Record<string, string> = {
     LOCAL_MATCH: "의미 조건 일치 · JEV 추가 검토 불필요",
     LOCAL_CONFLICT: "로컬 의미 충돌 · 조건 근거 확인",
@@ -246,6 +284,15 @@ export default function ScannerAiReview({
         )}
         {batchError && <small>진입 후보 전체 분류를 불러오지 못했습니다. 기존 Scanner 판단은 그대로 유지됩니다.</small>}
         <p data-jev-independent-event="p6a"><b>독립 뉴스·공시 근거:</b> {eventSummary}</p>
+        <p data-jev-event-assessment="p6b"><b>이벤트 의미 판정:</b> {assessmentSummary}</p>
+        {assessmentMatches && assessment && assessment.approved_assertion_count > 0 && (
+          <details>
+            <summary>검토 주장·시점 보기</summary>
+            <p>검토된 이벤트 {assessment.reviewed_event_count}건 · 사후 작성으로 제외 {assessment.retrospective_assertion_count}건</p>
+            <p>판정: {assessment.assertion_status} · 사유: {assessment.reason_codes.slice(0, 5).join(", ") || "없음"}</p>
+            <small>운영자 로컬 검토 기록입니다. 제3자 검증이나 JEV 실행을 증명하지 않으며, 외부 전송은 보류 상태입니다.</small>
+          </details>
+        )}
         {eventIdentityValid && eventReference?.status === "EVIDENCE_UNCERTAIN" && (
           <small>캡처 생성 시각 기준 저장된 참고 자료입니다. 전략의 반대 근거나 실제 JEV 검토 결과로 확정하지 않습니다. 외부 AI 사용 권한은 미승인입니다.</small>
         )}
