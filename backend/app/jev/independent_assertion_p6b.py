@@ -210,7 +210,7 @@ def evaluate_local_assertions(
         relation = raw.get("relation")
         if (
             raw.get("strategy_source_hash") != source_v2.get("source_snapshot_hash")
-            or raw.get("strategy_key") != strategy.get("strategy_key")
+            or raw.get("strategy_key") != relations.get("strategy_key")
             or raw.get("claim_id") not in claim_ids
             or relation not in VALID_RELATIONS
         ):
