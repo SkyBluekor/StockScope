@@ -329,6 +329,7 @@ export type JevIndependentEventAssessment = {
   assertion_status: string;
   approved_assertion_count: number;
   reviewed_event_count: number;
+  reviewed_assertion_refs: Array<{event_id: string; event_version: number; quality_hash: string; source_ref_id: string; source_ref_hash: string; assertion_hash: string; claim_id: string; relation: string; approved_at: string}>;
   retrospective_assertion_count: number;
   local_review_required: boolean;
   independent_review_candidate: boolean;
