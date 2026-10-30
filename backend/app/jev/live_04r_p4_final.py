@@ -133,6 +133,7 @@ def inspect_stored_horizon_capture(
         )
         horizon_status, horizon_reason = context.support_status, context.reason_code
     except HorizonPolicyError as exc:
+        context = None
         horizon_status, horizon_reason = "UNSUPPORTED", exc.code
 
     pairs = load_frozen_candidates(
@@ -178,9 +179,14 @@ def inspect_stored_horizon_capture(
     # S7.5 internal route/provider_eligible flag.
     local_horizon_usable = (
         horizon in ("SHORT", "MEDIUM")
+        and context is not None
         and canonical.get("horizon_policy_version") == context.policy_version
     )
-    if not same_horizon:
+    source_contract_matches = (
+        canonical_contract.get("horizon_intent") == horizon
+        and canonical_contract.get("horizon_policy_version") == canonical.get("horizon_policy_version")
+    )
+    if not same_horizon or not source_contract_matches:
         local_horizon_usable = False
     if not local_horizon_usable:
         local_result = "BLOCKED_CAPTURE_CONTEXT"
@@ -192,6 +198,8 @@ def inspect_stored_horizon_capture(
     local_reason = sorted(set(v4["reason_codes"]))
     if not same_horizon:
         local_reason.append("P4_CAPTURE_HORIZON_PURPOSE_DRIFT")
+    if not source_contract_matches:
+        local_reason.append("P4_FROZEN_REQUEST_HORIZON_MISMATCH")
     if not v2_valid:
         local_reason.append(v2_reason or "P4_SEMANTIC_V2_NOT_VERIFIED")
     return {
@@ -220,10 +228,7 @@ def inspect_stored_horizon_capture(
             "horizon_intent": horizon,
             "horizon_purpose": canonical_contract.get("horizon_purpose", "UNRECORDED"),
             "horizon_policy_version": canonical.get("horizon_policy_version"),
-            "request_horizon_matches_canonical": (
-                canonical_contract.get("horizon_intent") == horizon
-                and canonical_contract.get("horizon_policy_version") == canonical.get("horizon_policy_version")
-            ),
+            "request_horizon_matches_canonical": source_contract_matches,
             "requested_canonical_context_match": same_horizon,
             "selection_policy_id": canonical_contract.get("selection_policy_id"),
             "selection_policy_hash": canonical_contract.get("selection_policy_hash"),
