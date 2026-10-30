@@ -242,6 +242,48 @@ export type JevLocalReadiness = {
   db_writes: 0;
 };
 
+/** P5 local-only summary: these are NOT TypeSafe model results or permission. */
+export type JevEntryRouting = {
+  version: string;
+  read_only: true;
+  capture_id: string;
+  canonical_capture_id: string | null;
+  status: "COMPLETE" | "NO_ENTRY_CANDIDATE";
+  entry_count: number;
+  counts: Record<
+    "LOCAL_MATCH" | "LOCAL_CONFLICT" | "LOCAL_INCOMPLETE" |
+    "LOCAL_AMBIGUOUS" | "RESIDUAL_READY" | "RESIDUAL_BLOCKED" |
+    "BLOCKED_EVIDENCE", number
+  >;
+  rows: Array<{
+    sample_index: number;
+    market: string;
+    ticker: string;
+    rank: number | null;
+    snapshot_hash: string;
+    routing: string;
+    semantic_status: string | null;
+    local_v4_status: string;
+    v4_state_hash: string | null;
+    strategy_identity: string;
+    source_v2_valid: boolean;
+    provider_decision: "HOLD";
+    reason_codes: string[];
+  }>;
+  review_eligible_count: number;
+  external_model_call_allowed: false;
+  actual_provider_calls: 0;
+  db_writes: 0;
+};
+
+export function getJevEntryRouting(captureId: string) {
+  const params = new URLSearchParams({ capture_id: captureId });
+  return jevJson<JevEntryRouting>(
+    "/api/simulation/jev/entry-routing?" + params.toString(),
+  );
+}
+
+
 export function getJevLocalReadiness(captureId: string, sampleIndex: number) {
   const params = new URLSearchParams({
     capture_id: captureId,
