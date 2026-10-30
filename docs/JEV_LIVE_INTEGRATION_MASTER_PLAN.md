@@ -458,3 +458,10 @@ StockScope의 기본 `Scanner → 정량 전략/Risk 판단 → Prospective COMP
 - 소스 정책: official DART API list.json guide https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS001&apiId=2019001 , terms https://opendart.fss.or.kr/intro/terms.do . 현재 derived retention/AI transform 권한이 미승인인 EventEvidenceStore.store_source_ref() 보호장치를 우회하지 않는다. E4 공시 메타데이터의 영구 저장 및 event revision/entity/quality 연결은 실제 이용권 범위가 검증되기 전까지 실행하지 않았다. 실 OpenDART 서버/개인 계정 키는 GitHub CI에 없으므로 Windows 사용자 실조회 UAT는 별도.
 - 테스트: backend/tests/test_jev_open_dart_live_p6e.py + Chromium frontend/e2e/p003-scanner-recheck.spec.mjs. 페이지 이동/013/DATE_ONLY/중복/상대 종목 및 날짜/무호출 UI/기존 사용자 데이터 무변경을 검사. 실제 commit HEAD CI 최종 확인 후 상태 보고. 전체 추가 설명과 Windows 확인 방법 docs/JEV_P6E_LIVE_OPENDART.md.
 - 다음 실행은 일반 Mock/HOLD 추가가 아니라 사용자 Windows에서 기존 DART_API_KEY를 이용한 실제 목록 결과 확인과 허용된 source rights의 event ingest scope 증거 수집이다. 과거 SHORT 종목을 현재 조회해도 그 공시가 과거 판단 당시 관측됐다고 주장할 수 없다.
+
+
+### P6-E 고정 Scanner 파일 보호 수정 (실제 CI 회귀 발견)
+
+- 초기 P6-E는 backend/app/market/providers/dart.py에 직접 페이지 처리를 추가하여 고정 production baseline fingerprint 회귀 테스트 2개 실패를 유발했다. **이 잘못된 변경은 완전히 되돌렸으며** 1ce13cc8 원본 OpenDartProvider 파일의 GitHub blob SHA 1422609b51f678ef9f03547d9369fecf04d389ef가 다시 동일하다. baseline manifest를 바꾸지 않았다.
+- 최종 P6-E 실조회 페이지 처리/013 status/검증은 신규 backend/app/market/providers/dart_disclosure_p6e.py로 분리했다. 기존 OpenDartProvider는 변경하지 않고 신규 API는 기존 provider._get()을 재사용하며, legacy GET /dart/disclosures/{corp_code}의 1페이지 동작은 원래 provider를 계속 호출한다. 신규 종목별 API는 전용 adapter 사용. Python 테스트도 별도 adapter 대상으로 변경했다.
+- P6-E의 영구 EventEvidence 저장을 아직 수행하지 않았다는 사실과 실 OpenDART API 사용자 키 환경 UAT 미실시는 유지한다. docs/JEV_P6E_LIVE_OPENDART.md 참고. 수정된 최종 HEAD CI의 성공을 확인해야 한다.
