@@ -372,7 +372,7 @@ test("A: compact JEV status renders without hidden diagnostics or model calls; m
   await expect(compact).toContainText("가상 이전 후보 (145720)");
   await expect(compact).toContainText("Scanner 판단");
   await expect(compact).toContainText("관망");
-  await expect(compact).toContainText("현재 서버에서 JEV 사용 불가");
+  await expect(compact).toContainText("JEV 결과 확인 불가");
   await expect(compact.getByRole("button",{name:"JEV 검토 실행 (사용 불가)"})).toBeDisabled();
   await expect(developer).not.toHaveAttribute("open","");
   await expect(page.locator('[data-jev-entry-summary="p5"]')).toHaveCount(0);
