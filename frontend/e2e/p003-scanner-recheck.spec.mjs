@@ -86,6 +86,23 @@ async function setup(page,{matched=false}={}) {
     if(path==="/api/backtest/jobs/"+jobId&&req.method()==="GET")
       return fulfill(route,{job_id:jobId,status:"completed",stage:"complete",
         progress:{message:"완료",current:1,total:1,percent:100},result:newResult});
+    if(req.method()==="GET"&&path==="/api/dart/stocks/145720/disclosures"){
+      return fulfill(route,{
+        provider:"OpenDART",stock_code:"145720",corp_code:"12345678",
+        begin_date:"20261001",end_date:"20261030",
+        count:1,total_count:1,total_page:1,pages_fetched:1,
+        truncated:false,duplicate_receipt_count:0,
+        rows:[{receipt_no:"20261022000001",corp_name:"가상 이전 후보",
+          report_name:"검증용 공시",receipt_date:"20261022",remark:"",
+          corp_code:"12345678",stock_code:"145720",
+          viewer_url:"https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20261022000001",
+          source_time_quality:"DATE_ONLY",source_published_at:null}],
+        fetched_at:"2026-10-30T03:00:00+00:00",
+        source_publication_time_verified:false,time_quality:"DATE_ONLY",
+        event_evidence_storage:"NOT_PERSISTED_RIGHTS_UNVERIFIED",
+        external_ai_transfer:"BLOCKED",db_writes:0,model_calls:0,
+      });
+    }
     if(req.method()==="GET"&&path==="/api/simulation/jev/event-data-audit"){
       const query=new URL(req.url()).searchParams;
       return fulfill(route,{
@@ -311,6 +328,26 @@ test("P5 selected candidate shows local-only batch verdict without any model POS
   expect(calls.filter(x=>x.method==="POST"&&x.path==="/api/backtest/scanner/jobs")).toHaveLength(0);
   const card=page.locator(".scanner-control-card");
   expect((await card.boundingBox()).height).toBeLessThan(330);
+  expect(violations).toEqual([]);
+  expect(pageErrors).toEqual([]);
+});
+
+
+test("P6-E actual DART display requires explicit click; no evidence storage or model submission",async({page})=>{
+  const {calls,violations,pageErrors}=await setup(page);
+  await page.getByRole("tab",{name:"AI 검토"}).click();
+  const disclosure=page.locator('[data-jev-live-dart="p6e"]');
+  await expect(disclosure).toBeVisible();
+  expect(calls.filter(x=>x.path.includes("/dart/stocks/"))).toHaveLength(0);
+  await disclosure.locator("summary").click();
+  await disclosure.getByRole("button",{name:"공시 새로 조회"}).click();
+  await expect(disclosure.locator('[data-jev-live-dart-count="true"]')).toContainText("실제 조회 1건");
+  await expect(disclosure.getByRole("link",{name:/검증용 공시/})).toHaveAttribute(
+    "href","https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20261022000001"
+  );
+  await expect(disclosure).toContainText("EventEvidence 영구 저장: 미승인·미실행");
+  expect(calls.filter(x=>x.path==="/api/dart/stocks/145720/disclosures"&&x.method==="GET")).toHaveLength(1);
+  expect(calls.filter(x=>x.method==="POST"&&x.path.includes("/jev/"))).toHaveLength(0);
   expect(violations).toEqual([]);
   expect(pageErrors).toEqual([]);
 });
