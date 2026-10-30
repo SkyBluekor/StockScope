@@ -4,6 +4,7 @@ import { getJevEntryRouting, getJevIndependentEventReference, getJevIndependentE
 import { scannerAiReviewStatus } from "./scannerAiReviewStatus";
 import JevSyntheticDemo from "./JevSyntheticDemo";
 import JevEventV5Demo from "./JevEventV5Demo";
+import ScannerDartDisclosure from "./ScannerDartDisclosure";
 import { getJevEventV5Routing, type JevEventV5Routing, getJevRealEventAudit, type JevRealEventAudit } from "../services/jevApi";
 
 type Props = {
@@ -349,6 +350,7 @@ export default function ScannerAiReview({
         )}
         {batchError && <small>진입 후보 전체 분류를 불러오지 못했습니다. 기존 Scanner 판단은 그대로 유지됩니다.</small>}
         <p data-jev-real-event-inventory="p6d"><b>실제 이벤트 저장 현황:</b> {realAuditSummary}</p>
+        <ScannerDartDisclosure key={candidate.market + ":" + candidate.code} ticker={candidate.code} />
         <p data-jev-independent-event="p6a"><b>독립 뉴스·공시 근거:</b> {eventSummary}</p>
         <p data-jev-event-assessment="p6b"><b>이벤트 의미 판정:</b> {assessmentSummary}</p>
         <p data-jev-event-v5="p6c"><b>JEV V5:</b> {eventV5Summary} · 모델 미실행</p>
