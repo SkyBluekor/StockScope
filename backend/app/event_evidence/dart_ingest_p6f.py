@@ -196,7 +196,7 @@ def _persist_authorized(
         raise FileNotFoundError("P6F_EXISTING_DB_REQUIRED")
 
     store = EventEvidenceStore(db)
-    entities = EventEntityService(db)
+    entities = EventEntityService(db, clock=lambda: datetime.now(timezone.utc).isoformat())
     quality = EventEvidenceQualityService(db)
     source_exists = _present(db, "event_evidence_source_ref", "source_ref_id", prepared.source_ref_id)
     if source_exists:
