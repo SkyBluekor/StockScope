@@ -419,3 +419,11 @@ StockScope의 기본 `Scanner → 정량 전략/Risk 판단 → Prospective COMP
 - 독립 데이터의 실제 source는 기존 app.event_evidence/asof.py만 재사용한다. P6-A API는 기존 COMPLETE capture/sample identity를 검증하고 캡처 생성시각까지 관측된 참조만 읽는다. UI에는 참고 근거 없음/있음(충돌 미판정)/근거 불가 상태만 표시한다. 위 결과는 개별 종목 매수·매도 또는 외부 JEV 응답이 아니다.
 - 현재 코드가 보유한 Naver/OpenDART 정책의 AI_TRANSFORM 권한은 false이며, stock-specific TypeSafe outbound permit을 자동 부여하지 않는다. 기존 external_model_call_allowed=false를 유지한다. P6-A API는 안전한 readonly 구현이지 LIVE-04 실종목 유료 호출 완료 증명이 아니다.
 - 코드와 테스트 파일/최종 인수는 최신 JEV_NEXT_CHAT_HANDOFF.md를 기준으로 확인한다. Windows 실제 이벤트 DB UAT는 별도 미완료. 다음 P6-B는 timestamp/source·human-approved independent assertion 계약, P6-C는 V4와 다른 새 question version 및 실제 provider 전송권한 gate를 필요로 한다.
+
+
+### 2026-10-30 P6-B: independent event assertion (local operator-authored) implementation
+
+- P6-B adds a **separate contract/version** rather than modifying frozen V4 semantics. EventEvidence as-of's existing public identity hash remains byte-for-byte identical; a private-only pin projection exposes the verified event/version/quality/source identifiers needed to bind authored claims.
+- Local signed-by-hash (tamper-detectable, NOT cryptographically signed by an external authority) assertion records are accepted only with explicit review metadata, as-of approved_at <= capture cutoff, exact candidate+source+quality identity, and an actual Source V2 authored strategy concept binding. Never infer a contradiction from headlines, price or event category. No default approval records. Legacy-derived original strategy provenance is not upgraded.
+- Meaning verdicts are independently stored in API response and UI as EVENT_CONFLICT/COMPATIBLE/UNCERTAIN etc, separate from existing P5 LOCAL_MATCH. Naver/OpenDART derived retention and AI transformation remain disabled. Real TypeSafe market-data transmission, Scanner policy/numeric Horizon activation, and model training/evaluation are outside this stage. No DB writes/providers.
+- New endpoint: GET /api/simulation/jev/independent-event-assessment. Optional local read-only assertion manifest requires STOCKSCOPE_JEV_P6_ASSERTIONS_FILE; absent by default => uncertain. This manifest is an operator-authored claim, not evidence of real-world authoritative approval. See docs/JEV_NEXT_CHAT_HANDOFF.md for tests and the next P6-C gate.
