@@ -12,7 +12,8 @@ from typing import Any
 
 from .models import canonical_json, digest_json
 from .typesafe_provider import (
-    TypeSafeJevProvider, TypeSafeJevProviderError, validate_system_one_response,
+    FakeTypeSafeJevProvider, TypeSafeJevProvider, TypeSafeJevProviderError,
+    validate_system_one_response,
 )
 
 STATE_VERSION = "JEV_EVENT_REVIEW_STATE_V5"
@@ -180,7 +181,7 @@ async def review_synthetic_once(
     timeout_seconds: float = 3.0,
 ) -> dict[str, Any]:
     """Injected Fake provider only; never construct a network-capable provider."""
-    if provider.__class__.__name__ != "FakeTypeSafeJevProvider":
+    if type(provider) is not FakeTypeSafeJevProvider:
         raise EventV5ContractError("P6C_FAKE_PROVIDER_ONLY")
     request, review_id = build_event_v5_request(packet)
     try:
