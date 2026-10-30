@@ -84,7 +84,9 @@ def test_migrated_but_empty_store_is_distinct_from_missing_schema(frozen, tmp_pa
     assert all(row["reference_status"] == "NO_INDEPENDENT_EVIDENCE" for row in report["rows"])
     assert all(row["assertion_status"] == "NO_INDEPENDENT_EVIDENCE" for row in report["rows"])
     assert all(row["v5_route"] == "SKIPPED_NO_EVIDENCE" for row in report["rows"])
-    assert report["cause_counts"] == {"ENTITY_NOT_LINKED": 2}
+    assert report["cause_counts"] == {"NO_INGESTED_EVENTS": 2}
+    assert report["source_rights_current_code"]["NAVER_NEWS"]["ai_transform"] is False
+    assert report["source_rights_current_code"]["OPENDART_DISCLOSURE"]["ai_transform"] is False
     assert report["real_market_model_calls"] == 0
     assert report["mock_model_calls"] == 0
     assert db.read_bytes() == before
