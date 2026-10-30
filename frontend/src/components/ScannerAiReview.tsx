@@ -3,6 +3,8 @@ import type { ScannerCandidate, ScannerResponse } from "../services/api";
 import { getJevEntryRouting, getJevIndependentEventReference, getJevIndependentEventAssessment, getJevLocalReadiness, getJevOutboundPreflight, type JevEntryRouting, type JevIndependentEventReference, type JevIndependentEventAssessment, type JevLocalReadiness, type JevOutboundPreflight, type JevMonitorItem } from "../services/jevApi";
 import { scannerAiReviewStatus } from "./scannerAiReviewStatus";
 import JevSyntheticDemo from "./JevSyntheticDemo";
+import JevEventV5Demo from "./JevEventV5Demo";
+import { getJevEventV5Routing, type JevEventV5Routing } from "../services/jevApi";
 
 type Props = {
   candidate: ScannerCandidate;
@@ -120,6 +122,41 @@ export default function ScannerAiReview({
     : assessment.status === "NO_INDEPENDENT_EVIDENCE"
       ? "확인된 이벤트 근거 없음"
     : "이벤트 판정 불가 · 신원·시점·이용권 점검 필요";
+  const [eventV5, setEventV5] = useState<JevEventV5Routing | null>(null);
+  const [eventV5Error, setEventV5Error] = useState(false);
+  useEffect(() => {
+    let active = true;
+    setEventV5(null);
+    setEventV5Error(false);
+    if (!captureId || sampleIndex < 0) return () => { active = false; };
+    void getJevEventV5Routing(captureId, sampleIndex).then(value => {
+      if (!active) return;
+      if (value.capture_id !== captureId || value.sample_index !== sampleIndex
+        || value.market !== candidate.market || value.ticker !== candidate.code
+        || value.external_model_call_allowed !== false
+        || value.model_review_executed !== false || value.model_result !== null) {
+        setEventV5Error(true);
+        return;
+      }
+      setEventV5(value);
+    }).catch(() => { if (active) setEventV5Error(true); });
+    return () => { active = false; };
+  }, [captureId, sampleIndex, candidate.market, candidate.code]);
+  const eventV5IdentityValid = eventV5
+    && (!matchedRouting || matchedRouting.snapshot_hash === eventV5.snapshot_hash)
+    && (!assessment || assessment.snapshot_hash === eventV5.snapshot_hash);
+  const eventV5Text: Record<string, string> = {
+    SKIPPED_NO_EVIDENCE: "참고 이벤트 없음 · 추가 호출 생략",
+    SKIPPED_LOCALLY_RESOLVED: "로컬에서 의미 확인 완료 · 추가 호출 생략",
+    LOCAL_REVIEW_REQUIRED: "로컬 충돌 주장 · 사용자 재확인 우선",
+    BLOCKED_EVIDENCE: "원본 이벤트 근거 부족 · 요청 차단",
+    REVIEW_CANDIDATE_PROVIDER_HOLD: "추가 검토 후보 · 실제 외부 데이터 사용권 확인 전",
+    BLOCKED_NOT_REVIEW_CANDIDATE: "승인된 미해결 주장 없음 · 검토 대상 아님",
+  };
+  const eventV5Summary = eventV5Error ? "V5 적격성 조회 실패"
+    : eventV5 && !eventV5IdentityValid ? "원본 불일치 · V5 상태 표시 차단"
+    : !eventV5 ? "V5 검토 상태 확인 중"
+    : eventV5Text[eventV5.routing] ?? "V5 검토 상태 불명";
   const routeExplanation: Record<string, string> = {
     LOCAL_MATCH: "의미 조건 일치 · JEV 추가 검토 불필요",
     LOCAL_CONFLICT: "로컬 의미 충돌 · 조건 근거 확인",
@@ -285,6 +322,7 @@ export default function ScannerAiReview({
         {batchError && <small>진입 후보 전체 분류를 불러오지 못했습니다. 기존 Scanner 판단은 그대로 유지됩니다.</small>}
         <p data-jev-independent-event="p6a"><b>독립 뉴스·공시 근거:</b> {eventSummary}</p>
         <p data-jev-event-assessment="p6b"><b>이벤트 의미 판정:</b> {assessmentSummary}</p>
+        <p data-jev-event-v5="p6c"><b>JEV V5:</b> {eventV5Summary} · 모델 미실행</p>
         {assessmentMatches && assessment && assessment.approved_assertion_count > 0 && (
           <details>
             <summary>검토 주장·시점 보기</summary>
@@ -322,6 +360,7 @@ export default function ScannerAiReview({
         <small>저장된 실모델 검토가 없는 경우 AI 의견은 생성되지 않았습니다. 이 조회는 추가 모델 요청을 하지 않습니다.</small>
       </div>
       <JevSyntheticDemo />
+      <JevEventV5Demo />
       <details className="scanner-jev-motion-details">
         <summary>로컬 입력 준비도와 외부 전송 차단 근거 자세히 보기</summary>
       <div className="scanner-jev-local-readiness" role="status" data-local-readiness={readiness?.status ?? "UNAVAILABLE"}>
