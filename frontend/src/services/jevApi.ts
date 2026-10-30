@@ -376,6 +376,52 @@ export type JevEventV5Routing = {
   db_writes: 0;
 };
 
+/** P6-D actual DB inventory. Stored row counts are NOT retrospective proof. */
+export type JevRealEventAudit = {
+  version: "JEV_P6D_REAL_EVENT_INVENTORY_V1";
+  read_only: true;
+  capture_id: string;
+  canonical_capture_id: string | null;
+  entry_count: number;
+  store: {
+    status: "READY" | "SCHEMA_MISSING" | "SCHEMA_INCOMPLETE";
+    schema_ready: boolean;
+    stored_counts_not_asof: {
+      source_refs: number | null;
+      event_revisions: number | null;
+      entities: number | null;
+      entity_relevances: number | null;
+      quality_assessments: number | null;
+    };
+  };
+  registry_status: string;
+  cause_counts: Record<string, number>;
+  rows: Array<{
+    sample_index: number;
+    ticker: string;
+    market: string;
+    snapshot_hash: string;
+    reference_status: string;
+    assertion_status: string;
+    v5_route: string;
+    cause: string;
+    reference_count: number | null;
+    approved_assertions: number | null;
+  }>;
+  ready_for_live_jev: false;
+  real_market_model_calls: 0;
+  mock_model_calls: 0;
+  db_writes: 0;
+};
+
+export function getJevRealEventAudit(captureId: string) {
+  const params = new URLSearchParams({ capture_id: captureId });
+  return jevJson<JevRealEventAudit>(
+    "/api/simulation/jev/event-data-audit?" + params.toString(),
+  );
+}
+
+
 export function getJevEventV5Routing(captureId: string, sampleIndex: number) {
   const params = new URLSearchParams({
     capture_id: captureId, sample_index: String(sampleIndex),
