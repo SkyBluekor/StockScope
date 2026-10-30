@@ -4,7 +4,7 @@ import { getJevEntryRouting, getJevIndependentEventReference, getJevIndependentE
 import { scannerAiReviewStatus } from "./scannerAiReviewStatus";
 import JevSyntheticDemo from "./JevSyntheticDemo";
 import JevEventV5Demo from "./JevEventV5Demo";
-import { getJevEventV5Routing, type JevEventV5Routing } from "../services/jevApi";
+import { getJevEventV5Routing, type JevEventV5Routing, getJevRealEventAudit, type JevRealEventAudit } from "../services/jevApi";
 
 type Props = {
   candidate: ScannerCandidate;
@@ -27,6 +27,34 @@ export default function ScannerAiReview({
   const items = review?.reason_codes.slice(0, 3) ?? [];
   const captureId = result.prospective_capture?.canonical_capture_id
     || result.prospective_capture?.capture_id || null;
+  const [realAudit, setRealAudit] = useState<JevRealEventAudit | null>(null);
+  const [realAuditError, setRealAuditError] = useState(false);
+  useEffect(() => {
+    let active = true;
+    setRealAudit(null);
+    setRealAuditError(false);
+    if (!captureId) return () => { active = false; };
+    void getJevRealEventAudit(captureId).then(value => {
+      if (!active) return;
+      if (value.capture_id !== captureId || value.read_only !== true
+          || value.real_market_model_calls !== 0 || value.db_writes !== 0) {
+        setRealAuditError(true);
+        return;
+      }
+      setRealAudit(value);
+    }).catch(() => { if (active) setRealAuditError(true); });
+    return () => { active = false; };
+  }, [captureId]);
+  const realAuditSummary = !captureId ? "저장된 캡처 없음"
+    : realAuditError ? "읽기 전용 DB 진단 실패 · DB 경로 확인 필요"
+    : !realAudit ? "기존 EventEvidence DB 점검 중"
+    : !realAudit.store.schema_ready ? "이벤트 저장 구조 미준비 (" + realAudit.store.status + ")"
+    : realAudit.store.stored_counts_not_asof.source_refs === 0
+      ? "저장된 원천 이벤트 자료 0건 · 데이터 수집 경로 점검 필요"
+    : "저장된 원천 참조 " + realAudit.store.stored_counts_not_asof.source_refs
+      + "건 · 캡처 후보의 시점 내 참고 근거 "
+      + realAudit.rows.filter(item => item.reference_status === "EVIDENCE_UNCERTAIN").length
+      + "/" + realAudit.entry_count + "건";
   const [batch, setBatch] = useState<JevEntryRouting | null>(null);
   const [batchError, setBatchError] = useState(false);
   useEffect(() => {
@@ -320,6 +348,7 @@ export default function ScannerAiReview({
           </p>
         )}
         {batchError && <small>진입 후보 전체 분류를 불러오지 못했습니다. 기존 Scanner 판단은 그대로 유지됩니다.</small>}
+        <p data-jev-real-event-inventory="p6d"><b>실제 이벤트 저장 현황:</b> {realAuditSummary}</p>
         <p data-jev-independent-event="p6a"><b>독립 뉴스·공시 근거:</b> {eventSummary}</p>
         <p data-jev-event-assessment="p6b"><b>이벤트 의미 판정:</b> {assessmentSummary}</p>
         <p data-jev-event-v5="p6c"><b>JEV V5:</b> {eventV5Summary} · 모델 미실행</p>
