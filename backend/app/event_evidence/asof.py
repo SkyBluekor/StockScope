@@ -481,6 +481,7 @@ class EventEvidenceAsOfReader:
         decision_cutoff: str,
         *,
         limit: int = DEFAULT_REFERENCE_LIMIT,
+        include_internal_pins: bool = False,
     ) -> dict[str, Any]:
         normalized_code = self._normalize_code(code)
         normalized_market = self._normalize_market(market)
@@ -520,7 +521,7 @@ class EventEvidenceAsOfReader:
             ]
 
             if entity is None:
-                return self._response(
+                empty = self._response(
                     code=normalized_code,
                     market=normalized_market,
                     cutoff=cutoff,
@@ -531,6 +532,9 @@ class EventEvidenceAsOfReader:
                     limit=limit,
                     entity_identity_hash=None,
                 )
+                if include_internal_pins:
+                    empty["_internal_pins"] = []
+                return empty
 
             event_ids, rel_after, rel_late = self._event_ids_known_as_of(
                 conn,
@@ -542,6 +546,7 @@ class EventEvidenceAsOfReader:
 
             candidates: list[tuple[dict[str, Any], dict[str, Any]]] = []
             integrity_blocked = False
+            internal_by_quality: dict[str, dict[str, Any]] = {}
 
             for event_id in event_ids:
                 revision, event_after, event_late = self._latest_revision_as_of(
@@ -659,6 +664,38 @@ class EventEvidenceAsOfReader:
                         "quality_hash": str(row["quality_hash"]),
                         "source_identities": source_ids,
                     }
+                    if include_internal_pins:
+                        # Only expose metadata after existing immutable
+                        # revision/source/quality/as-of verification. This is
+                        # excluded from the public V1 projection hash.
+                        source_pins = json.loads(str(row["quality_json"]))["source_refs"]
+                        verified_sources = []
+                        for pin in source_pins:
+                            source = conn.execute(
+                                "SELECT source_ref_id,source_ref_hash,content_hash "
+                                "FROM event_evidence_source_ref WHERE source_ref_id=?",
+                                (pin["source_ref_id"],),
+                            ).fetchone()
+                            if source is None or str(source["source_ref_hash"]) != str(pin["source_ref_hash"]):
+                                raise EventEvidenceContractError(
+                                    "EVENT_EVIDENCE_ASOF_INTERNAL_SOURCE_MISMATCH",
+                                    "Internal source identity changed after verification.",
+                                )
+                            verified_sources.append({
+                                "source_ref_id": str(source["source_ref_id"]),
+                                "source_ref_hash": str(source["source_ref_hash"]),
+                                "content_hash": str(source["content_hash"]),
+                            })
+                        internal_by_quality[str(row["quality_hash"])] = {
+                            "sample_identity": sample_identity,
+                            "event_id": str(row["event_id"]),
+                            "event_version": int(row["event_version"]),
+                            "event_hash": str(row["event_hash"]),
+                            "quality_hash": str(row["quality_hash"]),
+                            "source_refs": sorted(
+                                verified_sources, key=lambda x: x["source_ref_id"],
+                            ),
+                        }
                     candidates.append((item, identity))
 
             candidates.sort(
@@ -699,7 +736,7 @@ class EventEvidenceAsOfReader:
             else:
                 event_status = "NO_VALIDATED_EVIDENCE"
 
-            return self._response(
+            response = self._response(
                 code=normalized_code,
                 market=normalized_market,
                 cutoff=cutoff,
@@ -711,6 +748,12 @@ class EventEvidenceAsOfReader:
                 entity_identity_hash=str(entity["identity_hash"]),
                 total_reference_count=len(deduped),
             )
+            if include_internal_pins:
+                response["_internal_pins"] = [
+                    internal_by_quality[ref["quality_hash"]]
+                    for ref in identity_refs
+                ]
+            return response
 
     @staticmethod
     def _response(
