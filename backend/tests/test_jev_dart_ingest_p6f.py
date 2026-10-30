@@ -127,7 +127,7 @@ def test_repeated_capture_does_not_replace_first_seen_or_duplicate(tmp_path):
     later = prepare_disclosure(
         _row(), ticker="086450", market="KOSDAQ",
         corp_code="12345678",
-        first_seen_at=(instant + timedelta(minutes=10)).isoformat(),
+        first_seen_at=datetime.now(timezone.utc).isoformat(),
     )
     repeated = persist_test_fixture_only(db, later, test_policy=_policy())
     assert repeated["source_hash"] == original["source_hash"]
@@ -203,3 +203,60 @@ def test_test_policy_cannot_be_used_with_nonisolated_filename(tmp_path):
     with pytest.raises(ValueError, match="P6F_TEST_ISOLATION_REQUIRED"):
         persist_test_fixture_only(path, prepared, test_policy=_policy())
     assert _count(path, "event_evidence_source_ref") == 0
+
+
+
+def test_future_first_seen_rejected_without_creating_db(tmp_path):
+    future = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+    with pytest.raises(ValueError, match="P6F_FUTURE_OBSERVATION_FORBIDDEN"):
+        prepare_disclosure(
+            _row(), ticker="086450", market="KOSDAQ", corp_code="12345678",
+            first_seen_at=future,
+        )
+
+
+def test_live_display_contains_only_nonpersistent_normalization_preview(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    import app.api.data_sources as api
+    from app.market.providers.dart import OpenDartProvider
+
+    provider = OpenDartProvider("test-key")
+
+    async def fake_resolve(stock_code):
+        assert stock_code == "086450"
+        return "12345678"
+
+    async def fake_fetch(provider_arg, corp_code, begin_date, end_date,
+                         *, page_count=20, max_pages=1):
+        assert provider_arg is provider and corp_code == "12345678"
+        return {
+            "provider": "OpenDART",
+            "corp_code": corp_code,
+            "count": 2, "rows": [_row(), _row(RECEIPT_2)],
+            "total_count": 2, "total_page": 1, "pages_fetched": 1,
+            "duplicate_receipt_count": 0, "truncated": False,
+        }
+
+    monkeypatch.setattr(provider, "resolve_corp_code", fake_resolve)
+    monkeypatch.setattr(api, "_providers", lambda: (None, provider))
+    monkeypatch.setattr(api, "fetch_bounded_disclosures", fake_fetch)
+    response = TestClient(app).get(
+        "/api/dart/stocks/086450/disclosures",
+        params={
+            "market": "KOSDAQ",
+            "begin_date": "2026-10-01",
+            "end_date": "2026-10-30",
+        },
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["count"] == 2
+    preview = body["p6f_ingest_preview"]
+    assert preview["validated_metadata_count"] == 2
+    assert preview["invalid_metadata_count"] == 0
+    assert preview["market_verified_by_source"] is False
+    assert preview["status"] == "PREVIEW_ONLY_NOT_PERSISTED"
+    assert preview["event_evidence_writes"] == 0
+    assert preview["ai_transmission_allowed"] is False
+    assert body["db_writes"] == body["model_calls"] == 0
