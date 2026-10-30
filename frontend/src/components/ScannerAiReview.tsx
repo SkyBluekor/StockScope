@@ -202,8 +202,19 @@ export default function ScannerAiReview({
         {batchError && <small>진입 후보 전체 분류를 불러오지 못했습니다. 기존 Scanner 판단은 그대로 유지됩니다.</small>}
         <p><b>전략:</b> {strategySummary} · <b>기간:</b> {policySummary}</p>
         <p><b>외부 TypeSafe:</b> {outboundSummary}</p>
-        <button type="button" disabled title="원천 데이터 이용권과 실행 승인이 확인되지 않았습니다.">
-          실제 종목 JEV 추가 검토 (현재 사용 불가)
+        <button type="button" disabled
+          title={matchedRouting?.routing === "LOCAL_MATCH"
+            ? "로컬 의미 조건이 일치하여 잔여 의미 검토 대상이 아닙니다."
+            : "실제 시장 데이터의 외부 전송 이용권과 실행 승인이 확인되지 않았습니다."}>
+          {matchedRouting?.routing === "LOCAL_MATCH"
+            ? "로컬 검토 완료 · JEV 호출 불필요"
+            : matchedRouting?.routing === "LOCAL_CONFLICT"
+              ? "로컬 충돌 확인 · 조건 재검토 필요"
+              : matchedRouting?.routing === "RESIDUAL_READY"
+                ? "JEV 추가 판단 대상 · 외부 검토 보류"
+                : matchedRouting?.routing === "LOCAL_INCOMPLETE" || matchedRouting?.routing === "LOCAL_AMBIGUOUS"
+                  ? "추가 근거 확인 전 · 모델 검토 불가"
+                  : "실제 종목 JEV 추가 검토 (현재 사용 불가)"}
         </button>
         <small>저장된 실모델 검토가 없는 경우 AI 의견은 생성되지 않았습니다. 이 조회는 추가 모델 요청을 하지 않습니다.</small>
       </div>
