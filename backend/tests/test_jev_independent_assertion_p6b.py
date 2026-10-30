@@ -121,6 +121,7 @@ def test_no_assertions_keeps_reference_uncertain():
     {"projection_hash": "0" * 64},
     {"claim_id": "claim_not_authored"}, {"strategy_source_hash": "0" * 64},
     {"approval_state": "PENDING"}, {"approved_by": ""},
+    {"event_version": []}, {"claim_id": []}, {"relation": []},
 ])
 def test_forged_or_unmatched_pins_fail_closed(change):
     result = _run([_claim(**change)])
