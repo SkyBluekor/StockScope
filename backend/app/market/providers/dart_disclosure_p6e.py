@@ -49,6 +49,7 @@ async def fetch_bounded_disclosures(
     duplicates = 0
     pages_fetched = 0
     for page_no in range(1, max_pages + 1):
+        pages_fetched += 1
         try:
             payload = await provider._get("list.json", {
                 "corp_code": code, "bgn_de": begin, "end_de": end,
@@ -62,7 +63,6 @@ async def fetch_bounded_disclosures(
             if page_no == 1:
                 total_count, total_page = 0, 0
             break
-        pages_fetched += 1
         try:
             counted, paged = int(payload["total_count"]), int(payload["total_page"])
         except (KeyError, TypeError, ValueError) as exc:
