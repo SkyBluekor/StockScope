@@ -456,11 +456,27 @@ export type JevDartLiveResponse = {
   external_ai_transfer: "BLOCKED";
   db_writes: 0;
   model_calls: 0;
+  p6f_ingest_preview: null | {
+    contract_version: "JEV_P6F_DISCLOSURE_INGEST_CONTRACT_V1";
+    validated_metadata_count: number;
+    invalid_metadata_count: number;
+    reason_counts: Record<string, number>;
+    stock_code: string;
+    market: "KOSPI" | "KOSDAQ";
+    market_verified_by_source: false;
+    storage_allowed: false;
+    event_evidence_writes: 0;
+    ai_transmission_allowed: false;
+    status: "PREVIEW_ONLY_NOT_PERSISTED";
+  };
 };
 
-export function fetchJevLiveDartDisclosures(code: string, signal?: AbortSignal) {
+export function fetchJevLiveDartDisclosures(code: string, market: string, signal?: AbortSignal) {
+  const params = new URLSearchParams({
+    max_pages: "2", page_count: "20", market,
+  });
   return jevJson<JevDartLiveResponse>(
-    "/api/dart/stocks/" + encodeURIComponent(code) + "/disclosures?max_pages=2&page_count=20",
+    "/api/dart/stocks/" + encodeURIComponent(code) + "/disclosures?" + params.toString(),
     { signal, cache: "no-store" },
   );
 }
