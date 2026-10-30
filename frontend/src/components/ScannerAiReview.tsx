@@ -525,8 +525,8 @@ export default function ScannerAiReview(props: Props) {
             <div><dt>검토 시각</dt><dd>{review.completed_at}</dd></div>
           )}
         </dl>
-        {hasVerifiedReview && review?.reason_codes.length > 0 && (
-          <p className="scanner-jev-compact-note">추가 확인 코드: {review.reason_codes.slice(0, 3).join(", ")}</p>
+        {hasVerifiedReview && (review?.reason_codes.length ?? 0) > 0 && (
+          <p className="scanner-jev-compact-note">추가 확인 코드: {review?.reason_codes.slice(0, 3).join(", ") ?? ""}</p>
         )}
         <button type="button" disabled title={unavailableReason}>JEV 검토 실행 (사용 불가)</button>
         {hasVerifiedReview && available && enabled && featureStatus === "ACTIVE" && (
