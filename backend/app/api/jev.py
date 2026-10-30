@@ -16,6 +16,8 @@ from app.jev.scanner_shadow_s7 import load_frozen_candidates
 from app.jev.live_04r_p5_batch import inspect_frozen_entry_batch
 from app.jev.independent_event_reference_p6 import inspect_frozen_event_reference
 from app.jev.independent_assertion_p6b import inspect_frozen_event_assertions
+from app.jev.event_v5 import route_event_v5
+from app.jev import synthetic_event_v5_demo as v5_demo
 from app.core.config import get_settings
 from app.jev.scanner_integrity_s7_1 import assess_frozen_candidate
 from app.jev.scanner_v4_readiness_s7_5 import diagnose_candidate as diagnose_v4_candidate
@@ -424,6 +426,69 @@ def jev_independent_event_assessment(
             detail={"code": code if code.startswith("P6_") else "P6B_INPUT_INVALID",
                     "message": "독립 이벤트 검토 대상을 확인할 수 없습니다."},
         ) from exc
+
+
+@router.get("/event-v5-routing")
+def jev_event_v5_routing(
+    capture_id: str = Query(min_length=1, max_length=200),
+    sample_index: int = Query(ge=0, le=499),
+) -> dict[str, object]:
+    """Read-only P6-C independent-event eligibility; never builds provider wire."""
+    try:
+        assessment = inspect_frozen_event_assertions(
+            _db(), capture_id=capture_id, sample_index=sample_index,
+            naver_provider_kind=get_settings().naver_news_provider_kind,
+        )
+        return route_event_v5(assessment)
+    except DecisionReviewContractError as exc:
+        raise HTTPException(status_code=422, detail={
+            "code": exc.code, "message": "저장된 이벤트 검토 후보를 읽을 수 없습니다.",
+        }) from exc
+    except ValueError as exc:
+        code = str(exc)
+        raise HTTPException(
+            status_code=404 if code == "P6_SAMPLE_NOT_FOUND" else 422,
+            detail={"code": code if code.startswith("P6_") else "P6C_INPUT_INVALID",
+                    "message": "대상 후보를 확인할 수 없습니다."},
+        ) from exc
+
+
+@router.get("/event-v5-demo/status")
+def jev_event_v5_demo_status(request: Request) -> dict[str, object]:
+    client = request.client.host if request.client else None
+    if not v5_demo.demo_enabled(client, request.url.hostname):
+        return {"enabled": False, "synthetic_only": True, "status": "DISABLED",
+                "actual_provider_calls": 0}
+    try:
+        return v5_demo.status()
+    except (ValueError, OSError):
+        raise HTTPException(status_code=409, detail={
+            "code": "P6C_DEMO_STATUS_INVALID", "message": "격리된 합성 결과를 읽을 수 없습니다.",
+        })
+
+
+@router.post("/event-v5-demo/start", status_code=202)
+def jev_event_v5_demo_start(request: Request, tasks: BackgroundTasks) -> dict[str, object]:
+    client = request.client.host if request.client else None
+    if not v5_demo.demo_enabled(client, request.url.hostname):
+        raise HTTPException(status_code=403, detail={
+            "code": "P6C_DEMO_DISABLED", "message": "로컬 개발용 합성 검토만 지원합니다.",
+        })
+    if request.headers.get("X-StockScope-V5-Synthetic") != "confirmed":
+        raise HTTPException(status_code=403, detail={
+            "code": "P6C_EXPLICIT_CONFIRMATION_REQUIRED",
+            "message": "합성 전용 실행 확인이 필요합니다.",
+        })
+    try:
+        result = v5_demo.start()
+    except (ValueError, OSError):
+        raise HTTPException(status_code=409, detail={
+            "code": "P6C_DEMO_ALREADY_CLAIMED",
+            "message": "합성 실행을 중복 요청할 수 없습니다.",
+        })
+    if not result["reused"]:
+        tasks.add_task(v5_demo.run_mock)
+    return result
 
 
 @router.get("/outbound-preflight")
