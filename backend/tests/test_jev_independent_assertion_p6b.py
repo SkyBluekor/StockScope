@@ -101,6 +101,9 @@ def test_explicit_pinned_and_author_reviewed_relations(stance, status):
     result = _run([_claim(stance)])
     assert result["status"] == status
     assert result["approved_assertion_count"] == 1
+    assert result["reviewed_assertion_refs"][0]["event_id"] == "event-1"
+    assert result["reviewed_assertion_refs"][0]["event_version"] == 1
+    assert result["reviewed_assertion_refs"][0]["source_ref_hash"] == SOURCE_HASH
     assert result["model_review_executed"] is False
     assert result["external_model_call_allowed"] is False
     assert result["independent_conflict_proven"] is False
