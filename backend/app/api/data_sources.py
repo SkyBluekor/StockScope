@@ -13,6 +13,7 @@ from app.core.config import get_settings
 from app.holdings.chart import HoldingsChartError, HoldingsChartService
 from app.holdings.chart_prepare import HoldingsChartPrepareError, HoldingsChartPrepareService
 from app.market.providers import KrxProvider, OpenDartProvider
+from app.market.providers.dart_disclosure_p6e import fetch_bounded_disclosures
 from app.market.providers.base import ProviderError, ProviderNotConfigured
 from app.market.service import MarketDataService
 from app.strategy.service import StrategyAnalysisService
@@ -305,7 +306,10 @@ async def dart_disclosures(
 ) -> dict[str, Any]:
     _, dart = _providers()
     try:
-        return await dart.disclosures(corp_code, begin_date, end_date, page_count, max_pages=max_pages)
+        return (await dart.disclosures(corp_code, begin_date, end_date, page_count)
+                if max_pages == 1 else
+                await fetch_bounded_disclosures(dart, corp_code, begin_date, end_date,
+                                                page_count=page_count, max_pages=max_pages))
     except (ProviderError, ValueError) as exc:
         _raise_provider_error(exc)
 
@@ -333,8 +337,8 @@ async def dart_stock_disclosures(
             raise ValueError("공시 조회 기간은 현재까지 최대 31일로 제한합니다.")
         _, dart = _providers()
         corp_code = await dart.resolve_corp_code(code)
-        disclosed = await dart.disclosures(
-            corp_code, begin.isoformat(), end.isoformat(),
+        disclosed = await fetch_bounded_disclosures(
+            dart, corp_code, begin.isoformat(), end.isoformat(),
             page_count=page_count, max_pages=max_pages,
         )
     except (ProviderError, ValueError) as exc:
