@@ -189,7 +189,13 @@ def evaluate_local_assertions(
             invalid_count += 1
             reasons.add("P6B_ASSERTION_HASH_OR_CONTRACT_INVALID")
             continue
-        key = (raw.get("event_id"), raw.get("event_version"))
+        event_id = raw.get("event_id")
+        event_version = raw.get("event_version")
+        if not isinstance(event_id, str) or type(event_version) is not int:
+            invalid_count += 1
+            reasons.add("P6B_ASSERTION_EVENT_IDENTITY_INVALID")
+            continue
+        key = (event_id, event_version)
         observed = verified.get(key)
         if observed is None:
             invalid_count += 1
@@ -208,10 +214,13 @@ def evaluate_local_assertions(
             reasons.add("P6B_ASSERTION_EVIDENCE_PIN_MISMATCH")
             continue
         relation = raw.get("relation")
+        claim_id = raw.get("claim_id")
         if (
-            raw.get("strategy_source_hash") != source_v2.get("source_snapshot_hash")
+            not isinstance(claim_id, str)
+            or not isinstance(relation, str)
+            or raw.get("strategy_source_hash") != source_v2.get("source_snapshot_hash")
             or raw.get("strategy_key") != relations.get("strategy_key")
-            or raw.get("claim_id") not in claim_ids
+            or claim_id not in claim_ids
             or relation not in VALID_RELATIONS
         ):
             invalid_count += 1
