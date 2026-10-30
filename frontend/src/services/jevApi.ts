@@ -276,6 +276,42 @@ export type JevEntryRouting = {
   db_writes: 0;
 };
 
+/** P6-A local EventEvidence reference. Not a model response or event verdict. */
+export type JevIndependentEventReference = {
+  version: string;
+  read_only: true;
+  capture_id: string;
+  sample_index: number;
+  snapshot_hash: string;
+  market: string;
+  ticker: string;
+  status: "NO_INDEPENDENT_EVIDENCE" | "EVIDENCE_UNCERTAIN" | "EVIDENCE_NOT_USABLE";
+  reason_codes: string[];
+  decision_cutoff: string | null;
+  cutoff_source: string;
+  event_reference_status: string;
+  projection_hash: string | null;
+  reference_count: number;
+  source_kinds: string[];
+  ai_input_rights: "NOT_APPROVED";
+  independent_conflict_proven: false;
+  review_needed: false;
+  model_review_executed: false;
+  external_model_call_allowed: false;
+  actual_provider_calls: 0;
+  db_writes: 0;
+};
+
+export function getJevIndependentEventReference(captureId: string, sampleIndex: number) {
+  const params = new URLSearchParams({
+    capture_id: captureId, sample_index: String(sampleIndex),
+  });
+  return jevJson<JevIndependentEventReference>(
+    "/api/simulation/jev/independent-event-reference?" + params.toString(),
+  );
+}
+
+
 export function getJevEntryRouting(captureId: string) {
   const params = new URLSearchParams({ capture_id: captureId });
   return jevJson<JevEntryRouting>(
