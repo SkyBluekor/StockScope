@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
@@ -16,6 +17,7 @@ from app.jev.scanner_shadow_s7 import load_frozen_candidates
 from app.jev.live_04r_p5_batch import inspect_frozen_entry_batch
 from app.jev.independent_event_reference_p6 import inspect_frozen_event_reference
 from app.jev.independent_assertion_p6b import inspect_frozen_event_assertions
+from app.jev.real_event_audit_p6d import audit_existing_capture
 from app.jev.event_v5 import route_event_v5
 from app.jev import synthetic_event_v5_demo as v5_demo
 from app.core.config import get_settings
@@ -426,6 +428,36 @@ def jev_independent_event_assessment(
             detail={"code": code if code.startswith("P6_") else "P6B_INPUT_INVALID",
                     "message": "독립 이벤트 검토 대상을 확인할 수 없습니다."},
         ) from exc
+
+
+@router.get("/event-data-audit")
+def jev_event_data_audit(
+    capture_id: str = Query(min_length=1, max_length=200),
+) -> dict[str, object]:
+    """P6-D: count existing real EventEvidence + Scanner links, read-only.
+
+    Unlike the synthetic V5 demo, this never constructs a provider or alters
+    the user's database. Missing schema does not imply an empty dataset.
+    """
+    try:
+        return audit_existing_capture(
+            _db(), capture_id=capture_id,
+            naver_provider_kind=get_settings().naver_news_provider_kind,
+        )
+    except DecisionReviewContractError as exc:
+        raise HTTPException(status_code=422, detail={
+            "code": exc.code, "message": "저장된 정본 Scanner 캡처가 준비되지 않았습니다.",
+        }) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail={
+            "code": "P6D_SIMULATION_DB_NOT_FOUND",
+            "message": "기존 SQLite 파일을 찾지 못했습니다. 새 DB를 생성하지 않습니다.",
+        }) from exc
+    except (ValueError, sqlite3.Error) as exc:
+        raise HTTPException(status_code=422, detail={
+            "code": "P6D_REAL_AUDIT_FAILED",
+            "message": "실제 이벤트 저장 자료의 상태를 확인할 수 없습니다.",
+        }) from exc
 
 
 @router.get("/event-v5-routing")
