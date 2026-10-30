@@ -465,3 +465,14 @@ StockScope의 기본 `Scanner → 정량 전략/Risk 판단 → Prospective COMP
 - 초기 P6-E는 backend/app/market/providers/dart.py에 직접 페이지 처리를 추가하여 고정 production baseline fingerprint 회귀 테스트 2개 실패를 유발했다. **이 잘못된 변경은 완전히 되돌렸으며** 1ce13cc8 원본 OpenDartProvider 파일의 GitHub blob SHA 1422609b51f678ef9f03547d9369fecf04d389ef가 다시 동일하다. baseline manifest를 바꾸지 않았다.
 - 최종 P6-E 실조회 페이지 처리/013 status/검증은 신규 backend/app/market/providers/dart_disclosure_p6e.py로 분리했다. 기존 OpenDartProvider는 변경하지 않고 신규 API는 기존 provider._get()을 재사용하며, legacy GET /dart/disclosures/{corp_code}의 1페이지 동작은 원래 provider를 계속 호출한다. 신규 종목별 API는 전용 adapter 사용. Python 테스트도 별도 adapter 대상으로 변경했다.
 - P6-E의 영구 EventEvidence 저장을 아직 수행하지 않았다는 사실과 실 OpenDART API 사용자 키 환경 UAT 미실시는 유지한다. docs/JEV_P6E_LIVE_OPENDART.md 참고. 수정된 최종 HEAD CI의 성공을 확인해야 한다.
+
+
+## 2026-10-30 P6-F 실제 OpenDART → EventEvidence 연결 계약 구현 (권한 미승인 시 격리 검증만)
+
+- 신규 backend/app/event_evidence/dart_ingest_p6f.py: P6-E 서버측 DART 조회 응답의 receipt_no/corp_code/ticker/receipt_date/공식 URL 및 fetched_at를 검증하여 최소 메타데이터의 SHA-256과 고정 source_ref/event_id를 만든다. receipt_date는 DATE_ONLY이며 source_published_at은 null, first_seen/available/fetched는 실제 UTC 관측 시각이다. 미래 관측시각과 다른 기업코드/종목/원문 URL/임의 발표시각은 거부한다.
+- SourceRef→EventRevision(original v1)→listed-company Entity→CONFIRMED/CORP_CODE_MAPPING Relevance→기존 Quality(REPORT REFERENCE) 서비스를 재사용하는 내부 연결 함수 제공. 해당 source 최초 관측 및 내용 해시를 재조회 시 보존하며 동일 접수번호 재수집으로 중복 event/quality가 증가하지 않게 한다. 내용이 변경된 접수번호는 무단 덮어쓰기 대신 충돌로 처리한다. 정정·철회/동일 사건 여부를 제목만으로 자동 판단하지 않는다. 독립된 EventEvidence as-of reader는 격리 통합 테스트에서 사용.
+- **운영 저장 범위:** OpenDART의 현재 코드 정책은 DERIVED_RETENTION=false, AI_TRANSFORM=false이므로 실제 사용자 simulation.db의 영구 저장 및 TypeSafe 호출은 여전히 **0/미실시**. 공식 OpenDART https://opendart.fss.or.kr/intro/main.do 및 https://opendart.fss.or.kr/intro/terms.do 와 https://opendart.fss.or.kr/disclosureinfo/mainMatter/main.do 는 광범위한 API/정보 가공 이용을 안내하지만 사용자 계정, P6 영구 파생 corpus 및 외부 AI 전송까지 확인하는 계약으로 자동 승격하지 않는다.
+- 격리된 테스트 전용 DB 이름 p6f-test-*.db + 고정 TEST_ONLY 전용 policy를 요구하는 persist_test_fixture_only()만 synthetic DART-shaped 자료 2건의 DB 저장·revision/entity/relevance/quality/as-of 검증을 수행한다. 실데이터 파일/원본 DB를 백필하지 않으며 새로운 HTTP write endpoint도 만들지 않는다.
+- 실제 GET /api/dart/stocks/{code}/disclosures?market=KOSDAQ 응답에는 p6f_ingest_preview (정규화된 최소 데이터 건수, 오류 건수, 저장 0, 외부 전송 차단, 시장 정보는 이 source만으로 독립 검증 안 됨)를 첨부한다. Scanner AI 탭의 기존 접힌 DART 목록에서 별도 저장 성공으로 가장하지 않고 **정규화 후보 N건 · 실제 DB 저장 0건**을 표시. 기존 운영 Scanner fingerprint 보호 파일 backend/app/market/providers/dart.py는 수정하지 않았다.
+- backend/tests/test_jev_dart_ingest_p6f.py에 실제 DART 형태의 synthetic 2개 접수번호 처리, SQLite 5개 테이블 연결, as-of 확인, 동일 접수번호 재실행, 최초 관측 보존, 변조 거부, 미래 시각 거부, 실제 정책 차단, FastAPI 라이브 출력 계약 등 검증을 추가. 최종 CI 결과에 따라 PASS 판정; 사용자 Windows 실 DB 저장 UAT는 아직 없음.
+- 다음 단계는 또 다른 Mock/HOLD가 아닌 **원천의 최소 사실 메타데이터 저장에 적용할 공식 권한 범위/계정·목적 근거를 확인하고 실제 격리 백업 DB에 제한적으로 수집하여 향후 신규 Scanner의 독립 이벤트로 관측되는지 검증**하는 것. 과거 SHORT 7 LOCAL_MATCH 판정 소급 금지.
