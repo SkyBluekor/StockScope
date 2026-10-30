@@ -20,7 +20,7 @@ type Props = {
   onRefresh: () => void;
 };
 
-export default function ScannerAiReview({
+function ScannerAiDiagnostics({
   candidate, result, sampleIndex, enabled, available, featureStatus,
   review, loading, loadError, onRefresh,
 }: Props) {
@@ -322,7 +322,7 @@ export default function ScannerAiReview({
         ? "기본 근거 확인 완료 · AI 모델 미실행"
         : "기본 분석과 별개의 AI 검토";
   return (
-    <section className="scanner-jev-review" aria-label="선택 종목 AI 검토 근거">
+    <section className="scanner-jev-review" aria-label="JEV 개발자 상세 진단">
       <div className={"scanner-jev-motion-status " + tone + (modelRunning ? " is-running" : "")} data-review-state={state.state} role="status">
         <span className="scanner-jev-motion-icon" aria-hidden="true">{verifiedModel ? "✓" : modelRunning ? "·" : "i"}</span>
         <div>
@@ -483,6 +483,70 @@ export default function ScannerAiReview({
         </button>
       )}
       <small>새로운 Jev 모델 호출은 실행하지 않습니다.</small>
+    </section>
+  );
+}
+ 
+/** End-user AI review is intentionally concise. Existing diagnostics are kept
+ * behind an explicit developer disclosure and only mount when opened, so
+ * browsing Scanner candidates never triggers P5/P6 debug network requests. */
+export default function ScannerAiReview(props: Props) {
+  const { candidate, result, enabled, available, featureStatus, review, loading, loadError, onRefresh } = props;
+  const [developerOpen, setDeveloperOpen] = useState(false);
+  const state = scannerAiReviewStatus({ candidate, result, enabled, available, featureStatus, review });
+  const hasVerifiedReview = !loading && !loadError && state.source === "STORED_JEV";
+  const isRunning = state.state === "RUNNING" || state.state === "QUEUED";
+  const isError = Boolean(loadError) || state.state === "FEATURE_ERROR" || state.state === "FAILED" || state.state === "UNKNOWN";
+  const tone = hasVerifiedReview ? "verified" : isRunning ? "working" : isError ? "error" : "idle";
+  const visibleStatus = loading ? "저장된 JEV 결과 확인 중"
+    : loadError ? "저장된 JEV 결과를 확인하지 못했습니다."
+    : hasVerifiedReview ? state.outcome
+    : isRunning ? state.label
+    : state.state === "OFF" ? "사용 안 함"
+    : state.state === "FEATURE_PENDING" ? "현재 서버에서 JEV 사용 불가"
+    : state.state === "FEATURE_LOADING" ? "JEV 제공 상태 확인 중"
+    : isError ? "JEV 결과 확인 불가"
+    : state.state === "INPUT_MISSING" ? "검토 입력 부족"
+    : "실제 JEV 검토 미실행";
+  // A-stage has no live executable review route. Do not advertise a working
+  // button based on a local toggle or stored model result.
+  const unavailableReason = !available || featureStatus !== "ACTIVE"
+    ? "서버에서 실제 검토 기능이 활성화되지 않았습니다."
+    : !enabled ? "JEV 사용 설정이 꺼져 있습니다."
+    : "현재 실제 종목의 허용된 전송 입력과 실행 승인이 준비되지 않았습니다.";
+  return (
+    <section className="scanner-jev-review" aria-label="선택 종목 AI 검토 근거" data-jev-a-summary="true">
+      <div className="scanner-jev-compact-summary" data-jev-primary-summary="true">
+        <strong className="scanner-jev-compact-stock">{candidate.name || candidate.code} ({candidate.code})</strong>
+        <dl>
+          <div><dt>Scanner 판단</dt><dd>{candidate.action_label || candidate.action}</dd></div>
+          <div><dt>JEV 검토</dt><dd data-jev-primary-status={state.state}>{visibleStatus}</dd></div>
+          {hasVerifiedReview && review?.completed_at && (
+            <div><dt>검토 시각</dt><dd>{review.completed_at}</dd></div>
+          )}
+        </dl>
+        {hasVerifiedReview && review?.reason_codes.length > 0 && (
+          <p className="scanner-jev-compact-note">추가 확인 코드: {review.reason_codes.slice(0, 3).join(", ")}</p>
+        )}
+        <button type="button" disabled title={unavailableReason}>JEV 검토 실행 (사용 불가)</button>
+        {hasVerifiedReview && available && enabled && featureStatus === "ACTIVE" && (
+          <button type="button" onClick={onRefresh} disabled={loading}>
+            {loading ? "결과 확인 중…" : "저장된 결과 새로고침"}
+          </button>
+        )}
+        {!hasVerifiedReview && (
+          <small className="scanner-jev-compact-note" data-jev-unavailable-reason="true">
+            {isError ? "검토 기록을 확인할 수 없습니다. Scanner 판단은 유지됩니다." : unavailableReason}
+          </small>
+        )}
+      </div>
+      <details className="scanner-jev-motion-details scanner-jev-developer-details"
+        data-jev-developer-details="true"
+        open={developerOpen}
+        onToggle={event => setDeveloperOpen(event.currentTarget.open)}>
+        <summary>개발자 진단 및 공시 조회</summary>
+        {developerOpen && <ScannerAiDiagnostics {...props} />}
+      </details>
     </section>
   );
 }
