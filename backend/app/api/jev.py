@@ -14,6 +14,8 @@ from app.jev.review_models import (
 from app.jev.decision_reviewer_offline import DecisionReviewContractError
 from app.jev.scanner_shadow_s7 import load_frozen_candidates
 from app.jev.live_04r_p5_batch import inspect_frozen_entry_batch
+from app.jev.independent_event_reference_p6 import inspect_frozen_event_reference
+from app.core.config import get_settings
 from app.jev.scanner_integrity_s7_1 import assess_frozen_candidate
 from app.jev.scanner_v4_readiness_s7_5 import diagnose_candidate as diagnose_v4_candidate
 from app.jev.scanner_eligibility_s8 import diagnose_candidate as diagnose_s8_candidate
@@ -364,6 +366,37 @@ def jev_entry_routing(
             status_code=422,
             detail={"code": str(exc) if str(exc).startswith("P4_") or str(exc).startswith("P5_") else "P5_ENTRY_INSPECTION_FAILED",
                     "message": "저장된 후보의 입력 계약을 확인할 수 없습니다."},
+        ) from exc
+
+
+@router.get("/independent-event-reference")
+def jev_independent_event_reference(
+    capture_id: str = Query(min_length=1, max_length=200),
+    sample_index: int = Query(ge=0, le=499),
+) -> dict[str, object]:
+    """P6-A: frozen candidate + observed EventEvidence, no JEV/model requests.
+
+    Missing EventEvidence schema is reported as NOT_USABLE, never as a fake
+    independent contradiction. This route has no source-permit override.
+    """
+    try:
+        return inspect_frozen_event_reference(
+            _db(), capture_id=capture_id, sample_index=sample_index,
+            naver_provider_kind=get_settings().naver_news_provider_kind,
+        )
+    except DecisionReviewContractError as exc:
+        raise HTTPException(status_code=422, detail={
+            "code": exc.code,
+            "message": "동결된 후보의 원본 근거를 읽을 수 없습니다.",
+        }) from exc
+    except ValueError as exc:
+        code = str(exc)
+        raise HTTPException(
+            status_code=404 if code == "P6_SAMPLE_NOT_FOUND" else 422,
+            detail={
+                "code": code if code.startswith("P6_") else "P6_INPUT_INVALID",
+                "message": "지정한 저장 후보를 확인할 수 없습니다.",
+            },
         ) from exc
 
 
