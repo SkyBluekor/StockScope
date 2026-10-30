@@ -124,6 +124,9 @@ def prepare_disclosure(
     if row.get("source_time_quality") not in (None, "DATE_ONLY"):
         raise ValueError("P6F_TIME_QUALITY_MISMATCH")
     observed = _utc(first_seen_at)
+    # Never accept an observation timestamp in the future as a past source.
+    if datetime.fromisoformat(observed) > datetime.now(timezone.utc):
+        raise ValueError("P6F_FUTURE_OBSERVATION_FORBIDDEN")
     normalized_fields = {
         "source_kind": "OPENDART_DISCLOSURE",
         "receipt_no": receipt,
