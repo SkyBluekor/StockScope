@@ -13,6 +13,7 @@ from app.jev.review_models import (
 )
 from app.jev.decision_reviewer_offline import DecisionReviewContractError
 from app.jev.scanner_shadow_s7 import load_frozen_candidates
+from app.jev.live_04r_p5_batch import inspect_frozen_entry_batch
 from app.jev.scanner_integrity_s7_1 import assess_frozen_candidate
 from app.jev.scanner_v4_readiness_s7_5 import diagnose_candidate as diagnose_v4_candidate
 from app.jev.scanner_eligibility_s8 import diagnose_candidate as diagnose_s8_candidate
@@ -332,6 +333,31 @@ def jev_local_readiness(
         "actual_provider_calls": 0,
         "db_writes": 0,
     }
+
+
+@router.get("/entry-routing")
+def jev_entry_routing(
+    capture_id: str = Query(min_length=1, max_length=200),
+) -> dict[str, object]:
+    """P5 aggregate of frozen ENTRY candidates; no new scan or model request.
+
+    The same canonical P4/S7 read-only checks are used per sample.
+    A residual review classification NEVER grants actual market-data transport.
+    """
+    try:
+        return inspect_frozen_entry_batch(_db(), capture_id=capture_id)
+    except DecisionReviewContractError as exc:
+        status = 404 if exc.code == "S7_CAPTURE_NOT_COMPLETE" else 422
+        raise HTTPException(
+            status_code=status,
+            detail={"code": exc.code, "message": "저장된 분석 후보의 로컬 분기 결과를 확인할 수 없습니다."},
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": str(exc) if str(exc).startswith("P4_") or str(exc).startswith("P5_") else "P5_ENTRY_INSPECTION_FAILED",
+                    "message": "저장된 후보의 입력 계약을 확인할 수 없습니다."},
+        ) from exc
 
 
 @router.get("/outbound-preflight")
