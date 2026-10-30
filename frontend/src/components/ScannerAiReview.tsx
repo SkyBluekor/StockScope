@@ -290,6 +290,13 @@ export default function ScannerAiReview({
             <summary>검토 주장·시점 보기</summary>
             <p>검토된 이벤트 {assessment.reviewed_event_count}건 · 사후 작성으로 제외 {assessment.retrospective_assertion_count}건</p>
             <p>판정: {assessment.assertion_status} · 사유: {assessment.reason_codes.slice(0, 5).join(", ") || "없음"}</p>
+            {assessment.reviewed_assertion_refs.map(item => (
+              <p key={item.assertion_hash}>
+                사건 {item.event_id} · revision {item.event_version} · 개념 {item.claim_id} · {item.relation}
+                {" · "}승인 {item.approved_at} · 출처 {item.source_ref_id}
+                <small>품질 SHA-256: {item.quality_hash} · 출처 SHA-256: {item.source_ref_hash}</small>
+              </p>
+            ))}
             <small>운영자 로컬 검토 기록입니다. 제3자 검증이나 JEV 실행을 증명하지 않으며, 외부 전송은 보류 상태입니다.</small>
           </details>
         )}
