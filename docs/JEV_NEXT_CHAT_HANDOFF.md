@@ -326,3 +326,18 @@ git -C $work log -1 --oneline
 - 사용자 후속 스크린샷 `localhost_5173_scanner (5)(1).png`: 상단 Scanner 기존 시장·버튼 배열 정상 복구, Horizon 하단 별도 줄 정상, 세로 한 글자 글꼴 문제/과도한 공백 사라짐; **실제 Windows UI 배치 검증 PASS**.
 - 같은 화면의 콤보박스 **단기**, 실행 당시 저장된 분석 라벨 **단기 · 수치 정책 미승인** 표시. 즉 이전 P4에서 기록한 Horizon 결과가 UI에 보이지만, 실제 신규 COMPLETE 정본 DB/P3 진단 없이 FULL P4 E2E 통과라고 주장하지 말 것.
 - `LEGACY_CURRENT_10_FALLBACK` 안내도 여전히 존재하며 원본 version/hash 없는 점은 미해결. 실종목 TypeSafe outbound HOLD. **다음 실질 검사**는 추가 Scanner 반복 실행이 아니라 기존 isolated DB의 최신 SHORT 캡처에 대해 P3 read-only probe로 `checks/v4` 확인.
+
+
+## 2026-10-30 JEV-LIVE-04R-P4-FINAL 구현·CI 완료 / 실제 Windows SHORT 인수 대기
+
+- **요청:** 사용자 기존 SHORT Scanner 결과를 다시 후보찾기 하지 말고, 기존 frozen Prospective DB에서 canonically 검증하고 V4 로컬 상태와 정책/원본/권한을 분리할 것.
+- **코드 구현:** `backend/app/jev/live_04r_p4_final.py` [`836067d`](https://github.com/SkyBluekor/StockScope/commit/836067dcd2a87ab2340a3a0e23b9d0e0a2cb7012), `tools/data/jev_live_04r_p4_final.py` [`da14b4a`](https://github.com/SkyBluekor/StockScope/commit/da14b4a7f6a9137b1a41275449e97575548f6b49), `backend/tests/test_jev_live_04r_p4_final.py` [`c2029d5`](https://github.com/SkyBluekor/StockScope/commit/c2029d5f116087d2e9bfad1e59d34ffe6fb11967). P3 CLI/신선성 계약은 바꾸지 않고 **별도** P4 read-only CLI 구현. `--find-short`는 SHORT COMPLETE/DUPLICATE 메타만 나열하고 임의 성공 대상 선택 금지, `--capture-id ID`로 실정본 JSON hash verified loader→S7.1→S7.5 V4→S8→Semantic Source V2를 실행. `--policy-status`로 strategy selection runtime이 ACTIVE/ROLLBACK/LEGACY 어디에 있는지, effective fallback reason과 original strategy identity count를 읽기만 함.
+- **결과 계약:** `selection.reused_canonical` + 요청 ID/정본 ID, `frozen_contract.horizon_intent/horizon_purpose`, `candidate.snapshot_hash_verified_by_loader`, `frozen_contract.semantic_source_v2_valid`, `checks`, `local_v4.status/source_v4_status/state_hash`, `strategy_identity.status/legacy_derived_is_not_original`, `horizon_execution.support_status/numeric_policy_approved`, `provider_authorization.decision=HOLD`. V4 구조적 성공/수치 정책 승인/실제 시장 TypeSafe 권한은 **서로 독립**. 기존 frozen request 계약 불일치면 구조적 성공을 차단. 기존 P3 `first_blocker`의 '과거 신선성 우선 차단'을 P4 진단의 진실로 재사용하지 않음.
+- **CI:** [#40978076734](https://github.com/SkyBluekor/StockScope/actions/runs/40978076734) **4/4 PASS** (Python 3.11/3.14, Frontend Node 22, Windows Fresh Clone). 실제 종목/계정 데이터는 CI에 없으며 작성 합성 fixture 및 monkeypatched mocked V4 only. 외부 KRX/JEV 호출 0회.
+- **사용자 Windows 인수(현재 미확인):**
+  1. `cd C:\Projects\StockScope; git pull --ff-only`
+  2. `.\.venv\Scripts\python.exe -m tools.data.jev_live_04r_p4_final --find-short --simulation-db "$env:STOCKSCOPE_SIM_DB"`
+  3. 실제 SHORT ID가 여럿 있으면 UI에 나온 result.prospective_capture ID/source_job_id와 맞는 항목을 **명시 선택**하고 `.\.venv\Scripts\python.exe -m tools.data.jev_live_04r_p4_final --capture-id "<ID>" --simulation-db "$env:STOCKSCOPE_SIM_DB"`
+  4. `.\.venv\Scripts\python.exe -m tools.data.jev_live_04r_p4_final --policy-status` (읽기 전용).
+  5. 실제 `local_v4.status`, source V2, 원본 신원, Horizon, rights를 확인하고 그 증거에 따라 P4 인수 판정. **별도 신규 후보 검색/시장 데이터 갱신 불필요.**
+- **장기 차단 계속:** user Windows actual SHORT V4 `LOCAL_V4_PROJECTABLE` 아직 미입증. 원본 ACTIVE version/hash가 없는 LEGACY는 원본 신원 승인으로 취급 금지. Numeric Horizon `EVALUATION_PENDING`, 시장 정보 외부 처리 권한 `HOLD`, LIVE-05 보류, G2-01~04 유지 G2-05 중지, Draft PR #170 유지.
