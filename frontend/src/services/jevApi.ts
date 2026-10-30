@@ -352,6 +352,73 @@ export function getJevIndependentEventAssessment(captureId: string, sampleIndex:
 }
 
 
+/** P6-C real-data routing is always read-only and never permits transport. */
+export type JevEventV5Routing = {
+  version: "JEV_EVENT_REVIEW_STATE_V5";
+  capture_id: string;
+  sample_index: number;
+  snapshot_hash: string;
+  market: string;
+  ticker: string;
+  event_reference_hash: string | null;
+  assertion_identity_hash: string;
+  event_assessment_status: string;
+  routing: "SKIPPED_NO_EVIDENCE" | "SKIPPED_LOCALLY_RESOLVED" |
+    "LOCAL_REVIEW_REQUIRED" | "BLOCKED_EVIDENCE" |
+    "REVIEW_CANDIDATE_PROVIDER_HOLD" | "BLOCKED_NOT_REVIEW_CANDIDATE";
+  semantic_review_candidate: boolean;
+  external_model_call_allowed: false;
+  transmission_status: "PROVIDER_HOLD";
+  model_review_executed: false;
+  model_result: null;
+  reason_codes: string[];
+  actual_provider_calls: 0;
+  db_writes: 0;
+};
+
+export function getJevEventV5Routing(captureId: string, sampleIndex: number) {
+  const params = new URLSearchParams({
+    capture_id: captureId, sample_index: String(sampleIndex),
+  });
+  return jevJson<JevEventV5Routing>(
+    "/api/simulation/jev/event-v5-routing?" + params.toString(),
+  );
+}
+
+/** V5 one-shot local synthetic demo, never uses selected Scanner candidate. */
+export type JevEventV5Demo = {
+  enabled: boolean;
+  synthetic_only: true;
+  status: "DISABLED" | "NOT_REQUESTED" | "QUEUED" | "RUNNING" |
+    "VALID" | "ERROR" | "INTERRUPTED";
+  fixture_id?: string;
+  reused?: boolean;
+  mock_provider_calls?: number;
+  actual_provider_calls: 0;
+  result?: null | {
+    status?: string;
+    disposition?: "REVIEW_REQUIRED" | "PASS_THROUGH" | "ABSTAIN";
+    review_id?: string;
+    model_returned?: string;
+    failure_code?: string;
+    cost_usd?: number | null;
+    cost_unknown?: boolean;
+    reason_codes?: string[];
+  };
+};
+
+export function getJevEventV5DemoStatus() {
+  return jevJson<JevEventV5Demo>("/api/simulation/jev/event-v5-demo/status");
+}
+
+export function startJevEventV5Demo() {
+  return jevJson<JevEventV5Demo>("/api/simulation/jev/event-v5-demo/start", {
+    method: "POST",
+    headers: { "X-StockScope-V5-Synthetic": "confirmed" },
+  });
+}
+
+
 export function getJevEntryRouting(captureId: string) {
   const params = new URLSearchParams({ capture_id: captureId });
   return jevJson<JevEntryRouting>(
