@@ -439,3 +439,11 @@ git -C $work log -1 --oneline
 - 초기 P6-E는 backend/app/market/providers/dart.py에 직접 페이지 처리를 추가하여 고정 production baseline fingerprint 회귀 테스트 2개 실패를 유발했다. **이 잘못된 변경은 완전히 되돌렸으며** 1ce13cc8 원본 OpenDartProvider 파일의 GitHub blob SHA 1422609b51f678ef9f03547d9369fecf04d389ef가 다시 동일하다. baseline manifest를 바꾸지 않았다.
 - 최종 P6-E 실조회 페이지 처리/013 status/검증은 신규 backend/app/market/providers/dart_disclosure_p6e.py로 분리했다. 기존 OpenDartProvider는 변경하지 않고 신규 API는 기존 provider._get()을 재사용하며, legacy GET /dart/disclosures/{corp_code}의 1페이지 동작은 원래 provider를 계속 호출한다. 신규 종목별 API는 전용 adapter 사용. Python 테스트도 별도 adapter 대상으로 변경했다.
 - P6-E의 영구 EventEvidence 저장을 아직 수행하지 않았다는 사실과 실 OpenDART API 사용자 키 환경 UAT 미실시는 유지한다. docs/JEV_P6E_LIVE_OPENDART.md 참고. 수정된 최종 HEAD CI의 성공을 확인해야 한다.
+
+
+## 2026-10-30 P6-E 실제 사용자 Windows OpenDART 화면 검증
+
+- 사용자 제공 실제 실행 스크린샷 기준, Scanner → AI 검토 → 선택 종목 동국제약 (086450) → "실제 OpenDART 공시 조회 · 최근 30일" → "공시 새로 조회" 수행 성공. 2026-10-01~2026-10-30 실제 조회 **2건 / 전체 2건**, 화면 조회 시각 2026-10-30T04:59:47.509167+00:00.
+- 실제 목록 2건 모두 접수일 2026-10-12: 주주명부폐쇄기간또는기준일설정 receipt_no 20261012900154; 주주총회소집결의(임시주주총회) receipt_no 20261012900140. 제목 및 DART 공식 원문 링크가 표시됨.
+- 이 증거는 OpenDART 실제 HTTP 조회, 종목→corp_code 매핑 및 UI 링크의 사용자 PC E2E 성공에 대한 것임. 기존 7개 후보 전부 성공이라고 확대하지 말 것. 화면상 EventEvidence 저장 자료 0건, 영구 저장 미승인/미실행, 외부 AI 전송 차단, AI 모델 의견 없음, JEV V5 실행 0회는 그대로임. 이는 아직 데이터를 저장·평가하지 않았다는 의미이며 실제 공시의 전략 충돌 또는 투자효용을 확인한 것은 아님.
+- 다음 개발 우선순위는 페이지 API/Mock 반복이 아니라 실제 공시 메타데이터의 저장·파생 권한 근거 확인 및 승인된 EventEvidence SourceRef→Revision→Entity→Quality prospective 연결. 공시 receipt_date는 DATE_ONLY이므로 원본 발표 시각으로 간주하지 말고 실제 first_seen/fetched_at을 보존. 기존 과거 SHORT 캡처로 시점을 소급하지 않는다.
