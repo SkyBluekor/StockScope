@@ -172,3 +172,38 @@ def test_restart_does_not_auto_execute_or_duplicate(monkeypatch, tmp_path):
     assert demo.start()["reused"] is True
     asyncio.run(demo.run_mock())
     assert demo.status()["mock_provider_calls"] == 0
+
+
+
+def test_v5_http_demo_explicit_local_confirm_and_persist(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    root = tmp_path / "isolated-v5-http"
+    monkeypatch.setattr(demo, "_root", lambda: root)
+    monkeypatch.setattr(demo, "_ACTIVE", False)
+    monkeypatch.delenv(demo.FLAG, raising=False)
+    client = TestClient(app)
+    url = "/api/simulation/jev/event-v5-demo"
+    header = {"X-StockScope-V5-Synthetic": "confirmed"}
+
+    assert client.get(url + "/status").json()["enabled"] is False
+    assert client.post(url + "/start", headers=header).status_code == 403
+    monkeypatch.setenv(demo.FLAG, "1")
+    assert client.post(url + "/start").status_code == 403
+    assert not root.exists()
+
+    # TestClient completes the local background task; no actual HTTP provider.
+    first = client.post(url + "/start", headers=header)
+    assert first.status_code == 202, first.text
+    assert first.json()["reused"] is False
+    result = client.get(url + "/status").json()
+    assert result["status"] == "VALID"
+    assert result["result"]["disposition"] == "REVIEW_REQUIRED"
+    assert result["result"]["model_returned"] == event_v5.TEST_MODEL_ID
+    assert result["mock_provider_calls"] == 1
+    assert result["actual_provider_calls"] == 0
+    assert client.post(url + "/start", headers=header).json()["reused"] is True
+    assert TestClient(app).get(url + "/status").json()["result"]["review_id"] == result["result"]["review_id"]
+    assert (root / "v5-session.json").exists()
+    assert not (tmp_path / "simulation.db").exists()
