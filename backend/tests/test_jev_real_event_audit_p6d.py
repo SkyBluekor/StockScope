@@ -115,3 +115,29 @@ def test_cli_requires_explicit_existing_db_and_prints_machine_readable_error(fro
     assert data["status"] == "AUDIT_UNAVAILABLE"
     assert data["read_only"] is True
     assert not (tmp_path / "missing.db").exists()
+
+
+
+def test_real_audit_http_endpoint_returns_missing_schema_not_faked_zero(frozen, monkeypatch, tmp_path):
+    import app.api.jev as api
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    db = tmp_path / "existing.sqlite"
+    with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TABLE untouched (value INTEGER)")
+        conn.execute("INSERT INTO untouched VALUES (17)")
+    before = db.read_bytes()
+    monkeypatch.setattr(api, "_db", lambda: db)
+    response = TestClient(app).get(
+        "/api/simulation/jev/event-data-audit",
+        params={"capture_id": CAPTURE_ID},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["read_only"] is True
+    assert body["entry_count"] == 2
+    assert body["store"]["status"] == "SCHEMA_MISSING"
+    assert body["store"]["stored_counts_not_asof"]["event_revisions"] is None
+    assert body["real_market_model_calls"] == 0
+    assert db.read_bytes() == before
