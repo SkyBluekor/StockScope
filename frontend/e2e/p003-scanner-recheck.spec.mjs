@@ -86,6 +86,22 @@ async function setup(page,{matched=false}={}) {
     if(path==="/api/backtest/jobs/"+jobId&&req.method()==="GET")
       return fulfill(route,{job_id:jobId,status:"completed",stage:"complete",
         progress:{message:"완료",current:1,total:1,percent:100},result:newResult});
+    if(req.method()==="GET"&&path==="/api/simulation/jev/independent-event-reference"){
+      const query=new URL(req.url()).searchParams;
+      return fulfill(route,{
+        version:"JEV_LIVE_04R_P6_INDEPENDENT_EVENT_REFERENCE_V1",read_only:true,
+        capture_id:query.get("capture_id"),sample_index:Number(query.get("sample_index")),
+        snapshot_hash:"authored-snapshot",market:"KOSPI",ticker:"145720",
+        status:"NO_INDEPENDENT_EVIDENCE",reason_codes:["P6_NO_OBSERVED_REFERENCE_BY_CUTOFF"],
+        decision_cutoff:"2026-10-20T00:00:00+00:00",
+        cutoff_source:"CAPTURE_CREATED_AT_NOT_MARKET_PUBLICATION",
+        event_reference_status:"NO_VALIDATED_EVIDENCE",projection_hash:null,
+        reference_count:0,source_kinds:[],ai_input_rights:"NOT_APPROVED",
+        independent_conflict_proven:false,review_needed:false,
+        model_review_executed:false,external_model_call_allowed:false,
+        actual_provider_calls:0,db_writes:0,
+      });
+    }
     if(req.method()==="GET"&&path==="/api/simulation/jev/entry-routing"){
       const capture=new URL(req.url()).searchParams.get("capture_id");
       return fulfill(route,{
@@ -234,6 +250,8 @@ test("P5 selected candidate shows local-only batch verdict without any model POS
   await expect(summary).toContainText("진입 후보:");
   await expect(summary).toContainText("의미 일치 1개");
   await expect(page.locator('[data-jev-entry-route="LOCAL_MATCH"]')).toContainText("JEV 추가 검토 불필요");
+  await expect(page.locator('[data-jev-independent-event="p6a"]')).toContainText("확인된 독립 이벤트 근거 없음");
+  expect(calls.filter(x=>x.path==="/api/simulation/jev/independent-event-reference"&&x.method==="GET").length).toBeGreaterThan(0);
   await expect(page.getByRole("button",{name:"로컬 검토 완료 · JEV 호출 불필요"})).toBeDisabled();
   expect(calls.filter(x=>x.method==="POST"&&x.path.includes("/jev/reviews"))).toHaveLength(0);
   expect(calls.filter(x=>x.method==="POST"&&x.path==="/api/backtest/scanner/jobs")).toHaveLength(0);
