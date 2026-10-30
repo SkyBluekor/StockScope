@@ -86,6 +86,23 @@ async function setup(page,{matched=false}={}) {
     if(path==="/api/backtest/jobs/"+jobId&&req.method()==="GET")
       return fulfill(route,{job_id:jobId,status:"completed",stage:"complete",
         progress:{message:"완료",current:1,total:1,percent:100},result:newResult});
+    if(req.method()==="GET"&&path==="/api/simulation/jev/event-data-audit"){
+      const query=new URL(req.url()).searchParams;
+      return fulfill(route,{
+        version:"JEV_P6D_REAL_EVENT_INVENTORY_V1",read_only:true,
+        capture_id:query.get("capture_id"),
+        canonical_capture_id:query.get("capture_id"),entry_count:1,
+        store:{status:"READY",schema_ready:true,
+          stored_counts_not_asof:{source_refs:0,event_revisions:0,entities:0,
+            entity_relevances:0,quality_assessments:0}},
+        registry_status:"ABSENT_OR_EMPTY",cause_counts:{NO_INGESTED_EVENTS:1},
+        rows:[{sample_index:0,ticker:"145720",market:"KOSPI",
+          snapshot_hash:"authored-snapshot",reference_status:"NO_INDEPENDENT_EVIDENCE",
+          assertion_status:"NO_INDEPENDENT_EVIDENCE",v5_route:"SKIPPED_NO_EVIDENCE",
+          cause:"NO_INGESTED_EVENTS",reference_count:0,approved_assertions:0}],
+        ready_for_live_jev:false,real_market_model_calls:0,mock_model_calls:0,db_writes:0,
+      });
+    }
     if(req.method()==="GET"&&path==="/api/simulation/jev/event-v5-routing"){
       const query=new URL(req.url()).searchParams;
       return fulfill(route,{
@@ -284,6 +301,7 @@ test("P5 selected candidate shows local-only batch verdict without any model POS
   await expect(page.locator('[data-jev-entry-route="LOCAL_MATCH"]')).toContainText("JEV 추가 검토 불필요");
   await expect(page.locator('[data-jev-independent-event="p6a"]')).toContainText("확인된 독립 이벤트 근거 없음");
   await expect(page.locator('[data-jev-event-assessment="p6b"]')).toContainText("확인된 이벤트 근거 없음");
+  await expect(page.locator('[data-jev-real-event-inventory="p6d"]')).toContainText("저장된 원천 이벤트 자료 0건");
   await expect(page.locator('[data-jev-event-v5="p6c"]')).toContainText("참고 이벤트 없음");
   await expect(page.locator('[data-jev-event-v5="p6c"]')).toContainText("모델 미실행");
   expect(calls.filter(x=>x.method==="POST"&&x.path.includes("/event-v5"))).toHaveLength(0);
