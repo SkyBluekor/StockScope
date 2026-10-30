@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import date
 from io import BytesIO
 import html
 import re
@@ -29,7 +28,7 @@ class OpenDartProvider:
         if not self.api_key:
             raise ProviderNotConfigured("DART_API_KEY가 설정되지 않았습니다.")
 
-    async def _get(self, path: str, params: dict[str, Any], *, allow_no_data: bool = False) -> dict[str, Any]:
+    async def _get(self, path: str, params: dict[str, Any]) -> dict[str, Any]:
         self._require_key()
         query = {"crtfc_key": self.api_key, **params}
 
@@ -48,7 +47,7 @@ class OpenDartProvider:
             raise ProviderError("OpenDART가 JSON이 아닌 응답을 반환했습니다.") from exc
 
         status = payload.get("status")
-        if status not in ((None, "000", "013") if allow_no_data else (None, "000")):
+        if status not in (None, "000"):
             message = payload.get("message") or "알 수 없는 OpenDART 오류"
             raise ProviderError(f"OpenDART 오류 {status}: {message}")
         return payload
@@ -408,120 +407,41 @@ class OpenDartProvider:
         begin_date: str,
         end_date: str,
         page_count: int = 20,
-        *,
-        max_pages: int = 1,
     ) -> dict[str, Any]:
-        """Bounded OpenDART list.json retrieval; no persistence or AI processing.
-
-        Receipt date is a DATE_ONLY value. It is *not* a publication time.
-        Legacy callers continue to receive the same basic fields.
-        """
         code = corp_code.strip()
         if len(code) != 8 or not code.isdigit():
             raise ValueError("OpenDART corp_code는 8자리 숫자여야 합니다.")
-        def parse_day(raw: str) -> date:
-            if not isinstance(raw, str) or not (
-                re.fullmatch(r"\d{8}", raw) or re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw)
-            ):
-                raise ValueError("공시 조회일은 정확한 YYYY-MM-DD 또는 YYYYMMDD여야 합니다.")
-            return date.fromisoformat(raw)
+        begin = begin_date.replace("-", "")
+        end = end_date.replace("-", "")
+        if not (len(begin) == 8 and begin.isdigit() and len(end) == 8 and end.isdigit()):
+            raise ValueError("공시 조회일은 YYYY-MM-DD 또는 YYYYMMDD 형식이어야 합니다.")
 
-        try:
-            begin_day = parse_day(begin_date)
-            end_day = parse_day(end_date)
-        except ValueError as exc:
-            raise ValueError("공시 조회일은 유효한 YYYY-MM-DD 또는 YYYYMMDD여야 합니다.") from exc
-        if begin_day > end_day:
-            raise ValueError("공시 조회 시작일은 종료일 이후일 수 없습니다.")
-        if type(page_count) is not int or not 1 <= page_count <= 100:
-            raise ValueError("공시 페이지당 건수는 1~100이어야 합니다.")
-        if type(max_pages) is not int or not 1 <= max_pages <= 5:
-            raise ValueError("공시 조회 페이지는 최대 5개입니다.")
-        begin, end = begin_day.strftime("%Y%m%d"), end_day.strftime("%Y%m%d")
-        rows: list[dict[str, Any]] = []
-        seen: set[str] = set()
-        total_count: int | None = None
-        total_page: int | None = None
-        duplicates = 0
-        fetched_pages = 0
-        for page_no in range(1, max_pages + 1):
-            payload = await self._get(
-                "list.json", {
-                    "corp_code": code,
-                    "bgn_de": begin, "end_de": end,
-                    "page_no": page_no, "page_count": page_count,
-                }, allow_no_data=True,
-            )
-            fetched_pages += 1
-            if payload.get("status") == "013":
-                if page_no == 1:
-                    total_count, total_page = 0, 0
-                break
-            try:
-                reported_count = int(payload["total_count"])
-                reported_pages = int(payload["total_page"])
-            except (TypeError, ValueError, KeyError) as exc:
-                raise ProviderError("OpenDART 공시 응답의 페이지 수를 확인할 수 없습니다.") from exc
-            if reported_count < 0 or reported_pages < 0 or (
-                reported_count > 0 and reported_pages == 0
-            ):
-                raise ProviderError("OpenDART 공시 페이지 정보가 올바르지 않습니다.")
-            if total_count is None:
-                total_count, total_page = reported_count, reported_pages
-            elif total_count != reported_count or total_page != reported_pages:
-                raise ProviderError("OpenDART 조회 중 공시 페이지 정보가 변경되었습니다.")
-            entries = payload.get("list") or []
-            if not isinstance(entries, list):
-                raise ProviderError("OpenDART 공시 목록 형식이 올바르지 않습니다.")
-            for item in entries:
-                if not isinstance(item, dict):
-                    raise ProviderError("OpenDART 공시 항목 형식이 올바르지 않습니다.")
-                receipt = str(item.get("rcept_no") or "")
-                receipt_day = str(item.get("rcept_dt") or "")
-                if (len(receipt) != 14 or not receipt.isdigit()
-                    or len(receipt_day) != 8 or not receipt_day.isdigit()):
-                    raise ProviderError("OpenDART 공시 접수번호 또는 접수일이 부정확합니다.")
-                try:
-                    actual_day = date.fromisoformat(
-                        f"{receipt_day[:4]}-{receipt_day[4:6]}-{receipt_day[6:]}"
-                    )
-                except ValueError as exc:
-                    raise ProviderError("OpenDART 공시 접수일이 유효하지 않습니다.") from exc
-                if not begin_day <= actual_day <= end_day:
-                    raise ProviderError("OpenDART 공시 접수일이 조회기간 밖입니다.")
-                source_corp = item.get("corp_code")
-                if source_corp and str(source_corp) != code:
-                    raise ProviderError("OpenDART 공시 기업 고유번호가 조회 대상과 다릅니다.")
-                if receipt in seen:
-                    duplicates += 1
-                    continue
-                seen.add(receipt)
-                rows.append({
-                    "receipt_no": receipt,
-                    "corp_name": item.get("corp_name"),
-                    "report_name": item.get("report_nm"),
-                    "filer_name": item.get("flr_nm"),
-                    "receipt_date": receipt_day,
-                    "remark": item.get("rm"),
-                    "corp_code": code,
-                    "stock_code": item.get("stock_code"),
-                    "viewer_url": f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={receipt}",
-                    "source_time_quality": "DATE_ONLY",
-                    "source_published_at": None,
-                })
-            if page_no >= reported_pages or reported_pages == 0:
-                break
+        payload = await self._get(
+            "list.json",
+            {
+                "corp_code": code,
+                "bgn_de": begin,
+                "end_de": end,
+                "page_no": 1,
+                "page_count": min(max(page_count, 1), 100),
+            },
+        )
+        rows = payload.get("list") or []
         return {
             "provider": "OpenDART",
             "corp_code": code,
-            "begin_date": begin, "end_date": end,
+            "begin_date": begin,
+            "end_date": end,
             "count": len(rows),
-            "rows": rows,
-            "total_count": total_count,
-            "total_page": total_page,
-            "pages_fetched": fetched_pages,
-            "truncated": bool(total_page and fetched_pages < total_page),
-            "duplicate_receipt_count": duplicates,
-            "persisted": False,
-            "model_calls": 0,
+            "rows": [
+                {
+                    "receipt_no": row.get("rcept_no"),
+                    "corp_name": row.get("corp_name"),
+                    "report_name": row.get("report_nm"),
+                    "filer_name": row.get("flr_nm"),
+                    "receipt_date": row.get("rcept_dt"),
+                    "remark": row.get("rm"),
+                }
+                for row in rows
+            ],
         }
