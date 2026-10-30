@@ -196,3 +196,80 @@ def test_independent_v4_status_does_not_hide_unapproved_horizon_or_legacy(tmp_pa
     else:
         assert report["local_v4"]["status"] == "BLOCKED_SEMANTIC_SOURCE"
         assert report["local_v4"]["state_hash"] is None
+
+
+def test_p5_batch_reuses_frozen_p4_contract_and_is_strictly_readonly(tmp_path):
+    from app.jev.live_04r_p5_batch import inspect_frozen_entry_batch, ROUTES
+    db, _, original, duplicate = _authored_db(tmp_path)
+    before = db.read_bytes()
+    actual = inspect_frozen_entry_batch(db, capture_id=duplicate["id"])
+    assert actual["capture_id"] == duplicate["id"]
+    assert actual["canonical_capture_id"] == original["id"]
+    assert actual["entry_count"] == 1
+    assert len(actual["rows"]) == 1
+    assert sum(actual["counts"].values()) == 1
+    assert set(actual["counts"]) == set(ROUTES)
+    assert actual["rows"][0]["sample_index"] == 0
+    assert actual["rows"][0]["provider_decision"] == "HOLD"
+    assert actual["external_model_call_allowed"] is False
+    assert actual["actual_provider_calls"] == 0
+    assert actual["db_writes"] == 0
+    assert db.read_bytes() == before
+
+
+def test_p5_batch_semantic_routes_preserve_incomplete_ambiguous_and_legacy(tmp_path, monkeypatch):
+    from copy import deepcopy
+    import app.jev.live_04r_p5_batch as batch
+    db, _, original, _ = _authored_db(tmp_path)
+    original_inspect = batch.inspect_stored_horizon_capture
+
+    def view(route, status):
+        def inspect(path, *, capture_id, sample_index):
+            report = deepcopy(original_inspect(path, capture_id=capture_id, sample_index=sample_index))
+            report["local_v4"]["semantic_status"] = route
+            report["local_v4"]["status"] = status
+            report["strategy_identity"]["status"] = "LEGACY_DERIVED"
+            report["frozen_contract"]["semantic_source_v2_valid"] = True
+            return report
+        return inspect
+
+    cases = [
+        ("LOCAL_MATCH", "SKIPPED_LOCAL", "LOCAL_MATCH"),
+        ("LOCAL_CONFLICT", "SKIPPED_LOCAL", "LOCAL_CONFLICT"),
+        ("LOCAL_INCOMPLETE", "SKIPPED_LOCAL", "LOCAL_INCOMPLETE"),
+        ("LOCAL_AMBIGUOUS", "SKIPPED_LOCAL", "LOCAL_AMBIGUOUS"),
+        ("RESIDUAL_SEMANTIC_REVIEW", "LOCAL_V4_PROJECTABLE", "RESIDUAL_READY"),
+        ("RESIDUAL_SEMANTIC_REVIEW", "BLOCKED_INTEGRITY", "RESIDUAL_BLOCKED"),
+    ]
+    for semantic, state, expected in cases:
+        monkeypatch.setattr(batch, "inspect_stored_horizon_capture", view(semantic, state))
+        report = batch.inspect_frozen_entry_batch(db, capture_id=original["id"])
+        assert report["counts"][expected] == 1
+        assert report["review_eligible_count"] == (1 if expected == "RESIDUAL_READY" else 0)
+        assert report["external_model_call_allowed"] is False
+        assert report["rows"][0]["strategy_identity"] == "LEGACY_DERIVED"
+
+
+def test_p5_cli_and_api_share_identical_canonical_batch_without_model_calls(tmp_path, capsys, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from app.api import jev as jev_api
+    from tools.data.jev_live_04r_p5_batch import main as p5_cli
+    db, _, original, duplicate = _authored_db(tmp_path)
+    before = db.read_bytes()
+    assert p5_cli(["--capture-id", duplicate["id"], "--simulation-db", str(db)]) == 0
+    cli = json.loads(capsys.readouterr().out)
+    monkeypatch.setattr(jev_api, "_db", lambda: db)
+    app = FastAPI()
+    app.include_router(jev_api.router)
+    client = TestClient(app)
+    api = client.get("/simulation/jev/entry-routing", params={"capture_id": duplicate["id"]})
+    assert api.status_code == 200
+    assert api.json() == cli
+    assert cli["entry_count"] == 1
+    assert cli["actual_provider_calls"] == 0
+    assert "snapshot_json" not in json.dumps(cli)
+    assert db.read_bytes() == before
+    invalid = client.get("/simulation/jev/entry-routing", params={"capture_id": "not-stored"})
+    assert invalid.status_code == 404
+    assert db.read_bytes() == before
