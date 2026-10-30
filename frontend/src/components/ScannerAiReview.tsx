@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ScannerCandidate, ScannerResponse } from "../services/api";
-import { getJevLocalReadiness, getJevOutboundPreflight, type JevLocalReadiness, type JevOutboundPreflight, type JevMonitorItem } from "../services/jevApi";
+import { getJevEntryRouting, getJevLocalReadiness, getJevOutboundPreflight, type JevEntryRouting, type JevLocalReadiness, type JevOutboundPreflight, type JevMonitorItem } from "../services/jevApi";
 import { scannerAiReviewStatus } from "./scannerAiReviewStatus";
 import JevSyntheticDemo from "./JevSyntheticDemo";
 
@@ -25,6 +25,39 @@ export default function ScannerAiReview({
   const items = review?.reason_codes.slice(0, 3) ?? [];
   const captureId = result.prospective_capture?.canonical_capture_id
     || result.prospective_capture?.capture_id || null;
+  const [batch, setBatch] = useState<JevEntryRouting | null>(null);
+  const [batchError, setBatchError] = useState(false);
+  useEffect(() => {
+    let active = true;
+    setBatch(null);
+    setBatchError(false);
+    if (!captureId) return () => { active = false; };
+    void getJevEntryRouting(captureId).then(value => {
+      if (!active) return;
+      // Never display a different canonical snapshot as this selected result.
+      if (value.canonical_capture_id !== captureId || !value.read_only
+        || value.external_model_call_allowed !== false) {
+        setBatchError(true);
+        return;
+      }
+      setBatch(value);
+    }).catch(() => { if (active) setBatchError(true); });
+    return () => { active = false; };
+  }, [captureId]);
+  const matchedRouting = batch?.rows.find(item =>
+    item.sample_index === sampleIndex
+    && item.market === candidate.market
+    && item.ticker === candidate.code
+  ) ?? null;
+  const routeExplanation: Record<string, string> = {
+    LOCAL_MATCH: "의미 조건 일치 · JEV 추가 검토 불필요",
+    LOCAL_CONFLICT: "로컬 의미 충돌 · 조건 근거 확인",
+    LOCAL_INCOMPLETE: "의미 증거 부족 · 모델 검토 보류",
+    LOCAL_AMBIGUOUS: "의미 해석 불명확 · 모델 검토 보류",
+    RESIDUAL_READY: "JEV 추가 판단 대상 · 실제 전송 권한 확인 전",
+    RESIDUAL_BLOCKED: "JEV 추가 판단 대상이지만 입력 증거 부족",
+    BLOCKED_EVIDENCE: "로컬 V4 또는 원본 무결성 증거 부족",
+  };
   const [readiness, setReadiness] = useState<JevLocalReadiness | null>(null);
   const [outbound, setOutbound] = useState<JevOutboundPreflight | null>(null);
   const [outboundError, setOutboundError] = useState<string | null>(null);
@@ -153,6 +186,20 @@ export default function ScannerAiReview({
         <strong>선택 종목 · {candidate.name ?? candidate.code} ({candidate.code})</strong>
         <p>기존 Scanner 판단 유지 · AI 추가 검토는 별도 판단입니다.</p>
         <p><b>로컬 입력:</b> {localSummary}</p>
+        {batch && (
+          <p data-jev-entry-summary="p5">
+            <b>이 분석의 진입 후보:</b> {batch.entry_count}개 · 의미 일치 {batch.counts.LOCAL_MATCH}개
+            {" · "}충돌 {batch.counts.LOCAL_CONFLICT}개
+            {" · "}모델 추가 판단 필요 {batch.counts.RESIDUAL_READY + batch.counts.RESIDUAL_BLOCKED}개
+            {" · "}근거 부족 {batch.counts.LOCAL_INCOMPLETE + batch.counts.LOCAL_AMBIGUOUS + batch.counts.BLOCKED_EVIDENCE}개
+          </p>
+        )}
+        {matchedRouting && (
+          <p data-jev-entry-route={matchedRouting.routing}>
+            <b>이 후보의 분기:</b> {routeExplanation[matchedRouting.routing] ?? "검토 상태 확인 필요"}
+          </p>
+        )}
+        {batchError && <small>진입 후보 전체 분류를 불러오지 못했습니다. 기존 Scanner 판단은 그대로 유지됩니다.</small>}
         <p><b>전략:</b> {strategySummary} · <b>기간:</b> {policySummary}</p>
         <p><b>외부 TypeSafe:</b> {outboundSummary}</p>
         <button type="button" disabled title="원천 데이터 이용권과 실행 승인이 확인되지 않았습니다.">
