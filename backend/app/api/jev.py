@@ -266,8 +266,15 @@ def jev_local_readiness(
         status = "SOURCE_RIGHTS_HOLD"
         local_readiness = "LOCAL_READY"
     elif local == "SKIPPED_LOCAL":
-        status = "LOCAL_ONLY"
-        local_readiness = "LOCAL_ONLY"
+        # A local semantic match/conflict is resolved without a model.
+        # Incomplete or ambiguous evidence is NOT a completed local review;
+        # keep the public status enums and fail closed to NEEDS_EVIDENCE.
+        if v4["v4_local_semantic_status"] in ("LOCAL_INCOMPLETE", "LOCAL_AMBIGUOUS"):
+            status = "NEEDS_EVIDENCE"
+            local_readiness = "NEEDS_EVIDENCE"
+        else:
+            status = "LOCAL_ONLY"
+            local_readiness = "LOCAL_ONLY"
     else:
         status = "NEEDS_EVIDENCE"
         local_readiness = "NEEDS_EVIDENCE"
