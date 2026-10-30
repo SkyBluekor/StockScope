@@ -341,3 +341,12 @@ git -C $work log -1 --oneline
   4. `.\.venv\Scripts\python.exe -m tools.data.jev_live_04r_p4_final --policy-status` (읽기 전용).
   5. 실제 `local_v4.status`, source V2, 원본 신원, Horizon, rights를 확인하고 그 증거에 따라 P4 인수 판정. **별도 신규 후보 검색/시장 데이터 갱신 불필요.**
 - **장기 차단 계속:** user Windows actual SHORT V4 `LOCAL_V4_PROJECTABLE` 아직 미입증. 원본 ACTIVE version/hash가 없는 LEGACY는 원본 신원 승인으로 취급 금지. Numeric Horizon `EVALUATION_PENDING`, 시장 정보 외부 처리 권한 `HOLD`, LIVE-05 보류, G2-01~04 유지 G2-05 중지, Draft PR #170 유지.
+
+
+## 2026-10-30 P4-FINAL 사용자 Windows 실저장 SHORT 정본 인수 결과 — SKIPPED_LOCAL PASS
+
+- **고객 실제 PowerShell 검증 완료:** 분리 PowerShell에서 `STOCKSCOPE_SIM_DB` 변수가 사라져 `S7_SOURCE_DB_NOT_FOUND`였으나, 원래 Temp 격리 DB의 파일 존재를 확인하고 변수를 다시 설정해 해결. `--find-short`에서 `SHORT/LOCAL_REVIEW_ONLY` 정본 `a1e9c341-7542-4511-8740-e07f4ee250ff` `COMPLETE`, 저장 후보 15/ENTRY 7, source job `5f0ed8d5b3634948903e506338e1421d`; 중복 `630043c5-414c-467b-b882-40d02a168530` (`DUPLICATE`, 같은 canonical 참조) 확인. 검사/재실행으로 DB 수정하지 않음.
+- **`--capture-id` 실캡처 진입 후보 1건:** `frozen_contract` SHORT/VN_P1_S2_HORIZON_CONTEXT_V1/LOCAL_REVIEW_ONLY 및 request/canonical 일치 true, Semantic V2 valid true, rank/policy/engine/dates/risk 모두 PASS; strategy `LEGACY_DERIVED` (original version/hash 없음). `local_v4.status=SKIPPED_LOCAL`, `semantic_status=LOCAL_MATCH`, lineage COMPLETE, state hash 빈 값. 이는 **의미 조건의 로컬 일치로 추가 잔여 JEV 의미 검토 불필요**를 뜻하고 유료 모델이 검토에 성공했다는 증거가 아님. 나머지 6개 ENTRY 후보는 검사 안 했으므로 결과를 일반화하지 않는다. `fresh_scan_independently_verified=false`는 신규 엔진 감사 증명에 한계 있음을 명시하는 정상 보호 상태.
+- **남은 독립 게이트:** `--policy-status` 실제 값은 `ACTIVE_REFERENCE_MISSING` → `LEGACY_CURRENT_10_FALLBACK`, original strategy identity count 0, reference valid false; 정책 검증 해시 자체는 valid. Horizon 숫자 정책 `EVALUATION_PENDING`; TypeSafe 권한 `HOLD`, source publication UNKNOWN/revision UNVERIFIED/rights UNVERIFIED, actual provider calls 0, DB writes 0. `LOCAL_V4_PROJECTABLE`을 만들어야 하는 임의의 실종목 선택/재계산/증거 조작 금지.
+- **최종 판정:** **P4-FINAL: 실제 SHORT 정본 1후보의 로컬 V4 라우팅 WINDOWS PASS (SKIPPED_LOCAL)**. P4의 목표였던 기존 실제 캡처 read-only 진단 기능과 사용자 Windows UAT는 완료. *실제 TypeSafe 실종목 provider 사용, ACTIVE 원본 정책 확보, 명시 수치 Horizon 승인, 6개 다른 후보의 판단과 source rights 계약*은 이 성공과 별개로 남는다. 동일 캡처를 계속 재확인하지 말고 다음 일은 실모델 실사용 계획의 기존 미완료 이슈(권리/승인/유용한 잔여검토 입력 경로)를 명확하게 좁혀 진행.
+- [마스터 P4 실제 사용자 증거](https://github.com/SkyBluekor/StockScope/commit/2d32e3c1fb051679d48e95aaf8a6f16bc0a5af3e). [코드 CI #40978076734](https://github.com/SkyBluekor/StockScope/actions/runs/40978076734) 4/4 PASS. G2-01~04 유지/G2-05 보류, Draft PR #170 유지.
