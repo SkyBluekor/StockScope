@@ -5,7 +5,7 @@ import {
 } from "../services/jevApi";
 
 /** Actual OpenDART lookup is strictly user-initiated and never persisted. */
-export default function ScannerDartDisclosure({ ticker }: { ticker: string }) {
+export default function ScannerDartDisclosure({ ticker, market }: { ticker: string; market: string }) {
   const [result, setResult] = useState<JevDartLiveResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -17,7 +17,7 @@ export default function ScannerDartDisclosure({ ticker }: { ticker: string }) {
     setError(null);
     setLoading(false);
     return () => request.current?.abort();
-  }, [ticker]);
+  }, [ticker, market]);
 
   const lookUp = async () => {
     request.current?.abort();
@@ -27,7 +27,7 @@ export default function ScannerDartDisclosure({ ticker }: { ticker: string }) {
     setError(null);
     setResult(null);
     try {
-      const value = await fetchJevLiveDartDisclosures(ticker, controller.signal);
+      const value = await fetchJevLiveDartDisclosures(ticker, market, controller.signal);
       if (controller.signal.aborted) return;
       if (
         value.stock_code !== ticker ||
@@ -61,6 +61,16 @@ export default function ScannerDartDisclosure({ ticker }: { ticker: string }) {
               실제 조회 {result.count}건 · 전체 {result.total_count}건
               {result.truncated ? " · 상위 일부 페이지만 표시" : ""}
             </p>
+            {result.p6f_ingest_preview && (
+              <p data-jev-p6f-ingest-preview="true">
+                EventEvidence 정규화 후보 {result.p6f_ingest_preview.validated_metadata_count}건
+                {result.p6f_ingest_preview.invalid_metadata_count > 0
+                  ? " · 검증 제외 " + result.p6f_ingest_preview.invalid_metadata_count + "건"
+                  : ""}
+                {" · "}실제 DB 저장 0건 (권한 미승인)
+              </p>
+            )}
+            <small>종목·기업코드 출처 대조와 이벤트 정규화는 별개입니다. 거래소 시장 정보는 이 조회에서 독립 검증되지 않았습니다.</small>
             <small>기준: {result.begin_date}~{result.end_date} · 조회 {result.fetched_at} (UTC). 공시 접수일은 날짜만 제공되어 당시 게시 시각을 증명하지 않습니다.</small>
             {result.rows.length === 0 && <p>해당 기간 공시 없음</p>}
             {result.rows.length > 0 && (
