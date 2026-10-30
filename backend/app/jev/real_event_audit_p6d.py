@@ -169,7 +169,8 @@ def audit_existing_capture(
     registry, registry_error = _registry()
     rows = []
     categories = Counter()
-    source_kinds = set(inventory["source_kind_counts"])
+    # Include current source-policy blockers even when this DB has zero source rows.
+    source_kinds = set(inventory["source_kind_counts"]) | {"NAVER_NEWS", "OPENDART_DISCLOSURE"}
     with _readonly(db) as conn:
         for capture, sample in entries:
             index = int(sample["sample_index"])
@@ -198,7 +199,11 @@ def audit_existing_capture(
                 )
                 routing = route_event_v5(assessment)
                 source_kinds.update(reference["source_kinds"])
-                if links["entity_count"] == 0:
+                if inventory["stored_counts_not_asof"]["source_refs"] == 0:
+                    cause = "NO_INGESTED_EVENTS"
+                elif inventory["stored_counts_not_asof"]["event_revisions"] == 0:
+                    cause = "NO_EVENT_REVISIONS"
+                elif links["entity_count"] == 0:
                     cause = "ENTITY_NOT_LINKED"
                 elif links["relevance_count"] == 0:
                     cause = "NO_RELEVANCE_LINK"
