@@ -52,6 +52,7 @@ def _v2():
         "strategy": {"strategy_key": "pullback"},
         "relations": {
             "relation_contract_hash": "2" * 64,
+            "strategy_key": "pullback",
             "concepts": [{"concept_id": "support_integrity"}],
         },
     }
