@@ -421,7 +421,7 @@ class OpenDartProvider:
             raise ValueError("OpenDART corp_code는 8자리 숫자여야 합니다.")
         def parse_day(raw: str) -> date:
             if not isinstance(raw, str) or not (
-                re.fullmatch(r"\\d{8}", raw) or re.fullmatch(r"\\d{4}-\\d{2}-\\d{2}", raw)
+                re.fullmatch(r"\d{8}", raw) or re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw)
             ):
                 raise ValueError("공시 조회일은 정확한 YYYY-MM-DD 또는 YYYYMMDD여야 합니다.")
             return date.fromisoformat(raw)
