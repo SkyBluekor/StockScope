@@ -316,6 +316,7 @@ test("P4 Horizon selector keeps the original Scanner control grid readable at de
 test("P5 selected candidate shows local-only batch verdict without any model POST or grid regression",async({page})=>{
   const {calls,violations,pageErrors}=await setup(page);
   await page.getByRole("tab",{name:"AI 검토"}).click();
+  await page.locator('[data-jev-developer-details="true"] > summary').click();
   const summary=page.locator('[data-jev-entry-summary="p5"]');
   await expect(summary).toBeVisible();
   await expect(summary).toContainText("진입 후보:");
@@ -341,6 +342,7 @@ test("P5 selected candidate shows local-only batch verdict without any model POS
 test("P6-E actual DART display requires explicit click; no evidence storage or model submission",async({page})=>{
   const {calls,violations,pageErrors}=await setup(page);
   await page.getByRole("tab",{name:"AI 검토"}).click();
+  await page.locator('[data-jev-developer-details="true"] > summary').click();
   const disclosure=page.locator('[data-jev-live-dart="p6e"]');
   await expect(disclosure).toBeVisible();
   expect(calls.filter(x=>x.path.includes("/dart/stocks/"))).toHaveLength(0);
@@ -355,6 +357,51 @@ test("P6-E actual DART display requires explicit click; no evidence storage or m
   await expect(disclosure).toContainText("EventEvidence 영구 저장: 미승인·미실행");
   expect(calls.filter(x=>x.path==="/api/dart/stocks/145720/disclosures"&&x.method==="GET")).toHaveLength(1);
   expect(calls.filter(x=>x.method==="POST"&&x.path.includes("/jev/"))).toHaveLength(0);
+  expect(violations).toEqual([]);
+  expect(pageErrors).toEqual([]);
+});
+
+
+test("A: compact JEV status renders without hidden diagnostics or model calls; mobile layout fits",async({page})=>{
+  const {calls,violations,pageErrors}=await setup(page);
+  await page.getByRole("tab",{name:"AI 검토"}).click();
+  const main=page.locator('[data-jev-a-summary="true"]');
+  const compact=page.locator('[data-jev-primary-summary="true"]');
+  const developer=page.locator('[data-jev-developer-details="true"]');
+  await expect(compact).toBeVisible();
+  await expect(compact).toContainText("가상 이전 후보 (145720)");
+  await expect(compact).toContainText("Scanner 판단");
+  await expect(compact).toContainText("관망");
+  await expect(compact).toContainText("현재 서버에서 JEV 사용 불가");
+  await expect(compact.getByRole("button",{name:"JEV 검토 실행 (사용 불가)"})).toBeDisabled();
+  await expect(developer).not.toHaveAttribute("open","");
+  await expect(page.locator('[data-jev-entry-summary="p5"]')).toHaveCount(0);
+  await expect(page.locator('[data-jev-live-dart="p6e"]')).toHaveCount(0);
+  await expect(page.locator('[data-jev-event-v5="p6c"]')).toHaveCount(0);
+  expect(calls.filter(x=>[
+    "/api/simulation/jev/entry-routing",
+    "/api/simulation/jev/independent-event-reference",
+    "/api/simulation/jev/independent-event-assessment",
+    "/api/simulation/jev/event-v5-routing",
+    "/api/simulation/jev/event-data-audit",
+  ].includes(x.path))).toHaveLength(0);
+  expect(calls.filter(x=>x.method==="POST"&&x.path.includes("/jev/"))).toHaveLength(0);
+  for(const width of [1360,390]){
+    await page.setViewportSize({width,height:800});
+    await expect(compact).toBeVisible();
+    const rect=await compact.boundingBox();
+    expect(rect?.height).toBeLessThan(265);
+    const overflow=await compact.evaluate(el=>el.scrollWidth-el.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(2);
+  }
+  await developer.locator(":scope > summary").click();
+  await expect(page.locator('[data-jev-entry-summary="p5"]')).toBeVisible();
+  await expect(page.locator('[data-jev-live-dart="p6e"]')).toBeVisible();
+  await expect(page.locator('[data-jev-event-v5="p6c"]')).toBeVisible();
+  expect(calls.filter(x=>x.method==="POST"&&x.path.includes("/jev/"))).toHaveLength(0);
+  await developer.locator(":scope > summary").click();
+  await expect(page.locator('[data-jev-entry-summary="p5"]')).toHaveCount(0);
+  await expect(compact).toBeVisible();
   expect(violations).toEqual([]);
   expect(pageErrors).toEqual([]);
 });
