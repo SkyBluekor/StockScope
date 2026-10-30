@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ScannerCandidate, ScannerResponse } from "../services/api";
-import { getJevEntryRouting, getJevLocalReadiness, getJevOutboundPreflight, type JevEntryRouting, type JevLocalReadiness, type JevOutboundPreflight, type JevMonitorItem } from "../services/jevApi";
+import { getJevEntryRouting, getJevIndependentEventReference, getJevLocalReadiness, getJevOutboundPreflight, type JevEntryRouting, type JevIndependentEventReference, type JevLocalReadiness, type JevOutboundPreflight, type JevMonitorItem } from "../services/jevApi";
 import { scannerAiReviewStatus } from "./scannerAiReviewStatus";
 import JevSyntheticDemo from "./JevSyntheticDemo";
 
@@ -49,6 +49,39 @@ export default function ScannerAiReview({
     && item.market === candidate.market
     && item.ticker === candidate.code
   ) ?? null;
+  const [eventReference, setEventReference] = useState<JevIndependentEventReference | null>(null);
+  const [eventError, setEventError] = useState(false);
+  useEffect(() => {
+    let active = true;
+    setEventReference(null);
+    setEventError(false);
+    if (!captureId || sampleIndex < 0) return () => { active = false; };
+    void getJevIndependentEventReference(captureId, sampleIndex)
+      .then(value => {
+        if (!active) return;
+        if (value.capture_id !== captureId || value.sample_index !== sampleIndex
+            || value.market !== candidate.market || value.ticker !== candidate.code
+            || value.external_model_call_allowed !== false
+            || value.model_review_executed !== false) {
+          setEventError(true);
+          return;
+        }
+        setEventReference(value);
+      })
+      .catch(() => { if (active) setEventError(true); });
+    return () => { active = false; };
+  }, [captureId, sampleIndex, candidate.market, candidate.code]);
+  const eventIdentityValid = eventReference
+    && (!matchedRouting || matchedRouting.snapshot_hash === eventReference.snapshot_hash);
+  const eventSummary = !captureId ? "저장된 캡처가 없어 확인 불가"
+    : eventError ? "독립 근거 조회 실패"
+    : eventReference && !eventIdentityValid ? "이 후보의 원본 해시와 일치하지 않음"
+    : !eventReference ? "독립 근거 확인 중"
+    : eventReference.status === "NO_INDEPENDENT_EVIDENCE"
+      ? "캡처 시점까지 확인된 독립 이벤트 근거 없음"
+      : eventReference.status === "EVIDENCE_UNCERTAIN"
+        ? "이벤트 참고 근거 " + eventReference.reference_count + "건 · 전략 충돌 여부 미판정"
+        : "이벤트 근거 확인 불가 · 출처 또는 시점 점검 필요";
   const routeExplanation: Record<string, string> = {
     LOCAL_MATCH: "의미 조건 일치 · JEV 추가 검토 불필요",
     LOCAL_CONFLICT: "로컬 의미 충돌 · 조건 근거 확인",
@@ -212,6 +245,10 @@ export default function ScannerAiReview({
           </p>
         )}
         {batchError && <small>진입 후보 전체 분류를 불러오지 못했습니다. 기존 Scanner 판단은 그대로 유지됩니다.</small>}
+        <p data-jev-independent-event="p6a"><b>독립 뉴스·공시 근거:</b> {eventSummary}</p>
+        {eventIdentityValid && eventReference?.status === "EVIDENCE_UNCERTAIN" && (
+          <small>캡처 생성 시각 기준 저장된 참고 자료입니다. 전략의 반대 근거나 실제 JEV 검토 결과로 확정하지 않습니다. 외부 AI 사용 권한은 미승인입니다.</small>
+        )}
         <p><b>전략:</b> {strategySummary} · <b>기간:</b> {policySummary}</p>
         <p><b>외부 TypeSafe:</b> {outboundSummary}</p>
         <button type="button" disabled
