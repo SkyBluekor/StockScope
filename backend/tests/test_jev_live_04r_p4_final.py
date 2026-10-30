@@ -273,3 +273,33 @@ def test_p5_cli_and_api_share_identical_canonical_batch_without_model_calls(tmp_
     invalid = client.get("/simulation/jev/entry-routing", params={"capture_id": "not-stored"})
     assert invalid.status_code == 404
     assert db.read_bytes() == before
+
+
+@pytest.mark.parametrize("semantic", ["LOCAL_INCOMPLETE", "LOCAL_AMBIGUOUS"])
+def test_p5_local_readiness_never_calls_incomplete_ambiguous_a_completed_local_review(tmp_path, monkeypatch, semantic):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from app.api import jev as jev_api
+    db, _, original, _ = _authored_db(tmp_path)
+    original_v4 = jev_api.diagnose_v4_candidate
+
+    def authored_semantic(capture, sample):
+        report = dict(original_v4(capture, sample))
+        report["local_v4_status"] = "SKIPPED_LOCAL"
+        report["v4_local_semantic_status"] = semantic
+        return report
+
+    monkeypatch.setattr(jev_api, "_db", lambda: db)
+    monkeypatch.setattr(jev_api, "diagnose_v4_candidate", authored_semantic)
+    app = FastAPI()
+    app.include_router(jev_api.router)
+    resp = TestClient(app).get("/simulation/jev/local-readiness",
+                               params={"capture_id": original["id"], "sample_index": 0})
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    assert payload["local_readiness"] == "NEEDS_EVIDENCE"
+    assert payload["status"] == "NEEDS_EVIDENCE"
+    assert payload["v4_semantic_status"] == semantic
+    assert payload["model_review_executed"] is False
+    assert payload["actual_provider_calls"] == 0
+    assert payload["db_writes"] == 0
