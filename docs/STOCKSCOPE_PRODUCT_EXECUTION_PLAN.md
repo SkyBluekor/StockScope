@@ -118,11 +118,78 @@
 
 ## 9. **고정 실행 순서** — 승인 후 순차 진행
 
-### 1단계: 실제 구현·데이터 연결 현황 확인
+### 1단계: 실제 구현·데이터 연결 현황 확인 — 실행 명세 v1
 
-- **목적:** 이미 있는 기능은 다시 만들지 않고 OpenAPI → 시장/경제/사건 → 산업/종목 → 10전략·Risk → Scanner → JEV의 실제 연결을 조사한다.
-- **변경 범위:** 핵심 코드와 사용자 Windows 실제 데이터 현황 확인. 새로운 Mock·진단기·UI·데이터 수집 프레임워크 생성 금지.
-- **완료 조건:** 현재 브랜치에서 실제 종목 한 개의 분석 경로를 재현하고, 본 문서 8절을 **구현됨/연결 안 됨/자료 부족/권한 차단/미확인**으로 갱신해 첫 번째 실질적인 연결 결함을 확정한다.
+**작업 상태:** SPEC_READY / IMPLEMENTATION_NOT_STARTED. 이 작업은 **분석·현황 확인**이며 기능 구현, 기존 로직 수정, DB 변경, 신규 JEV 호출이 아니다. 사용자에게 구현을 지시받기 전에는 아래 작업을 실행하지 않는다.
+
+**실제 작업 기준:** C:\TAEWOO\CapstonDesign\StockScope · codex/jev-reviewer-shadow-bridge. 시작 시 git branch --show-current, git rev-parse --short HEAD, git status --short로 브랜치/커밋/로컬 변경 상태를 확인한다. 다른 브랜치, C:\Projects, 사용자 보유 DB의 대체본을 이용하지 않는다. 사용자의 최신 커밋과 원래 파일은 모두 보존한다.
+
+#### 목표 / 이 단계에서 답할 질문
+
+> "현재 StockScope는 실제 API의 국내외 시장·국제 정세·기업 정보를 어디까지 읽고, 이를 어떤 경로로 Scanner의 종목/전략/위험 판단에 반영하는가? 끊어진 연결 중 제품 가치에 가장 큰 영향을 주는 **하나**는 무엇인가?"
+
+**핵심:** 시장/이벤트 분석 코드가 존재한다는 사실과, 실제 종목 Scanner의 최종 판단에 그 값이 적용된다는 사실은 다르다. 두 경로를 반드시 분리해 확인한다. 특히 현재 StrategyEngine._risk_gate에는 market_regime == PANIC, event_risk 입력 차단이 이미 존재하므로 이것을 "미구현"이라고 단정하지 말고 **원천 데이터가 어디에서 생성되어 이 필드까지 도달하는지** 추적한다.
+
+#### 조사 순서 — 1→2→3→4→5→6, 병렬 확장 금지
+
+1. **원천·시각 현황 확인:** KRX EOD 주가/지수, OpenDART 공시·기업, 국내 시장 위험, FRED 등 해외 거시·환율·국제 이벤트/뉴스 사용 가능 경로를 조사한다. 각 데이터에 대해 실제 provider 또는 로컬 DB, 최신 관측 기준일, 수집/발표/사용 가능 시각, 결측·오류, 표시/파생/외부 AI 전송 권한을 기재한다. "API 연결됨"과 "현재 DB에 실제 데이터 있음"은 별개 상태로 기록한다. 지표/이벤트가 존재하지 않으면 없는 그대로 기록한다.
+2. **시장·매크로 영향 소비자 확인:** backend/app/api/macro.py의 /market-stock-impact, /event-reference는 **reference/shadow** 응답임을 확인하고, 실제 Scanner job 결과나 StrategyInput에 연결되는 호출 지점을 검색한다. 산업/종목 연결도 '기업·업종 식별이 확인되는지'와 '최종 전략 평가의 입력인지'를 구분한다.
+3. **전략·Risk 실제 경로 확인:** backend/app/api/backtest.py의 _run_scanner_job → app.backtest.scanner.StockScannerService → 전략/시장 위험/기간/리스크 산출 → 최종 결과 형성을 추적한다. backend/app/strategy/engine.py의 market_regime, event_risk, tradable, liquidity_ok, extreme_move 차단 입력의 **생산자·시간·fallback**을 확인한다. RiskEngine, 기존 10개 전략, Horizon의 실사용/참고/차단 여부를 별도 표시한다. Strategy score는 수익 확률이 아니며, 입력 누락 시 기본값이 무엇인지 확인한다.
+4. **성과·검증 소비자 확인:** 현재 backtest/Prospective/Execution의 과거/향후 평가 경로가 실제 후보/전략별 **수익과 손실·비용·표본·평가 기간**을 어디까지 계산하고, Scanner 사용자 화면에서 그 정보를 직접 활용하는지 확인한다. 확인 전 "최고 수익 전략 판별 완료"라고 쓰지 않는다.
+5. **JEV 실제 입력 확인:** backend/app/api/jev.py, app/jev/review_service.py, owned_review_b.py, frontend/src/components/ScannerAiReview.tsx, ScannerOwnedReviewB.tsx를 확인한다. 기존 Scanner 결과가 실제 TypeSafe wire에 들어가는지/어떤 권한으로/어떤 질문으로 들어가는지 분리하여 기재. **사용자 직접 작성 문장 2개 비교는 제품 목표 불합격**이며 실제 종목·시장 JEV 분석이라고 인정하거나 유료 실행하지 않는다.
+6. **현재 Windows 사용자 흐름 관찰:** 기존 Windows 환경에서 마지막 완료된 **실제 종목 1개**(예: 과거 확인된 선익시스템 171090; 현재 데이터가 다르면 사용자가 선택한 기존 후보)로 기존 Scanner 화면·API 응답·데이터 기준일·위험/전략 판단을 확인한다. 먼저 **이미 저장된 결과/DB 조회만** 사용하고 외부 OpenAPI 재조회나 신규 Scanner 실행이 필요하면 사용자에게 비용·데이터 쓰기 여부를 밝힌 뒤 별도 진행한다. PC에 직접 접근할 수 없다면 코드만으로 확인된 항목과 **Windows UAT 미실시**를 분리하며 임의 성공 처리하지 않는다.
+
+#### 꼭 확인할 기존 소스(시작점, 전체 목록이 아님)
+
+- 수집: backend/app/market/providers/krx.py, backend/app/api/news.py, backend/app/api/macro.py, 기존 OpenDART API/provider, 관련 source policy.
+- Scanner: backend/app/api/backtest.py (_run_scanner_job), backend/app/backtest/scanner.py (StockScannerService), backend/app/strategy/engine.py, backend/app/risk/engine.py, backend/app/horizon.py.
+- 저장·평가: backend/app/prospective/catalog.py, 기존 Backtest/Execution·Market/Macro Store.
+- 사용자 표시/JEV: frontend/src/components/ScannerPanel.tsx, ScannerAiReview.tsx, ScannerOwnedReviewB.tsx, backend/app/api/jev.py, backend/app/jev/review_service.py, owned_review_b.py.
+- 확인 대상: 실제 호출 관계·생성되는 객체/필드·최종 응답/화면. 파일명만 나열하거나 README 문구로 "연결 완료" 판정하지 않는다.
+
+#### 결과물 — **이 문서 한 곳에만** 기록
+
+**A. 데이터·의사결정 연결표** (각 항목 1행)
+
+| 데이터/요인 | 실제 원천·기준시각 | 최종 소비자(실제 함수/필드) | 상태 | 근거 | 사용자 결과에 미치는 영향 |
+|---|---|---|---|---|---|
+
+항목은 최소 KRX 주가, KOSPI/KOSDAQ 지수 급락, 글로벌 금리/환율/해외지수, 국제 사건(전쟁/호르무즈 등), 산업·공시, 10개 전략, Risk/Horizon, 과거성과·위험, JEV를 포함한다.
+
+**상태는 정확히 하나:** VERIFIED_CONNECTED(실제 최종 출력까지 확인), IMPLEMENTED_NOT_CONNECTED(구현은 있으나 최종 출력 미연결), DATA_UNAVAILABLE(원천/현재 데이터 부족), RIGHTS_BLOCKED(허용 범위 차단), UNVERIFIED(코드·Windows 확인 부족). 동일 항목에 혼합 사유가 있으면 대표 상태를 택하고 근거에 다른 차단을 함께 적는다. "코드에 클래스 있음"만으로 VERIFIED_CONNECTED 금지.
+
+**B. 실제 종목 1개 추적표**
+
+- 종목명/코드/시장, 조회한 캡처 ID 또는 결과 식별자, 분석 기준일과 데이터 시각.
+- 현재 기본 Scanner 판단/전략/기간/Risk(실제 값 또는 미확인).
+- 글로벌·시장 위험과 국제 사건이 **실제 판단에 반영된 값 / 단순 별도 표시 / 데이터 없음** 중 어디에 해당하는지.
+- JEV 결과가 없으면 **모델 미실행**, 기존 B 입력 방식은 제품 미적합으로 표시.
+- 실제 Windows 사용자 관찰 여부, API 성공·실패/DB 원본 불변 여부.
+
+**C. 핵심 결함 한 가지와 다음 단계 범위**
+
+- 가장 큰 결함 한 가지를 **정확한 생산자 → 끊긴 소비자 → 사용자 체감 문제**로 기술한다.
+- 기존 재사용 가능한 코드와 필요한 최소 연결 변경만 추려 **2단계 작업 후보**로 연결한다.
+- 영향이 큰 문제가 여러 개여도 제품의 다음 단계는 하나만 제시. 원천 권한·실데이터 미확인 등 막힌 이유는 정직하게 기술하고 임의 구현하지 않는다.
+
+#### 금지 및 회귀 조건
+
+- **이번 단계에서는 제품 소스, SQL 스키마, 사용자 DB, UI, 모델 프롬프트, Strategy/Risk 판정, 기존 Frozen 검증 자료를 수정하지 않는다.**
+- 외부 JEV/TypeSafe 호출·유료 토큰 소비·신규 데이터 배치 수집 금지. 개발자용 진단기/Mock 테스트/새 상태 패널/새 보고서 파일 추가 금지.
+- 보안: API 키·토큰·보유계좌·원문 개인정보를 문서나 콘솔 로그에 기록하지 않는다. 사용권을 추측으로 승인 처리하지 않는다.
+- 테스트는 필요할 때 기존 읽기 전용 검사·기존 UI를 활용한다. 테스트 수행 자체가 DB migration/캐시/재수집 write를 유발하면 실행 전에 범위를 확인한다.
+- 자료가 없는 경우 임의 숫자·수익률·사건 시나리오로 결과를 채우지 않는다. CI 통과 ≠ 실제 Windows 종목 연결 통과.
+- **완료되면 멈춘다.** 이 단계에서 2단계 기능 코드를 미리 구현하지 않는다.
+
+#### 1단계 완료 판정
+
+1. A/B/C 결과가 이 문서의 1단계 결과란에 기록됨.
+2. 대표 종목을 통해 최종 Scanner 소비 여부가 확인되거나, 사용자 Windows 확인 불가 항목을 구체적 미완료로 표시함.
+3. 제품 개선에 직접 연결되는 **최우선 결함 1개**와 기존 코드 재사용 지점이 밝혀짐.
+4. 기존 소스·DB·정책·브랜치의 불필요한 변경이 없음을 확인함.
+5. 사용자에게 간결하게 조사 결론과 **2단계에서 해결할 단 하나의 작업**을 제시함.
+
+**1단계 결과:** NOT_STARTED. 조사 완료 후 이 문서의 본 절 아래에 A/B/C 기록을 추가하고, 11절 진행표만 갱신한다.
 
 ### 2단계: 시장·국제 사건 위험을 종목 분석에 연결
 
@@ -178,7 +245,7 @@
 | **제품 목표 문서** | **작성 완료 / 사용자 승인 대기** | 문서 검토·확정 |
 | 기존 A단계 요약 UI | DONE · 사용자 Windows 확인 | 보존 |
 | 기존 B단계 문장 비교 | REJECTED_PRODUCT_FIT · 코드 존재, 실모델 유료 검증 진행 금지 | 후속 해당 범위에서 UI 정리 |
-| **1단계 현황 파악** | NOT_STARTED | 사용자 승인 후 이것만 진행 |
+| **1단계 현황 파악** | SPEC_READY / NOT_STARTED | 실행 명세 v1 확정안 작성. 실행 지시 후 실제 브랜치·Windows 읽기 전용 조사만 실시 |
 | 2단계 시장·국제 사건 연결 | NOT_STARTED | 1단계 종료 후 |
 | 3단계 다전략/위험 통합 | NOT_STARTED | 2단계 종료 후 |
 | 4단계 JEV 실사용 | NOT_STARTED | 3단계 결과와 허용 입력 확인 후 |
