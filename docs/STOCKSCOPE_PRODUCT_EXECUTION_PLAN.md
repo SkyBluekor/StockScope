@@ -238,7 +238,7 @@
 
 ### 2단계: 기존 시장 위험을 실제 Scanner 판단에 연결 — 실행 명세 v1
 
-**상태: SPEC_READY / NOT_STARTED (2026-11-01).** 이번 요청은 다음 단계의 작업 범위를 정하는 것이며 **코드 구현 승인이 아님**. 다음 실행 요청을 받으면 아래 순서로 *하나의 2단계 작업*을 수행한다. 1단계의 Windows 확인을 독립된 새 검증 프로젝트로 분리하지 않는다.
+**상태: IMPLEMENTED_REFERENCE_ONLY / CI_PASS / WINDOWS_UAT_PENDING (2026-11-01).** 사용자가 2단계 구현 착수를 지시했고, **KRX 일별 지수 위험 설명의 API·UI 연결까지** 반영했다. 하지만 PANIC 차단 정책 미승인, 실제 Windows 검증 미완료, 글로벌/사건의 실시간 소비 미연결로 **2단계 전체 DONE 아님**. 1단계의 Windows 확인도 별도 프로젝트로 분리하지 않는다.
 
 #### 구현 목표와 성공 장면
 
@@ -306,7 +306,26 @@
 - 글로벌 거시 1종(기존 US10Y) 및 사건/산업 위험 1종(기존 DART 또는 event evidence)은 **사용 가능한 상태이면 근거·시점을 표시**, 제한된다면 **미연결/자료 부족/권한 차단**을 명확히 기록한다. 둘을 실제 투자 판단 입력으로 승인 없이 섞지 않는다.
 - 사용자 Windows 실제 결과와 기존 분석 비교, 변경 파일·CI 증거·차단 1~3개를 **이 계획서에만** 기록한다. 2단계 완료/미완료를 정직하게 선언하고 3단계 다전략·기간·성과로 넘어갈지는 **이 결과를 확인한 뒤** 결정한다.
 
-**2단계 실행 결과: NOT_STARTED. 이 명세는 아직 기능을 구현하지 않았다.**
+#### 2단계 구현 결과 — 2026-11-01
+
+**반영 완료 (실제 소스 변경):**
+
+- `backend/app/api/backtest.py`: Scanner가 기존 순위·Risk·정본 캡처·사후 reference 기록을 모두 확정한 **후**, `_attach_scanner_market_reference()`에서 기존 KRX EOD 저장소의 **동일 분석일 지수 1건만 읽어** API 최종 응답 `market_summary[]`에 추가. 날짜 불일치/누락/숫자 오류는 `UNKNOWN`. 유료 API 호출/신규 수집/DB 기록·재생성 없음.
+- 시장 변동률은 기존 `regime_from_index()`의 `TREND_DOWN` 신호만 재사용. 하락일에 `DECLINE_RECHECK`로 표시하지만 **새 PANIC 임계값 및 진입 차단은 적용하지 않음**. 응답에 `risk_decision_effect=REFERENCE_ONLY_NOT_RISK_GATE` 표기. 동일하지 않은 지수 날짜를 억지로 맞추지 않는다.
+- `frontend/src/services/api.ts`, `frontend/src/components/ScannerPanel.tsx`, `frontend/src/components/ScannerDecisionSummary.tsx`: 기존 후보 목록·종목 상세 구조 유지. 종목 상세의 "시장 위험 · 분석일 기준" 영역에 KRX 확정 일별 변화/하락 주의/자료 불명확을 노출하고 **전략 조건에 따른 기존 판단과 시장 참고 경고를 분리**. 미국 금리·국제 사건은 현재 Scanner의 진입·전략 판단에 자동 반영되지 않음을 명시. 이전 캐시·세션에 지수 상태가 없으면 "자료 확인 불가" 처리.
+- `backend/tests/test_scanner_v021.py`: 동일 분석일, 전일 데이터 혼용 차단, NaN/결측, 기존 `TREND_DOWN`과 PANIC Gate 불변, API 설명 보강 시 Frozen 후보·순위 불변 검증.
+- **중요 복원:** 최초 시도에서 `backend/app/backtest/scanner.py`를 변경하여 Frozen Baseline 검증이 실패했으나 **동일 파일을 기존 원본 blob `39852538b23516fe7acc3136f725d6dd53deb3ab`으로 완전히 복원**한 뒤 API 경계의 설명 전용 확장으로 대체했다. 프로덕션 Scanner/Backtest의 frozen 해시·전략/순위 변경 없음.
+
+**검증:** 최종 코드 `b574b1ab` 기준 [GitHub Actions #41313136517](https://github.com/SkyBluekor/StockScope/actions/runs/41313136517): **Python 3.11 PASS, Python 3.14 PASS, Frontend Node 22 PASS, Fresh Clone Windows PASS (4/4)**. 두 백엔드 환경에서 기존 Frozen Baseline 검증을 포함한 전체 테스트가 통과했다. **사용자 실제 Windows UI/UAT 및 실제 KRX 저장 데이터 시각·지수값은 아직 확인하지 않았으므로 PASS로 쓰지 않음.**
+
+**완료하지 못한 요구사항 / 다음 확인 사항:**
+
+1. **Windows UAT 대기:** 현재 브랜치에서 pull 후 기존 Scanner 분석 결과를 화면에 불러와 **한 번만** 실행/재사용하고, 같은 날 KRX 지수 변화·종목 전략·시장 위험 문구가 함께 보이는지 확인. 결과 날짜·종목 ID·출처와 현재 Risk 변동 여부만 비교. 데이터 미확보 시 임의 값 출력 금지.
+2. **PANIC에 따른 실제 신규 진입 차단은 미구현:** 현 코드에 승인된 급락 임계값/거버넌스가 없어, 근거 없이 숫자를 정해 `Risk Gate`를 활성화하지 않았다. 현재 표시되는 것은 **참고 경고**이며 매수/매도/순위가 바뀌지 않는다.
+3. **글로벌/국제 사건의 Scanner 소비 미완료:** 기존 DGS10 Macro/Event `reference`는 사후 검토로만 사용. 시간/데이터 이용권 및 업종 연결이 확인되지 않은 자료를 생산 `StrategyInput`으로 승격하거나 외부 JEV로 보내지 않았다. 이번 단계에서 새 공급자를 추가하지 않음.
+
+**2단계 판정:** `IMPLEMENTED_REFERENCE_ONLY_CI_PASS_WINDOWS_UAT_PENDING` / 전체 완료 아님. 사용자 PC에서 KRX 경고 표시를 확인하고, 남은 PANIC 위험 정책 및 실제 거시·이벤트 소비 조건을 명시적으로 결정하기 전에는 3단계로 이동하지 않는다.
+
 
 ### 3단계: 다전략·기간·위험 대비 기대성과 통합
 
@@ -353,11 +372,11 @@
 
 | 구분 | 현재 상태 (2026-11-01) | 다음 |
 |---|---|---|
-| **제품 목표 문서** | **작성 완료 / 사용자 승인 대기** | 문서 검토·확정 |
+| **제품 목표 문서** | **실행 기준 사용 중 · 단계별 승인** | 1단계 조사 및 2단계 착수 지시 반영. 별도 범위 확대는 승인 필요 |
 | 기존 A단계 요약 UI | DONE · 사용자 Windows 확인 | 보존 |
 | 기존 B단계 문장 비교 | REJECTED_PRODUCT_FIT · 코드 존재, 실모델 유료 검증 진행 금지 | 후속 해당 범위에서 UI 정리 |
 | **1단계 현황 파악** | **CODE_AUDIT_COMPLETE_WINDOWS_UAT_PENDING** | 2026-11-01 지정 브랜치 코드 연결 조사 완료, 실제 Windows·원천 데이터 미확인. 핵심 갭: Scanner 시장·이벤트 위험 → Risk Gate |
-| 2단계 시장·국제 사건 연결 | **SPEC_READY / NOT_STARTED** | 1단계 Windows 미확인을 진입 절차에 통합. KRX 급락 위험→Scanner 판단 최소 연결, US10Y·이벤트 참고 분리. 다음 실행 요청 시 구현 시작 |
+| **2단계 시장·국제 사건 연결** | **IMPLEMENTED_REFERENCE_ONLY_CI_PASS_WINDOWS_UAT_PENDING** | API 후처리 KRX 동일일 지수 주의 UI 연결 · CI 4/4 통과 · 기존 Scanner frozen 원본 복구. Windows 실데이터·PANIC 차단 규칙·거시/사건 판단 연계는 미완료 |
 | 3단계 다전략/위험 통합 | NOT_STARTED | 2단계 종료 후 |
 | 4단계 JEV 실사용 | NOT_STARTED | 3단계 결과와 허용 입력 확인 후 |
 | 5단계 효용 평가 | NOT_STARTED | 4단계 후 |
