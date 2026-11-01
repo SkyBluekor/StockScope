@@ -153,8 +153,13 @@ class OwnedReviewService:
         }
         wire_hash = _hash(remote)
         source_hash = _hash({"required_condition": rule, "observed_meaning": observation})
-        claim_id = _hash({"version": VERSION, "binding": binding,
-                          "source_hash": source_hash, "wire_hash": wire_hash})
+        # Claim identity is PER STOCK PER CANONICAL CAPTURE, not per text.
+        # Changing a sentence must never silently create a second paid call.
+        claim_id = _hash({"version": VERSION, "binding": binding})
+        prior = self.lookup(claim_id)
+        if prior and (prior.get("wire_sha256") != wire_hash
+                      or prior.get("input_sha256") != source_hash):
+            raise OwnedReviewError("JEV_B_ONE_REVIEW_PER_STOCK_INPUT_LOCKED", http_status=409)
         allowed, reason = self.ready()
         return {
             "version": VERSION,
@@ -171,7 +176,7 @@ class OwnedReviewService:
             "cost_unknown": True,
             "ready": allowed,
             "reason": reason,
-            "existing": self.lookup(claim_id),
+            "existing": prior,
             "_request": remote,  # INTERNAL: never return this field via HTTP
         }
 
