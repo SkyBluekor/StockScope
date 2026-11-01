@@ -3000,6 +3000,14 @@ export type ScannerResponse = {
     market: "KOSPI" | "KOSDAQ";
     data_date: string;
     regime: string;
+    /** Existing KRX EOD index rate on precisely the stock analysis date. */
+    index_change_rate_pct?: number | null;
+    index_data_date?: string | null;
+    risk_reference_status?: "DECLINE_RECHECK" | "REFERENCE_ONLY" | "UNKNOWN";
+    risk_reference_reason?: string;
+    risk_reference_source?: "KRX_EOD";
+    /** Never interpreted as a market-PANIC trade prohibition. */
+    risk_decision_effect?: "REFERENCE_ONLY_NOT_RISK_GATE";
   }>;
   partial_data?: boolean;
   preparation_required?: Array<{
