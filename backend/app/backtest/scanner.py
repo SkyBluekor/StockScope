@@ -2472,9 +2472,6 @@ class StockScannerService:
                 index_series = self.market_store.index_series(market, self._compact(fast_start), latest_date)
                 index_rows = sorted(index_series.rows.values(), key=self._row_date)
                 index_rows_by_market[market] = index_rows
-                last_index = index_rows[-1] if index_rows else {}
-                rate = last_index.get("change_rate")
-                regime = regime_from_index(float(rate) if rate is not None else None)
                 market_summaries.append(
                     self._market_risk_reference(market, self._iso(latest_date), index_rows)
                 )
