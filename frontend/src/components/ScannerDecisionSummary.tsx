@@ -29,7 +29,7 @@ export default function ScannerDecisionSummary({ candidate, marketContext, quote
         <p>{entry.explanation}</p>
       </div>
       <p className="scanner-ux2-decision-why">
-        <strong>종목 전략 조건</strong>
+        <strong>조건 현황 · 종목 전략</strong>
         <span>{view.headline} {view.why}</span>
       </p>
       {view.missingCount > 0 && (
