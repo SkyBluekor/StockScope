@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-import math
 import os
 import re
 import time
@@ -1571,52 +1570,6 @@ class StockScannerService:
     def _row_date(row: dict[str, Any]) -> str:
         return str(row.get("date") or "").replace("-", "")
 
-    @classmethod
-    def _market_risk_reference(
-        cls,
-        market: str,
-        stock_date: str,
-        index_rows: list[dict[str, Any]],
-    ) -> dict[str, Any]:
-        """Exact-date KRX EOD market context; never a new production Risk Gate.
-
-        The shared strategy/backtest regime remains untouched. A negative-index
-        signal is only a recheck reminder until a governed PANIC threshold exists.
-        """
-        expected = str(stock_date or "").replace("-", "")
-        aligned = next(
-            (row for row in reversed(index_rows) if cls._row_date(row) == expected),
-            None,
-        )
-        raw = aligned.get("change_rate") if aligned else None
-        try:
-            change = float(raw) if raw is not None else None
-        except (ValueError, TypeError):
-            change = None
-        if change is not None and not math.isfinite(change):
-            change = None
-        regime = regime_from_index(change)
-        if change is None:
-            status = "UNKNOWN"
-            reason = "INDEX_RATE_MISSING" if aligned else "INDEX_DATE_NOT_ALIGNED"
-        elif regime.value == "TREND_DOWN":
-            status = "DECLINE_RECHECK"
-            reason = "EXISTING_INDEX_REGIME_TREND_DOWN"
-        else:
-            status = "REFERENCE_ONLY"
-            reason = "NO_EXISTING_DECLINE_SIGNAL"
-        return {
-            "market": market,
-            "data_date": cls._iso(expected) if len(expected) == 8 else stock_date,
-            "regime": regime.value,
-            "index_change_rate_pct": round(change, 3) if change is not None else None,
-            "index_data_date": cls._iso(expected) if aligned and len(expected) == 8 else None,
-            "risk_reference_status": status,
-            "risk_reference_reason": reason,
-            "risk_reference_source": "KRX_EOD",
-            "risk_decision_effect": "REFERENCE_ONLY_NOT_RISK_GATE",
-        }
-
     async def _prepare_sector_inputs_for_quick_pool(
         self,
         *,
@@ -2289,20 +2242,6 @@ class StockScannerService:
                         cache_hit=True,
                     ),
                 )
-                # Old frozen caches do not contain the explanatory risk field.
-                # Refresh the response only from already stored EOD index rows.
-                # Never write back or re-rank a frozen candidate.
-                for market_context in cached.get("market_summary") or []:
-                    market = str(market_context.get("market") or "")
-                    asof = str(market_context.get("data_date") or "")
-                    compact = asof.replace("-", "")
-                    if market not in {"KOSPI", "KOSDAQ"} or len(compact) != 8:
-                        continue
-                    series = self.market_store.index_series(market, compact, compact)
-                    frozen_index = list(series.rows.values())
-                    market_context.update(
-                        self._market_risk_reference(market, asof, frozen_index)
-                    )
                 cached_diagnostics = cached.setdefault("diagnostics", {})
                 cached_diagnostics["reproducibility_audit"] = {
                     "written": False,
@@ -2472,9 +2411,10 @@ class StockScannerService:
                 index_series = self.market_store.index_series(market, self._compact(fast_start), latest_date)
                 index_rows = sorted(index_series.rows.values(), key=self._row_date)
                 index_rows_by_market[market] = index_rows
-                market_summaries.append(
-                    self._market_risk_reference(market, self._iso(latest_date), index_rows)
-                )
+                last_index = index_rows[-1] if index_rows else {}
+                rate = last_index.get("change_rate")
+                regime = regime_from_index(float(rate) if rate is not None else None)
+                market_summaries.append({"market": market, "data_date": self._iso(latest_date), "regime": regime.value})
                 self._emit(
                     progress,
                     stage="scanner_universe",
