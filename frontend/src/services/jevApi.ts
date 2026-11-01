@@ -190,3 +190,92 @@ export function requestJevReview(payload: JevManualReviewRequest) {
     }),
   });
 }
+
+
+/** Plan B — explicitly user-authored semantic review (no licensed market data). */
+export type OwnedJevInput = {
+  capture_id: string;
+  sample_index: number;
+  market: "KOSPI" | "KOSDAQ";
+  ticker: string;
+  required_condition: string;
+  observed_meaning: string;
+};
+export type OwnedJevResult = {
+  version: string;
+  review_id: string;
+  selected_stock: {
+    capture_id: string;
+    sample_index: number;
+    snapshot_hash: string;
+    market: string;
+    ticker: string;
+    stock_name: string;
+  };
+  wire_sha256: string;
+  input_sha256: string;
+  question_sha256: string;
+  model_requested: string;
+  status: "PENDING_OR_INTERRUPTED" | "PENDING" | "VALID" | "ERROR";
+  started_at: string;
+  completed_at?: string;
+  disposition?: "PASS_THROUGH" | "REVIEW_REQUIRED" | "ABSTAIN";
+  model_returned?: string;
+  answer_noul?: number;
+  response_sha256?: string;
+  usage?: { input_tokens: number; output_tokens: number };
+  cost_usd: number | null;
+  cost_unknown: boolean;
+  reused?: boolean;
+  reason?: string;
+};
+export type OwnedJevPreview = {
+  version: string;
+  review_id: string;
+  wire_sha256: string;
+  input_sha256: string;
+  question_sha256: string;
+  model_requested: string;
+  selected_stock: OwnedJevResult["selected_stock"];
+  remote_input_scope: "USER_AUTHORED_TEXT_ONLY";
+  market_data_sent: false;
+  third_party_content_sent: false;
+  estimated_cost_usd: null;
+  cost_unknown: true;
+  ready: boolean;
+  reason: string;
+  existing: OwnedJevResult | null;
+};
+
+export function previewOwnedJevReview(input: OwnedJevInput) {
+  return jevJson<OwnedJevPreview>("/api/simulation/jev/manual-owned/preview", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(input),
+  });
+}
+export function getOwnedJevLatest(input: Pick<OwnedJevInput, "capture_id" | "sample_index" | "market" | "ticker">) {
+  const qs = new URLSearchParams({
+    capture_id: input.capture_id,
+    sample_index: String(input.sample_index),
+    market: input.market,
+    ticker: input.ticker,
+  });
+  return jevJson<{review: OwnedJevResult | null}>(
+    "/api/simulation/jev/manual-owned/latest?" + qs.toString(),
+  );
+}
+export function executeOwnedJevReview(input: OwnedJevInput, preview: OwnedJevPreview) {
+  return jevJson<OwnedJevResult>("/api/simulation/jev/manual-owned/execute", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-StockScope-JEV-Approve": "유료 JEV 1회 실행",
+    },
+    body: JSON.stringify({
+      ...input, preflight_sha256: preview.wire_sha256,
+      confirm_paid_call: "유료 JEV 1회 실행",
+      original_authored_attested: true,
+    }),
+  });
+}
