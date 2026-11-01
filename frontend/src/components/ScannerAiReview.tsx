@@ -1,10 +1,13 @@
 import { useState } from "react";
+import ScannerOwnedReviewB, { ownedReviewStatus } from "./ScannerOwnedReviewB";
+import type { OwnedJevResult } from "../services/jevApi";
 import type { ScannerCandidate, ScannerResponse } from "../services/api";
 import type { JevMonitorItem } from "../services/jevApi";
 import { scannerAiReviewStatus } from "./scannerAiReviewStatus";
 
 type Props = {
   candidate: ScannerCandidate;
+  sampleIndex: number;
   result: ScannerResponse;
   enabled: boolean;
   available: boolean;
@@ -92,14 +95,25 @@ function ScannerAiDiagnostics({
  */
 export default function ScannerAiReview(props: Props) {
   const { candidate, result, enabled, available, featureStatus, review,
-    loading, loadError, onRefresh } = props;
+    loading, loadError, onRefresh, sampleIndex } = props;
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [ownedReview, setOwnedReview] = useState<OwnedJevResult | null>(null);
+  const captureId = result.prospective_capture?.canonical_capture_id
+    || result.prospective_capture?.capture_id || null;
+  const linkedOwned = ownedReview
+    && ownedReview.selected_stock.ticker === candidate.code
+    && ownedReview.selected_stock.market === candidate.market
+    && ownedReview.selected_stock.sample_index === sampleIndex
+    && ownedReview.selected_stock.capture_id === captureId
+    ? ownedReview : null;
+  const manualStatus = ownedReviewStatus(linkedOwned);
+
   const state = scannerAiReviewStatus({
     candidate, result, enabled, available, featureStatus, review,
   });
   const verified = !loading && !loadError && state.source === "STORED_JEV";
   const active = verified || state.state === "RUNNING" || state.state === "QUEUED";
-  const status = loading ? "검토 기록 확인 중"
+  const status = manualStatus || (loading ? "검토 기록 확인 중"
     : loadError ? "검토 기록 조회 실패"
     : verified ? (
       state.state === "NEEDS_REVIEW" ? "추가 확인 필요"
@@ -115,7 +129,7 @@ export default function ScannerAiReview(props: Props) {
     : state.state === "FAILED" ? "검토 실패"
     : state.state === "INPUT_MISSING" ? "검토 입력 부족"
     : state.state === "UNKNOWN" ? "결과 확인 필요"
-    : "아직 실행되지 않음";
+    : "아직 실행되지 않음");
   const blockedReason = !available || featureStatus !== "ACTIVE"
     ? "현재 서버에서 JEV 실행을 제공하지 않습니다."
     : !enabled ? "JEV 설정이 꺼져 있습니다."
@@ -138,19 +152,26 @@ export default function ScannerAiReview(props: Props) {
           확인 항목: {review.reason_codes.slice(0, 3).join(", ")}
         </p>
       )}
-      <div className="scanner-jev-compact-actions">
-        <button type="button" disabled title={blockedReason}>
-          JEV 검토 실행
+      {candidate.market === "KOSPI" || candidate.market === "KOSDAQ" ? (
+        <ScannerOwnedReviewB
+          key={[captureId, sampleIndex, candidate.market, candidate.code].join(":")}
+          captureId={captureId}
+          sampleIndex={sampleIndex}
+          market={candidate.market}
+          ticker={candidate.code}
+          onStoredReview={setOwnedReview}
+        />
+      ) : (
+        <p>해당 시장의 실제 종목 식별을 확인할 수 없습니다.</p>
+      )}
+      {verified && available && enabled && featureStatus === "ACTIVE" && (
+        <button type="button" onClick={onRefresh} disabled={loading}>
+          저장된 결과 새로고침
         </button>
-        {verified && available && enabled && featureStatus === "ACTIVE" && (
-          <button type="button" onClick={onRefresh} disabled={loading}>
-            저장된 결과 새로고침
-          </button>
-        )}
-      </div>
-      {!active && (
+      )}
+      {!linkedOwned && !active && (
         <small className="scanner-jev-compact-note">
-          {loadError ? "기존 Scanner 판단은 유지됩니다." : blockedReason}
+          기존 V4 자동 검토는 비활성 상태입니다. 위 수동 검토는 직접 작성한 문장만 사용합니다.
         </small>
       )}
       <details className="scanner-jev-compact-details"
