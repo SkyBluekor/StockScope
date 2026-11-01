@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import math
 import os
+import sqlite3
 from pathlib import Path
 from typing import Literal
 
@@ -111,7 +112,7 @@ def _attach_scanner_market_reference(result: dict, market_store) -> None:
                 key=lambda row: str(row.get("date") or ""),
             )
             source.update(_market_risk_reference(market, asof, index_rows))
-        except (OSError, ValueError, RuntimeError) as exc:
+        except (sqlite3.Error, OSError, ValueError, RuntimeError):
             source.update(_market_risk_reference(market, asof, []))
             source["risk_reference_reason"] = "INDEX_LOCAL_READ_FAILED"
             # Never expose absolute database paths or user files in the payload.
