@@ -378,3 +378,34 @@ def test_stage2_market_reference_never_labels_normal_as_risk_free() -> None:
     assert result["risk_reference_status"] == "REFERENCE_ONLY"
     assert result["risk_reference_reason"] == "NO_EXISTING_DECLINE_SIGNAL"
     assert result["risk_decision_effect"] == "REFERENCE_ONLY_NOT_RISK_GATE"
+
+
+
+def test_stage2_api_overlay_does_not_mutate_frozen_candidates_or_rank() -> None:
+    from copy import deepcopy
+    from types import SimpleNamespace
+    from app.api.backtest import _attach_scanner_market_reference
+
+    class StubMarketStore:
+        calls: list[tuple[str, str, str]] = []
+
+        def index_series(self, market, start_key, end_key):
+            self.calls.append((market, start_key, end_key))
+            return SimpleNamespace(rows={
+                "20261029": {"date": "2026-10-29", "change_rate": -1.71},
+            })
+
+    result = {
+        "market_summary": [{"market": "KOSDAQ", "data_date": "2026-10-29", "regime": "TREND_DOWN"}],
+        "candidates": [{"code": "171090", "action": "ENTRY_CANDIDATE", "risk": {"warning": False}}],
+        "more_candidates": [],
+    }
+    before = deepcopy(result["candidates"])
+    store = StubMarketStore()
+    _attach_scanner_market_reference(result, store)
+
+    assert store.calls == [("KOSDAQ", "20261029", "20261029")]
+    assert result["candidates"] == before
+    assert result["market_summary"][0]["risk_reference_status"] == "DECLINE_RECHECK"
+    assert result["market_summary"][0]["index_change_rate_pct"] == -1.71
+    assert result["market_summary"][0]["risk_decision_effect"] == "REFERENCE_ONLY_NOT_RISK_GATE"
