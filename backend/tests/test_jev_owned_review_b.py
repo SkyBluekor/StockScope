@@ -266,7 +266,7 @@ def test_real_asgi_preview_execute_and_latest_are_separate(monkeypatch, tmp_path
             unconfirmed = await client.post(url, json=body)
             assert unconfirmed.status_code == 403
             assert calls == []
-            approval = {"X-StockScope-JEV-Approve": "유료 JEV 1회 실행",
+            approval = {"X-StockScope-JEV-Approve": "paid-once-confirmed-v1",
                         "Origin": "http://127.0.0.1:5173"}
             paid = await client.post(url, json=body, headers=approval)
             assert paid.status_code == 200, paid.text
