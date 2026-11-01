@@ -46,7 +46,7 @@
 
 ### B. 실제 종목 TypeSafe JEV 수동 검토 1건
 
-**현재: IMPLEMENTED_PAID_WINDOWS_UAT_PENDING.** 실제 TypeSafe 호출은 아직 0회이며, 사용자가 별도 승인하기 전까지 자동 호출하지 않는다.
+**현재: IMPLEMENTED_PAID_WINDOWS_UAT_PENDING (CI 4/4 PASS).** 실제 TypeSafe 호출은 아직 0회이며, 사용자가 별도 승인하기 전까지 자동 호출하지 않는다.
 
 1. **현재 브랜치**에 있는 `TypeSafeSystemOneProvider`, 기존 서비스·API·모델 식별/응답 검증 로직을 먼저 살펴서 재사용한다. 다른 브랜치의 코드를 통째로 옮기지 않는다.
 2. Scanner의 **실제 선택 종목, 캡처 ID, 시각**과 안전한 사용자 작성 입력을 연결한다. 이 입력만으로 검토 가능한 한 가지 질문을 확정한다. Naver/DART/KRX 원본·허용되지 않은 파생물 전송 금지.
@@ -72,7 +72,7 @@
 | 단계 | 상태 | 마지막 확인 | 다음 |
 |---|---|---|---|
 | A — UI 간소화 | **DONE** | `fb93f32f` · CI 4/4 PASS · 사용자 Windows 화면 확인 (2026-11-01) | B |
-| B — 실종목 1건 JEV | IMPLEMENTED_PAID_WINDOWS_UAT_PENDING | 코드 반영 · 자동 테스트 진행 · 실제 유료 실행 0회 | Windows에서 사용자 작성 문장 2개, 모델 1회 실행·재조회 확인 |
+| B — 실종목 1건 JEV | IMPLEMENTED_PAID_WINDOWS_UAT_PENDING | `308d2a42` · CI 4/4 PASS ([Actions #41304015361](https://github.com/SkyBluekor/StockScope/actions/runs/41304015361)) · 실제 유료 실행 0회 | 사용자 Windows에서 직접 작성한 2문장·실모델 1회 실행·재조회 확인 |
 | C — 효용 검증 | NOT_STARTED | 실결과 없음 | B 완료 후 |
 
 ## 작업 규칙
@@ -95,3 +95,5 @@
 - 자동 테스트는 TypeSafe의 **실제 제공자 클래스 + 테스트용 HTTP transport**를 이용하므로 CI는 외부 유료 요청 0회. 사전 승인 없는 요청 차단, 외부 자료·시장 데이터 wire 누락, 1회 호출/중복 억제, restart 후 재조회, 잘못된 모델 반환 차단, HTTP ASGI 엔드포인트를 확인한다. 최초 ASGI 테스트의 비 ASCII HTTP 헤더 오류는 **영문 고정 헤더 토큰**으로 수정하고 요청 본문과 확인 대화상자의 한국어 승인 문구는 유지했다. 최종 CI 상태는 끝난 실행만 PASS로 보고.
 - **Windows 인수 절차(유료 호출 전 확인 필수):** 기존 서버 종료 → `C:\TAEWOO\CapstonDesign\StockScope`에서 동일 브랜치 `git pull --ff-only` → 서버에 `JEV_API_KEY`(기존 설정)와 `STOCKSCOPE_JEV_B_ENABLE=1`을 명시적으로 설정 후 시작 → Scanner 실제 종목 선택 → AI 검토 → '내가 작성한 조건으로 JEV 제2 의견 받기' → 직접 작성한 두 문장 입력 → '전송 내용 미리 확인 (무료)' → 모델·입력범위·비용 미확정 확인 → 본인이 유료 호출 1회에 체크하고 승인 버튼 클릭 → 브라우저 최종 확인 → 모델 결과 및 재조회 확인. **코드·CI 통과만으로 B 완료하지 않는다.**
 - 이 문서 상태는 실제 유료 모델 응답이 Windows에 기록되고 사용자 화면에서 검증되기 전까지 `IMPLEMENTED_PAID_WINDOWS_UAT_PENDING`. B 완료 전 C 시작 금지. 신규 공시 저장/Mock 기능/단계 추가 없음.
+
+- **2026-11-01 최신 코드 자동 검증:** `308d2a42` 기준 GitHub Actions #41304015361에서 Backend 3.11/3.14, Frontend Node 22, Windows Fresh Clone **4/4 PASS**. 이것은 실제 TypeSafe 실모델 결과가 아니므로 Windows 유료 1회 검증을 마칠 때까지 B 인수 완료는 아님.
