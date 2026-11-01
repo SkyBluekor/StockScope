@@ -154,7 +154,7 @@ export default function ScannerAiReview(props: Props) {
         </small>
       )}
       <details className="scanner-jev-compact-details"
-        onToggle={event => setDetailsOpen(event.currentTarget.open)}>
+        onToggle={event => { if (event.target === event.currentTarget) setDetailsOpen(event.currentTarget.open); }}>
         <summary>검토 근거·개발자 진단</summary>
         {detailsOpen && <ScannerAiDiagnostics {...props} />}
       </details>
