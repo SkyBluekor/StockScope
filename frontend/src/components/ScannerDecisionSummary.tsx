@@ -1,14 +1,15 @@
-import type { ScannerCandidate } from "../services/api";
+import type { ScannerCandidate, ScannerResponse } from "../services/api";
 import { beginnerCandidatePresentation } from "./scannerDecisionPresentation";
 import { scannerQuoteTruth, type ScannerQuoteSnapshot } from "./scannerQuoteTruth";
 
 type Props = {
   candidate: ScannerCandidate;
+  marketContext: ScannerResponse["market_summary"][number] | null;
   quoteSnapshot: ScannerQuoteSnapshot;
   onOpenPriceTab: () => void;
 };
 
-export default function ScannerDecisionSummary({ candidate, quoteSnapshot, onOpenPriceTab }: Props) {
+export default function ScannerDecisionSummary({ candidate, marketContext, quoteSnapshot, onOpenPriceTab }: Props) {
   const view = beginnerCandidatePresentation(candidate);
   const quote = scannerQuoteTruth(candidate, quoteSnapshot);
   const quoteAvailable = quoteSnapshot.quote !== null && !quoteSnapshot.loading
@@ -53,6 +54,33 @@ export default function ScannerDecisionSummary({ candidate, quoteSnapshot, onOpe
           )}
         </div>
       )}
+      <section aria-label="분석일 시장 위험" className="scanner-ux2-decision-why">
+        <strong>시장 위험 · 분석일 기준</strong>
+        {marketContext?.risk_reference_status === "DECLINE_RECHECK" ? (
+          <span>
+            {candidate.market === "KOSDAQ" ? "코스닥" : "코스피"} 지수가
+            {" "}{marketContext.index_change_rate_pct?.toFixed(2)}% 하락·약세 신호를 보였습니다.
+            종목 자체의 전략 조건과 별개로 진입 전 시장 상황을 다시 확인하세요.
+            이 경고만으로 기존 Scanner의 진입 판정이나 순위를 바꾸지는 않았습니다.
+            {" "}({marketContext.index_data_date ?? candidate.data_date} · KRX 확정 일별)
+          </span>
+        ) : marketContext?.risk_reference_status === "REFERENCE_ONLY" ? (
+          <span>
+            {candidate.market === "KOSDAQ" ? "코스닥" : "코스피"} 지수
+            {" "}{marketContext.index_change_rate_pct != null ? marketContext.index_change_rate_pct.toFixed(2) + "%" : "변동률 확인 필요"}.
+            기존 지수 규칙에서 하락 주의 신호는 없지만 다른 위험이 없다는 뜻은 아닙니다.
+            {" "}({marketContext.index_data_date ?? candidate.data_date} · KRX 확정 일별)
+          </span>
+        ) : (
+          <span>
+            분석일과 일치하는 KRX 지수 변동률을 확인하지 못했습니다.
+            시장이 안전하다는 뜻이 아니며, 현재 전략 판단과 별도로 확인해야 합니다.
+          </span>
+        )}
+      </section>
+      <p className="scanner-ux6-validation">
+        미국 금리·국제 사건·공시 참고자료는 현재 Scanner의 전략 점수와 진입 차단에 자동 반영되지 않았습니다.
+      </p>
       {(candidate.risk.warning || view.asOfPrice.state === "OUT_OF_RANGE") && (
         <p className="scanner-ux5-caution"><strong>주의</strong> {view.caution}</p>
       )}
