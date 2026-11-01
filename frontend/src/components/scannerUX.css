@@ -840,3 +840,21 @@
     gap: 8px;
   }
 }
+
+/* B: paid JEV controls mount only in one small user-opened disclosure. */
+.scanner-jev-b-details { border-top: 1px solid var(--line-soft); padding-top: 8px; }
+.scanner-jev-b-details > summary { cursor: pointer; font-size: 13px; font-weight: 600; }
+.scanner-jev-b-body { display: grid; gap: 9px; min-width: 0; padding: 10px 0; }
+.scanner-jev-b-body > label:not(.scanner-jev-b-check) { display: grid; gap: 5px; font-size: 13px; }
+.scanner-jev-b-body textarea {
+  box-sizing: border-box; width: 100%; min-width: 0;
+  resize: vertical; border: 1px solid var(--line-soft);
+  background: var(--surface); color: inherit; border-radius: 6px;
+  padding: 9px; font: inherit;
+}
+.scanner-jev-b-body button { justify-self: start; }
+.scanner-jev-b-body button:disabled { opacity: .6; cursor: not-allowed; }
+.scanner-jev-b-preview { display: grid; gap: 8px; min-width: 0; }
+.scanner-jev-b-preview p, .scanner-jev-b-preview small { margin: 0; overflow-wrap: anywhere; }
+.scanner-jev-b-check { display: flex; align-items: start; gap: 7px; font-size: 12px; line-height: 1.5; }
+.scanner-jev-b-check input { flex: none; margin-top: 3px; }
