@@ -478,6 +478,9 @@ function CandidateDetail({
           <div className="scanner-ux3-summary">
             <ScannerDecisionSummary
               candidate={candidate}
+              marketContext={result.market_summary.find(
+                item => item.market === candidate.market && item.data_date === candidate.data_date,
+              ) ?? null}
               quoteSnapshot={quoteSnapshot}
               onOpenPriceTab={() => setActiveTab("strategy")}
             />
@@ -1529,7 +1532,13 @@ export default function ScannerPanel({
 
   const marketText = useMemo(() => {
     if (!result?.market_summary?.length) return "아직 시장 상태를 계산하지 않았습니다.";
-    return result.market_summary.map((item) => `${item.market} ${regimeLabel[item.regime] ?? item.regime}`).join(" · ");
+    return result.market_summary.map((item) => {
+      const rate = item.index_change_rate_pct;
+      const rateText = rate != null && Number.isFinite(rate) ? " " + formatSignedPct(rate) : "";
+      const caution = item.risk_reference_status === "DECLINE_RECHECK" ? " · 하락 주의"
+        : item.risk_reference_status === "UNKNOWN" ? " · 지수 자료 확인 필요" : "";
+      return `${item.market} ${regimeLabel[item.regime] ?? item.regime}${rateText}${caution}`;
+    }).join(" · ");
   }, [result]);
 
   const progressDetails = (progress?.details ?? {}) as Record<string, unknown>;
