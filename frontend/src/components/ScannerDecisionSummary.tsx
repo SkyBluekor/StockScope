@@ -1,5 +1,5 @@
 import type { ScannerCandidate, ScannerResponse } from "../services/api";
-import { beginnerCandidatePresentation } from "./scannerDecisionPresentation";
+import { beginnerCandidatePresentation, scannerEntryGuidance } from "./scannerDecisionPresentation";
 import { scannerQuoteTruth, type ScannerQuoteSnapshot } from "./scannerQuoteTruth";
 
 type Props = {
@@ -11,6 +11,7 @@ type Props = {
 
 export default function ScannerDecisionSummary({ candidate, marketContext, quoteSnapshot, onOpenPriceTab }: Props) {
   const view = beginnerCandidatePresentation(candidate);
+  const entry = scannerEntryGuidance(candidate, marketContext);
   const quote = scannerQuoteTruth(candidate, quoteSnapshot);
   const quoteAvailable = quoteSnapshot.quote !== null && !quoteSnapshot.loading
     && !quoteSnapshot.error && quote.state !== "ERROR";
@@ -22,11 +23,14 @@ export default function ScannerDecisionSummary({ candidate, marketContext, quote
     || candidate.conditions.missing > 0;
   return (
     <section className="scanner-ux-decision scanner-ux2-decision" aria-label="선택한 종목의 쉬운 판단">
-      <span className="scanner-ux-eyebrow">분석일 기준 판단 · 최신 전략 확인 전</span>
-      <h4>{view.headline}</h4>
+      <div className="scanner-entry-guidance" data-scanner-entry-guidance={entry.state} role="status">
+        <span className="scanner-ux-eyebrow">신규 진입 판단 · 분석일 기준 (현재 매수 허가 아님)</span>
+        <h4>{entry.headline}</h4>
+        <p>{entry.explanation}</p>
+      </div>
       <p className="scanner-ux2-decision-why">
-        <strong>조건 현황</strong>
-        <span>{view.why}</span>
+        <strong>종목 전략 조건</strong>
+        <span>{view.headline} {view.why}</span>
       </p>
       {view.missingCount > 0 && (
         <div className="scanner-ux4-missing" aria-label="미충족 전략 조건">
@@ -98,7 +102,11 @@ export default function ScannerDecisionSummary({ candidate, marketContext, quote
       </section>
       <p className="scanner-ux5-next">
         <strong>다음 확인</strong>
-        {keepAsOfNextStep ? view.next
+        {entry.state === "MARKET_RECHECK"
+          ? "시장 하락 위험과 최신 시세·전략을 재확인한 뒤 신규 진입을 판단하세요."
+          : entry.state === "MARKET_UNKNOWN" && !keepAsOfNextStep
+            ? "해당 분석일의 시장 근거와 최신 시세·위험을 확인하세요."
+          : keepAsOfNextStep ? view.next
           : quote.state === "NOT_CHECKED" ? "전략·가격 탭에서 새 시세를 확인한 뒤 전략·위험을 재검증하세요."
           : quote.state === "CHECKING" ? "시세 확인 중입니다. 분석일 판단만 참고하세요."
             : quote.state === "ERROR" ? "새 시세를 다시 확인한 뒤 전략·위험을 검증하세요."

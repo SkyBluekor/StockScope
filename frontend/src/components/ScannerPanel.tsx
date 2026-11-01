@@ -441,7 +441,7 @@ function CandidateDetail({
             <span>{candidate.market} · {candidate.code}</span>
           </div>
           <div className="scanner-selected-tags">
-            <span className={`scanner-state-badge ${tone}`}>분석일 · {simpleConditionStatus(candidate)}</span>
+            <span className={`scanner-state-badge ${tone}`}>전략 조건 · {simpleConditionStatus(candidate)}</span>
             <span>{candidate.strategy_easy_name}</span>
 
           </div>

@@ -858,3 +858,25 @@
 .scanner-jev-b-preview p, .scanner-jev-b-preview small { margin: 0; overflow-wrap: anywhere; }
 .scanner-jev-b-check { display: flex; align-items: start; gap: 7px; font-size: 12px; line-height: 1.5; }
 .scanner-jev-b-check input { flex: none; margin-top: 3px; }
+
+/* Stage 2: prioritize user-facing entry context over an as-of strategy READY. */
+.scanner-entry-guidance {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  padding: 7px 0 8px 11px;
+  border-left: 3px solid var(--line);
+}
+.scanner-entry-guidance[data-scanner-entry-guidance="MARKET_RECHECK"],
+.scanner-entry-guidance[data-scanner-entry-guidance="EXISTING_RISK"],
+.scanner-entry-guidance[data-scanner-entry-guidance="NOT_A_CANDIDATE"] {
+  border-left-color: var(--status-warning);
+}
+.scanner-entry-guidance > h4 { margin: 0; overflow-wrap: anywhere; }
+.scanner-entry-guidance > p {
+  margin: 0;
+  color: var(--text);
+  line-height: 1.55;
+  font-size: 13px;
+  word-break: keep-all;
+}
