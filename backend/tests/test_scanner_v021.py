@@ -317,3 +317,61 @@ def test_three_year_evidence_prepare_uses_real_three_year_window_and_rechecks_re
     assert result["readiness"]["ready"] is True
     assert result["readiness"]["stock_warmup_rows"] >= 120
     assert result["readiness"]["index_warmup_rows"] >= 120
+
+
+
+def test_stage2_market_risk_reference_is_exact_day_and_nonblocking() -> None:
+    """A 1%+ decline is a user warning, not an invented PANIC policy."""
+    from app.strategy.context import regime_from_index
+    from app.strategy.engine import StrategyEngine
+    from app.strategy.models import MarketRegime, StrategyInput
+
+    store = StockScannerService._market_risk_reference(
+        "KOSDAQ",
+        "2026-10-29",
+        [
+            {"date": "2026-10-28", "change_rate": 1.2},
+            {"date": "2026-10-29", "change_rate": -2.34},
+        ],
+    )
+    assert store["data_date"] == "2026-10-29"
+    assert store["index_data_date"] == "2026-10-29"
+    assert store["index_change_rate_pct"] == -2.34
+    assert store["regime"] == "TREND_DOWN"
+    assert store["risk_reference_status"] == "DECLINE_RECHECK"
+    assert store["risk_decision_effect"] == "REFERENCE_ONLY_NOT_RISK_GATE"
+
+    # This intentionally does not change the shared historical regime function
+    # or activate the StrategyEngine PANIC gate for negative index days.
+    assert regime_from_index(-2.34) == MarketRegime.TREND_DOWN
+    input = StrategyInput(code="005930", market="KOSPI", current_price=50000.0)
+    input.market_regime = regime_from_index(-2.34)
+    assert StrategyEngine._risk_gate(input) == []
+
+
+def test_stage2_market_reference_never_uses_previous_day_or_invalid_rate() -> None:
+    cases = [
+        ([{"date": "2026-10-28", "change_rate": -4.2}], "INDEX_DATE_NOT_ALIGNED"),
+        ([{"date": "2026-10-29", "change_rate": None}], "INDEX_RATE_MISSING"),
+        ([{"date": "2026-10-29", "change_rate": float("nan")}], "INDEX_RATE_MISSING"),
+    ]
+    for index_rows, reason in cases:
+        result = StockScannerService._market_risk_reference(
+            "KOSDAQ", "2026-10-29", index_rows,
+        )
+        assert result["regime"] == "UNKNOWN"
+        assert result["index_change_rate_pct"] is None
+        assert result["index_data_date"] is (None if reason == "INDEX_DATE_NOT_ALIGNED" else "2026-10-29")
+        assert result["risk_reference_status"] == "UNKNOWN"
+        assert result["risk_reference_reason"] == reason
+
+
+def test_stage2_market_reference_never_labels_normal_as_risk_free() -> None:
+    result = StockScannerService._market_risk_reference(
+        "KOSPI", "2026-10-29",
+        [{"date": "2026-10-29", "change_rate": 0.3}],
+    )
+    assert result["regime"] == "RANGE"
+    assert result["risk_reference_status"] == "REFERENCE_ONLY"
+    assert result["risk_reference_reason"] == "NO_EXISTING_DECLINE_SIGNAL"
+    assert result["risk_decision_effect"] == "REFERENCE_ONLY_NOT_RISK_GATE"
