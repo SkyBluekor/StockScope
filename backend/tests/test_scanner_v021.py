@@ -409,3 +409,89 @@ def test_stage2_api_overlay_does_not_mutate_frozen_candidates_or_rank() -> None:
     assert result["market_summary"][0]["risk_reference_status"] == "DECLINE_RECHECK"
     assert result["market_summary"][0]["index_change_rate_pct"] == -1.71
     assert result["market_summary"][0]["risk_decision_effect"] == "REFERENCE_ONLY_NOT_RISK_GATE"
+
+
+def _scanner_date_test_service(tmp_path: Path, *, incomplete_kosdaq_index: bool = False):
+    """Isolated SQLite fixture, never the user's runtime market database."""
+    class StubKrx:
+        @staticmethod
+        def _today_kst() -> date:
+            return date(2026, 11, 2)
+
+    store = HistoricalMarketStore(tmp_path / "scanner_date_guard.db")
+    for market in ("KOSPI", "KOSDAQ"):
+        for day in ("20261029", "20261030"):
+            store.put_stock_day(
+                market, day, [{"code": "005930", "date": day, "close": 10000}],
+                stable=True,
+            )
+            if not (incomplete_kosdaq_index and market == "KOSDAQ" and day == "20261030"):
+                store.replace_index_day(
+                    market, day, {"date": day, "change_rate": -1.3},
+                    stable=True,
+                )
+    service = object.__new__(StockScannerService)
+    service.krx = StubKrx()
+    service.market_store = store
+    return service
+
+
+def test_scanner_automatic_date_uses_latest_common_krx_day_over_stale_browser(tmp_path: Path) -> None:
+    from app.api.backtest import _scanner_verified_known_date
+    service = _scanner_date_test_service(tmp_path)
+    assert _scanner_verified_known_date(service, "ALL", "2026-10-29") == "2026-10-30"
+    assert _scanner_verified_known_date(service, "ALL", None) == "2026-10-30"
+    assert _scanner_verified_known_date(service, "ALL", "2026-10-30") == "2026-10-30"
+
+
+def test_scanner_automatic_date_requires_stock_and_index_for_every_market(tmp_path: Path) -> None:
+    from app.api.backtest import _scanner_verified_known_date
+    service = _scanner_date_test_service(tmp_path, incomplete_kosdaq_index=True)
+    assert _scanner_verified_known_date(service, "ALL", "2026-10-30") == "2026-10-29"
+    assert _scanner_verified_known_date(service, "KOSPI", "2026-10-29") == "2026-10-30"
+    assert _scanner_verified_known_date(service, "KOSDAQ", "2026-10-29") == "2026-10-29"
+
+
+def test_scanner_automatic_date_rejects_unverified_future_browser_date(tmp_path: Path) -> None:
+    from app.api.backtest import _scanner_verified_known_date
+    service = _scanner_date_test_service(tmp_path)
+    assert _scanner_verified_known_date(service, "ALL", "2026-11-03") == "2026-10-30"
+    assert _scanner_verified_known_date(service, "ALL", "not-a-date") == "2026-10-30"
+
+
+def test_scanner_automatic_date_wrapper_pins_baseline_and_rejects_regression(tmp_path: Path) -> None:
+    from app.api.backtest import _prepare_scanner_latest_data
+    service = _scanner_date_test_service(tmp_path)
+    received = []
+
+    async def stale_provider(**kwargs):
+        received.append(kwargs["known_data_date"])
+        return {"status": "READY", "resolved_as_of_date": "2026-10-29"}
+
+    service.prepare_latest_confirmed_data = stale_provider
+    result = asyncio.run(_prepare_scanner_latest_data(
+        service, market_scope="ALL", known_data_date="2026-10-29",
+    ))
+    assert received == ["2026-10-30"]
+    assert result["status"] == "DATA_INCONSISTENT"
+    assert result["resolved_as_of_date"] is None
+    assert result["available_data_date"] == "2026-10-30"
+    assert result["fallback_allowed"] is False
+
+
+def test_scanner_automatic_date_wrapper_keeps_valid_newer_or_equal_date(tmp_path: Path) -> None:
+    from app.api.backtest import _prepare_scanner_latest_data
+    service = _scanner_date_test_service(tmp_path)
+    received = []
+
+    async def current_provider(**kwargs):
+        received.append(kwargs["known_data_date"])
+        return {"status": "READY", "resolved_as_of_date": "2026-10-30"}
+
+    service.prepare_latest_confirmed_data = current_provider
+    result = asyncio.run(_prepare_scanner_latest_data(
+        service, market_scope="ALL", known_data_date="2026-10-29",
+    ))
+    assert received == ["2026-10-30"]
+    assert result["status"] == "READY"
+    assert result["resolved_as_of_date"] == "2026-10-30"

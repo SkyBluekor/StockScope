@@ -4,6 +4,7 @@ import asyncio
 import math
 import os
 import sqlite3
+from datetime import timedelta
 from pathlib import Path
 from typing import Literal
 
@@ -118,6 +119,71 @@ def _attach_scanner_market_reference(result: dict, market_store) -> None:
             # Never expose absolute database paths or user files in the payload.
         enriched.append(source)
     result["market_summary"] = enriched
+
+
+
+def _scanner_verified_known_date(
+    service: StockScannerService,
+    market_scope: str,
+    known_data_date: str | None,
+) -> str | None:
+    """Pin the newest locally complete EOD day before an automatic Scanner run.
+
+    A restored browser result may be older than an already stored KRX day.
+    Using that result as the only 'known' date allows a provider that temporarily
+    serves older data to regress the automatic analysis date. Use the existing
+    stock+index completeness contract for all selected markets instead.
+    Explicit as_of_date requests do not pass through this helper.
+    """
+    markets = ["KOSPI", "KOSDAQ"] if market_scope == "ALL" else [market_scope]
+    cutoff = service.krx._today_kst() - timedelta(days=1)
+    stored = service._latest_common_complete_date(markets, end_date=cutoff)
+    supplied = service._normalize_iso_date(known_data_date)
+    if (
+        supplied
+        and supplied <= cutoff.isoformat()
+        and service._date_complete_for_markets(markets, supplied)
+    ):
+        return max(stored, supplied) if stored else supplied
+    return stored
+
+
+async def _prepare_scanner_latest_data(
+    service: StockScannerService,
+    *,
+    market_scope: str,
+    known_data_date: str | None,
+    progress=None,
+) -> dict:
+    """Use the same date-regression guard for jobs and the freshness endpoint."""
+    local_anchor = _scanner_verified_known_date(
+        service, market_scope, known_data_date,
+    )
+    freshness = await service.prepare_latest_confirmed_data(
+        market_scope=market_scope,
+        known_data_date=local_anchor,
+        progress=progress,
+    )
+    resolved = service._normalize_iso_date(freshness.get("resolved_as_of_date"))
+    if (
+        local_anchor
+        and freshness.get("status") in {"READY", "UPDATED"}
+        and (not resolved or resolved < local_anchor)
+    ):
+        return {
+            **freshness,
+            "status": "DATA_INCONSISTENT",
+            "resolved_as_of_date": None,
+            "available_data_date": local_anchor,
+            "fallback_allowed": False,
+            "consistency_status": "LOCAL_NEWER_DATE_NOT_RETAINED",
+            "failure_reason": "SCANNER_AUTOMATIC_DATE_REGRESSION",
+            "message": (
+                f"저장된 최신 공통 거래일 {local_anchor}보다 오래된 결과가 반환됐습니다. "
+                "자동 분석을 중단하고 시장 데이터 기준일을 확인하세요."
+            ),
+        }
+    return freshness
 
 
 def _prospective_service() -> ProspectiveService:
@@ -657,7 +723,8 @@ async def _run_scanner_job(
     try:
         resolved_as_of_date = payload.as_of_date
         if not resolved_as_of_date:
-            freshness = await service.prepare_latest_confirmed_data(
+            freshness = await _prepare_scanner_latest_data(
+                service,
                 market_scope=payload.market_scope,
                 known_data_date=payload.known_data_date,
                 progress=update_progress,
@@ -812,7 +879,8 @@ async def prepare_scanner_freshness(payload: ScannerFreshnessRequest) -> dict:
     settings = get_settings()
     service = StockScannerService(KrxProvider(settings.krx_api_key))
     try:
-        return await service.prepare_latest_confirmed_data(
+        return await _prepare_scanner_latest_data(
+            service,
             market_scope=payload.market_scope,
             known_data_date=payload.known_data_date,
         )

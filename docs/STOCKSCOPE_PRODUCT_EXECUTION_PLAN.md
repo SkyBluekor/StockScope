@@ -338,6 +338,18 @@
 - **Windows 실화면 미검증**: 사용자가 실제 브라우저에서 새 상단 '신규 진입 판단'을 확인하고, 기존 `시장 위험 · 분석일 기준`과 구분되는지 증거 필요. 예전 선익시스템 화면은 이 신규 커밋 이전 화면이며, 신규 변경의 UAT로 재사용하지 않음.
 - **미완료 경계:** KRX 하락은 별도 참고 신호이며 PANIC 차단 기준 미승인; 기존 Scanner 순위/Risk/과거 frozen 캡처는 변경하지 않음. 미국 금리·국제 사건 최종 Scanner 소비 및 실제 정책 차단도 아직 미완료. 2단계 전체 DONE 아님. 3단계 착수 금지.
 
+#### 2단계 후속 — 자동 기준일 역행 방지 (2026-11-02)
+
+**현장 근거:** 사용자 Windows `C:\\TAEWOO\\CapstonDesign\\StockScope`의 읽기 전용 조회에서 `simulation.db`의 2026-10-30 COMPLETE 캡처에 선익시스템(171090)이 남아 있고, 2026-11-02 00:43·00:45 KST의 새 자동 Scanner 결과는 2026-10-29 / 동국제약(086450)이었다. 두 요청의 `requested_as_of`는 NULL, 범위는 ALL. `market_history.db`의 10/30 KOSPI 주식 939개·지수 1건, KOSDAQ 주식 1828개·지수 1건과 네 개의 `data` 마커가 확인되었다. 브라우저 결과만 바뀌었으며 원본 캡처 삭제 증거는 없다.
+
+**재현 가능한 코드 결함:** API는 브라우저의 `known_data_date`만 `StockScannerService.prepare_latest_confirmed_data`로 전달한다. 이 함수는 이미 저장된 공통 최신일(`stored_common_before`)을 파악하지만, 전달된 `known_data_date`가 이전 날짜거나 NULL이면 `current_valid_date`가 이전 날짜 또는 NULL로 남는다. 일시적으로 제공자가 구형 날짜를 반환하면 그 날짜로 분석이 진행될 수 있다. 실제 제공자 응답 로그를 보지 못했으므로 이번 현상에서 어떤 공급자 상태였는지는 미확정.
+
+**수정:** `backend/app/api/backtest.py`에서 자동 Scanner 및 freshness API 호출 전에 기존 MarketStore의 지정 범위 전체 시장·주가/지수 `latest_common_complete_date`를 읽어 브라우저 날짜보다 최신인 유효 저장 기준일을 우선 전달한다. 응답이 그 날짜보다 오래되면 `DATA_INCONSISTENT`로 **새 분석을 차단**한다. 명시적 과거 `as_of_date`는 변경하지 않는다. `backend/app/backtest/scanner.py` frozen 파일·기존 전략/랭킹·DB 원본은 수정하지 않는다.
+
+**회귀:** `backend/tests/test_scanner_v021.py`에 이전 브라우저 기준일/누락 기준일/양 시장 완전성/시장별 차이/미래·잘못된 날짜/제공자 역행 차단/정상 최신일 유지 테스트 추가. 이 변경은 새로운 DB 수집이나 JEV 호출 없이 GitHub 코드로만 수행하며 **CI PASS와 사용자 Windows 재현 확인은 별도 판정**한다.
+
+**남은 확인:** 업데이트 후 실제 사용자 PC에서 10/30이 선택되는지 검증. 저장 주가의 EOD 원천 재확인·유료 모델 호출·기존 캡처 재생성은 하지 않는다. 2단계 전체 완료 전 PANIC 정책·국제사건 연계 및 Windows UAT가 남아 있다.
+
 ### 3단계: 다전략·기간·위험 대비 기대성과 통합
 
 - **목적:** 기존 10전략·단/중/장기·Risk 결과와 시장·산업 조건을 합쳐 종목에 맞는 접근법을 비교.
@@ -387,7 +399,7 @@
 | 기존 A단계 요약 UI | DONE · 사용자 Windows 확인 | 보존 |
 | 기존 B단계 문장 비교 | REJECTED_PRODUCT_FIT · 코드 존재, 실모델 유료 검증 진행 금지 | 후속 해당 범위에서 UI 정리 |
 | **1단계 현황 파악** | **CODE_AUDIT_COMPLETE_WINDOWS_UAT_PENDING** | 2026-11-01 지정 브랜치 코드 연결 조사 완료, 실제 Windows·원천 데이터 미확인. 핵심 갭: Scanner 시장·이벤트 위험 → Risk Gate |
-| **2단계 시장·국제 사건 연결** | **ENTRY_GUIDANCE_IMPLEMENTED_CI_PASS_WINDOWS_UAT_PENDING** | KRX 동일일 위험 참고 + 신규 진입 판단 요약 분리 · 최종 HEAD 8c86b289 CI 4/4 PASS. Windows 새 화면 UAT, PANIC 승인 정책, 거시/국제 사건 연결은 미완료 |
+| **2단계 시장·국제 사건 연결** | **DATE_REGRESSION_FIX_CI_PENDING_WINDOWS_UAT_PENDING** | 시장 위험 안내 Windows 화면 확인(동국제약) · 자동 분석 기준일 10/30→10/29 역행 결함 방지 코드·회귀 추가. CI/실제 Windows 날짜 재확인 대기, PANIC 정책 및 국제사건 연계 미완료 |
 | 3단계 다전략/위험 통합 | NOT_STARTED | 2단계 종료 후 |
 | 4단계 JEV 실사용 | NOT_STARTED | 3단계 결과와 허용 입력 확인 후 |
 | 5단계 효용 평가 | NOT_STARTED | 4단계 후 |
