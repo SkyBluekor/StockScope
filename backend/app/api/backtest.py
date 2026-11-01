@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import os
 from pathlib import Path
 from typing import Literal
@@ -38,8 +39,84 @@ from app.strategy.production_selection_policy import (
     ProductionStrategySelectionRegistry,
     SelectionPolicyPin,
 )
+from app.strategy.context import regime_from_index
 
 router = APIRouter(prefix="/backtest", tags=["backtest"])
+
+
+def _market_risk_reference(
+    market: str, stock_date: str, index_rows: list[dict],
+) -> dict:
+    """KRX same-date index context for UI only; never a production Risk Gate.
+
+    Keep the frozen Scanner/backtest engine and its historical decisions unchanged.
+    Negative index rate uses the already existing TREND_DOWN classification.
+    This is NOT permission to invent a PANIC threshold or block entry.
+    """
+    compact = str(stock_date or "").replace("-", "")
+    matched = next(
+        (row for row in reversed(index_rows)
+         if str(row.get("date") or "").replace("-", "") == compact),
+        None,
+    )
+    raw = matched.get("change_rate") if matched else None
+    try:
+        change = float(raw) if raw is not None else None
+    except (TypeError, ValueError):
+        change = None
+    if change is not None and not math.isfinite(change):
+        change = None
+    regime = regime_from_index(change)
+    if change is None:
+        status = "UNKNOWN"
+        reason = "INDEX_RATE_MISSING" if matched else "INDEX_DATE_NOT_ALIGNED"
+    elif regime.value == "TREND_DOWN":
+        status = "DECLINE_RECHECK"
+        reason = "EXISTING_INDEX_REGIME_TREND_DOWN"
+    else:
+        status = "REFERENCE_ONLY"
+        reason = "NO_EXISTING_DECLINE_SIGNAL"
+    return {
+        "market": market,
+        "data_date": stock_date,
+        "regime": regime.value,
+        "index_change_rate_pct": round(change, 3) if change is not None else None,
+        "index_data_date": stock_date if matched else None,
+        "risk_reference_status": status,
+        "risk_reference_reason": reason,
+        "risk_reference_source": "KRX_EOD",
+        "risk_decision_effect": "REFERENCE_ONLY_NOT_RISK_GATE",
+    }
+
+
+def _attach_scanner_market_reference(result: dict, market_store) -> None:
+    """Enrich only the HTTP job result AFTER frozen captures and rank evidence.
+
+    Reads the already available KRX EOD store; performs no provider calls and
+    does not modify Scanner cache, canonical samples, score, ranking or Risk.
+    """
+    enriched = []
+    for existing in result.get("market_summary") or []:
+        source = dict(existing)
+        market = str(source.get("market") or "").strip().upper()
+        asof = str(source.get("data_date") or "")
+        compact = asof.replace("-", "")
+        if market not in {"KOSPI", "KOSDAQ"} or len(compact) != 8 or not compact.isdigit():
+            enriched.append(source)
+            continue
+        try:
+            series = market_store.index_series(market, compact, compact)
+            index_rows = sorted(
+                list(series.rows.values()),
+                key=lambda row: str(row.get("date") or ""),
+            )
+            source.update(_market_risk_reference(market, asof, index_rows))
+        except (OSError, ValueError, RuntimeError) as exc:
+            source.update(_market_risk_reference(market, asof, []))
+            source["risk_reference_reason"] = "INDEX_LOCAL_READ_FAILED"
+            # Never expose absolute database paths or user files in the payload.
+        enriched.append(source)
+    result["market_summary"] = enriched
 
 
 def _prospective_service() -> ProspectiveService:
@@ -664,6 +741,7 @@ async def _run_scanner_job(
                 or prospective_capture.get("capture_id")
             )
             enrich_scanner_result_with_ai_presentation(result)
+            _attach_scanner_market_reference(result, service.market_store)
             result["execution_mode"] = "BASELINE_ONLY"
             result["jev_shadow"] = {
                 "status": "NOT_REQUESTED",
