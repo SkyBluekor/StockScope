@@ -293,7 +293,7 @@ async def execute_owned_jev_review(
         origin_host is not None and origin_host not in {"127.0.0.1", "localhost", "::1"}
     ):
         raise HTTPException(status_code=403, detail={"code": "JEV_B_LOOPBACK_ONLY"})
-    if request.headers.get("X-StockScope-JEV-Approve") != CONFIRM_PHRASE:
+    if request.headers.get("X-StockScope-JEV-Approve") != "paid-once-confirmed-v1":
         raise HTTPException(status_code=403, detail={"code": "JEV_B_CONFIRM_HEADER_REQUIRED"})
     try:
         return await OwnedReviewService(_db()).execute(
