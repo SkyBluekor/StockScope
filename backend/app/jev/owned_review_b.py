@@ -21,6 +21,7 @@ import secrets
 from typing import Any
 
 from app.prospective.catalog import ProspectiveCatalog, ProspectiveCatalogError
+from app.prospective.models import digest_json
 from .typesafe_provider import (
     TypeSafeSystemOneProvider, TypeSafeJevProviderError,
     load_typesafe_jev_api_key, validate_system_one_response,
@@ -97,7 +98,9 @@ def _capture_binding(
     if match is None or match["market"] != market or match["ticker"] != ticker:
         raise OwnedReviewError("JEV_B_SELECTED_STOCK_MISMATCH")
     snapshot_hash = str(match.get("snapshot_hash") or "")
-    if not re.fullmatch(r"[0-9a-f]{64}", snapshot_hash):
+    if (not re.fullmatch(r"[0-9a-f]{64}", snapshot_hash)
+            or not isinstance(match.get("snapshot"), dict)
+            or digest_json(match["snapshot"]) != snapshot_hash):
         raise OwnedReviewError("JEV_B_SNAPSHOT_INTEGRITY_UNVERIFIED")
     # Do not copy any sample market-data fields into the remote request.
     return {
