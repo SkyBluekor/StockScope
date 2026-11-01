@@ -327,6 +327,17 @@
 **2단계 판정:** `IMPLEMENTED_REFERENCE_ONLY_CI_PASS_WINDOWS_UAT_PENDING` / 전체 완료 아님. 사용자 PC에서 KRX 경고 표시를 확인하고, 남은 PANIC 위험 정책 및 실제 거시·이벤트 소비 조건을 명시적으로 결정하기 전에는 3단계로 이동하지 않는다.
 
 
+#### 2단계 후속 — 신규 진입 안내 분리 (2026-11-02 현재 GitHub 확인)
+
+**상태: CODE_IMPLEMENTED / CI_4_OF_4_PASS / WINDOWS_UAT_PENDING.** 이번 항목은 기존 2단계의 직접적인 후속이며 별도 단계가 아니다.
+
+- 코드 커밋 [`5c7612345a`](https://github.com/SkyBluekor/StockScope/commit/5c7612345a) 및 UX 호환 수정 [`8c86b28939`](https://github.com/SkyBluekor/StockScope/commit/8c86b28939): `frontend/src/components/scannerDecisionPresentation.ts`의 `scannerEntryGuidance()`가 기존 위험/거래 제외/미충족 조건을 우선하고, 분석일·시장·원천·참고 상태가 일치하는 KRX 지수 하락 시 `MARKET_RECHECK`, 일치 자료가 없으면 `MARKET_UNKNOWN`을 반환. 기존 READY/전략 조건은 원본 그대로 유지.
+- `frontend/src/components/ScannerDecisionSummary.tsx`: 선택 후보 요약 상단에 **신규 진입 판단 (현재 매수 허가 아님)**을 우선 표시하고 종목 조건을 별도 행으로 분리. 시장 하락 시 신규 진입 재확인, 승인된 실제 Risk Gate 차단과 구분. 진입 재확인에 맞춰 '다음 확인' 문구도 조정.
+- `frontend/tests/scannerDecisionPresentation.test.mjs` 및 E2E 회귀에서 선익시스템 171090 / KOSDAQ / 2026-10-30 / 6/6 / -3.83%와 정상/누락/시점 불일치/기존 위험 우선순위를 검증. 테스트 수치는 합성 fixture이며 실제 KRX 추가 수집 결과 아님. 기존 as-of/조건 라벨과 무관한 UX 계약은 보존.
+- 최종 HEAD `8c86b28939b427ae960e436f2bc3b42745a352c6` 기준 [GitHub Actions #41321297882](https://github.com/SkyBluekor/StockScope/actions/runs/41321297882) **Backend Python 3.11, 3.14 / Frontend Node 22 / Fresh Clone Windows 모두 PASS (4/4)**. 초기 중간 HEAD `5c761234`의 CI 실패는 이후 `8c86b289`에서 UX 호환성 수정 후 해결됨.
+- **Windows 실화면 미검증**: 사용자가 실제 브라우저에서 새 상단 '신규 진입 판단'을 확인하고, 기존 `시장 위험 · 분석일 기준`과 구분되는지 증거 필요. 예전 선익시스템 화면은 이 신규 커밋 이전 화면이며, 신규 변경의 UAT로 재사용하지 않음.
+- **미완료 경계:** KRX 하락은 별도 참고 신호이며 PANIC 차단 기준 미승인; 기존 Scanner 순위/Risk/과거 frozen 캡처는 변경하지 않음. 미국 금리·국제 사건 최종 Scanner 소비 및 실제 정책 차단도 아직 미완료. 2단계 전체 DONE 아님. 3단계 착수 금지.
+
 ### 3단계: 다전략·기간·위험 대비 기대성과 통합
 
 - **목적:** 기존 10전략·단/중/장기·Risk 결과와 시장·산업 조건을 합쳐 종목에 맞는 접근법을 비교.
@@ -376,7 +387,7 @@
 | 기존 A단계 요약 UI | DONE · 사용자 Windows 확인 | 보존 |
 | 기존 B단계 문장 비교 | REJECTED_PRODUCT_FIT · 코드 존재, 실모델 유료 검증 진행 금지 | 후속 해당 범위에서 UI 정리 |
 | **1단계 현황 파악** | **CODE_AUDIT_COMPLETE_WINDOWS_UAT_PENDING** | 2026-11-01 지정 브랜치 코드 연결 조사 완료, 실제 Windows·원천 데이터 미확인. 핵심 갭: Scanner 시장·이벤트 위험 → Risk Gate |
-| **2단계 시장·국제 사건 연결** | **IMPLEMENTED_REFERENCE_ONLY_CI_PASS_WINDOWS_UAT_PENDING** | API 후처리 KRX 동일일 지수 주의 UI 연결 · CI 4/4 통과 · 기존 Scanner frozen 원본 복구. Windows 실데이터·PANIC 차단 규칙·거시/사건 판단 연계는 미완료 |
+| **2단계 시장·국제 사건 연결** | **ENTRY_GUIDANCE_IMPLEMENTED_CI_PASS_WINDOWS_UAT_PENDING** | KRX 동일일 위험 참고 + 신규 진입 판단 요약 분리 · 최종 HEAD 8c86b289 CI 4/4 PASS. Windows 새 화면 UAT, PANIC 승인 정책, 거시/국제 사건 연결은 미완료 |
 | 3단계 다전략/위험 통합 | NOT_STARTED | 2단계 종료 후 |
 | 4단계 JEV 실사용 | NOT_STARTED | 3단계 결과와 허용 입력 확인 후 |
 | 5단계 효용 평가 | NOT_STARTED | 4단계 후 |
