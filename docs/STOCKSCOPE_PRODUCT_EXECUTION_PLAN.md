@@ -189,7 +189,52 @@
 4. 기존 소스·DB·정책·브랜치의 불필요한 변경이 없음을 확인함.
 5. 사용자에게 간결하게 조사 결론과 **2단계에서 해결할 단 하나의 작업**을 제시함.
 
-**1단계 결과:** NOT_STARTED. 조사 완료 후 이 문서의 본 절 아래에 A/B/C 기록을 추가하고, 11절 진행표만 갱신한다.
+**1단계 조사 결과 (2026-11-01): CODE_AUDIT_COMPLETE / WINDOWS_UAT_PENDING**
+
+**조사 방식과 한계:** 지정 브랜치의 GitHub 원본 파일들을 읽어서 함수·필드·API 호출 관계를 추적했다. 프로젝트 소스·SQL·런타임 DB를 수정하지 않았고 로컬/외부 시장 API 및 TypeSafe 유료 호출도 실행하지 않았다. 해당 Windows PC, 개인 API 키, KRX/DART/Macro DB, 실행 중인 서버에 직접 접근할 수 없으므로 실제 원천의 **최신 관측 날짜·수집 성공·실제 종목 가격/점수·DB 무결성**은 이번 조사에서 검증하지 못했다. 과거 사용자가 보여준 선익시스템(171090) UI는 **종목명이 표시되었다는 증거일 뿐**, 최신 실제 분석이 완료되었다는 근거는 아니다.
+
+#### A. 데이터·의사결정 연결표 (현재 브랜치의 코드 근거)
+
+상태: VERIFIED_CONNECTED = 실제 데이터부터 사용자 결과까지 확인, IMPLEMENTED_NOT_CONNECTED = 기능 존재하나 대상 판단 경로까지 미연결, DATA_UNAVAILABLE = 데이터 미확보 확인, RIGHTS_BLOCKED = 현재 정책의 사용권 제한, UNVERIFIED = 실제 실행·자료 또는 권한 확인이 부족. 이 표에는 **Windows 실행까지 검증된 VERIFIED_CONNECTED를 임의 부여하지 않는다.**
+
+| 데이터·요인 | 원천·최종 소비 경로 | 상태 | 확인한 사실과 남은 확인 |
+|---|---|---|---|
+| **KRX 주가·거래량(EOD)** | KrxProvider → HistoricalMarketStore → StockScannerService._quick_current_candidate → BacktestEngine._signal_snapshot → 현재 전략/위험 → Scanner 후보 결과 | UNVERIFIED | **코드 경로 연결됨**. StockScannerService.run은 KOSPI/KOSDAQ 종목과 확정 지수 시계열로 후보를 계산. 로컬 실제 최신 데이터·날짜·API 권한은 미검증. [근거: scanner.py](../backend/app/backtest/scanner.py), [backtest.py](../backend/app/api/backtest.py) |
+| **KOSPI/KOSDAQ 하락·상승** | KRX index_daily → BacktestEngine._signal_snapshot → regime_from_index → StrategyInput.market_regime → StrategyEngine | UNVERIFIED | **코드 경로 연결됨, 위험 구간 구현 불완전.** 현재 지수 변동률 판정은 TREND_UP/TREND_DOWN/RANGE/UNKNOWN만 반환. 정의된 PANIC/HIGH_VOLATILITY는 이 함수로는 생성 불가. Risk Gate의 PANIC 차단은 현재 Scanner의 이 입력 생성 경로에서는 도달 불가. [근거: strategy/context.py](../backend/app/strategy/context.py), [strategy/engine.py](../backend/app/strategy/engine.py), [backtest/engine.py](../backend/app/backtest/engine.py) |
+| **미국 금리·거시 충격** | LocalMacroReader → MacroContext(현재 US 10Y DGS10 계열) → GET /api/macro/market-stock-impact 및 /event-reference, ProspectiveReferenceCaptureService | IMPLEMENTED_NOT_CONNECTED | 참고·평가 경로 존재. **이미 저장된 Scanner 결과 뒤에** reference가 붙으며 governance: decision_input/scanner_input/risk_gate_input/production_decision_approved 모두 False. 외환·미국 지수·금리 전 분야를 이 경로가 포괄한다고 주장하지 않음. Macro DB의 실데이터와 기준시각 미확인. [근거: macro/context.py](../backend/app/macro/context.py), [macro.py](../backend/app/api/macro.py), [reference_capture.py](../backend/app/prospective/reference_capture.py) |
+| **전쟁·호르무즈·글로벌 사건** | 기존 Event Evidence reference, Naver 종목 뉴스 표시, Macro/Event 결합 조회 | IMPLEMENTED_NOT_CONNECTED | 일부 사건 근거 확인/표시 경로는 존재하지만, **구체적 글로벌 사건의 수집·산업별 영향·Scanner 최종 판단 소비자**는 확인된 코드 경로에 없음. 이벤트 자동 수집이 성공했다고 단정할 수 없음. 허용 원천·사건 종류·시점·업종 매핑을 별도 확인해야 함. [근거: api/news.py](../backend/app/api/news.py), [api/macro.py](../backend/app/api/macro.py), [event_evidence/policy.py](../backend/app/event_evidence/policy.py) |
+| **OpenDART 공시 이벤트: 개별 종목** | StrategyAnalysisService.analyze → EventRiskAnalyzer.analyze → event_analysis.risk_gate → StrategyInput.event_risk → StrategyEngine | UNVERIFIED | **개별 종목 전략 분석의 공시 위험 연결 코드는 존재함.** DART API 성공·사건 위험 판정 실사례는 Windows 미검증. [근거: strategy/service.py](../backend/app/strategy/service.py), [market/event_risk.py](../backend/app/market/event_risk.py) |
+| **OpenDART 이벤트: 다종목 Scanner** | StockScannerService → BacktestEngine._signal_snapshot(event_risk=False) | IMPLEMENTED_NOT_CONNECTED | **대량 후보 Scanner는 event_risk=False 고정.** 개별 종목 분석의 OpenDART 이벤트 위험은 Scanner 선별에 자동 전파되지 않음. Scanner 생성자는 기본 KRX만 받아 DART 호출도 없음. [근거: backtest/engine.py](../backend/app/backtest/engine.py), [backtest/scanner.py](../backend/app/backtest/scanner.py) |
+| **산업 상대강도** | 개별 분석은 OpenDART 업종코드 + KRX 업종지수. Scanner는 optional sector_prefetcher → historical sector projection | IMPLEMENTED_NOT_CONNECTED | 개별 분석 경로 존재. Scanner 기본 생성 시 업종 prefetcher는 None이고 선택적 source를 넣어도 STATIC_CURRENT / production_enabled False로 남음. 업종 입력이 현재 Scanner 순위를 보편적으로 바꾼다고 말할 수 없음. [근거: strategy/service.py](../backend/app/strategy/service.py), [scanner.py](../backend/app/backtest/scanner.py) |
+| **10개 전략 및 Risk** | StrategyEngine.evaluate_all(10개) → 선별된 정책 전략 → Scanner에서 **상위 최대 3개**를 current 조건·Risk로 다시 검토 → current_readiness → rank_candidates | UNVERIFIED | 코드 연결됨. fast 후보는 시장별 유동성 상위 최대 160개, 정밀 현재 판단은 전체 중 상위 최대 18개로 제한. **모든 상장 종목에 모든 전략을 똑같이 상세 검토하는 구조가 아님.** 최종 후보의 실제 PC 수치는 미확인. [근거: scanner.py](../backend/app/backtest/scanner.py), [strategy/engine.py](../backend/app/strategy/engine.py) |
+| **단기·중기·장기 기간 정책** | POST /api/backtest/scanner/jobs → resolve_horizon_context → require_horizon_activatable | IMPLEMENTED_NOT_CONNECTED | 현재 SHORT/MEDIUM/LONG은 numeric policy EVALUATION_PENDING이며 명시 기간 요청은 409로 차단. 레거시 기본 흐름은 실행 가능. **세 기간별 전략/성과를 실제로 선택하는 기능은 활성화되지 않음.** [근거: horizon.py](../backend/app/horizon.py), [api/backtest.py](../backend/app/api/backtest.py) |
+| **과거 수익·손실·낙폭** | BacktestEngine/metrics → MultiStrategyBacktestEngine, 별도 검증·과거 근거 → Scanner의 참고 설명 | IMPLEMENTED_NOT_CONNECTED | 승률·평균 순수익·기대값·profit factor·낙폭 계산 로직 존재. 현재 Scanner 최종 순위는 **현재 조건·Risk·진입 근접도 중심**이며 3년 근거는 설명용. Scanner의 빠른 후보 설정에는 round_trip_cost_pct=0.0. 현실적 거래비용 반영·전략별 최대 수익/위험 성과 최적화 완료로 주장하지 않는다. [근거: backtest/metrics.py](../backend/app/backtest/metrics.py), [backtest/scanner.py](../backend/app/backtest/scanner.py) |
+| **JEV 실제 종목 보조 검토** | Scanner API에서 execution_mode=BASELINE_ONLY, jev_shadow=NOT_REQUESTED → 별도 수동 reviewer / B 사용자 작성 경로 | IMPLEMENTED_NOT_CONNECTED | Scanner 실행은 JEV 미요청. 기존 V4 입력·검증 코드는 있으나 **현재 제품이 원하는 자동 시장·종목 분석 연결이 아님**. B 경로의 TypeSafe wire는 사용자 작성 문장 2개뿐; 종목은 결과 저장 ID로만 연결. 유료 실행 0회(이 조사 기준 실행하지 않음). [근거: api/backtest.py](../backend/app/api/backtest.py), [jev/owned_review_b.py](../backend/app/jev/owned_review_b.py) |
+| **외부 뉴스/공시의 JEV 전송** | news.policy / event_evidence.policy | RIGHTS_BLOCKED | 기존 Naver 뉴스 source 정책은 transform_allowed=False, ai_allowed=False. Event Evidence의 Naver/OpenDART 외부 변환·보존·AI 권한도 별도 미승인. **화면 표시 권한 ≠ 모델 외부 전송권한**. [근거: news/policy.py](../backend/app/news/policy.py), [event_evidence/policy.py](../backend/app/event_evidence/policy.py) |
+
+#### B. 실제 후보 종목 1개 — 확인한 것 vs 확인 불가
+
+- **선택 사례:** 선익시스템, 171090, KOSDAQ (이전 사용자 Windows 화면에 나타난 실제 선택 종목을 검사 표본으로 지정). 현재 해당 캡처 ID·입력 해시·분석 EOD 기준일·API 수집시각은 **미확인**; GitHub에 사용자 로컬 runtime 데이터가 없으므로 값을 지어내지 않는다.
+- **실제 코드 경로:** POST /api/backtest/scanner/jobs → KRX 준비 및 HistoricalMarketStore → StockScannerService.run → BacktestEngine._signal_snapshot(KRX 주가+지수, risk & 전략) → quick current top 3 재평가 → current_readiness / rank_candidates → Prospective 정본 캡처 → **사후** ProspectiveReferenceCaptureService.try_capture → ScannerPanel 후보/종목 상세.
+- **사용자 Windows UAT:** 이번 조사에서 직접 확인 불가. 기존 스크린샷은 종목 선택 및 AI UI의 존재만 뒷받침함. **현재 조건, 날짜, 전략, Risk, 실제 시장 하락지표, DART 공시 여부, 입력 출처·캡처 ID는 확인 불가.**
+- **시장·국제 사건:** KRX 지수 당일 변동률은 생산 경로에 입력되는 코드가 있음. 미국 10년물·Macro/Event는 사후 reference이며 production 사용 불승인. DART 이벤트 위험은 개별 StrategyAnalysisService에 있지만 Scanner에서는 False.
+- **JEV:** Scanner API에서 BASELINE_ONLY / NOT_REQUESTED. 저장된 실제 TypeSafe 결과의 존재나 Windows 재조회는 확인되지 않았음. 기존 B 문장 비교는 제품 목적 불합격.
+- **Windows 확인이 필요할 때:** 이미 화면에 보이는 저장된 Scanner 결과의 종목/기준일/전략/Risk/시장요약/AI 상태를 **조회·캡처만** 한다. 신규 Scanner 실행·외부 API 재수집·DB migration·데이터 삭제·유료 JEV 호출을 자동으로 수행하지 않는다. 이 원칙을 충족하는 실제 결과가 확보되기 전엔 "최종 Windows 제품 UAT PASS"로 표시하지 않는다.
+
+#### C. 최우선 결함 1개와 다음 단계 단일 범위
+
+**최우선 결함 = 기존 Scanner의 '실제 시장·사건 위험 신호 → 전략 Risk Gate' 연결 부재/불완전.**
+
+- **생산자:** KRX 지수 하락 → strategy/context.py:regime_from_index. 현재 출력은 상승/하락/횡보/미확인뿐이라 PANIC 차단값에 도달하지 못함. 시장 지수 급락 UI의 별도 표현과도 분리됨.
+- **추가로 단절된 생산자:** 개별 StrategyAnalysisService에서 제공하는 OpenDART 이벤트 위험 및 Macro/Event reference.
+- **끊긴 소비자:** BacktestEngine._signal_snapshot에서 생성하는 Scanner StrategyInput. event_risk=False 고정, Macro/Event reference는 Scanner 완료 이후 별도 부착되고 governance에서 scanner_input/risk_gate_input=False.
+- **사용자 체감:** 국제 충격이나 국내 시장 급락 위험을 충분히 반영하지 못한 채 종목의 가격·전략 조건이 양호한 후보가 기본 Scanner 추천 순위에 나타날 수 있다. 실제 특정 종목에서 오판이 발생했다는 주장이나 손실 추정은 하지 않는다.
+- **2단계 첫 수정 후보(아직 실행 금지):** 기존 KRX 지수/MarketRegime/StrategyEngine/Risk Gate를 재사용해서 '강한 시장 급락·PANIC' 신호를 현재 분석 시점에 정합적으로 생성·소비하도록 최소 연결한다. **명시적 정책·기준과 실데이터 검증 없이 임계값을 임의로 만들지 않는다.** 기존 전략 순위·Risk 기본 기준은 보호하고, 레거시 기준과 변경 결과를 실제 종목 1개로 비교한다.
+- **2단계 이후 같은 범위 내 후속 의존:** Macro/Event와 OpenDART의 시점·원천·AI/가공 권한 및 실제 산업 연결 증거가 확정돼야 해당 위험을 Scanner에 안전하게 연계할 수 있다. 지금은 독립적인 신규 뉴스 수집기·AI 예측·종목별 유료 모델을 만들지 않는다.
+- **별도 남은 제품 갭:** 명시 투자 기간 미활성, 실전 비용/수익 최적화 미검증, 일부 전략/업종 검사 범위 제한, JEV 자동 종목 입력 미연결. 다음 단계에서 모두 구현하지 않는다.
+
+**Stage 1 결과 판정: CODE_AUDIT_COMPLETE_WINDOWS_UAT_PENDING.** 코드의 실제 소비 경로와 핵심 결함 한 가지를 확인했고 계획서 외의 파일 변경 없음. **Windows 표본의 현재 실데이터·API·DB 상태 검증은 미완료**로 남긴다. 사용자 Windows에 접근할 수 없는 한 전체 1단계를 DONE으로 표시하지 않는다. 2단계 제품 코드 개발은 이 결과 검토와 사용자 명시적 착수 지시가 있기 전까지 시작하지 않는다.
+
 
 ### 2단계: 시장·국제 사건 위험을 종목 분석에 연결
 
@@ -245,7 +290,7 @@
 | **제품 목표 문서** | **작성 완료 / 사용자 승인 대기** | 문서 검토·확정 |
 | 기존 A단계 요약 UI | DONE · 사용자 Windows 확인 | 보존 |
 | 기존 B단계 문장 비교 | REJECTED_PRODUCT_FIT · 코드 존재, 실모델 유료 검증 진행 금지 | 후속 해당 범위에서 UI 정리 |
-| **1단계 현황 파악** | SPEC_READY / NOT_STARTED | 실행 명세 v1 확정안 작성. 실행 지시 후 실제 브랜치·Windows 읽기 전용 조사만 실시 |
+| **1단계 현황 파악** | **CODE_AUDIT_COMPLETE_WINDOWS_UAT_PENDING** | 2026-11-01 지정 브랜치 코드 연결 조사 완료, 실제 Windows·원천 데이터 미확인. 핵심 갭: Scanner 시장·이벤트 위험 → Risk Gate |
 | 2단계 시장·국제 사건 연결 | NOT_STARTED | 1단계 종료 후 |
 | 3단계 다전략/위험 통합 | NOT_STARTED | 2단계 종료 후 |
 | 4단계 JEV 실사용 | NOT_STARTED | 3단계 결과와 허용 입력 확인 후 |
