@@ -229,3 +229,58 @@ def test_pending_request_after_restart_is_never_repeated(monkeypatch, tmp_path):
     loaded = svc.lookup(preview["review_id"])
     assert loaded["status"] == "PENDING_OR_INTERRUPTED"
     assert loaded["reason"] == "JEV_B_BILLING_UNKNOWN_NO_AUTORETRY"
+
+
+
+def test_real_asgi_preview_execute_and_latest_are_separate(monkeypatch, tmp_path):
+    from app.main import app
+    import app.api.jev as api
+
+    db, cap = _capture(tmp_path)
+    monkeypatch.setenv("STOCKSCOPE_JEV_B_ENABLE", "1")
+    monkeypatch.setenv("JEV_API_KEY", "local-test-only")
+    calls = []
+    store = tmp_path / "asgi-records"
+    monkeypatch.setattr(api, "_db", lambda: db)
+    monkeypatch.setattr(api, "OwnedReviewService",
+                        lambda db_arg: _service(db_arg, store, calls))
+    data = _input(cap)
+
+    async def visit():
+        transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 4321))
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
+            preview_resp = await client.post(
+                "/api/simulation/jev/manual-owned/preview", json=data,
+            )
+            assert preview_resp.status_code == 200, preview_resp.text
+            preview = preview_resp.json()
+            assert preview["ready"] is True
+            assert "_request" not in preview
+            assert not store.exists()
+            body = {
+                **data, "preflight_sha256": preview["wire_sha256"],
+                "confirm_paid_call": "유료 JEV 1회 실행",
+                "original_authored_attested": True,
+            }
+            url = "/api/simulation/jev/manual-owned/execute"
+            unconfirmed = await client.post(url, json=body)
+            assert unconfirmed.status_code == 403
+            assert calls == []
+            approval = {"X-StockScope-JEV-Approve": "유료 JEV 1회 실행",
+                        "Origin": "http://127.0.0.1:5173"}
+            paid = await client.post(url, json=body, headers=approval)
+            assert paid.status_code == 200, paid.text
+            result = paid.json()
+            assert result["status"] == "VALID"
+            assert len(calls) == 1
+            query = {key: data[key] for key in ("capture_id","sample_index","market","ticker")}
+            saved = await client.get("/api/simulation/jev/manual-owned/latest", params=query)
+            assert saved.status_code == 200
+            assert saved.json()["review"]["review_id"] == result["review_id"]
+            assert saved.json()["review"]["usage"]["input_tokens"] == 56
+            repeated = await client.post(url, json=body, headers=approval)
+            assert repeated.status_code == 200
+            assert repeated.json()["reused"] is True
+            assert len(calls) == 1
+
+    asyncio.run(visit())
