@@ -130,10 +130,6 @@ export default function ScannerAiReview(props: Props) {
     : state.state === "INPUT_MISSING" ? "검토 입력 부족"
     : state.state === "UNKNOWN" ? "결과 확인 필요"
     : "아직 실행되지 않음");
-  const blockedReason = !available || featureStatus !== "ACTIVE"
-    ? "현재 서버에서 JEV 실행을 제공하지 않습니다."
-    : !enabled ? "JEV 설정이 꺼져 있습니다."
-    : "현재 종목의 전송 가능 입력과 실행 승인이 준비되지 않았습니다.";
   return (
     <section className="scanner-jev-review scanner-jev-compact" aria-label="선택 종목 AI 검토 근거"
       data-jev-primary-summary="true">
