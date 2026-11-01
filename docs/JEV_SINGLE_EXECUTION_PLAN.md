@@ -1,5 +1,7 @@
 # StockScope JEV — 단일 실행계획서
 
+> **과거 JEV 구현 이력 / 실행 순서 폐기(2026-11-01):** [현재 StockScope 제품 실행계획서](./STOCKSCOPE_PRODUCT_EXECUTION_PLAN.md)가 최우선이다. 이 파일의 기존 A→B→C, '문장 두 개 비교' 실모델 유료 검증, 다음 단계 안내는 **신규 작업 지시가 아님**. 기존 A UI 성과만 유지하며, B 사용자 작성 문장 비교는 **제품 요구 불일치**로 인수 거절되었다. 이 파일은 코드·과거 CI 기록 확인용으로만 보존한다.
+
 > **실제 작업 기준:** `C:\TAEWOO\CapstonDesign\StockScope` · `codex/jev-reviewer-shadow-bridge`
 >
 > **현재 단계:** A 완료. **B 코드 구현·자동 검증 진행, 실제 Windows 유료 1회 인수 대기 (2026-11-01)**. C는 B 실제 결과 후.
