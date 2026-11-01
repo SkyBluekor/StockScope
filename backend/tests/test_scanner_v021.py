@@ -322,11 +322,12 @@ def test_three_year_evidence_prepare_uses_real_three_year_window_and_rechecks_re
 
 def test_stage2_market_risk_reference_is_exact_day_and_nonblocking() -> None:
     """A 1%+ decline is a user warning, not an invented PANIC policy."""
+    from app.api.backtest import _market_risk_reference
     from app.strategy.context import regime_from_index
     from app.strategy.engine import StrategyEngine
     from app.strategy.models import MarketRegime, StrategyInput
 
-    store = StockScannerService._market_risk_reference(
+    store = _market_risk_reference(
         "KOSDAQ",
         "2026-10-29",
         [
@@ -350,24 +351,26 @@ def test_stage2_market_risk_reference_is_exact_day_and_nonblocking() -> None:
 
 
 def test_stage2_market_reference_never_uses_previous_day_or_invalid_rate() -> None:
+    from app.api.backtest import _market_risk_reference
     cases = [
         ([{"date": "2026-10-28", "change_rate": -4.2}], "INDEX_DATE_NOT_ALIGNED"),
         ([{"date": "2026-10-29", "change_rate": None}], "INDEX_RATE_MISSING"),
         ([{"date": "2026-10-29", "change_rate": float("nan")}], "INDEX_RATE_MISSING"),
     ]
     for index_rows, reason in cases:
-        result = StockScannerService._market_risk_reference(
+        result = _market_risk_reference(
             "KOSDAQ", "2026-10-29", index_rows,
         )
         assert result["regime"] == "UNKNOWN"
         assert result["index_change_rate_pct"] is None
-        assert result["index_data_date"] is (None if reason == "INDEX_DATE_NOT_ALIGNED" else "2026-10-29")
+        assert result["index_data_date"] == (None if reason == "INDEX_DATE_NOT_ALIGNED" else "2026-10-29")
         assert result["risk_reference_status"] == "UNKNOWN"
         assert result["risk_reference_reason"] == reason
 
 
 def test_stage2_market_reference_never_labels_normal_as_risk_free() -> None:
-    result = StockScannerService._market_risk_reference(
+    from app.api.backtest import _market_risk_reference
+    result = _market_risk_reference(
         "KOSPI", "2026-10-29",
         [{"date": "2026-10-29", "change_rate": 0.3}],
     )
