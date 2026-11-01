@@ -113,8 +113,7 @@ export default function ScannerAiReview(props: Props) {
   });
   const verified = !loading && !loadError && state.source === "STORED_JEV";
   const active = verified || state.state === "RUNNING" || state.state === "QUEUED";
-  const status = manualStatus || (loading ? "검토 기록 확인 중"
-    : loadError ? "검토 기록 조회 실패"
+  const status = manualStatus || (loading ? "기존 검토 기록 확인 중"
     : verified ? (
       state.state === "NEEDS_REVIEW" ? "추가 확인 필요"
       : state.state === "ABSTAIN" ? "판단 보류"
@@ -122,14 +121,8 @@ export default function ScannerAiReview(props: Props) {
     )
     : state.state === "RUNNING" ? "검토 진행 중"
     : state.state === "QUEUED" ? "검토 대기 중"
-    : state.state === "FEATURE_PENDING" ? "현재 사용 불가"
-    : state.state === "FEATURE_LOADING" ? "서버 상태 확인 중"
-    : state.state === "FEATURE_ERROR" ? "서버 상태 확인 실패"
-    : state.state === "OFF" ? "사용 안 함"
-    : state.state === "FAILED" ? "검토 실패"
-    : state.state === "INPUT_MISSING" ? "검토 입력 부족"
-    : state.state === "UNKNOWN" ? "결과 확인 필요"
-    : "아직 실행되지 않음");
+    : loadError ? "기존 검토 기록 조회 실패"
+    : "실제 JEV 검토 미실행");
   return (
     <section className="scanner-jev-review scanner-jev-compact" aria-label="선택 종목 AI 검토 근거"
       data-jev-primary-summary="true">
