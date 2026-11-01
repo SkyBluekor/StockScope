@@ -774,3 +774,69 @@
   }
   .scanner-jev-motion-status.is-running .scanner-jev-motion-icon::after { content: none; }
 }
+
+
+/* JEV execution plan A: compact end-user display. Detailed checks remain optional. */
+.scanner-jev-review.scanner-jev-compact {
+  display: grid;
+  gap: 8px;
+  padding: 10px 0;
+  min-width: 0;
+}
+.scanner-jev-compact-name {
+  color: var(--text-strong);
+  font-size: 15px;
+  font-weight: 700;
+}
+.scanner-jev-review .scanner-jev-compact-facts {
+  display: grid;
+  margin: 0;
+  border-top: 1px solid var(--line-soft);
+}
+.scanner-jev-review .scanner-jev-compact-facts > div {
+  display: grid;
+  grid-template-columns: minmax(95px, .45fr) minmax(0, 1fr);
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.scanner-jev-compact-facts dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+.scanner-jev-compact-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.scanner-jev-compact-actions button:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+.scanner-jev-review .scanner-jev-compact-note {
+  font-size: 12px;
+  color: var(--text-subtle);
+  line-height: 1.5;
+}
+.scanner-jev-compact-details {
+  border-top: 1px solid var(--line-soft);
+  margin-top: 2px;
+  padding-top: 8px;
+  min-width: 0;
+}
+.scanner-jev-review .scanner-jev-compact-details > summary {
+  color: var(--text-subtle);
+  font-size: 12px;
+  cursor: pointer;
+}
+.scanner-jev-compact-details > .scanner-jev-review {
+  margin-top: 10px;
+}
+@media (max-width: 520px) {
+  .scanner-jev-review .scanner-jev-compact-facts > div {
+    grid-template-columns: minmax(90px, .42fr) minmax(0, 1fr);
+    gap: 8px;
+  }
+}
