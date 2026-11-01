@@ -2,7 +2,7 @@
 
 > **실제 작업 기준:** `C:\TAEWOO\CapstonDesign\StockScope` · `codex/jev-reviewer-shadow-bridge`
 >
-> **현재 단계:** A 구현·CI·사용자 Windows 화면 확인 완료 (2026-11-01). **다음은 B**, C는 이후.
+> **현재 단계:** A 완료. **B 코드 구현·자동 검증 진행, 실제 Windows 유료 1회 인수 대기 (2026-11-01)**. C는 B 실제 결과 후.
 >
 > **변경 규칙:** 사용자 승인 없이 A→B→C 이외의 기능·단계·문서 신설 금지. 한 번에 한 단계만. 이 문서의 진행표가 유일한 현재 상태 기록.
 >
@@ -46,7 +46,7 @@
 
 ### B. 실제 종목 TypeSafe JEV 수동 검토 1건
 
-**현재: NOT_STARTED.**
+**현재: IMPLEMENTED_PAID_WINDOWS_UAT_PENDING.** 실제 TypeSafe 호출은 아직 0회이며, 사용자가 별도 승인하기 전까지 자동 호출하지 않는다.
 
 1. **현재 브랜치**에 있는 `TypeSafeSystemOneProvider`, 기존 서비스·API·모델 식별/응답 검증 로직을 먼저 살펴서 재사용한다. 다른 브랜치의 코드를 통째로 옮기지 않는다.
 2. Scanner의 **실제 선택 종목, 캡처 ID, 시각**과 안전한 사용자 작성 입력을 연결한다. 이 입력만으로 검토 가능한 한 가지 질문을 확정한다. Naver/DART/KRX 원본·허용되지 않은 파생물 전송 금지.
@@ -72,7 +72,7 @@
 | 단계 | 상태 | 마지막 확인 | 다음 |
 |---|---|---|---|
 | A — UI 간소화 | **DONE** | `fb93f32f` · CI 4/4 PASS · 사용자 Windows 화면 확인 (2026-11-01) | B |
-| B — 실종목 1건 JEV | NOT_STARTED | 실제 유료 실행 0회 | 허용 입력 설계·기존 Provider 연결 |
+| B — 실종목 1건 JEV | IMPLEMENTED_PAID_WINDOWS_UAT_PENDING | 코드 반영 · 자동 테스트 진행 · 실제 유료 실행 0회 | Windows에서 사용자 작성 문장 2개, 모델 1회 실행·재조회 확인 |
 | C — 효용 검증 | NOT_STARTED | 실결과 없음 | B 완료 후 |
 
 ## 작업 규칙
@@ -82,3 +82,16 @@
 3. 단계를 마칠 때는 변경 파일·실제 동작·CI·Windows UAT·미해결 장애·다음 단계를 간단히 남긴다.
 4. 진행 상태는 **이 문서만 수정**한다. 새 HANDOFF/MASTER_PLAN/P6 단계 추가 금지.
 5. PC 명령어는 언제나 `C:\TAEWOO\CapstonDesign\StockScope` 및 `codex/jev-reviewer-shadow-bridge` 기준으로 작성한다.
+
+
+### 2026-11-01 B 코드 실행 결과 및 인수 체크 (동일 계획, 범위 변경 없음)
+
+- 실제 사용자 브랜치에서만 B 구현: `backend/app/jev/owned_review_b.py`, `backend/app/api/jev.py`, `backend/tests/test_jev_owned_review_b.py`, `frontend/src/services/jevApi.ts`, `frontend/src/components/ScannerOwnedReviewB.tsx`, `ScannerAiReview.tsx`, `ScannerPanel.tsx`, `scannerUX.css`.
+- 기존 `TypeSafeSystemOneProvider`와 검증기 `validate_system_one_response`를 재사용했다. 기존 V4의 LOCAL_MATCH를 잔여 갈등으로 조작하지 않고 **독립된 사용자 작성 텍스트 의미 검토**로 처리. 이 경로에서 provider wire는 '필수조건 문장'과 '직접 관찰·판단한 문장' 및 고정 단일 `noul` 질문만 포함. 종목코드·원본 Scanner 스냅샷·시세·뉴스·공시·순위·보유/계좌 정보를 전송하지 않는다. **따라서 이것을 실제 주가·기업 정보 JEV 분석으로 표현하면 안 된다.**
+- POST `/api/simulation/jev/manual-owned/preview`는 실제 저장 캡처·종목·스냅샷을 로컬에서 확인하고 전송 본문 해시, 입력 해시, 모델 alias `jev-latest` 및 비용 미확정을 반환하며 **외부 요청/DB 기록 없이** 종료. GET `/manual-owned/latest`는 현재 선택 종목에 결속된 기존 결과만 재조회.
+- POST `/manual-owned/execute`는 기본적으로 **비활성**. 로컬 서버 환경 `STOCKSCOPE_JEV_B_ENABLE=1`, 기존 `JEV_API_KEY` 설정, 프리뷰 해시 일치, 사용자 직접 작성·외부 자료 미포함 확인, 별도 브라우저 유료 1회 승인 대화상자 및 로컬 전용 HTTP 동의 헤더가 모두 있어야 기존 실제 제공자를 호출. 사용자가 승인하기 전 실제 TypeSafe 호출 금지.
+- 같은 정본 캡처·샘플은 입력을 바꿔도 **유료 단 한 번**을 원칙으로 고정. 최초 실행 이전에 결과 ID의 JSON 파일을 원자적 선점하고, 응답 및 모델 신원·질문·token usage를 검증하여 `simulation.db`와 별도인 `jev_owned_review_b` 디렉터리에 **원문 없이** 결과 ID/해시·model/time/usage/비용정보를 저장. 실행 중 PC/서버가 종료되면 상태를 미확정으로 유지하고 **자동 재시도 및 2차 과금 금지**. 비용을 실제로 알 수 없으면 `cost_unknown`으로 표기.
+- 모델의 `noul` 수치는 투자수익·승률·장기 정확도 통계가 아님. 0.30/0.70은 제한적인 단문 의미 검토에 대한 **탐색적 UI 분류 기준**일 뿐 수익 확률이나 검증된 모델 정책으로 간주하지 않는다. 출력은 사용자가 작성한 두 문장의 논리적 충돌 여부만 뜻한다.
+- 자동 테스트는 TypeSafe의 **실제 제공자 클래스 + 테스트용 HTTP transport**를 이용하므로 CI는 외부 유료 요청 0회. 사전 승인 없는 요청 차단, 외부 자료·시장 데이터 wire 누락, 1회 호출/중복 억제, restart 후 재조회, 잘못된 모델 반환 차단, HTTP ASGI 엔드포인트를 확인한다. 최초 ASGI 테스트의 비 ASCII HTTP 헤더 오류는 **영문 고정 헤더 토큰**으로 수정하고 요청 본문과 확인 대화상자의 한국어 승인 문구는 유지했다. 최종 CI 상태는 끝난 실행만 PASS로 보고.
+- **Windows 인수 절차(유료 호출 전 확인 필수):** 기존 서버 종료 → `C:\TAEWOO\CapstonDesign\StockScope`에서 동일 브랜치 `git pull --ff-only` → 서버에 `JEV_API_KEY`(기존 설정)와 `STOCKSCOPE_JEV_B_ENABLE=1`을 명시적으로 설정 후 시작 → Scanner 실제 종목 선택 → AI 검토 → '내가 작성한 조건으로 JEV 제2 의견 받기' → 직접 작성한 두 문장 입력 → '전송 내용 미리 확인 (무료)' → 모델·입력범위·비용 미확정 확인 → 본인이 유료 호출 1회에 체크하고 승인 버튼 클릭 → 브라우저 최종 확인 → 모델 결과 및 재조회 확인. **코드·CI 통과만으로 B 완료하지 않는다.**
+- 이 문서 상태는 실제 유료 모델 응답이 Windows에 기록되고 사용자 화면에서 검증되기 전까지 `IMPLEMENTED_PAID_WINDOWS_UAT_PENDING`. B 완료 전 C 시작 금지. 신규 공시 저장/Mock 기능/단계 추가 없음.
