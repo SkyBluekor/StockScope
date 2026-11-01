@@ -270,7 +270,7 @@ export function executeOwnedJevReview(input: OwnedJevInput, preview: OwnedJevPre
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-StockScope-JEV-Approve": "유료 JEV 1회 실행",
+      "X-StockScope-JEV-Approve": "paid-once-confirmed-v1",
     },
     body: JSON.stringify({
       ...input, preflight_sha256: preview.wire_sha256,
