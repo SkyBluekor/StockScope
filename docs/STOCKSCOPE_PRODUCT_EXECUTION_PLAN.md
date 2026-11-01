@@ -348,6 +348,8 @@
 
 **회귀:** `backend/tests/test_scanner_v021.py`에 이전 브라우저 기준일/누락 기준일/양 시장 완전성/시장별 차이/미래·잘못된 날짜/제공자 역행 차단/정상 최신일 유지 테스트 추가. 이 변경은 새로운 DB 수집이나 JEV 호출 없이 GitHub 코드로만 수행하며 **CI PASS와 사용자 Windows 재현 확인은 별도 판정**한다.
 
+**CI 검증 (2026-11-02):** 최초 변경 `8bdcd077`의 백엔드 1개 실패는 기존 진행률 계약 테스트가 직접 `prepare_latest_confirmed_data` 호출만 허용했기 때문이다. `e2c163c`에서 보호용 함수 내부의 실제 호출과 분석 전 실행 순서를 확인하도록 테스트를 보강했고, [GitHub Actions #41325608233](https://github.com/SkyBluekor/StockScope/actions/runs/41325608233) 4/4 PASS. Python 3.11 백엔드 2,385 PASS, 2 SKIP, 1 WARNING. Frozen Scanner 원본·사용자 DB 변경 없음.
+
 **남은 확인:** 업데이트 후 실제 사용자 PC에서 10/30이 선택되는지 검증. 저장 주가의 EOD 원천 재확인·유료 모델 호출·기존 캡처 재생성은 하지 않는다. 2단계 전체 완료 전 PANIC 정책·국제사건 연계 및 Windows UAT가 남아 있다.
 
 ### 3단계: 다전략·기간·위험 대비 기대성과 통합
@@ -399,7 +401,7 @@
 | 기존 A단계 요약 UI | DONE · 사용자 Windows 확인 | 보존 |
 | 기존 B단계 문장 비교 | REJECTED_PRODUCT_FIT · 코드 존재, 실모델 유료 검증 진행 금지 | 후속 해당 범위에서 UI 정리 |
 | **1단계 현황 파악** | **CODE_AUDIT_COMPLETE_WINDOWS_UAT_PENDING** | 2026-11-01 지정 브랜치 코드 연결 조사 완료, 실제 Windows·원천 데이터 미확인. 핵심 갭: Scanner 시장·이벤트 위험 → Risk Gate |
-| **2단계 시장·국제 사건 연결** | **DATE_REGRESSION_FIX_CI_PENDING_WINDOWS_UAT_PENDING** | 시장 위험 안내 Windows 화면 확인(동국제약) · 자동 분석 기준일 10/30→10/29 역행 결함 방지 코드·회귀 추가. CI/실제 Windows 날짜 재확인 대기, PANIC 정책 및 국제사건 연계 미완료 |
+| **2단계 시장·국제 사건 연결** | **DATE_REGRESSION_FIX_CI_PASS_WINDOWS_UAT_PENDING** | 시장 위험 안내 Windows 화면 확인(동국제약) · 자동 기준일 역행 방지 수정, 코드 HEAD e2c163c CI 4/4 PASS(Backend 3.11/3.14·Frontend·Windows Fresh Clone). 실제 Windows 날짜 재확인, PANIC 정책 및 국제사건 연계 미완료 |
 | 3단계 다전략/위험 통합 | NOT_STARTED | 2단계 종료 후 |
 | 4단계 JEV 실사용 | NOT_STARTED | 3단계 결과와 허용 입력 확인 후 |
 | 5단계 효용 평가 | NOT_STARTED | 4단계 후 |
