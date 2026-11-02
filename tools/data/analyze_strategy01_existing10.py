@@ -139,6 +139,8 @@ def study(conn, *, end: str, days: int = 40, warmup: int = 120,
                         "round_trip_cost_pct_assumed": cost,
                         "max_holding_days_research_only": max_hold,
                         "candidate_selection": "EX_POST_COVERAGE_BIASED",
+                        "entry": "NEXT_TRADING_DAY_OPEN",
+                        "same_day_stop_target": "STOP_FIRST_CONSERVATIVE",
                         "source_asof": "KRX_EOD_DATE_ONLY_NOT_PIT_VERIFIED"},
         "horizons": {h: resolve_horizon_context(h).to_dict() for h in EXPLICIT_HORIZONS},
         "production_decision_approved": False, "horizon_policy_approved": False,
@@ -222,6 +224,8 @@ def study(conn, *, end: str, days: int = 40, warmup: int = 120,
             )
             by_strategy[strategy.value].append((item["market"], row))
     result["sample"]["evaluated"] = evaluated
+    result["sample"]["markets_evaluated"] = sorted({x["market"] for x in evaluated})
+    result["sample"]["both_markets_covered"] = {x["market"] for x in evaluated} == set(MARKETS)
     result["sample"]["exclusions"] = excluded[:20]
     if not evaluated:
         result["reason"] = "NO_EVALUABLE_STOCK"
@@ -235,7 +239,16 @@ def study(conn, *, end: str, days: int = 40, warmup: int = 120,
         later = [t for _, t in closed if str(t["entry_date"]).replace("-", "") > split]
         output.append({
             "strategy": strategy.value,
-            "status": "INSUFFICIENT_TRADES" if len(closed) < 5 else "DESCRIPTIVE_ONLY",
+            "status": (
+                "NOT_EVALUABLE" if not closed
+                else "INSUFFICIENT_TRADES" if len(closed) < 5
+                else "DESCRIPTIVE_ONLY"
+            ),
+            "exit_policies_used": sorted({r["exit_policy"]["policy_id"] for _, r in records}),
+            "max_single_stock_consecutive_losses": max(
+                (int(r["historical_metrics"]["max_consecutive_losses"])
+                 for _, r in records), default=0,
+            ),
             "signals": sum(int(r["signal_count"]) for _, r in records),
             "risk_blocked_signals": sum(int(r["risk_blocked_signals"]) for _, r in records),
             "simulated_trades": len(trades),
