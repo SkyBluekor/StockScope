@@ -4,7 +4,7 @@
 >
 > **실제 사용자 브랜치: `codex/p0-01-mvp-c1-c2-integration-20261022` · 로컬 `C:\Projects\StockScope`**
 >
-> **상태: MACRO-02 READ_ONLY_RESEARCH_CODE_CI_PASS / REAL_DB_EVIDENCE_PENDING.** 이 문서는 현재 사용 브랜치에서 다음 제품 작업을 관리하는 단일 기준이다. `codex/jev-reviewer-shadow-bridge`의 오래된 계획서는 역사적 근거 자료이며 **현재 브랜치에 자동 포함되지 않는다**. 기존 P0 Scanner·Holdings·JEV 작업, 동결된 Strategy/Risk/Scanner 계약을 전부 보존한다. 다른 브랜치 전체 병합 금지.
+> **상태: MACRO-02 RESEARCH_CLOSED_RELATION_UNVERIFIED / SCANNER_MACRO01_RETAINED.** 이 문서는 현재 사용 브랜치에서 다음 제품 작업을 관리하는 단일 기준이다. `codex/jev-reviewer-shadow-bridge`의 오래된 계획서는 역사적 근거 자료이며 **현재 브랜치에 자동 포함되지 않는다**. 기존 P0 Scanner·Holdings·JEV 작업, 동결된 Strategy/Risk/Scanner 계약을 전부 보존한다. 다른 브랜치 전체 병합 금지.
 
 ## 1. 제품 목표와 불변 원칙
 
@@ -23,13 +23,13 @@ StockScope는 다수 국내 주식의 OpenAPI 기반 **주가·시장·거시경
 | MACRO-01 금리 참고 UI | 현재 브랜치에 이식: `frontend/src/components/scannerMacroRateReference.ts`, `ScannerDecisionSummary.tsx`, 기존 `GET /api/macro/reference-diagnostic`. GitHub CI 4/4 PASS(코드 `46296a61`), 관측 오래됨 경고/간결화 CI 4/4 PASS(코드 `051d71d`). 사용자 실제 Scanner 화면에 DGS10 참고 표시 확인 | 원천 발표 시각을 `DATE_ONLY`로만 확보, 생산 결정 입력 승인 없음 |
 | 2026년 DGS10 로컬 수집 | 2026-11-02 FRED 기존 `tools/data/collect_macro_next6a_s2.py`로 2026-01-01~10-30 216건 요청, 208건 저장·게시, 8건 missing. 사용자 화면에 관측일 2026-10-29 금리 4.98% 표시 확인 | `fetched_at=2026-11-02`, `time_quality=DATE_ONLY`, `historical_pit_eligible_count=0`. 10/30 과거 Scanner에 그 자료가 있었다는 증거 아님 |
 | 10/30 국내 위험 참고 | 구 PC에서 2026-10-30 KOSPI -3.48%, KOSDAQ -3.83%, 상승 종목 비율 18.1%, 평균 절대 종목 변동폭 2.913% 확인 | 글로벌 금리로 인한 국내 하락이라고 단정 불가 |
-| MACRO-02 | **읽기 전용 연구 코드·회귀 구현 / CI 4·4 통과 / 새 PC 실자료 집계 대기** | 실제 DB 분포를 확인하기 전 상관·인과 설명이나 Scanner 의사결정에 반영 금지 |
+| MACRO-02 | **2026-11-02 새 PC 120일 실자료 사후 비교 완료 · 연구 종료** | 116일 정렬, 금리 상승일의 지수 평균 약세 관찰. 과거 이용 가능 시점 검증 0일 → 인과·예측·생산 Risk Gate 사용 불승인. 기존 MACRO-01 화면 유지 |
 
 **브랜치 차이:** 기존 별도 브랜치의 자동 Scanner 기준일 역행 방지 코드는 현 `p0-01` 브랜치에 이식하지 않았다. 현재 브랜치가 같거나 최신일이라는 가정으로 다른 브랜치를 병합하지 말 것. MACRO-02와 날짜 결함 수정을 섞지 않는다.
 
 ## 3. MACRO-02 — 미국 금리 변화와 국내 시장·종목 반응의 시점 안전한 비교
 
-**상태: READ_ONLY_RESEARCH_CODE_CI_PASS / REAL_DATA_RESEARCH_NOT_RUN / SCANNER_UI_UNCHANGED.**
+**상태: RESEARCH_CLOSED / OBSERVATIONAL_DIFFERENCE_FOUND / RELATION_UNVERIFIED / PRODUCTION_UNAPPROVED / SCANNER_UI_UNCHANGED.**
 
 ### 3.1 이번 단 하나의 목표
 
@@ -68,7 +68,7 @@ StockScope는 다수 국내 주식의 OpenAPI 기반 **주가·시장·거시경
 
 ### 3.6 MACRO-02 실행 기록 — 읽기 전용 연구 단계 (2026-11-02)
 
-**판정: 연구용 도구 구현 및 CI 완료 / 실제 새 PC 데이터 분석 대기 / 제품 설명 추가 보류.**
+**판정: 연구용 도구 구현·CI 완료, 실제 새 PC 데이터 분석 확인, MACRO-02 사후 연구 종료. 과거 PIT 검증 실패로 생산 반영·추가 UI 설명 보류.**
 
 - 구현: `tools/data/analyze_macro02_eod_relation.py`. 기존 `LocalMacroReader.read_series_window`로 게시된 DGS10 관측/개정본을 조회하고, KRX `day_status` 네 마커와 **실제 양 시장 주식·지수 행**을 확인한 최근 최대 120 공통 거래일만 읽음. 선택 종목 171090/KOSDAQ의 2개 유효 일자 수익률 및 시장 대비 차이는 기존 `LocalMarketImpactReader`를 사용해 별도 계산. 새 데이터 수집·DB/캐시 쓰기·API/JEV 네트워크 없음. `STOCKSCOPE_MACRO_DB`, `STOCKSCOPE_MARKET_STORE_DB` 환경변수 적용.
 - 정렬 계약: 한국 EOD 날짜 **이전**인 가장 가까운 미국 DGS10 관측일 하나를 대응하고 이전 미국 관측값과의 **관측 1회 변동 bp**를 계산. 7일 이상 지난 관측·미확보 기준 관측·같은 미국 관측일 중복 사용은 별도 누락 사유 집계. 이 7일은 **단순 데이터 결합 허용 범위**이지 금융 위험 임계값이 아니다. `DATE_ONLY` 데이터는 관측일 선후가 맞아도 당시 한국 장 마감 전 이용 가능성을 증명하지 않으므로 항상 `RETROSPECTIVE_DESCRIPTIVE_ONLY`·`RELATION_UNVERIFIED`; 생산 판단 입력으로 승격하지 않는다.
@@ -76,11 +76,36 @@ StockScope는 다수 국내 주식의 OpenAPI 기반 **주가·시장·거시경
 - 회귀: `backend/tests/test_macro02_retrospective_pairing.py`에서 미국 **당일 관측의 한국 당일 연결 금지**, `DATE_ONLY` 비PIT, 누락/오래된 날짜/중복 관측 제외, 미래 `available_at` 제외, KRX 상태/실제 행 완전성, 선택 종목 비교, 읽기 전용 DB 원본 보존/없는 DB 미생성 검증. 기존 종목 점수·Risk·Holdings·JEV 제품 파일은 변경하지 않았다.
 - 검증: 코드 HEAD `848414c7` 기준 [GitHub Actions CI #41381201813](https://github.com/SkyBluekor/StockScope/actions/runs/41381201813) **4/4 PASS**(Backend Python 3.11/3.14 각 2,764 PASS, 2 SKIP, 1 WARNING; Frontend Node 22 PASS; Windows Fresh Clone PASS).
 - **실자료 검사 실행 명령 (새 PC `C:\Projects\StockScope`):** `git pull --ff-only` 후 `.\.venv\Scripts\python.exe .\tools\data\analyze_macro02_eod_relation.py --end 2026-10-30 --days 120 --market KOSDAQ --ticker 171090`. 기존 DB를 삭제·재수집하지 않는다. JSON에는 날짜별 집계만 남기고 API 키·포트폴리오는 포함하지 않는다.
-- **필수 미완료:** 사용자 새 PC 실제 실행 결과의 교차 날짜 수, 변동 방향별 평균, 결측, 마지막 사례 확인. 이 결과 전에는 Macro-02의 **사용자 가치 검증 및 Scanner 설명 반영을 완료라고 주장하지 않는다**. 이미 통과한 MACRO-01 화면은 유지.
+- **실자료 집계 확인 완료:** 사용자 새 PC `C:\Projects\StockScope`에서 직접 출력한 읽기 전용 결과를 아래 3.7에 기록함. 데이터 분석은 마쳤으나 **예측·판단 규칙 및 Scanner 설명 추가에는 근거가 부족해 반영하지 않음**. 기존 MACRO-01 화면을 유지.
+
+### 3.7 새 PC 실제 실행 결과 및 최종 판정 (2026-11-02)
+
+**근거:** 사용자가 직접 실행한 `analyze_macro02_eod_relation.py --end 2026-10-30 --days 120 --market KOSDAQ --ticker 171090`의 JSON 콘솔 출력. `macro_reader_status=COMPLETE`, `snapshot_cutoff_utc=2026-11-02T03:11:51.004502+00:00`.
+
+| 평가 | 실제 값 |
+|---|---|
+| KRX 공통 확정 거래일 | 120일 |
+| DGS10 reader 적재 이력 | 1000개 관측 항목(요청 관측 상한 기준, 해당 120일과 일대일 대응 수 아님) |
+| 한국 거래일보다 **앞선** 미국 관측일과 대응 | 116일 |
+| 제외 | 4일: 미국 관측일 중복 사용. 이전 미국 관측 없음/7일 초과/직전 기준 누락 0건 |
+| 과거 정확한 시각까지 검증된 대응(PIT) | **0/116일** |
+| 금리 상승 58일 | KOSPI -0.624%, KOSDAQ -0.728% (평균 일간 지수 등락률) |
+| 금리 하락 50일 | KOSPI +0.532%, KOSDAQ -0.055% |
+| 금리 변화 없음 8일 | KOSPI +0.810%, KOSDAQ +0.682% |
+| 가장 마지막 대응 2026-10-30 | 선행 미국 DGS10 관측일 2026-10-29, 직전 관측 대비 **-7bp**, KOSPI **-3.48%**, KOSDAQ **-3.83%** |
+| 선익시스템(171090), 10/29→10/30 | 종목 **+0.756%**, KOSDAQ **-3.83%**, 시장 대비 **+4.586%p** |
+
+**판단:** 금리 상승 58일의 두 지수 평균은 금리 하락 50일보다 낮았다(KOSPI 차이 -1.156%p, KOSDAQ 차이 -0.673%p). 이는 관측된 집단 평균 차이이지 금리 때문에 하락했다는 인과관계나 예측 검증이 아니다. 2026-10-30에는 미국 금리가 직전 관측 대비 -7bp 하락했음에도 두 지수가 -3% 이상 떨어져, 금리 방향을 단독으로 사용하는 규칙이 적합하지 않음을 보여준다. 독립된 검증기간·시차의 공개 시각·다른 요인 통제·분산/신뢰구간·거래비용과 실제 영향 평가가 없다. 한 달 또는 특정 사건에 편중됐는지도 집계되지 않았다. **금리/지수 변동이 동행한 관측을 과도한 수익 예측 또는 신호로 확대하지 않는다.**
+
+**데이터 적격성:** 이번 FRED 이력은 `time_quality=DATE_ONLY`, 2026-11-02에 수집되었고 `pit_verified_pairs=0`. 10/30 과거 종목 판단 전에 존재했던 입력이라고 소급할 수 없다. 특히 금리 관측일이 한국 거래일보다 이르다는 것만으로 미국 발표가 한국 장 마감 전임이 증명되지 않는다. `RETROSPECTIVE_DESCRIPTIVE_ONLY`, `RELATION_UNVERIFIED`, `policy_input_approved=false` 유지.
+
+**제품 결정: MACRO-02 사후 연구는 CLOSED.** 현재 데이터를 이유로 Scanner에 '금리 상승으로 약세', '금리 하락으로 반등' 등 새로운 해석 문구나 Risk Gate·전략 점수·후보 순위·JEV 요청·Holdings 변경을 추가하지 않는다. MACRO-01의 실제 금리 수치·관측일·현재 조회 참고 정보는 그대로 제공한다. 이 결론은 단순 금리 자료 표시를 폐기한다는 뜻이 아니다. **실거래 판단에 이용할 수 있는 해외 위험 신호 검증 및 국제 사건 연결은 아직 미완료**이며, 사용자 PC에서 별도의 UI 변경을 확인할 필요도 생기지 않았다.
+
+**다음 단일 작업 제안:** 2단계 잔여 중 **국제 사건/정책·원유·환율·해외지수 자료의 기존 공급자·데이터 권한·최초 이용 가능 시점 점검**. 이미 구현된 `backend/app/macro/event_composition.py`, `backend/app/market/event_risk.py`, `/api/macro/event-reference` 경로 재사용 범위를 확인하되 승인 전 생산 Risk Gate 연결, 신규 크롤러, 뉴스 원문 AI 전송을 하지 않는다. 다음 단계는 별도 착수 요청 이후 진행한다.
 
 ## 4. 고정된 이후 순서
 
-1. **현 단계 MACRO-02 완료 또는 근거 부족으로 종료.** 이중 개발·무한 검증으로 확장하지 않는다.
+1. **MACRO-02 사후 연구 종료(2026-11-02):** KRX 120일·DGS10 결합 116일 분석, PIT 0건. 단순 평균 차이는 관찰됐지만 인과·예측·생산 판단 승인 불가. 기존 MACRO-01 표시 유지. 같은 표본 임계값 반복 튜닝 금지.
 2. **2단계 나머지:** 국제 사건·정책/원유·환율·해외지수의 실제 소스 권한과 시점 가용성을 점검한 뒤, 검증된 데이터만 국내 시장·산업·종목에 연결. 조회 불가면 사실대로 차단. 생산 PANIC Gate는 독립 실증·사용자 승인 없이는 불가.
 3. **3단계:** 기존 전략 10개·기간·Risk를 단일 후보 화면에서 비교하고 위험 대비 성과를 검증.
 4. **4단계:** 허용 입력이 준비된 경우에만 실제 TypeSafe JEV를 선택 후보 보조검토에 사용. 이미 구현된 제공자·비용 제한·P0 기능 재사용.
