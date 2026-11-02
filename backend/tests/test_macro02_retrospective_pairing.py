@@ -109,6 +109,11 @@ def _market_db(tmp_path: Path) -> Path:
                         "date": day, "close": close, "change_rate": daily,
                     })),
                 )
+                conn.execute(
+                    "INSERT INTO stock_daily VALUES (?,?,?,?)",
+                    (market, day, "000001",
+                     json.dumps({"date": day, "close": "10", "code": "000001"})),
+                )
             conn.execute(
                 "INSERT INTO stock_daily VALUES (?,?,?,?)",
                 ("KOSDAQ", day, "171090",
