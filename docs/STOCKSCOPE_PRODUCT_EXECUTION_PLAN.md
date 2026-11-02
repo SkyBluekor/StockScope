@@ -278,6 +278,18 @@ if ($LASTEXITCODE -eq 0) {
 
 **완료 경계:** CI는 코드 품질 근거일 뿐 사용자 로컬 실데이터의 전략별 성과·위험을 의미하지 않는다. 사용자 PC에서 나온 실제 JSON을 확인해 이 문서에 한 번 기록한 뒤에만 연구가 실제 수행되었다고 판정한다. JEV·GLOBAL-02·기간 수치 정책·운영 리스크/전략 선택은 변경하지 않는다.
 
+### 5.5 사용자 PC 최초 실데이터 진단과 휴장 상태 처리 수정 (2026-11-02)
+
+**실행 사실:** 사용자 PC `C:\Projects\StockScope`에서 `git pull --ff-only` 후 `--end 2026-10-30 --days 40 --warmup 120 --per-market 2 --cost-pct 0.3 --check-only`를 실행했다. `required_common_sessions=160`, `available_common_sessions=160`, `warmup_start=20260309`, `evaluation_start=20260901`, `evaluation_end=20261030`. **DB에 공통 160개 DATA 거래일이 확보되었음이 확인됐다.** 다만 검증기가 `PARTIAL_KRX_MARKET_DAYS`로 잘못 중단하여 실제 백테스트는 실행되지 않았다.
+
+**실패 원인:** 구 버전 연구 실행기는 `day_status`의 **모든 날짜**를 공통 거래일과 비교해 차집합을 결측으로 간주했다. 기존 `HistoricalMarketStore.put_stock_day/put_index_day`는 자료가 없는 안정된 날짜를 `status='empty'`로 기록하므로 휴장/비거래 기록도 차집합에 포함되는 결함이 있었다. 사용자 출력에 `20260501,20260505,20260525,20260603,20260717,20260817,20260924,20260925,20261005,20261009` 등이 포함됐다. **이 날짜들의 실제 각 DB 상태 값 자체는 아직 사용자 PC에서 재조회하지 않았으므로 개별 날짜를 전부 휴장이라고 최종 단정하지 않는다.**
+
+**수정:** `tools/data/analyze_strategy01_existing10.py`에서 `status='data'`인 날짜가 공통 4개 DATA 마커에 미달한 경우만 `PARTIAL_KRX_MARKET_DAYS`로 차단하고, **DATA 상태가 전혀 없고 비거래 기록만 있는 날짜는 `ignored_nontrading_marker_dates`의 개수·샘플로 구분**한다. 실제 일부만 수집된 거래일 차단 로직은 유지. 요일/공휴일을 하드코딩하거나 원본 데이터를 지우지 않는다. `backend/tests/test_strategy01_readonly_research.py`에 4개 empty 마커 휴장 통과 및 그 날짜에 data 마커 하나가 생기면 차단되는 회귀 테스트 추가.
+
+**검증:** 코드 수정 커밋 `a151c6c8`, [GitHub Actions #41409450235](https://github.com/SkyBluekor/StockScope/actions/runs/41409450235) **4/4 PASS**, Backend Python 3.11/3.14 각 **2,784 passed, 2 skipped**; Frontend Node 22·Windows Fresh Clone PASS. **사용자 실DB의 수정 후 READY 판정 및 10전략 연구 결과는 아직 미검증**. 기존 Scanner·Risk·Exit·JEV·Holdings·프로덕션 전략·DB는 변경하지 않았다.
+
+**다음 검증은 한 번만:** 동일 사용자 PC에서 `git pull --ff-only` 후 기존 `--check-only`를 다시 실행한다. `READY_TO_RESEARCH`이면 같은 CLI의 실제 연구 모드로 진행한다. 여전히 부분 DATA 날짜 또는 종목/지수 결측이면 출력된 **실제 이유**를 검토하고, 임의로 필터를 더 느슨하게 만들거나 추가 API 수집을 자동 진행하지 않는다.
+
 ## 6. 이후 고정 실행 순서
 
 1. **완료:** MACRO-01 FRED 참고, MACRO-02 120거래일/116금리 관측의 사후 분석(운영 판단 불승인), GLOBAL-01-S2 KIS 다우존스 개인 로컬 표시(Windows 실화면 확인, 외부 권리 미확인). 같은 API 프로브 반복 금지.
