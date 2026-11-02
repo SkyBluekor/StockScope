@@ -51,6 +51,7 @@ def test_macro02_counts_missing_and_stale_us_dates_and_reuse() -> None:
     cutoff = datetime(2026, 11, 2, 3, tzinfo=timezone.utc)
     obs = _macro_obs([
         _sample_macro("2026-09-01", "3.90"),
+        _sample_macro("2026-09-29", "3.95"),
         _sample_macro("2026-10-01", "4.00"),
     ], cutoff=cutoff)
     paired = pair_retro([
@@ -64,8 +65,8 @@ def test_macro02_counts_missing_and_stale_us_dates_and_reuse() -> None:
     assert paired["excluded"] == {
         "NO_PRIOR_US_OBSERVATION": 1,
         "US_OBSERVATION_TOO_OLD": 1,
-        "US_BASELINE_MISSING_OR_TOO_OLD": 2,
-        "US_DAY_REUSED": 0,
+        "US_BASELINE_MISSING_OR_TOO_OLD": 1,
+        "US_DAY_REUSED": 1,
     }
 
 
