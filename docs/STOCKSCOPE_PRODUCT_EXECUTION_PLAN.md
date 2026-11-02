@@ -4,7 +4,7 @@
 >
 > **실제 사용자 브랜치: `codex/p0-01-mvp-c1-c2-integration-20261022` · 로컬 `C:\Projects\StockScope`**
 >
-> **상태: GLOBAL-01 SPEC_READY / IMPLEMENTATION_NOT_STARTED.** MACRO-02는 사후 연구 종료(생산 판단 미승인), MACRO-01 표시는 유지한다. 이 문서는 현재 사용 브랜치에서 다음 제품 작업을 관리하는 단일 기준이다. `codex/jev-reviewer-shadow-bridge`의 오래된 계획서는 역사적 근거 자료이며 **현재 브랜치에 자동 포함되지 않는다**. 기존 P0 Scanner·Holdings·JEV 작업, 동결된 Strategy/Risk/Scanner 계약을 전부 보존한다. 다른 브랜치 전체 병합 금지.
+> **상태: GLOBAL-01-S2 CODE_INTEGRATED_CI_PASS / LOCAL_OPT_IN_DEFAULT_OFF / WINDOWS_LIVE_UAT_PENDING.** MACRO-02는 사후 연구 종료(생산 판단 미승인), MACRO-01 표시는 유지한다. 이 문서는 현재 사용 브랜치에서 다음 제품 작업을 관리하는 단일 기준이다. `codex/jev-reviewer-shadow-bridge`의 오래된 계획서는 역사적 근거 자료이며 **현재 브랜치에 자동 포함되지 않는다**. 기존 P0 Scanner·Holdings·JEV 작업, 동결된 Strategy/Risk/Scanner 계약을 전부 보존한다. 다른 브랜치 전체 병합 금지.
 
 ## 1. 제품 목표와 불변 원칙
 
@@ -105,7 +105,7 @@ StockScope는 다수 국내 주식의 OpenAPI 기반 **주가·시장·거시경
 
 ## 4. GLOBAL-01 — 해외 위험 자료 사용성 검증 및 첫 참조 신호 연결
 
-**작업 상태: LIVE_KIS_INDEX_DATA_CONFIRMED / OFFICIAL_CODE_IDENTITY_FIXED / USAGE_RIGHTS_UNVERIFIED / SCANNER_NOT_CONNECTED (2026-11-02).**
+**작업 상태: GLOBAL-01-S2 CODE_INTEGRATED_CI_PASS / LOCAL_ONLY_OPT_IN_DEFAULT_OFF / WINDOWS_USER_UAT_PENDING (2026-11-02).**
 
 **작업 범위는 딱 하나:** 국내 KRX 시장 위험을 해석할 때 실제 사용할 수 있는 **해외 증시 대표지수 1종**을 기존 공급자로부터 검증하고, 관측일·시각·권한이 허용되는 경우에만 **선택된 Scanner 종목의 비차단 참고 설명**에 최소 연결한다. 실행 여건이 충족되지 않으면 `SOURCE_UNVERIFIED` 또는 `RIGHTS_UNVERIFIED`를 남기고 기능을 억지로 구현하지 않는다. **환율·유가·전쟁/국제 사건은 같은 단계에서 실제 수집/판정/화면까지 확장하지 않는다.** 다만 원천 가능성·부재·권리 상태를 함께 기록해 향후 작업 순서를 확정한다.
 
@@ -161,7 +161,7 @@ StockScope는 다수 국내 주식의 OpenAPI 기반 **주가·시장·거시경
 
 ### 4.4 다음 실행 명세 — GLOBAL-01-S2: 개인 로컬 해외지수 참고 연결
 
-**상태: SPEC_READY / IMPLEMENTATION_NOT_STARTED / KIS_LIVE_DATA_VERIFIED / PERSONAL_LOCAL_USAGE_SCOPE_TO_CONFIRM.**
+**상태: CODE_INTEGRATED_CI_PASS / LOCAL_REFERENCE_DEFAULT_OFF / WINDOWS_LIVE_UAT_PENDING / PUBLIC_USAGE_UNAPPROVED.**
 
 **하나의 결과물:** 공식적으로 식별한 KIS 다우존스 일봉(현재 검증된 `.DJI`)을 **개인 PC 로컬 StockScope**에서 KOSPI/KOSDAQ·선택 종목의 기존 시장 위험 설명 곁에 **별도의 비차단 참고값**으로 보여준다. 권한이 확인되지 않는 공개·제3자 이용 방식에서는 KIS 시세를 제공하지 않는다. 이 단계는 미국 지수를 새로운 위험 점수나 국내 하락의 원인으로 만드는 작업이 아니다.
 
@@ -180,10 +180,30 @@ StockScope는 다수 국내 주식의 OpenAPI 기반 **주가·시장·거시경
 
 **이번 작업에서 하지 않을 일:** 미국 지수 단독의 매수/매도 신호·금리/환율/원유/전쟁 인과관계, 신규 데이터셋 백필/모델 학습, JEV 실모델 호출, 글로벌 전체 위험 점수/PANIC 자동 승격, 공개 서비스 출시, KIS 이용권을 넘는 지수 재배포.
 
+### 4.5 GLOBAL-01-S2 구현 및 CI 기록 (2026-11-02)
+
+**코드 구현 완료 / 사용자 PC 실화면 미확인 / 개인 로컬 이용 권한 검토·설정 미실시.**
+
+- **KIS 재사용:** `backend/app/macro/providers/kis.py`에 `include_reference_pair=True`를 추가해 `.DJI` 최신 서로 다른 관측 2개(일자·지수값·변동률)만 추출. 공식 코드·제공자 이름 검증, 누락·무효값·충돌 날짜 차단. 원본 API 응답/토큰은 보존하지 않는다.
+- **메모리 참조:** `backend/app/macro/local_dji.py`는 같은 서버 프로세스에서 성공 600초·실패 45초 공유. 사용자 종목마다 KIS로 재호출하지 않고 Market/Macro/Simulation DB·기존 캡처를 수정하지 않는다.
+- **기본 차단:** `GET /api/macro/overseas-index-reference`는 개인 로컬 사용 확인 스위치가 꺼져 있으면 데이터 숫자 없이 `UNAVAILABLE` 반환, 네트워크 호출 없음. 켜져 있어도 loopback peer/Host와 Origin·Referer·Forwarded 등 프록시 관련 헤더 검증을 통과해야 한다. `run-dev.ps1` 및 Vite 개발 서버는 127.0.0.1 바인딩. **외부 공개·reverse proxy 접근 금지**(프록시가 출처를 지우거나 조작하는 경우까지 검증된 인증/인가가 아님).
+- **설정 분리:** 기존 프로덕션 fingerprint가 고정된 `backend/app/core/config.py`는 원본 복구. 새 로컬 참조 모듈에서만 `.env`의 `STOCKSCOPE_KIS_DJI_PERSONAL_LOCAL_REFERENCE_ENABLED` 플래그를 읽고 기본값 false 유지.
+- **UI:** `ScannerDecisionSummary.tsx`의 기존 FRED 금리 참고 영역에 다우존스 한 줄과 설명 추가. `scannerDjiLocalReference.ts`에서 관측일·수집시각·두 값의 변화율을 재검증하고 확정 종가·당시 Scanner 정보·국내 시장 하락 원인이라고 주장하지 않는다. abort/identity 검사로 다른 후보로 이전 응답이 새는 것을 방지. KIS 오류 시 기존 Scanner/FRED 유지.
+- **권한/시점:** `DATE_ONLY`, `session_close_verified=false`; 공급자 발표시각·재배포/보존/AI·생산 판단 적격성은 미확인. 반환 `display_rights_approved`, `retention_rights_approved`, `ai_transfer_approved`, `scanner_input_approved`, `risk_gate_input_approved`, `production_decision_approved`는 모두 false. 개인 로컬 opt-in을 제3자 시세 재배포 허가로 확대하지 않는다.
+- **검증:** `backend/tests/test_global01_s2_local_dji_reference.py`, 기존 KIS/Scanner UI 테스트. [GitHub Actions #41401174958](https://github.com/SkyBluekor/StockScope/actions/runs/41401174958) **CI 4/4 PASS** (Python 3.11·3.14 각 2,777 passed / 2 skipped, Frontend Node22 PASS, Windows Fresh Clone PASS), 코드 HEAD `905d8e2e`. 초기 core config 해시 회귀를 수정·복구한 뒤 통과한 결과다.
+
+**실제 Windows UAT 절차 — 해당 KIS 계정의 개인 로컬 조회·화면표시 조건을 직접 확인한 경우에만:**
+
+1. `C:\Projects\StockScope`에서 `git pull --ff-only`. 프로젝트 루트의 비공개 `.env`에 `STOCKSCOPE_KIS_DJI_PERSONAL_LOCAL_REFERENCE_ENABLED=true` 추가. 인증정보나 `.env` 파일을 Git/채팅에 올리지 않음. 이용 조건을 확인할 수 없으면 설정하지 않음.
+2. 기존 개발 서버 종료 후 `.\run-dev.ps1` 재실행. `http://127.0.0.1:5173` → Scanner → 실제 후보에서 금리와 다우존스 관측일/변동률을 확인. 개인 KIS 상위 API 조회가 발생할 수 있다.
+3. 수치·날짜·기존 전략 불변 및 오류/비활성 처리 실제 화면을 확인 후 UAT 판정 갱신. **현재 이 검증은 미실시**이므로 `REFERENCE_CONNECTED_LOCAL_ONLY` 완료를 선언하지 않는다.
+
+**후속:** 글로벌 자료(FX/유가/전쟁)는 이 작업에서 구현하지 않음. 실제 PC UAT 또는 이용권 문제 해결 이후에만 다음 단계로 이동.
+
 ## 5. 고정된 이후 순서
 
 1. **MACRO-02 사후 연구 종료(2026-11-02):** KRX 120일·DGS10 결합 116일 분석, PIT 0건. 단순 평균 차이는 관찰됐지만 인과·예측·생산 판단 승인 불가. 기존 MACRO-01 표시 유지. 같은 표본 임계값 반복 튜닝 금지.
-2. **GLOBAL-01-S2 다음 구현:** 실제 인증·일자/값 검증이 끝난 KIS `.DJI`를 개인 로컬 이용 조건 확인 후 **공유 read-only 참조 1개와 Scanner 짧은 표시 1곳**으로 연결한다. 공개 송출·보존·AI 전송은 미승인 상태 유지; 권한 미확정이면 차단 후 단계 종료. FX/유가/전쟁은 다음 별도 작업.
+2. **GLOBAL-01-S2 코드·CI 완료 / 사용자 Windows UAT 대기:** `.DJI` read-only API·공유 캐시·Scanner 참조 표시 구현, 기본 off. 개인 사용 조건 확인 후 실제 화면 1회 검증 필요. 공개/AI/프로덕션 사용은 미승인.
 3. **3단계:** 기존 전략 10개·기간·Risk를 단일 후보 화면에서 비교하고 위험 대비 성과를 검증.
 4. **4단계:** 허용 입력이 준비된 경우에만 실제 TypeSafe JEV를 선택 후보 보조검토에 사용. 이미 구현된 제공자·비용 제한·P0 기능 재사용.
 5. **5단계:** 국내/글로벌/JEV 추가 분석의 실제 효용·오탐·낙폭·비용/지연, 사용자 Windows 경험 평가.
