@@ -105,7 +105,7 @@ StockScope는 다수 국내 주식의 OpenAPI 기반 **주가·시장·거시경
 
 ## 4. GLOBAL-01 — 해외 위험 자료 사용성 검증 및 첫 참조 신호 연결
 
-**작업 상태: CAPABILITY_PROBE_HARDENED / CI_PENDING / LIVE_PROVIDER_NOT_CHECKED / WINDOWS_UAT_PENDING (2026-11-02).**
+**작업 상태: CAPABILITY_PROBE_CI_PASS / LIVE_KIS_PROVIDER_NOT_CHECKED / DISPLAY_RIGHTS_UNVERIFIED / WINDOWS_LIVE_UAT_PENDING (2026-11-02).**
 
 **작업 범위는 딱 하나:** 국내 KRX 시장 위험을 해석할 때 실제 사용할 수 있는 **해외 증시 대표지수 1종**을 기존 공급자로부터 검증하고, 관측일·시각·권한이 허용되는 경우에만 **선택된 Scanner 종목의 비차단 참고 설명**에 최소 연결한다. 실행 여건이 충족되지 않으면 `SOURCE_UNVERIFIED` 또는 `RIGHTS_UNVERIFIED`를 남기고 기능을 억지로 구현하지 않는다. **환율·유가·전쟁/국제 사건은 같은 단계에서 실제 수집/판정/화면까지 확장하지 않는다.** 다만 원천 가능성·부재·권리 상태를 함께 기록해 향후 작업 순서를 확정한다.
 
@@ -136,6 +136,10 @@ StockScope는 다수 국내 주식의 OpenAPI 기반 **주가·시장·거시경
 - 기존 `tools/data/macro_capability_next6a_s2.py`에 `--kis-index-only`를 추가해 FX·국채 미설정 상태를 함께 성공/실패로 오인하지 않는다. `--no-report-file`로 보고서 파일을 남기지 않는다. `SEMANTICS_UNVERIFIED`나 `NOT_SUPPORTED`는 종료 코드 비정상으로 보고하여 오류를 성공으로 위장하지 않는다.
 - 응답 시각, 지수 세션 마감 시점, 제공자 보존/화면표시·재배포/AI 전송 권한은 **계속 미확인**으로 명시. 이번에는 실제 KIS 네트워크 접속이나 사용자 로컬 데이터 사용 없이 코드를 보강하며 사용자 PC에서 실증이 필요하다. 원본 데이터 DB 쓰기·API 키 노출·Scanner/Risk/JEV 변경은 하지 않는다.
 - 공식 API 응답 확인만으로 지수값을 과거 매매 판단이나 국내 지수 하락의 원인 추론에 사용하지 않는다.
+
+**GLOBAL-01 코드 검증 (2026-11-02):** 공급자 검증 보강 커밋 `f93afaa4`, [GitHub Actions #41392802703](https://github.com/SkyBluekor/StockScope/actions/runs/41392802703) **4/4 PASS**. Python 3.11·3.14 각각 **2,767 PASS / 2 SKIP / 1 WARNING**; Frontend Node 22, Windows Fresh Clone PASS. HTTP 200 및 `rt_cd=0`에 행이 없거나 유효 일자·종가/지수값·종목명이 없으면 `SEMANTICS_UNVERIFIED`로 분류하는 테스트 포함. **실제 KIS 계정 응답과 실제 제공자 권한은 아직 검증하지 않았음**. 외부 공급자 호출이 없는 CI는 LIVE_PROVIDER_PASS가 아님.
+
+**새 PC 실조회 명령(조회 1회, 파일 저장 없음):** `cd C:\Projects\StockScope` → `git pull --ff-only` → `.\.venv\Scripts\python.exe .\tools\data\macro_capability_next6a_s2.py --provider KIS --kis-index-only --start 2026-10-22 --end 2026-10-30 --kis-index-code .DJI --no-report-file`. KIS 인증에 따른 API 호출은 실제로 수행하며 원본 시세 DB나 보고서 파일은 작성하지 않는다. 결과 `status`, `index_name`, `index_sample.valid_index_rows`, `index_sample.latest_observation_date`, `limitations`만 확인하고 비밀키·토큰은 공유하지 않는다. `SUPPORTED_WITH_LIMITATIONS`도 **화면 표시/데이터 재배포 권리 확인 전까지 Scanner 연결 승인 상태가 아니다**.
 
 ### 4.3 명확한 완료 기준
 
