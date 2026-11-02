@@ -4,7 +4,7 @@
 >
 > **실제 사용자 브랜치: `codex/p0-01-mvp-c1-c2-integration-20261022` · 로컬 `C:\Projects\StockScope`**
 >
-> **상태: STRATEGY-01 SPEC_READY / IMPLEMENTATION_NOT_STARTED.** GLOBAL-01-S2의 Windows Scanner 참고표시는 검증 완료(개인·공개 이용권은 별도 확인 중). 생산 전략·Risk 정책은 변경하지 않는다. MACRO-02는 사후 연구 종료(생산 판단 미승인), MACRO-01 표시는 유지한다. 이 문서는 현재 사용 브랜치에서 다음 제품 작업을 관리하는 단일 기준이다. `codex/jev-reviewer-shadow-bridge`의 오래된 계획서는 역사적 근거 자료이며 **현재 브랜치에 자동 포함되지 않는다**. 기존 P0 Scanner·Holdings·JEV 작업, 동결된 Strategy/Risk/Scanner 계약을 전부 보존한다. 다른 브랜치 전체 병합 금지.
+> **상태: STRATEGY-01 READONLY_RESEARCH_CI_PASS / REAL_WINDOWS_MARKET_DATA_PENDING.** GLOBAL-01-S2의 Windows Scanner 참고표시는 검증 완료(개인·공개 이용권은 별도 확인 중). 생산 전략·Risk 정책은 변경하지 않는다. MACRO-02는 사후 연구 종료(생산 판단 미승인), MACRO-01 표시는 유지한다. 이 문서는 현재 사용 브랜치에서 다음 제품 작업을 관리하는 단일 기준이다. `codex/jev-reviewer-shadow-bridge`의 오래된 계획서는 역사적 근거 자료이며 **현재 브랜치에 자동 포함되지 않는다**. 기존 P0 Scanner·Holdings·JEV 작업, 동결된 Strategy/Risk/Scanner 계약을 전부 보존한다. 다른 브랜치 전체 병합 금지.
 
 ## 1. 제품 목표와 불변 원칙
 
@@ -215,7 +215,7 @@ StockScope는 다수 국내 주식의 OpenAPI 기반 **주가·시장·거시경
 
 ## 5. STRATEGY-01 — 기존 10개 전략의 실제 성능·위험 및 기간 적격성 검증
 
-**상태: SPEC_READY / CODE_NOT_STARTED / LOCAL_DATA_NOT_EVALUATED / PRODUCTION_POLICY_FROZEN (2026-11-02).**
+**상태: READONLY_RESEARCH_CODE_CI_PASS / USER_MARKET_DB_RESEARCH_PENDING / PRODUCTION_POLICY_FROZEN (2026-11-02).**
 
 **이번 단 하나의 목표:** 기존 10개 전략이 **같은 확정 KRX 데이터·체결·Risk·비용 가정**에서 얼마나 자주 조건을 충족하고, 종목/시장·기간에 따라 수익·손실·미판정 사례가 어떻게 갈리는지 **재현 가능한 읽기 전용 결과**로 확인한다. 이후 기간별(단·중·장기) 정책을 설계할 근거를 제공하되, 이번 결과만으로 최적 전략·수익 확률·생산 전략 선택을 승인하지 않는다. **새 전략이나 다른 UI 페이지를 만들지 않는다.**
 
@@ -249,10 +249,39 @@ StockScope는 다수 국내 주식의 OpenAPI 기반 **주가·시장·거시경
 
 **이번 단계가 성공한 뒤의 경계:** 단·중·장기 전략을 실제로 승인하고 사용자 후보 추천에 적용하려면 **독립 표본·기간 정책 설계·검증·명시적 승인**이 추가로 필요하다. 이번 STRATEGY-01은 그 결정을 위한 근거를 확보하는 **연구 완료**이지 생산 활성화가 아니다.
 
+### 5.4 STRATEGY-01 구현·회귀 결과 (2026-11-02)
+
+**판정: 연구 실행기 코드 구현 및 CI 완료 / 사용자 PC의 KRX 실데이터 검증 대기 / 운영 정책 미변경.**
+
+- 코드: `tools/data/analyze_strategy01_existing10.py`. `sqlite3`의 URI `mode=ro` 및 `PRAGMA query_only=ON`으로 기존 `market_history.db`를 조회한다. 기존 쓰기 가능한 `HistoricalMarketStore`와 KRX 공급자를 호출하지 않으며 **네트워크 0·시장 DB 변경 0·신규 시세 수집 0**을 기본 계약으로 둔다.
+- 입력: **양 시장 주식·지수 DATA가 동시에 기록된 공통 거래일**, 실제 지수/종목 JSON 날짜 및 OHLC·거래대금 적격성을 검사한다. 기본 **120거래일 준비구간 + 40거래일 평가구간 = 160일**이 없거나 기간 안의 부분 수집일·종목 결측이 확인되면 데이터를 임의 보충하지 않고 `DATA_INSUFFICIENT`로 보고한다.
+- 표본: 완전한 시계열 종목을 KOSPI/KOSDAQ 각각 최대 2개 선정, 같은 비용·진입·청산 가정으로 기존 10전략을 반복한다. 이 방식은 **현재까지 살아남아 충분한 데이터가 있는 종목을 우선하는 사후 표본선택 편향**이 있어 전 종목의 예측 효과를 대표하지 않는다.
+- 엔진: 기존 `MultiStrategyBacktestEngine`의 과거 시점 스냅샷과 `_run_strategy(include_trade_history=True)`를 재사용. `ProductionExitPolicyRegistry.ensure_mapping`의 운영 정책 자동 생성 부작용을 **`ReadOnlyExitRegistry`로 차단**하고, 존재하는 운영 Exit 매핑만 읽거나 안전 기준선 fallback을 사용한다. 기존 전략 점수·Risk/Exit·운영 선택 정책·Holdings·JEV/Scanner 코드는 수정하지 않았다.
+- 출력: 10개 전략 모두의 신호수·Risk 차단·모의 거래·종료일 미청산 거래·실제 종료거래 승률/기대수익/Profit Factor·실험 구간 전후 분할·양 시장별 결과·단일종목 기준 MDD/연속손실·Exit ID. 종료일 임시 청산(`END_OF_DATA`)을 확정 거래 성과와 분리하고, MDD는 **포트폴리오 MDD가 아니라 종목별 기존 엔진 지표**임을 표시한다. 유효 종료 거래가 0건이면 `NOT_EVALUABLE`, 적으면 `INSUFFICIENT_TRADES`로 표시한다.
+- 기간: `SHORT/MEDIUM/LONG`은 기존 `EVALUATION_PENDING` 유지. 관찰기간 5·10·20일을 기간 정책으로 임의 승인하지 않는다. 기본 `--cost-pct 0.3`은 **검증 시나리오의 왕복 비용 가정**이며 실제 거래 수수료/세금이 확정되었다는 뜻이 아니다.
+- 테스트: `backend/tests/test_strategy01_readonly_research.py`에서 없는 DB 미생성, 읽기 전용, 120일 부족 판정, 양 시장 표본 및 결측, 운영 Exit 자동 생성 차단, 거래 0건 분리, 실제 기존 10전략 엔진 활용을 검증. [GitHub Actions #41407914516](https://github.com/SkyBluekor/StockScope/actions/runs/41407914516) **CI 4/4 PASS**, Backend Python 3.11·3.14 각각 **2,783 passed / 2 skipped**, Frontend Node 22·Windows Fresh Clone PASS. 구현 코드 최종 HEAD `bff7109c`.
+
+**사용자 PC 검증 명령(실제 KRX 원본을 변경하지 않음):**
+
+```powershell
+cd C:\Projects\StockScope
+git pull --ff-only
+$python = '.\.venv\Scripts\python.exe'
+$script = '.\tools\data\analyze_strategy01_existing10.py'
+& $python $script --end 2026-10-30 --days 40 --warmup 120 --per-market 2 --cost-pct 0.3 --check-only
+if ($LASTEXITCODE -eq 0) {
+    & $python $script --end 2026-10-30 --days 40 --warmup 120 --per-market 2 --cost-pct 0.3
+}
+```
+
+`--check-only`가 실패 코드 2를 반환하면서 `DATA_INSUFFICIENT`를 출력했다면 **실제 연구는 실행하지 않도록 명시**했다. 이전 MACRO-02에서 확인된 120 공통일이 로컬 DB 전체인지 확정되지 않았으므로 **160일 충족을 추정해서는 안 된다**. 이 경우 필요한 추가 기간을 1회 보고하고 **사용자 승인 없이 자동 수집하지 않는다**.
+
+**완료 경계:** CI는 코드 품질 근거일 뿐 사용자 로컬 실데이터의 전략별 성과·위험을 의미하지 않는다. 사용자 PC에서 나온 실제 JSON을 확인해 이 문서에 한 번 기록한 뒤에만 연구가 실제 수행되었다고 판정한다. JEV·GLOBAL-02·기간 수치 정책·운영 리스크/전략 선택은 변경하지 않는다.
+
 ## 6. 이후 고정 실행 순서
 
 1. **완료:** MACRO-01 FRED 참고, MACRO-02 120거래일/116금리 관측의 사후 분석(운영 판단 불승인), GLOBAL-01-S2 KIS 다우존스 개인 로컬 표시(Windows 실화면 확인, 외부 권리 미확인). 같은 API 프로브 반복 금지.
-2. **현재: STRATEGY-01** 기존 10전략의 read-only 재현 성능·표본·손실·기간 근거 점검. **이 작업 외 다른 기능을 동시에 개발하지 않음**.
+2. **현재: STRATEGY-01 코드·CI 완료 / 사용자 PC KRX 실데이터 판정 대기.** `mode=ro` 연구 실행기·10전략 회귀 4/4 PASS. 실자료가 160일 미만이면 `DATA_INSUFFICIENT`로 종료하며 자동 수집·전략 변경은 하지 않는다.
 3. **GLOBAL-02 (후속 별도 단계):** 사용자의 원래 목표인 국제 정책/전쟁·원유·환율·해외지수 영향 해석을 위한 **원천 권한·시점·검증된 시장/산업/종목 연결**. 참고 값 나열만 늘리지 않도록, 이용 허가된 데이터의 실질 효용을 먼저 평가한다. 실제 Risk Gate 반영은 별도 실증·승인 전 금지.
 4. **JEV 실효성 단계:** 승인된 원천만 최소 전송해 기존 TypeSafe JEV의 종목 판단 보조 효과를 평가. 기존 Scanner 정책/차단을 조용히 덮어쓰지 않음.
 5. **제품 통합 검증:** 사용자가 초보자여도 신규 진입·보유 대응·단중장기 전략·국내외 위험·AI 근거를 구분할 수 있는지, 오탐·낙폭·비용/지연·실제 Windows 사용성을 평가.
