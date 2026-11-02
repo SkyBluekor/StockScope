@@ -4,7 +4,7 @@
 >
 > **실제 사용자 브랜치: `codex/p0-01-mvp-c1-c2-integration-20261022` · 로컬 `C:\Projects\StockScope`**
 >
-> **상태: MACRO-02 RESEARCH_CLOSED_RELATION_UNVERIFIED / SCANNER_MACRO01_RETAINED.** 이 문서는 현재 사용 브랜치에서 다음 제품 작업을 관리하는 단일 기준이다. `codex/jev-reviewer-shadow-bridge`의 오래된 계획서는 역사적 근거 자료이며 **현재 브랜치에 자동 포함되지 않는다**. 기존 P0 Scanner·Holdings·JEV 작업, 동결된 Strategy/Risk/Scanner 계약을 전부 보존한다. 다른 브랜치 전체 병합 금지.
+> **상태: GLOBAL-01 SPEC_READY / IMPLEMENTATION_NOT_STARTED.** MACRO-02는 사후 연구 종료(생산 판단 미승인), MACRO-01 표시는 유지한다. 이 문서는 현재 사용 브랜치에서 다음 제품 작업을 관리하는 단일 기준이다. `codex/jev-reviewer-shadow-bridge`의 오래된 계획서는 역사적 근거 자료이며 **현재 브랜치에 자동 포함되지 않는다**. 기존 P0 Scanner·Holdings·JEV 작업, 동결된 Strategy/Risk/Scanner 계약을 전부 보존한다. 다른 브랜치 전체 병합 금지.
 
 ## 1. 제품 목표와 불변 원칙
 
@@ -103,10 +103,44 @@ StockScope는 다수 국내 주식의 OpenAPI 기반 **주가·시장·거시경
 
 **다음 단일 작업 제안:** 2단계 잔여 중 **국제 사건/정책·원유·환율·해외지수 자료의 기존 공급자·데이터 권한·최초 이용 가능 시점 점검**. 이미 구현된 `backend/app/macro/event_composition.py`, `backend/app/market/event_risk.py`, `/api/macro/event-reference` 경로 재사용 범위를 확인하되 승인 전 생산 Risk Gate 연결, 신규 크롤러, 뉴스 원문 AI 전송을 하지 않는다. 다음 단계는 별도 착수 요청 이후 진행한다.
 
-## 4. 고정된 이후 순서
+## 4. GLOBAL-01 — 해외 위험 자료 사용성 검증 및 첫 참조 신호 연결
+
+**작업 상태: SPEC_READY / CODE_NOT_STARTED / LIVE_PROVIDER_NOT_CHECKED / WINDOWS_UAT_PENDING (2026-11-02).**
+
+**작업 범위는 딱 하나:** 국내 KRX 시장 위험을 해석할 때 실제 사용할 수 있는 **해외 증시 대표지수 1종**을 기존 공급자로부터 검증하고, 관측일·시각·권한이 허용되는 경우에만 **선택된 Scanner 종목의 비차단 참고 설명**에 최소 연결한다. 실행 여건이 충족되지 않으면 `SOURCE_UNVERIFIED` 또는 `RIGHTS_UNVERIFIED`를 남기고 기능을 억지로 구현하지 않는다. **환율·유가·전쟁/국제 사건은 같은 단계에서 실제 수집/판정/화면까지 확장하지 않는다.** 다만 원천 가능성·부재·권리 상태를 함께 기록해 향후 작업 순서를 확정한다.
+
+### 4.1 GitHub 코드로 확인한 기준선 — 가정으로 구현하지 말 것
+
+| 자료·경로 | 현재 코드에서 확인한 사실 | GLOBAL-01의 실증해야 할 부분 |
+|---|---|---|
+| 해외지수 | `backend/app/macro/providers/kis.py`는 KIS 해외 일봉 `inquire-daily-chartprice`의 `N` division capability probe가 있음. `tools/data/macro_capability_next6a_s2.py`는 `.DJI` 기본 예제를 제공 | 사용자의 실제 KIS 계정에서 해당 종목 코드/응답/거래일/단위/출처가 맞는지, 보존·표시 사용이 허용되는지. **probe 성공 ≠ 수집/저장/투자 판단 연결 완료** |
+| 환율 | 같은 provider에 `X`(FX) capability probe가 있지만 `--kis-fx-code` 기본값은 None이며 공식 기호 검증이 없으면 `SEMANTICS_UNVERIFIED` | 실제 종목 코드·통화 방향(USD/KRW와 역수 구분)·시각/권한 확인 전 수집/표시 금지 |
+| 해외 국채 | `I`(TREASURY) probe 지원. 현재 미국 10년물 DGS10 FRED 수집·MACRO-01 참고 표시가 동작 | 같은 금리를 새 KIS 시계열로 **중복 수집하지 않음**, 측정 정의 비교가 승인될 때만 재검토 |
+| 국제 사건/정책·전쟁 | `backend/app/macro/event_composition.py`, `backend/app/api/macro.py:/event-reference`는 DGS10 MacroContext + KRX 시장/종목 반응 + 저장된 P6 Event Evidence의 **참고 조합**. 이 경로만으로 국제 전쟁 뉴스나 호르무즈 사건이 실제 수집/분류되는 것은 아님 | P6 원천/기업-국가·업종 관계/사건시각/정정·철회·권한이 실제로 확보됐는지 확인; 데이터 없으면 `NO_VERIFIED_GLOBAL_EVENT_SOURCE` |
+| 유가/원유 | 현재 확인한 KIS Macro probe에는 유가 전용 `OIL/WTI/BRENT` 데이터 소유/수집 경로가 없음 | 기존 제공자/series 계약·접근·라이선스가 확인될 때만 후속 후보. 이 단계에서 가격이나 충격 추정치 생성 금지 |
+| 뉴스·공시 권리 | `backend/app/news/policy.py`의 NAVER는 표시 범위, 미승인 AI 변환/원문 보존 제한. `backend/app/event_evidence/policy.py`의 OpenDART는 기존 제품 표시 외 역사 연구·예측/AI 활용 미승인 | 외부 데이터 수집 허용·화면 표시·로컬 보존·과거 평가·제3자 JEV 전송 **각각 독립 권한 판정**. 무근거 승인/전송 금지 |
+| 제품 판정 | MACRO-02 KRX 120일 / DGS10 대응 116일 / PIT 0건 → 생산 사용 불승인. Scanner/10전략/Risk/보유 판단은 동결 | 해외지수 값 하나로 국내 급락 원인, PANIC, 매수·매도 추천 또는 AI 최종 판정을 만들어서는 안 됨 |
+
+### 4.2 실행 순서 — 1→2→3→4→5, 한 번에 하나씩
+
+1. **브랜치/데이터 보존 및 공급자 계약 검사:** `C:\Projects\StockScope`, `codex/p0-01-mvp-c1-c2-integration-20261022`에서 HEAD·local diff 확인. 기존 `KIS` 인증/권한/코드·원천 시각 계약 재사용. `macro.db` 및 `market_history.db`를 새 데이터로 덮어쓰지 않음. 사용자의 로컬 키 값을 출력하지 않음.
+2. **기존 probe로 좁은 날짜 범위의 해외지수 1종만 실증:** `tools/data/macro_capability_next6a_s2.py --provider KIS --start 2026-10-22 --end 2026-10-30 --kis-index-code .DJI --no-report-file` 경로 우선. 실행은 실제 작업 착수 후 **외부 요청·계정 비용/호출 가능성 설명과 확인**을 거쳐 수행. probe는 조회에 따른 네트워크만 사용하고 결과를 파일로 저장하지 않도록 `--no-report-file` 적용. `SUPPORTED_WITH_LIMITATIONS`이면 행 수, 날짜 의미·timezone·지수 명칭·식별 코드·누락, 인증 상태, 이용 가능한 필드, retention/redistribution/AI 권한을 별도로 검토. 오류·자격 미설정·빈 데이터면 `SOURCE_UNVERIFIED`로 그날 종료 가능.
+3. **시점·사용권 게이트 명확화:** `source_observation_date`, `provider_available_at`, `first_seen_at`, `fetched_at`, `KRX_analysis_date`, `quality`, `rights`를 혼동하지 않는다. 해외 거래일과 국내 EOD 일자 기준의 시차, 결측, 통화/단위의 일관성을 확인한다. 발표/이용 시각 근거가 없으면 **조회 시점 참고만**, 시점 이전 재현·백테스트·프로덕션 결정 입력은 불허. 전송·보존 권한 미확인이면 원시 응답을 저장하지 않는다.
+4. **사용자 가치 조건부 연결:** (2)·(3)이 충족되고 **화면 표시 권한이 확인된 경우에 한해서만**, 이미 존재하는 Macro/Market의 **read-only reference API와 `ScannerDecisionSummary` 선택 종목 영역**을 최소 보강한다. 결과는 예컨대 '미국 대표지수의 최근 관측 변화 · 관측일/현재 조회 · 한국 시장과 별개 자료'처럼 사실만 표시. 미국 주가가 한국 지수 하락의 원인이라는 단정, 확률, 가중치, 신규 Risk Gate 차단, 종목별 중복 API 호출 금지. 권한·자료 미흡 시 코드는 추가하지 않고 기존 MACRO-01 유지.
+5. **품질·종료:** 원천 성공 1건 또는 미확인 상태 1건의 실제 사용자 PC 증거, 타임스탬프/누락/오류/계정 제한, 종목 전환 stale 비노출, 기존 후보·순위·점수·Risk·Holdings·JEV 불변을 확인. 필요한 코드만 기존 테스트에 추가하고 GitHub CI·Windows 실제 화면·외부 소스 권리 검증을 분리해 기록한다. 한 번의 실증으로 가치가 없으면 `NO_ADDITIONAL_VALUE`로 종료하며 외부 공급자 탐색을 무한 확장하지 않는다.
+
+### 4.3 명확한 완료 기준
+
+- **PASS / REFERENCE_CONNECTED:** 실제 사용자 KIS 계정에서 정체·거래일·시각·사용권을 확인한 1개 해외지수를 Scanner 선택 종목의 참고 설명에 안전하게 연결하고, 정상·결측·실패·다른 종목 전환을 검증함. **전략/리스크/매수 판단은 그대로 유지**.
+- **BLOCKED / EVIDENCE_INSUFFICIENT:** KIS 미설정·계정 사용 불가·공식 시계열 코드/값 미검증·시각 또는 사용권 미확인 시 사용자에게 **막힌 한 가지 원인과 필요한 조치**만 남기고 종료. 다른 데이터로 거짓 대체하거나 가짜 녹색 PASS를 만들지 않음.
+- **마감 기록:** 이 문서에 ① 확인한 실제 공급자/상태 ② 최초 시각·권한 ③ 연결 여부/보류 이유 ④ Git commit/CI/Windows 증거 ⑤ **후속 단계 하나**만 기록. **이번 단계에서 FX/유가/전쟁 자동 해석 구현 완료를 선언하지 않는다.**
+
+**GLOBAL-01 금지 범위:** 신규 대규모 크롤러, 무차별 provider 수집/DB 백필, 가짜 시장 급락 임계값, 뉴스 원문 JEV 전송, 상품/지수별 무한 벤치마크, 기존 Scanner·Risk·Strategy·Holdings·P0·JEV 코드 변경, DB 마이그레이션/기존 캡처 수정, 관련 없는 UI 재구성.
+
+## 5. 고정된 이후 순서
 
 1. **MACRO-02 사후 연구 종료(2026-11-02):** KRX 120일·DGS10 결합 116일 분석, PIT 0건. 단순 평균 차이는 관찰됐지만 인과·예측·생산 판단 승인 불가. 기존 MACRO-01 표시 유지. 같은 표본 임계값 반복 튜닝 금지.
-2. **2단계 나머지:** 국제 사건·정책/원유·환율·해외지수의 실제 소스 권한과 시점 가용성을 점검한 뒤, 검증된 데이터만 국내 시장·산업·종목에 연결. 조회 불가면 사실대로 차단. 생산 PANIC Gate는 독립 실증·사용자 승인 없이는 불가.
+2. **GLOBAL-01 실행:** KIS 해외지수 1종의 실제 계정/권한·기준일·시각/보존 범위를 검증하고 조건을 충족할 경우에만 비차단 참고 연결. FX/유가/국제 사건 자료는 사용 가능성만 기록하고 별도 후속으로 다룬다. 생산 PANIC Gate는 독립 실증·사용자 승인 없이는 불가.
 3. **3단계:** 기존 전략 10개·기간·Risk를 단일 후보 화면에서 비교하고 위험 대비 성과를 검증.
 4. **4단계:** 허용 입력이 준비된 경우에만 실제 TypeSafe JEV를 선택 후보 보조검토에 사용. 이미 구현된 제공자·비용 제한·P0 기능 재사용.
 5. **5단계:** 국내/글로벌/JEV 추가 분석의 실제 효용·오탐·낙폭·비용/지연, 사용자 Windows 경험 평가.
