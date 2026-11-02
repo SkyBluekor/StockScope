@@ -60,6 +60,7 @@ def test_kis_index_probe_uses_official_daily_endpoint_without_secret_projection(
     assert payload["authenticated"] is True
     assert payload["details"]["row_count"] == 1
     assert payload["details"]["index_name"] == "다우존스"
+    assert payload["details"]["index_name_source"] == "PROVIDER_RESPONSE"
     assert payload["details"]["index_sample"] == {
         "valid_index_rows": 1,
         "invalid_index_rows": 0,
@@ -146,7 +147,7 @@ def test_global01_requires_identity_and_valid_date_and_positive_level():
         })
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = probe_kis_daily_chart(
-            division="N", instrument_code=".DJI",
+            division="N", instrument_code=".UNKNOWN",
             start_date="2026-10-22", end_date="2026-10-30",
             settings=_settings(), access_token="token", http_client=client,
         ).to_dict()
@@ -172,3 +173,59 @@ def test_global01_malformed_rows_cannot_claim_supported():
         ).to_dict()
     assert result["status"] == "SEMANTICS_UNVERIFIED"
     assert result["details"]["index_sample"]["valid_index_rows"] == 0
+
+
+def test_global01_official_request_code_allows_name_free_live_index_response():
+    # Real KIS output1 is a numeric summary. hts_kor_isnm may not be present.
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["FID_INPUT_ISCD"] == ".DJI"
+        return httpx.Response(200, json={
+            "rt_cd": "0",
+            "output1": {
+                "ovrs_nmix_prpr": "51770.31",
+                "ovrs_nmix_prdy_clpr": "51600.00",
+                "prdy_ctrt": "0.33",
+            },
+            "output2": [
+                {"stck_bsop_date": "20261022", "ovrs_nmix_prpr": "51010.00"},
+                {"stck_bsop_date": "20261029", "ovrs_nmix_prpr": "51500.00"},
+                {"stck_bsop_date": "20261030", "ovrs_nmix_prpr": "51770.31"},
+            ],
+        })
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = probe_kis_daily_chart(
+            division="N", instrument_code=".DJI",
+            start_date="2026-10-22", end_date="2026-10-30",
+            settings=_settings(), access_token="token", http_client=client,
+        ).to_dict()
+
+    assert result["status"] == "SUPPORTED_WITH_LIMITATIONS"
+    assert result["authenticated"] is True
+    assert result["details"]["index_name"] == "다우존스 산업평균지수"
+    assert result["details"]["index_name_source"] == "OFFICIAL_KIS_REQUEST_CODE"
+    assert result["details"]["provider_index_name"] is None
+    assert result["details"]["index_sample"]["valid_index_rows"] == 3
+    assert result["details"]["index_sample"]["latest_observation_date"] == "2026-10-30"
+    assert result["details"]["index_sample"]["latest_index_level"] == "51770.31"
+    assert "INDEX_NAME_FROM_OFFICIAL_REQUEST_CODE_ONLY" in result["limitations"]
+    assert "INDEX_IDENTITY_UNVERIFIED" not in result["limitations"]
+    assert result["details"]["display_rights_approved"] is False
+    assert result["details"]["retention_rights_approved"] is False
+    assert result["details"]["production_decision_approved"] is False
+
+
+def test_global01_official_code_cannot_hide_conflicting_provider_name():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={
+            "rt_cd": "0",
+            "output1": {"hts_kor_isnm": "나스닥 종합지수"},
+            "output2": [{"stck_bsop_date": "20261030", "ovrs_nmix_prpr": "51770.31"}],
+        })
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = probe_kis_daily_chart(
+            division="N", instrument_code=".DJI",
+            start_date="2026-10-22", end_date="2026-10-30",
+            settings=_settings(), access_token="token", http_client=client,
+        ).to_dict()
+    assert result["status"] == "SEMANTICS_UNVERIFIED"
+    assert "INDEX_NAME_CONFLICT_WITH_REQUEST_CODE" in result["limitations"]

@@ -105,7 +105,7 @@ StockScope는 다수 국내 주식의 OpenAPI 기반 **주가·시장·거시경
 
 ## 4. GLOBAL-01 — 해외 위험 자료 사용성 검증 및 첫 참조 신호 연결
 
-**작업 상태: CAPABILITY_PROBE_CI_PASS / LIVE_KIS_PROVIDER_NOT_CHECKED / DISPLAY_RIGHTS_UNVERIFIED / WINDOWS_LIVE_UAT_PENDING (2026-11-02).**
+**작업 상태: LIVE_KIS_INDEX_DATA_CONFIRMED / OFFICIAL_CODE_IDENTITY_FIXED / USAGE_RIGHTS_UNVERIFIED / SCANNER_NOT_CONNECTED (2026-11-02).**
 
 **작업 범위는 딱 하나:** 국내 KRX 시장 위험을 해석할 때 실제 사용할 수 있는 **해외 증시 대표지수 1종**을 기존 공급자로부터 검증하고, 관측일·시각·권한이 허용되는 경우에만 **선택된 Scanner 종목의 비차단 참고 설명**에 최소 연결한다. 실행 여건이 충족되지 않으면 `SOURCE_UNVERIFIED` 또는 `RIGHTS_UNVERIFIED`를 남기고 기능을 억지로 구현하지 않는다. **환율·유가·전쟁/국제 사건은 같은 단계에서 실제 수집/판정/화면까지 확장하지 않는다.** 다만 원천 가능성·부재·권리 상태를 함께 기록해 향후 작업 순서를 확정한다.
 
@@ -140,6 +140,14 @@ StockScope는 다수 국내 주식의 OpenAPI 기반 **주가·시장·거시경
 **GLOBAL-01 코드 검증 (2026-11-02):** 공급자 검증 보강 커밋 `f93afaa4`, [GitHub Actions #41392802703](https://github.com/SkyBluekor/StockScope/actions/runs/41392802703) **4/4 PASS**. Python 3.11·3.14 각각 **2,767 PASS / 2 SKIP / 1 WARNING**; Frontend Node 22, Windows Fresh Clone PASS. HTTP 200 및 `rt_cd=0`에 행이 없거나 유효 일자·종가/지수값·종목명이 없으면 `SEMANTICS_UNVERIFIED`로 분류하는 테스트 포함. **실제 KIS 계정 응답과 실제 제공자 권한은 아직 검증하지 않았음**. 외부 공급자 호출이 없는 CI는 LIVE_PROVIDER_PASS가 아님.
 
 **새 PC 실조회 명령(조회 1회, 파일 저장 없음):** `cd C:\Projects\StockScope` → `git pull --ff-only` → `.\.venv\Scripts\python.exe .\tools\data\macro_capability_next6a_s2.py --provider KIS --kis-index-only --start 2026-10-22 --end 2026-10-30 --kis-index-code .DJI --no-report-file`. KIS 인증에 따른 API 호출은 실제로 수행하며 원본 시세 DB나 보고서 파일은 작성하지 않는다. 결과 `status`, `index_name`, `index_sample.valid_index_rows`, `index_sample.latest_observation_date`, `limitations`만 확인하고 비밀키·토큰은 공유하지 않는다. `SUPPORTED_WITH_LIMITATIONS`도 **화면 표시/데이터 재배포 권리 확인 전까지 Scanner 연결 승인 상태가 아니다**.
+
+### 4.2.2 사용자 PC 실조회 — KIS `.DJI` 실제 관측 성공, 검증기 이름 가정 수정
+
+- **실제 실행 근거 (2026-11-02):** 사용자 PC `C:\Projects\StockScope`, 계정 `environment=real`, `configured=true`, `authenticated=true`; KIS 해외지수 `N / .DJI` 2026-10-22~2026-10-30 요청에 `row_count=7`, 유효 날짜·양수 지수값 **7/7**, `latest_observation_date=2026-10-30`, `latest_index_level=51770.31`, `has_continuation=false`. 사용자는 실제 API 키/원시 응답/계좌 비밀값을 제공하지 않았다.
+- **실제 발견한 결함:** KIS 실응답 `output1`에 `hts_kor_isnm`이 없고 시세 요약 필드만 들어 있음. 기존 GLOBAL-01 코드가 이 선택 필드를 필수로 간주해 `SEMANTICS_UNVERIFIED`를 반환했지만, 지수 영업일과 값의 유효성 검사는 통과했음. 즉 **데이터 조회 실패가 아니라 이름 검증기의 잘못된 필수 조건**.
+- **정정 정책:** KIS 공식 예제에서 `FID_COND_MRKT_DIV_CODE=N`, `FID_INPUT_ISCD=.DJI` 요청이 지원됨을 확인하고, S&P DJI도 Reuters 코드 `.DJI`를 Dow Jones Industrial Average로 표기. 공식 코드 정확히 `.DJI`일 때만 `다우존스 산업평균지수`로 식별하고 `index_name_source=OFFICIAL_KIS_REQUEST_CODE`로 구분한다. 제공자 이름이 있다면 `PROVIDER_RESPONSE`가 우선하고, 코드와 이름이 충돌하면 실패 처리. 다른 미승인 코드로 일반화하지 않는다. 공식 참고: https://github.com/koreainvestment/open-trading-api/blob/main/MCP/Kis%20Trading%20MCP/configs/overseas_stock.json 및 https://www.spglobal.com/spdji/kr/indices/equity/dow-jones-industrial-average/
+- **판정:** **실제 KIS 해외지수 원천 접속과 일자/값 확인은 성공.** 그러나 소스의 정확한 게시/이용 시각, 거래 세션 마감 의미, 사용자 계정/개인 로컬 활용 이외 공개 앱 배포·재배포·보존 권한, 타인 대상 화면 제공 권한은 **미확인**. KIS는 개인이 자신의 프로그램을 개발하는 사용과 제휴사/외부 고객에게 시세를 제공하는 상황을 구분해 안내한다. 개인용이라고 권리 전체가 승인된 것은 아님: https://apiportal.koreainvestment.com/about-howto 및 https://apiportal.koreainvestment.com/provider.
+- **제품 안전선:** 실제 공급자 지표를 통한 시장 비교는 다음 검증 후보지만, 현재 `display_rights_approved=false`, `retention_rights_approved=false`, `ai_transfer_approved=false`, `production_decision_approved=false` 유지. **실제 API 재호출은 필요 없음.** 기존 Scanner·Strategy·Risk·Holdings·JEV에 연결하지 않고 공식 권한의 사용범위를 확정한 다음 최소 참고 표시 여부를 결정한다.
 
 ### 4.3 명확한 완료 기준
 

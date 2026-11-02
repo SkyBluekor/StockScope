@@ -26,6 +26,13 @@ _COMPONENTS = {
     "I": "TREASURY",
 }
 
+# Only codes verified against the provider's published index examples are
+# recognized without a provider-returned name. This is request-code identity,
+# not an assertion that the API echoed the index name.
+_KNOWN_INDEX_CODES = {
+    ".DJI": "다우존스 산업평균지수",
+}
+
 
 
 def _validated_index_sample(
@@ -226,15 +233,36 @@ def probe_kis_daily_chart(
             if normalized_division == "N"
             else None
         )
-        index_name = (
+        provider_index_name = (
             str(output1.get("hts_kor_isnm") or "").strip()[:80]
             if normalized_division == "N" and isinstance(output1, dict)
             else ""
+        )
+        official_request_name = (
+            _KNOWN_INDEX_CODES.get(code.upper())
+            if normalized_division == "N"
+            else None
+        )
+        # The live KIS daily-chart index response often omits hts_kor_isnm.
+        # An official request code is an acceptable identity hint, but do not
+        # mislabel it as a provider-returned name or infer usage rights.
+        index_name = provider_index_name or official_request_name or ""
+        index_name_source = (
+            "PROVIDER_RESPONSE" if provider_index_name
+            else "OFFICIAL_KIS_REQUEST_CODE" if official_request_name
+            else "UNVERIFIED"
+        )
+        conflicting_name = bool(
+            official_request_name
+            and provider_index_name
+            and code.upper() == ".DJI"
+            and not any(token in provider_index_name.lower() for token in ("다우", "dow", "dji"))
         )
         index_confirmed = (
             index_sample is not None
             and index_sample["valid_index_rows"] > 0
             and bool(index_name)
+            and not conflicting_name
         )
         supported = (
             index_confirmed
@@ -253,6 +281,10 @@ def probe_kis_daily_chart(
         if normalized_division == "N":
             if not index_name:
                 limitations.append("INDEX_IDENTITY_UNVERIFIED")
+            if official_request_name and not provider_index_name:
+                limitations.append("INDEX_NAME_FROM_OFFICIAL_REQUEST_CODE_ONLY")
+            if conflicting_name:
+                limitations.append("INDEX_NAME_CONFLICT_WITH_REQUEST_CODE")
             if not index_sample["valid_index_rows"]:
                 limitations.append("NO_VALID_INDEX_OBSERVATION")
             if index_sample["invalid_index_rows"]:
@@ -276,6 +308,8 @@ def probe_kis_daily_chart(
                 "metadata_fields": meta_fields,
                 "row_fields": row_fields,
                 "index_name": index_name or None,
+                "index_name_source": index_name_source if normalized_division == "N" else None,
+                "provider_index_name": provider_index_name or None,
                 "index_sample": index_sample,
                 "has_continuation": bool(
                     response.headers.get("tr_cont")
