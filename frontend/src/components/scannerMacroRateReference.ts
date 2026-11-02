@@ -33,9 +33,19 @@ export function scannerMacroRatePresentation(
   if (!Number.isFinite(rate) || !Number.isFinite(available)
     || !Number.isFinite(cutoff) || available > cutoff) return empty;
 
+  // An observation's available_at is NOT the observation's date.
+  // A delayed first-seen timestamp can never make an old rate current.
+  const observationDay = /^\d{4}-\d{2}-\d{2}$/.test(reference.observation_date)
+    ? Date.parse(reference.observation_date + "T00:00:00Z")
+    : NaN;
+  if (!Number.isFinite(observationDay) || observationDay > cutoff) return empty;
   const analysisEnd = /^\d{4}-\d{2}-\d{2}$/.test(scannerDataDate)
     ? Date.parse(scannerDataDate + "T23:59:59+09:00")
     : NaN;
+  // Display-only recency guard. Seven calendar days tolerate weekends/holidays;
+  // it is NOT a market-risk or trading-policy threshold.
+  const referenceAgeDays = Math.floor((cutoff - observationDay) / 86_400_000);
+  const staleReference = referenceAgeDays > 7;
   const later = (!Number.isNaN(analysisEnd) && available > analysisEnd)
     || reference.observation_date > scannerDataDate;
   const timeNote = reference.time_quality === "EXACT"
@@ -46,12 +56,25 @@ export function scannerMacroRatePresentation(
     ? "이 분석일 이후에 이용 가능해진 자료로, 당시 판단 근거가 아니에요."
     : "당시 분석에 사용된 입력이 아니라 현재 조회 기준 참고자료예요.";
   const publication = reference.source_published_at
-    ? " · 원천 발표 기록 " + reference.source_published_at
-    : " · 원천 발표 시각 확인 불가";
+    ? "원천 발표 기록 있음"
+    : "원천 발표 시각 확인 불가";
+  const referenceSummary = "FRED DGS10 · 관측일 " + reference.observation_date
+    + " · 자료 이용 가능 기록일 " + reference.available_at.slice(0, 10)
+    + " · " + publication + ". ";
+  if (staleReference) {
+    return {
+      headline: "미국 10년물 금리 · 오래된 저장자료 (최신 금리 확인 필요)",
+      detail: referenceSummary
+        + "마지막 저장 관측은 조회 기준 " + referenceAgeDays + "일 전의 "
+        + rate.toFixed(2) + "%입니다. 현재 금리나 분석일의 최신 금리로 해석할 수 없어요. "
+        + snapshotNote + " 국내 시장 하락의 원인으로 단정하지 않아요. "
+        + "전략 점수와 신규 진입 차단은 변경하지 않았어요.",
+      available: true,
+    };
+  }
   return {
     headline: "미국 10년물 국채금리 " + rate.toFixed(2) + "% · 관측 " + reference.observation_date,
-    detail: "FRED DGS10 저장자료 · 이용 가능 기록 " + reference.available_at
-      + publication + " · " + timeNote + ". " + snapshotNote
+    detail: referenceSummary + timeNote + ". " + snapshotNote
       + " 국내 지수 하락의 원인으로 단정하지 않아요. 전략 점수와 신규 진입 차단은 변경하지 않았어요.",
     available: true,
   };
