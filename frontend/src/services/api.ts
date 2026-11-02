@@ -491,6 +491,34 @@ export async function fetchProviderStatus(): Promise<ProviderStatus> {
   return asJson<ProviderStatus>(await fetch("/api/providers/status"));
 }
 
+export type ScannerMacroRateReference = {
+  status: "AVAILABLE" | "PARTIAL" | "UNAVAILABLE";
+  source: "FRED_DGS10_LOCAL";
+  series_id: "US_10Y_CONSTANT_MATURITY_YIELD";
+  value_pct: string | null;
+  observation_date: string | null;
+  available_at: string | null;
+  source_published_at: string | null;
+  provider_available_at: string | null;
+  time_quality: string | null;
+  source_unit: string | null;
+  decision_cutoff: string;
+  production_decision_approved: false;
+  scanner_input_approved: false;
+  risk_gate_input_approved: false;
+  reason: string | null;
+};
+
+/** Local read-only reference; an unavailable Macro DB must not block Scanner. */
+export async function fetchScannerMacroRateReference(
+  signal?: AbortSignal,
+): Promise<ScannerMacroRateReference | null> {
+  const body = await asJson<{ dgs10_reference?: ScannerMacroRateReference }>(
+    await fetch("/api/macro/reference-diagnostic", { signal, cache: "no-store" }),
+  );
+  return body.dgs10_reference ?? null;
+}
+
 export async function fetchMarketDashboard(): Promise<MarketDashboard> {
   return asJson<MarketDashboard>(await fetch("/api/market/dashboard"));
 }
