@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import httpx
@@ -23,6 +25,45 @@ _COMPONENTS = {
     "X": "FX",
     "I": "TREASURY",
 }
+
+
+
+def _validated_index_sample(
+    rows: list[dict[str, Any]],
+    *,
+    start_date: str,
+    end_date: str,
+) -> dict[str, Any]:
+    """Check real date/positive close semantics without retaining provider rows."""
+    valid: list[tuple[str, Decimal]] = []
+    invalid = 0
+    from_day = start_date.replace("-", "")
+    to_day = end_date.replace("-", "")
+    for row in rows:
+        day = str(row.get("stck_bsop_date") or "").strip()
+        try:
+            if len(day) != 8 or not day.isascii() or not day.isdigit():
+                raise ValueError("invalid trade date")
+            date.fromisoformat(f"{day[:4]}-{day[4:6]}-{day[6:]}")
+            if not from_day <= day <= to_day:
+                raise ValueError("date outside requested range")
+            level = Decimal(str(row.get("ovrs_nmix_prpr")))
+            if not level.is_finite() or level <= 0:
+                raise ValueError("invalid index level")
+        except (ValueError, InvalidOperation, TypeError):
+            invalid += 1
+            continue
+        valid.append((day, level))
+    latest = max(valid, key=lambda item: item[0]) if valid else None
+    return {
+        "valid_index_rows": len(valid),
+        "invalid_index_rows": invalid,
+        "latest_observation_date": (
+            f"{latest[0][:4]}-{latest[0][4:6]}-{latest[0][6:]}"
+            if latest else None
+        ),
+        "latest_index_level": str(latest[1]) if latest else None,
+    }
 
 
 class KisMacroProbeError(RuntimeError):
@@ -176,15 +217,53 @@ def probe_kis_daily_chart(
         meta_fields = sorted(output1.keys()) if isinstance(output1, dict) else []
         row_fields = sorted(rows[0].keys()) if rows else []
 
-        limitations = (
+        # The provider accepted the HTTP request, but that alone does not
+        # establish a real index observation or permission to reuse it.
+        index_sample = (
+            _validated_index_sample(
+                rows, start_date=start_date, end_date=end_date,
+            )
+            if normalized_division == "N"
+            else None
+        )
+        index_name = (
+            str(output1.get("hts_kor_isnm") or "").strip()[:80]
+            if normalized_division == "N" and isinstance(output1, dict)
+            else ""
+        )
+        index_confirmed = (
+            index_sample is not None
+            and index_sample["valid_index_rows"] > 0
+            and bool(index_name)
+        )
+        supported = (
+            index_confirmed
+            if normalized_division == "N"
+            else bool(rows)
+        )
+        limitations = [
             "AVAILABILITY_TIMESTAMP_UNVERIFIED",
             "SESSION_CLOSE_SEMANTICS_REQUIRE_REVIEW",
             "RETENTION_SCOPE_UNVERIFIED",
-        )
+            "DISPLAY_AND_REDISTRIBUTION_RIGHTS_UNVERIFIED",
+            "REQUESTED_RANGE_COVERAGE_NOT_PROVEN",
+        ]
+        if not rows:
+            limitations.append("NO_PROVIDER_DATA_ROWS")
+        if normalized_division == "N":
+            if not index_name:
+                limitations.append("INDEX_IDENTITY_UNVERIFIED")
+            if not index_sample["valid_index_rows"]:
+                limitations.append("NO_VALID_INDEX_OBSERVATION")
+            if index_sample["invalid_index_rows"]:
+                limitations.append("INVALID_OR_OUT_OF_RANGE_INDEX_ROWS")
         return ProviderCapability(
             provider="KIS",
             component=_COMPONENTS[normalized_division],
-            status=CapabilityStatus.SUPPORTED_WITH_LIMITATIONS,
+            status=(
+                CapabilityStatus.SUPPORTED_WITH_LIMITATIONS
+                if supported else CapabilityStatus.SEMANTICS_UNVERIFIED
+            ),
             configured=True,
             authenticated=True,
             details={
@@ -196,13 +275,18 @@ def probe_kis_daily_chart(
                 "row_count": len(rows),
                 "metadata_fields": meta_fields,
                 "row_fields": row_fields,
+                "index_name": index_name or None,
+                "index_sample": index_sample,
                 "has_continuation": bool(
                     response.headers.get("tr_cont")
                     or response.headers.get("tr-cont")
                 ),
+                "display_rights_approved": False,
+                "retention_rights_approved": False,
+                "ai_transfer_approved": False,
                 "production_decision_approved": False,
             },
-            limitations=limitations,
+            limitations=tuple(limitations),
         )
     finally:
         if owns_client:

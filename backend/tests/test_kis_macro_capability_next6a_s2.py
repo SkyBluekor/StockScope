@@ -59,6 +59,15 @@ def test_kis_index_probe_uses_official_daily_endpoint_without_secret_projection(
     assert payload["status"] == "SUPPORTED_WITH_LIMITATIONS"
     assert payload["authenticated"] is True
     assert payload["details"]["row_count"] == 1
+    assert payload["details"]["index_name"] == "다우존스"
+    assert payload["details"]["index_sample"] == {
+        "valid_index_rows": 1,
+        "invalid_index_rows": 0,
+        "latest_observation_date": "2026-09-28",
+        "latest_index_level": "50000",
+    }
+    assert payload["details"]["display_rights_approved"] is False
+    assert payload["details"]["ai_transfer_approved"] is False
     assert payload["details"]["production_decision_approved"] is False
     serialized = str(payload)
     assert "app-key" not in serialized
@@ -104,3 +113,62 @@ def test_kis_not_configured_is_explicit_and_does_not_probe():
 
     assert len(results) == 3
     assert all(item.status.value == "NOT_CONFIGURED" for item in results)
+
+
+
+def test_global01_success_status_with_zero_index_rows_is_not_usable():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"rt_cd": "0", "output1": {"hts_kor_isnm": "다우존스"}, "output2": []}
+        )
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = probe_kis_daily_chart(
+            division="N", instrument_code=".DJI",
+            start_date="2026-10-22", end_date="2026-10-30",
+            settings=_settings(), access_token="token", http_client=client,
+        ).to_dict()
+    assert result["status"] == "SEMANTICS_UNVERIFIED"
+    assert result["details"]["row_count"] == 0
+    assert result["details"]["index_sample"]["latest_observation_date"] is None
+    assert "NO_PROVIDER_DATA_ROWS" in result["limitations"]
+
+
+def test_global01_requires_identity_and_valid_date_and_positive_level():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={
+            "rt_cd": "0", "output1": {},
+            "output2": [
+                {"stck_bsop_date": "20261101", "ovrs_nmix_prpr": "50000"},
+                {"stck_bsop_date": "20261029", "ovrs_nmix_prpr": "-3"},
+                {"stck_bsop_date": "20261030", "ovrs_nmix_prpr": "NaN"},
+                {"stck_bsop_date": "20261028", "ovrs_nmix_prpr": "49000"},
+            ],
+        })
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = probe_kis_daily_chart(
+            division="N", instrument_code=".DJI",
+            start_date="2026-10-22", end_date="2026-10-30",
+            settings=_settings(), access_token="token", http_client=client,
+        ).to_dict()
+    assert result["status"] == "SEMANTICS_UNVERIFIED"
+    assert result["details"]["index_sample"]["valid_index_rows"] == 1
+    assert result["details"]["index_sample"]["invalid_index_rows"] == 3
+    assert result["details"]["index_sample"]["latest_observation_date"] == "2026-10-28"
+    assert "INDEX_IDENTITY_UNVERIFIED" in result["limitations"]
+    assert "INVALID_OR_OUT_OF_RANGE_INDEX_ROWS" in result["limitations"]
+
+
+def test_global01_malformed_rows_cannot_claim_supported():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={
+            "rt_cd": "0", "output1": {"hts_kor_isnm": "다우존스"},
+            "output2": [{"stck_bsop_date": "2026-13-01", "ovrs_nmix_prpr": "100"}],
+        })
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = probe_kis_daily_chart(
+            division="N", instrument_code=".DJI",
+            start_date="2026-10-22", end_date="2026-10-30",
+            settings=_settings(), access_token="token", http_client=client,
+        ).to_dict()
+    assert result["status"] == "SEMANTICS_UNVERIFIED"
+    assert result["details"]["index_sample"]["valid_index_rows"] == 0

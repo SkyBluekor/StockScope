@@ -105,7 +105,7 @@ StockScope는 다수 국내 주식의 OpenAPI 기반 **주가·시장·거시경
 
 ## 4. GLOBAL-01 — 해외 위험 자료 사용성 검증 및 첫 참조 신호 연결
 
-**작업 상태: SPEC_READY / CODE_NOT_STARTED / LIVE_PROVIDER_NOT_CHECKED / WINDOWS_UAT_PENDING (2026-11-02).**
+**작업 상태: CAPABILITY_PROBE_HARDENED / CI_PENDING / LIVE_PROVIDER_NOT_CHECKED / WINDOWS_UAT_PENDING (2026-11-02).**
 
 **작업 범위는 딱 하나:** 국내 KRX 시장 위험을 해석할 때 실제 사용할 수 있는 **해외 증시 대표지수 1종**을 기존 공급자로부터 검증하고, 관측일·시각·권한이 허용되는 경우에만 **선택된 Scanner 종목의 비차단 참고 설명**에 최소 연결한다. 실행 여건이 충족되지 않으면 `SOURCE_UNVERIFIED` 또는 `RIGHTS_UNVERIFIED`를 남기고 기능을 억지로 구현하지 않는다. **환율·유가·전쟁/국제 사건은 같은 단계에서 실제 수집/판정/화면까지 확장하지 않는다.** 다만 원천 가능성·부재·권리 상태를 함께 기록해 향후 작업 순서를 확정한다.
 
@@ -124,10 +124,18 @@ StockScope는 다수 국내 주식의 OpenAPI 기반 **주가·시장·거시경
 ### 4.2 실행 순서 — 1→2→3→4→5, 한 번에 하나씩
 
 1. **브랜치/데이터 보존 및 공급자 계약 검사:** `C:\Projects\StockScope`, `codex/p0-01-mvp-c1-c2-integration-20261022`에서 HEAD·local diff 확인. 기존 `KIS` 인증/권한/코드·원천 시각 계약 재사용. `macro.db` 및 `market_history.db`를 새 데이터로 덮어쓰지 않음. 사용자의 로컬 키 값을 출력하지 않음.
-2. **기존 probe로 좁은 날짜 범위의 해외지수 1종만 실증:** `tools/data/macro_capability_next6a_s2.py --provider KIS --start 2026-10-22 --end 2026-10-30 --kis-index-code .DJI --no-report-file` 경로 우선. 실행은 실제 작업 착수 후 **외부 요청·계정 비용/호출 가능성 설명과 확인**을 거쳐 수행. probe는 조회에 따른 네트워크만 사용하고 결과를 파일로 저장하지 않도록 `--no-report-file` 적용. `SUPPORTED_WITH_LIMITATIONS`이면 행 수, 날짜 의미·timezone·지수 명칭·식별 코드·누락, 인증 상태, 이용 가능한 필드, retention/redistribution/AI 권한을 별도로 검토. 오류·자격 미설정·빈 데이터면 `SOURCE_UNVERIFIED`로 그날 종료 가능.
+2. **기존 probe로 좁은 날짜 범위의 해외지수 1종만 실증:** `tools/data/macro_capability_next6a_s2.py --provider KIS --kis-index-only --start 2026-10-22 --end 2026-10-30 --kis-index-code .DJI --no-report-file` 경로 우선. 실행은 실제 작업 착수 후 **외부 요청·계정 비용/호출 가능성 설명과 확인**을 거쳐 수행. probe는 조회에 따른 네트워크만 사용하고 결과를 파일로 저장하지 않도록 `--no-report-file` 적용. `SUPPORTED_WITH_LIMITATIONS`이면 행 수, 날짜 의미·timezone·지수 명칭·식별 코드·누락, 인증 상태, 이용 가능한 필드, retention/redistribution/AI 권한을 별도로 검토. 오류·자격 미설정·빈 데이터면 `SOURCE_UNVERIFIED`로 그날 종료 가능.
 3. **시점·사용권 게이트 명확화:** `source_observation_date`, `provider_available_at`, `first_seen_at`, `fetched_at`, `KRX_analysis_date`, `quality`, `rights`를 혼동하지 않는다. 해외 거래일과 국내 EOD 일자 기준의 시차, 결측, 통화/단위의 일관성을 확인한다. 발표/이용 시각 근거가 없으면 **조회 시점 참고만**, 시점 이전 재현·백테스트·프로덕션 결정 입력은 불허. 전송·보존 권한 미확인이면 원시 응답을 저장하지 않는다.
 4. **사용자 가치 조건부 연결:** (2)·(3)이 충족되고 **화면 표시 권한이 확인된 경우에 한해서만**, 이미 존재하는 Macro/Market의 **read-only reference API와 `ScannerDecisionSummary` 선택 종목 영역**을 최소 보강한다. 결과는 예컨대 '미국 대표지수의 최근 관측 변화 · 관측일/현재 조회 · 한국 시장과 별개 자료'처럼 사실만 표시. 미국 주가가 한국 지수 하락의 원인이라는 단정, 확률, 가중치, 신규 Risk Gate 차단, 종목별 중복 API 호출 금지. 권한·자료 미흡 시 코드는 추가하지 않고 기존 MACRO-01 유지.
 5. **품질·종료:** 원천 성공 1건 또는 미확인 상태 1건의 실제 사용자 PC 증거, 타임스탬프/누락/오류/계정 제한, 종목 전환 stale 비노출, 기존 후보·순위·점수·Risk·Holdings·JEV 불변을 확인. 필요한 코드만 기존 테스트에 추가하고 GitHub CI·Windows 실제 화면·외부 소스 권리 검증을 분리해 기록한다. 한 번의 실증으로 가치가 없으면 `NO_ADDITIONAL_VALUE`로 종료하며 외부 공급자 탐색을 무한 확장하지 않는다.
+
+### 4.2.1 GLOBAL-01 사전 보강 — 해외지수 공급자 응답의 보수적 판정
+
+- 기존 `backend/app/macro/providers/kis.py` probe를 유지하면서 `N` 해외지수에 대해 **종목명(`output1.hts_kor_isnm`), 실제 날짜(`stck_bsop_date`), 양수 유효 지수값(`ovrs_nmix_prpr`), 요청 기간 이내 여부**를 확인한다. 공식 KIS 예제와 필드 이름 대조: [한국투자증권 공식 예제](https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/overseas_stock/inquire_daily_chartprice/chk_inquire_daily_chartprice.py).
+- KIS `rt_cd=0`이더라도 행 0개/유효일자 0개/종목명 미확인이라면 `SEMANTICS_UNVERIFIED`로 보고하며 **지원·데이터 완전·권한 승인으로 판정하지 않는다**. 원본 행 대신 유효/무효 개수, 가장 최근 실제 관측일·지수값, 확인된 이름만 요약.
+- 기존 `tools/data/macro_capability_next6a_s2.py`에 `--kis-index-only`를 추가해 FX·국채 미설정 상태를 함께 성공/실패로 오인하지 않는다. `--no-report-file`로 보고서 파일을 남기지 않는다. `SEMANTICS_UNVERIFIED`나 `NOT_SUPPORTED`는 종료 코드 비정상으로 보고하여 오류를 성공으로 위장하지 않는다.
+- 응답 시각, 지수 세션 마감 시점, 제공자 보존/화면표시·재배포/AI 전송 권한은 **계속 미확인**으로 명시. 이번에는 실제 KIS 네트워크 접속이나 사용자 로컬 데이터 사용 없이 코드를 보강하며 사용자 PC에서 실증이 필요하다. 원본 데이터 DB 쓰기·API 키 노출·Scanner/Risk/JEV 변경은 하지 않는다.
+- 공식 API 응답 확인만으로 지수값을 과거 매매 판단이나 국내 지수 하락의 원인 추론에 사용하지 않는다.
 
 ### 4.3 명확한 완료 기준
 
