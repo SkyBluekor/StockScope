@@ -11,7 +11,8 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from app.core.config import get_settings
+from app.core.config import PROJECT_ROOT, get_settings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from app.integrations.kis.client import KisAuthenticationError, KisConfigurationError
 from app.macro.capability import CapabilityStatus
 from app.macro.providers.kis import KisMacroProbeError, probe_kis_daily_chart
@@ -21,6 +22,25 @@ _CACHE: dict[str, Any] | None = None
 _CACHE_UNTIL = 0.0
 _CACHE_TTL_OK_SECONDS = 600
 _CACHE_TTL_FAILED_SECONDS = 45
+
+
+class _LocalDjiOptions(BaseSettings):
+    # Opt-in is private to this reference module, outside pinned core config.
+    # Users must independently verify their permitted PERSONAL/LOCAL use.
+    stockscope_kis_dji_personal_local_reference_enabled: bool = False
+    model_config = SettingsConfigDict(
+        env_file=PROJECT_ROOT / ".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+
+def personal_local_opted_in() -> bool:
+    try:
+        return _LocalDjiOptions().stockscope_kis_dji_personal_local_reference_enabled
+    except (ValueError, TypeError):
+        return False
 
 
 def _base(reason: str | None) -> dict[str, Any]:

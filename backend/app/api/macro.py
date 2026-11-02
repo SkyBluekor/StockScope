@@ -7,8 +7,8 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 
-from app.core.config import PROJECT_ROOT, get_settings
-from app.macro.local_dji import read_local_dji_reference
+from app.core.config import PROJECT_ROOT
+from app.macro.local_dji import personal_local_opted_in, read_local_dji_reference
 from app.core.stock_code import normalize_stock_code
 from app.event_evidence import (
     EVENT_REFERENCE_AS_OF_MODE,
@@ -218,7 +218,7 @@ def _local_dji_request_allowed(request: Request) -> bool:
 def overseas_index_reference(request: Request, response: Response) -> dict[str, Any]:
     """Opt-in personal-local KIS index observation, not a Scanner decision input."""
     response.headers["Cache-Control"] = "no-store"
-    enabled = get_settings().stockscope_kis_dji_personal_local_reference_enabled
+    enabled = personal_local_opted_in()
     if not enabled:
         return read_local_dji_reference(enabled=False)
     if not _local_dji_request_allowed(request):
