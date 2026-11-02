@@ -35,6 +35,47 @@ _KNOWN_INDEX_CODES = {
 
 
 
+def _validated_index_pair(
+    rows: list[dict[str, Any]], *, start_date: str, end_date: str,
+) -> dict[str, Any] | None:
+    """Return only the last two distinct valid daily values, never raw KIS rows.
+
+    This is a date-only observation, not proof of a finalized US close.
+    Conflicting values for the same observation date fail closed.
+    """
+    start_dd = start_date.replace("-", "")
+    end_dd = end_date.replace("-", "")
+    selected: dict[str, Decimal] = {}
+    for row in rows:
+        day = str(row.get("stck_bsop_date") or "").strip()
+        if len(day) != 8 or not day.isascii() or not day.isdigit():
+            continue
+        try:
+            date.fromisoformat(f"{day[:4]}-{day[4:6]}-{day[6:]}")
+            value = Decimal(str(row.get("ovrs_nmix_prpr")))
+        except (ValueError, InvalidOperation, TypeError):
+            continue
+        if day < start_dd or day > end_dd or not value.is_finite() or value <= 0:
+            continue
+        if day in selected and selected[day] != value:
+            return None
+        selected[day] = value
+    if len(selected) < 2:
+        return None
+    previous_day, current_day = sorted(selected)[-2:]
+    previous = selected[previous_day]
+    current = selected[current_day]
+    return {
+        "previous_observation_date": date.fromisoformat(previous_day).isoformat(),
+        "observation_date": date.fromisoformat(current_day).isoformat(),
+        "previous_index_value": str(previous),
+        "index_value": str(current),
+        "daily_change_pct": str(
+            ((current / previous) - Decimal("1")) * Decimal("100")
+        ),
+    }
+
+
 def _validated_index_sample(
     rows: list[dict[str, Any]],
     *,
@@ -96,6 +137,7 @@ def probe_kis_daily_chart(
     access_token: str | None = None,
     http_client: httpx.Client | None = None,
     timeout_seconds: float = 20.0,
+    include_reference_pair: bool = False,
 ) -> ProviderCapability:
     settings = validate_settings(settings or get_settings())
     normalized_division = str(division or "").strip().upper()
@@ -311,6 +353,13 @@ def probe_kis_daily_chart(
                 "index_name_source": index_name_source if normalized_division == "N" else None,
                 "provider_index_name": provider_index_name or None,
                 "index_sample": index_sample,
+                **(
+                    {"index_reference_pair": _validated_index_pair(
+                        rows, start_date=start_date, end_date=end_date,
+                    )}
+                    if include_reference_pair and normalized_division == "N"
+                    else {}
+                ),
                 "has_continuation": bool(
                     response.headers.get("tr_cont")
                     or response.headers.get("tr-cont")

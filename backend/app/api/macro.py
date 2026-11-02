@@ -5,9 +5,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 
-from app.core.config import PROJECT_ROOT
+from app.core.config import PROJECT_ROOT, get_settings
+from app.macro.local_dji import read_local_dji_reference
 from app.core.stock_code import normalize_stock_code
 from app.event_evidence import (
     EVENT_REFERENCE_AS_OF_MODE,
@@ -174,6 +175,56 @@ def _scanner_dgs10_rate_reference(
         "source_unit": str(observation["source_unit"]),
         "reason": None,
     }
+
+
+
+def _local_dji_request_allowed(request: Request) -> bool:
+    """Fail closed for direct remote/public requests; dev servers bind loopback.
+
+    A reverse proxy that deliberately removes forwarding evidence is outside the
+    personal-local trust boundary. Do not expose this endpoint via a proxy.
+    """
+    from urllib.parse import urlsplit
+
+    host = request.headers.get("host", "")
+    try:
+        host_name = urlsplit("http://" + host).hostname
+    except ValueError:
+        return False
+    if request.client is None or request.client.host not in {"127.0.0.1", "::1"}:
+        return False
+    if host_name not in {"localhost", "127.0.0.1", "::1"}:
+        return False
+    if any(
+        request.headers.get(name)
+        for name in ("forwarded", "x-forwarded-for", "x-real-ip", "via")
+    ):
+        return False
+    for name in ("origin", "referer"):
+        value = request.headers.get(name)
+        if value:
+            try:
+                address = urlsplit(value)
+            except ValueError:
+                return False
+            if address.scheme != "http" or address.hostname not in {
+                "localhost", "127.0.0.1", "::1",
+            }:
+                return False
+    return True
+
+
+@router.get("/overseas-index-reference")
+def overseas_index_reference(request: Request, response: Response) -> dict[str, Any]:
+    """Opt-in personal-local KIS index observation, not a Scanner decision input."""
+    response.headers["Cache-Control"] = "no-store"
+    enabled = get_settings().stockscope_kis_dji_personal_local_reference_enabled
+    if not enabled:
+        return read_local_dji_reference(enabled=False)
+    if not _local_dji_request_allowed(request):
+        # No market data and no upstream calls for non-local or proxied access.
+        return read_local_dji_reference(enabled=False, reason="LOCAL_ACCESS_ONLY")
+    return read_local_dji_reference(enabled=True)
 
 
 @router.get("/reference-diagnostic")

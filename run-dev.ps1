@@ -40,7 +40,7 @@ foreach ($port in @(8000, 5173)) {
     }
 }
 
-$backendCommand = "chcp.com 65001 > `$null; `$env:PYTHONUTF8='1'; `$env:PYTHONIOENCODING='utf-8'; Set-Location '$root\backend'; & '$python' -m uvicorn app.main:app --reload"
+$backendCommand = "chcp.com 65001 > `$null; `$env:PYTHONUTF8='1'; `$env:PYTHONIOENCODING='utf-8'; Set-Location '$root\backend'; & '$python' -m uvicorn app.main:app --reload --host 127.0.0.1"
 $frontendCommand = "chcp.com 65001 > `$null; Set-Location '$root\frontend'; npm run dev"
 
 Start-Process powershell -ArgumentList @(
