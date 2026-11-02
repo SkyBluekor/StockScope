@@ -10,6 +10,7 @@ export type ScannerDjiView = {
 export function scannerDjiLocalPresentation(
   reference: ScannerDjiLocalReference | null,
   scannerDataDate: string,
+  nowMs: number = Date.now(),
 ): ScannerDjiView {
   const unavailable = (message: string): ScannerDjiView => ({
     headline: message, detail: "", available: false,
@@ -53,13 +54,15 @@ export function scannerDjiLocalPresentation(
     ? Date.parse(reference.observation_date + "T00:00:00Z") : NaN;
   const prevDate = dateStamp.test(reference.previous_observation_date)
     ? Date.parse(reference.previous_observation_date + "T00:00:00Z") : NaN;
+  const kstDay = Number.isFinite(fetched)
+    ? new Date(fetched + 9 * 60 * 60 * 1000).toISOString().slice(0, 10) : "";
   if (!Number.isFinite(current) || current <= 0
     || !Number.isFinite(previous) || previous <= 0
     || !Number.isFinite(reported) || Math.abs(reported) > 100
-    || !Number.isFinite(fetched) || fetched > Date.now() + 300_000
+    || !Number.isFinite(fetched) || fetched > nowMs + 300_000
     || !Number.isFinite(observed) || !Number.isFinite(prevDate)
-    || prevDate >= observed || observed > fetched
-    || (fetched - observed) / 86_400_000 > 9
+    || prevDate >= observed || reference.observation_date > kstDay
+    || (Date.parse(kstDay + "T00:00:00Z") - observed) / 86_400_000 > 7
     || Math.abs((current / previous - 1) * 100 - reported) > 0.015
   ) return unavailable("미국 다우존스 · 날짜 또는 지수값 검증 실패");
 

@@ -317,7 +317,7 @@ test("GLOBAL-01-S2 shows the KIS observation only as a current local reference",
     ai_transfer_approved: false, scanner_input_approved: false,
     risk_gate_input_approved: false, production_decision_approved: false,
   };
-  const view = scannerDjiLocalPresentation(base, "2026-10-30");
+  const view = scannerDjiLocalPresentation(base, "2026-10-30", Date.parse("2026-11-02T06:00:00Z"));
   assert.equal(view.available, true);
   assert.match(view.headline, /51,770.31/);
   assert.match(view.headline, /일간 값 변화 \+0.52%/);
@@ -326,17 +326,17 @@ test("GLOBAL-01-S2 shows the KIS observation only as a current local reference",
   assert.doesNotMatch(view.detail, /하락 원인입니다|매수하세요|매수 권장/);
   assert.equal(scannerDjiLocalPresentation({
     ...base, status: "UNAVAILABLE", reason: "PERSONAL_LOCAL_OPT_IN_REQUIRED",
-  }, "2026-10-30").available, false);
+  }, "2026-10-30", Date.parse("2026-11-02T06:00:00Z")).available, false);
   assert.equal(scannerDjiLocalPresentation({
     ...base, status: "UNAVAILABLE", reason: "LOCAL_ACCESS_ONLY",
-  }, "2026-10-30").available, false);
+  }, "2026-10-30", Date.parse("2026-11-02T06:00:00Z")).available, false);
   assert.equal(scannerDjiLocalPresentation({
     ...base, ai_transfer_approved: true,
-  }, "2026-10-30").available, false);
+  }, "2026-10-30", Date.parse("2026-11-02T06:00:00Z")).available, false);
   assert.equal(scannerDjiLocalPresentation({
     ...base, daily_change_pct: "9",
-  }, "2026-10-30").available, false);
+  }, "2026-10-30", Date.parse("2026-11-02T06:00:00Z")).available, false);
   assert.equal(scannerDjiLocalPresentation({
     ...base, observation_date: "2026-11-09",
-  }, "2026-10-30").available, false);
+  }, "2026-10-30", Date.parse("2026-11-02T06:00:00Z")).available, false);
 });
