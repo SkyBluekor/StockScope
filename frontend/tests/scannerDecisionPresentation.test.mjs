@@ -249,3 +249,51 @@ test("MACRO-01 does not leak analysis-day attribution between candidates", () =>
   assert.match(scannerMacroRatePresentation(reference, "2026-10-29").detail, /분석일 이후/);
   assert.match(scannerMacroRatePresentation(reference, "2026-11-01").detail, /현재 조회 기준 참고자료/);
 });
+
+test("MACRO-01 makes an old DGS10 observation visibly stale even if available_at is recent", () => {
+  const reference = {
+    status: "PARTIAL", source: "FRED_DGS10_LOCAL", source_unit: "PERCENT",
+    value_pct: "4.14", observation_date: "2025-12-30",
+    available_at: "2026-09-30T01:59:56+00:00",
+    source_published_at: null,
+    time_quality: "DATE_ONLY", decision_cutoff: "2026-11-02T01:00:00+00:00",
+    scanner_input_approved: false, risk_gate_input_approved: false,
+    production_decision_approved: false,
+  };
+  const view = scannerMacroRatePresentation(reference, "2026-10-30");
+  assert.equal(view.available, true);
+  assert.match(view.headline, /오래된 저장자료/);
+  assert.doesNotMatch(view.headline, /4\.14%/);
+  assert.match(view.detail, /2025-12-30/);
+  assert.match(view.detail, /현재 금리나 분석일의 최신 금리로 해석할 수 없어요/);
+  assert.match(view.detail, /원천 발표 시각 확인 불가/);
+});
+
+test("MACRO-01 accepts a recent business-day observation across the weekend", () => {
+  const reference = {
+    status: "AVAILABLE", source: "FRED_DGS10_LOCAL", source_unit: "PERCENT",
+    value_pct: "4.1", observation_date: "2026-10-30",
+    available_at: "2026-10-31T01:00:00+00:00",
+    source_published_at: "2026-10-30T22:00:00+00:00",
+    time_quality: "EXACT", decision_cutoff: "2026-11-02T01:00:00+00:00",
+    scanner_input_approved: false, risk_gate_input_approved: false,
+    production_decision_approved: false,
+  };
+  const view = scannerMacroRatePresentation(reference, "2026-10-30");
+  assert.equal(view.available, true);
+  assert.match(view.headline, /4\.10%/);
+  assert.doesNotMatch(view.headline, /오래된 저장자료/);
+  assert.match(view.detail, /자료 이용 가능 기록일 2026-10-31/);
+});
+
+test("MACRO-01 does not show an observation dated after the reference cutoff", () => {
+  const reference = {
+    status: "AVAILABLE", source: "FRED_DGS10_LOCAL", source_unit: "PERCENT",
+    value_pct: "4.1", observation_date: "2026-11-09",
+    available_at: "2026-11-01T01:00:00+00:00",
+    time_quality: "EXACT", decision_cutoff: "2026-11-02T01:00:00+00:00",
+    scanner_input_approved: false, risk_gate_input_approved: false,
+    production_decision_approved: false,
+  };
+  assert.equal(scannerMacroRatePresentation(reference, "2026-10-30").available, false);
+});
