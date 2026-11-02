@@ -152,11 +152,28 @@ def study(conn, *, end: str, days: int = 40, warmup: int = 120,
     start, final = common[warmup], common[-1]
     result["window"] = {"warmup_start": common[0], "evaluation_start": start,
                         "evaluation_end": final}
-    partial = conn.execute(
-        "SELECT DISTINCT bas_dd FROM day_status WHERE bas_dd>=? AND bas_dd<=?",
+    # The Market Store records market-closed days as status='empty'.
+    # Those are not missing trading sessions. Only a day with an actual
+    # 'data' marker but without all four stock/index market markers is partial.
+    # Never hardcode exchange holidays; trust the stored status contract.
+    recorded = conn.execute(
+        """SELECT DISTINCT bas_dd, status FROM day_status
+           WHERE bas_dd>=? AND bas_dd<=?
+             AND market IN ('KOSPI','KOSDAQ')
+             AND kind IN ('stock','index')""",
         (common[0], final),
     ).fetchall()
-    gap = sorted({r["bas_dd"] for r in partial} - set(common))
+    common_set = set(common)
+    active_dates = {str(r["bas_dd"]) for r in recorded if r["status"] == "data"}
+    empty_only_dates = sorted(
+        {str(r["bas_dd"]) for r in recorded} - active_dates - common_set
+    )
+    result["ignored_nontrading_marker_dates"] = {
+        "count": len(empty_only_dates),
+        "sample": empty_only_dates[:10],
+        "classification": "NO_DATA_MARKERS_IN_EITHER_KRX_MARKET",
+    }
+    gap = sorted(active_dates - common_set)
     if gap:
         result["reason"] = "PARTIAL_KRX_MARKET_DAYS"
         result["partial_dates_sample"] = gap[:10]

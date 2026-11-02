@@ -101,6 +101,47 @@ def test_strategy01_readonly_sample_selection_and_gap_detection(tmp_path: Path):
                for row in missing["sample"]["exclusions"])
 
 
+def test_strategy01_ignores_empty_holiday_markers_but_not_partial_data(tmp_path: Path):
+    # An extra date in the cache is NOT necessarily a trading day.
+    # Holiday/closure status='empty' must never block 160 complete KRX sessions.
+    path, end, _ = _db(tmp_path, sessions=160)
+    closed_day = "20260103"  # non-trading synthetic day inside the selected range
+    before = (path.stat().st_size, path.stat().st_mtime_ns)
+    with sqlite3.connect(path) as con:
+        for market in ("KOSPI", "KOSDAQ"):
+            for kind in ("stock", "index"):
+                con.execute(
+                    "INSERT INTO day_status VALUES (?,?,?,?)",
+                    (market, closed_day, kind, "empty"),
+                )
+    stable = (path.stat().st_size, path.stat().st_mtime_ns)
+    with open_readonly(path) as conn:
+        valid = study(conn, end=end, days=40, warmup=120, per_market=1,
+                      check_only=True)
+        with pytest.raises(sqlite3.OperationalError):
+            conn.execute("UPDATE day_status SET status='data'")
+    assert valid["status"] == "READY_TO_RESEARCH"
+    assert valid["ignored_nontrading_marker_dates"]["count"] == 1
+    assert valid["ignored_nontrading_marker_dates"]["sample"] == [closed_day]
+    assert (path.stat().st_size, path.stat().st_mtime_ns) == stable
+
+    # The same date has a KOSPI stock-data marker but lacks 3 other data
+    # markers. That is an incomplete source session, not a holiday.
+    with sqlite3.connect(path) as con:
+        con.execute(
+            "UPDATE day_status SET status='data' WHERE market='KOSPI'"
+            " AND bas_dd=? AND kind='stock'",
+            (closed_day,),
+        )
+    with open_readonly(path) as conn:
+        partial = study(conn, end=end, days=40, warmup=120, per_market=1,
+                        check_only=True)
+    assert partial["status"] == "DATA_INSUFFICIENT"
+    assert partial["reason"] == "PARTIAL_KRX_MARKET_DAYS"
+    assert closed_day in partial["partial_dates_sample"]
+    assert partial["ignored_nontrading_marker_dates"]["count"] == 0
+
+
 def test_strategy01_does_not_bootstrap_production_exit_mapping(tmp_path: Path):
     runtime = tmp_path / "research"
     runtime.mkdir()
