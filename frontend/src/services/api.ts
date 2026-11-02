@@ -491,6 +491,35 @@ export async function fetchProviderStatus(): Promise<ProviderStatus> {
   return asJson<ProviderStatus>(await fetch("/api/providers/status"));
 }
 
+
+export type ScannerMacroRateReference = {
+  status: "AVAILABLE" | "PARTIAL" | "UNAVAILABLE";
+  source: "FRED_DGS10_LOCAL";
+  series_id: "US_10Y_CONSTANT_MATURITY_YIELD";
+  value_pct: string | null;
+  observation_date: string | null;
+  available_at: string | null;
+  source_published_at: string | null;
+  provider_available_at: string | null;
+  time_quality: string | null;
+  source_unit: string | null;
+  decision_cutoff: string;
+  production_decision_approved: false;
+  scanner_input_approved: false;
+  risk_gate_input_approved: false;
+  reason: string | null;
+};
+
+/** Local read-only reference; an unavailable Macro DB must not block Scanner. */
+export async function fetchScannerMacroRateReference(
+  signal?: AbortSignal,
+): Promise<ScannerMacroRateReference | null> {
+  const body = await asJson<{ dgs10_reference?: ScannerMacroRateReference }>(
+    await fetch("/api/macro/reference-diagnostic", { signal, cache: "no-store" }),
+  );
+  return body.dgs10_reference ?? null;
+}
+
 export async function fetchMarketDashboard(): Promise<MarketDashboard> {
   return asJson<MarketDashboard>(await fetch("/api/market/dashboard"));
 }
@@ -3000,6 +3029,14 @@ export type ScannerResponse = {
     market: "KOSPI" | "KOSDAQ";
     data_date: string;
     regime: string;
+    /** Existing KRX EOD index rate on precisely the stock analysis date. */
+    index_change_rate_pct?: number | null;
+    index_data_date?: string | null;
+    risk_reference_status?: "DECLINE_RECHECK" | "REFERENCE_ONLY" | "UNKNOWN";
+    risk_reference_reason?: string;
+    risk_reference_source?: "KRX_EOD";
+    /** Never interpreted as a market-PANIC trade prohibition. */
+    risk_decision_effect?: "REFERENCE_ONLY_NOT_RISK_GATE";
   }>;
   partial_data?: boolean;
   preparation_required?: Array<{

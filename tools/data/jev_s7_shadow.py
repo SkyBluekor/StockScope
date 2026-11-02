@@ -19,6 +19,7 @@ for p in (ROOT, BACKEND):
         sys.path.insert(0, str(p))
 
 from app.jev.decision_reviewer_offline import DecisionReviewContractError
+from app.jev.scanner_reviewer_bridge import inspect_reviewer_candidate_readonly
 from app.jev.scanner_lineage_s7_4 import diagnose_capture, source_audit, REASONS_KO as LINEAGE_REASONS_KO
 from app.jev.scanner_integrity_s7_1 import EXPLAIN
 from app.jev.scanner_v4_readiness_s7_5 import diagnose_capture as diagnose_v4_readiness
@@ -50,7 +51,7 @@ def build_parser() -> argparse.ArgumentParser:
             "status", "inspect", "capture", "report", "run-approved",
             "prepare", "preflight", "source-audit", "lineage", "v4-readiness",
             "s8-readiness", "local-evidence", "local-history", "local-cohort", "local-outcomes",
-            "local-first-check", "local-readiness",
+            "local-first-check", "local-readiness", "reviewer-bridge",
         ),
     )
     parser.add_argument("--capture-id", default=None)
@@ -78,6 +79,15 @@ def execute(
             "reason": "SOURCE_RELEASE_TIME_AND_RIGHTS_AND_HORIZON_UNVERIFIED",
             "actual_provider_calls": 0,
         }
+    if args.mode == "reviewer-bridge":
+        if (args.save_preflight or not args.capture_id or args.sample_index is None
+                or args.evaluation_run_id is not None or args.market_db is not None
+                or args.limit != 60):
+            raise DecisionReviewContractError("REVIEWER_BRIDGE_ARGUMENT_CONFLICT")
+        return inspect_reviewer_candidate_readonly(
+            args.simulation_db or simulation_db_path(),
+            capture_id=args.capture_id, sample_index=args.sample_index,
+        )
     if args.mode == "run-approved":
         # Explicitly impossible to 'fix' legal/right provenance by a flag or
         # owner typing a broad permission. Never load tokens in this branch.
@@ -188,6 +198,24 @@ def display(value: dict[str, Any], *, as_json: bool = False) -> None:
     print("StockScope S7 · 실제 추천 후보 관찰")
     print("=" * 63)
     print(f"상태: {value.get('status', 'UNKNOWN')}")
+    if value.get("version") == "JEV_ACT2_PHASE1_REVIEW_BRIDGE_V1":
+        print("JEV Decision Reviewer · 동결 후보 Shadow 연결 점검")
+        print("상태: " + str(value["status"]))
+        print("사유: " + str(value["reason_code"]))
+        if value.get("baseline_action"):
+            print(
+                f"기존 판단: {value['baseline_action']} "
+                f"/ 순위 {value['baseline_rank']} "
+                f"/ Risk {value['baseline_risk']}"
+            )
+            print("입력 근거 항목: " + str(value["evidence_item_count"]) + "건")
+        if value.get("candidate_category") == "LEGACY_LIMITED":
+            print("레거시 원본 전략 버전/해시 없음 · 의미 분석용 파생 식별자만 확인됨")
+            print("엄격한 JEV 입력 계약: STRATEGY_IDENTITY_MISMATCH (해제 불가)")
+            print("※ 다음 새 Capture에는 승인된 원본 전략 정책 증명이 필요합니다.")
+        print("실제 모델 사용: 보류 · 원천자료 권한/공개 시점/시험 승인 필요")
+        print("※ 기존 추천·Risk 불변 / AI 호출 0 / DB 쓰기 0 / AI 개선 효과 미검증")
+        return
     if value.get("version") == "JEV_LOCAL_PIPELINE_READINESS_S13_V1":
         policy = value["policy"]
         print(

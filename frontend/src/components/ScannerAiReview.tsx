@@ -1,9 +1,13 @@
+import { useState } from "react";
+import ScannerOwnedReviewB, { ownedReviewStatus } from "./ScannerOwnedReviewB";
+import type { OwnedJevResult } from "../services/jevApi";
 import type { ScannerCandidate, ScannerResponse } from "../services/api";
 import type { JevMonitorItem } from "../services/jevApi";
 import { scannerAiReviewStatus } from "./scannerAiReviewStatus";
 
 type Props = {
   candidate: ScannerCandidate;
+  sampleIndex: number;
   result: ScannerResponse;
   enabled: boolean;
   available: boolean;
@@ -14,7 +18,7 @@ type Props = {
   onRefresh: () => void;
 };
 
-export default function ScannerAiReview({
+function ScannerAiDiagnostics({
   candidate, result, enabled, available, featureStatus,
   review, loading, loadError, onRefresh,
 }: Props) {
@@ -34,7 +38,7 @@ export default function ScannerAiReview({
         ? "기본 근거 확인 완료 · AI 모델 미실행"
         : "기본 분석과 별개의 AI 검토";
   return (
-    <section className="scanner-jev-review" aria-label="선택 종목 AI 검토 근거">
+    <section className="scanner-jev-review" aria-label="JEV 상세 검토 기록">
       <div className={"scanner-jev-motion-status " + tone + (modelRunning ? " is-running" : "")} data-review-state={state.state} role="status">
         <span className="scanner-jev-motion-icon" aria-hidden="true">{verifiedModel ? "✓" : modelRunning ? "·" : "i"}</span>
         <div>
@@ -78,6 +82,92 @@ export default function ScannerAiReview({
         </button>
       )}
       <small>새로운 Jev 모델 호출은 실행하지 않습니다.</small>
+    </section>
+  );
+}
+
+/**
+ * Plan A: show the actual Scanner verdict and JEV state without technical
+ * reports by default. The existing detailed review stays intact behind a
+ * disclosure and is mounted only when explicitly opened by the user.
+ *
+ * No model request or change to the original Scanner decision is made here.
+ */
+export default function ScannerAiReview(props: Props) {
+  const { candidate, result, enabled, available, featureStatus, review,
+    loading, loadError, onRefresh, sampleIndex } = props;
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [ownedReview, setOwnedReview] = useState<OwnedJevResult | null>(null);
+  const captureId = result.prospective_capture?.canonical_capture_id
+    || result.prospective_capture?.capture_id || null;
+  const linkedOwned = ownedReview
+    && ownedReview.selected_stock.ticker === candidate.code
+    && ownedReview.selected_stock.market === candidate.market
+    && ownedReview.selected_stock.sample_index === sampleIndex
+    && ownedReview.selected_stock.capture_id === captureId
+    ? ownedReview : null;
+  const manualStatus = ownedReviewStatus(linkedOwned);
+
+  const state = scannerAiReviewStatus({
+    candidate, result, enabled, available, featureStatus, review,
+  });
+  const verified = !loading && !loadError && state.source === "STORED_JEV";
+  const active = verified || state.state === "RUNNING" || state.state === "QUEUED";
+  const status = manualStatus || (loading ? "기존 검토 기록 확인 중"
+    : verified ? (
+      state.state === "NEEDS_REVIEW" ? "추가 확인 필요"
+      : state.state === "ABSTAIN" ? "판단 보류"
+      : "검토 완료"
+    )
+    : state.state === "RUNNING" ? "검토 진행 중"
+    : state.state === "QUEUED" ? "검토 대기 중"
+    : loadError ? "기존 검토 기록 조회 실패"
+    : "실제 JEV 검토 미실행");
+  return (
+    <section className="scanner-jev-review scanner-jev-compact" aria-label="선택 종목 AI 검토 근거"
+      data-jev-primary-summary="true">
+      <strong className="scanner-jev-compact-name">
+        {candidate.name || candidate.code} ({candidate.code})
+      </strong>
+      <dl className="scanner-jev-compact-facts">
+        <div><dt>Scanner 판단</dt><dd>{candidate.action_label || candidate.action}</dd></div>
+        <div><dt>JEV 검토</dt><dd data-jev-primary-status={state.state}>{status}</dd></div>
+        {verified && review?.completed_at && (
+          <div><dt>검토 시각</dt><dd>{review.completed_at}</dd></div>
+        )}
+      </dl>
+      {verified && review?.reason_codes && review.reason_codes.length > 0 && (
+        <p className="scanner-jev-compact-note">
+          확인 항목: {review.reason_codes.slice(0, 3).join(", ")}
+        </p>
+      )}
+      {candidate.market === "KOSPI" || candidate.market === "KOSDAQ" ? (
+        <ScannerOwnedReviewB
+          key={[captureId, sampleIndex, candidate.market, candidate.code].join(":")}
+          captureId={captureId}
+          sampleIndex={sampleIndex}
+          market={candidate.market}
+          ticker={candidate.code}
+          onStoredReview={setOwnedReview}
+        />
+      ) : (
+        <p>해당 시장의 실제 종목 식별을 확인할 수 없습니다.</p>
+      )}
+      {verified && available && enabled && featureStatus === "ACTIVE" && (
+        <button type="button" onClick={onRefresh} disabled={loading}>
+          저장된 결과 새로고침
+        </button>
+      )}
+      {!linkedOwned && !active && (
+        <small className="scanner-jev-compact-note">
+          기존 V4 자동 검토는 비활성 상태입니다. 위 수동 검토는 직접 작성한 문장만 사용합니다.
+        </small>
+      )}
+      <details className="scanner-jev-compact-details"
+        onToggle={event => { if (event.target === event.currentTarget) setDetailsOpen(event.currentTarget.open); }}>
+        <summary>검토 근거·개발자 진단</summary>
+        {detailsOpen && <ScannerAiDiagnostics {...props} />}
+      </details>
     </section>
   );
 }

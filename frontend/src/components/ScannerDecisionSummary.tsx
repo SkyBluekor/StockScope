@@ -1,15 +1,50 @@
-import type { ScannerCandidate } from "../services/api";
-import { beginnerCandidatePresentation } from "./scannerDecisionPresentation";
+import { useEffect, useState } from "react";
+import {
+  fetchScannerMacroRateReference,
+  type ScannerMacroRateReference,
+  type ScannerCandidate, type ScannerResponse,
+} from "../services/api";
+import { scannerMacroRatePresentation } from "./scannerMacroRateReference";
+import { beginnerCandidatePresentation, scannerEntryGuidance } from "./scannerDecisionPresentation";
 import { scannerQuoteTruth, type ScannerQuoteSnapshot } from "./scannerQuoteTruth";
 
 type Props = {
   candidate: ScannerCandidate;
+  marketContext: ScannerResponse["market_summary"][number] | null;
   quoteSnapshot: ScannerQuoteSnapshot;
   onOpenPriceTab: () => void;
 };
 
-export default function ScannerDecisionSummary({ candidate, quoteSnapshot, onOpenPriceTab }: Props) {
+export default function ScannerDecisionSummary({ candidate, marketContext, quoteSnapshot, onOpenPriceTab }: Props) {
+  const macroIdentity = candidate.market + ":" + candidate.code + ":" + candidate.data_date;
+  const [macro, setMacro] = useState<{
+    identity: string;
+    state: "LOADING" | "READY" | "UNAVAILABLE";
+    value: ScannerMacroRateReference | null;
+  } | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    setMacro({ identity: macroIdentity, state: "LOADING", value: null });
+    void fetchScannerMacroRateReference(controller.signal)
+      .then(value => {
+        if (!controller.signal.aborted) {
+          setMacro({ identity: macroIdentity, state: "READY", value });
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setMacro({ identity: macroIdentity, state: "UNAVAILABLE", value: null });
+        }
+      });
+    return () => controller.abort();
+  }, [macroIdentity]);
+  const macroForCandidate = macro?.identity === macroIdentity ? macro : null;
+  const macroView = scannerMacroRatePresentation(
+    macroForCandidate?.state === "READY" ? macroForCandidate.value : null,
+    candidate.data_date,
+  );
   const view = beginnerCandidatePresentation(candidate);
+  const entry = scannerEntryGuidance(candidate, marketContext);
   const quote = scannerQuoteTruth(candidate, quoteSnapshot);
   const quoteAvailable = quoteSnapshot.quote !== null && !quoteSnapshot.loading
     && !quoteSnapshot.error && quote.state !== "ERROR";
@@ -21,11 +56,14 @@ export default function ScannerDecisionSummary({ candidate, quoteSnapshot, onOpe
     || candidate.conditions.missing > 0;
   return (
     <section className="scanner-ux-decision scanner-ux2-decision" aria-label="선택한 종목의 쉬운 판단">
-      <span className="scanner-ux-eyebrow">분석일 기준 판단 · 최신 전략 확인 전</span>
-      <h4>{view.headline}</h4>
+      <div className="scanner-entry-guidance" data-scanner-entry-guidance={entry.state} role="status">
+        <span className="scanner-ux-eyebrow">신규 진입 판단 · 분석일 기준 (현재 매수 허가 아님)</span>
+        <h4>{entry.headline}</h4>
+        <p>{entry.explanation}</p>
+      </div>
       <p className="scanner-ux2-decision-why">
-        <strong>조건 현황</strong>
-        <span>{view.why}</span>
+        <strong>조건 현황 · 종목 전략</strong>
+        <span>{view.headline} {view.why}</span>
       </p>
       {view.missingCount > 0 && (
         <div className="scanner-ux4-missing" aria-label="미충족 전략 조건">
@@ -53,6 +91,42 @@ export default function ScannerDecisionSummary({ candidate, quoteSnapshot, onOpe
           )}
         </div>
       )}
+      <section aria-label="분석일 시장 위험" className="scanner-ux2-decision-why">
+        <strong>시장 위험 · 분석일 기준</strong>
+        {marketContext?.risk_reference_status === "DECLINE_RECHECK" ? (
+          <span>
+            {candidate.market === "KOSDAQ" ? "코스닥" : "코스피"} 지수가
+            {" "}{marketContext.index_change_rate_pct?.toFixed(2)}% 하락·약세 신호를 보였습니다.
+            종목 자체의 전략 조건과 별개로 진입 전 시장 상황을 다시 확인하세요.
+            이 경고만으로 기존 Scanner의 진입 판정이나 순위를 바꾸지는 않았습니다.
+            {" "}({marketContext.index_data_date ?? candidate.data_date} · KRX 확정 일별)
+          </span>
+        ) : marketContext?.risk_reference_status === "REFERENCE_ONLY" ? (
+          <span>
+            {candidate.market === "KOSDAQ" ? "코스닥" : "코스피"} 지수
+            {" "}{marketContext.index_change_rate_pct != null ? marketContext.index_change_rate_pct.toFixed(2) + "%" : "변동률 확인 필요"}.
+            기존 지수 규칙에서 하락 주의 신호는 없지만 다른 위험이 없다는 뜻은 아닙니다.
+            {" "}({marketContext.index_data_date ?? candidate.data_date} · KRX 확정 일별)
+          </span>
+        ) : (
+          <span>
+            분석일과 일치하는 KRX 지수 변동률을 확인하지 못했습니다.
+            시장이 안전하다는 뜻이 아니며, 현재 전략 판단과 별도로 확인해야 합니다.
+          </span>
+        )}
+      </section>
+      <section className="scanner-ux2-decision-why" aria-label="해외 금리 참고자료">
+        <strong>해외 금리 · 현재 조회 참고</strong>
+        <span>{!macroForCandidate || macroForCandidate.state === "LOADING"
+          ? "미국 10년물 국채금리 저장자료 확인 중…"
+          : macroView.headline}</span>
+        {macroForCandidate?.state === "READY" && macroView.available && (
+          <small>{macroView.detail}</small>
+        )}
+      </section>
+      <p className="scanner-ux6-validation">
+        미국 금리는 참고 설명일 뿐이며 국제 사건·공시와 함께 현재 Scanner의 전략 점수와 진입 차단에 자동 반영되지 않았습니다.
+      </p>
       {(candidate.risk.warning || view.asOfPrice.state === "OUT_OF_RANGE") && (
         <p className="scanner-ux5-caution"><strong>주의</strong> {view.caution}</p>
       )}
@@ -70,7 +144,11 @@ export default function ScannerDecisionSummary({ candidate, quoteSnapshot, onOpe
       </section>
       <p className="scanner-ux5-next">
         <strong>다음 확인</strong>
-        {keepAsOfNextStep ? view.next
+        {entry.state === "MARKET_RECHECK"
+          ? "시장 하락 위험과 최신 시세·전략을 재확인한 뒤 신규 진입을 판단하세요."
+          : entry.state === "MARKET_UNKNOWN" && !keepAsOfNextStep
+            ? "해당 분석일의 시장 근거와 최신 시세·위험을 확인하세요."
+          : keepAsOfNextStep ? view.next
           : quote.state === "NOT_CHECKED" ? "전략·가격 탭에서 새 시세를 확인한 뒤 전략·위험을 재검증하세요."
           : quote.state === "CHECKING" ? "시세 확인 중입니다. 분석일 판단만 참고하세요."
             : quote.state === "ERROR" ? "새 시세를 다시 확인한 뒤 전략·위험을 검증하세요."

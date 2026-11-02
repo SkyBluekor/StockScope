@@ -56,7 +56,14 @@ def test_scanner_job_owns_freshness_then_analysis_without_decision_version_bump(
     job_start = api_source.index("async def _run_scanner_job")
     job_end = api_source.index('@router.post("/scanner/freshness")', job_start)
     job_source = api_source[job_start:job_end]
-    assert job_source.index("prepare_latest_confirmed_data") < job_source.index("service.run(")
+    # Freshness is now routed through the API's date-regression guard.
+    # Verify the real prepare call inside the guard and its order before analysis.
+    guarded_call = "_prepare_scanner_latest_data("
+    assert job_source.index(guarded_call) < job_source.index("service.run(")
+    guard_start = api_source.index("async def _prepare_scanner_latest_data(")
+    guard_end = api_source.index("def _prospective_service()", guard_start)
+    guard_source = api_source[guard_start:guard_end]
+    assert "await service.prepare_latest_confirmed_data(" in guard_source
     assert '"freshness_failure"' in job_source
     assert '"resolved_as_of_date"' in job_source
     assert '"completed_stages"' in job_source

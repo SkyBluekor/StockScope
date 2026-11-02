@@ -1,4 +1,4 @@
-import type { ConcreteEntryRiskGuide, ScannerCandidate } from "../services/api";
+import type { ConcreteEntryRiskGuide, ScannerCandidate, ScannerResponse } from "../services/api";
 
 export type PriceRuleAssessment = {
   state: "IN_RANGE" | "OUT_OF_RANGE" | "UNKNOWN";
@@ -218,4 +218,70 @@ export function beginnerCandidatePresentation(candidate: ScannerCandidate): Begi
     nextActionLabel: price.state === "UNKNOWN" ? "가격 기준 확인" : "새 시세·전략 확인",
     nextActionContext: price.label,
   };
+}
+
+
+// Stage 2: current presentation only. Never change Scanner/Risk/frozen outcomes.
+type MarketReference = ScannerResponse["market_summary"][number];
+export type ScannerEntryGuidance = {
+  state: "EXISTING_RISK" | "NOT_A_CANDIDATE" | "CONDITIONS_WAIT"
+    | "MARKET_RECHECK" | "PRICE_RECHECK" | "MARKET_UNKNOWN" | "BASELINE_RECHECK";
+  headline: string;
+  explanation: string;
+};
+
+export function scannerEntryGuidance(
+  candidate: ScannerCandidate, market: MarketReference | null,
+): ScannerEntryGuidance {
+  const rate = market?.index_change_rate_pct;
+  const aligned = market?.market === candidate.market
+    && market?.data_date === candidate.data_date
+    && market?.index_data_date === candidate.data_date
+    && market?.risk_reference_source === "KRX_EOD"
+    && market?.risk_decision_effect === "REFERENCE_ONLY_NOT_RISK_GATE"
+    && typeof rate === "number" && Number.isFinite(rate);
+  const declining = aligned && market?.risk_reference_status === "DECLINE_RECHECK"
+    && market.regime === "TREND_DOWN" && rate <= -1;
+  const marketKnown = aligned
+    && (declining || market?.risk_reference_status === "REFERENCE_ONLY");
+
+  if (candidate.risk?.warning || candidate.priority?.tier === "RISK_HOLD"
+    || candidate.entry_risk_guide?.action.status === "RISK_BLOCKED") {
+    return { state: "EXISTING_RISK", headline: "기존 위험 신호 · 진입 판단 보류",
+      explanation: "Scanner에 이미 기록된 위험 판단을 먼저 확인하세요. 시장 참고 자료로 기존 위험 상태를 변경하지 않았습니다." };
+  }
+  if (candidate.action === "NO_TRADE" || candidate.priority?.tier === "LOW_PRIORITY") {
+    return { state: "NOT_A_CANDIDATE", headline: "기존 Scanner에서 신규 진입 후보가 아니에요",
+      explanation: "기존 종목 판단을 유지합니다. 시장 참고 자료가 신규 진입 허가를 만들지 않습니다." };
+  }
+  const count = candidate.conditions;
+  if (!count || !Number.isFinite(count.total) || count.total <= 0
+    || !Number.isFinite(count.passed) || count.passed < 0 || count.passed > count.total
+    || !Number.isFinite(count.missing) || count.missing < 0) {
+    return { state: "CONDITIONS_WAIT", headline: "전략 자료 부족 · 신규 진입 판단 보류",
+      explanation: "분석일 전략 조건이 검증되지 않았습니다. 자료 부족을 진입 가능으로 판단하지 않습니다." };
+  }
+  if (count.missing > 0 || candidate.action === "WAIT" || candidate.action === "NEEDS_VALIDATION") {
+    return { state: "CONDITIONS_WAIT", headline: "전략 조건 재확인 · 진입 대기",
+      explanation: "기존 종목 조건이나 후보 상태가 미충족입니다. 시장 경고와 별개로 전략 조건부터 확인하세요." };
+  }
+  if (declining) {
+    return { state: "MARKET_RECHECK", headline: "시장 하락 위험 · 신규 진입 재확인 필요",
+      explanation: "분석일 " + candidate.data_date + " " + (candidate.market === "KOSDAQ" ? "코스닥" : "코스피")
+        + " 지수 " + rate.toFixed(2) + "%로 기존 하락 주의 신호가 확인됐습니다. "
+        + "전략 조건이 충족돼도 신규 진입 전 시장 상황을 재확인하세요. "
+        + "실제 Risk Gate 차단이나 후보 순위 변경은 아닙니다." };
+  }
+  if (beginnerCandidatePresentation(candidate).asOfPrice.state === "OUT_OF_RANGE") {
+    return { state: "PRICE_RECHECK", headline: "참고 가격 범위 밖 · 진입 전 가격 재확인",
+      explanation: "분석 당시 참고 가격이 조건 범위를 벗어났습니다. 새 시세와 전략을 다시 확인하세요." };
+  }
+  if (!marketKnown) {
+    return { state: "MARKET_UNKNOWN", headline: "시장 자료 확인 필요 · 신규 진입 판단 보류",
+      explanation: "분석일과 일치하는 검증된 KRX 지수 정보가 없습니다. 자료 부족은 안전 신호가 아닙니다." };
+  }
+  return { state: "BASELINE_RECHECK", headline: "전략 조건 충족 · 최신 진입 위험 재확인",
+    explanation: "분석일 " + candidate.data_date + " 지수 " + rate.toFixed(2)
+      + "%에는 기존 하락 주의 신호가 없습니다. 다른 위험까지 안전하다는 뜻은 아니며 "
+      + "최신 시세와 전략을 확인한 뒤 진입 여부를 판단해야 합니다." };
 }

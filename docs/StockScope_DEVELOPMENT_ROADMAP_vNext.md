@@ -1,5 +1,7 @@
 # StockScope Development Roadmap vNext
 
+> **과거 기술 로드맵(참고용):** 현재 제품 목적 및 실제 개발 순서는 [StockScope 제품 실행계획서](./STOCKSCOPE_PRODUCT_EXECUTION_PLAN.md)가 우선한다. 이 문서의 기존 '현재 실행 순서'가 새 제품 우선순위를 자동 승인하지 않는다. 고정 기술·데이터 보존 기준은 계속 유효하다.
+
 작성일: 2026-09-27 (Asia/Seoul) · 설계 버전: `vNext-2026-09-27`
 
 

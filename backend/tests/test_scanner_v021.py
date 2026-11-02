@@ -317,3 +317,181 @@ def test_three_year_evidence_prepare_uses_real_three_year_window_and_rechecks_re
     assert result["readiness"]["ready"] is True
     assert result["readiness"]["stock_warmup_rows"] >= 120
     assert result["readiness"]["index_warmup_rows"] >= 120
+
+
+
+def test_stage2_market_risk_reference_is_exact_day_and_nonblocking() -> None:
+    """A 1%+ decline is a user warning, not an invented PANIC policy."""
+    from app.api.backtest import _market_risk_reference
+    from app.strategy.context import regime_from_index
+    from app.strategy.engine import StrategyEngine
+    from app.strategy.models import MarketRegime, StrategyInput
+
+    store = _market_risk_reference(
+        "KOSDAQ",
+        "2026-10-29",
+        [
+            {"date": "2026-10-28", "change_rate": 1.2},
+            {"date": "2026-10-29", "change_rate": -2.34},
+        ],
+    )
+    assert store["data_date"] == "2026-10-29"
+    assert store["index_data_date"] == "2026-10-29"
+    assert store["index_change_rate_pct"] == -2.34
+    assert store["regime"] == "TREND_DOWN"
+    assert store["risk_reference_status"] == "DECLINE_RECHECK"
+    assert store["risk_decision_effect"] == "REFERENCE_ONLY_NOT_RISK_GATE"
+
+    # This intentionally does not change the shared historical regime function
+    # or activate the StrategyEngine PANIC gate for negative index days.
+    assert regime_from_index(-2.34) == MarketRegime.TREND_DOWN
+    input = StrategyInput(code="005930", market="KOSPI", current_price=50000.0)
+    input.market_regime = regime_from_index(-2.34)
+    assert StrategyEngine._risk_gate(input) == []
+
+
+def test_stage2_market_reference_never_uses_previous_day_or_invalid_rate() -> None:
+    from app.api.backtest import _market_risk_reference
+    cases = [
+        ([{"date": "2026-10-28", "change_rate": -4.2}], "INDEX_DATE_NOT_ALIGNED"),
+        ([{"date": "2026-10-29", "change_rate": None}], "INDEX_RATE_MISSING"),
+        ([{"date": "2026-10-29", "change_rate": float("nan")}], "INDEX_RATE_MISSING"),
+    ]
+    for index_rows, reason in cases:
+        result = _market_risk_reference(
+            "KOSDAQ", "2026-10-29", index_rows,
+        )
+        assert result["regime"] == "UNKNOWN"
+        assert result["index_change_rate_pct"] is None
+        assert result["index_data_date"] == (None if reason == "INDEX_DATE_NOT_ALIGNED" else "2026-10-29")
+        assert result["risk_reference_status"] == "UNKNOWN"
+        assert result["risk_reference_reason"] == reason
+
+
+def test_stage2_market_reference_never_labels_normal_as_risk_free() -> None:
+    from app.api.backtest import _market_risk_reference
+    result = _market_risk_reference(
+        "KOSPI", "2026-10-29",
+        [{"date": "2026-10-29", "change_rate": 0.3}],
+    )
+    assert result["regime"] == "RANGE"
+    assert result["risk_reference_status"] == "REFERENCE_ONLY"
+    assert result["risk_reference_reason"] == "NO_EXISTING_DECLINE_SIGNAL"
+    assert result["risk_decision_effect"] == "REFERENCE_ONLY_NOT_RISK_GATE"
+
+
+
+def test_stage2_api_overlay_does_not_mutate_frozen_candidates_or_rank() -> None:
+    from copy import deepcopy
+    from types import SimpleNamespace
+    from app.api.backtest import _attach_scanner_market_reference
+
+    class StubMarketStore:
+        calls: list[tuple[str, str, str]] = []
+
+        def index_series(self, market, start_key, end_key):
+            self.calls.append((market, start_key, end_key))
+            return SimpleNamespace(rows={
+                "20261029": {"date": "2026-10-29", "change_rate": -1.71},
+            })
+
+    result = {
+        "market_summary": [{"market": "KOSDAQ", "data_date": "2026-10-29", "regime": "TREND_DOWN"}],
+        "candidates": [{"code": "171090", "action": "ENTRY_CANDIDATE", "risk": {"warning": False}}],
+        "more_candidates": [],
+    }
+    before = deepcopy(result["candidates"])
+    store = StubMarketStore()
+    _attach_scanner_market_reference(result, store)
+
+    assert store.calls == [("KOSDAQ", "20261029", "20261029")]
+    assert result["candidates"] == before
+    assert result["market_summary"][0]["risk_reference_status"] == "DECLINE_RECHECK"
+    assert result["market_summary"][0]["index_change_rate_pct"] == -1.71
+    assert result["market_summary"][0]["risk_decision_effect"] == "REFERENCE_ONLY_NOT_RISK_GATE"
+
+
+def _scanner_date_test_service(tmp_path: Path, *, incomplete_kosdaq_index: bool = False):
+    """Isolated SQLite fixture, never the user's runtime market database."""
+    class StubKrx:
+        @staticmethod
+        def _today_kst() -> date:
+            return date(2026, 11, 2)
+
+    store = HistoricalMarketStore(tmp_path / "scanner_date_guard.db")
+    for market in ("KOSPI", "KOSDAQ"):
+        for day in ("20261029", "20261030"):
+            store.put_stock_day(
+                market, day, [{"code": "005930", "date": day, "close": 10000}],
+                stable=True,
+            )
+            if not (incomplete_kosdaq_index and market == "KOSDAQ" and day == "20261030"):
+                store.replace_index_day(
+                    market, day, {"date": day, "change_rate": -1.3},
+                    stable=True,
+                )
+    service = object.__new__(StockScannerService)
+    service.krx = StubKrx()
+    service.market_store = store
+    return service
+
+
+def test_scanner_automatic_date_uses_latest_common_krx_day_over_stale_browser(tmp_path: Path) -> None:
+    from app.api.backtest import _scanner_verified_known_date
+    service = _scanner_date_test_service(tmp_path)
+    assert _scanner_verified_known_date(service, "ALL", "2026-10-29") == "2026-10-30"
+    assert _scanner_verified_known_date(service, "ALL", None) == "2026-10-30"
+    assert _scanner_verified_known_date(service, "ALL", "2026-10-30") == "2026-10-30"
+
+
+def test_scanner_automatic_date_requires_stock_and_index_for_every_market(tmp_path: Path) -> None:
+    from app.api.backtest import _scanner_verified_known_date
+    service = _scanner_date_test_service(tmp_path, incomplete_kosdaq_index=True)
+    assert _scanner_verified_known_date(service, "ALL", "2026-10-30") == "2026-10-29"
+    assert _scanner_verified_known_date(service, "KOSPI", "2026-10-29") == "2026-10-30"
+    assert _scanner_verified_known_date(service, "KOSDAQ", "2026-10-29") == "2026-10-29"
+
+
+def test_scanner_automatic_date_rejects_unverified_future_browser_date(tmp_path: Path) -> None:
+    from app.api.backtest import _scanner_verified_known_date
+    service = _scanner_date_test_service(tmp_path)
+    assert _scanner_verified_known_date(service, "ALL", "2026-11-03") == "2026-10-30"
+    assert _scanner_verified_known_date(service, "ALL", "not-a-date") == "2026-10-30"
+
+
+def test_scanner_automatic_date_wrapper_pins_baseline_and_rejects_regression(tmp_path: Path) -> None:
+    from app.api.backtest import _prepare_scanner_latest_data
+    service = _scanner_date_test_service(tmp_path)
+    received = []
+
+    async def stale_provider(**kwargs):
+        received.append(kwargs["known_data_date"])
+        return {"status": "READY", "resolved_as_of_date": "2026-10-29"}
+
+    service.prepare_latest_confirmed_data = stale_provider
+    result = asyncio.run(_prepare_scanner_latest_data(
+        service, market_scope="ALL", known_data_date="2026-10-29",
+    ))
+    assert received == ["2026-10-30"]
+    assert result["status"] == "DATA_INCONSISTENT"
+    assert result["resolved_as_of_date"] is None
+    assert result["available_data_date"] == "2026-10-30"
+    assert result["fallback_allowed"] is False
+
+
+def test_scanner_automatic_date_wrapper_keeps_valid_newer_or_equal_date(tmp_path: Path) -> None:
+    from app.api.backtest import _prepare_scanner_latest_data
+    service = _scanner_date_test_service(tmp_path)
+    received = []
+
+    async def current_provider(**kwargs):
+        received.append(kwargs["known_data_date"])
+        return {"status": "READY", "resolved_as_of_date": "2026-10-30"}
+
+    service.prepare_latest_confirmed_data = current_provider
+    result = asyncio.run(_prepare_scanner_latest_data(
+        service, market_scope="ALL", known_data_date="2026-10-29",
+    ))
+    assert received == ["2026-10-30"]
+    assert result["status"] == "READY"
+    assert result["resolved_as_of_date"] == "2026-10-30"

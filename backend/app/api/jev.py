@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from app.core.config import PROJECT_ROOT
@@ -12,6 +13,7 @@ from app.jev.review_models import (
     JEV_USER_FEATURE_DISABLED,
 )
 from app.jev.review_service import JevManualReviewService
+from app.jev.owned_review_b import OwnedReviewService, OwnedReviewError, CONFIRM_PHRASE
 from app.jev.typesafe_catalog import (
     TypeSafeJevCatalog,
     TypeSafeJevCatalogError,
@@ -221,3 +223,86 @@ async def request_jev_manual_review(
         sample_index=payload.sample_index,
         review_epoch=payload.review_epoch,
     )
+
+
+
+# Plan B: separate from the historical V4 residual-semantic reviewer.
+# Only self-authored words may reach the actual TypeSafe provider; Scanner
+# source snapshots, licensed market data and news are never sent.
+class OwnedReviewInput(BaseModel):
+    capture_id: str = Field(..., min_length=1, max_length=200)
+    sample_index: int = Field(..., ge=0, le=100)
+    market: str = Field(..., pattern="^(KOSPI|KOSDAQ)$")
+    ticker: str = Field(..., pattern=r"^\d{6}$")
+    required_condition: str = Field(..., min_length=16, max_length=500)
+    observed_meaning: str = Field(..., min_length=16, max_length=500)
+
+
+class OwnedReviewExecute(OwnedReviewInput):
+    preflight_sha256: str = Field(..., pattern=r"^[0-9a-f]{64}$")
+    confirm_paid_call: str
+    original_authored_attested: bool
+
+
+def _owned_error(exc: OwnedReviewError) -> HTTPException:
+    return HTTPException(status_code=exc.http_status, detail={
+        "code": exc.code,
+        "message": "JEV 수동 검토 준비 또는 권한 확인에 실패했습니다.",
+    })
+
+
+@router.post("/manual-owned/preview")
+def preview_owned_jev_review(payload: OwnedReviewInput) -> dict[str, object]:
+    """Pure preflight. No TypeSafe HTTP and no data writes."""
+    try:
+        preview = OwnedReviewService(_db()).prepare(payload.model_dump())
+    except OwnedReviewError as exc:
+        raise _owned_error(exc) from exc
+    preview.pop("_request", None)
+    return preview
+
+
+@router.get("/manual-owned/latest")
+def latest_owned_jev_review(
+    capture_id: str = Query(min_length=1, max_length=200),
+    sample_index: int = Query(ge=0, le=100),
+    market: str = Query(pattern="^(KOSPI|KOSDAQ)$"),
+    ticker: str = Query(pattern=r"^\d{6}$"),
+) -> dict[str, object]:
+    """Read only: return an existing local, immutable review for this candidate."""
+    try:
+        result = OwnedReviewService(_db()).latest(capture_id, sample_index, market, ticker)
+        return {"review": result}
+    except OwnedReviewError as exc:
+        raise _owned_error(exc) from exc
+
+
+@router.post("/manual-owned/execute")
+async def execute_owned_jev_review(
+    payload: OwnedReviewExecute, request: Request,
+) -> dict[str, object]:
+    """Only a loopback user-initiated POST may authorize a one-shot paid call.
+
+    The configured endpoint is *disabled by default*. Explicit acceptance of
+    cost-unknown one-call billing and text ownership is mandatory.
+    """
+    host = request.client.host if request.client else ""
+    origin = request.headers.get("origin", "")
+    origin_host = urlparse(origin).hostname if origin else None
+    if host not in {"127.0.0.1", "::1"} or (
+        origin_host is not None and origin_host not in {"127.0.0.1", "localhost", "::1"}
+    ):
+        raise HTTPException(status_code=403, detail={"code": "JEV_B_LOOPBACK_ONLY"})
+    if request.headers.get("X-StockScope-JEV-Approve") != "paid-once-confirmed-v1":
+        raise HTTPException(status_code=403, detail={"code": "JEV_B_CONFIRM_HEADER_REQUIRED"})
+    try:
+        return await OwnedReviewService(_db()).execute(
+            payload.model_dump(exclude={
+                "preflight_sha256", "confirm_paid_call", "original_authored_attested",
+            }),
+            preflight_sha256=payload.preflight_sha256,
+            explicit_confirm=payload.confirm_paid_call,
+            original_authored_attested=payload.original_authored_attested,
+        )
+    except OwnedReviewError as exc:
+        raise _owned_error(exc) from exc

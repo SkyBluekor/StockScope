@@ -330,3 +330,222 @@ def test_malformed_abstain_reason_is_rejected_not_executed(tmp_path):
     record = OfflineFakeShadowSession().inspect(projection, invalid)
     assert record["status"] == "ERROR"
     assert record["failure_code"] == "ABSTAIN_REASON_INVALID"
+
+
+# ACT2 Phase-1 integration: reuse S3 frozen source, S8's non-authorizing
+# rights status, and the existing fake-only reviewer without re-ranking.
+from app.jev.scanner_reviewer_bridge import (
+    inspect_reviewer_candidate_readonly,
+    inspect_synthetic_fake_review_readonly,
+)
+from tools.data.jev_s7_shadow import build_parser as s7_build_parser, execute as s7_execute
+
+
+def test_phase1_bridge_inspects_real_shaped_source_without_source_export(tmp_path):
+    db, capture_id = _stored(tmp_path)
+    with sqlite3.connect(db) as conn:
+        before = "\n".join(conn.iterdump())
+    output = inspect_reviewer_candidate_readonly(
+        db, capture_id=capture_id, sample_index=0,
+    )
+    assert output["status"] == "LOCAL_PROJECTION_READY_PROVIDER_HOLD"
+    assert output["provider_gate"] == "NO_GO"
+    assert output["source_rights"] == "UNVERIFIED"
+    assert output["approved_trial_protocol"] is False
+    assert output["actual_provider_eligible"] is False
+    assert output["baseline_action"] == "ENTRY_CANDIDATE"
+    assert output["baseline_rank"] == 1
+    assert output["evidence_item_count"] >= 2
+    assert output["publication_time_proven"] is False
+    assert output["provider_calls"] == output["runtime_db_writes"] == 0
+    assert "evidence_items" not in output
+    assert "entry_risk_guide" not in output
+    with sqlite3.connect(db) as conn:
+        assert before == "\n".join(conn.iterdump())
+
+
+@pytest.mark.parametrize("decision,action", [
+    ("PASS_THROUGH", "BASELINE_UNCHANGED"),
+    ("REVIEW_REQUIRED", "DEFER_THIS_OPPORTUNITY"),
+    ("ABSTAIN", "BASELINE_UNCHANGED"),
+])
+def test_phase1_synthetic_only_fake_links_input_validation_without_ai(
+    tmp_path, decision, action,
+):
+    db, capture_id = _stored(tmp_path)
+    session = OfflineFakeShadowSession()
+    result = inspect_synthetic_fake_review_readonly(
+        db, capture_id=capture_id, sample_index=0,
+        fake_response=_response(decision), session=session,
+    )
+    assert result["status"] == "SYNTHETIC_FAKE_REVIEW_ONLY"
+    assert result["validation_status"] == "VALID"
+    assert result["fake_decision"] == decision
+    assert result["fake_shadow_action"] == action
+    assert result["outcome_return"] is None
+    assert result["provider_gate"] == "NO_GO"
+    assert result["actual_provider_eligible"] is False
+    assert result["external_requests"] == result["runtime_db_writes"] == 0
+    assert result["production_action_modified"] is False
+    assert result["investment_improvement_verified"] is False
+    reused = inspect_synthetic_fake_review_readonly(
+        db, capture_id=capture_id, sample_index=0,
+        fake_response=_response("ABSTAIN"), session=session,
+    )
+    assert reused["reused"] is True
+    assert reused["fake_decision"] == decision
+
+
+def test_phase1_real_capture_is_never_silently_fake_reviewed(tmp_path, monkeypatch):
+    from app.jev import scanner_reviewer_bridge as bridge
+
+    db, capture_id = _stored(tmp_path)
+    capture, sample, projection = bridge._candidate(
+        db, capture_id=capture_id, sample_index=0,
+    )
+    # A completed Capture is immutable: exercise the REAL marker only on a
+    # separate in-memory copy, never by updating the frozen SQLite source.
+    real_capture = {**capture, "capture_version": "REAL"}
+    monkeypatch.setattr(
+        bridge, "_candidate",
+        lambda *args, **kwargs: (real_capture, sample, projection),
+    )
+    plan = inspect_reviewer_candidate_readonly(
+        db, capture_id=capture_id, sample_index=0,
+    )
+    assert plan["fake_only_available"] is False
+    with pytest.raises(DecisionReviewContractError, match="REAL_CAPTURE_FAKE_REVIEW_FORBIDDEN"):
+        inspect_synthetic_fake_review_readonly(
+            db, capture_id=capture_id, sample_index=0,
+            fake_response=_response("PASS_THROUGH"),
+        )
+
+
+def test_phase1_legacy_and_tampered_candidate_never_enable_provider(tmp_path):
+    (tmp_path / "legacy").mkdir()
+    legacy, lid = _stored(tmp_path / "legacy", horizon="LEGACY_UNSPECIFIED")
+    result = inspect_reviewer_candidate_readonly(legacy, capture_id=lid, sample_index=0)
+    assert result["status"] == "LEGACY_INSPECTION_ONLY"
+    assert result["fake_only_available"] is False
+    with pytest.raises(DecisionReviewContractError, match="HORIZON_NOT_FAKE_TEST_SCOPE"):
+        inspect_synthetic_fake_review_readonly(
+            legacy, capture_id=lid, sample_index=0,
+            fake_response=_response("PASS_THROUGH"),
+        )
+    (tmp_path / "bad").mkdir()
+    db, capture_id = _stored(tmp_path / "bad")
+    from app.jev import scanner_reviewer_bridge as bridge
+    capture, sample = load_canonical_candidate_readonly(
+        db, capture_id=capture_id, sample_index=0,
+    )
+    # The immutable stored row must remain intact; change only a copy of
+    # the candidate returned by the test's read adapter.
+    broken_sample = {**sample, "snapshot_hash": "bad"}
+    before = db.read_bytes()
+    with pytest.MonkeyPatch.context() as patcher:
+        patcher.setattr(
+            bridge, "load_canonical_candidate_readonly",
+            lambda *args, **kwargs: (capture, broken_sample),
+        )
+        result = inspect_reviewer_candidate_readonly(
+            db, capture_id=capture_id, sample_index=0,
+        )
+    assert result["status"] == "HOLD"
+    assert result["reason_code"] == "SNAPSHOT_HASH_MISMATCH"
+    assert result["provider_calls"] == 0
+    assert db.read_bytes() == before
+
+
+def test_phase1_bridge_cli_uses_existing_s7_command_without_feature_toggle(tmp_path):
+    db, capture_id = _stored(tmp_path)
+    args = s7_build_parser().parse_args([
+        "reviewer-bridge", "--simulation-db", str(db),
+        "--capture-id", capture_id, "--sample-index", "0", "--json",
+    ])
+    out = s7_execute(args)
+    assert out["status"] == "LOCAL_PROJECTION_READY_PROVIDER_HOLD"
+    assert out["provider_gate"] == "NO_GO"
+    args.sample_index = None
+    with pytest.raises(DecisionReviewContractError, match="REVIEWER_BRIDGE_ARGUMENT_CONFLICT"):
+        s7_execute(args)
+
+
+@pytest.mark.parametrize("capture_id,index", [
+    ("", 0), ("x", -1), ("x", 500), ("x", True),
+])
+def test_phase1_malformed_reference_fails_without_model_calls(tmp_path, capture_id, index):
+    db, _ = _stored(tmp_path)
+    out = inspect_reviewer_candidate_readonly(
+        db, capture_id=capture_id, sample_index=index,
+    )
+    assert out["status"] == "HOLD"
+    assert out["reason_code"] == "REVIEWER_BRIDGE_REFERENCE_INVALID"
+    assert out["external_requests"] == out["runtime_db_writes"] == 0
+
+
+def test_phase1_legacy_derived_strategy_is_diagnostic_only_not_reviewable(tmp_path, monkeypatch):
+    """Three school-PC candidates have source-only identity; never backfill."""
+    from app.jev import scanner_reviewer_bridge as bridge
+    from app.strategy.semantic_identity_bridge import ENGINE_VERIFIED_SOURCE
+
+    db, capture_id = _stored(tmp_path)
+    capture, sample = load_canonical_candidate_readonly(
+        db, capture_id=capture_id, sample_index=0,
+    )
+    sample = deepcopy(sample)
+    source = sample["snapshot"]["semantic_source_v2"]["strategy"]
+    sample["snapshot"].pop("strategy_version_id")
+    sample["snapshot"].pop("strategy_definition_hash")
+    sample["snapshot"]["semantic_policy_provenance"][
+        "policy_source"
+    ] = "LEGACY_CURRENT_10_FALLBACK"
+    sample["snapshot"]["semantic_strategy_identity"] = {
+        "source": ENGINE_VERIFIED_SOURCE,
+        "strategy_key": STRATEGY,
+        "strategy_version_id": source["strategy_version_id"],
+        "strategy_definition_hash": source["strategy_definition_hash"],
+        "selection_policy_id": "synthetic-policy",
+        "selection_policy_hash": "synthetic-policy-hash",
+    }
+    sample["snapshot_hash"] = digest_json(sample["snapshot"])
+    original = db.read_bytes()
+    monkeypatch.setattr(
+        bridge, "load_canonical_candidate_readonly",
+        lambda *args, **kwargs: (capture, sample),
+    )
+    status = inspect_reviewer_candidate_readonly(
+        db, capture_id=capture_id, sample_index=0,
+    )
+    assert status["status"] == "LEGACY_INSPECTION_ONLY"
+    assert status["reason_code"] == "LEGACY_DERIVED_IDENTITY"
+    assert status["candidate_category"] == "LEGACY_LIMITED"
+    assert status["strict_block_reason"] == "STRATEGY_IDENTITY_MISMATCH"
+    assert status["semantic_strategy_identity"] == "DERIVED_NOT_ORIGINAL"
+    assert status["actual_provider_eligible"] is False
+    assert status["fake_only_available"] is False
+    assert status["provider_calls"] == status["runtime_db_writes"] == 0
+    assert "evidence_items" not in status
+    assert db.read_bytes() == original
+    with pytest.raises(DecisionReviewContractError, match="STRATEGY_IDENTITY_MISMATCH"):
+        inspect_synthetic_fake_review_readonly(
+            db, capture_id=capture_id, sample_index=0,
+            fake_response=_response("PASS_THROUGH"),
+        )
+
+    # A fabricated derived-only identity must never earn LEGACY_LIMITED.
+    sample["snapshot"]["semantic_strategy_identity"]["strategy_definition_hash"] = "forged"
+    sample["snapshot_hash"] = digest_json(sample["snapshot"])
+    forged = inspect_reviewer_candidate_readonly(
+        db, capture_id=capture_id, sample_index=0,
+    )
+    assert forged["status"] == "HOLD"
+    assert forged["reason_code"] == "STRATEGY_IDENTITY_MISMATCH"
+    assert forged["actual_provider_eligible"] is False
+
+    # A tampered immutable sample digest also fails closed.
+    sample["snapshot_hash"] = "tampered"
+    tampered = inspect_reviewer_candidate_readonly(
+        db, capture_id=capture_id, sample_index=0,
+    )
+    assert tampered["status"] == "HOLD"
+    assert tampered["reason_code"] == "SNAPSHOT_HASH_MISMATCH"

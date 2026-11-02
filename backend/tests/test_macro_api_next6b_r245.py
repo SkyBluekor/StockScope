@@ -111,6 +111,20 @@ def test_macro_reference_diagnostic_api_is_read_only_descriptive_projection(
         "recommended_support": None,
     }
     assert body["rate_spike"]["state"] == "UNCALIBRATED"
+    rate = body["dgs10_reference"]
+    assert rate["source"] == "FRED_DGS10_LOCAL"
+    assert rate["series_id"] == SERIES
+    assert rate["status"] == "PARTIAL"  # DATE_ONLY is not a proven publication timestamp.
+    assert rate["value_pct"] == "4.841"
+    assert rate["observation_date"] == "2026-09-30"
+    assert rate["available_at"] == "2026-09-30T10:00:00+00:00"
+    assert rate["source_published_at"] is None
+    assert rate["time_quality"] == "DATE_ONLY"
+    assert rate["source_unit"] == "PERCENT"
+    assert rate["decision_cutoff"] == CUTOFF
+    assert rate["production_decision_approved"] is False
+    assert rate["scanner_input_approved"] is False
+    assert rate["risk_gate_input_approved"] is False
     assert body["production_decision_approved"] is False
     assert "STRATEGY_INPUT" in body["reference_diagnostic"]["governance"][
         "prohibited_consumers"
@@ -185,3 +199,31 @@ def test_macro_reference_diagnostic_api_uses_current_utc_cutoff_when_omitted(
 
     assert response.status_code == 200
     assert response.json()["decision_cutoff"] == "2026-10-01T12:34:56+00:00"
+
+def test_macro_scanner_rate_reference_fails_closed_on_unmatched_revision() -> None:
+    from app.api.macro import _scanner_dgs10_rate_reference
+
+    class ChangedSource:
+        def read_series_as_of(self, *args, **kwargs):
+            return {"status": "COMPLETE", "observation": {
+                "normalized_hash": "unexpected-revision",
+                "observation_date": "2026-09-30",
+                "normalized_value": "4.841",
+                "source_unit": "PERCENT",
+                "available_at": "2026-09-30T10:00:00+00:00",
+            }}
+
+    ctx = {
+        "status": "COMPLETE_REFERENCE",
+        "decision_cutoff": CUTOFF,
+        "features": {"features": [{
+            "feature_id": "rate_level_pct", "status": "AVAILABLE",
+            "value": "4.841", "current_observation_ref": "expected-revision",
+        }]},
+    }
+    result = _scanner_dgs10_rate_reference(ctx, ChangedSource())
+    assert result["status"] == "UNAVAILABLE"
+    assert result["value_pct"] is None
+    assert result["reason"] == "RATE_SOURCE_REVISION_NOT_ALIGNED"
+    assert result["production_decision_approved"] is False
+

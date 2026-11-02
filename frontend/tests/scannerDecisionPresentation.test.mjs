@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { scannerMacroRatePresentation } from "../src/components/scannerMacroRateReference.ts";
 import {
   assessPriceRule,
   beginnerCandidatePresentation,
   priceReferenceText,
   simpleConditionStatus,
+  scannerEntryGuidance,
 } from "../src/components/scannerDecisionPresentation.ts";
 
 function candidate(overrides = {}) {
@@ -199,4 +201,111 @@ test("SC-UX4-S2 does not invent cause when market evidence differs", () => {
     },
   }));
   assert.equal(view.missingConditions[0].label, "시장 환경이 급격한 하락 상태가 아님");
+});
+
+function sameDayMarket(overrides = {}) {
+  return {
+    market: "KOSPI", data_date: "2026-10-07", regime: "TREND_DOWN",
+    index_change_rate_pct: -3.83, index_data_date: "2026-10-07",
+    risk_reference_status: "DECLINE_RECHECK",
+    risk_reference_source: "KRX_EOD",
+    risk_decision_effect: "REFERENCE_ONLY_NOT_RISK_GATE",
+    ...overrides,
+  };
+}
+
+test("stage2: READY 6/6 as-of KRX decline shows market recheck without mutating strategy", () => {
+  const stock = candidate({ code: "171090", name: "선익시스템", market: "KOSDAQ",
+    data_date: "2026-10-30", current_price: 80_000,
+    entry_risk_guide: { price_rule: { kind: "ABOVE", trigger_price: 79_500, executable_entry_range: true } },
+  });
+  const previous = structuredClone(stock);
+  const status = scannerEntryGuidance(stock, sameDayMarket({
+    market: "KOSDAQ", data_date: "2026-10-30", index_data_date: "2026-10-30",
+  }));
+  assert.equal(status.state, "MARKET_RECHECK");
+  assert.match(status.headline, /신규 진입 재확인/);
+  assert.match(status.explanation, /-3.83%/);
+  assert.match(status.explanation, /Risk Gate 차단이나 후보 순위 변경은 아닙니다/);
+  assert.deepEqual(stock, previous);
+  assert.match(beginnerCandidatePresentation(stock).headline, /모두 충족/);
+});
+
+test("stage2: non-decline is never automatically a buy-now instruction", () => {
+  const status = scannerEntryGuidance(candidate({ current_price: 87_000 }), sameDayMarket({
+    regime: "RANGE", index_change_rate_pct: 0.25, risk_reference_status: "REFERENCE_ONLY",
+  }));
+  assert.equal(status.state, "BASELINE_RECHECK");
+  assert.doesNotMatch(status.headline, /지금 매수|매수하세요/);
+});
+
+test("stage2: missing, mismatched, invalid, or old market reference does not imply safety", () => {
+  const stock = candidate({ current_price: 87_000 });
+  for (const context of [
+    null, sameDayMarket({ index_data_date: "2026-10-06" }),
+    sameDayMarket({ data_date: "2026-10-06" }), sameDayMarket({ market: "KOSDAQ" }),
+    sameDayMarket({ risk_reference_source: undefined }), sameDayMarket({ risk_decision_effect: undefined }),
+    sameDayMarket({ index_change_rate_pct: Number.NaN }), sameDayMarket({ risk_reference_status: "UNKNOWN" }),
+    sameDayMarket({ regime: "RANGE", index_change_rate_pct: 0.3 }),
+  ]) assert.equal(scannerEntryGuidance(stock, context).state, "MARKET_UNKNOWN");
+});
+
+test("stage2: existing risk, NO_TRADE, conditions and out-of-range price retain priority", () => {
+  const falling = sameDayMarket();
+  assert.equal(scannerEntryGuidance(candidate({ risk: { warning: true } }), falling).state, "EXISTING_RISK");
+  assert.equal(scannerEntryGuidance(candidate({ priority: { tier: "RISK_HOLD" } }), falling).state, "EXISTING_RISK");
+  assert.equal(scannerEntryGuidance(candidate({ action: "NO_TRADE" }), falling).state, "NOT_A_CANDIDATE");
+  assert.equal(scannerEntryGuidance(candidate({ conditions: { passed: 5, missing: 1 } }), falling).state, "CONDITIONS_WAIT");
+  assert.equal(scannerEntryGuidance(candidate({ conditions: { passed: 0, total: 0, missing: 0 } }), falling).state, "CONDITIONS_WAIT");
+  assert.equal(scannerEntryGuidance(candidate({ current_price: 89_400 }),
+    sameDayMarket({ regime: "RANGE", index_change_rate_pct: 0.5, risk_reference_status: "REFERENCE_ONLY" })).state,
+    "PRICE_RECHECK");
+});
+
+test("MACRO-01 displays DGS10 as a current reference, never historical Scanner input", () => {
+  const reference = {
+    status: "PARTIAL", source: "FRED_DGS10_LOCAL", source_unit: "PERCENT",
+    value_pct: "4.841", observation_date: "2026-10-31",
+    available_at: "2026-11-01T11:00:00+00:00",
+    source_published_at: null, provider_available_at: null,
+    time_quality: "DATE_ONLY", decision_cutoff: "2026-11-02T01:00:00+00:00",
+    scanner_input_approved: false, risk_gate_input_approved: false,
+    production_decision_approved: false,
+  };
+  const view = scannerMacroRatePresentation(reference, "2026-10-30");
+  assert.equal(view.available, true);
+  assert.match(view.headline, /4\.84%/);
+  assert.match(view.detail, /당시 판단 근거가 아니에요/);
+  assert.match(view.detail, /원천 발표 시각 확인 불가/);
+  assert.doesNotMatch(view.detail, /매수하세요|매수 권장|하락 원인입니다/);
+});
+
+test("MACRO-01 fails closed for absent, invalid, or future-available rates", () => {
+  const base = {
+    status: "AVAILABLE", source: "FRED_DGS10_LOCAL",
+    source_unit: "PERCENT", value_pct: "4.2",
+    observation_date: "2026-10-30",
+    available_at: "2026-11-02T03:00:00+00:00",
+    decision_cutoff: "2026-11-02T01:00:00+00:00",
+    time_quality: "EXACT", scanner_input_approved: false,
+    risk_gate_input_approved: false, production_decision_approved: false,
+  };
+  assert.equal(scannerMacroRatePresentation(null, "2026-10-30").available, false);
+  assert.equal(scannerMacroRatePresentation(base, "2026-10-30").available, false);
+  assert.equal(scannerMacroRatePresentation({ ...base, available_at: "2026-11-01T01:00:00+00:00", value_pct: "NaN" }, "2026-10-30").available, false);
+  assert.equal(scannerMacroRatePresentation({ ...base, available_at: "2026-11-01T01:00:00+00:00", risk_gate_input_approved: true }, "2026-10-30").available, false);
+});
+
+test("MACRO-01 does not leak analysis-day attribution between candidates", () => {
+  const reference = {
+    status: "AVAILABLE", source: "FRED_DGS10_LOCAL",
+    source_unit: "PERCENT", value_pct: "4.10",
+    observation_date: "2026-10-29",
+    available_at: "2026-10-30T15:00:00+00:00",
+    decision_cutoff: "2026-11-02T01:00:00+00:00",
+    time_quality: "EXACT", scanner_input_approved: false,
+    risk_gate_input_approved: false, production_decision_approved: false,
+  };
+  assert.match(scannerMacroRatePresentation(reference, "2026-10-29").detail, /분석일 이후/);
+  assert.match(scannerMacroRatePresentation(reference, "2026-11-01").detail, /현재 조회 기준 참고자료/);
 });
