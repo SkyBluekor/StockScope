@@ -375,6 +375,36 @@
 
 **MR-01 완료 조건:** (a) 이미 승인된 정책의 존재 여부를 근거로 분류, (b) 사용 가능한 실제 KRX 표본으로 정책 후보의 재현성과 부족한 근거 확인, (c) **‘시장 하락 참고’ vs ‘차단 근거 있는 PANIC’ vs ‘자료 부족’**의 사용자 출력 차이와 기존 종목 조건·순위 보존 정리, (d) 이 문서에 정책 1개/승인 대기 여부 기재. **CI/시뮬레이션만으로 실제 운용 정책을 승인한 것으로 간주하지 않는다.**
 
+#### MR-01 실행 기록 — 기존 정책 실체 확인 및 단일 후보 도출 (2026-11-02)
+
+**판정: POLICY_CANDIDATE_DOCUMENTED / LOCAL_EMPIRICAL_EVIDENCE_PENDING / PRODUCTION_GATE_UNAPPROVED.**
+이 결과는 사용자의 "작업 시작" 요청에 따라 GitHub에서 실제 코드를 추적한 결과이다. **프로덕션 코드·데이터·Frozen Scanner·Risk·JEV 설정은 변경하지 않았다.** 현재 새 PC의 `market_history.db` 내용은 GitHub에 없으므로 읽거나 검증했다고 주장할 수 없다. 새 PC에서 선익시스템(171090)이 2026-10-30 기준 후보로 나왔다는 사용자 확인은 존재하지만 **반복 실행 날짜 역행 검증은 남아 있다**.
+
+**(1) 확인한 기존 경로 및 결함**
+- `backend/app/backtest/engine.py:_signal_snapshot`는 KRX 동일일 지수 `change_rate`를 `regime_from_index`로 전달한다. `backend/app/strategy/context.py`는 <= -1.0%를 `TREND_DOWN`으로 분류하고 `PANIC`은 생성하지 않는다.
+- `backend/app/strategy/engine.py:_risk_gate`에는 `MarketRegime.PANIC` 진입 차단이 있으나 현재 Scanner의 지수 경로에서 이 입력이 생산되지 않는다. `backend/app/backtest/engine.py`의 Scanner 계열 `event_risk=False`도 그대로다.
+- `backend/app/api/backtest.py:_attach_scanner_market_reference` → `frontend/src/components/scannerDecisionPresentation.ts:scannerEntryGuidance`는 동일 분석일 `TREND_DOWN`을 `MARKET_RECHECK`로 설명하지만 실제 `risk_decision_effect=REFERENCE_ONLY_NOT_RISK_GATE`. **이것은 실제 신규 진입 차단이 아니다.**
+- `docs/backtest-risk-policy-v0.19.5.md` / `docs/backtest-risk-policy-decision-v0.19.6.md`에 기존 손절·CAUTION 비교 연구와 표본·거래 유지 가드레일이 있으나 **시장 급락을 PANIC 차단으로 승격하도록 승인한 기준은 아니다**.
+
+**(2) 새 기준 발명 없이 확인한 재사용 요소**
+- `backend/app/market/service.py:MarketDataService._breadth`: 동일 시장/일자 종목별 KRX `change_rate`가 있는 행의 상승·하락·보합 수, `up_ratio`, `avg_abs_change_rate`를 계산한다.
+- 같은 파일의 `_market_regime(kospi_rate, kosdaq_rate, up_ratio)`: KOSPI/KOSDAQ 등락률 **단순 평균 <= -0.8%** 및 **전체 상승 종목 비율 <= 0.40**일 때 화면용 `강한 하락`으로 표시한다.
+- 같은 파일의 `_volatility_label(avg_abs_move)`: 종목별 일간 변동률 절댓값 평균 **>= 4.0%**를 화면용 `높음`으로 분류한다.
+- 이 값은 **기존 대시보드용 휴리스틱**이지 검증된 금융시장 PANIC 차단 임계값이 아니다. `backend/tests/test_market_dashboard_logic.py`는 기본 상승/폭 집계만 검증한다. `_market_regime`는 원래 단일일 데이터 유효성/양 시장 날짜 동기화를 자체 강제하지 않으므로 연구·후속 구현에서는 반드시 사전 검증한다.
+
+**(3) MR-01 *단일 시험 정책 후보*: `MR01_BROAD_DOWN_AND_HIGH_MOVE_V0` (비생산)**
+- **입력/시점:** 동일한 KRX 확정 EOD 거래일의 KOSPI·KOSDAQ 대표지수 및 종목별 일간 변동률. 4종 데이터 마커(stock/index × 양 시장)가 모두 `data`이고 실제 주가·지수 행도 존재하며 `change_rate`가 유한 숫자일 것. 결측·시장별 날짜 불일치·원천 불명확이면 `UNKNOWN`으로 차단 승인 금지. 이력은 평가일 이전에 관측된 사실만 이용.
+- **시험 조건:** 대시보드 기존 `강한 하락` **AND** 기존 변동폭 프록시 `높음`이 동시에 관찰된 날을 `PANIC_CANDIDATE`로 분류. 새로운 -2%/-3% 같은 경계를 만들지 않는다. 단일 시장 급락에 대한 민감도·평균/가중 방식 편향·저유동성/상장 특수주 포함의 영향은 별도 평가 대상이다.
+- **현 단계 출력:** `PANIC_CANDIDATE`는 **연구용 분류만** 뜻한다. 운영 Scanner UI는 계속 기존 `MARKET_RECHECK` 또는 `MARKET_UNKNOWN`; `StrategyInput.market_regime`, `risk_gate_active`, 후보 점수·순위·Prospective 저장본은 불변이다.
+- **후속 MR-02 조건:** 실제 로컬 과거 EOD 시계열에서 정책 발생일 수, 빈도, 2026-10-29/30 편입 여부, 시장별 누락과 상승/하락 종목 커버리지, 동일일 KRX 날짜 정합성, 비발생일 대비 이후 5/10 거래일 손실/최대 낙폭(**사후 평가만, 판정 입력 금지**), 잘못 차단된 회복장 사례를 검증한다. 기간 분리 및 오탐·거래 기회 상실 비교 뒤 사용자 승인 필요. 승인 시 새 분석의 **별도 버전된 신규 진입 게이트**에서만 실제 보류를 적용하며 공유 `regime_from_index`/Frozen 과거 결과를 직접 고치지 않는다.
+
+**(4) 실제 KRX 데이터 증거 현황 및 차단 사유**
+- 사용자 구 PC의 읽기 전용 조회로 2026-10-29 및 10-30 양 시장의 `day_status = stock/index data` 및 해당 일 종목 수·지수 1건이 확인됐다. 선익시스템 171090의 2026-10-30 COMPLETE 캡처도 존재했다. 당시 화면에서 KOSDAQ 지수 하락 참고 신호가 관찰됐다. **이 사실만으로 `_breadth`·`_volatility_label` 또는 전체 과거 표본을 재현할 수는 없다.**
+- 이 GitHub 연결에는 구/신 PC 개인 `market_history.db`가 없고 저장소에는 실행용 시장 SQLite가 없다. 실제 국내 EOD 120거래일 이상 분포·후속 손실/오탐 비교를 아직 계산할 수 없다. 따라서 `POLICY_EVIDENCE_INSUFFICIENT`, `PANIC` 위험 차단 **미승인/미구현**으로 기록한다.
+- **다음에 필요한 단 하나의 입력:** 사용자 새 PC의 기존 `market_history.db`를 `sqlite3 mode=ro`로 읽고, *양 시장의 공통 거래일*에 대해 기존 `MarketDataService._breadth`, `_market_regime`, `_volatility_label` 분류를 과거 시계열과 2026-10-29/30에서 일관되게 집계한 **집계값만** 수령. 시장 DB 전체·개인 포트폴리오·API 키 업로드는 요청하지 않는다. 실자료가 없으면 임의 표본으로 승인하지 않는다.
+
+**MR-01 남은 작업:** 사용자 새 PC에서 읽기 전용 시장 분포 집계 → 후보의 발생률/추가 차단 영향·거짓 경보 가능성 평가 → 정책 승인 또는 보류 기록. 이번 소스 검증만으로 MR-01을 DONE으로 처리하지 않는다.
+
 ### 3단계: 다전략·기간·위험 대비 기대성과 통합
 
 - **목적:** 기존 10전략·단/중/장기·Risk 결과와 시장·산업 조건을 합쳐 종목에 맞는 접근법을 비교.
@@ -424,7 +454,7 @@
 | 기존 A단계 요약 UI | DONE · 사용자 Windows 확인 | 보존 |
 | 기존 B단계 문장 비교 | REJECTED_PRODUCT_FIT · 코드 존재, 실모델 유료 검증 진행 금지 | 후속 해당 범위에서 UI 정리 |
 | **1단계 현황 파악** | **CODE_AUDIT_COMPLETE_WINDOWS_UAT_PENDING** | 2026-11-01 지정 브랜치 코드 연결 조사 완료, 실제 Windows·원천 데이터 미확인. 핵심 갭: Scanner 시장·이벤트 위험 → Risk Gate |
-| **2단계 시장·국제 사건 연결** | **DATE_REGRESSION_FIX_CI_PASS_WINDOWS_UAT_PENDING** | 시장 위험 안내 Windows 화면 확인(동국제약) · 자동 기준일 역행 방지 수정, 코드 HEAD e2c163c CI 4/4 PASS(Backend 3.11/3.14·Frontend·Windows Fresh Clone). 실제 Windows 날짜 재확인, PANIC 정책 및 국제사건 연계 미완료 |
+| **2단계 시장·국제 사건 연결** | **MR01_POLICY_CANDIDATE_LOCAL_EVIDENCE_PENDING** | 10/30 선익시스템 새 PC 선정 확인 · 기존 MarketDataService의 강한 하락+높음 조합을 비생산 PANIC 후보 1개로 확정. 120거래일 실자료/오탐 검증·정책 승인 및 실제 Risk Gate 연결 미완료. 자동 날짜 역행 방지 코드 CI 4/4 PASS, 반복 Windows 검증은 별도 미확인 |
 | 3단계 다전략/위험 통합 | NOT_STARTED | 2단계 종료 후 |
 | 4단계 JEV 실사용 | NOT_STARTED | 3단계 결과와 허용 입력 확인 후 |
 | 5단계 효용 평가 | NOT_STARTED | 4단계 후 |
