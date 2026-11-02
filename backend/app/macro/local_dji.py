@@ -102,9 +102,17 @@ def _query_once(now: datetime) -> dict[str, Any]:
     details = capability.details
     sample = details.get("index_sample") or {}
     pair = details.get("index_reference_pair") or {}
+    identity_source = details.get("index_name_source")
+    received_name = str(details.get("index_name") or "").lower()
+    known_identity = (
+        identity_source == "OFFICIAL_KIS_REQUEST_CODE"
+        and received_name == "다우존스 산업평균지수"
+    ) or (
+        identity_source == "PROVIDER_RESPONSE"
+        and any(token in received_name for token in ("다우", "dow", "dji"))
+    )
     if (
-        details.get("index_name") != "다우존스 산업평균지수"
-        or details.get("index_name_source") != "OFFICIAL_KIS_REQUEST_CODE"
+        not known_identity
         or sample.get("invalid_index_rows") != 0
         or not pair
     ):

@@ -121,28 +121,51 @@ def test_global01_s2_backend_blocks_public_or_proxied_requests(
                         {"status": "PARTIAL" if enabled else "UNAVAILABLE",
                          "reason": None if enabled else reason})
     local = TestClient(app, client=("127.0.0.1", 15000))
-    if True:
-        okay = local.get("/api/macro/overseas-index-reference",
-                         headers={"host": "127.0.0.1:8000"})
-        assert okay.status_code == 200
-        assert okay.json()["status"] == "PARTIAL"
-        assert okay.headers["cache-control"] == "no-store"
-        for headers in (
-            {"host": "stockscope.example.com"},
-            {"host": "127.0.0.1:8000", "x-forwarded-for": "203.0.113.5"},
-            {"host": "127.0.0.1:8000", "referer": "https://example.com/scanner"},
-            {"host": "127.0.0.1:8000", "origin": "http://example.com"},
-        ):
-            rejected = local.get("/api/macro/overseas-index-reference", headers=headers)
-            assert rejected.status_code == 200
-            assert rejected.json()["status"] == "UNAVAILABLE"
-            assert rejected.json()["reason"] == "LOCAL_ACCESS_ONLY"
+    okay = local.get("/api/macro/overseas-index-reference",
+                     headers={"host": "127.0.0.1:8000"})
+    assert okay.status_code == 200
+    assert okay.json()["status"] == "PARTIAL"
+    assert okay.headers["cache-control"] == "no-store"
+    for headers in (
+        {"host": "stockscope.example.com"},
+        {"host": "127.0.0.1:8000", "x-forwarded-for": "203.0.113.5"},
+        {"host": "127.0.0.1:8000", "referer": "https://example.com/scanner"},
+        {"host": "127.0.0.1:8000", "origin": "http://example.com"},
+    ):
+        rejected = local.get("/api/macro/overseas-index-reference", headers=headers)
+        assert rejected.status_code == 200
+        assert rejected.json()["status"] == "UNAVAILABLE"
+        assert rejected.json()["reason"] == "LOCAL_ACCESS_ONLY"
     remote = TestClient(app, client=("198.51.100.10", 24000))
-    if True:
-        result = remote.get("/api/macro/overseas-index-reference",
-                            headers={"host": "127.0.0.1:8000"})
-        assert result.json()["status"] == "UNAVAILABLE"
-        assert result.json()["reason"] == "LOCAL_ACCESS_ONLY"
+    result = remote.get("/api/macro/overseas-index-reference",
+                        headers={"host": "127.0.0.1:8000"})
+    assert result.json()["status"] == "UNAVAILABLE"
+    assert result.json()["reason"] == "LOCAL_ACCESS_ONLY"
+
+
+def test_global01_s2_accepts_consistent_provider_returned_index_name(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    class Clock(ActualDatetime):
+        @classmethod
+        def now(cls, zone):
+            return ActualDatetime(2026, 11, 2, 6, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(local_dji, "datetime", Clock)
+    capability = _capability()
+    capability = ProviderCapability(
+        provider=capability.provider,
+        component=capability.component,
+        status=capability.status,
+        configured=True, authenticated=True,
+        details={**capability.details, "index_name": "다우존스",
+                 "index_name_source": "PROVIDER_RESPONSE"},
+    )
+    monkeypatch.setattr(local_dji, "probe_kis_daily_chart",
+                        lambda **kwargs: capability)
+    result = local_dji.read_local_dji_reference(enabled=True)
+    assert result["status"] == "PARTIAL"
+    assert result["index_name"] == "다우존스 산업평균지수"
+    assert result["index_name_source"] == "PROVIDER_RESPONSE"
 
 
 def test_global01_s2_uses_real_kis_row_shape_and_two_distinct_dates():
