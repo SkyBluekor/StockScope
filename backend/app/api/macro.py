@@ -101,6 +101,81 @@ def _unavailable_detail(context: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+
+def _scanner_dgs10_rate_reference(
+    context: dict[str, Any], reader: LocalMacroReader,
+) -> dict[str, Any]:
+    """A bounded display-only projection of the existing DGS10 context.
+
+    Never claims this rate was a Scanner decision input. Re-read the source
+    observation read-only and require the exact feature reference to match,
+    so displayed provenance cannot be attached to another revision.
+    """
+    base = {
+        "status": "UNAVAILABLE",
+        "source": "FRED_DGS10_LOCAL",
+        "series_id": "US_10Y_CONSTANT_MATURITY_YIELD",
+        "value_pct": None,
+        "observation_date": None,
+        "available_at": None,
+        "source_published_at": None,
+        "provider_available_at": None,
+        "time_quality": None,
+        "source_unit": None,
+        "decision_cutoff": context["decision_cutoff"],
+        "production_decision_approved": False,
+        "scanner_input_approved": False,
+        "risk_gate_input_approved": False,
+        "reason": "RATE_REFERENCE_UNAVAILABLE",
+    }
+    features = (context.get("features") or {}).get("features") or []
+    level = next(
+        (f for f in features if f.get("feature_id") == "rate_level_pct"),
+        None,
+    )
+    if not level or level.get("status") != "AVAILABLE" or level.get("value") is None:
+        return {**base, "reason": "RATE_LEVEL_FEATURE_UNAVAILABLE"}
+
+    source = reader.read_series_as_of(
+        base["series_id"],
+        cutoff=context["decision_cutoff"],
+        historical_eligible_only=False,
+    )
+    observation = source.get("observation") or {}
+    observation_ref = (
+        observation.get("normalized_hash")
+        or observation.get("id")
+        or observation.get("observation_key")
+    )
+    if (
+        source.get("status") != "COMPLETE"
+        or not observation_ref
+        or str(observation_ref) != str(level.get("current_observation_ref") or "")
+        or observation.get("source_unit") != "PERCENT"
+        or observation.get("normalized_value") is None
+        or str(observation["normalized_value"]) != str(level["value"])
+    ):
+        return {**base, "reason": "RATE_SOURCE_REVISION_NOT_ALIGNED"}
+
+    return {
+        **base,
+        "status": (
+            "AVAILABLE"
+            if context.get("status") == "COMPLETE_REFERENCE"
+            and observation.get("time_quality") in {"EXACT", "PROVIDER_TIME"}
+            else "PARTIAL"
+        ),
+        "value_pct": str(level["value"]),
+        "observation_date": str(observation["observation_date"]),
+        "available_at": str(observation["available_at"]),
+        "source_published_at": observation.get("source_published_at"),
+        "provider_available_at": observation.get("provider_available_at"),
+        "time_quality": observation.get("time_quality"),
+        "source_unit": str(observation["source_unit"]),
+        "reason": None,
+    }
+
+
 @router.get("/reference-diagnostic")
 def reference_diagnostic(
     response: Response,
@@ -115,9 +190,10 @@ def reference_diagnostic(
     response.headers["Cache-Control"] = "no-store"
     decision_cutoff = cutoff or _default_cutoff()
 
+    reader = LocalMacroReader(_macro_db_path())
     try:
         context = build_macro_context(
-            reader=LocalMacroReader(_macro_db_path()),
+            reader=reader,
             decision_cutoff=decision_cutoff,
             usage="REFERENCE_SHADOW",
         )
@@ -160,6 +236,8 @@ def reference_diagnostic(
             "recommended_support": governance["recommended_support"],
         },
         "rate_spike": _rate_spike_summary(context),
+        # MACRO-01: additive, read-only reference for the selected Scanner card.
+        "dgs10_reference": _scanner_dgs10_rate_reference(context, reader),
         "production_decision_approved": bool(
             context["production_decision_approved"]
         ),

@@ -1,4 +1,10 @@
-import type { ScannerCandidate, ScannerResponse } from "../services/api";
+import { useEffect, useState } from "react";
+import {
+  fetchScannerMacroRateReference,
+  type ScannerMacroRateReference,
+  type ScannerCandidate, type ScannerResponse,
+} from "../services/api";
+import { scannerMacroRatePresentation } from "./scannerMacroRateReference";
 import { beginnerCandidatePresentation, scannerEntryGuidance } from "./scannerDecisionPresentation";
 import { scannerQuoteTruth, type ScannerQuoteSnapshot } from "./scannerQuoteTruth";
 
@@ -10,6 +16,33 @@ type Props = {
 };
 
 export default function ScannerDecisionSummary({ candidate, marketContext, quoteSnapshot, onOpenPriceTab }: Props) {
+  const macroIdentity = candidate.market + ":" + candidate.code + ":" + candidate.data_date;
+  const [macro, setMacro] = useState<{
+    identity: string;
+    state: "LOADING" | "READY" | "UNAVAILABLE";
+    value: ScannerMacroRateReference | null;
+  } | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    setMacro({ identity: macroIdentity, state: "LOADING", value: null });
+    void fetchScannerMacroRateReference(controller.signal)
+      .then(value => {
+        if (!controller.signal.aborted) {
+          setMacro({ identity: macroIdentity, state: "READY", value });
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setMacro({ identity: macroIdentity, state: "UNAVAILABLE", value: null });
+        }
+      });
+    return () => controller.abort();
+  }, [macroIdentity]);
+  const macroForCandidate = macro?.identity === macroIdentity ? macro : null;
+  const macroView = scannerMacroRatePresentation(
+    macroForCandidate?.state === "READY" ? macroForCandidate.value : null,
+    candidate.data_date,
+  );
   const view = beginnerCandidatePresentation(candidate);
   const entry = scannerEntryGuidance(candidate, marketContext);
   const quote = scannerQuoteTruth(candidate, quoteSnapshot);
@@ -82,8 +115,17 @@ export default function ScannerDecisionSummary({ candidate, marketContext, quote
           </span>
         )}
       </section>
+      <section className="scanner-ux2-decision-why" aria-label="해외 금리 참고자료">
+        <strong>해외 금리 · 현재 조회 참고</strong>
+        <span>{!macroForCandidate || macroForCandidate.state === "LOADING"
+          ? "미국 10년물 국채금리 저장자료 확인 중…"
+          : macroView.headline}</span>
+        {macroForCandidate?.state === "READY" && macroView.available && (
+          <small>{macroView.detail}</small>
+        )}
+      </section>
       <p className="scanner-ux6-validation">
-        미국 금리·국제 사건·공시 참고자료는 현재 Scanner의 전략 점수와 진입 차단에 자동 반영되지 않았습니다.
+        미국 금리는 참고 설명일 뿐이며 국제 사건·공시와 함께 현재 Scanner의 전략 점수와 진입 차단에 자동 반영되지 않았습니다.
       </p>
       {(candidate.risk.warning || view.asOfPrice.state === "OUT_OF_RANGE") && (
         <p className="scanner-ux5-caution"><strong>주의</strong> {view.caution}</p>

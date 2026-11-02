@@ -465,6 +465,19 @@
 - **품질 보증:** 결과 선택/새 조회/오류/다른 날짜 전환 중 이전 종목의 거시 참고가 다음 종목에 잘못 표시되지 않아야 함. 새 원천 정보는 `production_decision_approved=False`를 유지. API 오류는 기존 Scanner 작동을 방해하지 않아야 함.
 - **보고:** 코드/테스트/사용자 Windows 결과/차단 사유/다음 가장 이른 미완료 목표를 **이 계획서 한곳**에만 기록한다. MACRO-01 구현이 끝나도 미승인 PANIC 차단과 전쟁·국제 사건 연결이 자동 완료되는 것은 아니다.
 
+
+#### MACRO-01 구현 기록 — 코드 반영, 실데이터 확인 분리 (2026-11-02)
+
+**범위:** 기존 `GET /api/macro/reference-diagnostic`에 `dgs10_reference`를 **추가 필드**로 넣는다. `LocalMacroReader.read_series_as_of`를 다시 읽되 동일 `normalized_hash`/참고 수치인지 검사하고, 불일치 시 `UNAVAILABLE`. DGS10 수치(%)·관측일·`available_at`·`source_published_at`·`provider_available_at`·`time_quality`·`decision_cutoff`를 제공한다. 원래 diagnostic/governance 응답 필드 삭제 또는 contract_version 변경 없음.
+- `frontend/src/services/api.ts`: 기존 read-only GET을 선택 종목 화면에서 사용할 타입 및 함수 제공.
+- `frontend/src/components/scannerMacroRateReference.ts`: 금리 숫자·날짜·타임스탬프·비생산 플래그를 검증하고 **현재 조회 후 참고**임을 분명히 하는 쉬운 문구 생성. 발표시각 미확인/분석일 이후 이용 가능 상태를 정확히 구분. 거시 자료로 국내 지수 하락의 인과관계나 예측 수익을 주장하지 않는다.
+- `frontend/src/components/ScannerDecisionSummary.tsx`: **현재 선택된 종목 1개**의 요약 탭만 조회하고, 기존 KRX 시장 경고 하단에 한 줄/짧은 설명 추가. API 503/오류·자료 없음이면 안전한 안내, 후보 전략·점수·순위·Risk 판정 유지.
+- `frontend/src/components/ScannerPanel.tsx`: 종목/날짜 전환에 `key`를 명시해 이전 종목의 비동기 Macro 결과가 순간적으로 표시되지 않도록 함. 요청은 AbortController로 취소.
+- 테스트는 기존 `backend/tests/test_macro_api_next6b_r245.py`, `frontend/tests/scannerDecisionPresentation.test.mjs`에 추가. **실제 CI/Windows 증거는 테스트 결과 확인 전 PASS로 표시하지 않는다.**
+- **한계:** 이 Macro 자료는 조회 당시 참고 정보이며 **2026-10-30 Scanner 의사결정 당시 이용되었음을 의미하지 않음**. 새 PC의 실제 `C:\\Projects\\StockScope\\backend\\runtime\\macro\\macro.db` 상태/실제 DGS10 수집 여부를 GitHub 코드로는 확인할 수 없다. 기존 `production_decision_approved=False`, `scanner_input_approved=False`, `risk_gate_input_approved=False` 보존; 데이터 수집·마이그레이션·신규 JEV 호출 없음.
+
+**MACRO-01 완료 이전 필요한 증거:** CI 백엔드/프런트/Windows 4/4, 실제 새 PC 후보 1건에서 있는 값 또는 '자료 없음' 정확히 표시, 날짜·시각/정보 권한 검증. 그 전에는 본 작업을 **CODE_IMPLEMENTED / WINDOWS_UAT_PENDING**으로 취급한다.
+
 ### 3단계: 다전략·기간·위험 대비 기대성과 통합
 
 - **목적:** 기존 10전략·단/중/장기·Risk 결과와 시장·산업 조건을 합쳐 종목에 맞는 접근법을 비교.
@@ -514,7 +527,7 @@
 | 기존 A단계 요약 UI | DONE · 사용자 Windows 확인 | 보존 |
 | 기존 B단계 문장 비교 | REJECTED_PRODUCT_FIT · 코드 존재, 실모델 유료 검증 진행 금지 | 후속 해당 범위에서 UI 정리 |
 | **1단계 현황 파악** | **CODE_AUDIT_COMPLETE_WINDOWS_UAT_PENDING** | 2026-11-01 지정 브랜치 코드 연결 조사 완료, 실제 Windows·원천 데이터 미확인. 핵심 갭: Scanner 시장·이벤트 위험 → Risk Gate |
-| **2단계 시장·국제 사건 연결** | **MACRO01_SPEC_READY_LOCAL_DATA_UNVERIFIED** | MR-01 후보 운영 차단 기각·종료. MACRO-01 단일 실행 명세 확정: 기존 DGS10 Macro reference를 선택 종목의 비차단 시장 설명에만 결합, 관측일/available_at/cutoff 계약·결측·사용권 보존. 구현/Windows 확인 미착수, PANIC Gate 미승인·국제 사건 미연결 |
+| **2단계 시장·국제 사건 연결** | **MACRO01_CODE_IMPLEMENTED_CI_PENDING_WINDOWS_UAT_PENDING** | MR-01 후보 기각. MACRO-01 기존 Macro 진단 API에 DGS10 read-only 단일 관측값/시각 메타데이터 추가, Scanner 선택 종목 요약에 현재 조회 참고자료 표시. 과거 결정 입력/인과관계로 위장 금지, 결측시 기존 판단 유지. CI·새 PC Macro DB UAT 미확인; PANIC Gate 미승인/국제사건 미연결 |
 | 3단계 다전략/위험 통합 | NOT_STARTED | 2단계 종료 후 |
 | 4단계 JEV 실사용 | NOT_STARTED | 3단계 결과와 허용 입력 확인 후 |
 | 5단계 효용 평가 | NOT_STARTED | 4단계 후 |

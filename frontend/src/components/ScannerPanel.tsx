@@ -477,6 +477,7 @@ function CandidateDetail({
         {activeTab === "summary" && (
           <div className="scanner-ux3-summary">
             <ScannerDecisionSummary
+              key={candidate.market + ":" + candidate.code + ":" + candidate.data_date}
               candidate={candidate}
               marketContext={result.market_summary.find(
                 item => item.market === candidate.market && item.data_date === candidate.data_date,
