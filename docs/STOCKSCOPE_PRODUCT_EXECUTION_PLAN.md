@@ -476,7 +476,9 @@
 - 테스트는 기존 `backend/tests/test_macro_api_next6b_r245.py`, `frontend/tests/scannerDecisionPresentation.test.mjs`에 추가. **실제 CI/Windows 증거는 테스트 결과 확인 전 PASS로 표시하지 않는다.**
 - **한계:** 이 Macro 자료는 조회 당시 참고 정보이며 **2026-10-30 Scanner 의사결정 당시 이용되었음을 의미하지 않음**. 새 PC의 실제 `C:\\Projects\\StockScope\\backend\\runtime\\macro\\macro.db` 상태/실제 DGS10 수집 여부를 GitHub 코드로는 확인할 수 없다. 기존 `production_decision_approved=False`, `scanner_input_approved=False`, `risk_gate_input_approved=False` 보존; 데이터 수집·마이그레이션·신규 JEV 호출 없음.
 
-**MACRO-01 완료 이전 필요한 증거:** CI 백엔드/프런트/Windows 4/4, 실제 새 PC 후보 1건에서 있는 값 또는 '자료 없음' 정확히 표시, 날짜·시각/정보 권한 검증. 그 전에는 본 작업을 **CODE_IMPLEMENTED / WINDOWS_UAT_PENDING**으로 취급한다.
+**MACRO-01 코드 검증 (2026-11-02):** [GitHub Actions #41368180351](https://github.com/SkyBluekor/StockScope/actions/runs/41368180351)에서 Backend Python 3.11/3.14, Frontend Node 22, Fresh Clone Windows **4/4 PASS**. 백엔드 각 **2,386 PASS / 2 SKIP / 1 WARNING**. 프런트 MACRO-01의 과거입력 위장 금지/결측·미래 시각 차단/선택 종목 시점 표시 3개 회귀 포함 PASS. 코드 커밋 `a5bfe600`. 사용자 새 PC의 실제 `macro.db` 및 실행 브라우저 확인은 이 CI로 대체할 수 없음.
+
+**MACRO-01 완료 이전 필요한 증거:** 실제 새 PC 후보 1건에서 있는 값 또는 '자료 없음' 정확히 표시, 날짜·시각/정보 권한 검증. 현재 **CODE_IMPLEMENTED_CI_PASS / WINDOWS_UAT_PENDING**; 이 확인 전 기능 전체 DONE으로 취급하지 않는다.
 
 ### 3단계: 다전략·기간·위험 대비 기대성과 통합
 
@@ -527,7 +529,7 @@
 | 기존 A단계 요약 UI | DONE · 사용자 Windows 확인 | 보존 |
 | 기존 B단계 문장 비교 | REJECTED_PRODUCT_FIT · 코드 존재, 실모델 유료 검증 진행 금지 | 후속 해당 범위에서 UI 정리 |
 | **1단계 현황 파악** | **CODE_AUDIT_COMPLETE_WINDOWS_UAT_PENDING** | 2026-11-01 지정 브랜치 코드 연결 조사 완료, 실제 Windows·원천 데이터 미확인. 핵심 갭: Scanner 시장·이벤트 위험 → Risk Gate |
-| **2단계 시장·국제 사건 연결** | **MACRO01_CODE_IMPLEMENTED_CI_PENDING_WINDOWS_UAT_PENDING** | MR-01 후보 기각. MACRO-01 기존 Macro 진단 API에 DGS10 read-only 단일 관측값/시각 메타데이터 추가, Scanner 선택 종목 요약에 현재 조회 참고자료 표시. 과거 결정 입력/인과관계로 위장 금지, 결측시 기존 판단 유지. CI·새 PC Macro DB UAT 미확인; PANIC Gate 미승인/국제사건 미연결 |
+| **2단계 시장·국제 사건 연결** | **MACRO01_CODE_CI_PASS_WINDOWS_UAT_PENDING** | MR-01 후보 기각. MACRO-01 기존 Macro 진단 API에 DGS10 read-only 관측값/시각 메타데이터, Scanner 선택 종목 요약에 현재 조회 참고자료 추가. 2026-11-02 GitHub CI 4/4 PASS(Python 3.11·3.14, Frontend, Windows Fresh Clone), 새 PC Macro DB·UI 실증 미확인. 과거 결정 입력·Risk Gate·국제 사건은 미승인/미연결 |
 | 3단계 다전략/위험 통합 | NOT_STARTED | 2단계 종료 후 |
 | 4단계 JEV 실사용 | NOT_STARTED | 3단계 결과와 허용 입력 확인 후 |
 | 5단계 효용 평가 | NOT_STARTED | 4단계 후 |
