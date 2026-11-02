@@ -149,6 +149,8 @@ StockScope는 다수 국내 주식의 OpenAPI 기반 **주가·시장·거시경
 - **판정:** **실제 KIS 해외지수 원천 접속과 일자/값 확인은 성공.** 그러나 소스의 정확한 게시/이용 시각, 거래 세션 마감 의미, 사용자 계정/개인 로컬 활용 이외 공개 앱 배포·재배포·보존 권한, 타인 대상 화면 제공 권한은 **미확인**. KIS는 개인이 자신의 프로그램을 개발하는 사용과 제휴사/외부 고객에게 시세를 제공하는 상황을 구분해 안내한다. 개인용이라고 권리 전체가 승인된 것은 아님: https://apiportal.koreainvestment.com/about-howto 및 https://apiportal.koreainvestment.com/provider.
 - **제품 안전선:** 실제 공급자 지표를 통한 시장 비교는 다음 검증 후보지만, 현재 `display_rights_approved=false`, `retention_rights_approved=false`, `ai_transfer_approved=false`, `production_decision_approved=false` 유지. **실제 API 재호출은 필요 없음.** 기존 Scanner·Strategy·Risk·Holdings·JEV에 연결하지 않고 공식 권한의 사용범위를 확정한 다음 최소 참고 표시 여부를 결정한다.
 
+**GLOBAL-01 기술 검증 후속 (2026-11-02):** 커밋 `fc26097a`(KIS 실응답에 선택적 한글 이름 누락 시 공식 `.DJI` 코드 인지, 이름 출처 분리, 이름 충돌 차단, 실제 응답 모형 회귀 테스트). [GitHub Actions #41393803152](https://github.com/SkyBluekor/StockScope/actions/runs/41393803152) **4/4 PASS**: Backend Python 3.11·3.14, Frontend Node 22, Windows Fresh Clone 모두 통과. 실제 사용자의 7/7 KIS 응답은 기술적으로 수집 가능하다는 사실을 입증하지만, 새 커밋을 사용자 PC에서 직접 다시 실행한 것은 아니다. **실자료/기술 연결은 확인, 표시·보존·외부 제공 권한과 시점 적격성이 미확인이므로 프로덕션 Scanner 연결은 계속 보류.** 동일 API를 반복 호출할 필요는 없다.
+
 ### 4.3 명확한 완료 기준
 
 - **PASS / REFERENCE_CONNECTED:** 실제 사용자 KIS 계정에서 정체·거래일·시각·사용권을 확인한 1개 해외지수를 Scanner 선택 종목의 참고 설명에 안전하게 연결하고, 정상·결측·실패·다른 종목 전환을 검증함. **전략/리스크/매수 판단은 그대로 유지**.
