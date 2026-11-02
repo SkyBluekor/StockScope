@@ -519,6 +519,43 @@ export async function fetchScannerMacroRateReference(
   return body.dgs10_reference ?? null;
 }
 
+export type ScannerDjiLocalReference = {
+  contract_version: "STOCKSCOPE_GLOBAL01_S2_DJI_REFERENCE_V1";
+  status: "PARTIAL" | "UNAVAILABLE";
+  reason: string | null;
+  source: "KIS_OVERSEAS_INDEX_LOCAL";
+  index_code: ".DJI";
+  index_name: string;
+  index_name_source: string;
+  observation_date: string | null;
+  previous_observation_date: string | null;
+  index_value: string | null;
+  previous_index_value: string | null;
+  daily_change_pct: string | null;
+  fetched_at_utc: string | null;
+  source_time_quality: "DATE_ONLY";
+  session_close_verified: false;
+  usage_scope: "PERSONAL_LOCAL_REFERENCE_ONLY";
+  display_rights_approved: false;
+  retention_rights_approved: false;
+  ai_transfer_approved: false;
+  scanner_input_approved: false;
+  risk_gate_input_approved: false;
+  production_decision_approved: false;
+};
+
+/** Personal-local-only: backend blocks network when opt-in or loopback checks fail. */
+export async function fetchScannerDjiLocalReference(
+  signal?: AbortSignal,
+): Promise<ScannerDjiLocalReference> {
+  return asJson<ScannerDjiLocalReference>(
+    await fetch("/api/macro/overseas-index-reference", {
+      signal,
+      cache: "no-store",
+    }),
+  );
+}
+
 export async function fetchMarketDashboard(): Promise<MarketDashboard> {
   return asJson<MarketDashboard>(await fetch("/api/market/dashboard"));
 }

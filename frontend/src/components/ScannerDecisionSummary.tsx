@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import {
   fetchScannerMacroRateReference,
+  fetchScannerDjiLocalReference,
   type ScannerMacroRateReference,
+  type ScannerDjiLocalReference,
 } from "../services/api";
 import { scannerMacroRatePresentation } from "./scannerMacroRateReference";
+import { scannerDjiLocalPresentation } from "./scannerDjiLocalReference";
 import type { ScannerCandidate } from "../services/api";
 import { beginnerCandidatePresentation } from "./scannerDecisionPresentation";
 import { scannerQuoteTruth, type ScannerQuoteSnapshot } from "./scannerQuoteTruth";
@@ -38,6 +41,32 @@ export default function ScannerDecisionSummary({ candidate, quoteSnapshot, onOpe
       });
     return () => controller.abort();
   }, [macroIdentity]);
+  const [dji, setDji] = useState<{
+    identity: string;
+    state: "LOADING" | "READY" | "UNAVAILABLE";
+    value: ScannerDjiLocalReference | null;
+  } | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    setDji({ identity: macroIdentity, state: "LOADING", value: null });
+    void fetchScannerDjiLocalReference(controller.signal)
+      .then(value => {
+        if (!controller.signal.aborted) {
+          setDji({ identity: macroIdentity, state: "READY", value });
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setDji({ identity: macroIdentity, state: "UNAVAILABLE", value: null });
+        }
+      });
+    return () => controller.abort();
+  }, [macroIdentity]);
+  const djiForCandidate = dji?.identity === macroIdentity ? dji : null;
+  const djiView = scannerDjiLocalPresentation(
+    djiForCandidate?.state === "READY" ? djiForCandidate.value : null,
+    candidate.data_date,
+  );
   const macroForCandidate = macro?.identity === macroIdentity ? macro : null;
   const macroView = scannerMacroRatePresentation(
     macroForCandidate?.state === "READY" ? macroForCandidate.value : null,
@@ -104,9 +133,17 @@ export default function ScannerDecisionSummary({ candidate, quoteSnapshot, onOpe
         {macroForCandidate?.state === "READY" && macroView.available && (
           <small>{macroView.detail}</small>
         )}
+        <span aria-label="미국 다우존스 참고">
+          {!djiForCandidate || djiForCandidate.state === "LOADING"
+            ? "미국 다우존스 참고 자료 확인 중…"
+            : djiView.headline}
+        </span>
+        {djiForCandidate?.state === "READY" && djiView.available && (
+          <small>{djiView.detail}</small>
+        )}
       </section>
       <p className="scanner-ux6-validation">
-        국제 사건·공시 자료와 함께 미국 금리는 이 Scanner의 전략 점수나 진입 차단에 반영되지 않았습니다.
+        국제 사건·공시, 미국 금리·다우존스 참고 값은 이 Scanner의 전략 점수나 진입 차단에 반영되지 않았습니다.
       </p>
       {(candidate.risk.warning || view.asOfPrice.state === "OUT_OF_RANGE") && (
         <p className="scanner-ux5-caution"><strong>주의</strong> {view.caution}</p>

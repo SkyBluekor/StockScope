@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { scannerMacroRatePresentation } from "../src/components/scannerMacroRateReference.ts";
+import { scannerDjiLocalPresentation } from "../src/components/scannerDjiLocalReference.ts";
 import {
   assessPriceRule,
   beginnerCandidatePresentation,
@@ -296,4 +297,46 @@ test("MACRO-01 does not show an observation dated after the reference cutoff", (
     production_decision_approved: false,
   };
   assert.equal(scannerMacroRatePresentation(reference, "2026-10-30").available, false);
+});
+
+
+
+test("GLOBAL-01-S2 shows the KIS observation only as a current local reference", () => {
+  const base = {
+    contract_version: "STOCKSCOPE_GLOBAL01_S2_DJI_REFERENCE_V1",
+    status: "PARTIAL", reason: "SOURCE_PUBLISHED_TIME_UNVERIFIED",
+    source: "KIS_OVERSEAS_INDEX_LOCAL", index_code: ".DJI",
+    index_name: "다우존스 산업평균지수", index_name_source: "OFFICIAL_KIS_REQUEST_CODE",
+    observation_date: "2026-10-30", previous_observation_date: "2026-10-29",
+    index_value: "51770.31", previous_index_value: "51500.00",
+    daily_change_pct: String((51770.31 / 51500 - 1) * 100),
+    fetched_at_utc: "2026-11-02T03:11:51+00:00",
+    source_time_quality: "DATE_ONLY", session_close_verified: false,
+    usage_scope: "PERSONAL_LOCAL_REFERENCE_ONLY",
+    display_rights_approved: false, retention_rights_approved: false,
+    ai_transfer_approved: false, scanner_input_approved: false,
+    risk_gate_input_approved: false, production_decision_approved: false,
+  };
+  const view = scannerDjiLocalPresentation(base, "2026-10-30");
+  assert.equal(view.available, true);
+  assert.match(view.headline, /51,770.31/);
+  assert.match(view.headline, /일간 값 변화 \+0.52%/);
+  assert.match(view.detail, /원천 발표·확정 종가 시각 미확인/);
+  assert.match(view.detail, /분석일 이후 조회한 자료/);
+  assert.doesNotMatch(view.detail, /하락 원인입니다|매수하세요|매수 권장/);
+  assert.equal(scannerDjiLocalPresentation({
+    ...base, status: "UNAVAILABLE", reason: "PERSONAL_LOCAL_OPT_IN_REQUIRED",
+  }, "2026-10-30").available, false);
+  assert.equal(scannerDjiLocalPresentation({
+    ...base, status: "UNAVAILABLE", reason: "LOCAL_ACCESS_ONLY",
+  }, "2026-10-30").available, false);
+  assert.equal(scannerDjiLocalPresentation({
+    ...base, ai_transfer_approved: true,
+  }, "2026-10-30").available, false);
+  assert.equal(scannerDjiLocalPresentation({
+    ...base, daily_change_pct: "9",
+  }, "2026-10-30").available, false);
+  assert.equal(scannerDjiLocalPresentation({
+    ...base, observation_date: "2026-11-09",
+  }, "2026-10-30").available, false);
 });
