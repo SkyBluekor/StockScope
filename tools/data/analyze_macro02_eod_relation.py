@@ -17,7 +17,6 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[2]
 for folder in (ROOT, ROOT / "backend"):
@@ -160,7 +159,7 @@ def pair_retro(
         previous = macro[index - 1]
         delta_bp = (current["value"] - previous["value"]) * Decimal("100")
         local_close = datetime.combine(
-            local_day, time(15, 30), tzinfo=ZoneInfo("Asia/Seoul")
+            local_day, time(15, 30), tzinfo=timezone(timedelta(hours=9))
         )
         historically_verified = all(
             v["quality"] in {"EXACT", "PROVIDER_TIME"}
