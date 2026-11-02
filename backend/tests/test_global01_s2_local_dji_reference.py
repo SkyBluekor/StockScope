@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from types import SimpleNamespace
+from datetime import datetime as ActualDatetime
 
 import httpx
 import pytest
@@ -59,9 +59,11 @@ def test_global01_s2_disabled_is_network_free_and_never_leaks_cached_values(
 def test_global01_s2_collects_two_observations_once_and_caches(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setattr(local_dji, "datetime", SimpleNamespace(
-        now=lambda zone: datetime(2026, 11, 2, 6, 0, tzinfo=timezone.utc),
-    ))
+    class Clock(ActualDatetime):
+        @classmethod
+        def now(cls, zone):
+            return ActualDatetime(2026, 11, 2, 6, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(local_dji, "datetime", Clock)
     calls = []
     def fake_probe(**kwargs):
         calls.append(kwargs)
@@ -96,9 +98,11 @@ def test_global01_s2_absent_or_stale_data_is_not_displayed(
     monkeypatch: pytest.MonkeyPatch,
     pair: bool, latest: str, expected: str,
 ):
-    monkeypatch.setattr(local_dji, "datetime", SimpleNamespace(
-        now=lambda zone: datetime(2026, 11, 2, 6, 0, tzinfo=timezone.utc),
-    ))
+    class Clock(ActualDatetime):
+        @classmethod
+        def now(cls, zone):
+            return ActualDatetime(2026, 11, 2, 6, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(local_dji, "datetime", Clock)
     monkeypatch.setattr(local_dji, "probe_kis_daily_chart",
                         lambda **kwargs: _capability(pair=pair, latest=latest))
     result = local_dji.read_local_dji_reference(enabled=True)
@@ -116,7 +120,8 @@ def test_global01_s2_backend_blocks_public_or_proxied_requests(
                         lambda *, enabled, reason="PERSONAL_LOCAL_OPT_IN_REQUIRED":
                         {"status": "PARTIAL" if enabled else "UNAVAILABLE",
                          "reason": None if enabled else reason})
-    with TestClient(app, client=("127.0.0.1", 15000)) as local:
+    local = TestClient(app, client=("127.0.0.1", 15000))
+    if True:
         okay = local.get("/api/macro/overseas-index-reference",
                          headers={"host": "127.0.0.1:8000"})
         assert okay.status_code == 200
@@ -132,7 +137,8 @@ def test_global01_s2_backend_blocks_public_or_proxied_requests(
             assert rejected.status_code == 200
             assert rejected.json()["status"] == "UNAVAILABLE"
             assert rejected.json()["reason"] == "LOCAL_ACCESS_ONLY"
-    with TestClient(app, client=("198.51.100.10", 24000)) as remote:
+    remote = TestClient(app, client=("198.51.100.10", 24000))
+    if True:
         result = remote.get("/api/macro/overseas-index-reference",
                             headers={"host": "127.0.0.1:8000"})
         assert result.json()["status"] == "UNAVAILABLE"
