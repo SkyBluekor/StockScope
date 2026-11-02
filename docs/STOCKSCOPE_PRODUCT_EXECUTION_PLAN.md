@@ -430,6 +430,41 @@
 
 **다음 단일 작업(2단계 유지, PANIC 미승인 경로에 대한 우회 없음): `MACRO-01` — 기존 미국 10년물 금리(DGS10)와 국내 KRX 시장 경고의 참조 설명 연결.** 이미 존재하는 `LocalMacroReader`, `GET /api/macro/market-stock-impact`, 사후 reference 결과를 **원천·발표시각·평가 기준일·자료 사용권**과 함께 점검하고, 충분히 확인된 경우에만 기존 Scanner의 **비차단 시장 설명**에 결합. 데이터가 없다면 미확인으로 종료. Risk Gate/점수/순위/JEV/원천 DB를 바꾸거나 임의 국제뉴스 API를 새로 만들지 않는다. 실제 사용자에게 설명되는 변화가 확인되지 않으면 완료라 주장하지 않는다.
 
+#### 2단계 다음 단일 작업 — MACRO-01: 미국 금리와 국내 시장 위험의 참고 설명 연결
+
+**상태: SPEC_READY / IMPLEMENTATION_NOT_STARTED / LOCAL_MACRO_DATA_UNVERIFIED (2026-11-02).**
+사용자 새 PC 기준 경로는 `C:\\Projects\\StockScope`, 작업 브랜치는 `codex/jev-reviewer-shadow-bridge`. 사용자가 2026-10-30 선익시스템(171090)을 새 PC에서 확인했고, MR-01 실자료 평가를 종료한 다음 단일 작업이다. 이전 PC 경로 `C:\\TAEWOO\\CapstonDesign\\StockScope`를 새 PC 경로로 착각하지 않는다.
+
+**문제와 제품 결과:** 현재 Scanner 상세는 KRX 분석일 기준 지수 하락 참고 안내(`MARKET_RECHECK`)를 표시하지만 미국 국채금리 같은 해외 거시 지표를 함께 전달하지 못한다. 사용자는 **(a) 종목 전략 조건, (b) KOSPI/KOSDAQ 동일일 시장 위험, (c) 미국 금리 참고 상태 및 관측일/이용 가능 시각**을 쉬운 한국어로 구분해 볼 수 있어야 한다. **금리 상승이 실제 국내 하락의 원인임을 확정하거나, 이 자료로 즉시 매수/매도를 결정하지 않는다.**
+
+#### 이미 확인된 코드·거버넌스
+
+- `backend/app/macro/context.py:build_macro_context()`는 `US_10Y_CONSTANT_MATURITY_YIELD`(DGS10)에 대해 `LocalMacroReader`를 호출하며, `decision_cutoff`, `available_at`, `time_quality`와 `features`(`rate_level_pct`, `delta_bp_1obs/5obs/10obs`)를 관리한다. `COMPLETE_REFERENCE`, `PARTIAL`, `UNAVAILABLE`은 구별된다. `unavailable` 자료를 임의로 숫자 0으로 보완하지 않는다.
+- `backend/app/api/macro.py`의 `GET /api/macro/reference-diagnostic`과 `GET /api/macro/market-stock-impact`는 로컬 DB를 읽는 **reference/shadow** API다. 후자는 시장/종목 EOD 1공통세션 비교 `impact`와 `macro_context`의 상태·ID 등을 반환하지만, **현재 DGS10 숫자 자체를 이 endpoint 응답에 직접 제공하는 것으로 가정하지 않는다**. 실제 응답 계약을 먼저 확인한다.
+- `backend/app/prospective/reference_capture.py`의 결과는 **Scanner 결과가 확정된 뒤 별도 기록되는 사후 reference**이며 `decision_input=False`, `scanner_input_approved=False`, `risk_gate_input_approved=False`, `production_decision_approved=False`. 같은 캡처 ID가 있다고 당시 종목 판단에 금리가 반영됐다고 해석하지 않는다.
+- `frontend/src/components/ScannerDecisionSummary.tsx`에서 기존 '시장 위험 · 분석일 기준'을 보여주지만 현재 직접 Macro API를 소비하지 않는다. 설명/숫자의 실제 출처와 최초 이용 가능 시점을 별도로 제공해야 한다. 기존 Frozen Scanner 내부 계산은 변경하지 않는다.
+
+#### 구현 지시 — 1→2→3→4→5 순서, 병렬 확장 금지
+
+1. **새 PC의 데이터 상태를 먼저 확인:** Git HEAD, 브랜치, 로컬 미커밋 변경을 확인하고, 사용자 DB를 손대지 않은 상태에서 `STOCKSCOPE_MACRO_DB` 또는 기본 `backend/runtime/macro/macro.db` 존재 여부와 기존 `LocalMacroReader`의 상태를 읽기 전용으로 확인한다. DGS10의 실제 관측값, observation_date, `available_at`, source_published_at/provider_available_at, time_quality 및 결측을 조회한다. DB 부재/스키마 불일치라면 자동 DB 생성·수집으로 우회하지 않는다. 사용자 PC를 직접 볼 수 없으면 GitHub 코드 검사 완료와 Windows 데이터 확인 미완료를 분리한다.
+2. **시점 계약 고정:** Scanner 분석일(`candidate.data_date`)과 Macro 원천 관측일·수집일·이용 가능 시각·UI 조회 시각을 분리한다. **분석 당시 참고**로 표시하려면 해당 분석시점에 `available_at <= 당시 지정 cutoff`라는 증거가 있어야 한다. `ProspectiveReferenceCapture`의 `reference_cutoff=completed_at`는 Scanner 완료 *이후*의 시각이므로, 이를 과거 분석 입력의 시각으로 대체해서는 안 된다. 당시 이용 가능성이 증명되지 않거나 현재 시점 조회라면 **'추후 확인된 참고자료'** 또는 **'확인 불가'**로 명확하게 표시한다. 미국 발표일이 한국 거래일과 다르다는 사실도 숨기지 않는다.
+3. **기존 API 소비부터 최소 연결:** 이미 존재하는 `GET /api/macro/reference-diagnostic`과 `GET /api/macro/market-stock-impact` 응답 필드를 확인한다. UI에서 출처·상태·실제 유효 관측값/기준시각을 표현하기에 충분하면 기존 호출을 재사용한다. 부족한 경우에만 **기존 API에 비파괴적 read-only 참고 필드**를 작게 추가하고 과거 contract 필드·governance를 보존한다. 추가 엔드포인트, 새 거시 수집기, 별도 사용자 입력/새 진단 UI는 만들지 않는다. 기존 reference capture의 저장 스키마를 고치거나 과거 캡처를 재작성하지 않는다.
+4. **한 화면에 결합:** `frontend/src/components/ScannerDecisionSummary.tsx` 및 필요한 최소 API 타입·조회 코드에 **'해외 금리 · 참고자료'** 한 줄/간결한 영역을 배치한다. 예시: `미국 10년물 금리 · 관측일 YYYY-MM-DD · 당시 이용 가능/사후 확인 · 기준 시각 ...`. 금리 변화가 실제 제공되고 시점·정확성이 확인된 경우에만 `상승/하락`을 표시하고, 그 자체가 국내 주가 변동의 원인이라는 서술은 금지한다. KRX 지수 하락 경고와 종목 전략 조건, 기존 Risk Gate/판정은 각각 별개로 보여준다. 빠른 후보 목록 전체에 자동 원격 호출을 늘리지 않고 **선택된 한 종목의 기존 API 조회**를 우선한다.
+5. **직접 검증 후 종료:** 기존 API가 `UNAVAILABLE`·`PARTIAL`·날짜 불일치·시각 불충족·공급자 타임스탬프 미확인·오류인 경우 **'자료 없음/시점 검증 불가'**를 표시하고 종목 전략/순위가 바뀌지 않는지 확인한다. 정상 자료가 있으면 관측일/이용 가능 시각/단위(`% vs bp`)/KRX 날짜가 맞는지 검증한다. Python 관련 회귀·프런트 타입/단위 테스트·필요한 E2E·Windows 실종목 1건 확인. CI PASS와 Windows UI 실증을 분리해 기록하고 통과 시 종료한다.
+
+#### 허용/금지 경계
+
+- **허용:** 기존 Macro 조회 API의 후방호환 읽기전용 필드, 프런트 선택 후보 참조 설명, 꼭 필요한 타입·테스트, 이 단일 실행 계획서의 상태 갱신.
+- **금지:** 새로운 글로벌 공급자/크롤러, 금리 변화로 수익·손실·사건 인과관계 조작, 임의 거시 충격 임계값/확률, PANIC Gate 재활성화, `StrategyInput`·기존 10전략·Scanner 랭킹·Holdings/Prospective 원본 변경, 유료 JEV·제3자 AI 전송, DB 마이그레이션/백필, 기존 2단계에 새 하위 검증 프로젝트 추가.
+- **권한:** 기존 API의 내부 로컬 읽기와 외부 전송·재배포 권한은 별개다. 원천 라이선스·AI 권한 미확인 시 외부 JEV 입력 사용 금지. 자료에 대한 서술은 참고 범위로 제한한다.
+
+#### 완료 기준 및 실패 처리
+
+- **정상 데이터:** 실제 Windows에서 선익시스템(171090) 또는 사용자가 선택한 실제 후보에 대해 `종목 전략 조건 + KRX 시장 위험 + 미국 금리 참고자료`가 중복/모순 없이 한 화면에 표시되며, 거시 관측일·시각/출처와 분석일을 구분할 수 있음.
+- **자료 없음:** 기존 시장·전략 화면과 후보/점수/진입 판정을 그대로 유지하면서 금리 설명은 **사용 가능한 자료 없음**으로 정확히 표시. 막힌 원천 사유를 계획서에 기록하고, 새 수집기/데이터 조작 없이 마무리.
+- **품질 보증:** 결과 선택/새 조회/오류/다른 날짜 전환 중 이전 종목의 거시 참고가 다음 종목에 잘못 표시되지 않아야 함. 새 원천 정보는 `production_decision_approved=False`를 유지. API 오류는 기존 Scanner 작동을 방해하지 않아야 함.
+- **보고:** 코드/테스트/사용자 Windows 결과/차단 사유/다음 가장 이른 미완료 목표를 **이 계획서 한곳**에만 기록한다. MACRO-01 구현이 끝나도 미승인 PANIC 차단과 전쟁·국제 사건 연결이 자동 완료되는 것은 아니다.
+
 ### 3단계: 다전략·기간·위험 대비 기대성과 통합
 
 - **목적:** 기존 10전략·단/중/장기·Risk 결과와 시장·산업 조건을 합쳐 종목에 맞는 접근법을 비교.
@@ -479,7 +514,7 @@
 | 기존 A단계 요약 UI | DONE · 사용자 Windows 확인 | 보존 |
 | 기존 B단계 문장 비교 | REJECTED_PRODUCT_FIT · 코드 존재, 실모델 유료 검증 진행 금지 | 후속 해당 범위에서 UI 정리 |
 | **1단계 현황 파악** | **CODE_AUDIT_COMPLETE_WINDOWS_UAT_PENDING** | 2026-11-01 지정 브랜치 코드 연결 조사 완료, 실제 Windows·원천 데이터 미확인. 핵심 갭: Scanner 시장·이벤트 위험 → Risk Gate |
-| **2단계 시장·국제 사건 연결** | **MR01_CLOSED_POLICY_REJECTED_MACRO01_NEXT** | 새 PC 120일 KRX 실데이터로 PANIC 후보 검증: 8/120 발동, 10/29·10/30 급락 미포착, 사후 5일 위험 분리 미입증 → 운영 차단 기각. MARKET_RECHECK 유지, 실제 PANIC Gate 미승인. 다음은 기존 US10Y Macro 비차단 시장 설명 연결(MACRO-01), 날짜 반복 Windows 검증 별도 미확인 |
+| **2단계 시장·국제 사건 연결** | **MACRO01_SPEC_READY_LOCAL_DATA_UNVERIFIED** | MR-01 후보 운영 차단 기각·종료. MACRO-01 단일 실행 명세 확정: 기존 DGS10 Macro reference를 선택 종목의 비차단 시장 설명에만 결합, 관측일/available_at/cutoff 계약·결측·사용권 보존. 구현/Windows 확인 미착수, PANIC Gate 미승인·국제 사건 미연결 |
 | 3단계 다전략/위험 통합 | NOT_STARTED | 2단계 종료 후 |
 | 4단계 JEV 실사용 | NOT_STARTED | 3단계 결과와 허용 입력 확인 후 |
 | 5단계 효용 평가 | NOT_STARTED | 4단계 후 |
