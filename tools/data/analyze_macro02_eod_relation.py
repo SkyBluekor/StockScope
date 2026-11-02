@@ -82,6 +82,12 @@ def market_days(db_path: Path, *, end: date, limit: int) -> list[dict[str, Any]]
         for key in reversed(keys):
             result = {"day": key}
             for market in MARKETS:
+                # Do not trust day_status without actual stored stock and index rows.
+                if not conn.execute(
+                    "SELECT 1 FROM stock_daily WHERE market=? AND bas_dd=? LIMIT 1",
+                    (market, key),
+                ).fetchone():
+                    break
                 row = conn.execute(
                     "SELECT row_json FROM main_index_daily WHERE market=? AND bas_dd=?",
                     (market, key),
