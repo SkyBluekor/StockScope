@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { scannerMacroRatePresentation } from "../src/components/scannerMacroRateReference.ts";
 import {
   assessPriceRule,
   beginnerCandidatePresentation,
@@ -199,4 +200,52 @@ test("SC-UX4-S2 does not invent cause when market evidence differs", () => {
     },
   }));
   assert.equal(view.missingConditions[0].label, "시장 환경이 급격한 하락 상태가 아님");
+});
+
+test("MACRO-01 displays DGS10 as a current reference, never historical Scanner input", () => {
+  const reference = {
+    status: "PARTIAL", source: "FRED_DGS10_LOCAL", source_unit: "PERCENT",
+    value_pct: "4.841", observation_date: "2026-10-31",
+    available_at: "2026-11-01T11:00:00+00:00",
+    source_published_at: null, provider_available_at: null,
+    time_quality: "DATE_ONLY", decision_cutoff: "2026-11-02T01:00:00+00:00",
+    scanner_input_approved: false, risk_gate_input_approved: false,
+    production_decision_approved: false,
+  };
+  const view = scannerMacroRatePresentation(reference, "2026-10-30");
+  assert.equal(view.available, true);
+  assert.match(view.headline, /4\.84%/);
+  assert.match(view.detail, /당시 판단 근거가 아니에요/);
+  assert.match(view.detail, /원천 발표 시각 확인 불가/);
+  assert.doesNotMatch(view.detail, /매수하세요|매수 권장|하락 원인입니다/);
+});
+
+test("MACRO-01 fails closed for absent, invalid, or future-available rates", () => {
+  const base = {
+    status: "AVAILABLE", source: "FRED_DGS10_LOCAL",
+    source_unit: "PERCENT", value_pct: "4.2",
+    observation_date: "2026-10-30",
+    available_at: "2026-11-02T03:00:00+00:00",
+    decision_cutoff: "2026-11-02T01:00:00+00:00",
+    time_quality: "EXACT", scanner_input_approved: false,
+    risk_gate_input_approved: false, production_decision_approved: false,
+  };
+  assert.equal(scannerMacroRatePresentation(null, "2026-10-30").available, false);
+  assert.equal(scannerMacroRatePresentation(base, "2026-10-30").available, false);
+  assert.equal(scannerMacroRatePresentation({ ...base, available_at: "2026-11-01T01:00:00+00:00", value_pct: "NaN" }, "2026-10-30").available, false);
+  assert.equal(scannerMacroRatePresentation({ ...base, available_at: "2026-11-01T01:00:00+00:00", risk_gate_input_approved: true }, "2026-10-30").available, false);
+});
+
+test("MACRO-01 does not leak analysis-day attribution between candidates", () => {
+  const reference = {
+    status: "AVAILABLE", source: "FRED_DGS10_LOCAL",
+    source_unit: "PERCENT", value_pct: "4.10",
+    observation_date: "2026-10-29",
+    available_at: "2026-10-30T15:00:00+00:00",
+    decision_cutoff: "2026-11-02T01:00:00+00:00",
+    time_quality: "EXACT", scanner_input_approved: false,
+    risk_gate_input_approved: false, production_decision_approved: false,
+  };
+  assert.match(scannerMacroRatePresentation(reference, "2026-10-29").detail, /분석일 이후/);
+  assert.match(scannerMacroRatePresentation(reference, "2026-11-01").detail, /현재 조회 기준 참고자료/);
 });
