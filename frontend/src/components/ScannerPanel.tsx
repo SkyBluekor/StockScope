@@ -524,6 +524,7 @@ function CandidateDetail({
               onOpenHoldings={onOpenHoldings}
             />
             <ScannerDecisionSummary
+              key={candidate.market + ":" + candidate.code + ":" + candidate.data_date}
               candidate={candidate}
               quoteSnapshot={quoteSnapshot}
               onOpenPriceTab={() => setActiveTab("strategy")}
