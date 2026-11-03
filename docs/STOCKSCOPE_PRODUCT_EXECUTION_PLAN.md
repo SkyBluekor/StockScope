@@ -4,7 +4,7 @@
 >
 > **실제 사용자 브랜치: `codex/p0-01-mvp-c1-c2-integration-20261022` · 로컬 `C:\Projects\StockScope`**
 >
-> **현재 작업: GLOBAL-02-S2 CODE_IMPLEMENTED_CI_PENDING / OFFLINE_CONTRACT_ONLY / OFFICIAL_EVENT_SOURCE_RIGHTS_AND_TIME_UNVERIFIED / PRODUCTION_POLICY_FROZEN.** STRATEGY-01은 Windows 실데이터 10전략 연구 실행 완료·전략당 2~4건으로 성능 판정 보류. 생산 전략/Risk/JEV/기간 정책은 동결한다. GLOBAL-01-S2의 Windows Scanner 참고표시는 검증 완료(개인·공개 이용권은 별도 확인 중). 생산 전략·Risk 정책은 변경하지 않는다. MACRO-02는 사후 연구 종료(생산 판단 미승인), MACRO-01 표시는 유지한다. 이 문서는 현재 사용 브랜치에서 다음 제품 작업을 관리하는 단일 기준이다. `codex/jev-reviewer-shadow-bridge`의 오래된 계획서는 역사적 근거 자료이며 **현재 브랜치에 자동 포함되지 않는다**. 기존 P0 Scanner·Holdings·JEV 작업, 동결된 Strategy/Risk/Scanner 계약을 전부 보존한다. 다른 브랜치 전체 병합 금지.
+> **현재 작업: GLOBAL-02-S2 CODE_IMPLEMENTED_CI_4_OF_4_PASS / OFFLINE_CONTRACT_ONLY / OFFICIAL_EVENT_SOURCE_RIGHTS_AND_TIME_UNVERIFIED / PRODUCTION_POLICY_FROZEN.** STRATEGY-01은 Windows 실데이터 10전략 연구 실행 완료·전략당 2~4건으로 성능 판정 보류. 생산 전략/Risk/JEV/기간 정책은 동결한다. GLOBAL-01-S2의 Windows Scanner 참고표시는 검증 완료(개인·공개 이용권은 별도 확인 중). 생산 전략·Risk 정책은 변경하지 않는다. MACRO-02는 사후 연구 종료(생산 판단 미승인), MACRO-01 표시는 유지한다. 이 문서는 현재 사용 브랜치에서 다음 제품 작업을 관리하는 단일 기준이다. `codex/jev-reviewer-shadow-bridge`의 오래된 계획서는 역사적 근거 자료이며 **현재 브랜치에 자동 포함되지 않는다**. 기존 P0 Scanner·Holdings·JEV 작업, 동결된 Strategy/Risk/Scanner 계약을 전부 보존한다. 다른 브랜치 전체 병합 금지.
 
 ## 1. 제품 목표와 불변 원칙
 
@@ -368,7 +368,7 @@ StockScope의 목표는 미국 금리·해외 지수를 단순 표시하는 것�
 
 **GLOBAL-02-S1 완료 조건:** 실제 FX와 Brent 각각에 대해 원천/단위·관측/공개시각·결측/권리 판정이 명확하고, 합법적 로컬 이용 범위에서 **기존 국내 시장 공통 거래일과 매칭된 사후 분석을 재현**하며, 데이터 부족·권리 제한을 정직하게 표시한다. **연구 실행 완료는 제품의 인과관계·예측력·투자 정책 승인을 뜻하지 않는다.** 실제 수집·연구가 제한되면 원인과 다음에 필요한 단 한 가지 조건을 제시하고 종료한다.
 
-### 7.4 GLOBAL-02 후속 순서 — S2 오프라인 코드 구현·CI 대기, S3/S4 미착수
+### 7.4 GLOBAL-02 후속 순서 — S2 오프라인 코드 구현·CI 통과, S3/S4 미착수
 
 - **GLOBAL-02-S2 / 국제 사건 근거 — 다음 단일 구현 작업 (§7.7):** 1차 공식 원천은 UN 안전보장이사회 제재 명단 변경 목록으로 제한해 출처 ID·변경 유형·공식 통지번호·관측일/원문 게시시각 분리·권한 미승인 차단을 검사한다. S2는 제재/외교 사건의 **증거 계약**으로, 전쟁 발생 인과·국내 업종/기업·매매판단을 추정하지 않는다. 기존 `event_evidence/policy.py`, `TemporalEvidence`, 정정·중복 관리, `macro/event_composition.py`를 재사용하며 NAVER_NEWS 원문 저장·AI 전송 금지.
 - **GLOBAL-02-S3 / 산업·종목 연결:** S1 환율/유가의 확정된 출처와 S2 사건 입력을 기존 `macro/impact.py`, `macro/sector_route.py`, `api/macro.py`에 read-only 보조 설명으로 연결한다. 정확한 산업·기업 노출도/매출 구조/시점매핑이 증명되지 않으면 `SECTOR_LINK_UNVERIFIED`로 처리. 국제 뉴스 하나로 시장 폭락 원인을 단정하지 않음.
@@ -442,7 +442,7 @@ if ($LASTEXITCODE -eq 0) {
 
 ### 7.7 다음 실행 명세 — GLOBAL-02-S2: 공식 국제 제재 변경 사건의 근거·시점·권리 검증
 
-**작업 상태: `OFFLINE_CODE_IMPLEMENTED / CI_PENDING / RIGHTS_UNVERIFIED / HISTORICAL_PIT_UNVERIFIED` (2026-11-03).**
+**작업 상태: `OFFLINE_CODE_IMPLEMENTED / CI_4_OF_4_PASS / RIGHTS_UNVERIFIED / HISTORICAL_PIT_UNVERIFIED` (2026-11-03).**
 
 **이번 한 단계의 목표:** 글로벌 정책/제재/분쟁 사건을 막연한 뉴스 감성 점수로 취급하지 않기 위해, **국제 공식기관이 실제 발표한 사건 1종을 출처/ID/변경 유형/시점/정정/권한이 있는 작은 참조 레코드로 구분할 수 있는가**를 실데이터 1회로 검증한다. 기존 EVENT P6 인프라를 재사용하고 이번 S2에서는 신규 사업체 매핑·지수/종목 가격 비교·전쟁 확률·AI/JEV·Scanner 화면 **모두 불허**. 글로벌 사건 위험도 임의 숫자와 확정 인과관계는 만들지 않는다.
 
@@ -483,11 +483,11 @@ if ($LASTEXITCODE -eq 0) {
 
 ### 7.8 GLOBAL-02-S2 오프라인 구현 및 차단 판정 (2026-11-03)
 
-**상태: `OFFLINE_CODE_IMPLEMENTED / CI_PENDING / RIGHTS_UNVERIFIED / HISTORICAL_PIT_UNVERIFIED / NO_LIVE_FETCH`.** S2의 공식 원천 구조는 UN 안전보장이사회 변경 목록에서 확인했지만 자동 추출·파생 정규화 권리까지 확인된 것은 아니다.
+**상태: `OFFLINE_CODE_IMPLEMENTED / CI_4_OF_4_PASS / RIGHTS_UNVERIFIED / HISTORICAL_PIT_UNVERIFIED / NO_LIVE_FETCH`.** S2의 공식 원천 구조는 UN 안전보장이사회 변경 목록에서 확인했지만 자동 추출·파생 정규화 권리까지 확인된 것은 아니다.
 
 - **공식 근거:** UN 공식 변경 목록 `https://main.un.org/securitycouncil/en/content/list-updates-unsc-consolidated-list`에는 변경 날짜, 제재체제, 영구 참조번호, Listing/Delisting/Amendment, 변경 수, SC 통지 링크가 있다. UN 공식 약관 `https://www.un.org/en/about-us/terms-of-use`는 개인·비상업적 방문/복사를 허용하지만 원문 재배포와 파생물 제작을 제한한다. StockScope의 자동 수집·파생 정규화·상업/공개 서비스·AI 입력 허가는 **미확인**.
 - **추가 코드:** `backend/app/event_evidence/global02_official_updates.py`는 정책 미승인 `UNSC_SANCTIONS_UPDATE_CANDIDATE`에 대한 별도 deny-all 후보와 strict notice/regime/permanent ref/change type/date/link 정규화, 날짜만 제공된 자료의 `TemporalEvidence.DATE_ONLY`, 최초 검증시각 이전 가용성 역행 금지, 중복/충돌, 입력 크기/건수 제한 및 메모리 내 집계를 구현한다. `policy_for_event_source` 운영 승인 목록은 수정하지 않음.
 - **CLI:** `tools/data/inspect_global02_official_events.py`. 기본은 네트워크 없는 안내, `--offline-fixture`는 **실제 UN 사건이 아닌 합성 공지** 3개/고유 변경 4개에 대한 집계만 출력한다. `--live --confirm-personal-research`조차 source rights 확보 전에는 `RIGHTS_UNVERIFIED`와 `network_requests=0`을 반환한다. 원문·개인/단체 제재명단·개별 영구 ID/공지번호를 CLI 출력이나 DB에 쓰지 않는다.
-- **테스트:** `backend/tests/test_global02_official_updates_s2.py` 신규. 권리 fail-closed, 실제 UTC 미증명, 날짜만 제공된 사건의 PIT 차단, 참조번호 다수/변경 유형/공지별 수정 사건 구별, 중복/충돌, 공식 도메인 위장/무단 링크, HTML 용량 제한/합성 테이블, opt-in 이후에도 네트워크 0을 검증한다. GitHub CI 검증은 **아직 대기 중**이며 이 단계 완료 판정 전 결과 확인 필수.
+- **테스트:** `backend/tests/test_global02_official_updates_s2.py` 신규. 권리 fail-closed, 실제 UTC 미증명, 날짜만 제공된 사건의 PIT 차단, 참조번호 다수/변경 유형/공지별 수정 사건 구별, 중복/충돌, 공식 도메인 위장/무단 링크, HTML 용량 제한/합성 테이블, opt-in 이후에도 네트워크 0을 검증한다. GitHub Actions [CI #41559484181](https://github.com/SkyBluekor/StockScope/actions/runs/41559484181) **4/4 PASS** (Backend Python 3.11 **2,829 passed / 2 skipped**, Python 3.14 PASS, Frontend Node22 PASS, Windows Fresh Clone PASS). 테스트 초기 1건은 예외 메시지와 내부 오류 코드를 혼동한 테스트 단언 문제였고, 오류 코드 속성을 직접 검사하도록 수정한 커밋 `e8480876`에서 전체 통과.
 - **수용 경계:** 오프라인 계약이 검증되어도 실제 공식 UN HTML의 자동 추출 권리, UTC 최초 발행 증거, 변경 공지 간 정정 링크는 검증되지 않았다. 따라서 `SOURCE_CONTRACT_VERIFIED_REFERENCE_ONLY`나 실전 가용성으로 승격하지 않는다. `RIGHTS_UNVERIFIED`, `DATE_ONLY_LIMITED`, `CORRECTION_LINK_UNVERIFIED`로 유지하고, 독립적으로 확인 가능한 권리 승인 없이 실네트워크 재시도·다른 공식 기관 우회 조회·DB/JEV/Scanner/전략 반영 금지.
-- **다음 완료 조건:** CI 통과 후 합성 테스트 결과를 기록하고, **실자료 UAT/운영 연결을 위해서는 UN의 자동 추출 및 파생 메타데이터 사용 허용을 뒷받침할 별도 공식 근거 또는 권리자의 명시적 허가가 필요**하다. 그전에는 GLOBAL-02-S3/S4로 확대하지 않는다.
+- **다음 완료 조건:** 오프라인 합성 테스트·CI 4/4는 완료. **실자료 UAT/운영 연결을 위해서는 UN의 자동 추출 및 파생 메타데이터 사용 허용을 뒷받침할 별도 공식 근거 또는 권리자의 명시적 허가가 필요**하다. 그전에는 GLOBAL-02-S3/S4로 확대하지 않는다.
