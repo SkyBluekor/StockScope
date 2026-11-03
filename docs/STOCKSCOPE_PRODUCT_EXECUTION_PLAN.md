@@ -1,10 +1,10 @@
 # StockScope — 제품 목표·단일 실행계획 (현재 사용 브랜치)
 
-> 기준: 2026-11-02 KST · 저장소 `SkyBluekor/StockScope`
+> 기준: 2026-11-03 KST · 저장소 `SkyBluekor/StockScope`
 >
 > **실제 사용자 브랜치: `codex/p0-01-mvp-c1-c2-integration-20261022` · 로컬 `C:\Projects\StockScope`**
 >
-> **현재 다음 단계: GLOBAL-02-S1 SPEC_READY / IMPLEMENTATION_NOT_STARTED.** STRATEGY-01은 Windows 실데이터 10전략 연구 실행 완료·전략당 2~4건으로 성능 판정 보류. 생산 전략/Risk/JEV/기간 정책은 동결한다. GLOBAL-01-S2의 Windows Scanner 참고표시는 검증 완료(개인·공개 이용권은 별도 확인 중). 생산 전략·Risk 정책은 변경하지 않는다. MACRO-02는 사후 연구 종료(생산 판단 미승인), MACRO-01 표시는 유지한다. 이 문서는 현재 사용 브랜치에서 다음 제품 작업을 관리하는 단일 기준이다. `codex/jev-reviewer-shadow-bridge`의 오래된 계획서는 역사적 근거 자료이며 **현재 브랜치에 자동 포함되지 않는다**. 기존 P0 Scanner·Holdings·JEV 작업, 동결된 Strategy/Risk/Scanner 계약을 전부 보존한다. 다른 브랜치 전체 병합 금지.
+> **현재 작업: GLOBAL-02-S1 CODE_IMPLEMENTED_CI_4_OF_4_PASS / PERSONAL_LOCAL_FRED_UAT_PENDING / PRODUCTION_POLICY_FROZEN.** STRATEGY-01은 Windows 실데이터 10전략 연구 실행 완료·전략당 2~4건으로 성능 판정 보류. 생산 전략/Risk/JEV/기간 정책은 동결한다. GLOBAL-01-S2의 Windows Scanner 참고표시는 검증 완료(개인·공개 이용권은 별도 확인 중). 생산 전략·Risk 정책은 변경하지 않는다. MACRO-02는 사후 연구 종료(생산 판단 미승인), MACRO-01 표시는 유지한다. 이 문서는 현재 사용 브랜치에서 다음 제품 작업을 관리하는 단일 기준이다. `codex/jev-reviewer-shadow-bridge`의 오래된 계획서는 역사적 근거 자료이며 **현재 브랜치에 자동 포함되지 않는다**. 기존 P0 Scanner·Holdings·JEV 작업, 동결된 Strategy/Risk/Scanner 계약을 전부 보존한다. 다른 브랜치 전체 병합 금지.
 
 ## 1. 제품 목표와 불변 원칙
 
@@ -328,7 +328,7 @@ if ($LASTEXITCODE -eq 0) {
 
 1. **완료:** MACRO-01 FRED 참고, MACRO-02 120거래일/116금리 관측의 사후 분석(운영 판단 불승인), GLOBAL-01-S2 KIS 다우존스 개인 로컬 표시(Windows 실화면 확인, 외부 권리 미확인). 같은 API 프로브 반복 금지.
 2. **STRATEGY-01 실자료 사후 연구 종료(2026-11-02) / 생산 승인 보류:** 160거래일/4종목/10전략 실행, 모두 종료 거래 2~4건으로 `INSUFFICIENT_TRADES`, 기본 Exit fallback. 재현 실행 성공과 전략 효과 검증은 구분. 장기 독립 데이터/종목 범위 확장은 별도 후속 승인 사항이며 전략 가중치·Risk·기간 정책 불변.
-3. **현재 다음 작업 GLOBAL-02-S1:** 환율 `DEXKOUS` + 브렌트유 `DCOILBRENTEU`의 출처·사용권·관측/공개 시점 분리와 기존 KRX 양 시장의 **사후 관계 검증**을 하나의 읽기 전용 실행기로 구현한다(§7). 단순 화면 숫자 나열 금지, 검증 전 전략·Risk·JEV 입력 금지. 이후 GLOBAL-02-S2 국제 사건 자료 계약, S3 제한적 종목·업종 설명으로 단계 진행.
+3. **진행 중 GLOBAL-02-S1:** 환율 DEXKOUS + 브렌트유 DCOILBRENTEU의 엄격한 정규화와 KRX 읽기 전용 사후 비교 실행기 구현, CI 4/4 PASS (§7.5). **사용자 PC 실제 FRED 인증·시계열·표본 검증 대기**; 생산 Strategy/Risk/JEV·해외 재배포 금지. 실제 권한·자료 판정 후 S2 국제 사건 자료 계약으로 이동.
 4. **JEV 실효성 단계:** 승인된 원천만 최소 전송해 기존 TypeSafe JEV의 종목 판단 보조 효과를 평가. 기존 Scanner 정책/차단을 조용히 덮어쓰지 않음.
 5. **제품 통합 검증:** 사용자가 초보자여도 신규 진입·보유 대응·단중장기 전략·국내외 위험·AI 근거를 구분할 수 있는지, 오탐·낙폭·비용/지연·실제 Windows 사용성을 평가.
 
@@ -336,7 +336,7 @@ if ($LASTEXITCODE -eq 0) {
 
 ## 7. GLOBAL-02 — 환율·원유·국제 사건을 실제 시장 맥락과 연결
 
-**현재 작업: GLOBAL-02-S1 / SPEC_READY / IMPLEMENTATION_NOT_STARTED / FX_OIL_LIVE_UNVERIFIED / USAGE_RIGHTS_UNVERIFIED (2026-11-03).**
+**현재 작업: GLOBAL-02-S1 / CODE_IMPLEMENTED_CI_PASS / FRED_REAL_USER_UAT_PENDING / PUBLIC_REDISTRIBUTION_UNAPPROVED (2026-11-03).**
 
 ### 7.1 제품 목표와 이번 작업의 경계
 
@@ -375,3 +375,36 @@ StockScope의 목표는 미국 금리·해외 지수를 단순 표시하는 것�
 - **GLOBAL-02-S4 / 사용자 제품화 및 결정 여부:** 전·후 시장 비교 및 실제 사용자 설명의 효용을 확인한 뒤에만 기존 Scanner의 **한 곳**에 글로벌 맥락 요약을 추가한다(동일 카드 증식 금지). 출처/관측일/불확실성 구분, 기존 후보 의사결정 불변. 충분한 외표본·PIT·위험 비교·사용자 승인 전까지 `RiskGate`·전략 랭킹·Horizon·Holdings·JEV를 무단 활성화하지 않는다.
 
 **작업 경계:** 지금 구현할 것은 **GLOBAL-02-S1만**. 기존 STRATEGY-01의 4종목·40일 미미한 표본을 재최적화하지 않고, MACRO-01/02, KIS .DJI, 전략 10개, Risk, Exit, JEV, Holdings 및 Production 선택/정책 파일을 그대로 보존한다. 사용자 PC 실제 값은 이 명세 작성 시점에 조회하지 않았으므로 **GLOBAL-02 실데이터 연동/시장 효과를 성공했다고 기록하지 않는다**.
+
+### 7.5 GLOBAL-02-S1 실제 구현 및 CI 결과 (2026-11-03)
+
+**판정: CODE_IMPLEMENTED_CI_PASS / REAL_FRED_FX_OIL_USER_UAT_PENDING / HISTORICAL_PIT_UNVERIFIED / PRODUCTION_POLICY_UNCHANGED.**
+
+- **정규화:** 신규 backend/app/macro/global02_fx_oil.py에서 FRED 시리즈 ID·Daily 빈도·제목·단위·비계절조정 상태 검증. DEXKOUS는 KRW_PER_USD(상승 시 원화 약세), DCOILBRENTEU는 Brent-Europe USD_PER_BARREL(상승 시 유가 증가). '.'·0·음수·NaN·형식 오류·같은 날짜의 충돌 값은 수익률로 만들지 않음. 결측일을 0% 변화로 대체하지 않고, 단순 관측일과 원천 최초 게시/수정 시각을 구분해 DATE_ONLY / HISTORICAL_VINTAGES_NOT_RECONSTRUCTED / source_published_at_utc=null로 보존.
+- **CLI:** 신규 tools/data/analyze_global02_fx_oil.py는 --confirm-personal-research 미지정 시 FRED/DB 조회 없이 RIGHTS_UNVERIFIED 반환. --metadata-only는 KRX DB가 없어도 시리즈 의미·단위를 확인하며 **원본 시세값은 조회하지 않는다**. 연구 모드는 기존 FredClient API를 사용하고 Market DB는 SQLite mode=ro + query_only=ON으로만 읽는다. 원시 외국 시세·FRED API 키를 로컬 보고 파일이나 GitHub에 보존하지 않는다.
+- **KRX 실데이터:** KOSPI/KOSDAQ의 주식·지수 네 개 status=data 마커 + 실물 종목/지수 row + 일자/종가 유효성을 요구. 비거래 empty 마커와 실제 partial data 결측을 구분하며, 부분 수집일/누락 지수는 DATA_INSUFFICIENT로 차단. 시장 일일 변화는 전일의 *실제 완전 거래일* 종가에서 계산한다.
+- **비교 내용:** FRED 미국 관측의 일별 변화와 KRX 시장의 수익률을 *동일 표기 날짜*로 대응시키되 **미국 뉴욕 정오/EIA 자료가 한국 장 마감 시점 이전에 이용 가능했음을 의미하지 않는 사후 비교**로 고정. 해외 변화 상승/하락/불변별 매칭 수, KOSPI/KOSDAQ 평균 일별 수익률, 공통자료 수/결측/출처·단위/관측일 범위/수집시각만 stdout JSON으로 표시. 매칭 5건 미만은 DATA_INSUFFICIENT. 샘플 원문·가격 값, 인증정보를 출력하지 않는다.
+- **불변 정책:** historical_decision_eligible=false, independent_pit_verified_pairs=0, production_decision_approved=false, ai_transfer_approved=false, risk_gate_input_approved=false. 지금은 단순 연관 관측이지 전쟁·유가·환율 인과관계·매수/매도 확률이 아님. FRED 원천 제공자 권리와 개인 비상업 이용 조건을 구분하며 **공개 서비스/AI 전송/원천 재배포/장기보존은 별도 승인 전 금지**. 기존 DGS10·DJI·Scanner·10전략·Risk/Exit·Holdings·JEV 코드는 변경하지 않음.
+- **테스트:** backend/tests/test_global02_fx_oil_readonly.py에서 메타데이터 ID/단위/빈도 오인, 결측·중복충돌/무효값, opt-in 없을 때 API 차단, KRX empty·partial 및 실제 row 검증, read-only DB와 비노출, 미국/한국 시장 일정 불일치, 401/403/429/5xx 오류, PIT 미검증을 검증. 기존 OpenDART 테스트의 '미래' 고정일 2026-11-03이 실제 현재 날짜가 되어 실패한 회귀는 테스트 입력만 동적인 미래 날짜로 변경; 프로덕션 OpenDART 코드 수정 없음.
+- **GitHub Actions:** 코드 최종 HEAD f9d6b795, [CI #41552181305](https://github.com/SkyBluekor/StockScope/actions/runs/41552181305) **4/4 PASS**. Backend Python 3.11과 3.14 각각 **2,798 passed / 2 skipped**, Frontend Node22 **PASS**, Windows Fresh Clone **PASS**. 사용자 PC의 실 FRED FX/Brent 응답과 국내시장 매칭 결과는 **아직 검증하지 않았음**.
+
+**다음 사용자 PC 1회 UAT (사용하는 FRED 계정과 원천 자료가 개인 비상업 로컬 연구에 허용되는 경우에만):**
+
+~~~powershell
+cd C:\Projects\StockScope
+git pull --ff-only
+
+$py = ".\.venv\Scripts\python.exe"
+$tool = ".\tools\data\analyze_global02_fx_oil.py"
+$range = @("--start", "2026-09-01", "--end", "2026-10-30")
+
+& $py $tool @range --metadata-only --confirm-personal-research
+
+if ($LASTEXITCODE -eq 0) {
+    & $py $tool @range --confirm-personal-research
+}
+~~~
+
+- 메타데이터 확인 시 METADATA_VERIFIED이면 공식 ID·단위 의미 검증 성공. 실제 연구는 RETROSPECTIVE_DESCRIPTIVE_ONLY, DATA_INSUFFICIENT, SOURCE_UNAVAILABLE, SEMANTICS_UNVERIFIED를 구분한다. 어느 출력도 PIT·상관의 인과/예측력 또는 매매 신호를 승인하지 않음.
+- FRED_API_KEY가 기존 MACRO-01에서 이미 설정되어 있다면 추가 키 발급 불필요. 키/.env/원문 응답·원천 시세를 GitHub나 채팅에 붙이지 않는다. 사용자 PC의 실제 JSON(집계 요약만)을 확인해 **이 실행계획서에 한 번만 기록**하고 S1 완료·차단 판정을 내린다.
+- 추후 S2 국제 사건 근거는 이 실자료 UAT와 권한 검토가 끝난 다음 착수한다. 이번 범위에 새로운 Scanner 카드, 리스크 점수, 뉴스 자동 인과, 가중치 수정, JEV 실행·학습, 추가 KRX 자동 수집은 포함되지 않는다.
