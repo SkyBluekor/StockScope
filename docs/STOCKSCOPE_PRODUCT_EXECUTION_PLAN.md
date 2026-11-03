@@ -4,7 +4,7 @@
 >
 > **실제 사용자 브랜치: `codex/p0-01-mvp-c1-c2-integration-20261022` · 로컬 `C:\Projects\StockScope`**
 >
-> **상태: STRATEGY-01 REAL_WINDOWS_RESEARCH_EXECUTED / ALL_10_INSUFFICIENT_TRADES / PRODUCTION_POLICY_FROZEN.** GLOBAL-01-S2의 Windows Scanner 참고표시는 검증 완료(개인·공개 이용권은 별도 확인 중). 생산 전략·Risk 정책은 변경하지 않는다. MACRO-02는 사후 연구 종료(생산 판단 미승인), MACRO-01 표시는 유지한다. 이 문서는 현재 사용 브랜치에서 다음 제품 작업을 관리하는 단일 기준이다. `codex/jev-reviewer-shadow-bridge`의 오래된 계획서는 역사적 근거 자료이며 **현재 브랜치에 자동 포함되지 않는다**. 기존 P0 Scanner·Holdings·JEV 작업, 동결된 Strategy/Risk/Scanner 계약을 전부 보존한다. 다른 브랜치 전체 병합 금지.
+> **현재 다음 단계: GLOBAL-02-S1 SPEC_READY / IMPLEMENTATION_NOT_STARTED.** STRATEGY-01은 Windows 실데이터 10전략 연구 실행 완료·전략당 2~4건으로 성능 판정 보류. 생산 전략/Risk/JEV/기간 정책은 동결한다. GLOBAL-01-S2의 Windows Scanner 참고표시는 검증 완료(개인·공개 이용권은 별도 확인 중). 생산 전략·Risk 정책은 변경하지 않는다. MACRO-02는 사후 연구 종료(생산 판단 미승인), MACRO-01 표시는 유지한다. 이 문서는 현재 사용 브랜치에서 다음 제품 작업을 관리하는 단일 기준이다. `codex/jev-reviewer-shadow-bridge`의 오래된 계획서는 역사적 근거 자료이며 **현재 브랜치에 자동 포함되지 않는다**. 기존 P0 Scanner·Holdings·JEV 작업, 동결된 Strategy/Risk/Scanner 계약을 전부 보존한다. 다른 브랜치 전체 병합 금지.
 
 ## 1. 제품 목표와 불변 원칙
 
@@ -328,8 +328,50 @@ if ($LASTEXITCODE -eq 0) {
 
 1. **완료:** MACRO-01 FRED 참고, MACRO-02 120거래일/116금리 관측의 사후 분석(운영 판단 불승인), GLOBAL-01-S2 KIS 다우존스 개인 로컬 표시(Windows 실화면 확인, 외부 권리 미확인). 같은 API 프로브 반복 금지.
 2. **STRATEGY-01 실자료 사후 연구 종료(2026-11-02) / 생산 승인 보류:** 160거래일/4종목/10전략 실행, 모두 종료 거래 2~4건으로 `INSUFFICIENT_TRADES`, 기본 Exit fallback. 재현 실행 성공과 전략 효과 검증은 구분. 장기 독립 데이터/종목 범위 확장은 별도 후속 승인 사항이며 전략 가중치·Risk·기간 정책 불변.
-3. **GLOBAL-02 (후속 별도 단계):** 사용자의 원래 목표인 국제 정책/전쟁·원유·환율·해외지수 영향 해석을 위한 **원천 권한·시점·검증된 시장/산업/종목 연결**. 참고 값 나열만 늘리지 않도록, 이용 허가된 데이터의 실질 효용을 먼저 평가한다. 실제 Risk Gate 반영은 별도 실증·승인 전 금지.
+3. **현재 다음 작업 GLOBAL-02-S1:** 환율 `DEXKOUS` + 브렌트유 `DCOILBRENTEU`의 출처·사용권·관측/공개 시점 분리와 기존 KRX 양 시장의 **사후 관계 검증**을 하나의 읽기 전용 실행기로 구현한다(§7). 단순 화면 숫자 나열 금지, 검증 전 전략·Risk·JEV 입력 금지. 이후 GLOBAL-02-S2 국제 사건 자료 계약, S3 제한적 종목·업종 설명으로 단계 진행.
 4. **JEV 실효성 단계:** 승인된 원천만 최소 전송해 기존 TypeSafe JEV의 종목 판단 보조 효과를 평가. 기존 Scanner 정책/차단을 조용히 덮어쓰지 않음.
 5. **제품 통합 검증:** 사용자가 초보자여도 신규 진입·보유 대응·단중장기 전략·국내외 위험·AI 근거를 구분할 수 있는지, 오탐·낙폭·비용/지연·실제 Windows 사용성을 평가.
 
 새 작업은 가장 이른 미완료 항목만 실시한다. 전략 성능 검증 결과가 없다고 **기존 MACRO/UI를 더 늘려 시간을 소비하지 않는다**. `docs/JEV_SINGLE_EXECUTION_PLAN.md` 및 개별 과거 계획은 기술적 근거 문서로 보존하되 본 단일 실행순서를 대체하지 않는다.
+
+## 7. GLOBAL-02 — 환율·원유·국제 사건을 실제 시장 맥락과 연결
+
+**현재 작업: GLOBAL-02-S1 / SPEC_READY / IMPLEMENTATION_NOT_STARTED / FX_OIL_LIVE_UNVERIFIED / USAGE_RIGHTS_UNVERIFIED (2026-11-03).**
+
+### 7.1 제품 목표와 이번 작업의 경계
+
+StockScope의 목표는 미국 금리·해외 지수를 단순 표시하는 것이 아니라 **환율 변동·원유 가격·국제 분쟁/제재·정책 변화와 국내 지수/업종/보유종목에 미치는 가능성 있는 영향을 사용자에게 설명할 근거를 마련**하는 것이다. 하지만 **시계열의 동행/후행 관계 ≠ 사건의 인과관계 ≠ 매매 신호**다. MACRO-01 FRED DGS10, MACRO-02 사후 금리연구(116쌍, 인과/시점 적격성 불승인), GLOBAL-01 KIS .DJI 개인 로컬 참고, NEXT-6C `macro/impact.py`의 1공통거래일 시장·종목 서술, NEXT-6D `api/macro.py:event-reference`는 이미 존재한다. 이 경로들을 무시하고 새 거시·사건·Risk 엔진을 중복 개발하면 안 된다.
+
+**이번 S1의 한 가지 실질적 산출물:** 기존 FRED 접속 + 기존 KRX 읽기 전용 데이터를 결합해, **원/달러(미국 뉴욕 기준)와 브렌트유(미국 EIA 자료)의 실제 관측 변화에 대응하는 KOSPI/KOSDAQ의 사후 관측 결과를 설명하는 1개 연구 보고서**를 만든다. 사용자가 보기에 상승·하락 방향과 시장 데이터 기간/부재를 구분할 수 있어야 한다. 이때 자료의 한국 거래시각 선후관계가 입증되지 않았으면 `RETROSPECTIVE_ONLY`로 고정하고 역사적 전략 판단 또는 추천에 투입하지 않는다. **GLOBAL-02-S1에서 새 Scanner 화면 카드나 Risk 점수 추가 없음**; 숫자만 한 줄 더 놓는 일을 완료로 간주하지 않는다.
+
+### 7.2 공식 원천 후보와 데이터 계약 — **실조회/사용권은 구현 단계에서 따로 검증**
+
+| 데이터 | 소스 계약 후보 | 단위/의미 | 확인할 제약 |
+|---|---|---|---|
+| USD/KRW | FRED `DEXKOUS`, 원 출처 미 연준 Board of Governors, H.10 | **1달러당 KRW**, 뉴욕 정오 기준 구매율. 값 상승 = 원화 약세 | 한국 장 종가·국내 실시간 환율이 아님. 미 영업일, 최초 게시/수정시각·이용권 확인 |
+| 원유 | FRED `DCOILBRENTEU`, 원 출처 U.S. EIA | **Brent-Europe 일별 현물 USD/배럴** | WTI·선물·국내 정유사 조달가 아님. 게시 지연·수정·이용권 확인 |
+| 국내 비교 | 이미 저장된 `backend/runtime/market_history/market_history.db` | KOSPI/KOSDAQ 확정 지수의 실제 종가 변화 | 공통 거래일/휴장 상태·정합성·사후 관측과 정보 이용 가능 시점의 차이 |
+
+- 공식 시리즈: https://fred.stlouisfed.org/series/DEXKOUS , https://fred.stlouisfed.org/series/DCOILBRENTEU . FRED 이용 조건: https://fred.stlouisfed.org/legal/terms/ .
+- FRED 시리즈·제공자별 권리 조건을 구별해야 한다. **FRED API 키가 있다 ≠ 외부 유료 서비스 재배포·AI 입력·장기 보존 허가**. 원 데이터의 권리 소유자, 저작권 표기, 인용 요건, 개인 로컬 사용 범위와 FRED 자체 금지 행위를 점검하고 결과를 `rights_status`로 기록한다. 구체적 사용권이 불확실하면 **외부 제공·AI 송신·원천 저장·화면 공개를 차단**하고 메타데이터만 보고한다. 이번 작업은 원시 뉴스 본문/원시 시세를 LLM에 보내지 않는다.
+- KIS 해외일봉의 `X` 환율 division은 **코드·의미 검증이 끝나지 않은 상태**다. 공식 원천 코드를 증명하지 못했으면 임의 티커로 API를 반복 호출하지 않는다. `DEXKOUS`를 KIS 실시간 환율과 같다고 혼합하지 않는다.
+- 유가의 대체 WTI `DCOILWTICO`는 **이번 범위의 추가 입력이 아니다**. 추후 Brent 결측/시장 관련성으로 데이터원 교체가 필요할 때 별도 비교한다.
+
+### 7.3 GLOBAL-02-S1 Codex 구현 명세 — 순서 고정
+
+1. **기존 능력의 재사용 지점 확정:** `backend/app/integrations/fred/client.py:FredClient.series/observations`로 DEXKOUS·DCOILBRENTEU의 공급자 메타데이터(시리즈 ID, 제목, 빈도, 단위, 원천, 시계열 기간/게시 정보)와 소량 실관측 가능성을 1회 검증한다. 기존 `backend/app/macro/providers/fred.py`의 DGS10 계약·정규화·비밀키 제외 패턴을 참고하되 DGS10 의존 정규화를 무리하게 재사용하지 않는다. 승인되지 않은 KIS 코드를 추측하거나 별도의 거시 데이터 공급자 스택을 신설하지 않는다. 이용권/원천 확인 실패 시 `SOURCE_RIGHTS_UNVERIFIED`·`SEMANTICS_UNVERIFIED`를 구분해 종료.
+2. **두 시계열의 엄격한 정규화:** 신규 소규모 `backend/app/macro/global02_fx_oil.py`(이름 제안)에 `source_series_id`, `unit`, `observation_date`, `value`, `previous_observation_date`, `change_pct`, `retrieved_at_utc`, `provider_published_at_utc|null`, `time_quality`, `rights_status`, `revision_or_vintage_status`, `staleness`를 구별하는 read-only 계약 구현. 두 시리즈의 **원래 방향성**을 숨기지 않음(DEXKOUS 상승=원화 약세, Brent 상승=유가 상승); 값이 `.`/음수/0/비정상/중복·역순 날짜면 필터 또는 `UNAVAILABLE`; 결측 날짜를 이전 가격으로 0% 변화라 채우지 않는다. 관측일 ≠ 공식 게시/한국시장 이용 가능 시각. FRED 최초 조회 시각이나 `realtime_start`만으로 PIT 적격성을 주장하지 않는다.
+3. **기존 KRX와 1개 읽기 전용 사후 검증:** 신규 단일 CLI `tools/data/analyze_global02_fx_oil.py`(이름 제안). 기존 DB를 `sqlite3 URI mode=ro`와 `query_only=ON`으로 열며 `HistoricalMarketStore` 생성/스키마 쓰기/신규 KRX 수집을 금지. KOSPI/KOSDAQ의 **완전한 공통 거래일**과 `empty` 비거래 기록을 분리한다(STRATEGY-01에서 바로 수정한 휴장 차단 회귀 재사용). FRED 미국 관측일·KRX 한국 시장일 간 **교차시차를 표기**하고, 해외 자료의 `provider_published_at_utc`가 없으면 미래정보 유출 가능성을 배제하지 않은 `RETROSPECTIVE_ONLY` 자료로만 관측 전후 결과·표본수·상승/하락/결측·차이를 보여준다. **업종·종목 영향은 신뢰할 수 있는 종목별/업종별 시점매핑을 확보하기 전까지 주장하지 않는다.**
+4. **실질적 결과 확인:** 보고서는 `data_coverage`, `unit`, `observation_date`, `retrieved_at_utc`, `direction`, `matched_KRX_common_sessions`, `unmatched_reason`, KOSPI/KOSDAQ 관측 변화, `claim_scope=DESCRIPTIVE_ONLY`, `historical_decision_eligible=false`, `production_decision_approved=false`, `ai_transfer_approved=false`를 포함한다. 자료가 부족하면 **`DATA_INSUFFICIENT`**, 실조회 실패면 **`SOURCE_UNAVAILABLE`**, 권리 불명확 시 **`RIGHTS_UNVERIFIED`**로 정확히 출력하고 관계·효과·확률을 추정으로 채우지 않는다. 유의미해 보이는 양·음 상관이 나오더라도 매수확률·전쟁 인과 또는 매매중단 Gate로 변환하지 않는다. 원시 시세의 출력/파일 보존은 이용권 확인 범위 안에서만; 기본은 **요약 JSON stdout만**.
+5. **안전성·회귀:** 테스트는 시리즈 오인/역단위·뉴욕 정오와 한국 장 마감 혼동·미국 휴장/한국 거래일·EIA 게시 지연·빈/결측·중복·수정(vintage)·시각 확인 불가·권리 미승인·누락 시장 날짜·미래 데이터 유입·미설정 API/401/429/5xx, API 키 비노출, 기존 KRX DB 원본 미변경, no JEV outbound, 실패 시 정상 Macro/Scanner/FRED DGS10·DJI 그대로 등을 포함한다. 모의 HTTP/fixture 테스트와 실제 인증 1회 검증을 분리. 운영 기능의 snapshot/golden fingerprint와 Windows Fresh Clone CI를 통과해야 한다.
+6. **사용자 PC 단 한 번의 UAT:** CI PASS 뒤 `C:\Projects\StockScope`에서 기존 FRED 키를 안전하게 사용해 실제 두 시계열의 메타데이터·공급 가능 범위·관측일과 샘플을 확인하고, KRX 160일 DB의 공통 거래일에 매칭된 **실제 개수**를 검증한다. 민감정보·뉴스 본문/권리 불명확 자료를 GitHub에 올리지 않는다. 결과는 **기존 이 문서 §7에만** 기록. 법적/시점상 사용 불가능하면 차단 사유를 정확히 고정하고 다른 API를 무한히 돌며 우회하지 않는다.
+
+**GLOBAL-02-S1 완료 조건:** 실제 FX와 Brent 각각에 대해 원천/단위·관측/공개시각·결측/권리 판정이 명확하고, 합법적 로컬 이용 범위에서 **기존 국내 시장 공통 거래일과 매칭된 사후 분석을 재현**하며, 데이터 부족·권리 제한을 정직하게 표시한다. **연구 실행 완료는 제품의 인과관계·예측력·투자 정책 승인을 뜻하지 않는다.** 실제 수집·연구가 제한되면 원인과 다음에 필요한 단 한 가지 조건을 제시하고 종료한다.
+
+### 7.4 GLOBAL-02 후속 순서 — 이번에는 미착수
+
+- **GLOBAL-02-S2 / 국제 사건 근거:** 공식 정책·지정학적 사건의 원천·식별 ID·발표 UTC·정정·나라/영향범위·이용권을 확인하고 기존 `event_evidence/policy.py`와 `macro/event_composition.py`의 권한 모델을 사용. NAVER_NEWS는 현재 **표시 중심**이며 P6에서 원문 보관·AI 변환·역사적 평가·예측 권리가 승인되지 않았으므로 전쟁 뉴스 본문을 임의로 AI에 넣거나 가상의 사건 점수를 만들지 않는다.
+- **GLOBAL-02-S3 / 산업·종목 연결:** S1 환율/유가의 확정된 출처와 S2 사건 입력을 기존 `macro/impact.py`, `macro/sector_route.py`, `api/macro.py`에 read-only 보조 설명으로 연결한다. 정확한 산업·기업 노출도/매출 구조/시점매핑이 증명되지 않으면 `SECTOR_LINK_UNVERIFIED`로 처리. 국제 뉴스 하나로 시장 폭락 원인을 단정하지 않음.
+- **GLOBAL-02-S4 / 사용자 제품화 및 결정 여부:** 전·후 시장 비교 및 실제 사용자 설명의 효용을 확인한 뒤에만 기존 Scanner의 **한 곳**에 글로벌 맥락 요약을 추가한다(동일 카드 증식 금지). 출처/관측일/불확실성 구분, 기존 후보 의사결정 불변. 충분한 외표본·PIT·위험 비교·사용자 승인 전까지 `RiskGate`·전략 랭킹·Horizon·Holdings·JEV를 무단 활성화하지 않는다.
+
+**작업 경계:** 지금 구현할 것은 **GLOBAL-02-S1만**. 기존 STRATEGY-01의 4종목·40일 미미한 표본을 재최적화하지 않고, MACRO-01/02, KIS .DJI, 전략 10개, Risk, Exit, JEV, Holdings 및 Production 선택/정책 파일을 그대로 보존한다. 사용자 PC 실제 값은 이 명세 작성 시점에 조회하지 않았으므로 **GLOBAL-02 실데이터 연동/시장 효과를 성공했다고 기록하지 않는다**.
