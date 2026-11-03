@@ -4,7 +4,7 @@
 >
 > **실제 사용자 브랜치: `codex/p0-01-mvp-c1-c2-integration-20261022` · 로컬 `C:\Projects\StockScope`**
 >
-> **현재 작업: GLOBAL-02-S2 CODE_IMPLEMENTED_CI_4_OF_4_PASS / OFFLINE_CONTRACT_ONLY / OFFICIAL_EVENT_SOURCE_RIGHTS_AND_TIME_UNVERIFIED / PRODUCTION_POLICY_FROZEN.** STRATEGY-01은 Windows 실데이터 10전략 연구 실행 완료·전략당 2~4건으로 성능 판정 보류. 생산 전략/Risk/JEV/기간 정책은 동결한다. GLOBAL-01-S2의 Windows Scanner 참고표시는 검증 완료(개인·공개 이용권은 별도 확인 중). 생산 전략·Risk 정책은 변경하지 않는다. MACRO-02는 사후 연구 종료(생산 판단 미승인), MACRO-01 표시는 유지한다. 이 문서는 현재 사용 브랜치에서 다음 제품 작업을 관리하는 단일 기준이다. `codex/jev-reviewer-shadow-bridge`의 오래된 계획서는 역사적 근거 자료이며 **현재 브랜치에 자동 포함되지 않는다**. 기존 P0 Scanner·Holdings·JEV 작업, 동결된 Strategy/Risk/Scanner 계약을 전부 보존한다. 다른 브랜치 전체 병합 금지.
+> **다음 작업: JEV-A-WINDOWS-UAT SPEC_READY / A_UI_IMPLEMENTED / CI_PASS / USER_WINDOWS_ACCEPTANCE_PENDING / PRODUCTION_POLICY_FROZEN.** GLOBAL-02-S2 오프라인 계약·Windows 합성 검증 완료, UN 실자료 자동 추출 권리·발표시각 미확인으로 live BLOCKED; S3/S4 보류. STRATEGY-01은 Windows 실데이터 10전략 연구 실행 완료·전략당 2~4건으로 성능 판정 보류. 생산 전략/Risk/JEV/기간 정책은 동결한다. GLOBAL-01-S2의 Windows Scanner 참고표시는 검증 완료(개인·공개 이용권은 별도 확인 중). 생산 전략·Risk 정책은 변경하지 않는다. MACRO-02는 사후 연구 종료(생산 판단 미승인), MACRO-01 표시는 유지한다. 이 문서는 현재 사용 브랜치에서 다음 제품 작업을 관리하는 단일 기준이다. `codex/jev-reviewer-shadow-bridge`의 오래된 계획서는 역사적 근거 자료이며 **현재 브랜치에 자동 포함되지 않는다**. 기존 P0 Scanner·Holdings·JEV 작업, 동결된 Strategy/Risk/Scanner 계약을 전부 보존한다. 다른 브랜치 전체 병합 금지.
 
 ## 1. 제품 목표와 불변 원칙
 
@@ -328,8 +328,8 @@ if ($LASTEXITCODE -eq 0) {
 
 1. **완료:** MACRO-01 FRED 참고, MACRO-02 120거래일/116금리 관측의 사후 분석(운영 판단 불승인), GLOBAL-01-S2 KIS 다우존스 개인 로컬 표시(Windows 실화면 확인, 외부 권리 미확인). 같은 API 프로브 반복 금지.
 2. **STRATEGY-01 실자료 사후 연구 종료(2026-11-02) / 생산 승인 보류:** 160거래일/4종목/10전략 실행, 모두 종료 거래 2~4건으로 `INSUFFICIENT_TRADES`, 기본 Exit fallback. 재현 실행 성공과 전략 효과 검증은 구분. 장기 독립 데이터/종목 범위 확장은 별도 후속 승인 사항이며 전략 가중치·Risk·기간 정책 불변.
-3. **GLOBAL-02-S1 실자료 연구 실행 완료(§7.6):** 사용자 PC에서 실제 FRED 메타데이터 검증과 KRX 40거래일 사후 매칭 완료(환율 38일, Brent 37일). 정보 공개시각/PIT 및 인과·예측 적격성 미검증, 외부 재배포·JEV 전송 불승인. **다음은 GLOBAL-02-S2 국제 사건 원천·권리·게시시각/정정 계약**이며 실제 Strategy/Risk 적용은 동결.
-4. **JEV 실효성 단계:** 승인된 원천만 최소 전송해 기존 TypeSafe JEV의 종목 판단 보조 효과를 평가. 기존 Scanner 정책/차단을 조용히 덮어쓰지 않음.
+3. **GLOBAL-02-S1 사후 연구와 S2 합성 계약·Windows 검증 완료(§7.6–7.8):** FX 38일/Brent 37일 사후 매칭, S2 합성 변경 4건 검증·CI 4/4 PASS. UN 실데이터 자동 추출·파생 이용 권한과 공식 게시 UTC 미확인으로 S2 live BLOCKED, S3/S4 보류. 같은 합성 fixture·권한 미확인 API 프로브를 반복하지 않는다.
+4. **다음 단일 작업 JEV-A-WINDOWS-UAT (§8):** 기구현 AI 검토 기본 화면의 Windows 실사용 인수. 기존 CI 결과를 재사용, A 수용 전 B 실제 유료 호출을 구현·실행하지 않음. 이후 B는 사용자가 직접 작성·권리 보유한 입력만 허용하여 기존 TypeSafe로 실제 종목 1건을 수동 검토하도록 준비한다.
 5. **제품 통합 검증:** 사용자가 초보자여도 신규 진입·보유 대응·단중장기 전략·국내외 위험·AI 근거를 구분할 수 있는지, 오탐·낙폭·비용/지연·실제 Windows 사용성을 평가.
 
 새 작업은 가장 이른 미완료 항목만 실시한다. 전략 성능 검증 결과가 없다고 **기존 MACRO/UI를 더 늘려 시간을 소비하지 않는다**. `docs/JEV_SINGLE_EXECUTION_PLAN.md` 및 개별 과거 계획은 기술적 근거 문서로 보존하되 본 단일 실행순서를 대체하지 않는다.
@@ -492,3 +492,40 @@ if ($LASTEXITCODE -eq 0) {
 - **사용자 Windows 로컬 UAT (2026-11-03):** `C:\\Projects\\StockScope`에서 `.\\.venv\\Scripts\\python.exe tools\\data\\inspect_global02_official_events.py --offline-fixture` 실행 결과 사용자 제공 stdout JSON 확인. `source_status=OFFLINE_FIXTURE_VALIDATED_ONLY`, `data_origin=SYNTHETIC_TEST_ROWS_NOT_REAL_UNSC_EVENTS`, `notice_id_count=3`, `identity_validated_count=4`, `change_type_counts={AMENDMENT:2, DELISTING:1, LISTING:1}`, `date_only_count=4`, `excluded_reasons={}`, `duplicate_conflicts=0`, `network_requests=0`, `writes=0`, `ai_calls=0`, `production_inputs=0`. `rights_status=RIGHTS_UNVERIFIED`, `historical_pit_verified_count=0`, `ai_transfer_approved=false`, `production_decision_approved=false`. **결론: 로컬 오프라인 합성 데이터 검증 PASS; 공식 UN 실조회·권리·과거시점 정보 이용 가능성 및 투자판단 유효성은 여전히 미검증.** 로그가 보여주는 것은 CLI의 집계 출력이며 독립 네트워크 패킷 감사를 수행한 것은 아님.
 - **수용 경계:** 오프라인 계약이 검증되어도 실제 공식 UN HTML의 자동 추출 권리, UTC 최초 발행 증거, 변경 공지 간 정정 링크는 검증되지 않았다. 따라서 `SOURCE_CONTRACT_VERIFIED_REFERENCE_ONLY`나 실전 가용성으로 승격하지 않는다. `RIGHTS_UNVERIFIED`, `DATE_ONLY_LIMITED`, `CORRECTION_LINK_UNVERIFIED`로 유지하고, 독립적으로 확인 가능한 권리 승인 없이 실네트워크 재시도·다른 공식 기관 우회 조회·DB/JEV/Scanner/전략 반영 금지.
 - **다음 완료 조건:** 오프라인 합성 테스트·CI 4/4는 완료. **실자료 UAT/운영 연결을 위해서는 UN의 자동 추출 및 파생 메타데이터 사용 허용을 뒷받침할 별도 공식 근거 또는 권리자의 명시적 허가가 필요**하다. 그전에는 GLOBAL-02-S3/S4로 확대하지 않는다.
+
+
+## 8. 다음 단일 실행 명세 — JEV-A-WINDOWS-UAT (2026-11-03)
+
+**상태: SPEC_READY / A_UI_ALREADY_IMPLEMENTED / CI_4_OF_4_PASS / USER_WINDOWS_ACCEPTANCE_PENDING / NO_PAID_CALLS.**
+
+### 8.1 선택 이유 / 기존 자산
+
+- GLOBAL-02-S2는 2026-11-03 Windows 오프라인 합성 데이터 3공지/4변경 검증 완료. 공식 UN 자동 추출·파생 데이터 이용 권한/게시 UTC가 미확인되어 실자료 조회·S3/S4 진행은 보류한다. 법적 권한 확보 없이 UN·뉴스·DART·KRX 자료를 JEV 전송하지 않는다.
+- 2026-10-30 JEV 단일 실행계획 A의 UI 간결화는 이미 frontend/src/components/ScannerAiReview.tsx, scannerUX.css 및 frontend/e2e/p003-scanner-recheck.spec.mjs에 구현됐다. 자세한 Mock/P5/P6 디버그는 사용자가 개발자 진단을 펼칠 때만 표시한다. 기구현 코드를 다시 만드는 작업이 아니다.
+- 통합 브랜치 CI https://github.com/SkyBluekor/StockScope/actions/runs/41559484181 에서 Python 3.11(2,829 PASS/2 SKIP), Python 3.14, Node22, Windows Fresh Clone 4/4 통과. 사용자 Windows에서 **JEV A 간결 UI의 실제 화면 인수는 아직 없음**. 글로벌 S2 Windows CLI 검증을 JEV-A UAT로 오인 금지.
+- 이번 작업은 이전 문서 docs/JEV_SINGLE_EXECUTION_PLAN.md의 **A → B → C** 순서를 따른다. A 수용 전 B 유료 실모델 검토를 미리 활성화하지 않는다.
+
+### 8.2 Codex/Windows 작업 (이번에는 A만)
+
+1. C:\Projects\StockScope 에서 git status --short 와 git branch --show-current 로 현재 상태를 확인하고, 기존 수정파일 보존 후 git pull --ff-only. 8000/5173 포트가 사용 중이면 중복 서버를 띄우지 않는다. 필요 시 .\run-dev.ps1 로 기존 개발 서버 시작.
+2. 브라우저 http://127.0.0.1:5173 에서 Scanner의 **기존 저장 후보**를 선택. 새 KRX 수집·새 캡처 생성·실거래·유료 모델 호출은 하지 않는다. 일반 사용자 AI 검토 영역에는 선택 종목명/코드, 기존 Scanner 판단, 저장된 실제 JEV 검토 상태, 실행 불가 사유와 비활성 버튼만 간결하게 표시되어야 한다.
+3. 저장된 다른 후보 하나로 전환하여 종목명/코드/검토 상태가 섞이지 않는지 확인. 좁은 창에서도 주요 내용이 겹치거나 누락되지 않아야 한다. 기본 영역에는 Mock/V4/V5/SourceRef/P6 기술 라벨이 펼쳐지지 않아야 한다. 아직 실제 JEV 결과가 없으면 **실제 검토 미실행**으로 표시하고 결과를 만들어 내지 않는다.
+4. 개발자 진단 및 공시 조회를 직접 펼쳤을 때만 상세 진단이 보이는지 확인. 평소 기본 화면에서 불필요한 P5/P6 조회·유료 모델 요청이 추가로 발생하지 않아야 한다. Scanner/Risk/Holdings 결과는 변경되지 않는다.
+5. 사용자 Windows 스크린샷 1~2장 또는 화면 결과로 인수 판정. 정상이라면 **코드 변경 없이** 상태만 이 문서에 기록한다. 문제 발견 시 ScannerAiReview.tsx와 직접 관련 CSS/E2E의 결함만 최소 수정하고 CI+같은 Windows 화면을 재검증한다. 새 Mock 화면/진단기/권한 토글/새 데이터 수집 경로는 추가하지 않는다.
+6. 사용자 증거가 없으면 A를 완료 처리하지 않는다. CI PASS만으로 실사용 UAT를 대체하지 않는다.
+
+### 8.3 수용 조건과 다음 단계
+
+| 항목 | 수용 기준 |
+|---|---|
+| 일반 UI | 실제 선택 종목·기존 Scanner 판단·JEV 상태·불가 사유가 즉시 구분 |
+| 기술 내용 | Mock/P6 디버그는 기본 접힘, 개발자 진단 수동 진입 시만 보임 |
+| 종목 전환 | 저장 후보 2개 사이 전환해도 이전 종목 결과가 섞이지 않음 |
+| 동작 보존 | 실행 버튼은 조건 충족 전 비활성, 외부 JEV 호출 0회, 기존 Scanner/Risk/Holdings 불변 |
+| 품질 | 기존 CI 4/4 PASS 유지, 실제 사용자 Windows 화면 확인 |
+
+**진행표:** GLOBAL-02-S2 offline = PASS / live = RIGHTS_UNVERIFIED; JEV-A = WINDOWS_UAT_PENDING; JEV-B = NOT_STARTED; JEV-C = NOT_STARTED.
+
+**A 통과 이후에만 다음 B를 진행:** 실제 저장된 한 종목과 그 캡처 신원을 읽기 전용으로 연결하고, **사용자 직접 작성·전송 권리 보유 입력**만 기존 TypeSafeSystemOneProvider로 1회 수동 검토하는 기능. 해당 유료 요청은 별도 사용자 명시 승인 필수. 원천 권한 불명 시장 수치/공시/뉴스·UN 자료를 문구만 바꿔 외부 전송 금지. 호출·중복 청구·모델 ID·시각·비용·저장 및 재조회가 확인되어야 B 성공이며, 유효한 입력이 부족하면 B 보류. 이번 A 작업에서 B 구현·유료 호출은 수행하지 않는다.
+
+**다음 실행에 필요한 사용자 확인:** 기존 StockScope 프로그램을 실행해 Scanner의 선택 종목 AI 검토 요약 영역 스크린샷을 전달하면 A 인수 판단 가능. GLOBAL-02-S2 offline-fixture 재실행 불필요.
