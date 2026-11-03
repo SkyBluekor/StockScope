@@ -4,7 +4,7 @@
 >
 > **실제 사용자 브랜치: `codex/p0-01-mvp-c1-c2-integration-20261022` · 로컬 `C:\Projects\StockScope`**
 >
-> **현재 작업: GLOBAL-02-S1 CODE_IMPLEMENTED_CI_4_OF_4_PASS / PERSONAL_LOCAL_FRED_UAT_PENDING / PRODUCTION_POLICY_FROZEN.** STRATEGY-01은 Windows 실데이터 10전략 연구 실행 완료·전략당 2~4건으로 성능 판정 보류. 생산 전략/Risk/JEV/기간 정책은 동결한다. GLOBAL-01-S2의 Windows Scanner 참고표시는 검증 완료(개인·공개 이용권은 별도 확인 중). 생산 전략·Risk 정책은 변경하지 않는다. MACRO-02는 사후 연구 종료(생산 판단 미승인), MACRO-01 표시는 유지한다. 이 문서는 현재 사용 브랜치에서 다음 제품 작업을 관리하는 단일 기준이다. `codex/jev-reviewer-shadow-bridge`의 오래된 계획서는 역사적 근거 자료이며 **현재 브랜치에 자동 포함되지 않는다**. 기존 P0 Scanner·Holdings·JEV 작업, 동결된 Strategy/Risk/Scanner 계약을 전부 보존한다. 다른 브랜치 전체 병합 금지.
+> **현재 다음 작업: GLOBAL-02-S2 SPEC_NEXT / S1_REAL_FRED_KRX_RETROSPECTIVE_UAT_PASS / PRODUCTION_POLICY_FROZEN.** STRATEGY-01은 Windows 실데이터 10전략 연구 실행 완료·전략당 2~4건으로 성능 판정 보류. 생산 전략/Risk/JEV/기간 정책은 동결한다. GLOBAL-01-S2의 Windows Scanner 참고표시는 검증 완료(개인·공개 이용권은 별도 확인 중). 생산 전략·Risk 정책은 변경하지 않는다. MACRO-02는 사후 연구 종료(생산 판단 미승인), MACRO-01 표시는 유지한다. 이 문서는 현재 사용 브랜치에서 다음 제품 작업을 관리하는 단일 기준이다. `codex/jev-reviewer-shadow-bridge`의 오래된 계획서는 역사적 근거 자료이며 **현재 브랜치에 자동 포함되지 않는다**. 기존 P0 Scanner·Holdings·JEV 작업, 동결된 Strategy/Risk/Scanner 계약을 전부 보존한다. 다른 브랜치 전체 병합 금지.
 
 ## 1. 제품 목표와 불변 원칙
 
@@ -328,7 +328,7 @@ if ($LASTEXITCODE -eq 0) {
 
 1. **완료:** MACRO-01 FRED 참고, MACRO-02 120거래일/116금리 관측의 사후 분석(운영 판단 불승인), GLOBAL-01-S2 KIS 다우존스 개인 로컬 표시(Windows 실화면 확인, 외부 권리 미확인). 같은 API 프로브 반복 금지.
 2. **STRATEGY-01 실자료 사후 연구 종료(2026-11-02) / 생산 승인 보류:** 160거래일/4종목/10전략 실행, 모두 종료 거래 2~4건으로 `INSUFFICIENT_TRADES`, 기본 Exit fallback. 재현 실행 성공과 전략 효과 검증은 구분. 장기 독립 데이터/종목 범위 확장은 별도 후속 승인 사항이며 전략 가중치·Risk·기간 정책 불변.
-3. **진행 중 GLOBAL-02-S1:** 환율 DEXKOUS + 브렌트유 DCOILBRENTEU의 엄격한 정규화와 KRX 읽기 전용 사후 비교 실행기 구현, CI 4/4 PASS (§7.5). **사용자 PC 실제 FRED 인증·시계열·표본 검증 대기**; 생산 Strategy/Risk/JEV·해외 재배포 금지. 실제 권한·자료 판정 후 S2 국제 사건 자료 계약으로 이동.
+3. **GLOBAL-02-S1 실자료 연구 실행 완료(§7.6):** 사용자 PC에서 실제 FRED 메타데이터 검증과 KRX 40거래일 사후 매칭 완료(환율 38일, Brent 37일). 정보 공개시각/PIT 및 인과·예측 적격성 미검증, 외부 재배포·JEV 전송 불승인. **다음은 GLOBAL-02-S2 국제 사건 원천·권리·게시시각/정정 계약**이며 실제 Strategy/Risk 적용은 동결.
 4. **JEV 실효성 단계:** 승인된 원천만 최소 전송해 기존 TypeSafe JEV의 종목 판단 보조 효과를 평가. 기존 Scanner 정책/차단을 조용히 덮어쓰지 않음.
 5. **제품 통합 검증:** 사용자가 초보자여도 신규 진입·보유 대응·단중장기 전략·국내외 위험·AI 근거를 구분할 수 있는지, 오탐·낙폭·비용/지연·실제 Windows 사용성을 평가.
 
@@ -336,7 +336,7 @@ if ($LASTEXITCODE -eq 0) {
 
 ## 7. GLOBAL-02 — 환율·원유·국제 사건을 실제 시장 맥락과 연결
 
-**현재 작업: GLOBAL-02-S1 / CODE_IMPLEMENTED_CI_PASS / FRED_REAL_USER_UAT_PENDING / PUBLIC_REDISTRIBUTION_UNAPPROVED (2026-11-03).**
+**상태: GLOBAL-02-S1 REAL_FRED_KRX_RETROSPECTIVE_RESEARCH_COMPLETED / HISTORICAL_PIT_UNVERIFIED / PUBLIC_REDISTRIBUTION_UNAPPROVED (2026-11-03).**
 
 ### 7.1 제품 목표와 이번 작업의 경계
 
@@ -408,3 +408,34 @@ if ($LASTEXITCODE -eq 0) {
 - 메타데이터 확인 시 METADATA_VERIFIED이면 공식 ID·단위 의미 검증 성공. 실제 연구는 RETROSPECTIVE_DESCRIPTIVE_ONLY, DATA_INSUFFICIENT, SOURCE_UNAVAILABLE, SEMANTICS_UNVERIFIED를 구분한다. 어느 출력도 PIT·상관의 인과/예측력 또는 매매 신호를 승인하지 않음.
 - FRED_API_KEY가 기존 MACRO-01에서 이미 설정되어 있다면 추가 키 발급 불필요. 키/.env/원문 응답·원천 시세를 GitHub나 채팅에 붙이지 않는다. 사용자 PC의 실제 JSON(집계 요약만)을 확인해 **이 실행계획서에 한 번만 기록**하고 S1 완료·차단 판정을 내린다.
 - 추후 S2 국제 사건 근거는 이 실자료 UAT와 권한 검토가 끝난 다음 착수한다. 이번 범위에 새로운 Scanner 카드, 리스크 점수, 뉴스 자동 인과, 가중치 수정, JEV 실행·학습, 추가 KRX 자동 수집은 포함되지 않는다.
+
+### 7.6 GLOBAL-02-S1 Windows 실제 FRED·KRX 실자료 결과 (2026-11-03)
+
+**판정: `PERSONAL_LOCAL_FRED_KRX_RESEARCH_EXECUTED` / `RETROSPECTIVE_DESCRIPTIVE_ONLY` / `HISTORICAL_PIT_VERIFIED_PAIRS=0` / `PRODUCTION_POLICY_CHANGE=0` / `PUBLIC_DATA_RIGHTS_UNVERIFIED`.**
+
+**근거:** 사용자가 제출한 Windows PowerShell 실실행 로그. `git pull --ff-only`로 `0f03923`까지 적용 후 `tools/data/analyze_global02_fx_oil.py --start 2026-09-01 --end 2026-10-30 --metadata-only --confirm-personal-research`가 **`METADATA_VERIFIED`**였으며, 이어 실제 연구 실행은 **`RETROSPECTIVE_DESCRIPTIVE_ONLY` / `SOURCE_PUBLISHED_TIME_AND_INDEPENDENT_PIT_UNVERIFIED`**. 조회시각 `2026-11-03T00:47:17.354150+00:00`.
+
+| 항목 | Windows 실자료 확인값 |
+|---|---|
+| KRX | `READY`, 공통 거래일 40개, 수익률 산출 40개, `empty` 4개 별도 제외, `partial` 0개, 무효 실물 행 0개 |
+| KRX 분석기간 | 2026-09-01 ~ 2026-10-30, KOSPI·KOSDAQ |
+| FRED `DEXKOUS` | `KRW_PER_USD`, 상승=원화 약세, 유효 관측 50개(2026-08-20~10-30), missing 2, invalid/duplicate 0, 마지막 관측과 조회 4일 차이 |
+| FRED `DCOILBRENTEU` | Brent-Europe `USD_PER_BARREL`, 유효 관측 48개(2026-08-20~10-27), missing 1, invalid/duplicate 0, 마지막 관측과 조회 7일 차이 |
+| FX ↔ KRX | 같은 날짜의 사후 매칭 **38개**, KRX 동명 날짜 없음 12개, PIT 검증 0개 |
+| Brent ↔ KRX | 같은 날짜의 사후 매칭 **37개**, KRX 동명 날짜 없음 11개, PIT 검증 0개 |
+| 실행기 반환 안전성 | `network_requests_to_krx=0`, `db_writes=0`, `file_writes=0`, 원본 시세 값 비출력·비저장, `ai_transfer_approved=false`, `risk_gate_input_approved=false` |
+
+**사후 관찰된 시장 수익률:** 미국 지표의 관측 **날짜 문자열**과 국내 지수의 거래 날짜를 대응했을 뿐, 미국 지표가 한국 장 마감 전에 이용 가능했던 정보임을 입증하지 않는다.
+
+| 지표 | 사후 분류 | 매칭일 | KOSPI 평균 일수익률 | KOSDAQ 평균 일수익률 |
+|---|---|---:|---:|---:|
+| `DEXKOUS` | 상승, 원화 약세 | 17 | -0.465% | -0.301% |
+| `DEXKOUS` | 하락, 원화 강세 | 21 | -0.424% | -0.187% |
+| `DCOILBRENTEU` | 상승 | 20 | -0.380% | -0.346% |
+| `DCOILBRENTEU` | 하락 | 17 | -0.598% | -0.200% |
+
+**해석 및 한계:** 상승·하락 어느 구간이든 이 표본에서 국내 두 시장의 평균은 모두 음수였다. 이는 FX·원유의 인과효과/예측력을 증명하지 않는다. 제3요인·계절성·시장 국면·표본 선택·독립 외표본/유의성은 평가되지 않았다. Brent 최신 관측일은 10월 27일로 국내 최종일 10월 30일을 임의로 채우지 않았다. `source_published_at_utc=null`, `HISTORICAL_VINTAGES_NOT_RECONSTRUCTED`, `independent_pit_verified_pairs=0`. 제공자 원천 이용권의 외부 배포/보관·AI 사용 권한은 별도 증빙이 없다.
+
+**S1 종료:** 개인 로컬 데이터 연결·메타데이터 검증·KRX 40거래일 사후 매칭 **실행 목표 완료**. 다시 동일 기간 API를 반복 조회하거나 사후 표본에서 최적 매매 규칙을 만들지 않는다. 사용자 PC 보고서의 `db_writes=0` 등은 실행기가 반환한 진단 필드이며, 운영 환경의 독립 파일 해시/네트워크 패킷 감사까지 수행한 결과는 아니다. 기존 Scanner/10전략/Risk/Exit/Horizon/Holdings/JEV 및 외부 공개 상태 불변.
+
+**다음 작업:** `GLOBAL-02-S2` 국제 정책·지정학적 사건의 공식 ID, 발표 UTC, 정정 이력, 나라/영향 범위, 제공자 권리 검증. 기존 `event_evidence/policy.py`와 `macro/event_composition.py` 재사용. NAVER 뉴스 원문 임의 저장/AI 변환/예측 이용 금지, 사건 하나가 하락의 원인이라고 단정 금지. **S2 구현은 아직 시작하지 않았다.**
