@@ -43,8 +43,9 @@ def test_unsc_candidate_is_not_a_production_evidence_source():
         assert not policy.allows(capability)
         with pytest.raises(EventEvidenceContractError):
             policy.require(capability)
-    with pytest.raises(EventEvidenceContractError, match="EVENT_EVIDENCE_SOURCE_NOT_APPROVED"):
+    with pytest.raises(EventEvidenceContractError) as unapproved:
         policy_for_event_source(SOURCE_KIND)
+    assert unapproved.value.code == "EVENT_EVIDENCE_SOURCE_NOT_APPROVED"
     naver = policy_for_event_source("NAVER_NEWS", provider_kind="developer_center")
     assert not naver.ai_transform_allowed
     assert not naver.raw_retention_allowed
