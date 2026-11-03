@@ -181,13 +181,19 @@ def run_research(
     result = _blank(status="UNAVAILABLE", reason="NOT_EVALUATED")
     result["requested_range"] = {"start": start.isoformat(), "end": end.isoformat()}
     created_client = client is None
-    try:
-        with closing(open_krx_readonly(db_path)) as conn:
-            krx = read_krx_context(conn, start=start, end=end)
-    except (sqlite3.Error, FileNotFoundError):
-        return {**result, "status": "DATA_INSUFFICIENT", "reason": "KRX_LOCAL_STORE_UNAVAILABLE"}
+    if metadata_only:
+        # Source identity/units must be checkable even if local KRX history
+        # is absent. Metadata-only never fetches FRED observation values.
+        krx = {"status": "NOT_REQUIRED_FOR_METADATA", "daily_returns": {}}
+    else:
+        try:
+            with closing(open_krx_readonly(db_path)) as conn:
+                krx = read_krx_context(conn, start=start, end=end)
+        except (sqlite3.Error, FileNotFoundError):
+            return {**result, "status": "DATA_INSUFFICIENT",
+                    "reason": "KRX_LOCAL_STORE_UNAVAILABLE"}
     result["krx"] = {k:v for k,v in krx.items() if k != "daily_returns"}
-    if krx["status"] != "READY" and not metadata_only:
+    if krx["status"] not in {"READY", "NOT_REQUIRED_FOR_METADATA"}:
         return {**result, "status": "DATA_INSUFFICIENT", "reason": krx["reason"]}
     try:
         active_client = client or FredClient()

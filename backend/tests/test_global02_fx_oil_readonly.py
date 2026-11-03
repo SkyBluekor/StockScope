@@ -144,7 +144,8 @@ def test_global02_missing_invalid_and_duplicate_fred_rows_are_not_imputed():
     assert normal["public"]["historical_decision_eligible"] is False
     assert normal["points"][1]["previous_date"]==date(2026,9,1)
     assert normal["points"][1]["previous_gap_calendar_days"]==2
-    assert "value" not in str(normal["public"])
+    assert normal["public"]["raw_values_in_report"] is False
+    assert '"1340"' not in json.dumps(normal["public"])
     rows[3]["value"]="1346"
     with pytest.raises(Global02SeriesError,match="DUPLICATE_DATE_CONFLICT"):
         normalize_observations(FX,rows,_meta(FX),start=START,end=END,
@@ -221,6 +222,20 @@ def test_global02_real_existing_krx_fake_fred_end_to_end_aggregate_only(tmp_path
     assert result["db_writes"]==0
     assert "1350" not in json.dumps(result)
     assert (path.stat().st_mtime_ns,path.stat().st_size)==baseline
+
+
+def test_global02_metadata_check_does_not_require_krx_database(tmp_path: Path):
+    fake = FakeFred(_days())
+    missing = tmp_path / "no-market.db"
+    result = run_research(
+        start=START, end=END, confirm_personal_research=True,
+        metadata_only=True, db_path=missing, client=fake,
+    )
+    assert result["status"] == "METADATA_VERIFIED"
+    assert result["krx"]["status"] == "NOT_REQUIRED_FOR_METADATA"
+    assert fake.series_calls == [FX, OIL]
+    assert not fake.observation_calls
+    assert not missing.exists()
 
 
 def test_global02_metadata_only_does_not_read_observations(tmp_path: Path):

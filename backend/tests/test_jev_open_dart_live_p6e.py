@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -166,8 +166,12 @@ def test_live_by_stock_api_rejects_future_and_wrong_stock_without_persistence(mo
     monkeypatch.setattr(api, "_providers", lambda: (None, p))
     from app.main import app
     client = TestClient(app)
+    # Calendar-relative: the prior fixed 2026-11-03 date became today and
+    # stopped testing the intended rejection of a FUTURE request.
+    future_from = (date.today() + timedelta(days=2)).isoformat()
+    future_to = (date.today() + timedelta(days=3)).isoformat()
     bad = client.get("/api/dart/stocks/068270/disclosures",
-                     params={"begin_date": "2026-11-02", "end_date": "2026-11-03"})
+                     params={"begin_date": future_from, "end_date": future_to})
     assert bad.status_code in {400, 422}
     assert calls == []
     mismatch = client.get("/api/dart/stocks/068270/disclosures",
