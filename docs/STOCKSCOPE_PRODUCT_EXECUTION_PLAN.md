@@ -4,7 +4,7 @@
 >
 > **실제 사용자 브랜치: `codex/p0-01-mvp-c1-c2-integration-20261022` · 로컬 `C:\Projects\StockScope`**
 >
-> **현재 다음 작업: GLOBAL-02-S2 SPEC_NEXT / S1_REAL_FRED_KRX_RETROSPECTIVE_UAT_PASS / PRODUCTION_POLICY_FROZEN.** STRATEGY-01은 Windows 실데이터 10전략 연구 실행 완료·전략당 2~4건으로 성능 판정 보류. 생산 전략/Risk/JEV/기간 정책은 동결한다. GLOBAL-01-S2의 Windows Scanner 참고표시는 검증 완료(개인·공개 이용권은 별도 확인 중). 생산 전략·Risk 정책은 변경하지 않는다. MACRO-02는 사후 연구 종료(생산 판단 미승인), MACRO-01 표시는 유지한다. 이 문서는 현재 사용 브랜치에서 다음 제품 작업을 관리하는 단일 기준이다. `codex/jev-reviewer-shadow-bridge`의 오래된 계획서는 역사적 근거 자료이며 **현재 브랜치에 자동 포함되지 않는다**. 기존 P0 Scanner·Holdings·JEV 작업, 동결된 Strategy/Risk/Scanner 계약을 전부 보존한다. 다른 브랜치 전체 병합 금지.
+> **현재 작업: GLOBAL-02-S2 SPEC_READY / IMPLEMENTATION_NOT_STARTED / OFFICIAL_EVENT_SOURCE_RIGHTS_AND_TIME_UNVERIFIED / PRODUCTION_POLICY_FROZEN.** STRATEGY-01은 Windows 실데이터 10전략 연구 실행 완료·전략당 2~4건으로 성능 판정 보류. 생산 전략/Risk/JEV/기간 정책은 동결한다. GLOBAL-01-S2의 Windows Scanner 참고표시는 검증 완료(개인·공개 이용권은 별도 확인 중). 생산 전략·Risk 정책은 변경하지 않는다. MACRO-02는 사후 연구 종료(생산 판단 미승인), MACRO-01 표시는 유지한다. 이 문서는 현재 사용 브랜치에서 다음 제품 작업을 관리하는 단일 기준이다. `codex/jev-reviewer-shadow-bridge`의 오래된 계획서는 역사적 근거 자료이며 **현재 브랜치에 자동 포함되지 않는다**. 기존 P0 Scanner·Holdings·JEV 작업, 동결된 Strategy/Risk/Scanner 계약을 전부 보존한다. 다른 브랜치 전체 병합 금지.
 
 ## 1. 제품 목표와 불변 원칙
 
@@ -368,9 +368,9 @@ StockScope의 목표는 미국 금리·해외 지수를 단순 표시하는 것�
 
 **GLOBAL-02-S1 완료 조건:** 실제 FX와 Brent 각각에 대해 원천/단위·관측/공개시각·결측/권리 판정이 명확하고, 합법적 로컬 이용 범위에서 **기존 국내 시장 공통 거래일과 매칭된 사후 분석을 재현**하며, 데이터 부족·권리 제한을 정직하게 표시한다. **연구 실행 완료는 제품의 인과관계·예측력·투자 정책 승인을 뜻하지 않는다.** 실제 수집·연구가 제한되면 원인과 다음에 필요한 단 한 가지 조건을 제시하고 종료한다.
 
-### 7.4 GLOBAL-02 후속 순서 — 이번에는 미착수
+### 7.4 GLOBAL-02 후속 순서 — S2 명세 확정·구현 미착수, S3/S4 미착수
 
-- **GLOBAL-02-S2 / 국제 사건 근거:** 공식 정책·지정학적 사건의 원천·식별 ID·발표 UTC·정정·나라/영향범위·이용권을 확인하고 기존 `event_evidence/policy.py`와 `macro/event_composition.py`의 권한 모델을 사용. NAVER_NEWS는 현재 **표시 중심**이며 P6에서 원문 보관·AI 변환·역사적 평가·예측 권리가 승인되지 않았으므로 전쟁 뉴스 본문을 임의로 AI에 넣거나 가상의 사건 점수를 만들지 않는다.
+- **GLOBAL-02-S2 / 국제 사건 근거 — 다음 단일 구현 작업 (§7.7):** 1차 공식 원천은 UN 안전보장이사회 제재 명단 변경 목록으로 제한해 출처 ID·변경 유형·공식 통지번호·관측일/원문 게시시각 분리·권한 미승인 차단을 검사한다. S2는 제재/외교 사건의 **증거 계약**으로, 전쟁 발생 인과·국내 업종/기업·매매판단을 추정하지 않는다. 기존 `event_evidence/policy.py`, `TemporalEvidence`, 정정·중복 관리, `macro/event_composition.py`를 재사용하며 NAVER_NEWS 원문 저장·AI 전송 금지.
 - **GLOBAL-02-S3 / 산업·종목 연결:** S1 환율/유가의 확정된 출처와 S2 사건 입력을 기존 `macro/impact.py`, `macro/sector_route.py`, `api/macro.py`에 read-only 보조 설명으로 연결한다. 정확한 산업·기업 노출도/매출 구조/시점매핑이 증명되지 않으면 `SECTOR_LINK_UNVERIFIED`로 처리. 국제 뉴스 하나로 시장 폭락 원인을 단정하지 않음.
 - **GLOBAL-02-S4 / 사용자 제품화 및 결정 여부:** 전·후 시장 비교 및 실제 사용자 설명의 효용을 확인한 뒤에만 기존 Scanner의 **한 곳**에 글로벌 맥락 요약을 추가한다(동일 카드 증식 금지). 출처/관측일/불확실성 구분, 기존 후보 의사결정 불변. 충분한 외표본·PIT·위험 비교·사용자 승인 전까지 `RiskGate`·전략 랭킹·Horizon·Holdings·JEV를 무단 활성화하지 않는다.
 
@@ -439,3 +439,43 @@ if ($LASTEXITCODE -eq 0) {
 **S1 종료:** 개인 로컬 데이터 연결·메타데이터 검증·KRX 40거래일 사후 매칭 **실행 목표 완료**. 다시 동일 기간 API를 반복 조회하거나 사후 표본에서 최적 매매 규칙을 만들지 않는다. 사용자 PC 보고서의 `db_writes=0` 등은 실행기가 반환한 진단 필드이며, 운영 환경의 독립 파일 해시/네트워크 패킷 감사까지 수행한 결과는 아니다. 기존 Scanner/10전략/Risk/Exit/Horizon/Holdings/JEV 및 외부 공개 상태 불변.
 
 **다음 작업:** `GLOBAL-02-S2` 국제 정책·지정학적 사건의 공식 ID, 발표 UTC, 정정 이력, 나라/영향 범위, 제공자 권리 검증. 기존 `event_evidence/policy.py`와 `macro/event_composition.py` 재사용. NAVER 뉴스 원문 임의 저장/AI 변환/예측 이용 금지, 사건 하나가 하락의 원인이라고 단정 금지. **S2 구현은 아직 시작하지 않았다.**
+
+### 7.7 다음 실행 명세 — GLOBAL-02-S2: 공식 국제 제재 변경 사건의 근거·시점·권리 검증
+
+**작업 상태: `SPEC_READY / IMPLEMENTATION_NOT_STARTED / RIGHTS_UNVERIFIED / HISTORICAL_PIT_UNVERIFIED` (2026-11-03).**
+
+**이번 한 단계의 목표:** 글로벌 정책/제재/분쟁 사건을 막연한 뉴스 감성 점수로 취급하지 않기 위해, **국제 공식기관이 실제 발표한 사건 1종을 출처/ID/변경 유형/시점/정정/권한이 있는 작은 참조 레코드로 구분할 수 있는가**를 실데이터 1회로 검증한다. 기존 EVENT P6 인프라를 재사용하고 이번 S2에서는 신규 사업체 매핑·지수/종목 가격 비교·전쟁 확률·AI/JEV·Scanner 화면 **모두 불허**. 글로벌 사건 위험도 임의 숫자와 확정 인과관계는 만들지 않는다.
+
+#### A. 이번에 실제 검사할 공식 원천은 단 1개
+
+- **1차 지정 원천: UN 안전보장이사회(UNSC) 통합 제재 명단 'List of updates to the UNSC Consolidated List'**, https://main.un.org/securitycouncil/en/content/list-updates-unsc-consolidated-list . 이 목록에는 변경 날짜, 제재위원회/제재체제, 영구 참조번호(Permanent Reference Number), 변경 유형(Listing/Delisting/Amendment), 해당 항목수, 공식 통지/보도자료 번호(예: SC/…)가 있다. 통합 명단 원본 https://main.un.org/securitycouncil/en/content/un-sc-consolidated-list 와 서로 다른 문서임을 유지한다. **현재 웹에서 이런 필드의 존재를 확인했지만, 실제 응답 파서/정확한 UTC 게시시각/데이터 이용 허가는 구현 및 사용자 UAT 전 미검증**.
+- **S2가 포괄하는 사건:** 해당 제재체제의 **제재 대상 등재/삭제/정보 변경이라는 행정 사실**. 이를 전쟁 개시, 호르무즈 해협 봉쇄, 석유 공급 차질, 미국 연방정부 경제정책, 국내 기업의 해외 매출 충격으로 자동 변환하지 않는다. 전쟁/분쟁 현황과 정책 변동의 더 넓은 원천은 **S2 후속 별도 승인 작업**에서 각 공식 발표/시각 계약을 추가해야 한다. 같은 단계에서 검증 없이 OFAC·뉴스·소셜미디어까지 일괄 수집하지 않는다.
+- **교차 참고 후보만:** OFAC 공식 Sanctions List Service(https://ofac.treasury.gov/sanctions-list-service)는 제재 명단 및 변경(delta) 파일을 제공하는 별도 관할의 공식 소스다. 이번 S2에서는 링크/후속 후보로만 기록하고 OFAC 데이터 다운로드, 통합 dedup, 미국 제재의 UN 제재 대체 취급은 하지 않는다.
+
+#### B. 기존 코드 재사용과 신규 최소 구현 위치
+
+| 기존 코드 / 실제 상태 | S2 적용 경계 |
+|---|---|
+| `backend/app/event_evidence/policy.py`의 `EventEvidenceSourcePolicy`/`EvidenceCapability` 및 `policy_for_event_source` | 현재 승인된 소스는 `NAVER_NEWS`, `OPENDART_DISCLOSURE`뿐. **UNSC는 아직 미승인 소스**이며 정책 목록에 무심코 추가하거나 DISPLAY/NORMALIZE/RETENTION/AI/HISTORICAL/PREDICTION=true로 열지 않는다. 먼저 `UNSC_SANCTIONS_UPDATE_CANDIDATE`를 별도 진단용으로 fail-closed. 원천 조건이 공식적으로 확인돼 별도 정책 결정이 있을 때만 등록 가능 |
+| `backend/app/event_evidence/time.py:TemporalEvidence`, `EvidenceTimeQuality`, `conservative_available_at` | `event_date`(공식 변경 날짜), `source_published_at`(공식 UTC가 확인된 경우에만), `first_seen_at`, `fetched_at`, `available_at`, `corrected_at`을 분리. 웹페이지에 날짜만 있으면 `DATE_ONLY`이고 **00:00 UTC/KST 임의 생성 금지**. earliest historical PIT를 추정할 수 없어 `historical_evaluation_eligible=false` |
+| `backend/app/event_evidence/models.py:EventEvidenceSourceRef`, `EventRevisionIdentity`, `EventEvidenceState` | 발표·참조 ID 확인 뒤 표준 계약으로 매핑 가능한지 **메모리/fixture에서만 검증**. UN 소스 policy 승인 전 `EventEvidenceStore`나 Simulation DB에 기록 금지. 같은 사건의 amended/delisted/withdrawn 이력을 영구 ID의 다른 revision으로 구분하되 임의 version 발급 금지 |
+| `backend/app/event_evidence/resolution.py`/`quality.py`/`asof.py`, `backend/app/macro/event_composition.py` | 기존 중복/품질/컷오프/정정 메커니즘이 있다는 사실을 확인. **S2 공식 데이터는 권한/시점 적격성이 없으므로 생산 경로 또는 과거 백테스트에 주입하지 않는다**. 향후 기존 읽기 전용 제품 경로로 재사용할 계약만 맞춤 |
+| `backend/app/news/policy.py` | NAVER_NEWS는 표시/표시용 정규화만 허용. 원문 저장·번역/LLM 변환·역사평가·예측 입력 불승인. S2에서 해당 정책을 우회하지 않음 |
+
+#### C. Codex 다음 실행 작업 — 이 순서로 구현
+
+1. **공식 1회 preflight 및 권리 판정:** UN 공식 URL의 제공 상태·구조·공식 통지 링크·영구 참조번호가 실제 접근 가능한지 확인하고, 원천의 자동 조회·인용·메타데이터 추출·비상업 이용·재배포·파생 저장 조건을 공식 문서로 확인한다. 검증하지 못한 capability는 **기본 false**. 승인 증거(정확한 공식 링크, 확인 날짜, 허용 목적과 제한)가 없는 경우 `RIGHTS_UNVERIFIED`로 안전 종료. 공개 PDF 전체 본문/공식 HTML 전문/개인정보를 LLM 또는 GitHub에 전달하지 않음.
+2. **원천 계약 1개 구현:** 신규 `backend/app/event_evidence/global02_official_updates.py`(파일명 제안)에 `UNSC_SANCTIONS_UPDATE_CANDIDATE`용 strict normalizer + rights/time gate를 둔다. 파서에 필요한 필드: `source_kind`, `official_notice_id`, `sanctions_regime_id`, `permanent_reference_numbers[]`, `change_type` (`LISTING/DELISTING/AMENDMENT`), `change_date` (YYYY-MM-DD), `official_reference_url`, `observed_at_utc`, `source_published_at_utc|null`, `time_quality`, `rights_capabilities`, `validation_status`. 원본 기사/제재대상 개인정보/전체 명단/제재 리스트 원문·URL 쿼리 자격정보를 출력하지 않는다. 누락/충돌/링크가 공식 도메인이 아닌 경우 `IDENTITY_UNVERIFIED`/`SOURCE_UNAVAILABLE`/`SEMANTICS_UNVERIFIED`로 중단.
+3. **공식 식별자·정정 및 의미 충돌 방지:** 단일 공지에 여러 영구 참조번호가 포함될 수 있으므로 (공식 통지번호+제재체제+영구 참조번호+변경유형)을 **개별 변경 이벤트 식별자 후보**로 사용한다. 단순 해당 날짜, 헤드라인, 유사한 인명/국가 문자열만으로 dedup하지 않는다. 같은 영구 참조번호가 다른 공지에서 `AMENDMENT`/`DELISTING`되면 같은 엔터티의 **서로 다른 변경 사건**이다. 공식 게시일 미상/정정 링크 불명 시 수정 직전 상태로 과거 스냅샷을 재작성하지 않는다. 발표·명단의 수정 사실과 처음 관측했다는 사실은 별개.
+4. **시각/권리 정책 fail-closed:** 원천의 `change_date`는 제재 변경일이지 공식 발표 UTC가 아니다. `source_published_at_utc`가 없는 경우 `DATE_ONLY`를 유지하고 `available_at`은 **StockScope가 실제로 해당 버전을 처음 관측·검증한 시각보다 이르게 만들지 않는다**. `TemporalEvidence`의 `historical_evaluation_eligible` 속성에 관계없이 **capability 승인까지 별개 확인**한다. `publication_rights_approved=false`, `retention_approved=false`, `ai_transfer_approved=false`, `historical_decision_eligible=false`, `production_decision_approved=false`를 출력하며 원문/파생 자동 DB 저장, 소스 권리 자동 상속, 제재명단 존재=확정 한국기업 영향 판단을 차단한다.
+5. **사용자용 단일 연구 CLI:** `tools/data/inspect_global02_official_events.py`(파일명 제안). 기본 동작은 offline fixture/도움말; live mode는 **명시적 개인 로컬 접근 확인 + 제공자 약관 사전 확인**시에만 공식 원천 *좁은 목록 1회* 요청. 최대 건수/타임아웃/허용 호스트/리다이렉트·크기 제한을 둔다. 실행 후 stdout에 `source_status`, `rights_status`, `identity_validated_count`, `date_only_count`, `notice_id_count`, `change_type_counts`, `excluded_reasons`, `duplicate_conflicts`, `correction_linkage_verified_count`, `historical_pit_verified_count`, `writes=0`, `ai_calls=0`, `production_inputs=0`의 **집계만 출력**. 다운로드 본문/개별 민감정보/원본 파일 저장하지 않고 글로벌 사건 DB·Market/Simulation DB·JEV·Scanner에 연결하지 않는다.
+6. **테스트/CI와 실증 완료:** 가짜 UN 변경 목록 fixture에서 `LISTING/DELISTING/AMENDMENT`, 한 공지 안 다수 참조번호, 동일 공지 중복, 공식 통지/영구 ID 부재, 다른 도메인 위장·redirect·수집량/응답 크기 초과, 원천 `DATE_ONLY`/나중에 관측된 정정, 권리 비승인, 403/429/5xx/연결 실패, 무신뢰 HTML 내용, 시간대 해석/미래 cutoff, 소스 변경, NAVER 미승인 capability 및 외부 AI 호출/DB 쓰기 0을 검증한다. 기존 `backend/tests/test_event_evidence_contract_vnp6s1.py`, `test_macro_event_composition_next6d_s1.py` 및 Python 3.11/3.14·Frontend·Windows Fresh Clone 회귀 유지. 사용자 PC 라이브 확인은 조건 충족 시 공식 목록 1회만 실시하고 결과의 **메타데이터 집계/차단 사유만** 이 단일 계획서 §7.8에 기록한다. 권한 또는 공식 시각 부재 때문에 PIT 검증 실패는 정상적인 안전 판정으로 인정하며 무작정 다른 사이트를 재조회하지 않는다.
+
+#### D. 수용/차단 판정
+
+- `SOURCE_CONTRACT_VERIFIED_REFERENCE_ONLY`: 공식 도메인/공지·체제·영구 ID/변경 유형·날짜가 충돌 없이 해석되고, 실조회 이용권 범위가 확인됐으며 권한 제한과 날짜 한계가 분리돼 집계 결과로 재현된다. **단, 이벤트가 전략 판단에 유용하거나 권한이 공개 서비스까지 확대되었다는 뜻은 아님**.
+- `RIGHTS_UNVERIFIED`: 해당 데이터의 자동 조회·로컬 이용·인용/파생 처리 조건이 확인되지 않거나 허용 범위가 모호하면 원천 값을 받거나 저장하는 동작을 수행하지 않는다. 공식 링크·부족한 권리 근거를 보고하고 종료.
+- `SOURCE_UNAVAILABLE` / `IDENTITY_UNVERIFIED` / `DATE_ONLY_LIMITED` / `CORRECTION_LINK_UNVERIFIED`: 목록 구조/공지·참조번호/UTC 게시시각/정정 연결의 결함을 개별 이유로 기록한다. 출처가 날자만 제공하는 경우는 **참조용 연구까지 가능할 수 있어도 역사적 거래·인과 판단은 계속 차단**한다.
+- **절대 변경 금지:** 기존 10전략 순위/점수, Exit/Risk/PANIC/Horizon, 보유 대응, 뉴스/네이버 권한, UN/OFAC의 개인·단체 제재 명단을 로컬 장기 저장하는 기능, JEV AI 요청, Scanner 국제 사건 점수/원인 문구, 자동 거래/외부 공개. **사용자 동의 없이 정부 제재·국제분쟁 관련 사실을 특정 한국 종목의 악재나 주가 폭락 원인으로 표시하지 않는다.**
+
+**GLOBAL-02-S2 후속 연결:** 이 단계에서 제재 변경에 대한 **공식 사건 존재**가 확인돼도, 실제 전쟁·공급망·무역·산업 노출과 한국 기업 피해를 규명하려면 별도 공식 원천·산업 자료가 필요하다. 후속 GLOBAL-02-S3은 S2에서 **검증된 사건 종류만** 대상으로 `sector_route.py`의 업체/업종 맵핑을 별도 실증하고, 실패하면 `SECTOR_LINK_UNVERIFIED`로 남긴다. 우선 S2만 구현하고 문서·진단 UI를 계속 증식시키지 않는다.
