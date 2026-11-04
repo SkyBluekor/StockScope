@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import base64
+import binascii
 import hashlib
 import hmac
 import json
@@ -102,7 +103,7 @@ def _verify_token(value: str, identity: str, body_hash: str) -> None:
                  and expiry <= int(datetime.now(timezone.utc).timestamp()) + 300
                  and actual_identity == identity and actual_hash == body_hash
                  and hmac.compare_digest(expected, value))
-    except (ValueError, TypeError, UnicodeError, OverflowError, json.JSONDecodeError):
+    except (ValueError, TypeError, UnicodeError, OverflowError, binascii.Error):
         valid = False
     if not valid:
         raise StockChoiceExecutionError("CHOICE_APPROVAL_INVALID_OR_EXPIRED")
@@ -319,7 +320,7 @@ class StockChoiceService:
                 prepared["request_body"], model_id=self.model_id,
                 transport=self.transport,
             )
-        except (StockChoiceExecutionError, TypeSafeJevProviderError) as exc:
+        except (StockChoiceExecutionError, TypeSafeJevProviderError, StockReviewContractError) as exc:
             saved = self.catalog.finish(
                 review_identity=prepared["review_identity"],
                 result=None, error_code=exc.code,
