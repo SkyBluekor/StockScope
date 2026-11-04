@@ -267,6 +267,12 @@ class StockChoiceService:
                     base["reason_code"] = "B4_NOTE_NOT_REGISTERED"
                 return base
             prepared = _prepare_request(identity, evidence, model_id=self.model_id)
+            # A stored result for an older note/model must never appear as
+            # the current review of the newly authored input.
+            if (base["latest_review"] is not None
+                    and base["latest_review"]["review_identity"]
+                    != prepared["review_identity"]):
+                base["latest_review"] = None
             price_preview = (self.cost_policy.check(prepared, model=self.model_id)
                              if self.cost_policy is not None else None)
         except (StockChoiceExecutionError, StockChoiceStorageError) as exc:
