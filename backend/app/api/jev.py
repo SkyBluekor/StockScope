@@ -683,7 +683,7 @@ def jev_review_feature_status(
         "db_writes": 0,
         "historical_pit_verified": False,
         "source_rights_approved": False,
-        "requires_new_question_contract": status == "INPUT_CONTRACT_MISMATCH",
+        "requires_new_question_contract": status in {"INPUT_CONTRACT_MISMATCH", "LOCAL_ALREADY_RESOLVED"},
     }
     return result
 
