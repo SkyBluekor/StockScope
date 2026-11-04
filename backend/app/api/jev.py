@@ -607,14 +607,85 @@ def jev_synthetic_demo_start(request: Request, tasks: BackgroundTasks) -> dict[s
     return result
 
 
+def _single_stock_review_fit(v4: dict[str, object]) -> tuple[str, str]:
+    """V4 question fit only; NEVER an approval for provider transmission."""
+    local = str(v4.get("local_v4_status") or "")
+    semantic = str(v4.get("v4_local_semantic_status") or "")
+    if str(v4.get("category") or "") == "REFERENCE_ONLY":
+        return "NOT_ENTRY_CANDIDATE", "NOT_ENTRY_CANDIDATE"
+    if local == "SKIPPED_LOCAL":
+        if semantic == "LOCAL_MATCH":
+            return "LOCAL_ALREADY_RESOLVED", "NO_RESIDUAL_SEMANTIC_REVIEW"
+        if semantic == "LOCAL_CONFLICT":
+            return "LOCAL_ALREADY_RESOLVED", "LOCAL_CONFLICT_ALREADY_DETERMINED"
+        return "INPUT_CONTRACT_MISMATCH", "LOCAL_SEMANTIC_STATE_NOT_REVIEWABLE"
+    if local == "LOCAL_V4_PROJECTABLE":
+        # Even a valid *shape* contains unverified third-party parents.
+        return "SOURCE_RIGHTS_HOLD", "SOURCE_RIGHTS_AND_TIMING_UNVERIFIED"
+    return "INPUT_CONTRACT_MISMATCH", "V4_SEMANTIC_INPUT_NOT_READY"
+
+
 @router.get("/review-feature")
-def jev_review_feature_status() -> dict[str, object]:
-    return {
+def jev_review_feature_status(
+    capture_id: str | None = Query(default=None, min_length=1, max_length=200),
+    sample_index: int | None = Query(default=None, ge=0, le=499),
+) -> dict[str, object]:
+    """Existing global feature contract, optionally one read-only B scope check.
+
+    Neither a caller-provided flag nor a valid local V4 semantic projection
+    grants external data rights or activates TypeSafe. The unqualified GET
+    is unchanged; candidate inspection happens only on explicit request.
+    """
+    result: dict[str, object] = {
         "execution_mode": BASELINE_WITH_JEV,
         "feature_status": JEV_USER_FEATURE_DISABLED,
         "available": False,
         "reason": "FEATURE_NOT_ACTIVATED",
     }
+    if capture_id is None and sample_index is None:
+        return result
+    if capture_id is None or sample_index is None:
+        raise HTTPException(status_code=422, detail={
+            "code": "JEV_B_CAPTURE_AND_SAMPLE_REQUIRED",
+            "message": "실제 저장 캡처와 후보 번호를 함께 지정해야 합니다.",
+        })
+    try:
+        pairs = load_frozen_candidates(_db(), capture_id=capture_id, limit=500)
+        match = next(
+            ((capture, sample) for capture, sample in pairs
+             if sample["sample_index"] == sample_index),
+            None,
+        )
+        if match is None:
+            raise HTTPException(status_code=404, detail={
+                "code": "JEV_B_SAMPLE_NOT_FOUND",
+                "message": "선택한 저장 후보를 찾지 못했습니다.",
+            })
+        capture, sample = match
+        v4 = diagnose_v4_candidate(capture, sample)
+    except DecisionReviewContractError as exc:
+        raise HTTPException(status_code=422, detail={
+            "code": exc.code,
+            "message": "저장 후보의 검토 범위를 확인할 수 없습니다.",
+        }) from exc
+    status, reason_code = _single_stock_review_fit(v4)
+    result["candidate_review"] = {
+        "capture_id": capture["id"],
+        "sample_index": int(sample["sample_index"]),
+        "market": sample["market"],
+        "ticker": sample["ticker"],
+        "snapshot_hash": sample["snapshot_hash"],
+        "question_scope": "V4_STRATEGY_RELATION_CONFLICT_ONLY",
+        "status": status,
+        "reason_code": reason_code,
+        "provider_eligible": False,
+        "external_model_calls": 0,
+        "db_writes": 0,
+        "historical_pit_verified": False,
+        "source_rights_approved": False,
+        "requires_new_question_contract": status == "INPUT_CONTRACT_MISMATCH",
+    }
+    return result
 
 
 @router.post("/reviews")
