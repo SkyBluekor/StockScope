@@ -492,3 +492,60 @@ test("B3 stored Choice is bound to selected capture, never leaked on stock switc
   expect(violations).toEqual([]);
   expect(pageErrors).toEqual([]);
 });
+
+
+test("B4 optional authored note stays local until explicit one-time model approval",async({page})=>{
+  const {calls,violations,pageErrors}=await setup(page);
+  let savedNote=null, authoredPosts=0, modelChecks=0;
+  await page.route("**/api/simulation/jev/stock-choice/authored?**",route=>{
+    const query=new URL(route.request().url()).searchParams;
+    return fulfill(route,{
+      available:true,status:savedNote?"STORED":"NOT_REGISTERED",
+      candidate:{capture_id:query.get("capture_id"),
+        sample_index:Number(query.get("sample_index")),
+        market:"KOSPI",ticker:"145720",snapshot_hash:"fixture-snapshot",
+        horizon_intent:"SHORT"},
+      note_version:savedNote?1:null,note:savedNote,authored_at_utc:savedNote?"2026-11-04T05:00:00Z":null,
+      original_authorship_self_attested:Boolean(savedNote),
+      third_party_transfer_approved:false,provider_calls:0,
+    });
+  });
+  await page.route("**/api/simulation/jev/stock-choice/authored",route=>{
+    if(route.request().method()!=="POST")return fulfill(route,{detail:"no other calls"},405);
+    authoredPosts++;
+    const payload=route.request().postDataJSON();
+    savedNote=payload.note;
+    expect(payload.original_authorship_attested).toBe(true);
+    expect(payload.no_third_party_material_attested).toBe(true);
+    expect(payload.external_ai_transfer_attested).toBe(true);
+    expect(payload.capture_id).toBe("old-cap");
+    expect(payload.sample_index).toBe(0);
+    return fulfill(route,{status:"STORED",note_version:1});
+  });
+  await page.route("**/api/simulation/jev/stock-choice/models/verify",route=>{
+    modelChecks++;
+    return fulfill(route,{status:"VERIFIED",model:"jev-1.14.0",
+      expires_in_seconds:3600,model_count:1,paid_model_calls:0});
+  });
+  await page.getByRole("tab",{name:"AI 검토"}).click();
+  const section=page.locator('[data-jev-b4-authored="true"]');
+  await expect(section).not.toHaveAttribute("open","");
+  await section.locator(":scope > summary").click();
+  const note="I independently want to check the assumptions in my own scenario before drawing conclusions.";
+  await section.locator("textarea").fill(note);
+  await expect(section.getByRole("button",{name:"로컬 의견 저장"})).toBeDisabled();
+  await section.getByRole("checkbox",{name:/내가 직접 처음 작성/}).check();
+  await section.getByRole("checkbox",{name:/외부 시세/}).check();
+  await section.getByRole("checkbox",{name:/이 의견을 이번 종목/}).check();
+  await section.getByRole("button",{name:"로컬 의견 저장"}).click();
+  await expect(section.getByText("로컬에 저장했어요.")).toBeVisible();
+  await expect(section.locator('[data-jev-b4-version="true"]')).toContainText("버전 1");
+  expect(authoredPosts).toBe(1);
+  expect(modelChecks).toBe(0);
+  await section.getByRole("button",{name:/TypeSafe 사용 모델 확인/}).click();
+  await expect(section.getByText(/모델 jev-1.14.0 확인 완료/)).toBeVisible();
+  expect(modelChecks).toBe(1);
+  expect(calls.filter(x=>x.method==="POST"&&x.path.includes("/jev/"))).toHaveLength(0);
+  expect(violations).toEqual([]);
+  expect(pageErrors).toEqual([]);
+});
