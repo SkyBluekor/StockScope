@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import type { ScannerCandidate, ScannerResponse } from "../services/api";
 import { getJevCandidateReviewFit, type JevCandidateReviewFit } from "../services/jevApi";
 import { getJevStockChoicePreview, executeJevStockChoice, type JevStockChoicePreview } from "../services/jevApi";
+import { getJevStockChoiceAuthored, saveJevStockChoiceAuthored,
+  verifyJevStockChoiceModels, type JevStockChoiceAuthored } from "../services/jevApi";
 import { getJevEntryRouting, getJevIndependentEventReference, getJevIndependentEventAssessment, getJevLocalReadiness, getJevOutboundPreflight, type JevEntryRouting, type JevIndependentEventReference, type JevIndependentEventAssessment, type JevLocalReadiness, type JevOutboundPreflight, type JevMonitorItem } from "../services/jevApi";
 import { scannerAiReviewStatus } from "./scannerAiReviewStatus";
 import JevSyntheticDemo from "./JevSyntheticDemo";
@@ -536,6 +538,15 @@ export default function ScannerAiReview(props: Props) {
     key: string; value: JevStockChoicePreview;
   } | null>(null);
   const [choiceConsent, setChoiceConsent] = useState(false);
+  const [authoredEntry, setAuthoredEntry] = useState<{
+    key: string; data: JevStockChoiceAuthored;
+  } | null>(null);
+  const [authoredNote, setAuthoredNote] = useState("");
+  const [authoredOriginal, setAuthoredOriginal] = useState(false);
+  const [authoredNoExternal, setAuthoredNoExternal] = useState(false);
+  const [authoredTransfer, setAuthoredTransfer] = useState(false);
+  const [authoredBusy, setAuthoredBusy] = useState(false);
+  const [authoredMessage, setAuthoredMessage] = useState<string | null>(null);
   const [choiceLookupErrorKey, setChoiceLookupErrorKey] = useState<string | null>(null);
   const [choiceSubmitting, setChoiceSubmitting] = useState(false);
   const [choiceSubmitError, setChoiceSubmitError] = useState(false);
@@ -543,6 +554,12 @@ export default function ScannerAiReview(props: Props) {
   useEffect(() => {
     let active = true;
     setChoiceQuery(null);
+    setAuthoredEntry(null);
+    setAuthoredNote("");
+    setAuthoredOriginal(false);
+    setAuthoredNoExternal(false);
+    setAuthoredTransfer(false);
+    setAuthoredMessage(null);
     setChoiceLookupErrorKey(null);
     setChoiceConsent(false);
     setChoiceSubmitting(false);
@@ -572,6 +589,73 @@ export default function ScannerAiReview(props: Props) {
     });
     return () => { active = false; };
   }, [selectedKey, captureId, sampleIndex, candidate.market, candidate.code]);
+  const currentAuthored = authoredEntry?.key === selectedKey ? authoredEntry.data : null;
+  async function reloadChoiceForThisStock() {
+    if (!captureId) return;
+    const item = await getJevStockChoicePreview(captureId, sampleIndex);
+    if (item.candidate?.capture_id === captureId
+        && item.candidate?.sample_index === sampleIndex
+        && item.candidate?.market === candidate.market
+        && item.candidate?.ticker === candidate.code
+        && item.candidate?.snapshot_hash) {
+      setChoiceQuery({key: selectedKey, value: item});
+    }
+  }
+  async function loadAuthoredNote() {
+    if (!captureId) return;
+    const key = selectedKey;
+    try {
+      const item = await getJevStockChoiceAuthored(captureId, sampleIndex);
+      if (item.available && (item.candidate?.capture_id !== captureId
+          || item.candidate?.sample_index !== sampleIndex
+          || item.candidate?.market !== candidate.market
+          || item.candidate?.ticker !== candidate.code)) {
+        throw new Error("B4_AUTHORED_IDENTITY_MISMATCH");
+      }
+      setAuthoredEntry({key, data: item});
+      setAuthoredNote(item.note ?? "");
+      setAuthoredMessage(null);
+    } catch {
+      setAuthoredMessage("직접 작성 입력 조회 실패 · 로컬 서버와 DB를 확인하세요.");
+    }
+  }
+  async function saveAuthoredNote() {
+    if (!captureId || !authoredOriginal || !authoredNoExternal || !authoredTransfer
+        || authoredBusy || authoredNote.trim().length < 24) return;
+    setAuthoredBusy(true);
+    setAuthoredMessage(null);
+    try {
+      await saveJevStockChoiceAuthored({
+        capture_id: captureId, sample_index: sampleIndex,
+        note: authoredNote.trim(), original_authorship_attested: true,
+        no_third_party_material_attested: true, external_ai_transfer_attested: true,
+      });
+      await loadAuthoredNote();
+      await reloadChoiceForThisStock();
+      setAuthoredMessage("로컬에 저장했어요. 아직 유료 모델을 호출하지 않았습니다.");
+      setAuthoredOriginal(false);
+      setAuthoredNoExternal(false);
+      setAuthoredTransfer(false);
+    } catch {
+      setAuthoredMessage("등록 실패 · 원문 인용·가격 수치·개인정보 없이 독자 작성한 의견인지 확인하세요.");
+    } finally {
+      setAuthoredBusy(false);
+    }
+  }
+  async function verifyChoiceModel() {
+    if (authoredBusy) return;
+    setAuthoredBusy(true);
+    setAuthoredMessage(null);
+    try {
+      const info = await verifyJevStockChoiceModels();
+      await reloadChoiceForThisStock();
+      setAuthoredMessage("모델 " + info.model + " 확인 완료 · 유료 Choice 호출은 실행하지 않았습니다.");
+    } catch {
+      setAuthoredMessage("모델 확인 실패 · TypeSafe API 키와 연결을 확인하세요.");
+    } finally {
+      setAuthoredBusy(false);
+    }
+  }
   const choiceSaved = currentChoice?.latest_review ?? null;
   const choiceNotReadyReasons: Record<string, string> = {
     CHOICE_SOURCE_RIGHTS_UNVERIFIED: "실제 종목 입력의 외부 AI 전송 권한 미확인",
@@ -580,6 +664,12 @@ export default function ScannerAiReview(props: Props) {
     CHOICE_SOURCE_BINDING_MISMATCH: "입력과 종목의 연결 불일치",
     CHOICE_FIELD_NOT_ALLOWLISTED: "전송 가능한 입력 필드 부족",
     CHOICE_TIME_INVALID: "입력 관측 시각 확인 필요",
+    B4_NOTE_NOT_REGISTERED: "종목별 직접 작성한 검토 의견 없음",
+    B4_MODEL_NOT_DISCOVERED: "TypeSafe 사용 모델 확인 필요",
+    B4_PROVIDER_KEY_MISSING: "TypeSafe API 키 확인 필요",
+    B4_COST_WIRE_LIMIT: "요청 분량이 비용 제한을 초과",
+    B4_COST_LIMIT: "단건 비용 정책 초과",
+    CHOICE_B4_MIGRATION_REQUIRED: "로컬 입력 저장소 업데이트 필요",
   };
   const choiceStatus = !captureId ? "저장된 분석 캡처 없음"
     : choiceLookupErrorKey === selectedKey ? "Choice 조회 오류 · 서버 연결 확인 필요"
@@ -664,7 +754,7 @@ export default function ScannerAiReview(props: Props) {
             JEV 추가 확인: {choiceLabel[choiceSaved.priority_choice] || "검토 결과 확인"}
             {" · "}{choiceSaved.completed_at || choiceSaved.requested_at}
             {" · "}{choiceSaved.model_returned || choiceSaved.model_requested}
-            {" · "}{choiceSaved.cost_unknown ? "비용 확인 불가" : (choiceSaved.cost_usd ?? 0) + " USD"}
+            {" · "}{choiceSaved.cost_unknown ? "비용 확인 불가" : "추정 $" + (choiceSaved.cost_usd ?? 0).toFixed(8)}
             <small>매수·수익률 예측이 아닌 추가 확인 항목입니다.</small>
           </p>
         )}
@@ -685,7 +775,12 @@ export default function ScannerAiReview(props: Props) {
             <p>{currentChoice.preview.state.review_notes}</p>
             <p>{currentChoice.preview.state.internal_risk_rule_description}</p>
             <p>검토 기간: {currentChoice.preview.state.horizon_intent}
-              {" · 모델: "}{currentChoice.preview.model}{" · 비용: 사전 확인 불가"}</p>
+              {" · 모델: "}{currentChoice.preview.model}
+              {" · 추정 입력 비용 상한: "}
+              {currentChoice.preview.cost_policy
+                ? "$" + currentChoice.preview.cost_policy.estimated_cost_ceiling_usd.toFixed(6)
+                : "확인 불가"}
+              {" (제공자 과금 상한 보장 아님)"}</p>
             <label>
               <input type="checkbox" checked={choiceConsent}
                 onChange={event => setChoiceConsent(event.currentTarget.checked)} />
@@ -734,6 +829,47 @@ export default function ScannerAiReview(props: Props) {
           </small>
         )}
       </div>
+      <details key={selectedKey + ":authored"} className="scanner-jev-motion-details"
+        data-jev-b4-authored="true"
+        onToggle={event => {if (event.currentTarget.open) void loadAuthoredNote();}}>
+        <summary>직접 작성한 종목 검토 의견 등록 (선택)</summary>
+        {currentAuthored?.available === false ? (
+          <p>로컬 입력 기능이 꺼져 있습니다. 서버에서 STOCKSCOPE_JEV_B4_LOCAL_AUTHORED=1 설정 후 재실행하세요.</p>
+        ) : (
+          <div>
+            <p>현재 선택 종목의 직접 작성한 가설만 보냅니다. 기사·공시·시세 수치와 이를 옮긴 문장, 개인정보는 입력하지 마세요.</p>
+            {currentAuthored?.status === "STORED" && (
+              <p data-jev-b4-version="true">로컬 의견 버전 {currentAuthored.note_version} · 작성 시점 이후 현재 검토에만 사용</p>
+            )}
+            <textarea rows={3} maxLength={380} value={authoredNote}
+              style={{width:"100%",boxSizing:"border-box"}}
+              placeholder="이 종목에 대해 내가 직접 세운 가설과 다시 확인하고 싶은 점을 짧게 적으세요."
+              onChange={event => setAuthoredNote(event.currentTarget.value)}/>
+            <label><input type="checkbox" checked={authoredOriginal}
+              onChange={value => setAuthoredOriginal(value.currentTarget.checked)} />
+              내가 직접 처음 작성한 의견입니다.</label>
+            <label><input type="checkbox" checked={authoredNoExternal}
+              onChange={value => setAuthoredNoExternal(value.currentTarget.checked)} />
+              외부 시세·기사·공시의 인용·요약·파생 자료와 민감정보가 없습니다.</label>
+            <label><input type="checkbox" checked={authoredTransfer}
+              onChange={value => setAuthoredTransfer(value.currentTarget.checked)} />
+              이 의견을 이번 종목의 AI 검토에 전송하는 데 동의합니다. (저장만으로 모델은 실행되지 않습니다.)</label>
+            <div>
+              <button type="button" onClick={() => void saveAuthoredNote()}
+                disabled={authoredBusy || authoredNote.trim().length < 24
+                  || !authoredOriginal || !authoredNoExternal || !authoredTransfer}>
+                로컬 의견 저장
+              </button>
+              <button type="button" disabled={authoredBusy}
+                onClick={() => void verifyChoiceModel()}>
+                TypeSafe 사용 모델 확인 (읽기 전용)
+              </button>
+            </div>
+            {authoredMessage && <p role="status">{authoredMessage}</p>}
+            <small>독자 작성 여부는 본인 확인에 기반하며 자동으로 법적 권리가 증명되는 것은 아닙니다.</small>
+          </div>
+        )}
+      </details>
       <details className="scanner-jev-motion-details scanner-jev-developer-details"
         data-jev-developer-details="true"
         open={developerOpen}
