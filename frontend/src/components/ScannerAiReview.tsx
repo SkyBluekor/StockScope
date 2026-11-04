@@ -492,7 +492,7 @@ function ScannerAiDiagnostics({
  * behind an explicit developer disclosure and only mount when opened, so
  * browsing Scanner candidates never triggers P5/P6 debug network requests. */
 export default function ScannerAiReview(props: Props) {
-  const { candidate, result, enabled, available, featureStatus, review, loading, loadError, onRefresh } = props;
+  const { candidate, result, sampleIndex, enabled, available, featureStatus, review, loading, loadError, onRefresh } = props;
   const [developerOpen, setDeveloperOpen] = useState(false);
   const state = scannerAiReviewStatus({ candidate, result, enabled, available, featureStatus, review });
   // B is a read-only, user-triggered fit check. Never call a provider here.
