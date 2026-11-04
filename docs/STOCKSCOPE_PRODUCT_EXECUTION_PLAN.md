@@ -4,7 +4,7 @@
 >
 > **실제 사용자 브랜치: `codex/p0-01-mvp-c1-c2-integration-20261022` · 로컬 `C:\Projects\StockScope`**
 >
-> **다음 작업: JEV-B3 ONE_REAL_STOCK_CHOICE_INTEGRATION SPEC_READY / IMPLEMENTATION_NOT_STARTED / ACTUAL_TYPE_SAFE_CALL_REQUIRES_EXPLICIT_APPROVAL / JEV_A_WINDOWS_UAT_PARTIAL / PRODUCTION_POLICY_FROZEN.** GLOBAL-02-S2 오프라인 계약·Windows 합성 검증 완료, UN 실자료 자동 추출 권리·발표시각 미확인으로 live BLOCKED; S3/S4 보류. STRATEGY-01은 Windows 실데이터 10전략 연구 실행 완료·전략당 2~4건으로 성능 판정 보류. 생산 전략/Risk/JEV/기간 정책은 동결한다. GLOBAL-01-S2의 Windows Scanner 참고표시는 검증 완료(개인·공개 이용권은 별도 확인 중). 생산 전략·Risk 정책은 변경하지 않는다. MACRO-02는 사후 연구 종료(생산 판단 미승인), MACRO-01 표시는 유지한다. 이 문서는 현재 사용 브랜치에서 다음 제품 작업을 관리하는 단일 기준이다. `codex/jev-reviewer-shadow-bridge`의 오래된 계획서는 역사적 근거 자료이며 **현재 브랜치에 자동 포함되지 않는다**. 기존 P0 Scanner·Holdings·JEV 작업, 동결된 Strategy/Risk/Scanner 계약을 전부 보존한다. 다른 브랜치 전체 병합 금지.
+> **현재 상태: JEV-B3 CHOICE_EXECUTION_STORAGE_UI_CODE_IMPLEMENTED / CI_4_OF_4_PASS / NO_VERIFIED_REAL_INPUT_OR_LIVE_CALL / JEV_A_WINDOWS_UAT_PARTIAL / PRODUCTION_POLICY_FROZEN.** GLOBAL-02-S2 오프라인 계약·Windows 합성 검증 완료, UN 실자료 자동 추출 권리·발표시각 미확인으로 live BLOCKED; S3/S4 보류. STRATEGY-01은 Windows 실데이터 10전략 연구 실행 완료·전략당 2~4건으로 성능 판정 보류. 생산 전략/Risk/JEV/기간 정책은 동결한다. GLOBAL-01-S2의 Windows Scanner 참고표시는 검증 완료(개인·공개 이용권은 별도 확인 중). 생산 전략·Risk 정책은 변경하지 않는다. MACRO-02는 사후 연구 종료(생산 판단 미승인), MACRO-01 표시는 유지한다. 이 문서는 현재 사용 브랜치에서 다음 제품 작업을 관리하는 단일 기준이다. `codex/jev-reviewer-shadow-bridge`의 오래된 계획서는 역사적 근거 자료이며 **현재 브랜치에 자동 포함되지 않는다**. 기존 P0 Scanner·Holdings·JEV 작업, 동결된 Strategy/Risk/Scanner 계약을 전부 보존한다. 다른 브랜치 전체 병합 금지.
 
 ## 1. 제품 목표와 불변 원칙
 
@@ -674,7 +674,7 @@ if ($LASTEXITCODE -eq 0) {
 
 ## 11. 다음 단일 작업 — JEV-B3 실제 종목 1건 Choice 연결 및 저장 (2026-11-04)
 
-**상태: `SPEC_READY / CODE_NOT_STARTED / ONE_REAL_CANDIDATE_REQUIRED / EXTERNAL_SOURCE_RIGHTS_UNVERIFIED / PAID_CALL_NOT_APPROVED`.**
+**상태: `CODE_IMPLEMENTED / CI_4_OF_4_PASS / ONE_REAL_CANDIDATE_RIGHTS_AND_COST_POLICY_BLOCKED / PAID_CALL_NOT_APPROVED`.**
 
 ### 11.1 작업 목표 및 사용자 가치
 
@@ -746,3 +746,20 @@ if ($LASTEXITCODE -eq 0) {
 - **권한 정책:** TypeSafe가 모델 학습에 고객 입력을 쓰지 않는다는 문서와 KRX/KIS/DART/Naver/UN 데이터를 제3자에게 전송하는 권리는 다른 문제다. 사용조건이 실제로 확인된 **특정 입력 필드 단위**로만 판단한다. 금지라고 단정하거나 허용이라고 지어내지 않는다.
 
 **실행 지시:** 이번 작업은 권리 확인 상태와 상관없이 **실제 실행·저장·UI 코드까지 구현하는 범위**다. 단순 권한 보고서, 또 다른 실자료 차단 진단기, 합성 프리뷰 코드로 범위를 축소해서 완료하지 말 것. 실모델 과금은 별도 사용자 실행 승인 전 금지. 기존 단일 실행계획서 §11에 결과를 남기고 현재 브랜치에 commit, CI 확인. 성공하면 JEV-C에서 Scanner 대비 JEV 추가 가치/비용을 비교한다.
+
+
+### 11.6 JEV-B3 구현 결과 — 실제 캡처 바인딩·Choice 실행·저장·화면 (2026-11-04)
+
+**코드 완료 판정: `B3_EXECUTION_STORAGE_UI_IMPLEMENTED_CI_PASS`. 실자료/운영 완료 판정: `B3_REAL_INPUT_BLOCKED / B3_LIVE_MODEL_NOT_RUN / B3_WINDOWS_REAL_UI_UAT_PENDING`.** 기존 V4/Scanner/Strategy/Risk/Holdings 생산 계산 변경 없이 현재 사용 브랜치에 직접 커밋.
+
+- **Choice 저장:** `backend/app/jev/stock_choice_catalog.py`, `tools/data/migrate_jev_stock_choice.py` 신규. 기존 `jev_typesafe_review` 또는 V4 데이터를 변경하지 않고 신규 `jev_stock_choice_schema_meta`, `jev_stock_choice_review`만 명시적 idempotent 마이그레이션으로 생성. 실제 canonical capture·sample·market·ticker·snapshot/input/question/model 해시와 실제 API 요청 body hash를 저장. `review_identity UNIQUE`+SQLite `BEGIN IMMEDIATE`로 같은 입력의 중복 클릭/동시 제출에 대해 애플리케이션 단일 요청 예약. `RESERVED/VALID/UNKNOWN_BILLING`을 구별하고 원문·민감정보·권한 토큰·API 응답 전문은 저장하지 않음. 서버 재시작 시 진행 중인 예약을 과금 불명으로 바꾸며 재호출 금지. **공급자 자체의 정확히 1회 과금까지 보장하는 것이 아님.**
+- **실제 실행 서비스:** `backend/app/jev/stock_choice_execution.py` 신규. `scanner_shadow_s7.load_frozen_candidates`로 실제 COMPLETE 원본 종목 캡처/해시 확인, 서버에서만 생성되는 `TrustedChoiceInput`의 출처·대상·시점/허용 필드 검증, Choice 1문항 요청 `httpx.Request` 바이트 SHA256 고정, 만료되는 HMAC 승인 토큰, 동일 ID 중복 방지, TypeSafe `/v1/systemone` HTTP transport 및 `validate_choice_response`로 정상 Choice 저장. 기존 TypeSafe V4 `noul` 경로는 그대로 보존. 타임아웃·429/422/5xx·응답 형식 오류는 과금 불명 상태 기록 후 자동 재시도 금지.
+- **권한 불명 운영 경계:** 생산 환경 `unavailable_resolver`가 기본값이므로 실제 종목 선택 및 API 키만으로 외부 호출 불가. 사용자 self-attestation이나 임의 `source_rights_approved` 플래그는 요청 API에 존재하지 않음. 실사용에는 **필드별 권한을 검증한 별도 신뢰 가능한 서버-side 원천 resolver 구현**, 공급자 실계정 보관/전송 조건 및 모델별 비용 정책, 실제 종목에 관한 적법하고 구별되는 검토 의견/관찰이 필수. 또한 호출 전 **예상 지출 상한 정책은 아직 확정·강제되지 않음**: UI는 비용 미확인을 명시하고, 실제 호출은 권한 resolver가 존재하지 않아 차단 상태. 이번 코드로 실거래 신호나 종목 분석 결과가 발생했다고 주장 금지.
+- **API:** `backend/app/api/jev.py`에 `GET /api/simulation/jev/stock-choice/preview`(기존 immutable 캡처 조회·실제 저장 결과·권한 상태/전송 프리뷰, GET 시 DB 변경 없음) 및 `POST /api/simulation/jev/stock-choice/reviews`(서버 재검증+사용자 1회 승인+바이트 지문 확인 뒤 예약/호출/저장)를 추가. 기존 `/reviews`·V4 `/review-feature` 의미 불변.
+- **화면:** `frontend/src/services/jevApi.ts`, `frontend/src/components/ScannerAiReview.tsx` 수정. 기존 AI 검토 요약에서 정확히 일치하는 선택 종목의 `VALID` Choice가 저장된 경우만 **추가 확인 우선순위·모델·완료 시각·비용 불명** 표시. `RESERVED` 및 `UNKNOWN_BILLING` 구별. 실제 권한이 있는 `PREVIEW_READY`일 때에만 전송할 본문을 사용자에게 보여주고 체크 승인+별도 클릭을 받는다. 기본적으로 기존 미승인 실행 버튼 비활성. 종목 전환 시 이전 결과는 표시하지 않음.
+- **테스트:** `backend/tests/test_jev_stock_choice_b3.py` 신규: 전용 DB migration idempotency, GET 무쓰기, 권한/마이그레이션 미승인 차단, mock HTTP transport 1회 실제 서비스–API–저장/재조회 완주, 승인/해시 위조, 동시 요청 중복 방지, 422/429/529/timeout 재호출 차단, 재시작 중단 상태 보존. `frontend/e2e/p003-scanner-recheck.spec.mjs`에 Chromium 실브라우저에서 저장된 Choice의 종목 전환 격리 검증 추가. 기존 frontend+Backend+Windows 회귀 검사 유지.
+- **GitHub Actions:** [CI #41762697684](https://github.com/SkyBluekor/StockScope/actions/runs/41762697684) **4/4 PASS** (Python 3.11 **2,895 passed / 2 skipped**, Python 3.14 PASS, Frontend Node22 PASS, Windows Fresh Clone PASS). 이 CI에서 사용한 네트워크는 테스트용 `httpx.MockTransport`이며 외부 TypeSafe 유료 호출 증거는 아님.
+- **Windows에서 다음 적용:** `C:\Projects\StockScope`의 현재 브랜치에서 `git pull --ff-only`; 실제 `backend/runtime/simulation/simulation.db`가 존재하고 Prospective capture 테이블이 있는 경우 `.\.venv\Scripts\python.exe tools\data\migrate_jev_stock_choice.py`를 **한 번** 실행 (기존 DB는 유지·Choice 테이블만 생성). 그런 다음 `.\run-dev.ps1`로 기존 UI 실행. 실제 사용 허가 원천 resolver가 없는 동안은 선택 종목의 기존 JEV 요약 및 미실행 상태가 유지되는 것이 정상. 사용자의 실제 Windows에서 후보 전환·Choice 표시 재검증은 **미완료**.
+- **다음 작업 단 하나:** 법적/기술적으로 전송 가능한 **실제 종목별 관찰 입력 1건**을 서버 신뢰 resolver로 제공할 수 있는 데이터 원천/허용 필드·정확한 시각/권리를 먼저 확인하고, 그 모델의 비용 정책·단건 지출 제한을 검증한다. 이를 확보한 뒤 사용자의 **해당 1회 유료 호출 승인**으로 실제 TypeSafe 결과를 저장·재조회하고 UI를 검증한다. 이를 갖추지 못하면 `B3_REAL_INPUT_BLOCKED` 유지하고 추가 합성 실험이나 진단기 생성 금지.
+
+**정리:** 코드로는 선택 종목→승인된 Choice 실행→결과 저장→같은 종목 표시 흐름을 구현했다. 현재 운영은 신뢰할 수 있는 외부 전송 입력 원천/비용 정책 미확인으로 **실제 모델 실행 불가**이며, 이것을 완료·성능 향상으로 오인하면 안 된다.
