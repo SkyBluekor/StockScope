@@ -185,6 +185,8 @@ async def _post_choice(body: dict[str, Any], *, model_id: str,
             raise TypeSafeJevProviderError("TYPESAFE_PROVIDER_NETWORK_ERROR") from exc
     if response.status_code == 401:
         raise TypeSafeJevProviderError("TYPESAFE_PROVIDER_AUTH_ERROR")
+    if response.status_code == 402:
+        raise TypeSafeJevProviderError("TYPESAFE_PROVIDER_INSUFFICIENT_CREDITS")
     if response.status_code == 422:
         raise TypeSafeJevProviderError("TYPESAFE_PROVIDER_REQUEST_REJECTED")
     if response.status_code == 429:
@@ -203,12 +205,14 @@ async def _post_choice(body: dict[str, Any], *, model_id: str,
 class StockChoiceService:
     def __init__(self, db_path: Path, *, resolver: TrustedResolver = unavailable_resolver,
                  model_id: str = DEFAULT_MODEL,
-                 transport: httpx.AsyncBaseTransport | None = None):
+                 transport: httpx.AsyncBaseTransport | None = None,
+                 cost_policy: Any | None = None):
         self.db_path = Path(db_path)
         self.catalog = StockChoiceCatalog(self.db_path)
         self.resolver = resolver  # server trusted code dependency, never HTTP param
         self.model_id = model_id
         self.transport = transport
+        self.cost_policy = cost_policy  # No implicit live privileges in B3 fixtures.
 
     def _candidate(self, capture_id: str, sample_index: int) -> tuple[dict[str, Any], dict[str, Any]]:
         if (not isinstance(capture_id, str) or not 1 <= len(capture_id) <= 200
@@ -261,6 +265,8 @@ class StockChoiceService:
             if evidence is None:
                 return base
             prepared = _prepare_request(identity, evidence, model_id=self.model_id)
+            price_preview = (self.cost_policy.check(prepared, model=self.model_id)
+                             if self.cost_policy is not None else None)
         except StockChoiceExecutionError as exc:
             base["reason_code"] = exc.code
             return base
@@ -275,7 +281,8 @@ class StockChoiceService:
                 "question_hash": QUESTION_HASH,
                 "input_hash": prepared["input_hash"],
                 "model": self.model_id,
-                "cost_status": "UNKNOWN",
+                "cost_status": "ESTIMATED" if price_preview is not None else "UNKNOWN",
+                "cost_policy": price_preview,
                 "expires_at_utc": datetime.fromtimestamp(
                     deadline, timezone.utc).isoformat(),
             },
@@ -295,6 +302,8 @@ class StockChoiceService:
         if evidence is None:
             raise StockChoiceExecutionError("CHOICE_SOURCE_RIGHTS_UNVERIFIED")
         prepared = _prepare_request(identity, evidence, model_id=self.model_id)
+        if self.cost_policy is not None:
+            self.cost_policy.check(prepared, model=self.model_id)
         if not hmac.compare_digest(str(request_body_sha256), prepared["request_body_sha256"]):
             raise StockChoiceExecutionError("CHOICE_BODY_CHANGED_SINCE_PREVIEW")
         _verify_token(approval_token, prepared["review_identity"],
@@ -320,6 +329,10 @@ class StockChoiceService:
                 prepared["request_body"], model_id=self.model_id,
                 transport=self.transport,
             )
+            estimated_cost, pricing_ref = (
+                self.cost_policy.after_response(normalized["usage"]["input_tokens"])
+                if self.cost_policy is not None else (None, None)
+            )
         except (StockChoiceExecutionError, TypeSafeJevProviderError, StockReviewContractError) as exc:
             saved = self.catalog.finish(
                 review_identity=prepared["review_identity"],
@@ -328,5 +341,6 @@ class StockChoiceService:
             return {"status": saved["status"], "reused": False, "review": saved}
         saved = self.catalog.finish(
             review_identity=prepared["review_identity"], result=normalized,
+            cost_estimate_usd=estimated_cost, cost_basis_ref=pricing_ref,
         )
         return {"status": saved["status"], "reused": False, "review": saved}
