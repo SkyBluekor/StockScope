@@ -4,7 +4,7 @@ import os
 import sqlite3
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from app.core.config import PROJECT_ROOT
@@ -27,6 +27,8 @@ from app.jev.scanner_eligibility_s8 import diagnose_candidate as diagnose_s8_can
 from app.jev.scanner_outbound_gate_live_03 import diagnose_outbound_candidate
 from app.horizon import HorizonPolicyError, resolve_horizon_context
 from app.jev.review_service import JevManualReviewService
+from app.jev.stock_choice_execution import StockChoiceService, StockChoiceExecutionError
+from app.jev.stock_choice_catalog import StockChoiceStorageError
 from app.jev import synthetic_live_04_demo as live04_demo
 from app.jev.typesafe_catalog import (
     TypeSafeJevCatalog,
@@ -698,3 +700,51 @@ async def request_jev_manual_review(
         sample_index=payload.sample_index,
         review_epoch=payload.review_epoch,
     )
+
+
+# JEV-B3 Choice remains independent of V4 /reviews and disabled by default.
+# Trusted resolver is a *server dependency*, never an HTTP field or browser
+# checkbox. Production currently has no validated rights resolver.
+def _stock_choice_service() -> StockChoiceService:
+    return StockChoiceService(_db())
+
+
+class StockChoiceExecuteRequest(BaseModel):
+    capture_id: str = Field(min_length=1, max_length=200)
+    sample_index: int = Field(ge=0, le=499)
+    approval_token: str = Field(min_length=1, max_length=750)
+    request_body_sha256: str = Field(min_length=64, max_length=64)
+    explicit_approval: bool
+
+
+@router.get("/stock-choice/preview")
+def get_stock_choice_preview(
+    capture_id: str = Query(min_length=1, max_length=200),
+    sample_index: int = Query(ge=0, le=499),
+    service: StockChoiceService = Depends(_stock_choice_service),
+) -> dict[str, object]:
+    try:
+        return service.preflight(capture_id, sample_index)
+    except (StockChoiceExecutionError, StockChoiceStorageError) as exc:
+        raise HTTPException(status_code=404 if exc.code == "CHOICE_SAMPLE_NOT_FOUND" else 422,
+                            detail={"code": exc.code, "message": "저장 종목 검토를 확인할 수 없습니다."}) from exc
+
+
+@router.post("/stock-choice/reviews")
+async def post_stock_choice_review(
+    payload: StockChoiceExecuteRequest,
+    service: StockChoiceService = Depends(_stock_choice_service),
+) -> dict[str, object]:
+    try:
+        return await service.execute_once(
+            capture_id=payload.capture_id,
+            sample_index=payload.sample_index,
+            approval_token=payload.approval_token,
+            request_body_sha256=payload.request_body_sha256,
+            explicit_approval=payload.explicit_approval,
+        )
+    except (StockChoiceExecutionError, StockChoiceStorageError) as exc:
+        raise HTTPException(status_code=409, detail={
+            "code": exc.code,
+            "message": "입력 출처·실행 승인·기존 기록 상태를 확인해야 합니다.",
+        }) from exc
