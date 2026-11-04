@@ -774,3 +774,14 @@ if ($LASTEXITCODE -eq 0) {
 - 이후 `.\run-dev.ps1` 명령을 실행했으나 사용자가 제공한 출력에는 **기동 로그·HTTP 상태·브라우저 스크린샷이 없어** Frontend 5173/Backend 8000 실제 서비스 기동과 종목별 Choice GET 성공은 아직 미검증.
 - 후속 확인은 이미 실행한 마이그레이션 재반복이 아니라 `http://127.0.0.1:5173`에서 실제 저장된 Scanner 후보 1개 → `AI 검토` 요약 → 다른 후보 전환 시 정보 섞임 없음, 서버 `GET /api/simulation/jev/stock-choice/preview?capture_id=...&sample_index=...` 응답/사유를 확인하는 것. 현재 허가 원천 resolver가 없으므로 실모델 버튼 비활성이 **정상**이며 실제 JEV POST 0 유지.
 - 실종목 대상의 Choice `VALID` 저장·실사용 TypeSafe 결과, 사용자 1회 호출 승인, 비용 정책·권한 원천 검증은 여전히 미완료. 코드 CI 4/4는 기존 근거 그대로 유지한다. 사용자 화면 확인 전 Windows A/B3 UAT PASS로 승격하지 않는다.
+
+
+### 11.8 사용자 Windows 동국제약 AI 검토 화면 확인 및 기존 V4/B3 표시 혼동 수정 (2026-11-04)
+
+**실제 사용자 화면 인수: `B3_WINDOWS_SCANNER_UI_VISIBLE / LIVE_CHOICE_GET_UNVERIFIED / CANDIDATE_SWITCH_UAT_PENDING`. 표시 코드 수정: `B3_CHOICE_STATUS_CLARITY_CI_4_OF_4_PASS / USER_LOCAL_UPDATE_PENDING`.**
+
+- **화면 근거:** 사용자가 제출한 `image(20261104-025616).png`에 실제 Windows 실행 중인 StockScope Scanner의 선택 후보 **동국제약 086450(KOSDAQ)**, 2026-11-03 확정 일봉, 기본 `AI 검토` 탭, `Scanner 판단=현재 조건상 진입 후보`, `JEV 검토=현재 서버에서 JEV 사용 불가`, 회색 비활성 실행 버튼, 상세 개발자 진단 접힘 상태를 확인. **실제 Windows에서 프론트 페이지가 표시된 것은 확인됐지만 HTTP 8000의 Choice GET 성공·DB 저장 결과·실모델 응답·다른 후보 전환까지는 이 사진으로 증명할 수 없음.** 실제 유료 TypeSafe 호출 0을 이 스크린샷만으로 감사 완료했다고 주장하지 않음.
+- **화면에서 발견된 혼동:** `이 종목에서 JEV를 실행할 수 없는 이유`로 펼친 문구는 기존 **V4 `strategy_relation_conflict`** 입력 계약 부적합을 설명했으나, 이미 B2/B3 **Choice 별도 질문·실행 코드가 구현된 현상황**에서는 마치 새 질문 자체가 없는 듯 오해시킬 수 있었다. 실제 B3 기본 원천 `unavailable_resolver`는 **필드별 AI 전송 권한 있는 입력을 공급하지 않으므로** 정상 서버 응답이라면 `CHOICE_SOURCE_RIGHTS_UNVERIFIED`로 유료 실행 차단이 맞다. 그러나 사진만으로 GET 정상 여부는 미확인.
+- **수정 내용:** `frontend/src/components/ScannerAiReview.tsx`에서 펼침 제목을 `기존 V4 전략 검토 불가 사유`로 명시하고, V4 `INPUT_CONTRACT_MISMATCH` 설명이 **별도의 Choice 계약을 새로 만들라고 안내하지 않도록** 정정. 별도 상태 표시 카드/행을 추가하지 않고 기존 작은 상태 안내에 서버 `stock-choice/preview`의 실제 `reason_code`를 쉬운 한국어로 노출. 정상 `NOT_READY/CHOICE_SOURCE_RIGHTS_UNVERIFIED`는 **`새 Choice: 실제 종목 입력의 외부 AI 전송 권한 미확인`**, 조회 실패/응답 신원 불일치는 **`새 Choice 조회 실패`**로 구분한다. 과거 V4 저장 결과가 존재해도 Choice 상태를 독립적으로 표시. 새 진단 GET·실모델 POST·Scanner 정책/전략 변경 없음.
+- **회귀:** `frontend/e2e/p003-scanner-recheck.spec.mjs`에서 다른 후보 선택 후 실제 `AI 검토` 탭으로 재진입해 과거 저장 Choice가 나타나지 않는지, 현재 Choice 차단 사유가 표시되는지 확인. 모바일 390px 좁은 화면에서 새 행 추가로 발생한 265px 높이 회귀를 **기존 작은 안내 영역 재사용**으로 해결. [최종 GitHub CI #41764894363](https://github.com/SkyBluekor/StockScope/actions/runs/41764894363) **4/4 PASS**: Backend Python 3.11 `2,895 passed / 2 skipped`; Python 3.14 PASS; Frontend Node22/Chromium PASS; Windows Fresh Clone PASS. 이 CI는 사용자 실화면을 대체하지 않는다.
+- **다음 사용자 확인:** 로컬 `git pull --ff-only` 후 기존 Scanner의 동국제약 `AI 검토` 요약 아래에서 `새 Choice: 실제 종목 입력의 외부 AI 전송 권한 미확인` 또는, 실제 조회 실패 시 `새 Choice 조회 실패` 메시지가 분리되는지 확인한다. 다른 저장 후보 1개를 클릭해 종목·상태 잔존 여부를 함께 확인하면 A 잔여 Windows UAT를 마칠 수 있다. 정상 차단 상태에서 실행 버튼은 비활성이고 DB 마이그레이션 재실행은 불필요.
