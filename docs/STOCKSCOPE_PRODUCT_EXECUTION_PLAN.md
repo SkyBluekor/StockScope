@@ -4,7 +4,7 @@
 >
 > **실제 사용자 브랜치: `codex/p0-01-mvp-c1-c2-integration-20261022` · 로컬 `C:\Projects\StockScope`**
 >
-> **다음 작업: JEV-B4 FIRST_AUTHORED_REAL_STOCK_INPUT_AND_COST_GATE SPEC_READY / IMPLEMENTATION_NOT_STARTED / NO_LIVE_TYPE_SAFE_CALL_AUTHORIZED / JEV_A_WINDOWS_UAT_PARTIAL / PRODUCTION_POLICY_FROZEN.** GLOBAL-02-S2 오프라인 계약·Windows 합성 검증 완료, UN 실자료 자동 추출 권리·발표시각 미확인으로 live BLOCKED; S3/S4 보류. STRATEGY-01은 Windows 실데이터 10전략 연구 실행 완료·전략당 2~4건으로 성능 판정 보류. 생산 전략/Risk/JEV/기간 정책은 동결한다. GLOBAL-01-S2의 Windows Scanner 참고표시는 검증 완료(개인·공개 이용권은 별도 확인 중). 생산 전략·Risk 정책은 변경하지 않는다. MACRO-02는 사후 연구 종료(생산 판단 미승인), MACRO-01 표시는 유지한다. 이 문서는 현재 사용 브랜치에서 다음 제품 작업을 관리하는 단일 기준이다. `codex/jev-reviewer-shadow-bridge`의 오래된 계획서는 역사적 근거 자료이며 **현재 브랜치에 자동 포함되지 않는다**. 기존 P0 Scanner·Holdings·JEV 작업, 동결된 Strategy/Risk/Scanner 계약을 전부 보존한다. 다른 브랜치 전체 병합 금지.
+> **현재 상태: JEV-B4 LOCAL_AUTHORED_INPUT_RESOLVER_AND_COST_GATE_IMPLEMENTED / CI_4_OF_4_PASS / REAL_WINDOWS_AUTHORED_NOTE_NOT_YET_UAT / NO_LIVE_TYPE_SAFE_CALL_AUTHORIZED / JEV_A_WINDOWS_UAT_PARTIAL / PRODUCTION_POLICY_FROZEN.** GLOBAL-02-S2 오프라인 계약·Windows 합성 검증 완료, UN 실자료 자동 추출 권리·발표시각 미확인으로 live BLOCKED; S3/S4 보류. STRATEGY-01은 Windows 실데이터 10전략 연구 실행 완료·전략당 2~4건으로 성능 판정 보류. 생산 전략/Risk/JEV/기간 정책은 동결한다. GLOBAL-01-S2의 Windows Scanner 참고표시는 검증 완료(개인·공개 이용권은 별도 확인 중). 생산 전략·Risk 정책은 변경하지 않는다. MACRO-02는 사후 연구 종료(생산 판단 미승인), MACRO-01 표시는 유지한다. 이 문서는 현재 사용 브랜치에서 다음 제품 작업을 관리하는 단일 기준이다. `codex/jev-reviewer-shadow-bridge`의 오래된 계획서는 역사적 근거 자료이며 **현재 브랜치에 자동 포함되지 않는다**. 기존 P0 Scanner·Holdings·JEV 작업, 동결된 Strategy/Risk/Scanner 계약을 전부 보존한다. 다른 브랜치 전체 병합 금지.
 
 ## 1. 제품 목표와 불변 원칙
 
@@ -789,7 +789,7 @@ if ($LASTEXITCODE -eq 0) {
 
 ## 12. 다음 단일 작업 — JEV-B4: 실종목 자체 작성 입력 1건 연결 + 비용 정책 (2026-11-04)
 
-**상태: `SPEC_READY / IMPLEMENTATION_NOT_STARTED / JEV_B3_CODE_AND_CI_PASS / LIVE_TYPE_SAFE_CALL_NOT_APPROVED`.**
+**상태: `CODE_IMPLEMENTED / CI_4_OF_4_PASS / LOCAL_AUTHORING_OPT_IN / REAL_USER_NOTE_AND_MODEL_DISCOVERY_WINDOWS_UAT_PENDING / LIVE_TYPE_SAFE_CALL_NOT_APPROVED`.**
 
 ### 12.1 실제로 해결할 한 가지 병목
 
@@ -828,3 +828,20 @@ B3에서 immutable 저장 캡처 → Choice 요청 프리뷰 → 승인/원자�
 **이번 구현에서 하지 않을 것:** KIS/KRX/DART/Naver/UN의 가격·기사·재무 수치 또는 파생 데이터를 무허가 외부 전송하지 않음. 자동 전략 평가·랭크·위험·주문 변경 금지. 추가 P5/P6/기술 진단기, 모델 평가 숫자를 주가 성공확률로 표시, B4a/B4b 등 단계 문서 분할, 합성 fixture 반복만으로 성공 선언 금지.
 
 **다음 작업에서의 결과 우선순위:** 최소 1개의 **실제 비합성 종목에 결합된 입력이 서버에서 검증되어 `PREVIEW_READY`로 진행되는 코드**가 핵심 합격 항목. 모델 사용료가 낮다는 이유로 승인 없는 실제 요청을 보내지 않고, 특정 공급자의 약관이 허가되지 않는다는 이유로 모든 사용자 독자 작성 입력까지 금지하지 않는다. B3의 정상 동작과 자동 검증은 재사용한다.
+
+
+### 12.5 JEV-B4 실제 코드 구현·CI 결과 (2026-11-04)
+
+**판정: `B4_INPUT_PIPELINE_IMPLEMENTED_CI_PASS` / `B4_REAL_WINDOWS_NOTE_NOT_YET_TESTED` / `B4_REAL_TYPE_SAFE_CALL_NOT_RUN`.** GitHub Actions [#41777028020](https://github.com/SkyBluekor/StockScope/actions/runs/41777028020) **4/4 PASS**: Backend Python 3.11 **2,908 PASS/2 SKIP**, Python 3.14 PASS, Frontend Node22/Chromium PASS, Windows Fresh Clone PASS. CI는 가상 저장 캡처 + `httpx.MockTransport`로 실시했으며 실세계 원천 권리, 실종목 Windows 프리뷰 또는 실제 TypeSafe 유료 호출을 증명하지 않는다.
+
+- `backend/app/jev/stock_choice_authored_b4.py` 신규: 선택된 immutable 캡처 ID·표본·시장·종목·snapshot hash·기간과 묶어 **로컬에서 사용자가 직접 작성한 종목별 의견 한 건**을 SQLite `jev_stock_choice_authored_evidence_v1` 테이블에 **원문·버전·작성 UTC·저장 목적·본인 확인 기록**으로 보존. 동일 메모 반복 저장은 버전 추가하지 않으며 변경 시 이전 버전을 보존. 작성 시점 **이후 현재 검토에만** 사용하고 과거 캡처가 만들어졌을 때의 정보였던 것처럼 소급하지 않는다. 외부 공급자 원문이나 복사/가공된 시세·뉴스·공시·UN 사실은 허가하지 않으며 일부 URL·수치·비밀 표현을 보수적으로 필터링. **필터로 모든 외부 원문의 복사, 실질적 제3자 권리 침해, 민감정보를 자동 탐지할 수는 없다**. 원문 저작 확인은 사용자의 명시적 진술에 근거하며 독립적인 권리 인증이라고 주장하지 않는다.
+- 동일 모듈의 resolver는 기존 B3 `TrustedChoiceInput`에 **로컬 원문만** 전달한다. `strategy_intent`, `internal_risk_rule_description`은 저장소 자체 작성의 일반 원칙 문장, `review_notes`는 해당 로컬 의견, `horizon_intent`는 원본 캡처의 기록을 사용한다. **종목 코드/명·시세·가격기반 Scanner 라벨·외부 기사·수익률/공시 데이터는 모델 wire payload에 넣지 않는다.** 따라서 이것은 종목별 사용자의 가설에 관한 추가 확인 우선순위이지 **시세에 근거한 종합 투자 추천 기능은 아님**.
+- `backend/app/api/jev.py`: `STOCKSCOPE_JEV_B4_LOCAL_AUTHORED=1`로 명시적으로 활성화된 **로컬 개발 서버에서만** B4 저장 원천 resolver를 연결. `GET/POST /api/simulation/jev/stock-choice/authored`로 로컬 작성 의견 조회·버전 저장, `POST /api/simulation/jev/stock-choice/models/verify`는 사용자가 직접 클릭했을 때만 기존 `discover_typesafe_models`의 **읽기 전용 GET /v1/models** 실행 (유료 Choice 없음). 실제 API 키·모델 목록이 맞지 않으면 `B4_PROVIDER_KEY_MISSING`/`B4_MODEL_NOT_DISCOVERED`로 차단. 발견된 Jev 모델은 서버 메모리에서 **1시간**만 확인된 상태로 유지, 재기동 이후 수동 확인 필요. 기본 운영 flag OFF에서 기존 B3 `unavailable_resolver` 보존.
+- `backend/app/jev/stock_choice_execution.py` + `stock_choice_catalog.py`: 기존 요청 바이트 지문·원자적 유일 예약·승인 토큰·중복/타임아웃 보류 경계를 유지. 권한 있는 원문 메모와 **사용자가 직접 확인한 모델**이 있어야 `PREVIEW_READY`. 기존 `choice` 결과 기록에 원문을 저장하지 않고 `usage.input_tokens` × [2026-11-03 TypeSafe 공식 요율](https://help.typesafe.ai/articles/5187202169-how-much-does-jev-cost) **US$0.042/100만 입력 토큰**으로 **청구액이 아닌 추정 비용**을 `cost_usd` 및 `cost_basis_ref`에 저장. `402` 부족 크레딧은 별도 오류코드로 분리, 자동 재시도 없음. 프리뷰 request-byte 제한 3,500바이트와 토큰 12,000개 가정/단건 추정 비용 제한 US$0.001로 보수적 사전 확인. **숨은 서비스 토큰/과금량을 알 수 없고 제공자의 실사용 하드 캡이 없으므로 이 상한은 보장되지 않는다**. 사용자가 별도 유료 실행을 승인하기 전 전송 0.
+- `tools/data/migrate_jev_stock_choice.py` 기존 CLI를 idempotent 확장: B3 `jev_stock_choice_review`의 nullable `cost_basis_ref` 추가 및 B4 새 로컬 authored 테이블 생성. 기존 V4·Scanner 캡처 데이터를 지우거나 재작성하지 않음. **사용자가 앞서 실행한 B3 마이그레이션은 B4 테이블까지 만들지 않았기 때문에** B4 코드 pull 후 CLI를 **한 번 더 실행해야 함**.
+- `frontend/src/components/ScannerAiReview.tsx`, `frontend/src/services/jevApi.ts`: 기본 Scanner AI 요약은 계속 간결하게 유지, 별도의 접힌 **'직접 작성한 종목 검토 의견 등록(선택)'** 아래에서만 24~380자 메모·3개 확인 후 로컬 저장, TypeSafe 모델 목록 수동 확인. 메모 저장과 유료 1회 호출 승인은 별개. 프리뷰에는 실제 전송되는 작성 원문, 모델 및 요금 참고치와 제공자 하드 캡 비보장을 명시. 완료 결과는 선택 종목의 원본 캡처/해시에 바인딩되어 표시하며 비용은 **'추정'**으로 표기.
+- 신규 `backend/tests/test_jev_stock_choice_b4.py`: 저장·수정 버전·원천 서약·금지된 외부 텍스트·로컬 기능 OFF·모델 확인 실패·가격 정책·프리뷰·명시 승인·httpx.MockTransport 단건 성공 및 동일 호출 중복 방지·DB 결과 저장 확인. 기존 `frontend/e2e/p003-scanner-recheck.spec.mjs`에 로컬 본문/명시 저장/수동 모델 목록 확인/유료 Choice POST 0을 Chromium 경유 테스트 추가. 기존 V4 `noul` 질문·Scanner/Strategy/Risk/Holdings 유지.
+
+**Windows 다음 실인수:** 개발 서버가 이미 실행 중이라면 포트 8000/5173 중복 기동 방지를 위해 종료 후 `C:\Projects\StockScope`에서 `git pull --ff-only` → `.\.venv\Scripts\python.exe tools\data\migrate_jev_stock_choice.py` (한 번) → `$env:STOCKSCOPE_JEV_B4_LOCAL_AUTHORED = "1"` → `.\run-dev.ps1`. 브라우저의 저장된 실제 후보 → `AI 검토` → 선택형 로컬 의견 등록 및 저장. 모델 조회는 사용자가 버튼 클릭 시에만 외부 read-only GET, 실제 유료 POST는 실행하지 말고 `PREVIEW_READY` 화면까지 인수. 이 결과가 실제 PC에서 확인되기 전에는 `B4_WINDOWS_PREVIEW_READY`로 승격하지 않음.
+
+**권리·제품 경계:** KIS 공식 [Open API 이용고객 제한](https://apiportal.koreainvestment.com/about-open-api)은 개인 이용자 시세정보의 제3자 제공 금지를 명시한다. 원문뿐 아니라 다른 공급자의 파생 시세·외부 문구를 포장해 TypeSafe로 전송하는 것을 승인하지 않는다. 사용자 독자 작성 의견도 저작권/원천이 사실상 외부 자료에 의존하면 외부 모델 전송을 미승인으로 처리한다. 운영 중 모델을 호출하려면 **사용자가 해당 1회 실행 버튼에 직접 동의한 경우**에만 가능하며, 본 채팅의 '작업 시작해'는 그 승인으로 간주하지 않음.
