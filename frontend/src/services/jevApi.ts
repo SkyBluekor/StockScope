@@ -141,6 +141,37 @@ export type JevReviewFeature = {
   reason: string;
 };
 
+/** Explicit, read-only JEV-B question-fit check for one frozen candidate. */
+export type JevCandidateReviewFit = {
+  capture_id: string;
+  sample_index: number;
+  market: string;
+  ticker: string;
+  snapshot_hash: string;
+  question_scope: "V4_STRATEGY_RELATION_CONFLICT_ONLY";
+  status: "LOCAL_ALREADY_RESOLVED" | "SOURCE_RIGHTS_HOLD" | "INPUT_CONTRACT_MISMATCH" | "NOT_ENTRY_CANDIDATE";
+  reason_code: string;
+  provider_eligible: false;
+  external_model_calls: 0;
+  db_writes: 0;
+  historical_pit_verified: false;
+  source_rights_approved: false;
+  requires_new_question_contract: boolean;
+};
+
+export type JevCandidateFeature = JevReviewFeature & {
+  candidate_review: JevCandidateReviewFit;
+};
+
+export function getJevCandidateReviewFit(captureId: string, sampleIndex: number) {
+  const params = new URLSearchParams({
+    capture_id: captureId, sample_index: String(sampleIndex),
+  });
+  return jevJson<JevCandidateFeature>(
+    "/api/simulation/jev/review-feature?" + params.toString(),
+  );
+}
+
 export type JevManualReviewRequest = {
   capture_id: string;
   sample_index: number;
