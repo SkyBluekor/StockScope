@@ -263,11 +263,13 @@ class StockChoiceService:
         try:
             evidence = self.resolver(capture, sample)
             if evidence is None:
+                if self.cost_policy is not None:
+                    base["reason_code"] = "B4_NOTE_NOT_REGISTERED"
                 return base
             prepared = _prepare_request(identity, evidence, model_id=self.model_id)
             price_preview = (self.cost_policy.check(prepared, model=self.model_id)
                              if self.cost_policy is not None else None)
-        except StockChoiceExecutionError as exc:
+        except (StockChoiceExecutionError, StockChoiceStorageError) as exc:
             base["reason_code"] = exc.code
             return base
         deadline = int(datetime.now(timezone.utc).timestamp()) + 180
