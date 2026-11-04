@@ -721,7 +721,8 @@ export default function ScannerAiReview(props: Props) {
             {loading ? "결과 확인 중…" : "저장된 결과 새로고침"}
           </button>
         )}
-        {!hasVerifiedReview && (
+        {(!hasVerifiedReview || currentChoice?.status === "NOT_READY"
+          || choiceLookupErrorKey === selectedKey) && (
           <small className="scanner-jev-compact-note" data-jev-unavailable-reason="true">
             {choiceLookupErrorKey === selectedKey
               ? "새 Choice 조회 실패 · 서버 연결을 확인하세요."
