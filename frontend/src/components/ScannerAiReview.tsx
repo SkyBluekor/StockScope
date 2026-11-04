@@ -565,9 +565,9 @@ export default function ScannerAiReview(props: Props) {
         )}
         <button type="button" disabled title={unavailableReason}>JEV 검토 실행 (사용 불가)</button>
         {!hasVerifiedReview && (
-          <details data-jev-b-fit-check="true"
+          <details key={selectedKey} data-jev-b-fit-check="true"
             onToggle={event => {
-              if (event.currentTarget.open && !selectedFit && captureId) {
+              if (event.currentTarget.open && (!selectedFit || selectedFit.state === "error") && captureId) {
                 void inspectFit();
               }
             }}>
