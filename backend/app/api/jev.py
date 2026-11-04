@@ -716,7 +716,7 @@ def _stock_choice_service() -> StockChoiceService:
         return StockChoiceService(
             _db(), resolver=AuthoredEvidenceStore(_db()).resolver,
             model_id=MODEL_REGISTRY.active() or "jev-1.14.0",
-            cost_policy=ChoiceCostPolicy(),
+            cost_policy=ChoiceCostPolicy(MODEL_REGISTRY),
         )
     return StockChoiceService(_db())
 
