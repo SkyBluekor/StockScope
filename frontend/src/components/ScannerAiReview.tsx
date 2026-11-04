@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ScannerCandidate, ScannerResponse } from "../services/api";
+import { getJevCandidateReviewFit, type JevCandidateReviewFit } from "../services/jevApi";
 import { getJevEntryRouting, getJevIndependentEventReference, getJevIndependentEventAssessment, getJevLocalReadiness, getJevOutboundPreflight, type JevEntryRouting, type JevIndependentEventReference, type JevIndependentEventAssessment, type JevLocalReadiness, type JevOutboundPreflight, type JevMonitorItem } from "../services/jevApi";
 import { scannerAiReviewStatus } from "./scannerAiReviewStatus";
 import JevSyntheticDemo from "./JevSyntheticDemo";
@@ -494,6 +495,40 @@ export default function ScannerAiReview(props: Props) {
   const { candidate, result, enabled, available, featureStatus, review, loading, loadError, onRefresh } = props;
   const [developerOpen, setDeveloperOpen] = useState(false);
   const state = scannerAiReviewStatus({ candidate, result, enabled, available, featureStatus, review });
+  // B is a read-only, user-triggered fit check. Never call a provider here.
+  // Key every asynchronous result to the selected capture and stock.
+  const captureId = result.prospective_capture?.canonical_capture_id
+    || result.prospective_capture?.capture_id || null;
+  const selectedKey = [captureId ?? "", sampleIndex, candidate.market, candidate.code].join("|");
+  const [fitCheck, setFitCheck] = useState<{
+    key: string; state: "loading" | "ready" | "error"; value?: JevCandidateReviewFit;
+  } | null>(null);
+  const selectedFit = fitCheck?.key === selectedKey ? fitCheck : null;
+  const fitExplanation: Record<JevCandidateReviewFit["status"], string> = {
+    LOCAL_ALREADY_RESOLVED: "이 후보의 전략 조건 관계는 로컬에서 이미 판정됐습니다. 기존 V4 의미 충돌 질문으로 다시 검토할 대상이 아닙니다.",
+    SOURCE_RIGHTS_HOLD: "전략 조건 검토 형식은 맞지만, 입력에 포함된 시장 자료의 전송 권한과 이용 가능 시각이 확인되지 않아 실제 모델 호출은 차단됩니다.",
+    INPUT_CONTRACT_MISMATCH: "이 후보는 기존 V4 의미 충돌 질문에 필요한 입력을 갖추지 못했습니다. 종목·시장 자체를 평가하려면 별도의 질문 계약 검토가 필요합니다.",
+    NOT_ENTRY_CANDIDATE: "이 종목은 현재 진입 후보가 아니므로 기존 V4 검토 대상이 아닙니다.",
+  };
+  async function inspectFit() {
+    if (!captureId || sampleIndex < 0 || selectedFit?.state === "loading") return;
+    const checkedKey = selectedKey;
+    setFitCheck({key: checkedKey, state: "loading"});
+    try {
+      const data = await getJevCandidateReviewFit(captureId, sampleIndex);
+      const fit = data.candidate_review;
+      if (data.available || !fit || fit.provider_eligible !== false
+          || fit.external_model_calls !== 0 || fit.db_writes !== 0
+          || fit.capture_id !== captureId || fit.sample_index !== sampleIndex
+          || fit.market !== candidate.market || fit.ticker !== candidate.code
+          || !fit.snapshot_hash || fit.question_scope !== "V4_STRATEGY_RELATION_CONFLICT_ONLY") {
+        throw new Error("JEV_B_READONLY_IDENTITY_MISMATCH");
+      }
+      setFitCheck({key: checkedKey, state: "ready", value: fit});
+    } catch {
+      setFitCheck({key: checkedKey, state: "error"});
+    }
+  }
   const hasVerifiedReview = !loading && !loadError && state.source === "STORED_JEV";
   const isRunning = state.state === "RUNNING" || state.state === "QUEUED";
   const isError = Boolean(loadError) || state.state === "FEATURE_ERROR" || state.state === "FAILED" || state.state === "UNKNOWN";
@@ -529,6 +564,22 @@ export default function ScannerAiReview(props: Props) {
           <p className="scanner-jev-compact-note">추가 확인 코드: {review?.reason_codes.slice(0, 3).join(", ") ?? ""}</p>
         )}
         <button type="button" disabled title={unavailableReason}>JEV 검토 실행 (사용 불가)</button>
+        {!hasVerifiedReview && (
+          <details data-jev-b-fit-check="true"
+            onToggle={event => {
+              if (event.currentTarget.open && !selectedFit && captureId) {
+                void inspectFit();
+              }
+            }}>
+            <summary>이 종목에서 JEV를 실행할 수 없는 이유</summary>
+            {!captureId ? <p>저장된 분석 캡처가 없어 검토 조건을 확인할 수 없습니다.</p>
+              : selectedFit?.state === "loading" ? <p role="status">선택 종목의 검토 조건을 확인 중입니다.</p>
+              : selectedFit?.state === "error" ? <p role="alert">검토 조건 확인에 실패했습니다. 기존 Scanner 판단은 그대로 유지됩니다.</p>
+              : selectedFit?.state === "ready" && selectedFit.value
+                ? <p role="status" data-jev-b-fit-result="true">{fitExplanation[selectedFit.value.status]}</p>
+                : <p>검토 조건은 실제 저장된 후보와 연결해 확인합니다. 이 확인은 유료 모델을 실행하지 않습니다.</p>}
+          </details>
+        )}
         {hasVerifiedReview && available && enabled && featureStatus === "ACTIVE" && (
           <button type="button" onClick={onRefresh} disabled={loading}>
             {loading ? "결과 확인 중…" : "저장된 결과 새로고침"}
