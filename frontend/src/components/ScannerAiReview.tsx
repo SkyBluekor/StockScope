@@ -651,8 +651,7 @@ export default function ScannerAiReview(props: Props) {
         <strong className="scanner-jev-compact-stock">{candidate.name || candidate.code} ({candidate.code})</strong>
         <dl>
           <div><dt>Scanner 판단</dt><dd>{candidate.action_label || candidate.action}</dd></div>
-          <div><dt>기존 JEV 검토</dt><dd data-jev-primary-status={state.state}>{visibleStatus}</dd></div>
-          <div><dt>새 Choice 검토</dt><dd data-jev-choice-status="true">{choiceStatus}</dd></div>
+          <div><dt>JEV 검토</dt><dd data-jev-primary-status={state.state}>{visibleStatus}</dd></div>
           {hasVerifiedReview && review?.completed_at && (
             <div><dt>검토 시각</dt><dd>{review.completed_at}</dd></div>
           )}
@@ -724,7 +723,13 @@ export default function ScannerAiReview(props: Props) {
         )}
         {!hasVerifiedReview && (
           <small className="scanner-jev-compact-note" data-jev-unavailable-reason="true">
-            {isError ? "검토 기록을 확인할 수 없습니다. Scanner 판단은 유지됩니다." : unavailableReason}
+            {choiceLookupErrorKey === selectedKey
+              ? "새 Choice 조회 실패 · 서버 연결을 확인하세요."
+              : currentChoice?.status === "NOT_READY"
+                ? "새 Choice: " + choiceStatus
+                : isError
+                  ? "검토 기록을 확인할 수 없습니다. Scanner 판단은 유지됩니다."
+                  : unavailableReason}
           </small>
         )}
       </div>
