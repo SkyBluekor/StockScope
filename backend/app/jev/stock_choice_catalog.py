@@ -96,9 +96,15 @@ def migrate_stock_choice(db_path: Path) -> dict[str, Any]:
             cost_usd REAL,
             cost_unknown INTEGER NOT NULL DEFAULT 1,
             error_code TEXT,
+            cost_basis_ref TEXT,
             CHECK ((status = 'VALID' AND priority_choice IS NOT NULL)
               OR (status <> 'VALID' AND priority_choice IS NULL))
         )""")
+        existing_cols = {r["name"] for r in db.execute(
+            "PRAGMA table_info(jev_stock_choice_review)"
+        )}
+        if "cost_basis_ref" not in existing_cols:
+            db.execute("ALTER TABLE jev_stock_choice_review ADD COLUMN cost_basis_ref TEXT")
         db.execute("""CREATE INDEX IF NOT EXISTS idx_jev_stock_choice_capture
             ON jev_stock_choice_review(canonical_capture_id,sample_index)""")
         db.commit()
@@ -137,6 +143,7 @@ class StockChoiceCatalog:
             "model_requested", "model_returned", "request_body_sha256",
             "approved_at", "requested_at", "completed_at", "status",
             "priority_choice", "confidence", "cost_usd", "error_code",
+            "cost_basis_ref",
         )}
         result["cost_unknown"] = bool(row["cost_unknown"])
         result["usage"] = (json.loads(row["usage_json"])
@@ -225,7 +232,8 @@ class StockChoiceCatalog:
             db.close()
 
     def finish(self, *, review_identity: str, result: dict[str, Any] | None,
-               error_code: str | None = None) -> dict[str, Any]:
+               error_code: str | None = None, cost_estimate_usd: float | None = None,
+               cost_basis_ref: str | None = None) -> dict[str, Any]:
         db = _connect(self.db_path)
         try:
             db.execute("BEGIN IMMEDIATE")
@@ -246,11 +254,13 @@ class StockChoiceCatalog:
                     raise StockChoiceStorageError("CHOICE_RESULT_INVALID")
                 db.execute("""UPDATE jev_stock_choice_review SET
                     status='VALID',completed_at=?,priority_choice=?,confidence=?,
-                    model_returned=?,usage_json=?,cost_unknown=1,cost_usd=NULL
+                    model_returned=?,usage_json=?,cost_unknown=?,cost_usd=?,
+                    cost_basis_ref=?
                     WHERE review_identity=? AND status='RESERVED'""",
                     (_now(), result["choice"], result["confidence"],
                      result["model"], json.dumps(result["usage"], sort_keys=True),
-                     review_identity))
+                     0 if cost_estimate_usd is not None and cost_basis_ref else 1,
+                     cost_estimate_usd, cost_basis_ref, review_identity))
             db.commit()
             with _connect(self.db_path, readonly=True) as reader:
                 saved = reader.execute(
