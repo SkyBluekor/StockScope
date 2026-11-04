@@ -4,7 +4,7 @@
 >
 > **실제 사용자 브랜치: `codex/p0-01-mvp-c1-c2-integration-20261022` · 로컬 `C:\Projects\StockScope`**
 >
-> **현재 상태: JEV-B3 CHOICE_EXECUTION_STORAGE_UI_CODE_IMPLEMENTED / CI_4_OF_4_PASS / NO_VERIFIED_REAL_INPUT_OR_LIVE_CALL / JEV_A_WINDOWS_UAT_PARTIAL / PRODUCTION_POLICY_FROZEN.** GLOBAL-02-S2 오프라인 계약·Windows 합성 검증 완료, UN 실자료 자동 추출 권리·발표시각 미확인으로 live BLOCKED; S3/S4 보류. STRATEGY-01은 Windows 실데이터 10전략 연구 실행 완료·전략당 2~4건으로 성능 판정 보류. 생산 전략/Risk/JEV/기간 정책은 동결한다. GLOBAL-01-S2의 Windows Scanner 참고표시는 검증 완료(개인·공개 이용권은 별도 확인 중). 생산 전략·Risk 정책은 변경하지 않는다. MACRO-02는 사후 연구 종료(생산 판단 미승인), MACRO-01 표시는 유지한다. 이 문서는 현재 사용 브랜치에서 다음 제품 작업을 관리하는 단일 기준이다. `codex/jev-reviewer-shadow-bridge`의 오래된 계획서는 역사적 근거 자료이며 **현재 브랜치에 자동 포함되지 않는다**. 기존 P0 Scanner·Holdings·JEV 작업, 동결된 Strategy/Risk/Scanner 계약을 전부 보존한다. 다른 브랜치 전체 병합 금지.
+> **다음 작업: JEV-B4 FIRST_AUTHORED_REAL_STOCK_INPUT_AND_COST_GATE SPEC_READY / IMPLEMENTATION_NOT_STARTED / NO_LIVE_TYPE_SAFE_CALL_AUTHORIZED / JEV_A_WINDOWS_UAT_PARTIAL / PRODUCTION_POLICY_FROZEN.** GLOBAL-02-S2 오프라인 계약·Windows 합성 검증 완료, UN 실자료 자동 추출 권리·발표시각 미확인으로 live BLOCKED; S3/S4 보류. STRATEGY-01은 Windows 실데이터 10전략 연구 실행 완료·전략당 2~4건으로 성능 판정 보류. 생산 전략/Risk/JEV/기간 정책은 동결한다. GLOBAL-01-S2의 Windows Scanner 참고표시는 검증 완료(개인·공개 이용권은 별도 확인 중). 생산 전략·Risk 정책은 변경하지 않는다. MACRO-02는 사후 연구 종료(생산 판단 미승인), MACRO-01 표시는 유지한다. 이 문서는 현재 사용 브랜치에서 다음 제품 작업을 관리하는 단일 기준이다. `codex/jev-reviewer-shadow-bridge`의 오래된 계획서는 역사적 근거 자료이며 **현재 브랜치에 자동 포함되지 않는다**. 기존 P0 Scanner·Holdings·JEV 작업, 동결된 Strategy/Risk/Scanner 계약을 전부 보존한다. 다른 브랜치 전체 병합 금지.
 
 ## 1. 제품 목표와 불변 원칙
 
@@ -785,3 +785,46 @@ if ($LASTEXITCODE -eq 0) {
 - **수정 내용:** `frontend/src/components/ScannerAiReview.tsx`에서 펼침 제목을 `기존 V4 전략 검토 불가 사유`로 명시하고, V4 `INPUT_CONTRACT_MISMATCH` 설명이 **별도의 Choice 계약을 새로 만들라고 안내하지 않도록** 정정. 별도 상태 표시 카드/행을 추가하지 않고 기존 작은 상태 안내에 서버 `stock-choice/preview`의 실제 `reason_code`를 쉬운 한국어로 노출. 정상 `NOT_READY/CHOICE_SOURCE_RIGHTS_UNVERIFIED`는 **`새 Choice: 실제 종목 입력의 외부 AI 전송 권한 미확인`**, 조회 실패/응답 신원 불일치는 **`새 Choice 조회 실패`**로 구분한다. 과거 V4 저장 결과가 존재해도 Choice 상태를 독립적으로 표시. 새 진단 GET·실모델 POST·Scanner 정책/전략 변경 없음.
 - **회귀:** `frontend/e2e/p003-scanner-recheck.spec.mjs`에서 다른 후보 선택 후 실제 `AI 검토` 탭으로 재진입해 과거 저장 Choice가 나타나지 않는지, 현재 Choice 차단 사유가 표시되는지 확인. 모바일 390px 좁은 화면에서 새 행 추가로 발생한 265px 높이 회귀를 **기존 작은 안내 영역 재사용**으로 해결. [최종 GitHub CI #41764894363](https://github.com/SkyBluekor/StockScope/actions/runs/41764894363) **4/4 PASS**: Backend Python 3.11 `2,895 passed / 2 skipped`; Python 3.14 PASS; Frontend Node22/Chromium PASS; Windows Fresh Clone PASS. 이 CI는 사용자 실화면을 대체하지 않는다.
 - **다음 사용자 확인:** 로컬 `git pull --ff-only` 후 기존 Scanner의 동국제약 `AI 검토` 요약 아래에서 `새 Choice: 실제 종목 입력의 외부 AI 전송 권한 미확인` 또는, 실제 조회 실패 시 `새 Choice 조회 실패` 메시지가 분리되는지 확인한다. 다른 저장 후보 1개를 클릭해 종목·상태 잔존 여부를 함께 확인하면 A 잔여 Windows UAT를 마칠 수 있다. 정상 차단 상태에서 실행 버튼은 비활성이고 DB 마이그레이션 재실행은 불필요.
+
+
+## 12. 다음 단일 작업 — JEV-B4: 실종목 자체 작성 입력 1건 연결 + 비용 정책 (2026-11-04)
+
+**상태: `SPEC_READY / IMPLEMENTATION_NOT_STARTED / JEV_B3_CODE_AND_CI_PASS / LIVE_TYPE_SAFE_CALL_NOT_APPROVED`.**
+
+### 12.1 실제로 해결할 한 가지 병목
+
+B3에서 immutable 저장 캡처 → Choice 요청 프리뷰 → 승인/원자적 예약 → TypeSafe HTTP → 결과 저장·재조회 → 기존 Scanner UI 경로와 CI 4/4 PASS를 구현했음. 그러나 `backend/app/jev/stock_choice_execution.py`의 운영 `unavailable_resolver`가 항상 `None`을 반환하므로 **실제 종목에 쓸 수 있는 검증된 입력이 0건**. B3 기본값을 무조건 참으로 바꾸거나 합성 가설을 실종목에 붙여 호출하면 안 됨.
+
+이번 **단일 작업**은 사용자가 선택한 **비합성 저장 종목 1건에 대해 직접 창작한 검토 메모(최초 1회 인수용)**와 StockScope가 독자적으로 작성한 전략 설명을 로컬 원천으로 연결하는 **서버 측 실제 입력 resolver** 및 **호출 비용 정책**을 기존 B3에 구현하는 것. 정상 구현된 실제 입력만 `PREVIEW_READY`로 전이시킨다. 추가 Mock/합성 전용 검사기·P6 진단기·전체 Scanner UI 리뉴얼을 만들지 않는다.
+
+**사용자 부담 제한:** 실제 첫 1건 인수에서만 원문 출처를 분명히 할 **짧은 종목별 독자 관찰/가설 1개**를 사용한다. 모든 후보마다 긴 메모를 요구하는 방식을 제품 기본 흐름으로 도입하지 않는다. 자동 입력 경로는 **제3자 AI 전송까지 허용된 원천 필드 확인 이후** 제공하고, 허가가 없으면 해당 종목을 정확하게 보류한다. 사용자가 직접 입력했다는 사실 자체는 그 내용이 제3자 자료에서 복사되었는지 자동 판별/면책해주지 않는다.
+
+### 12.2 공개 원천·비용 조사에서 확정한 사항
+
+- **TypeSafe Jev 가격(2026-11-03 현재 Help Center):** 입력 토큰 100만 개당 **US$0.042**, 출력 무료, 별도 호출당 최소요금 없음. 공식 https://help.typesafe.ai/articles/5187202169-how-much-does-jev-cost . 입력 1,000토큰이면 **US$0.000042**. 운영 실계정의 최신 요율·보유 크레딧·모델 목록은 실행 직전 재확인; `cost_unknown=true` 영구 고정이나 막연한 “너무 비싸니 차단”은 중단. 가격과 잔여크레딧은 별개이고 TypeSafe는 402(크레딧 부족)를 명시함: https://help.typesafe.ai/articles/5505198974-what-s-a-402-error-and-how-can-i-add-more-credits .
+- **KIS 제3자 전달 금지:** 공식 https://apiportal.koreainvestment.com/about-open-api 에서 개인 고객 시세는 본인 자산 투자용으로 **제3자 제공 불가**를 명시. KIS/KRX 가격, 종목 분석 수치, 가격에 기초한 가공 수치/라벨을 이 한 건의 TypeSafe 데이터로 전송하거나, “우리 코드가 만든 요약”으로 재명명하여 우회하지 않는다. 특정 공급자/필드의 파생 정보 이용이 별도 허용된 증거가 있으면 **그 범위만** 차후 재평가. DART/뉴스/UN 자료도 별도 허가 증거 없으면 계속 배제.
+- **모델:** 현재 B2/B3 `DEFAULT_MODEL="jev-1.14.0"`는 **실계정에서 발견된 모델이라는 증거 없음**. 기존 `typesafe_provider.discover_typesafe_models`의 **read-only** `GET /v1/models`로 사용 가능한 모델/alias 확인 후 사용자가 선택한 특정 1회 요청의 모델 ID를 고정. 모델 목록 조회는 유료 Choice 실행 승인이 아니며, 키가 없으면 `MODEL_NOT_DISCOVERED`로 보류.
+- **호출 비용:** `usage.input_tokens`가 반환되면 해당 호출 시점에 확인된 요율로 `estimated_cost_usd=usage.input_tokens*0.042/1_000_000` 계산하고 사용된 가격 버전/근거를 함께 기록. 제공자가 청구한 실금액과 동일하다고 단정하지 않음. 사용량/요율 미확인이면 `cost_unknown` 유지. 출력 confidence는 투자 수익확률로 변환하지 않는다.
+- **외부 데이터 처리:** TypeSafe가 고객 입력으로 학습하지 않는다는 정책은 KIS 등 **원데이터의 외부 전송권**을 대신하지 않음. 사용자 원문/키/개인정보/계좌번호가 전송·로그에 포함되지 않도록 별도 검증. 관련 공식 https://help.typesafe.ai/articles/5974925716-how-is-submitted-data-used-or-retained .
+
+### 12.3 Codex 실제 구현 범위 — 한 작업에서 완료
+
+1. **실제 입력 원천을 한 개만 추가:** 기존 `backend/runtime/simulation/simulation.db`에 B3 Choice의 기존 테이블을 손대지 않고, `stock_choice_authored_evidence_v1` 로컬 테이블을 idempotent migration으로 추가하거나 동일 기능의 최소 별도 테이블. 키: `canonical_capture_id, sample_index, snapshot_hash, market, ticker, note_version`; 원문은 사용자 PC 로컬 DB에만 저장하고 Git/로그/원격 진단에 업로드 금지. 출처 `USER_ORIGINALLY_AUTHORED`, 작성 일시 UTC, 작성 목적, 최초 등록/수정 이력, 허용 범위 확인을 명시적으로 기록. 타인 기사·KIS/KRX·뉴스/공시/UN의 복사/요약·파생 시세 설명·개인정보/비밀은 제외. 이 증빙은 **사용자가 독자 작성 사실을 직접 확인한 기록**이며 독자적 저작권 감정/외부 공급자의 제3자 전송 허가를 입증한 것은 아니라고 보존.
+2. **단일 server-side resolver 연결:** `StockChoiceService`의 기본 `unavailable_resolver`는 보존하고, **명시적으로 활성화한 로컬 실행 경로에 한해서만** 방금 저장한 원천을 읽어 검증된 `TrustedChoiceInput`을 구성. 브라우저가 `scope/rights_basis/observed_at_utc`를 직접 넘겨 resolver를 우회할 수 없게 유지. 캡처 ID/종목/해시/기간/작성 시각, 서버에 저장한 원래 텍스트 출처/권한, B2 Choice 허용 필드를 전부 검증. 실제 종목과 무관한 범용 전략 예시만 있거나 저작 여부가 모호하면 `REAL_STOCK_EVIDENCE_NOT_READY`. **새로 작성한 메모는 작성 시점 이후의 현재 검토 전용**이며 과거 캡처 날짜 당시의 근거로 소급하지 않는다.
+3. **최소 UI 입력·표시:** 기존 `ScannerAiReview.tsx`의 AI 검토 영역에 **한 건의 독자 작성 메모 등록/수정** 수단을 기존 컴팩트 UI 범위에서 제공; 개발자 진단/로그 화면 확대 금지. 사용자가 등록을 강제당하지 않음. 읽기 전용 미등록 상태는 `종목별 직접 작성한 검토 관찰 없음` 등 구체적 사유만 표시. 등록 완료 후 실제 `stock-choice/preview`의 검증된 전송 내용/모델/요금 산정 기준을 보여주고 별도 실제 유료 1회 실행 버튼의 승인을 구분. 전송 원문과 로컬 개인 정보 노출을 과도하게 확대하지 않는다.
+4. **실제 모델·비용 안전장치:** 기존 `stock_choice_execution.py`의 B3 중복 예약/승인 토큰/바이트 동일성은 보존. 선택한 해당 모델을 read-only 모델 목록과 매칭하고 전송 JSON `MAX_WIRE_BYTES` 및 신규 요청 횟수(동일 캡처·메모 버전·입력 hash당 최대 1회) 검사. 사전 토큰/요금은 정확히 알 수 없으므로 프리뷰에 **공식 요율과 예상 사용량 근거**, 명시적 **단건 허용 지출 한도 정책**을 제시하되 TypeSafe 제공자 지원 없는 hard billing limit를 보장하지 않는다. 확인된 보수적 입력 크기 상한을 초과하면 차단. `402 INSUFFICIENT_CREDITS`를 422/일반 4xx와 구분하고 자동 재결제·자동 재시도 금지. 유효 응답 후 `usage`에 기반한 추정 비용·가격 버전 기록; 기존 `cost_usd`/ `cost_unknown` 의미를 변경할 땐 **마이그레이션과 기존 기록 읽기 호환**을 검증.
+5. **실제 경로 단위 테스트:** 추가 Mock 화면이 아니라 현재 저장 API를 경유하는 한 건의 로컬 작성 메모 등록 → 신원/해시·작성 시각 검증 → 전송 preview → 명시적 1회 승인 → TypeSafe `httpx.MockTransport` 1회 호출 → Choice `VALID` 저장·조회 → 기존 AI 요약 표시까지 end-to-end 검증. 다른 종목, 변경된 메모, 과거 시점 재생, 미승인 원문, 모델 불일치, 402/429/529/timeout, 동시 2클릭, 재시작 미정산·타 종목 결과 유출을 모두 차단 검증. Scanner/Strategy/Risk/Holdings와 기존 V4 데이터 변경 0. `pytest` Python 3.11/3.14, Frontend/Chromium, Windows Fresh Clone **4/4 PASS**.
+6. **실제 Windows 인수는 구분:** 사용자 PC에서 기존 동국제약 등 저장 실제 후보 **한 건**을 확정하고 원천이 직접 작성한 진짜 의견인 경우에만 B4 프리뷰가 `PREVIEW_READY`로 전환되는지 확인. **별도 사용자 명시 승인 전 TypeSafe 유료 POST는 0**. 실모델 1회 호출과 결과 재조회는 승인받아 이후 수행; 승인 없이 “B4 실제 모델 성공”이라고 기록하지 않는다.
+
+### 12.4 완료 기준과 하지 않을 것
+
+| 판정 | 충족 조건 |
+|---|---|
+| `B4_INPUT_PIPELINE_IMPLEMENTED_CI_PASS` | 실종목에 바인딩된 자체 작성 입력의 로컬 저장→서버 resolver→기존 Choice 프리뷰/승인/결과 저장 연결을 코드와 CI로 검증 |
+| `B4_WINDOWS_PREVIEW_READY` | 실제 Windows 캡처·독자 작성 원천 1건과 선택 모델의 유효한 전송 프리뷰를 실제로 확인한 경우 |
+| `B4_REAL_CHOICE_CALL_PASS` | 그 **동일한** 승인된 request body로 별도 승인된 TypeSafe 단건 POST 후 유효 Choice 저장·재조회·동일종목 표시·usage/추정 비용 확인 |
+| `B4_REAL_INPUT_NOT_READY` | 직접 작성된 진짜 종목별 관찰/권리 증빙 부재, API 모델 확인 실패 또는 예산 정책 미설정 시 정상 차단. 그 원인을 1개만 제시하고 모의 데이터로 완료 처리하지 않음 |
+
+**이번 구현에서 하지 않을 것:** KIS/KRX/DART/Naver/UN의 가격·기사·재무 수치 또는 파생 데이터를 무허가 외부 전송하지 않음. 자동 전략 평가·랭크·위험·주문 변경 금지. 추가 P5/P6/기술 진단기, 모델 평가 숫자를 주가 성공확률로 표시, B4a/B4b 등 단계 문서 분할, 합성 fixture 반복만으로 성공 선언 금지.
+
+**다음 작업에서의 결과 우선순위:** 최소 1개의 **실제 비합성 종목에 결합된 입력이 서버에서 검증되어 `PREVIEW_READY`로 진행되는 코드**가 핵심 합격 항목. 모델 사용료가 낮다는 이유로 승인 없는 실제 요청을 보내지 않고, 특정 공급자의 약관이 허가되지 않는다는 이유로 모든 사용자 독자 작성 입력까지 금지하지 않는다. B3의 정상 동작과 자동 검증은 재사용한다.
