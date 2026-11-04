@@ -538,3 +538,47 @@ if ($LASTEXITCODE -eq 0) {
 **A 통과 이후에만 다음 B를 진행:** 실제 저장된 한 종목과 그 캡처 신원을 읽기 전용으로 연결하고, **사용자 직접 작성·전송 권리 보유 입력**만 기존 TypeSafeSystemOneProvider로 1회 수동 검토하는 기능. 해당 유료 요청은 별도 사용자 명시 승인 필수. 원천 권한 불명 시장 수치/공시/뉴스·UN 자료를 문구만 바꿔 외부 전송 금지. 호출·중복 청구·모델 ID·시각·비용·저장 및 재조회가 확인되어야 B 성공이며, 유효한 입력이 부족하면 B 보류. 이번 A 작업에서 B 구현·유료 호출은 수행하지 않는다.
 
 **다음 실행에 필요한 사용자 확인:** 기존 StockScope 프로그램을 실행해 Scanner의 선택 종목 AI 검토 요약 영역 스크린샷을 전달하면 A 인수 판단 가능. GLOBAL-02-S2 offline-fixture 재실행 불필요.
+
+
+## 9. JEV-B 다음 구현 명세 — 선택한 실제 종목 수동 TypeSafe 검토 (2026-11-04)
+
+**상태: \`SPEC_READY / IMPLEMENTATION_NOT_STARTED / JEV_A_WINDOWS_UAT_PARTIAL_PASS / MANUAL_REAL_MODEL_CALL_NOT_APPROVED\`.**
+
+**최종 사용자 목표:** 실제 저장된 종목 1개를 선택해, 출처·이용 권한을 확인한 입력에 대해 기존 TypeSafe JEV가 검토할 수 있는 질문만 1회 수동 실행하고 StockScope의 로컬 판단과 나란히 확인. 실전 수익률/승률/매수 신호를 모델이 증명했다는 식으로 보여주지 않는다.
+
+### 9.1 이 명세가 필요한 실제 코드 상태 (2026-11-04, 현재 사용자 브랜치)
+
+- \`backend/app/jev/typesafe_provider.py:TypeSafeSystemOneProvider\`는 /v1/systemone HTTP 요청, 응답 타입/모델/질문/usage 검증과 401/422/429/5xx/timeout 처리가 이미 있다. 기존 검증·클라이언트를 사용하며 새 제공자나 무의미한 합성 유료 canary를 만들지 않는다.
+- \`backend/app/api/jev.py:jev_review_feature_status\`는 \`DISABLED_VALIDATION_PENDING\`/available=false, \`POST /simulation/jev/reviews\`는 기본 비활성 \`JevManualReviewService\`를 생성한다. 프론트 \`ScannerAiReview.tsx\` 실행 버튼은 의도적으로 disabled. **UI 버튼 활성화만으로는 실모델 호출 경로가 존재하지 않는다.**
+- \`backend/app/jev/review_service.py\`는 완전한 저장 캡처/프로토콜, \`semantic_source_v2\`, \`route_typesafe_state_v4\`, \`RESIDUAL_SEMANTIC_REVIEW\`, 명시적 provider 주입을 요구한다. 과거 실종목 ENTRY 후보 7개는 \`LOCAL_MATCH\`였으므로 해당 후보를 억지로 잔여 의미 검토 대상으로 바꾸지 않는다.
+- \`backend/app/jev/typesafe_questions_v4.py\`의 \`strategy_relation_conflict\`는 **작성된 전략 의미 관계의 충돌**을 묻는 계약이다. 사용자가 제공한 투자 관련 자유 텍스트를 이 질문에 무조건 끼워 넣어 '시장 적합성/수익률'을 판단했다는 식으로 표현하지 않는다.
+- 현재 JEV-A는 사용자 Windows 실제 종목 요약 화면을 확인했으나 **두 번째 종목 전환과 기본 접힘 상태** 인수가 남아 있다. B의 유료 호출·사용자 활성화보다 먼저 A의 잔여 인수 항목을 1회 완료한다. A 확인을 이유로 추가 P5/P6 진단기를 만들지 않는다.
+
+### 9.2 구현 우선순위 (순서 고정, 기존 자산 우선)
+
+1. **A 잔여 인수는 B 진입 게이트로 한 번만 처리:** 기존 저장 후보 2개 전환, 일반 JEV 요약에 다른 종목/검토 상태 잔존 여부, 개발자 진단 기본 닫힘·수동 열림 확인. Windows 실행 환경에서 오작동 시 해당 UI 결함만 수정한다. 확인되기 전 \`A_WINDOWS_UAT_PENDING\` 유지. 실제 JEV API 유료 요청 0회.
+2. **B의 단일 질문과 실입력 호환성 게이트:** 저장된 real ticker/market/canonical capture ID/sample index/snapshot hash를 읽기 전용으로 연결한다. 기존 V4의 질문·projector·policy를 그대로 사용할 수 있는지 검사한다. \`LOCAL_MATCH\`를 \`RESIDUAL_SEMANTIC_REVIEW\`로 조작하거나 user text를 거짓 \`semantic_source_v2\`로 꾸미면 안 된다. **현재 V4는 전략 의미 충돌 질문이므로 주식시장 평가 질문으로 범위를 확대할 수 없다.** 정당한 실제 입력으로 기존 V4 계약과 검토 목적이 부합하지 않으면 \`INPUT_CONTRACT_MISMATCH\` 또는 기존 의미 있는 \`NOT_READY\` 상태로 중단하고, 사용자에게 필요한 **질문 계약 변경 선택지 한 가지**를 설명한다. 사용자 승인 없이 새 V5/V6 질문/점수/모델을 만들지 않는다.
+3. **전송 내용·권한 검증:** 실제 검토가 적격한 경우에만 사용자가 직접 작성하고 전송할 권리가 있는 **전략 의도/용어 정의/관계 설명** 등 작은 텍스트를 입력으로 허용. 사용자가 직접 작성했다는 사실만으로 검색 기사·KRX 가격·DART 공시·UN 제재 원문 및 그 변형/전사본이 자동 승인되는 것은 아님. 필드별 원천·권한·입력 시점 확인; 허용되지 않은 캡처/뉴스/시세/감시 데이터는 TypeSafe wire body에 절대 포함하지 않는다. 실제 HTTP 전송 전, 화면에서 사용자에게 전송 범위·모델·비용 추정 가능 여부를 알리고 명시적 **해당 요청 1회 승인**을 받는다.
+4. **한 종목 수동 요청 경계:** 기존 \`TypeSafeSystemOneProvider\`, \`review_service.py\`, \`typesafe_service.py\`, \`typesafe_catalog.py\`, \`/api/simulation/jev/reviews\`, \`jevApi.ts\`를 재사용하며 새 provider/스캐너 복제 페이지를 만들지 않는다. 현재 비활성 기본값을 전역적으로 풀지 말고, 특정 검증된 단건 요청만 서버 측 신원·권한·실행 승인과 함께 허용하는 좁은 경계를 추가한다. 브라우저 버튼/feature flag만으로 server gate 우회 금지. \`review_epoch\` 증가나 재로드로 중복 결제를 재허용하지 않는다. 동일 capture+sample+snapshot+user-input digest+question/model/policy에 대해 **원자적 예약·중복 방지** 후 한 번 호출하고 실패 시 자동 재시도/배치 없음. 검토 불충분/승인 없음/타임아웃 시 Scanner 원본은 변하지 않는다.
+5. **실제 응답 검증·영속성:** provider의 \`model\`, question ID, \`noul\` 답변 타입, \`usage\` 검증을 유지한다. \`noul\`은 '해당 질문의 참값 추정'으로, 주가 상승 확률/수익률 예측/원인 설명이 아니다. TypeSafe 응답으로만 결정할 수 있는 \`PASS_THROUGH/REVIEW_REQUIRED/ABSTAIN\`을 기록. 모델·질문/입력 해시·캡처 신원·검토 시각·호출 결과·cost_usd 또는 \`cost_unknown=true\`를 저장하고, 재조회해 **그 종목의 그 입력에만** 결과가 나타나도록 한다. 새로운 실시간 결과로 위장하거나 중복된 자연어 이유를 지어내지 않는다.
+6. **기존 간결 화면에만 통합:** 기본 AI 검토 요약에 결과 전/진행/완료/보류/오류, 실제 저장 결과의 모델/시각/비용 불명 여부, 읽기 쉬운 차이만 표시. 개발자 영역의 디버그/원본 해시/근거 라벨 보존. 'JEV 검토 실행' 버튼은 특정 1회 요청이 서버 검사에 적격일 때만 활성. 거절 시 필요한 조치 하나와 이유를 보여주고 새로운 HOLD 카드·팝업/거대 상태 목록을 만들지 않는다.
+7. **자동 검증 → 실제 Windows 실행은 별도 승인 후 1회:** 기존 구조의 E2E·백엔드 모의 네트워크로 미승인·권한 불명·해시/원본 불일치·중복 클릭·동시 요청·타임아웃·429/5xx·중복 결과 재조회·모델/질문 불일치·보유/Scanner 변경 없음 테스트. Python 3.11/3.14, Frontend, Windows Fresh Clone CI 유지. 실제 TypeSafe 유료 호출은 **사용자가 해당 호출을 명시적으로 승인한 경우에만 Windows에서 1회 수행**하고, 실모델 응답/저장·재조회/입력 범위·호출 수를 확인. 사용자가 허가하지 않은 동안 실제 외부 API 호출 = 0.
+
+### 9.3 파일 변경 예상 범위
+
+| 재사용/수정 후보 | 이번 단계의 역할 |
+|---|---|
+| \`frontend/src/components/ScannerAiReview.tsx\`, \`frontend/src/services/jevApi.ts\` | 사용자 직접 입력이 정말 필요한 경우 최소 입력/1회 승인/결과 표시; 기존 간결 화면 유지 |
+| \`backend/app/api/jev.py\` | 비활성 기본 보존, 승인된 단건 요청을 위한 서버 측 검증 경계 |
+| \`backend/app/jev/review_service.py\`, \`typesafe_service.py\` | 권한 있는 적격 입력, 원자적 중복 방지, 기존 provider와 저장 서비스 연결 |
+| \`backend/app/jev/typesafe_provider.py\`, \`typesafe_catalog.py\`, V4 question/state/policy | **기존 구현 우선 재사용**. 질문 계약·정책 변경 금지. 기존 저장 구조로 충족 불가한 경우 코드를 억지로 확장하지 말고 원인 보고 |
+| 기존 JEV 백엔드 테스트 및 \`frontend/e2e/p003-scanner-recheck.spec.mjs\` | 최소 필요 회귀 추가; 새 테스트 프레임워크/진단 UI 없음 |
+
+### 9.4 정확한 완료·중단 판정
+
+- **B 구현 완료 기준:** A 사용자 Windows 인수 완료, 서버에서 승인 전 차단·권한 검증·신원/입력 해시·중복 안전성 통과, 실제 수동 1회 실행 준비가 됨. 코딩/CI 성공만으로 실모델 사용 성공이라고 하지 않는다.
+- **B 실사용 완료 기준:** 실제 **비합성 종목 + 허용 입력 + 별도 승인된 실제 TypeSafe 유료 1회** → 모델 ID/질문 응답 타입 검증 → 저장·재조회 → 동일 입력 중복 과금 0 → 기존 Scanner/Strategy/Risk/Horizon/Holdings 결과 불변 → 사용자 Windows 화면 확인. 응답이 투자 성과 향상/수익 예측 능력을 입증한 것은 아니다.
+- **정당한 V4 입력이 없거나 질문이 제품 목표에 부적합한 경우:** \`INPUT_CONTRACT_MISMATCH\`, \`B_BLOCKED_NEEDS_QUESTION_SCOPE_DECISION\`으로 명확히 중단. UI 토글 변경·\`LOCAL_MATCH\` 우회·추가 Mock/외부 데이터 수집·신규 P6/GLOBAL 추론으로 억지 성공하지 않는다. 사용자에게 'V4 의미 충돌 검토로 제한'과 '질문 계약을 별도 승인하여 실제 투자 검토로 재설계' 중 하나를 선택할 수 있게 이유를 제시하되 **이번 단계에서 자동 변경하지 않는다**.
+- **다음은 JEV-C:** B가 실제 응답을 확보한 경우에만 기존 Scanner 판단과 JEV의 추가 가치/지연·비용을 한 페이지로 비교. 별도 실거래 자동화나 JEV 배치는 승인되지 않았다.
+
+**상태 요약:** JEV-A=WINDOWS_VISUAL_PARTIAL_PASS/잔여 종목 전환 인수 대기, JEV-B=SPEC_READY/IMPLEMENTATION_NOT_STARTED/PAID_CALL_NOT_APPROVED, GLOBAL-02-S2=OFFLINE_PASS/LIVE_RIGHTS_UNVERIFIED, JEV-C=NOT_STARTED. 이 문서 외의 신규 handoff/단계번호 문서를 만들지 않는다.
