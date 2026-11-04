@@ -18,6 +18,7 @@ for folder in (ROOT, ROOT / "backend"):
         sys.path.insert(0, str(folder))
 
 from app.jev.stock_choice_catalog import migrate_stock_choice, StockChoiceStorageError
+from app.jev.stock_choice_authored_b4 import migrate_authored_b4
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -28,6 +29,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         result = migrate_stock_choice(args.db)
+        result["authored_input"] = migrate_authored_b4(args.db)
     except StockChoiceStorageError as exc:
         print(json.dumps({"status": "BLOCKED", "code": exc.code, "db_writes": 0}))
         return 1
