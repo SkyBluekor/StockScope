@@ -188,6 +188,26 @@ async function setup(page,{matched=false}={}) {
         review_eligible_count:0,external_model_call_allowed:false,actual_provider_calls:0,db_writes:0,
       });
     }
+    if(req.method()==="GET"&&path==="/api/simulation/jev/review-feature"
+       && new URL(req.url()).searchParams.has("capture_id")){
+      const query=new URL(req.url()).searchParams;
+      const cap=query.get("capture_id");
+      const isOld=cap==="old-cap";
+      return fulfill(route,{
+        execution_mode:"BASELINE_WITH_JEV",feature_status:"DISABLED_VALIDATION_PENDING",
+        available:false,reason:"FEATURE_NOT_ACTIVATED",
+        candidate_review:{
+          capture_id:cap,sample_index:Number(query.get("sample_index")),
+          market:isOld?"KOSPI":"KOSDAQ",
+          ticker:isOld?"145720":"012345",
+          snapshot_hash:"mock-snapshot",question_scope:"V4_STRATEGY_RELATION_CONFLICT_ONLY",
+          status:"LOCAL_ALREADY_RESOLVED",reason_code:"NO_RESIDUAL_SEMANTIC_REVIEW",
+          provider_eligible:false,external_model_calls:0,db_writes:0,
+          historical_pit_verified:false,source_rights_approved:false,
+          requires_new_question_contract:true,
+        },
+      });
+    }
     if(req.method()==="GET"&&path==="/api/health")return fulfill(route,{status:"ok"});
     if(req.method()==="GET"&&path==="/api/providers/status")return fulfill(route,{krx:{configured:false,role:"MOCK_BLOCKED"},dart:{configured:false,role:"MOCK_BLOCKED"},naver_news:{configured:false,provider_kind:"MOCK",role:"MOCK_BLOCKED"},kis:{enabled:false,role:"MOCK_BLOCKED"},real_trading:false});
     if(req.method()==="GET"&&path==="/api/holdings/stocks")return fulfill(route,[]);
@@ -402,6 +422,25 @@ test("A: compact JEV status renders without hidden diagnostics or model calls; m
   await developer.locator(":scope > summary").click();
   await expect(page.locator('[data-jev-entry-summary="p5"]')).toHaveCount(0);
   await expect(compact).toBeVisible();
+  expect(violations).toEqual([]);
+  expect(pageErrors).toEqual([]);
+});
+
+test("B preflight: selected stored stock fit is read only, user-triggered and never invokes JEV",async({page})=>{
+  const {calls,violations,pageErrors}=await setup(page);
+  await page.getByRole("tab",{name:"AI 검토"}).click();
+  const check=page.locator('[data-jev-b-fit-check="true"]');
+  await expect(check).toBeVisible();
+  await expect(check).not.toHaveAttribute("open","");
+  const previous=calls.filter(x=>x.path==="/api/simulation/jev/review-feature").length;
+  await check.locator(":scope > summary").click();
+  await expect(check.locator('[data-jev-b-fit-result="true"]')).toContainText(
+    "로컬에서 이미 판정됐습니다",
+  );
+  expect(calls.filter(x=>x.path==="/api/simulation/jev/review-feature")).toHaveLength(previous+1);
+  expect(calls.filter(x=>x.method==="POST"&&x.path.includes("/jev/"))).toHaveLength(0);
+  expect(page.locator('[data-jev-primary-summary="true"]')
+    .getByRole("button",{name:"JEV 검토 실행 (사용 불가)"})).toBeDisabled();
   expect(violations).toEqual([]);
   expect(pageErrors).toEqual([]);
 });
