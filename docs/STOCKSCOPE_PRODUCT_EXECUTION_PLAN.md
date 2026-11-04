@@ -763,3 +763,14 @@ if ($LASTEXITCODE -eq 0) {
 - **다음 작업 단 하나:** 법적/기술적으로 전송 가능한 **실제 종목별 관찰 입력 1건**을 서버 신뢰 resolver로 제공할 수 있는 데이터 원천/허용 필드·정확한 시각/권리를 먼저 확인하고, 그 모델의 비용 정책·단건 지출 제한을 검증한다. 이를 확보한 뒤 사용자의 **해당 1회 유료 호출 승인**으로 실제 TypeSafe 결과를 저장·재조회하고 UI를 검증한다. 이를 갖추지 못하면 `B3_REAL_INPUT_BLOCKED` 유지하고 추가 합성 실험이나 진단기 생성 금지.
 
 **정리:** 코드로는 선택 종목→승인된 Choice 실행→결과 저장→같은 종목 표시 흐름을 구현했다. 현재 운영은 신뢰할 수 있는 외부 전송 입력 원천/비용 정책 미확인으로 **실제 모델 실행 불가**이며, 이것을 완료·성능 향상으로 오인하면 안 된다.
+
+
+### 11.7 사용자 Windows 로컬 DB 적용 (2026-11-04)
+
+**부분 확인: `B3_WINDOWS_GIT_PULL_PASS / CHOICE_SCHEMA_MIGRATION_READY / RUN_DEV_STARTUP_NOT_YET_VERIFIED / REAL_CHOICE_UI_UAT_PENDING`.**
+
+- 사용자 제공 PowerShell 로그: `C:\Projects\StockScope`의 `git pull --ff-only`가 기존 `65f012f6`에서 `055e757d`까지 **Fast-forward 완료**. 해당 구간 13개 파일 변경(2,327 insertions/7 deletions) 정상 적용.
+- 같은 로컬 Windows Python venv에서 `.\.venv\Scripts\python.exe tools\data\migrate_jev_stock_choice.py` 실행 결과: `{"schema_version":"JEV_STOCK_CHOICE_STORAGE_V1","status":"READY","writes_to_scanner":0}`. **Choice 전용 저장 스키마 생성/준비 성공**. `writes_to_scanner=0`은 마이그레이션 도구의 반환값으로, 별도 전체 DB 변경 감사 증거는 아님.
+- 이후 `.\run-dev.ps1` 명령을 실행했으나 사용자가 제공한 출력에는 **기동 로그·HTTP 상태·브라우저 스크린샷이 없어** Frontend 5173/Backend 8000 실제 서비스 기동과 종목별 Choice GET 성공은 아직 미검증.
+- 후속 확인은 이미 실행한 마이그레이션 재반복이 아니라 `http://127.0.0.1:5173`에서 실제 저장된 Scanner 후보 1개 → `AI 검토` 요약 → 다른 후보 전환 시 정보 섞임 없음, 서버 `GET /api/simulation/jev/stock-choice/preview?capture_id=...&sample_index=...` 응답/사유를 확인하는 것. 현재 허가 원천 resolver가 없으므로 실모델 버튼 비활성이 **정상**이며 실제 JEV POST 0 유지.
+- 실종목 대상의 Choice `VALID` 저장·실사용 TypeSafe 결과, 사용자 1회 호출 승인, 비용 정책·권한 원천 검증은 여전히 미완료. 코드 CI 4/4는 기존 근거 그대로 유지한다. 사용자 화면 확인 전 Windows A/B3 UAT PASS로 승격하지 않는다.
