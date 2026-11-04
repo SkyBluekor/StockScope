@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ScannerCandidate, ScannerResponse } from "../services/api";
 import { getJevCandidateReviewFit, type JevCandidateReviewFit } from "../services/jevApi";
+import { getJevStockChoicePreview, executeJevStockChoice, type JevStockChoicePreview } from "../services/jevApi";
 import { getJevEntryRouting, getJevIndependentEventReference, getJevIndependentEventAssessment, getJevLocalReadiness, getJevOutboundPreflight, type JevEntryRouting, type JevIndependentEventReference, type JevIndependentEventAssessment, type JevLocalReadiness, type JevOutboundPreflight, type JevMonitorItem } from "../services/jevApi";
 import { scannerAiReviewStatus } from "./scannerAiReviewStatus";
 import JevSyntheticDemo from "./JevSyntheticDemo";
@@ -529,6 +530,75 @@ export default function ScannerAiReview(props: Props) {
       setFitCheck({key: checkedKey, state: "error"});
     }
   }
+  // B3 is independent from legacy V4. Only a stored result bound to the
+  // immutable selected stock can appear as an actual Choice review.
+  const [choiceQuery, setChoiceQuery] = useState<{
+    key: string; value: JevStockChoicePreview;
+  } | null>(null);
+  const [choiceConsent, setChoiceConsent] = useState(false);
+  const [choiceSubmitting, setChoiceSubmitting] = useState(false);
+  const [choiceSubmitError, setChoiceSubmitError] = useState(false);
+  const currentChoice = choiceQuery?.key === selectedKey ? choiceQuery.value : null;
+  useEffect(() => {
+    let active = true;
+    setChoiceQuery(null);
+    setChoiceConsent(false);
+    setChoiceSubmitting(false);
+    setChoiceSubmitError(false);
+    if (!captureId || sampleIndex < 0) return () => { active = false; };
+    void getJevStockChoicePreview(captureId, sampleIndex).then(value => {
+      if (!active) return;
+      if (!value.candidate || value.candidate.capture_id !== captureId
+          || value.candidate.sample_index !== sampleIndex
+          || value.candidate.market !== candidate.market
+          || value.candidate.ticker !== candidate.code
+          || !value.candidate.snapshot_hash) return;
+      const review = value.latest_review;
+      if (review && (review.canonical_capture_id !== captureId
+          || review.sample_index !== sampleIndex || review.market !== candidate.market
+          || review.ticker !== candidate.code
+          || review.snapshot_hash !== value.candidate.snapshot_hash)) return;
+      setChoiceQuery({key: selectedKey, value});
+    }).catch(() => { /* The existing JEV summary stays unchanged on unavailable stores. */ });
+    return () => { active = false; };
+  }, [selectedKey, captureId, sampleIndex, candidate.market, candidate.code]);
+  const choiceSaved = currentChoice?.latest_review ?? null;
+  const canSubmitChoice = currentChoice?.status === "PREVIEW_READY"
+    && Boolean(currentChoice.approval_token && currentChoice.preview);
+  const choiceLabel: Record<string, string> = {
+    CHECK_MISSING_EVIDENCE: "추가 자료를 먼저 확인",
+    CHECK_CONFLICTING_SIGNALS: "상충하는 근거를 먼저 확인",
+    CHECK_RISK_CONTEXT: "위험 조건을 먼저 재확인",
+    NO_DISTINCT_REVIEW_PRIORITY: "뚜렷한 추가 확인 항목 없음",
+  };
+  async function submitChoice() {
+    if (!captureId || !currentChoice || !canSubmitChoice || !choiceConsent
+        || choiceSubmitting || !currentChoice.approval_token || !currentChoice.preview) return;
+    const originalKey = selectedKey;
+    setChoiceSubmitting(true);
+    setChoiceSubmitError(false);
+    try {
+      await executeJevStockChoice({
+        capture_id: captureId,
+        sample_index: sampleIndex,
+        approval_token: currentChoice.approval_token,
+        request_body_sha256: currentChoice.preview.request_body_sha256,
+        explicit_approval: true,
+      });
+      const refreshed = await getJevStockChoicePreview(captureId, sampleIndex);
+      if (refreshed.candidate?.capture_id === captureId
+          && refreshed.candidate?.sample_index === sampleIndex
+          && refreshed.candidate?.market === candidate.market
+          && refreshed.candidate?.ticker === candidate.code) {
+        setChoiceQuery({key: originalKey, value: refreshed});
+      }
+      setChoiceConsent(false);
+    } catch {
+      setChoiceSubmitError(true);
+    } finally {
+      setChoiceSubmitting(false);
+    }
+  }
   const hasVerifiedReview = !loading && !loadError && state.source === "STORED_JEV";
   const isRunning = state.state === "RUNNING" || state.state === "QUEUED";
   const isError = Boolean(loadError) || state.state === "FEATURE_ERROR" || state.state === "FAILED" || state.state === "UNKNOWN";
@@ -563,7 +633,42 @@ export default function ScannerAiReview(props: Props) {
         {hasVerifiedReview && (review?.reason_codes.length ?? 0) > 0 && (
           <p className="scanner-jev-compact-note">추가 확인 코드: {review?.reason_codes.slice(0, 3).join(", ") ?? ""}</p>
         )}
-        <button type="button" disabled title={unavailableReason}>JEV 검토 실행 (사용 불가)</button>
+        {choiceSaved?.status === "VALID" && choiceSaved.priority_choice && (
+          <p className="scanner-jev-compact-note" data-jev-choice-stored="true">
+            JEV 추가 확인: {choiceLabel[choiceSaved.priority_choice] || "검토 결과 확인"}
+            {" · "}{choiceSaved.completed_at || choiceSaved.requested_at}
+            {" · "}{choiceSaved.model_returned || choiceSaved.model_requested}
+            {" · "}{choiceSaved.cost_unknown ? "비용 확인 불가" : (choiceSaved.cost_usd ?? 0) + " USD"}
+            <small>매수·수익률 예측이 아닌 추가 확인 항목입니다.</small>
+          </p>
+        )}
+        {choiceSaved?.status === "UNKNOWN_BILLING" && (
+          <p className="scanner-jev-compact-note" role="status">
+            JEV 호출 결과와 과금 여부를 확인할 수 없습니다. 자동 재실행하지 않습니다.
+          </p>
+        )}
+        {canSubmitChoice && currentChoice?.preview ? (
+          <div data-jev-choice-approval="true" className="scanner-jev-compact-note">
+            <p>실제 TypeSafe 모델로 전송될 검토 의견:</p>
+            <p>{currentChoice.preview.state.strategy_intent}</p>
+            <p>{currentChoice.preview.state.review_notes}</p>
+            <p>{currentChoice.preview.state.internal_risk_rule_description}</p>
+            <p>검토 기간: {currentChoice.preview.state.horizon_intent}
+              {" · 모델: "}{currentChoice.preview.model}{" · 비용: 사전 확인 불가"}</p>
+            <label>
+              <input type="checkbox" checked={choiceConsent}
+                onChange={event => setChoiceConsent(event.currentTarget.checked)} />
+              위 정보의 외부 전송과 이번 1회 유료 호출을 승인합니다.
+            </label>
+            <button type="button" onClick={() => void submitChoice()}
+              disabled={!choiceConsent || choiceSubmitting}>
+              {choiceSubmitting ? "실제 검토 요청 중" : "승인한 JEV 검토 1회 실행"}
+            </button>
+            {choiceSubmitError && <p role="alert">실행 요청이 완료되지 않았습니다. 요청 기록을 먼저 확인하세요.</p>}
+          </div>
+        ) : (
+          <button type="button" disabled title={unavailableReason}>JEV 검토 실행 (사용 불가)</button>
+        )}
         {!hasVerifiedReview && (
           <details key={selectedKey} data-jev-b-fit-check="true"
             onToggle={event => {
