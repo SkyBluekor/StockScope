@@ -261,6 +261,7 @@ class LocalModelRegistry:
             row["name"] for row in models
             if isinstance(row, dict) and isinstance(row.get("name"), str)
             and _MODEL_RE.fullmatch(row["name"])
+            and row["name"].startswith("jev-")
         })
         if not candidates:
             raise StockChoiceExecutionError("B4_MODELS_EMPTY")
@@ -291,10 +292,9 @@ class ChoiceCostPolicy:
     def check(self, prepared: dict[str, Any], *, model: str) -> dict[str, Any]:
         if self.registry.active() != model:
             raise StockChoiceExecutionError("B4_MODEL_NOT_DISCOVERED")
-        if not os.getenv("JEV_API_KEY") and not os.getenv("STOCKSCOPE_B4_TEST_KEY"):
-            from .typesafe_provider import load_typesafe_jev_api_key
-            if load_typesafe_jev_api_key() is None:
-                raise StockChoiceExecutionError("B4_PROVIDER_KEY_MISSING")
+        from .typesafe_provider import load_typesafe_jev_api_key
+        if load_typesafe_jev_api_key() is None:
+            raise StockChoiceExecutionError("B4_PROVIDER_KEY_MISSING")
         from .stock_review_contract_v1 import MAX_WIRE_BYTES
         from .typesafe_provider import TYPESAFE_SYSTEM_ONE_URL
         import httpx
