@@ -222,7 +222,7 @@ def test_wrong_hash_tampered_token_and_unapproved_source_do_not_call(tmp_path, m
     assert e1.value.code == "CHOICE_BODY_CHANGED_SINCE_PREVIEW"
     with pytest.raises(StockChoiceExecutionError) as e2:
         asyncio.run(svc.execute_once(**{**kwargs, "approval_token": "untrusted"}))
-    assert e2.value.code == "CHOICE_APPROVAL_INVALID_OR_EXPIRED"
+    assert e2.value.code == "CHOICE_APPROVAL_REQUIRED"
     not_approved = _service(db, preview, calls=calls, evidence=False)
     with pytest.raises(StockChoiceExecutionError) as e3:
         asyncio.run(not_approved.execute_once(**kwargs))
