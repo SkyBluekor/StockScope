@@ -484,6 +484,7 @@ test("B3 stored Choice is bound to selected capture, never leaked on stock switc
   await page.getByRole("button",{name:"이 후보 최신 확정 일봉으로 다시 판단"}).click();
   await page.getByRole("button",{name:/가상 다른 후보 선택/}).click();
   await expect(page.locator(".scanner-selected-detail")).toContainText("가상 다른 후보");
+  await page.getByRole("tab",{name:"AI 검토"}).click();
   await expect(page.locator('[data-jev-choice-stored="true"]')).toHaveCount(0);
   await expect(page.locator('[data-jev-unavailable-reason="true"]'))
     .toContainText("새 Choice: 실제 종목 입력의 외부 AI 전송 권한 미확인");
