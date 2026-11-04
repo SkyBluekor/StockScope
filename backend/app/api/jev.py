@@ -29,6 +29,12 @@ from app.horizon import HorizonPolicyError, resolve_horizon_context
 from app.jev.review_service import JevManualReviewService
 from app.jev.stock_choice_execution import StockChoiceService, StockChoiceExecutionError
 from app.jev.stock_choice_catalog import StockChoiceStorageError
+from app.jev.stock_choice_authored_b4 import (
+    AuthoredEvidenceStore, MODEL_REGISTRY, ChoiceCostPolicy,
+    local_authored_enabled,
+)
+from app.jev.typesafe_provider import discover_typesafe_models, TypeSafeJevProviderError
+
 from app.jev import synthetic_live_04_demo as live04_demo
 from app.jev.typesafe_catalog import (
     TypeSafeJevCatalog,
@@ -706,6 +712,12 @@ async def request_jev_manual_review(
 # Trusted resolver is a *server dependency*, never an HTTP field or browser
 # checkbox. Production currently has no validated rights resolver.
 def _stock_choice_service() -> StockChoiceService:
+    if local_authored_enabled():
+        return StockChoiceService(
+            _db(), resolver=AuthoredEvidenceStore(_db()).resolver,
+            model_id=MODEL_REGISTRY.active() or "jev-1.14.0",
+            cost_policy=ChoiceCostPolicy(),
+        )
     return StockChoiceService(_db())
 
 
@@ -747,4 +759,85 @@ async def post_stock_choice_review(
         raise HTTPException(status_code=409, detail={
             "code": exc.code,
             "message": "입력 출처·실행 승인·기존 기록 상태를 확인해야 합니다.",
+        }) from exc
+
+
+
+class StockChoiceAuthoredRequest(BaseModel):
+    capture_id: str = Field(min_length=1, max_length=200)
+    sample_index: int = Field(ge=0, le=499)
+    note: str = Field(min_length=24, max_length=380)
+    original_authorship_attested: bool
+    no_third_party_material_attested: bool
+    external_ai_transfer_attested: bool
+
+
+@router.get("/stock-choice/authored")
+def get_stock_choice_authored(
+    capture_id: str = Query(min_length=1, max_length=200),
+    sample_index: int = Query(ge=0, le=499),
+) -> dict[str, object]:
+    if not local_authored_enabled():
+        return {"available": False, "status": "B4_LOCAL_AUTHORING_DISABLED"}
+    try:
+        capture, sample = StockChoiceService(_db())._candidate(capture_id, sample_index)
+        identity = StockChoiceService._identity(capture, sample)
+        record = AuthoredEvidenceStore(_db()).latest(identity)
+        return {
+            "available": True,
+            "status": "STORED" if record else "NOT_REGISTERED",
+            "candidate": identity,
+            "note_version": record["note_version"] if record else None,
+            "note": record["authored_note"] if record else None,
+            "authored_at_utc": record["authored_at_utc"] if record else None,
+            "original_authorship_self_attested": bool(record) if record else False,
+            "third_party_transfer_approved": False,
+            "provider_calls": 0,
+        }
+    except (StockChoiceExecutionError, StockChoiceStorageError) as exc:
+        raise HTTPException(status_code=422, detail={
+            "code": exc.code, "message": "선택한 저장 종목 또는 로컬 저장소를 확인할 수 없습니다.",
+        }) from exc
+
+
+@router.post("/stock-choice/authored")
+def save_stock_choice_authored(payload: StockChoiceAuthoredRequest) -> dict[str, object]:
+    if not local_authored_enabled():
+        raise HTTPException(status_code=403, detail={
+            "code": "B4_LOCAL_AUTHORING_DISABLED",
+            "message": "로컬 직접 작성 입력 경로가 활성화되지 않았습니다.",
+        })
+    try:
+        capture, sample = StockChoiceService(_db())._candidate(
+            payload.capture_id, payload.sample_index,
+        )
+        identity = StockChoiceService._identity(capture, sample)
+        return AuthoredEvidenceStore(_db()).save(
+            identity, payload.note,
+            original_authorship_attested=payload.original_authorship_attested,
+            no_third_party_material_attested=payload.no_third_party_material_attested,
+            external_ai_transfer_attested=payload.external_ai_transfer_attested,
+        )
+    except (StockChoiceExecutionError, StockChoiceStorageError) as exc:
+        raise HTTPException(status_code=422, detail={
+            "code": exc.code,
+            "message": "직접 작성 여부·외부 자료 포함 여부 또는 종목 연결을 확인해 주세요.",
+        }) from exc
+
+
+@router.post("/stock-choice/models/verify")
+async def verify_stock_choice_model() -> dict[str, object]:
+    """Only an explicit user button triggers read-only GET /v1/models."""
+    if not local_authored_enabled():
+        raise HTTPException(status_code=403, detail={
+            "code": "B4_LOCAL_AUTHORING_DISABLED",
+            "message": "로컬 직접 작성 경로가 활성화되지 않았습니다.",
+        })
+    try:
+        models = await discover_typesafe_models()
+        return MODEL_REGISTRY.confirm_from_provider(models)
+    except (TypeSafeJevProviderError, StockChoiceExecutionError) as exc:
+        raise HTTPException(status_code=422, detail={
+            "code": exc.code,
+            "message": "TypeSafe 계정의 사용 가능한 모델을 확인하지 못했습니다.",
         }) from exc
