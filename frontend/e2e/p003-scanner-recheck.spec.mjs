@@ -479,14 +479,14 @@ test("B3 stored Choice is bound to selected capture, never leaked on stock switc
   await expect(page.locator('[data-jev-choice-stored="true"]')).toContainText(
     "추가 자료를 먼저 확인",
   );
-  await expect(page.locator('[data-jev-choice-status="true"]'))
-    .toHaveText("실제 저장된 추가 검토 있음");
+  await expect(page.locator('[data-jev-unavailable-reason="true"]'))
+    .toContainText("새 Choice: 실제 저장된 추가 검토 있음");
   await page.getByRole("button",{name:"이 후보 최신 확정 일봉으로 다시 판단"}).click();
   await page.getByRole("button",{name:/가상 다른 후보 선택/}).click();
   await expect(page.locator(".scanner-selected-detail")).toContainText("가상 다른 후보");
   await expect(page.locator('[data-jev-choice-stored="true"]')).toHaveCount(0);
-  await expect(page.locator('[data-jev-choice-status="true"]'))
-    .toHaveText("실제 종목 입력의 외부 AI 전송 권한 미확인");
+  await expect(page.locator('[data-jev-unavailable-reason="true"]'))
+    .toContainText("새 Choice: 실제 종목 입력의 외부 AI 전송 권한 미확인");
   expect(calls.filter(x=>x.method==="POST"&&x.path.includes("/jev/"))).toHaveLength(0);
   expect(violations).toEqual([]);
   expect(pageErrors).toEqual([]);
