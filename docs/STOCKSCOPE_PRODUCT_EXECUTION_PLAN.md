@@ -524,7 +524,16 @@ if ($LASTEXITCODE -eq 0) {
 | 동작 보존 | 실행 버튼은 조건 충족 전 비활성, 외부 JEV 호출 0회, 기존 Scanner/Risk/Holdings 불변 |
 | 품질 | 기존 CI 4/4 PASS 유지, 실제 사용자 Windows 화면 확인 |
 
-**진행표:** GLOBAL-02-S2 offline = PASS / live = RIGHTS_UNVERIFIED; JEV-A = WINDOWS_UAT_PENDING; JEV-B = NOT_STARTED; JEV-C = NOT_STARTED.
+**진행표:** GLOBAL-02-S2 offline = PASS / live = RIGHTS_UNVERIFIED; JEV-A = WINDOWS_VISUAL_PARTIAL_PASS / CANDIDATE_SWITCH_NOT_VERIFIED; JEV-B = NOT_STARTED; JEV-C = NOT_STARTED.
+
+### 8.4 사용자 Windows 실제 화면 1차 확인 (2026-11-04)
+
+**판정: `WINDOWS_VISUAL_PARTIAL_PASS / FULL_UAT_PENDING`.** 사용자 제출 `127.0.0.1_5173_scanner (2).png` 전체 화면 캡처에서 실제 저장 후보 **동국제약(086450, KOSDAQ)**의 AI 검토 탭이 표시됨. 일반 사용자 요약에 종목명/코드, Scanner 판단, `현재 서버에서 JEV 사용 불가` 상태, `JEV 검토 실행 (사용 불가)` 회색 비활성 버튼, 간결한 사유 문구를 확인. 세부 P5/P6 진단은 `개발자 진단 및 공시 조회`가 **열린 상태**로 촬영됨. 코드 `ScannerAiReview.tsx`는 기본 `developerOpen=false`와 사용자가 상세를 열 때만 진단 컴포넌트 mount를 구현하고 있으며, E2E 테스트에서도 기본 진단 GET 0/유료 POST 0/390px 레이아웃이 확인되었음.
+
+- **확인된 것:** 사용자의 실제 Windows 실행 화면에서 간결 요약/비활성 버튼/기존 판단 구분, 진단 분리 표시. 합성 CI를 실제 TypeSafe 응답이나 Windows 네트워크 감사로 오인하지 않음.
+- **미확인:** 실제 Windows에서 두 번째 저장 후보로 전환했을 때 종목/검토 상태가 섞이지 않는지, 해당 사용자 환경에서 기본 접힘 상태의 스크린샷 및 외부 JEV POST 0 별도 관찰. 스크린샷 단일 장만으로 동작/네트워크를 증명하지 않는다. **A 전체 DONE 선언 금지.**
+- **남은 간단 인수:** 같은 실행에서 개발자 진단을 닫고 다른 저장 후보 1개를 선택해 기본 AI 검토 요약을 확인. 문제가 없으면 A=`WINDOWS_UAT_PASS`로 기록하고 B 구현 명세로 이동. 문제가 있으면 화면/현상에 직접 관련된 UI 코드만 수정, 별도 GLOBAL-02 fixture 재실행/권한 미확인 데이터 수집 금지.
+- **별도 디자인 관찰:** 기본 결과 영역 외의 일부 Scanner 경고와 펼친 개발자 진단에는 LEGACY/P5/P6/HOLD 등 기술어가 남아 있다. 현 A 검증은 사용자 기본 요약만 대상으로 하고, 요청 없는 전체 Scanner UI 재설계나 진단 삭제는 하지 않는다.
 
 **A 통과 이후에만 다음 B를 진행:** 실제 저장된 한 종목과 그 캡처 신원을 읽기 전용으로 연결하고, **사용자 직접 작성·전송 권리 보유 입력**만 기존 TypeSafeSystemOneProvider로 1회 수동 검토하는 기능. 해당 유료 요청은 별도 사용자 명시 승인 필수. 원천 권한 불명 시장 수치/공시/뉴스·UN 자료를 문구만 바꿔 외부 전송 금지. 호출·중복 청구·모델 ID·시각·비용·저장 및 재조회가 확인되어야 B 성공이며, 유효한 입력이 부족하면 B 보류. 이번 A 작업에서 B 구현·유료 호출은 수행하지 않는다.
 
