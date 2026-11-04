@@ -278,3 +278,36 @@ def test_concurrent_approved_clicks_create_at_most_one_model_transport(tmp_path,
         market=ready["candidate"]["market"],
         ticker=ready["candidate"]["ticker"])
     assert len(stored) == 1
+
+
+
+def test_restart_marks_reserved_unknown_billing_without_resending(tmp_path):
+    db, preview = _db(tmp_path)
+    migrate_stock_choice(db)
+    calls = []
+    svc = _service(db, preview, calls=calls)
+    ready = svc.preflight(preview["capture_id"], preview["sample_index"])
+    data = ready["preview"]
+    candidate = ready["candidate"]
+    catalog = StockChoiceCatalog(db)
+    prior, fresh = catalog.reserve(
+        review_identity=data["review_identity"],
+        candidate=candidate,
+        input_hash=data["input_hash"],
+        question_hash=data["question_hash"],
+        model_requested=data["model"],
+        request_body_sha256=data["request_body_sha256"],
+        approval_digest="only-a-hash-not-a-token",
+    )
+    assert fresh and prior["status"] == "RESERVED"
+    assert catalog.mark_pending_unknown_after_restart() == 1
+    assert catalog.mark_pending_unknown_after_restart() == 0
+    saved = catalog.get_for_candidate(
+        capture_id=candidate["capture_id"], sample_index=candidate["sample_index"],
+        snapshot_hash=candidate["snapshot_hash"],
+        market=candidate["market"], ticker=candidate["ticker"],
+    )
+    assert len(saved) == 1
+    assert saved[0]["status"] == "UNKNOWN_BILLING"
+    assert saved[0]["error_code"] == "CHOICE_PROCESS_RESTART_UNKNOWN_BILLING"
+    assert calls == []
