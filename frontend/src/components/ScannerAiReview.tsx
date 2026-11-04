@@ -642,6 +642,11 @@ export default function ScannerAiReview(props: Props) {
             <small>매수·수익률 예측이 아닌 추가 확인 항목입니다.</small>
           </p>
         )}
+        {choiceSaved?.status === "RESERVED" && (
+          <p className="scanner-jev-compact-note" role="status">
+            JEV 단건 검토가 접수되었습니다. 중복 실행하지 않습니다.
+          </p>
+        )}
         {choiceSaved?.status === "UNKNOWN_BILLING" && (
           <p className="scanner-jev-compact-note" role="status">
             JEV 호출 결과와 과금 여부를 확인할 수 없습니다. 자동 재실행하지 않습니다.
