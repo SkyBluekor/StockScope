@@ -144,6 +144,28 @@ class StockChoiceCatalog:
         # No approval bearer token, private review text, or raw model response.
         return result
 
+    def mark_pending_unknown_after_restart(self) -> int:
+        """At startup a RESERVED row may have reached TypeSafe. Never retry it."""
+        db = _connect(self.db_path)
+        try:
+            db.execute("BEGIN IMMEDIATE")
+            self._ready(db)
+            changed = db.execute("""
+                UPDATE jev_stock_choice_review SET status='UNKNOWN_BILLING',
+                    completed_at=?,error_code='CHOICE_PROCESS_RESTART_UNKNOWN_BILLING'
+                WHERE status='RESERVED'
+            """, (_now(),)).rowcount
+            db.commit()
+            return changed
+        except (sqlite3.Error, StockChoiceStorageError) as exc:
+            if db.in_transaction:
+                db.rollback()
+            if isinstance(exc, StockChoiceStorageError):
+                raise
+            raise StockChoiceStorageError("CHOICE_RESTART_RECONCILE_FAILED") from exc
+        finally:
+            db.close()
+
     def get_for_candidate(
         self, *, capture_id: str, sample_index: int, snapshot_hash: str,
         market: str, ticker: str,
@@ -187,7 +209,6 @@ class StockChoiceCatalog:
                  candidate["snapshot_hash"], input_hash, question_hash, model_requested,
                  request_body_sha256, approval_digest, _now(), _now(), "RESERVED"))
             db.commit()
-            db = db  # single transaction, return freshly committed item
             with _connect(self.db_path, readonly=True) as reader:
                 saved = reader.execute(
                     "SELECT * FROM jev_stock_choice_review WHERE review_identity=?",
