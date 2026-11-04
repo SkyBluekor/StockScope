@@ -805,6 +805,22 @@ class HoldingDecisionSupportService:
             != _decimal_text(decision["valuation_price"])
         ):
             reasons.append("VALUATION_PRICE_CHANGED")
+
+        # Market data's current-use contract can be revoked without changing
+        # the displayed close/date or the stored Analysis Revision ID.
+        # In that case an older approval must not remain actionable.
+        saved_evidence = decision.get("evidence") or {}
+        current_evidence = current.get("evidence") or {}
+        if (
+            saved_evidence.get("proposal_ready") is not
+            current_evidence.get("proposal_ready")
+        ):
+            reasons.append("PROPOSAL_READINESS_CHANGED")
+        if (
+            saved_evidence.get("new_plan_horizon_activatable") is not
+            current_evidence.get("new_plan_horizon_activatable")
+        ):
+            reasons.append("HORIZON_APPLICABILITY_CHANGED")
         return reasons
 
     def get_decision(self, decision_id: str) -> dict[str, Any]:
@@ -1007,6 +1023,26 @@ class HoldingDecisionSupportService:
                 "HOLD_DECISION_PLAN_UNAVAILABLE",
                 "계획에 적용할 최신 Analysis Revision이 없습니다.",
             )
+
+        # Require an approved, current-use proposal on the server as well as
+        # the frontend. Existing protection data alone is never permission to
+        # promote a new Analysis Revision into an active management plan.
+        evidence = decision.get("evidence") or {}
+        if evidence.get("proposal_conflict") == "STOP_LOOSENING_BLOCKED":
+            raise HoldingsManagementError(
+                "HOLD_PLAN_STOP_LOOSENING_BLOCKED",
+                "새 분석의 손절 기준이 현재 적용 계획보다 낮아 기존 보유 위험 기준을 느슨하게 만들 수 없습니다.",
+            )
+        if (
+            evidence.get("proposal_ready") is not True
+            or evidence.get("new_plan_horizon_activatable") is not True
+            or evidence.get("proposal_conflict")
+        ):
+            raise HoldingsDecisionSupportError(
+                "HOLD_DECISION_PLAN_NOT_READY",
+                "현재 사용 가능한 최신 분석 제안이 아닙니다. 입력 근거와 Horizon 정책을 확인한 뒤 판단을 다시 생성하세요.",
+            )
+
         action = (
             selected_action.strip().upper()
             if selected_action

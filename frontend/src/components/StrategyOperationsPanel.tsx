@@ -91,6 +91,19 @@ export default function StrategyOperationsPanel({
             </div>
           </div>
 
+          {overview.production_policy.policy_source === "LEGACY_CURRENT_10_FALLBACK" && (
+            <p className="sim-strategy-ops-warning" role="status">
+              현재 Scanner는 Legacy Fallback 정책을 사용합니다. 이 정책에는 원본 전략 버전과 정의 해시가 없어 신규 진입 후보도 S7에서 LEGACY_LIMITED로 분류될 수 있습니다.
+              정책을 임의로 활성화하거나 과거 캡처를 수정하지 않습니다.
+            </p>
+          )}
+          {(overview.production_policy.policy_source === "ACTIVE_SELECTION_POLICY" ||
+            overview.production_policy.policy_source === "ROLLBACK_FALLBACK") && (
+            <p className="sim-strategy-ops-loading">
+              정책에는 전략 식별 정보가 포함될 수 있지만, 신규 후보가 LOCAL_VALIDATED에 도달하려면 실제 엔진 통과 근거와 S7 엄격 검증이 별도로 필요합니다.
+            </p>
+          )}
+
           {blocked && (
             <p className="sim-strategy-ops-lock">
               승격·강등 수치 기준(Q7)이 아직 사전 승인되지 않아 운영 전략 변경은 잠겨 있습니다.

@@ -83,9 +83,60 @@ jobs:
         working-directory: frontend
         run: npm run test:sc-ux-motion
 
+      - name: Test S29 rank/evidence
+        working-directory: frontend
+        run: npm run test:sc-s29
+
+      - name: Test S30 tie groups
+        working-directory: frontend
+        run: npm run test:sc-s30
+
+      - name: Test S31-K Risk reference and quote provenance
+        working-directory: frontend
+        run: npm run test:sc-s31k
+
+      - name: Test S31-M Scanner/Holdings boundary
+        working-directory: frontend
+        run: npm run test:sc-s31m
+
+      - name: Test P0-03 Candidate recheck display and selection
+        working-directory: frontend
+        run: npm run test:sc-p003
+
+      - name: Test S31-N Holdings protection summary
+        working-directory: frontend
+        run: npm run test:hold-s31n
+
+      - name: Test S31-O Watch policy explanation
+        working-directory: frontend
+        run: npm run test:hold-s31o
+
+      - name: Test P0-04 Holdings plan confirmation
+        working-directory: frontend
+        run: npm run test:hold-p004
+
+      - name: Verify Scanner policy identity provenance and legacy guard
+        working-directory: frontend
+        run: npm run test:sc-provenance
+
       - name: Build frontend
         working-directory: frontend
         run: npm run build
+
+      - name: Install pinned Chromium E2E runner (CI-only)
+        working-directory: frontend
+        run: |
+          npm install --no-save --package-lock=false @playwright/test@1.56.1
+          npx playwright install --with-deps chromium
+
+      - name: Test P0-03 isolated real Chromium click-through
+        working-directory: frontend
+        run: npx playwright test -c playwright.p003.config.mjs
+
+      - name: Test P0-04 Holdings browser confirmation (isolated synthetic HTTP)
+        working-directory: frontend
+        run: npx playwright test -c playwright.p004.config.mjs
+
 
 
   fresh-clone-windows:
@@ -134,6 +185,120 @@ jobs:
         shell: powershell
         run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_health.py
 
+      - name: Verify P0-02 offline Scanner replay on Windows (no KRX network)
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_02_offline_scanner_replay.py
+
+      - name: Verify P0-03 Windows offline API job UAT isolation
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_03_offline_api_job_uat.py
+
+      - name: Verify P0-03 Windows browser real API runner fail-closed safety
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_03_windows_browser_uat.py
+
+      - name: Verify P0-04 Windows Holdings readonly schema and WAL preflight
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_04_holdings_readonly_preflight.py
+
+      - name: Verify P0-04 Windows Holdings stored workspace read-only probe
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_04_holdings_workspace_probe.py
+
+      - name: Verify P0-04 Windows genuine read-only FastAPI UI worker isolation
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_04_windows_readonly_browser_uat.py
+
+      - name: Verify P0-04 Windows synthetic transactional API write journey
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_holdings_decision_api_vnp3s1.py -k test_p004_phase9
+
+      - name: Verify P0-05 Prospective operational inventory read-only audit (synthetic DB)
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_05_prospective_readonly_audit.py
+
+      - name: Verify P0-05 existing S16 readonly observation coverage and redaction
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_05_s16_readonly_coverage.py
+
+      - name: Verify P0-05 S16 integrity reason and calendar gap subtype contracts
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_q7_s16_readonly_maturity.py -k 'test_g0c or test_g0d or test_g0e'
+
+      - name: Verify P0-05 G1 S17 persisted capture proof (synthetic Windows SQLite)
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_prospective_daily_s17.py -k test_p005_g1
+
+      - name: Verify P0-05 G1 read-only local readiness preflight (synthetic Windows stores)
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_05_g1_local_preflight.py
+
+      - name: Parse P0-05 operator recovery script without execution
+        shell: powershell
+        run: |
+          $tokens = $null
+          $errors = $null
+          $script = (Resolve-Path .\tools\data\p0_05_run_authorized_recovery.ps1).Path
+          [System.Management.Automation.Language.Parser]::ParseFile($script, [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Host $_.Message }
+            exit 1
+          }
+
+      - name: Parse P0-05 G1 one-time operator script without execution
+        shell: powershell
+        run: |
+          $tokens = $null
+          $errors = $null
+          $script = (Resolve-Path .\tools\data\p0_05_run_g1_capture_once.ps1).Path
+          [System.Management.Automation.Language.Parser]::ParseFile($script, [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Host $_.Message }
+            exit 1
+          }
+
+      - name: Verify P0-05 G1 isolated operator capture (synthetic, no KRX)
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_05_g1_operator_capture.py
+
+      - name: Verify Scanner preview market store binding
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_scanner_preview_market_db.py
+
+      - name: Verify G2-03 per-stock timeline and isolated SQLite preview
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_stock_capture_timeline_g2_03.py
+
+      - name: Verify G2-03 Windows preview launcher syntax without execution
+        shell: powershell
+        run: |
+          $tokens = $null
+          $errorsFound = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path .\tools\data\g2_03_run_preview.ps1).Path,
+            [ref]$tokens, [ref]$errorsFound
+          ) | Out-Null
+          if ($errorsFound.Count -gt 0) {
+            $errorsFound | Out-String | Write-Error
+            exit 1
+          }
+
+      - name: Verify G2-02 cross-date saved Scanner change comparison
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_saved_capture_comparison_g2_02.py
+
+      - name: Verify G2 saved Scanner capture journal and rolling observations
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_capture_observation_journal_g2.py
+
+      - name: Verify P0-05 G1 captured 15-snapshot S7 proof (read-only synthetic)
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_05_g1_capture_s7_proof.py
+
+      - name: Verify P0-05 G1 bounded KRX gap recovery (synthetic data; no network)
+        shell: powershell
+        run: .\.venv\Scripts\python.exe -m pytest -c .\backend\pyproject.toml .\backend\tests\test_p0_05_market_gap_recovery.py
+
       - name: Verify fresh runtime and no Drive dependency
         shell: powershell
         run: |
@@ -174,3 +339,11 @@ jobs:
               "google_drive_required": False,
           }))
           '@ | .\.venv\Scripts\python.exe -
+
+      - name: Verify JEV-LIVE-01 authored synthetic preflight (Windows, no network)
+        shell: powershell
+        run: .\\.venv\\Scripts\\python.exe -m tools.data.jev_live_01_synthetic_smoke --mode preflight
+
+      - name: Verify JEV-LIVE-01 TypeSafe V4 service integration (Windows HTTP mock, no network)
+        shell: powershell
+        run: .\\.venv\\Scripts\\python.exe -m tools.data.jev_live_01_synthetic_smoke --mode mock

@@ -736,3 +736,25 @@ def test_naive_cutoff_and_missing_store_fail_closed(tmp_path: Path) -> None:
             CUTOFF,
         )
     assert not missing.exists()
+
+
+
+def test_internal_revision_pins_preserve_original_public_projection_hash(tmp_path: Path) -> None:
+    """P6-B pins are internal metadata, not part of the frozen public hash."""
+    db = _db(tmp_path)
+    _insert_reference(db, suffix="P6B")
+    before = db.read_bytes()
+    reader = EventEvidenceAsOfReader(db)
+    public = reader.stock_reference_as_of("005930", "KOSPI", CUTOFF)
+    internal = reader.stock_reference_as_of(
+        "005930", "KOSPI", CUTOFF, include_internal_pins=True,
+    )
+    assert public == {k: v for k, v in internal.items() if k != "_internal_pins"}
+    assert len(internal["_internal_pins"]) == 1
+    pinned = internal["_internal_pins"][0]
+    assert pinned["event_id"] == "EVENT-P6B"
+    assert pinned["event_version"] == 1
+    assert pinned["source_refs"][0]["source_ref_id"] == "SRC-P6B-V1"
+    assert pinned["source_refs"][0]["content_hash"] == "9" * 64
+    assert db.read_bytes() == before
+

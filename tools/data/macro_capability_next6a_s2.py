@@ -36,6 +36,7 @@ def build_report(
     kis_index_code: str,
     kis_fx_code: str | None,
     kis_treasury_code: str | None,
+    kis_index_only: bool = False,
 ) -> dict[str, Any]:
     provider_name = provider.strip().upper()
     if provider_name not in {"FRED", "KIS", "ALL"}:
@@ -62,6 +63,7 @@ def build_report(
                 fx_code=kis_fx_code,
                 treasury_code=kis_treasury_code,
             )
+            if not kis_index_only or item.component == "OVERSEAS_INDEX"
         )
     payload = {
         "contract_version": REPORT_CONTRACT_VERSION,
@@ -104,6 +106,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="공식 master/example에서 확인한 국채 code. 생략 시 추측하지 않습니다.",
     )
     parser.add_argument(
+        "--kis-index-only",
+        action="store_true",
+        help="KIS 해외지수 한 종목만 판정해 누락 FX·국채를 성공으로 오인하지 않습니다.",
+    )
+    parser.add_argument(
         "--no-report-file",
         action="store_true",
         help="runtime JSON report 파일 생성을 생략합니다.",
@@ -120,6 +127,7 @@ def main() -> int:
         kis_index_code=args.kis_index_code,
         kis_fx_code=args.kis_fx_code,
         kis_treasury_code=args.kis_treasury_code,
+        kis_index_only=args.kis_index_only,
     )
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
@@ -138,6 +146,8 @@ def main() -> int:
         "NOT_CONFIGURED",
         "NOT_AUTHORIZED",
         "ERROR",
+        "SEMANTICS_UNVERIFIED",
+        "NOT_SUPPORTED",
     }
     return 2 if any(item["status"] in blocking for item in report["results"]) else 0
 

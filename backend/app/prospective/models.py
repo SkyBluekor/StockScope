@@ -44,6 +44,7 @@ class ProspectiveCaptureRequest:
     horizon_policy_version: str | None
     selection_policy_id: str | None = None
     selection_policy_hash: str | None = None
+    horizon_purpose: str = "PRODUCTION_POLICY"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

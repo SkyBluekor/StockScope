@@ -5,9 +5,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 
 from app.core.config import PROJECT_ROOT
+from app.macro.local_dji import personal_local_opted_in, read_local_dji_reference
 from app.core.stock_code import normalize_stock_code
 from app.event_evidence import (
     EVENT_REFERENCE_AS_OF_MODE,
@@ -101,6 +102,131 @@ def _unavailable_detail(context: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+
+def _scanner_dgs10_rate_reference(
+    context: dict[str, Any], reader: LocalMacroReader,
+) -> dict[str, Any]:
+    """A bounded display-only projection of the existing DGS10 context.
+
+    Never claims this rate was a Scanner decision input. Re-read the source
+    observation read-only and require the exact feature reference to match,
+    so displayed provenance cannot be attached to another revision.
+    """
+    base = {
+        "status": "UNAVAILABLE",
+        "source": "FRED_DGS10_LOCAL",
+        "series_id": "US_10Y_CONSTANT_MATURITY_YIELD",
+        "value_pct": None,
+        "observation_date": None,
+        "available_at": None,
+        "source_published_at": None,
+        "provider_available_at": None,
+        "time_quality": None,
+        "source_unit": None,
+        "decision_cutoff": context["decision_cutoff"],
+        "production_decision_approved": False,
+        "scanner_input_approved": False,
+        "risk_gate_input_approved": False,
+        "reason": "RATE_REFERENCE_UNAVAILABLE",
+    }
+    features = (context.get("features") or {}).get("features") or []
+    level = next(
+        (f for f in features if f.get("feature_id") == "rate_level_pct"),
+        None,
+    )
+    if not level or level.get("status") != "AVAILABLE" or level.get("value") is None:
+        return {**base, "reason": "RATE_LEVEL_FEATURE_UNAVAILABLE"}
+
+    source = reader.read_series_as_of(
+        base["series_id"],
+        cutoff=context["decision_cutoff"],
+        historical_eligible_only=False,
+    )
+    observation = source.get("observation") or {}
+    observation_ref = (
+        observation.get("normalized_hash")
+        or observation.get("id")
+        or observation.get("observation_key")
+    )
+    if (
+        source.get("status") != "COMPLETE"
+        or not observation_ref
+        or str(observation_ref) != str(level.get("current_observation_ref") or "")
+        or observation.get("source_unit") != "PERCENT"
+        or observation.get("normalized_value") is None
+        or str(observation["normalized_value"]) != str(level["value"])
+    ):
+        return {**base, "reason": "RATE_SOURCE_REVISION_NOT_ALIGNED"}
+
+    return {
+        **base,
+        "status": (
+            "AVAILABLE"
+            if context.get("status") == "COMPLETE_REFERENCE"
+            and observation.get("time_quality") in {"EXACT", "PROVIDER_TIME"}
+            else "PARTIAL"
+        ),
+        "value_pct": str(level["value"]),
+        "observation_date": str(observation["observation_date"]),
+        "available_at": str(observation["available_at"]),
+        "source_published_at": observation.get("source_published_at"),
+        "provider_available_at": observation.get("provider_available_at"),
+        "time_quality": observation.get("time_quality"),
+        "source_unit": str(observation["source_unit"]),
+        "reason": None,
+    }
+
+
+
+def _local_dji_request_allowed(request: Request) -> bool:
+    """Fail closed for direct remote/public requests; dev servers bind loopback.
+
+    A reverse proxy that deliberately removes forwarding evidence is outside the
+    personal-local trust boundary. Do not expose this endpoint via a proxy.
+    """
+    from urllib.parse import urlsplit
+
+    host = request.headers.get("host", "")
+    try:
+        host_name = urlsplit("http://" + host).hostname
+    except ValueError:
+        return False
+    if request.client is None or request.client.host not in {"127.0.0.1", "::1"}:
+        return False
+    if host_name not in {"localhost", "127.0.0.1", "::1"}:
+        return False
+    if any(
+        request.headers.get(name)
+        for name in ("forwarded", "x-forwarded-for", "x-real-ip", "via")
+    ):
+        return False
+    for name in ("origin", "referer"):
+        value = request.headers.get(name)
+        if value:
+            try:
+                address = urlsplit(value)
+            except ValueError:
+                return False
+            if address.scheme != "http" or address.hostname not in {
+                "localhost", "127.0.0.1", "::1",
+            }:
+                return False
+    return True
+
+
+@router.get("/overseas-index-reference")
+def overseas_index_reference(request: Request, response: Response) -> dict[str, Any]:
+    """Opt-in personal-local KIS index observation, not a Scanner decision input."""
+    response.headers["Cache-Control"] = "no-store"
+    enabled = personal_local_opted_in()
+    if not enabled:
+        return read_local_dji_reference(enabled=False)
+    if not _local_dji_request_allowed(request):
+        # No market data and no upstream calls for non-local or proxied access.
+        return read_local_dji_reference(enabled=False, reason="LOCAL_ACCESS_ONLY")
+    return read_local_dji_reference(enabled=True)
+
+
 @router.get("/reference-diagnostic")
 def reference_diagnostic(
     response: Response,
@@ -115,9 +241,10 @@ def reference_diagnostic(
     response.headers["Cache-Control"] = "no-store"
     decision_cutoff = cutoff or _default_cutoff()
 
+    reader = LocalMacroReader(_macro_db_path())
     try:
         context = build_macro_context(
-            reader=LocalMacroReader(_macro_db_path()),
+            reader=reader,
             decision_cutoff=decision_cutoff,
             usage="REFERENCE_SHADOW",
         )
@@ -160,6 +287,8 @@ def reference_diagnostic(
             "recommended_support": governance["recommended_support"],
         },
         "rate_spike": _rate_spike_summary(context),
+        # MACRO-01: additive, read-only reference for the selected Scanner card.
+        "dgs10_reference": _scanner_dgs10_rate_reference(context, reader),
         "production_decision_approved": bool(
             context["production_decision_approved"]
         ),

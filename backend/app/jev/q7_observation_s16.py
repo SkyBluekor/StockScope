@@ -21,8 +21,45 @@ from app.strategy.models import StrategyName
 
 from .decision_reviewer_offline import DecisionReviewContractError
 from .q7_diagnosis_s18 import classify_capture_timing
-from .scanner_integrity_s7_1 import assess_frozen_candidate
+from .scanner_integrity_s7_1 import EXPLAIN, assess_frozen_candidate
 from .scanner_shadow_s7 import EVALUATION_SPEC, WINDOWS, load_frozen_candidates
+
+# Only literal, reviewed S3 projection codes from decision_reviewer_offline.py
+# may pass into aggregate reports. No dynamic addition of raw exception text,
+# policy IDs or candidate/source details.
+KNOWN_S3_PROJECTION_CODES = frozenset({
+    "CAPTURE_OR_PROTOCOL_NOT_READY",
+    "SNAPSHOT_MISSING",
+    "SNAPSHOT_HASH_MISMATCH",
+    "CAPTURE_IDENTITY_MISMATCH",
+    "ACTION_OUT_OF_SCOPE",
+    "CANDIDATE_IDENTITY_MISMATCH",
+    "BASELINE_EVIDENCE_INCOMPLETE",
+    "BASELINE_RANK_MISMATCH",
+    "BASELINE_RISK_MISSING",
+    "RISK_BLOCKED_OUT_OF_SCOPE",
+    "POLICY_PROVENANCE_UNVERIFIED",
+    "POLICY_PIN_MISMATCH",
+    "SEMANTIC_SOURCE_INVALID",
+    "ENGINE_EVIDENCE_INCOMPLETE",
+    "ENGINE_PASS_PROOF_MISMATCH",
+    "STRATEGY_IDENTITY_MISMATCH",
+    "SIGNAL_DATE_INVALID",
+    "FUTURE_OR_MISMATCHED_EVIDENCE_DATE",
+    "HORIZON_OUT_OF_SCOPE",
+    "SEMANTIC_SOURCE_V2_MISSING",
+    "SEMANTIC_SOURCE_V2_VERSION_UNSUPPORTED",
+    "SEMANTIC_SOURCE_V2_CONTRACT_HASH_MISMATCH",
+    "SEMANTIC_SOURCE_V2_HASH_MISMATCH",
+    "SEMANTIC_SOURCE_V2_BASE_MISSING",
+    "SEMANTIC_SOURCE_V2_BASE_IDENTITY_MISMATCH",
+    "SEMANTIC_SOURCE_V2_RELATIONS_MISSING",
+    "SEMANTIC_SOURCE_V2_RELATION_HASH_MISMATCH",
+    "SEMANTIC_SOURCE_V2_CONDITIONS_MISSING",
+    "SEMANTIC_SOURCE_V2_ASSERTION_MAPPING_MISMATCH",
+})
+SAFE_INTEGRITY_REASON_CODES = frozenset(EXPLAIN) | KNOWN_S3_PROJECTION_CODES
+
 
 
 VERSION = "Q7_S16_READONLY_COHORT_MATURITY_V1"
@@ -78,6 +115,8 @@ def _empty_window(denominator: int) -> dict[str, Any]:
         "market_evidence_unavailable": 0,
         "post_as_of_data_rejected": 0,
         "unverified_calendar_or_market_gap": 0,
+        "gap_with_insufficient_confirmed_sessions": 0,
+        "gap_with_sufficient_confirmed_sessions": 0,
         "average_signal_close_change_pct": None,
         "positive_observations": 0,
         "negative_observations": 0,
@@ -218,6 +257,10 @@ def measure(
 
     evaluator = ProspectiveEvaluator(market_db)
     integrity_counts: Counter[str] = Counter()
+    invalid_check_failures: Counter[str] = Counter()
+    invalid_reason_codes: Counter[str] = Counter()
+    invalid_without_failed_checks = 0
+    invalid_rank_source_missing: Counter[str] = Counter()
     skipped_reasons: Counter[str] = Counter()
     values: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
     strategy_counts: dict[str, dict[str, Any]] = {}
@@ -283,6 +326,45 @@ def measure(
                 if category == "INVALID":
                     group["invalid"] += 1
                     skipped_reasons["FROZEN_INTEGRITY_INVALID"] += 1
+                    failed = 0
+                    # Counts overlap: one INVALID candidate can have several
+                    # failing checks and reasons. Never reinterpret as distinct
+                    # candidates or expose any policy/source identifiers.
+                    for field in ("rank", "strategy", "policy", "engine",
+                                  "dates", "risk", "strict_s3"):
+                        check = integrity.get(field)
+                        if isinstance(check, dict) and check.get("status") == "FAIL":
+                            invalid_check_failures[field] += 1
+                            failed += 1
+                    if not failed:
+                        invalid_without_failed_checks += 1
+                    rank_check = integrity.get("rank")
+                    if isinstance(rank_check, dict) and rank_check.get("status") == "FAIL":
+                        # Only booleans about where the public Scanner rank
+                        # disappeared. Never export rank values or candidate IDs.
+                        snapshot_missing = rank_check.get("snapshot_priority") is None
+                        stored_missing = rank_check.get("stored") is None
+                        if snapshot_missing:
+                            invalid_rank_source_missing["snapshot_priority_rank_missing"] += 1
+                        if stored_missing:
+                            invalid_rank_source_missing["stored_sample_rank_missing"] += 1
+                        if snapshot_missing and stored_missing:
+                            invalid_rank_source_missing["both_rank_sources_missing"] += 1
+                    codes = integrity.get("codes")
+                    if isinstance(codes, list):
+                        # Deduplicate *after* normalization. Several distinct
+                        # unrecognized S7 strings from one INVALID candidate
+                        # collapse into the same privacy-safe OTHER_S7_CODE.
+                        # Counting before normalization can exceed the number
+                        # of INVALID candidates and makes the G0c contract
+                        # falsely fail on an otherwise readable local cohort.
+                        normalized = {
+                            code if type(code) is str and code in SAFE_INTEGRITY_REASON_CODES
+                            else "OTHER_S7_CODE"
+                            for code in codes
+                        }
+                        for key in normalized:
+                            invalid_reason_codes[key] += 1
                     continue
                 group["integrity_valid"] += 1
                 try:
@@ -294,12 +376,14 @@ def measure(
                     windows, issue = _record_windows(
                         obs, market_cutoff, signal_date=str(sample.get("signal_date")),
                     )
+                    available_sessions = obs.get("available_trading_days")
                     if issue:
                         skipped_reasons[_code(issue)] += 1
                 except (ProspectiveEvaluationError, sqlite3.Error, ValueError, KeyError, TypeError) as exc:
                     reason = _code(getattr(exc, "code", "MARKET_EVIDENCE_UNAVAILABLE"))
                     skipped_reasons[reason] += 1
                     windows = {w: ("MARKET_EVIDENCE_UNAVAILABLE", None) for w in WINDOWS}
+                    available_sessions = None
 
                 for window in WINDOWS:
                     label = f"{window}d"
@@ -322,6 +406,19 @@ def measure(
                         win["post_as_of_data_rejected"] += 1
                     elif state == "UNVERIFIED_CALENDAR_OR_DATA_GAP":
                         win["unverified_calendar_or_market_gap"] += 1
+                        # Orthogonal subtype, not a relaxation of S16's
+                        # conservative calendar gate. In particular, fewer
+                        # confirmed sessions is NOT proof that the horizon is
+                        # truly immature: an unknown weekday could be a market
+                        # session or an unverified closure.
+                        if type(available_sessions) is not int or available_sessions < 0:
+                            return _base("OBSERVATION_CONTRACT_INVALID", counts_complete=False)
+                        subgroup = (
+                            "gap_with_insufficient_confirmed_sessions"
+                            if available_sessions < window
+                            else "gap_with_sufficient_confirmed_sessions"
+                        )
+                        win[subgroup] += 1
                     else:
                         win["market_evidence_unavailable"] += 1
     except (DecisionReviewContractError, sqlite3.Error, KeyError, ValueError, TypeError):
@@ -341,6 +438,8 @@ def measure(
                 "readiness_denominator", "observed", "awaiting_future_trading_days",
                 "price_missing", "market_evidence_unavailable",
                 "post_as_of_data_rejected", "unverified_calendar_or_market_gap",
+                "gap_with_insufficient_confirmed_sessions",
+                "gap_with_sufficient_confirmed_sessions",
                 "positive_observations",
                 "negative_observations", "unchanged_observations",
             ):
@@ -375,6 +474,22 @@ def measure(
         integrity_counts={
             k: integrity_counts[k] for k in ("LOCAL_VALIDATED", "LEGACY_LIMITED", "INVALID")
         },
+        invalid_check_failure_counts={
+            k: invalid_check_failures[k] for k in (
+                "rank", "strategy", "policy", "engine", "dates", "risk", "strict_s3"
+            )
+        },
+        invalid_reason_code_counts=dict(sorted(invalid_reason_codes.items())),
+        invalid_rank_source_missing_counts={
+            key: invalid_rank_source_missing[key] for key in (
+                "snapshot_priority_rank_missing",
+                "stored_sample_rank_missing",
+                "both_rank_sources_missing",
+            )
+        },
+        invalid_without_failed_checks=invalid_without_failed_checks,
+        invalid_reason_counts_can_overlap=True,
+        gap_subtypes_are_not_independent_calendar_proof=True,
         excluded_reason_counts=dict(sorted(skipped_reasons.items())),
         windows=summary,
         strategy_counts={k: strategy_counts[k] for k in sorted(strategy_counts)},

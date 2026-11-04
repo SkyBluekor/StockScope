@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { holdingsWatchPolicyText } from "./holdingsWatchPolicyText";
 import type {
   HoldingPosition,
   HoldingWorkspaceSourceStatus,
@@ -55,7 +56,7 @@ function statusLabel(status: WatchPositionStatus) {
   if (!status.policy_enabled) return "정책 검증 중";
   if (status.open_gaps.length > 0) return "감시 공백";
   if (status.rules.some((rule) => rule.state === "CONFIRMED")) return "기준 확인됨";
-  if (status.setting) return "감시 중";
+  if (status.setting) return "감시 설정 기록 있음 · 가동 미확인";
   return "미감시";
 }
 
@@ -77,7 +78,7 @@ function statusDetail(status: WatchPositionStatus) {
       + "원 기준이 확인되었습니다.";
   }
   if (status.setting) {
-    return "현재 적용 Plan v" + status.setting.plan_version + " 기준으로 서버가 관찰합니다.";
+    return "Plan v" + status.setting.plan_version + "에 연결된 Watch 설정 기록은 있으나 실시간 실행과 감시 연속성 확인이 필요합니다.";
   }
   return "현재 적용 계획에 연결된 Watch가 없습니다.";
 }
@@ -130,22 +131,19 @@ export default function HoldingWatchStatus({
     [positions],
   );
   const error = status?.status === "PARTIAL" || status?.status === "UNAVAILABLE";
+  const policyCopy = holdingsWatchPolicyText(systemStatus);
 
   if (openPositions.length === 0) return null;
 
   return (
-    <div className="holding-watch-summary" aria-label="실시간 감시 상태">
+    <div id="holding-watch-summary" className="holding-watch-summary" aria-label="실시간 감시 상태">
       <span className="holding-watch-summary-label">실시간 감시</span>
 
       <div className="holding-watch-health">
         <div>
           <span>Watch 정책</span>
           <strong>
-            {systemStatus?.migration_required
-              ? "준비 필요"
-              : systemStatus?.policy_enabled
-                ? "운영 감시"
-                : "정책 검증 중"}
+            {watchError ? "조회 실패" : policyCopy.title}
           </strong>
         </div>
         <div>
@@ -170,6 +168,7 @@ export default function HoldingWatchStatus({
       </div>
 
       {watchError && <p className="holding-watch-error">{watchError}</p>}
+      <p className="holding-watch-policy-explanation">{policyCopy.explanation}</p>
 
       {systemStatus?.runtime?.session?.continuity_state === "UNMONITORED" && (
         <p className="holding-watch-continuity">

@@ -716,16 +716,29 @@ def test_ux_redesign1j4_prioritizes_held_management_and_separates_opening_balanc
     assert "HoldingDecisionPanel" in holdings
     assert "위의 보유 판단에서 검토 후 명시적으로 적용할 수 있습니다." in holdings
     assert "applyLatestManagementPlan" not in holdings
-    assert "새 분석 계획 적용" in decision_panel
+    # P0-04 preserves explicit apply behind a two-step price comparison.
+    plan_review = Path(
+        "frontend/src/components/holdingPlanReview.ts"
+    ).read_text(encoding="utf-8")
+    assert "새 분석 계획 비교" in decision_panel
+    assert "이 가격으로 관리 계획 적용" in decision_panel
+    assert "setPendingPlanReview(" in decision_panel
+    assert "pendingPlanReview.key === review.key" in decision_panel
+    assert "onClick={() => void applyPlan(decision, review)}" in decision_panel
     assert "applyHoldingDecisionPlan(" in decision_panel
-    # First plan creation is a valid explicit apply path: there is no active plan
-    # to differ from yet. Existing-plan replacement still requires a newer analysis.
+    assert "management={management}" in holdings
     assert "const hasApplicableAnalysis = Boolean(" in decision_panel
     assert "decision.source_active_plan_id == null" in decision_panel
     assert "|| decision.evidence.latest_analysis_differs_from_active_plan" in decision_panel
-    assert "&& hasApplicableAnalysis" in decision_panel
-    assert "&& decision.evidence.new_plan_horizon_activatable" in decision_panel
-    assert "&& !decision.evidence.proposal_conflict" in decision_panel
+    # A first plan is allowed without an active plan; replacements require a new
+    # analysis. All writes fail closed on stale, mismatched and unsafe proposals.
+    assert "decision.source_active_plan_id !== null && !decision.evidence.latest_analysis_differs_from_active_plan" in plan_review
+    assert "decision.stale || decision.effective_status" in plan_review
+    assert "!decision.evidence.new_plan_horizon_activatable" in plan_review
+    assert "decision.evidence.proposal_conflict" in plan_review
+    assert "decision.evidence.proposal_ready !== true" in plan_review
+    assert "proposal.analysis_revision_id !== decision.source_analysis_revision_id" in plan_review
+    assert "stop < Number(active.stop_price)" in plan_review
 
     # STALE decisions remain review-only until the user explicitly rebuilds them.
     # NEXT-2 supplies saved decision state from the parent workspace facade instead
@@ -823,7 +836,13 @@ def test_ux_redesign1j5_scanner_defaults_to_reading_and_separates_explicit_work(
     assert "const evidencePreferredKey = preferredCandidateKeyRef.current" in poll
     assert "const preferredKey = evidencePreferredKey ?? scannerSelectionToPreserveRef.current" in poll
     assert "latestCandidates.find" in poll
-    assert "latest.result.candidates[0]" in poll
+    # Candidate restoration is now a tested helper: ordinary Scanner results
+    # retain the old fallback-to-first behavior, but a rechecked candidate
+    # removed by filters must never silently select an unrelated stock.
+    assert "scannerSelectionAfterRecheck(latest.result, preferredKey)" in poll
+    view = Path("frontend/src/components/scannerCandidateRecheckView.ts").read_text(encoding="utf-8")
+    assert "result.candidates?.[0]" in view
+    assert "if (recheck)" in view
 
     # Evidence preparation still keeps its dedicated candidate and is not automatic.
     evidence_start = scanner.index("async function prepareCandidateEvidence")
@@ -1649,7 +1668,13 @@ def test_vnp4s1_watch_status_is_observational_and_adds_no_primary_action_buttons
     assert '"정책 검증 중"' in panel
     assert '"감시 공백"' in panel
     assert '"기준 확인됨"' in panel
-    assert '"감시 중"' in panel
+    # S31-O: stored settings must not be presented as live Watch operation.
+    assert '"감시 설정 기록 있음 · 가동 미확인"' in panel
+    assert '"감시 중"' not in panel
+    assert "holdingsWatchPolicyText(systemStatus)" in panel
+    policy_text = Path("frontend/src/components/holdingsWatchPolicyText.ts").read_text(encoding="utf-8")
+    assert '"OPERATING_THRESHOLDS_UNAPPROVED"' in policy_text
+    assert "runtimeConfirmed: false" in policy_text
     assert "알림 보기" in panel
     assert "markWatchNotificationRead" in panel
     assert "감시 시작" not in panel

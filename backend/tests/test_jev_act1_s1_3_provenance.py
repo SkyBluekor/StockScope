@@ -408,3 +408,62 @@ def test_no_pin_or_wrong_baseline_is_fail_closed():
         request_policy_hash=forged.policy_hash, pin=forged,
     )[0]
     assert verify_candidate_policy_binding({"strategy": "other"}, pin)[0] is False
+
+def test_p005_forward_rank_provenance_and_legacy_null_remain_distinct(tmp_path, monkeypatch):
+    """G0e: a newly written proven rank must not validate a historical NULL rank."""
+    from app.jev.scanner_integrity_s7_1 import assess_frozen_candidate
+
+    pin, candidate, result, request, _ = _fixture(tmp_path, monkeypatch)
+    catalog = _catalog(tmp_path)
+    capture = _store(catalog, pin, result, request, "p005-forward")
+    assert capture["status"] == "COMPLETE"
+    [stored] = catalog.list_samples(capture_run_id=capture["id"])
+    assert stored["rank"] == candidate["priority"]["rank"] == 1
+    assert stored["snapshot_hash"] == digest_json(stored["snapshot"])
+    assert stored["snapshot"]["semantic_policy_provenance"]["status"] == "VERIFIED_PINNED_EXECUTION"
+
+    current = assess_frozen_candidate(capture, stored)
+    assert current["rank"]["status"] == "PASS"
+    assert current["policy"]["status"] == "PASS"
+    assert current["external_provider_eligible"] is False
+
+    # Model the immutable older capture's rank-column omission in memory.
+    # Never backfill the SQLite row or promote the old snapshot.
+    historical = assess_frozen_candidate(capture, {**stored, "rank": None})
+    assert historical["rank"]["status"] == "FAIL"
+    assert historical["rank"]["code"] == "RANK_MISSING"
+    assert historical["category"] == "INVALID"
+    assert historical["locally_validated"] is False
+    assert catalog.list_samples(capture_run_id=capture["id"])[0]["rank"] == 1
+    with sqlite3.connect(catalog.db_path) as conn:
+        with pytest.raises(sqlite3.IntegrityError, match="immutable"):
+            conn.execute(
+                "UPDATE prospective_recommendation_sample SET rank=NULL "
+                "WHERE capture_run_id=?",
+                (capture["id"],),
+            )
+
+
+def test_p005_conflicting_rank_remains_null_in_new_capture(tmp_path, monkeypatch):
+    """Do not invent DB rank from list order when Scanner rank sources disagree."""
+    from app.jev.scanner_integrity_s7_1 import assess_frozen_candidate
+
+    pin, candidate, result, request, _ = _fixture(tmp_path, monkeypatch)
+    candidate["rank"] = 2  # Scanner priority.rank=1; direct rank is conflicting.
+    original = deepcopy(candidate)
+    catalog = _catalog(tmp_path)
+    capture = _store(catalog, pin, result, request, "p005-conflict")
+    assert capture["status"] == "COMPLETE"  # Capture finished; NOT evidence approval.
+    [stored] = catalog.list_samples(capture_run_id=capture["id"])
+    assert stored["rank"] is None
+    assert stored["snapshot"]["priority"]["rank"] == 1
+    assert stored["snapshot"]["rank"] == 2
+    assert stored["snapshot_hash"] == digest_json(stored["snapshot"])
+    assert stored["snapshot"]["semantic_source_v2"]["readiness"]["local_semantic_status"] == "LOCAL_INCOMPLETE"
+    assert candidate == original
+
+    assessment = assess_frozen_candidate(capture, stored)
+    assert assessment["rank"]["status"] == "FAIL"
+    assert assessment["rank"]["code"] == "RANK_REPRO_CONFLICT"
+    assert assessment["category"] == "INVALID"
+    assert assessment["external_provider_eligible"] is False

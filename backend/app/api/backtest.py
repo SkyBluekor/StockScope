@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import date
 import os
 from pathlib import Path
 from typing import Literal
@@ -17,7 +18,12 @@ from app.backtest.exit_policy_validation_runner import (
 )
 from app.backtest.risk_validation import RiskPolicyValidationService
 from app.backtest.scanner import StockScannerService
-from app.backtest.data_preparation_plan import plan_scanner_data
+from app.backtest.market_store import HistoricalMarketStore
+from app.backtest.scanner_candidate_recheck import (
+    attach_recheck_execution_lineage,
+    independently_recheck_unreturned_candidate,
+)
+from app.backtest.data_preparation_plan import plan_scanner_data, plan_scanner_evidence_data
 from app.backtest.production_exit_policy import ProductionExitPolicyRegistry
 from app.core.config import PROJECT_ROOT, get_settings
 from app.prospective import (
@@ -40,6 +46,32 @@ from app.strategy.production_selection_policy import (
 )
 
 router = APIRouter(prefix="/backtest", tags=["backtest"])
+
+
+def _scanner_service(api_key: str | None) -> StockScannerService:
+    """Use the explicitly configured market DB for UI preview and live Scanner.
+
+    Without an override preserve the pinned production Scanner defaults.
+    """
+    store_path = os.getenv("STOCKSCOPE_MARKET_STORE_DB") or os.getenv("STOCKSCOPE_MARKET_DB")
+    if store_path:
+        return StockScannerService(
+            KrxProvider(api_key),
+            market_store=HistoricalMarketStore(Path(store_path)),
+        )
+    return StockScannerService(KrxProvider(api_key))
+
+
+def _selection_policy_registry() -> ProductionStrategySelectionRegistry:
+    """Use the same policy runtime binding as Strategy Governance.
+
+    No automatic policy activation: missing or invalid refs still resolve to
+    the existing verified LEGACY/ROLLBACK fallbacks.
+    """
+    override = (os.getenv("STOCKSCOPE_STRATEGY_SELECTION_RUNTIME_DIR") or "").strip()
+    if override:
+        return ProductionStrategySelectionRegistry(runtime_dir=Path(override))
+    return ProductionStrategySelectionRegistry()
 
 
 def _prospective_service() -> ProspectiveService:
@@ -75,6 +107,20 @@ def _prospective_reference_capture_service() -> ProspectiveReferenceCaptureServi
 
 
 
+class ScannerRecheckCandidate(BaseModel):
+    """Client-supplied reference, not independently verified historical evidence."""
+    market: Literal["KOSPI", "KOSDAQ"]
+    code: str = Field(..., pattern=r"^[0-9]{6}$")
+    name: str = Field(default="", max_length=120)
+    source_data_date: date
+    source_action: str = Field(default="", max_length=80)
+    source_strategy: str = Field(default="", max_length=80)
+    source_input_fingerprint_id: str | None = Field(default=None, max_length=128)
+    source_policy_id: str | None = Field(default=None, max_length=160)
+    source_policy_hash: str | None = Field(default=None, max_length=128)
+    source_capture_id: str | None = Field(default=None, max_length=160)
+
+
 class ScannerRequest(BaseModel):
     market_scope: Literal["ALL", "KOSPI", "KOSDAQ"] = "ALL"
     as_of_date: str | None = None
@@ -83,6 +129,10 @@ class ScannerRequest(BaseModel):
     force_refresh: bool = False
     allow_large_sync: bool = False
     horizon_intent: str | None = None
+    # Default preserves the old Scanner execution contract. This explicit
+    # mode records a user-selected time horizon for local V4 inspection ONLY.
+    horizon_purpose: Literal["PRODUCTION_POLICY", "LOCAL_REVIEW_ONLY"] = "PRODUCTION_POLICY"
+    recheck_candidate: ScannerRecheckCandidate | None = None
 
 
 class ScannerEvidencePrepareRequest(BaseModel):
@@ -92,6 +142,7 @@ class ScannerEvidencePrepareRequest(BaseModel):
     data_end: str = Field(..., min_length=10, max_length=10)
     market_scope: Literal["ALL", "KOSPI", "KOSDAQ"] = "ALL"
     candidate_limit: int = Field(default=5, ge=1, le=10)
+    allow_large_sync: bool = False
 
 
 class ScannerFreshnessRequest(BaseModel):
@@ -548,7 +599,7 @@ async def _run_scanner_job(
     api_key: str | None,
     selection_policy_pin: SelectionPolicyPin,
 ) -> None:
-    service = StockScannerService(KrxProvider(api_key))
+    service = _scanner_service(api_key)
     prospective = _prospective_service()
     progress_context: dict[str, object] = {
         "completed_stages": [],
@@ -630,10 +681,20 @@ async def _run_scanner_job(
             selection_policy_pin=selection_policy_pin,
         )
         if isinstance(result, dict):
+            if payload.recheck_candidate is not None:
+                previous = payload.recheck_candidate.model_dump(mode="json")
+                result["candidate_recheck"] = independently_recheck_unreturned_candidate(
+                    service=service,
+                    previous=previous,
+                    scanner_result=result,
+                    selection_policy_pin=selection_policy_pin,
+                )
             rank_evidence_rows = extract_rank_evidence_from_audit(result)
-            result["horizon_context"] = resolve_horizon_context(
-                payload.horizon_intent
-            ).to_dict()
+            horizon_context = resolve_horizon_context(payload.horizon_intent).to_dict()
+            horizon_context["purpose"] = payload.horizon_purpose
+            # Record context only; the Scanner's baseline scoring, risk and
+            # selection policy remain exactly as they were.
+            result["horizon_context"] = horizon_context
             prospective_capture = prospective.try_finalize_scanner_capture(
                 source_job_id=job_id,
                 payload=payload,
@@ -663,6 +724,12 @@ async def _run_scanner_job(
                 prospective_capture.get("canonical_capture_id")
                 or prospective_capture.get("capture_id")
             )
+            if payload.recheck_candidate is not None:
+                result["candidate_recheck"] = attach_recheck_execution_lineage(
+                    recheck=result["candidate_recheck"],
+                    source_job_id=job_id,
+                    capture=prospective_capture,
+                )
             enrich_scanner_result_with_ai_presentation(result)
             result["execution_mode"] = "BASELINE_ONLY"
             result["jev_shadow"] = {
@@ -727,11 +794,23 @@ def scanner_data_plan(payload: ScannerDataPlanRequest) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.post("/scanner/evidence/data-plan")
+def scanner_evidence_data_plan(payload: ScannerEvidencePrepareRequest) -> dict:
+    """Read-only full-window evidence estimate; no provider or runtime writes."""
+    try:
+        return plan_scanner_evidence_data(
+            market=payload.market,
+            data_end=payload.data_end,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post("/scanner/freshness")
 async def prepare_scanner_freshness(payload: ScannerFreshnessRequest) -> dict:
     """Resolve and persist the latest confirmed EOD before a user starts Scanner analysis."""
     settings = get_settings()
-    service = StockScannerService(KrxProvider(settings.krx_api_key))
+    service = _scanner_service(settings.krx_api_key)
     try:
         return await service.prepare_latest_confirmed_data(
             market_scope=payload.market_scope,
@@ -747,7 +826,7 @@ async def prepare_scanner_freshness(payload: ScannerFreshnessRequest) -> dict:
 async def scanner_data_integrity_audit(payload: ScannerDataIntegrityAuditRequest) -> dict:
     """Force-read KRX for one EOD day, compare local cache/store, and correct the exact snapshot."""
     settings = get_settings()
-    service = StockScannerService(KrxProvider(settings.krx_api_key))
+    service = _scanner_service(settings.krx_api_key)
     try:
         return await service.audit_input_data(
             market_scope=payload.market_scope,
@@ -768,7 +847,7 @@ async def _run_scanner_evidence_job(
     api_key: str | None,
     selection_policy_pin: SelectionPolicyPin,
 ) -> None:
-    service = StockScannerService(KrxProvider(api_key))
+    service = _scanner_service(api_key)
 
     def update_progress(progress_payload: dict) -> None:
         if backtest_jobs.is_cancelled(job_id):
@@ -822,10 +901,31 @@ async def _run_scanner_evidence_job(
 
 @router.post("/scanner/evidence/jobs", status_code=202)
 async def create_scanner_evidence_job(payload: ScannerEvidencePrepareRequest) -> dict:
+    # Server-side gate is mandatory: a client may call this route directly,
+    # bypass the UI, or retry after local KRX usage changes. Do not allocate
+    # a job, initialize a provider, or start a long historical fetch before
+    # a read-only evidence plan passes the explicit approval/budget checks.
+    try:
+        estimate = plan_scanner_evidence_data(market=payload.market, data_end=payload.data_end)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    status = estimate["status"]
+    if status in {"BLOCKED_SCHEMA", "REVIEW_BUDGET"}:
+        raise HTTPException(status_code=409, detail={
+            "code": "EVIDENCE_DATA_PREFLIGHT_BLOCKED",
+            "plan_status": status,
+            "message": "3년 자료 준비 전에 저장소와 KRX 일일 예산을 확인해야 합니다.",
+        })
+    if status == "APPROVAL_REQUIRED" and not payload.allow_large_sync:
+        raise HTTPException(status_code=409, detail={
+            "code": "EVIDENCE_LARGE_SYNC_APPROVAL_REQUIRED",
+            "estimated_missing_krx_slots": estimate["estimated_missing_krx_slots"],
+            "message": "3년 과거 데이터 대량 준비에 대한 명시적 동의가 필요합니다.",
+        })
     settings = get_settings()
     job = backtest_jobs.create()
     selection_policy_pin = (
-        ProductionStrategySelectionRegistry().pin_active_selection_policy()
+        _selection_policy_registry().pin_active_selection_policy()
     )
     task = asyncio.create_task(
         _run_scanner_evidence_job(
@@ -839,12 +939,36 @@ async def create_scanner_evidence_job(payload: ScannerEvidencePrepareRequest) ->
     return job.public()
 
 
+def _validate_scanner_recheck_request(payload: ScannerRequest) -> None:
+    selected = payload.recheck_candidate
+    if selected is None:
+        return
+    if payload.as_of_date is not None or not payload.force_refresh:
+        raise HTTPException(status_code=400, detail={
+            "code": "RECHECK_REQUIRES_LATEST_EOD",
+            "message": "후보 다시 판단은 고정된 과거 날짜가 아니라 최신 확정 EOD 재계산으로만 실행합니다.",
+        })
+    if payload.market_scope not in ("ALL", selected.market):
+        raise HTTPException(status_code=400, detail={
+            "code": "RECHECK_MARKET_SCOPE_MISMATCH",
+            "message": "선택 후보의 시장이 새로운 Scanner 분석 범위에 포함돼야 합니다.",
+        })
+
+
 @router.post("/scanner/jobs", status_code=202)
 async def create_scanner_job(payload: ScannerRequest) -> dict:
+    _validate_scanner_recheck_request(payload)
     try:
-        require_horizon_activatable(
-            resolve_horizon_context(payload.horizon_intent)
-        )
+        horizon = resolve_horizon_context(payload.horizon_intent)
+        if payload.horizon_purpose == "LOCAL_REVIEW_ONLY":
+            if horizon.is_legacy:
+                raise HorizonPolicyError(
+                    "HORIZON_LOCAL_REVIEW_REQUIRES_EXPLICIT_INTENT",
+                    "로컬 의미 검토에는 단기·중기·장기 중 하나를 명시해야 합니다.",
+                )
+            # Not activation: unapproved numeric rules must stay pending.
+        else:
+            require_horizon_activatable(horizon)
     except HorizonPolicyError as exc:
         raise HTTPException(
             status_code=409,
@@ -854,7 +978,7 @@ async def create_scanner_job(payload: ScannerRequest) -> dict:
     settings = get_settings()
     job = backtest_jobs.create()
     selection_policy_pin = (
-        ProductionStrategySelectionRegistry().pin_active_selection_policy()
+        _selection_policy_registry().pin_active_selection_policy()
     )
     _prospective_service().try_begin_scanner_capture(
         source_job_id=job.job_id,

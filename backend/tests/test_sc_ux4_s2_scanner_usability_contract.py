@@ -34,7 +34,12 @@ def test_collapsing_more_candidates_does_not_reset_selection() -> None:
 
     workspace = panel.index('className="scanner-decision-workspace"')
     compare = panel.index("<ScannerRankComparison result={result} />", workspace)
-    expand = panel.index("{result.more_candidates.length > 0 && (", workspace)
+    # S30 keeps Scanner's original data untouched but displays whole tie groups
+    # across the top/more boundary; only still-hidden groups require expansion.
+    assert "selectedSampleIndex >= displayLayout.visibleFeaturedCount" in panel
+    assert "displayLayout.featured.map((group)" in panel
+    assert "displayLayout.other.map((group)" in panel
+    expand = panel.index("{displayLayout.other.length > 0 && (", workspace)
     detail = panel.index("<CandidateDetail", compare)
     assert workspace < compare < expand < detail
 

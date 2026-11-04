@@ -5,6 +5,8 @@
 
 > 과거 입력 문서(Current State / Recovery Context / Astra handoff)는 현재 checkout의 active 문서가 아니다. 필요한 설계 이유는 `history/StockScope_R4_R5_R5R_설계변경이력.md`와 Git history에서 확인한다.
 
+> **2026-10-28 실행 우선순위 갱신:** 아래 2026-10-06 절은 과거의 실행 구상입니다. 현재 작업은 **[JEV 실사용 마스터 계획](JEV_LIVE_INTEGRATION_MASTER_PLAN.md)의 JEV-LIVE-01~06 순서**, 다음 채팅 인계는 [JEV_NEXT_CHAT_HANDOFF](JEV_NEXT_CHAT_HANDOFF.md)를 따릅니다. G2-05는 보류. 기존 TypeSafe HTTP 어댑터와 V4 서비스는 이미 존재하지만 사용자용 JEV 실행은 비활성 상태이며, 실 KRX 유래 입력의 외부 전송은 S7.4 권한/시점 기준에 따라 HOLD입니다. **합성 데이터 실모델 연동 개발을 먼저 진행**하고, 실후보 호출은 확인된 허용 범위에 한해 확장합니다.
+
 ## 현재 실행 순서 — 2026-10-06
 
 이 절이 과거 문서의 오래된 NEXT 표현보다 우선한다.
