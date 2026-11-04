@@ -134,6 +134,11 @@ class StockChoiceCatalog:
         ).fetchone()
         if version is None or version["value"] != SCHEMA:
             raise StockChoiceStorageError("CHOICE_SCHEMA_UNSUPPORTED")
+        columns = {r["name"] for r in db.execute(
+            "PRAGMA table_info(jev_stock_choice_review)"
+        )}
+        if "cost_basis_ref" not in columns:
+            raise StockChoiceStorageError("CHOICE_MIGRATION_REQUIRED")
 
     @staticmethod
     def _public(row: sqlite3.Row) -> dict[str, Any]:
