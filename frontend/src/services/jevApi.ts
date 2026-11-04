@@ -172,6 +172,79 @@ export function getJevCandidateReviewFit(captureId: string, sampleIndex: number)
   );
 }
 
+/** JEV-B3: one real frozen stock, Choice result (independent of V4 Noul). */
+export type JevStockChoiceSaved = {
+  id: string;
+  review_identity: string;
+  canonical_capture_id: string;
+  sample_index: number;
+  market: string;
+  ticker: string;
+  snapshot_hash: string;
+  status: "RESERVED" | "VALID" | "UNKNOWN_BILLING";
+  priority_choice: "CHECK_MISSING_EVIDENCE" | "CHECK_CONFLICTING_SIGNALS" |
+    "CHECK_RISK_CONTEXT" | "NO_DISTINCT_REVIEW_PRIORITY" | null;
+  model_requested: string;
+  model_returned: string | null;
+  approved_at: string;
+  requested_at: string;
+  completed_at: string | null;
+  cost_usd: number | null;
+  cost_unknown: boolean;
+  error_code: string | null;
+  usage: {input_tokens: number; output_tokens: number} | null;
+};
+export type JevStockChoicePreview = {
+  version: "JEV_STOCK_REVIEW_ROUTING_V1";
+  status: "NOT_READY" | "PREVIEW_READY";
+  reason_code: string;
+  approved_for_paid_call: false;
+  approved_for_market_decision: false;
+  model_requested: string;
+  real_model_calls: 0;
+  candidate: {
+    capture_id: string; sample_index: number; market: string;
+    ticker: string; snapshot_hash: string; horizon_intent: string;
+  };
+  latest_review: JevStockChoiceSaved | null;
+  preview: null | {
+    state: {
+      review_scope: string; strategy_intent: string;
+      review_notes: string; horizon_intent: string;
+      internal_risk_rule_description: string;
+    };
+    request_body_sha256: string;
+    review_identity: string;
+    question_hash: string;
+    model: string;
+    cost_status: "UNKNOWN";
+    expires_at_utc: string;
+  };
+  approval_token: string | null;
+};
+
+export function getJevStockChoicePreview(captureId: string, sampleIndex: number) {
+  const params = new URLSearchParams({
+    capture_id: captureId, sample_index: String(sampleIndex),
+  });
+  return jevJson<JevStockChoicePreview>(
+    "/api/simulation/jev/stock-choice/preview?" + params.toString(),
+  );
+}
+
+export function executeJevStockChoice(payload: {
+  capture_id: string; sample_index: number; approval_token: string;
+  request_body_sha256: string; explicit_approval: true;
+}) {
+  return jevJson<{status: string; reused: boolean; review: JevStockChoiceSaved}>(
+    "/api/simulation/jev/stock-choice/reviews", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
 export type JevManualReviewRequest = {
   capture_id: string;
   sample_index: number;
