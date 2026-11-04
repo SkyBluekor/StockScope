@@ -508,7 +508,7 @@ export default function ScannerAiReview(props: Props) {
   const fitExplanation: Record<JevCandidateReviewFit["status"], string> = {
     LOCAL_ALREADY_RESOLVED: "이 후보의 전략 조건 관계는 로컬에서 이미 판정됐습니다. 기존 V4 의미 충돌 질문으로 다시 검토할 대상이 아닙니다.",
     SOURCE_RIGHTS_HOLD: "전략 조건 검토 형식은 맞지만, 입력에 포함된 시장 자료의 전송 권한과 이용 가능 시각이 확인되지 않아 실제 모델 호출은 차단됩니다.",
-    INPUT_CONTRACT_MISMATCH: "이 후보는 기존 V4 의미 충돌 질문에 필요한 입력을 갖추지 못했습니다. 종목·시장 자체를 평가하려면 별도의 질문 계약 검토가 필요합니다.",
+    INPUT_CONTRACT_MISMATCH: "이 후보는 이전 V4 전략 의미 검토의 입력 조건을 충족하지 않습니다. 새 Choice 검토는 위 상태에서 별도로 확인하세요.",
     NOT_ENTRY_CANDIDATE: "이 종목은 현재 진입 후보가 아니므로 기존 V4 검토 대상이 아닙니다.",
   };
   async function inspectFit() {
@@ -536,12 +536,14 @@ export default function ScannerAiReview(props: Props) {
     key: string; value: JevStockChoicePreview;
   } | null>(null);
   const [choiceConsent, setChoiceConsent] = useState(false);
+  const [choiceLookupErrorKey, setChoiceLookupErrorKey] = useState<string | null>(null);
   const [choiceSubmitting, setChoiceSubmitting] = useState(false);
   const [choiceSubmitError, setChoiceSubmitError] = useState(false);
   const currentChoice = choiceQuery?.key === selectedKey ? choiceQuery.value : null;
   useEffect(() => {
     let active = true;
     setChoiceQuery(null);
+    setChoiceLookupErrorKey(null);
     setChoiceConsent(false);
     setChoiceSubmitting(false);
     setChoiceSubmitError(false);
@@ -552,17 +554,41 @@ export default function ScannerAiReview(props: Props) {
           || value.candidate.sample_index !== sampleIndex
           || value.candidate.market !== candidate.market
           || value.candidate.ticker !== candidate.code
-          || !value.candidate.snapshot_hash) return;
+          || !value.candidate.snapshot_hash) {
+        setChoiceLookupErrorKey(selectedKey);
+        return;
+      }
       const review = value.latest_review;
       if (review && (review.canonical_capture_id !== captureId
           || review.sample_index !== sampleIndex || review.market !== candidate.market
           || review.ticker !== candidate.code
-          || review.snapshot_hash !== value.candidate.snapshot_hash)) return;
+          || review.snapshot_hash !== value.candidate.snapshot_hash)) {
+        setChoiceLookupErrorKey(selectedKey);
+        return;
+      }
       setChoiceQuery({key: selectedKey, value});
-    }).catch(() => { /* The existing JEV summary stays unchanged on unavailable stores. */ });
+    }).catch(() => {
+      if (active) setChoiceLookupErrorKey(selectedKey);
+    });
     return () => { active = false; };
   }, [selectedKey, captureId, sampleIndex, candidate.market, candidate.code]);
   const choiceSaved = currentChoice?.latest_review ?? null;
+  const choiceNotReadyReasons: Record<string, string> = {
+    CHOICE_SOURCE_RIGHTS_UNVERIFIED: "실제 종목 입력의 외부 AI 전송 권한 미확인",
+    CHOICE_MIGRATION_REQUIRED: "Choice 저장소 준비 필요",
+    CHOICE_SCHEMA_UNSUPPORTED: "Choice 저장소 버전 확인 필요",
+    CHOICE_SOURCE_BINDING_MISMATCH: "입력과 종목의 연결 불일치",
+    CHOICE_FIELD_NOT_ALLOWLISTED: "전송 가능한 입력 필드 부족",
+    CHOICE_TIME_INVALID: "입력 관측 시각 확인 필요",
+  };
+  const choiceStatus = !captureId ? "저장된 분석 캡처 없음"
+    : choiceLookupErrorKey === selectedKey ? "Choice 조회 오류 · 서버 연결 확인 필요"
+    : !currentChoice ? "Choice 상태 확인 중"
+    : choiceSaved?.status === "VALID" ? "실제 저장된 추가 검토 있음"
+    : choiceSaved?.status === "RESERVED" ? "1회 검토 요청 진행 중"
+    : choiceSaved?.status === "UNKNOWN_BILLING" ? "응답·과금 상태 확인 필요"
+    : currentChoice.status === "PREVIEW_READY" ? "검증된 입력 확인 · 실행 승인 필요"
+    : choiceNotReadyReasons[currentChoice.reason_code] ?? "Choice 실행 조건 미충족";
   const canSubmitChoice = currentChoice?.status === "PREVIEW_READY"
     && Boolean(currentChoice.approval_token && currentChoice.preview);
   const choiceLabel: Record<string, string> = {
@@ -625,7 +651,8 @@ export default function ScannerAiReview(props: Props) {
         <strong className="scanner-jev-compact-stock">{candidate.name || candidate.code} ({candidate.code})</strong>
         <dl>
           <div><dt>Scanner 판단</dt><dd>{candidate.action_label || candidate.action}</dd></div>
-          <div><dt>JEV 검토</dt><dd data-jev-primary-status={state.state}>{visibleStatus}</dd></div>
+          <div><dt>기존 JEV 검토</dt><dd data-jev-primary-status={state.state}>{visibleStatus}</dd></div>
+          <div><dt>새 Choice 검토</dt><dd data-jev-choice-status="true">{choiceStatus}</dd></div>
           {hasVerifiedReview && review?.completed_at && (
             <div><dt>검토 시각</dt><dd>{review.completed_at}</dd></div>
           )}
@@ -681,7 +708,7 @@ export default function ScannerAiReview(props: Props) {
                 void inspectFit();
               }
             }}>
-            <summary>이 종목에서 JEV를 실행할 수 없는 이유</summary>
+            <summary>기존 V4 전략 검토 불가 사유</summary>
             {!captureId ? <p>저장된 분석 캡처가 없어 검토 조건을 확인할 수 없습니다.</p>
               : selectedFit?.state === "loading" ? <p role="status">선택 종목의 검토 조건을 확인 중입니다.</p>
               : selectedFit?.state === "error" ? <p role="alert">검토 조건 확인에 실패했습니다. 기존 Scanner 판단은 그대로 유지됩니다.</p>
