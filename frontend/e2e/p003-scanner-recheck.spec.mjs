@@ -444,3 +444,46 @@ test("B preflight: selected stored stock fit is read only, user-triggered and ne
   expect(violations).toEqual([]);
   expect(pageErrors).toEqual([]);
 });
+
+test("B3 stored Choice is bound to selected capture, never leaked on stock switch",async({page})=>{
+  const {calls,violations,pageErrors}=await setup(page,{matched:true});
+  await page.route("**/api/simulation/jev/stock-choice/preview?**",route=>{
+    const query=new URL(route.request().url()).searchParams;
+    const cap=query.get("capture_id"), index=Number(query.get("sample_index"));
+    const old=cap==="old-cap" || index===0;
+    const candidate={
+      capture_id:cap, sample_index:index,
+      market:old?"KOSPI":"KOSDAQ",ticker:old?"145720":"012345",
+      snapshot_hash:old?"fixture-previous-snapshot":"fixture-next-snapshot",
+      horizon_intent:"SHORT",
+    };
+    return fulfill(route,{
+      version:"JEV_STOCK_REVIEW_ROUTING_V1",
+      status:"NOT_READY",reason_code:"CHOICE_SOURCE_RIGHTS_UNVERIFIED",
+      approved_for_paid_call:false,approved_for_market_decision:false,
+      model_requested:"jev-1.14.0",real_model_calls:0,
+      candidate,preview:null,approval_token:null,
+      latest_review:old?{
+        id:"stored-choice-only-for-old",review_identity:"fixture-choice-identity",
+        canonical_capture_id:cap,sample_index:index,market:"KOSPI",ticker:"145720",
+        snapshot_hash:candidate.snapshot_hash,status:"VALID",
+        priority_choice:"CHECK_MISSING_EVIDENCE",model_requested:"jev-1.14.0",
+        model_returned:"jev-1.14.0",approved_at:"2026-10-21T00:00:00Z",
+        requested_at:"2026-10-21T00:00:00Z",completed_at:"2026-10-21T00:01:00Z",
+        cost_usd:null,cost_unknown:true,error_code:null,usage:{input_tokens:10,output_tokens:5},
+      }:null,
+    });
+  });
+  await page.reload();
+  await page.getByRole("tab",{name:"AI 검토"}).click();
+  await expect(page.locator('[data-jev-choice-stored="true"]')).toContainText(
+    "추가 자료를 먼저 확인",
+  );
+  await page.getByRole("button",{name:"이 후보 최신 확정 일봉으로 다시 판단"}).click();
+  await page.getByRole("button",{name:/가상 다른 후보 선택/}).click();
+  await expect(page.locator(".scanner-selected-detail")).toContainText("가상 다른 후보");
+  await expect(page.locator('[data-jev-choice-stored="true"]')).toHaveCount(0);
+  expect(calls.filter(x=>x.method==="POST"&&x.path.includes("/jev/"))).toHaveLength(0);
+  expect(violations).toEqual([]);
+  expect(pageErrors).toEqual([]);
+});
