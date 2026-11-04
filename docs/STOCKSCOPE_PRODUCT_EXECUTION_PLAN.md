@@ -4,7 +4,7 @@
 >
 > **실제 사용자 브랜치: `codex/p0-01-mvp-c1-c2-integration-20261022` · 로컬 `C:\Projects\StockScope`**
 >
-> **현재 작업: JEV-B READONLY_V4_FIT_IMPLEMENTED / CI_4_OF_4_PASS / REAL_TYPESAFE_CALL_BLOCKED / JEV_A_WINDOWS_UAT_PARTIAL / PRODUCTION_POLICY_FROZEN.** GLOBAL-02-S2 오프라인 계약·Windows 합성 검증 완료, UN 실자료 자동 추출 권리·발표시각 미확인으로 live BLOCKED; S3/S4 보류. STRATEGY-01은 Windows 실데이터 10전략 연구 실행 완료·전략당 2~4건으로 성능 판정 보류. 생산 전략/Risk/JEV/기간 정책은 동결한다. GLOBAL-01-S2의 Windows Scanner 참고표시는 검증 완료(개인·공개 이용권은 별도 확인 중). 생산 전략·Risk 정책은 변경하지 않는다. MACRO-02는 사후 연구 종료(생산 판단 미승인), MACRO-01 표시는 유지한다. 이 문서는 현재 사용 브랜치에서 다음 제품 작업을 관리하는 단일 기준이다. `codex/jev-reviewer-shadow-bridge`의 오래된 계획서는 역사적 근거 자료이며 **현재 브랜치에 자동 포함되지 않는다**. 기존 P0 Scanner·Holdings·JEV 작업, 동결된 Strategy/Risk/Scanner 계약을 전부 보존한다. 다른 브랜치 전체 병합 금지.
+> **다음 작업: JEV-B2 SINGLE_STOCK_REVIEW_QUESTION_AND_INPUT_CONTRACT_SPEC_READY / IMPLEMENTATION_NOT_STARTED / REAL_TYPESAFE_CALL_NOT_APPROVED / JEV_A_WINDOWS_UAT_PARTIAL / PRODUCTION_POLICY_FROZEN.** GLOBAL-02-S2 오프라인 계약·Windows 합성 검증 완료, UN 실자료 자동 추출 권리·발표시각 미확인으로 live BLOCKED; S3/S4 보류. STRATEGY-01은 Windows 실데이터 10전략 연구 실행 완료·전략당 2~4건으로 성능 판정 보류. 생산 전략/Risk/JEV/기간 정책은 동결한다. GLOBAL-01-S2의 Windows Scanner 참고표시는 검증 완료(개인·공개 이용권은 별도 확인 중). 생산 전략·Risk 정책은 변경하지 않는다. MACRO-02는 사후 연구 종료(생산 판단 미승인), MACRO-01 표시는 유지한다. 이 문서는 현재 사용 브랜치에서 다음 제품 작업을 관리하는 단일 기준이다. `codex/jev-reviewer-shadow-bridge`의 오래된 계획서는 역사적 근거 자료이며 **현재 브랜치에 자동 포함되지 않는다**. 기존 P0 Scanner·Holdings·JEV 작업, 동결된 Strategy/Risk/Scanner 계약을 전부 보존한다. 다른 브랜치 전체 병합 금지.
 
 ## 1. 제품 목표와 불변 원칙
 
@@ -596,3 +596,64 @@ if ($LASTEXITCODE -eq 0) {
 - Windows 잔여 UAT: 작업 브랜치를 업데이트한 뒤 실제 저장 종목의 AI 검토 탭에서 위 접힘 영역을 직접 열고, 표시된 상태가 선택한 종목과 일치하는지 확인. 다른 저장 후보로 전환했을 때 이전 결과가 남지 않는지도 확인. 이는 **읽기 전용 적격성 확인**으로 유료 요청이 아니다. 이 화면 검증 및 질문 계약 범위 승인 없이는 B 완료로 표시하지 않는다.
 
 **다음 결정:** 현재 V4 의미 충돌 검토만 유지할지, 실제 종목을 대상으로 시장·전략 적합성을 검토하도록 **새 질문의 목적/입력권한/검증 기준을 별도 설계 및 승인할지** 결정해야 한다. '현재 V4가 실주식 종합판단 모델'이라고 표시하지 않는다. 권한 없는 데이터를 새 질문에 투입하지 않으며, 유료 호출은 사용자 실행별 별도 승인 이후에만 가능하다.
+
+
+## 10. 다음 작업 명세 — JEV-B2: 종목 분석 보조 질문·입력 계약 (2026-11-04)
+
+**상태: SPEC_READY / IMPLEMENTATION_NOT_STARTED / PROVIDER_CALLS_ZERO / EXISTING_V4_UNCHANGED.** 직전 JEV-B 읽기 전용 종목별 검토 가능 여부 확인은 CI 4/4 PASS, 하지만 실모델 연결 0건. 이번 작업은 그 진단 기능을 확장하지 않는다. **실제 종목에 대해 모델이 보조할 가치가 있는 새로운 단일 질문 계약**을 코드로 고정하고 최소 합성 테스트까지 완료한다.
+
+### 10.1 목적과 기술적 선택
+
+1. **최종 제품 목적:** StockScope 기존 Scanner 10전략·단/중/장기·Risk·시장·보유 판단을 보존하면서, JEV가 해당 종목의 허용된 근거만 보고 **"다음에 무엇을 재확인할 가치가 큰가"**를 하나 분류한다. 기존 판단을 직접 바꾸거나 주가/수익률/매매 성공 확률을 생성하지 않는다. 사용자는 JEV를 별도 수동 대본 입력기가 아닌 실제 후보의 선택적 보조 검토로 이용해야 한다.
+2. **기존 V4와 명확히 분리:** \`strategy_relation_conflict\`는 작성된 전략 의미 관계 충돌의 잔여 검토 문제. 실종목 \`LOCAL_MATCH\`를 \`RESIDUAL_SEMANTIC_REVIEW\`로 바꾸는 방법은 불허. V4 \`typesafe_questions_v4.py\`·\`typesafe_state_v4.py\`·\`typesafe_policy_v4.py\`의 질문/해시/정책 보존. 새로운 계약 식별자는 \`JEV_STOCK_REVIEW_ROUTING_V1\`(V4 의미 판정 버전 번호 재사용/덮어쓰기 금지).
+3. **JEV 응답 형태:** TypeSafe 공식 \`/v1/systemone\` API의 \`choice\` 질문 1개를 채택하되, 응답 스키마는 공식 문서를 기준으로 구현 단계에 다시 확인한다. 공식 근거: https://docs.typesafe.ai/api/system-one , https://docs.typesafe.ai/primitives/choice . 주관적/비결정적 보조 판단이므로 결과 confidence나 choice 확률을 "주가 상승 확률"이라고 표시하지 않는다. 기존 provider의 \`validate_system_one_response\`는 V4 \`noul\` 전용이므로 그걸 위험하게 일반화하지 말고 **새 질문에 한정한 응답 검증기**를 구현한다.
+
+**고정된 첫 질문 (계약 내용):** "제출된 **사용 허가된 관찰과 종목·전략 검토 문맥**만으로 판단할 때, 기존 로컬 판단에 앞서 가장 먼저 확인할 항목은 무엇인가?" 질문은 **사실 생성·원인 추론·미래 시세 예측**을 금지한다. \`choice\`의 옵션은 다음 네 가지로 제한한다.
+
+| 선택 값 | 해석과 후속 행동 | JEV가 주장하지 않는 것 |
+|---|---|---|
+| \`CHECK_MISSING_EVIDENCE\` | 판단에 필요한 명시 근거/출처/시점이 빠졌는지 확인 | 없는 데이터가 실제로 불리하다는 뜻 아님 |
+| \`CHECK_CONFLICTING_SIGNALS\` | 제공된 허용 입력끼리 상충하거나 해석이 모호한 부분 확인 | 종목의 상승/하락 예측 아님 |
+| \`CHECK_RISK_CONTEXT\` | 제공된 내부 위험 조건과 사용자 관찰의 부합 여부 확인 | 새로운 Risk/PANIC 기준이나 거래 중단 명령 아님 |
+| \`NO_DISTINCT_REVIEW_PRIORITY\` | 허용 자료 안에서 별도의 우선 점검 항목을 식별하지 못함 | 안전·매수 승인, 충분한 시장정보 확보를 의미하지 않음 |
+
+서버는 입력이 부족하거나 권리/시점이 불명확하면 **JEV 호출 전 \`ABSTAIN\`/NOT_READY** 처리한다. 선택값을 모델 단독의 절대적 결정으로 취급하지 않고, 추가 확인 항목의 **표시 후보**로만 쓴다. 숫자 임계값/자동 승격은 근거 검증 전 만들지 않는다. 납득 가능한 \`choice\` 경로를 구현할 수 없으면 계약을 \`BLOCKED_CONTRACT_UNVERIFIED\`로 종료하며 임의 \`noul\`로 대체하지 않는다.
+
+### 10.2 입력 프로젝션과 권한 범위
+
+| 입력 필드 | 포함 여부 | 출처·시점 계약 |
+|---|---|---|
+| \`review_scope\` / 질문버전 / 내부 작성 전략의 **원래 문구** | 조건부 허용 | 저장소 자체 저작 또는 별도 사용권 입증 필요 |
+| \`review_notes\` (사용자가 직접 창작한 구체적인 가설·관찰) | 조건부 허용 | 단순 "내가 작성" 체크만으로 충분하지 않음. 기사·시세표·공시·UN 텍스트 및 말 바꾸기 파생값 금지 |
+| \`horizon_intent\` (현재 단·중·장기 선택) | 조건부 허용 | 현재 사용자가 직접 선택한 값인지 확인. 시장 공급자의 저작 컨텐츠로부터 자동 추출한 항목 제외 |
+| \`internal_risk_rule_description\` | 조건부 허용 | 내부 작성된 원래 정책 설명만 허용. 실제 KRX 수치·외부 사실·의미가 보존된 파생 라벨은 별도 권한 확인 전 제외 |
+| \`market_regime\`, \`price\`, \`return\`, \`scanner_pass_counts\`, \`foreign_event\`, \`news\`, \`dart\`, \`unsc\` | 기본 **외부 전송 불허** | 가격/뉴스/공시/UN 제재·그 계산값/번역/요약·출처 불명 라벨 자동 패킷에 넣지 않음 |
+| \`ticker\`, \`market\`, \`capture_id\`, \`sample_index\`, \`snapshot_hash\`, \`data_asof\` | 서버 **로컬 바인딩** | 종목·캡처·시점 식별용. 필요 없으면 모델 payload에 포함하지 않음. 외부 전송에 편입할 경우 필드별 권리 검증 필요 |
+
+- 클라이언트가 보내는 \`source_rights_approved=true\`, \`observed_at\`, \`rights_receipt\` 값만으로 승인하지 않는다. 서버의 신뢰 가능한 권리·출처·시점 확인 근거가 없는 필드는 전부 제외/차단. 사용 허용을 보수적으로 확인한 경우에만 딱 그 목적의 전송 후보를 만들고, **후보만 만들었다고 유료 호출 승인/실전 판단 승인을 뜻하지 않는다**.
+- 최소 한 가지 **종목별로 구분되는 적법한 관찰 또는 검토 가설**이 없으면 요청 생성하지 않는다. 기업명과 템플릿만 채워 실종목 분석처럼 보이는 방식 금지. 사용자의 반복 수작업을 필수 운영 경로로 확정하지 말고, 추후 적법한 자동 데이터가 있을 때 이를 활용할 수 있도록 계약만 만든다.
+- 동일 종목·같은 캡처/입력·질문/모델 계약 → 동일 검토 정체성. 서버가 사용자 UI의 종목명·코드 문자열을 신뢰하지 않고 기존 COMPLETE immutable 캡처와 snapshot_hash를 재검증한다. \`data_asof\`와 \`fetched_at\`·공식 공개시각 구분, 미래 정보 과거 소급 금지.
+- 민감정보/비밀키·외부 데이터 원문·모델 응답 전문은 stdout/GitHub/진단 UI에 출력하거나 영구 저장하지 않는다. 입력/바디 해시 및 허용 여부만 local-only 진단. 기존 Scanner/Simulation/Risk/Holdings DB 수정 금지.
+
+### 10.3 **이번 한 작업에서 실제로 구현할 파일**
+
+**(A) 신규 최소 모듈:** \`backend/app/jev/stock_review_contract_v1.py\`. 내부 상수 \`JEV_STOCK_REVIEW_ROUTING_V1\`, 고정 Choice 질문 구성, 필드별 allowlist + 권리/시점 보수적 validator, 정체성·입력 구별, bounded state 준비, 모델 호출 없는 \`request_preview\` 결과만 구현. 공식 Choice 응답 shape/모델 ID 검증은 타입 단위 함수 또는 필요한 최소 별도 모듈로 작성. 본 단계에 공급자 HTTP POST 금지.
+
+**(B) 기존 코드 재사용:** \`backend/app/jev/typesafe_provider.py\`의 wire 구조 및 HTTP body 바이트 구성 관례, \`scanner_outbound_gate_live_03.py\`의 권한 ≠ 바인딩 검사 원칙, \`review_identity.py\`의 versioned identity 해시, \`scanner_shadow_s7.py\`의 저장 캡처 조회 방식. 단, **기존 V4 리스크/질문/정책 해시를 변경하지 않고, 이미 승인한 raw 시장 데이터가 있는 것으로 가정하지 않는다.**
+
+**(C) 테스트:** \`backend/tests/test_jev_stock_review_contract_v1.py\` 신규. 자체 작성 합성 텍스트에서만 \`choice\` body shape/문항 ID/옵션 집합/정체성 재현성과 fingerprint 안정성 검증. 라이선스 미확인 원천의 문장/수치/파생 라벨, 날짜만 있는 외부 사건, 변조 해시, 시점 불일치, 종목 불일치, 필수 관찰 부재는 유료 전송 후보로 승격 금지. 응답 \`choice\`가 허용 옵션에 없거나 확률·confidence 모델 응답이 형식 위반이면 거부. 10전략/Scanner/Risk/Horizon/Holdings 기존 변경 없음. \`provider_calls=0\`, \`db_writes=0\` 강제.
+
+**(D) 하지 않을 일:** 실제 TypeSafe 호출·유료 재시도·배치·외부 뉴스 수집·UN 권한 우회·기존 JEV-A UI에 추가 접힘 진단기·새 점수/승률 계산·거래 추천·저장 DB 마이그레이션·실시간 투자판단 연결. 현 단계는 제품에 진짜 결과를 보여주었다고 주장하지 않는다.
+
+### 10.4 실행 순서 / 성공 판정
+
+1. 공식 TypeSafe Choice 응답 형식과 기존 프로젝트 provider 계약을 검사하고 **질문 1개와 4개 옵션**을 코드로 동결한다.
+2. 입력 출처/관측 시점이 확실한 자체 작성 합성 상태만 projector에 넣고 \`state/questions/model\` **요청 프리뷰**를 메모리에서 만든다. 권한/자료 없으면 설명 가능한 \`INPUT_NOT_ELIGIBLE\`로 중단한다.
+3. 허용/차단 케이스를 fixture에서 검증하고 검증 불가 원천·client self-certification·payload 변조·종목 혼합을 fail-closed 테스트한다. 외부 HTTP 요청/DB write 0으로 확인한다.
+4. Python 3.11/3.14, Frontend, Windows Fresh Clone 기존 CI 4/4 통과를 확인하고 기존 단일 실행계획서에 결과·한계를 기록한다. 사용자의 실제 종목 Windows 캡처는 **자동으로 JEV 권한을 부여하지 않으며** 별도 A 전환 인수 미확인을 보존한다.
+
+**통과:** \`JEV_B2_QUESTION_CONTRACT_TESTED_OFFLINE\`: 하나의 Choice 질문과 허용/금지 입력 경계가 코드·테스트로 재현되고 기존 V4·Scanner·Risk에 영향 없음. \`JEV_B2_REAL_MODEL_NOT_RUN\` 상태 유지. 단순 fixture PASS를 "실제 종목 분석 완료"로 표현하지 않는다.
+
+**후속 (이번 단계 아님):** 권리가 확인된 특정 종목 입력으로 같은 Choice 계약의 실효성을 검증할 수 있을 때에만 기존 TypeSafe provider/카탈로그/1회 승인 경계에 연결한다. 증빙이 없어 유효한 실종목 입력이 존재하지 않는다면 **\`B2_REAL_INPUT_BLOCKED\`로 명시하고** 사용권 확인이 가능한 공급자·내부 저작 입력의 확보를 별도 작업으로 판단한다. 권한 미승인 데이터를 불법·무단 사용하거나 포장만 바꿔 넣지 않는다.
+
+**단일 현재상태:** JEV-A=WINDOWS_VISUAL_PARTIAL_PASS/후보 전환 실인수 미완; JEV-B read-only=CI_PASS/실제 모델 미실행; **JEV-B2=SPEC_READY / IMPLEMENTATION_NOT_STARTED**; GLOBAL-02-S2=OFFLINE_PASS/UN_LIVE_BLOCKED; JEV-C=NOT_STARTED.
