@@ -191,6 +191,7 @@ export type JevStockChoiceSaved = {
   completed_at: string | null;
   cost_usd: number | null;
   cost_unknown: boolean;
+  cost_basis_ref?: string | null;
   error_code: string | null;
   usage: {input_tokens: number; output_tokens: number} | null;
 };
@@ -217,7 +218,18 @@ export type JevStockChoicePreview = {
     review_identity: string;
     question_hash: string;
     model: string;
-    cost_status: "UNKNOWN";
+    cost_status: "UNKNOWN" | "ESTIMATED";
+    cost_policy?: {
+      price_ref: string;
+      price_verified_date: string;
+      usd_per_million_input_tokens: number;
+      estimated_token_allowance: number;
+      estimated_cost_ceiling_usd: number;
+      user_single_call_limit_usd: number;
+      wire_bytes: number;
+      provider_hard_billing_limit: false;
+      rate_is_estimate: true;
+    } | null;
     expires_at_utc: string;
   };
   approval_token: string | null;
@@ -243,6 +255,52 @@ export function executeJevStockChoice(payload: {
       body: JSON.stringify(payload),
     },
   );
+}
+
+/** B4 local first-party authored note; never a third-party market-data license. */
+export type JevStockChoiceAuthored = {
+  available: boolean;
+  status: "STORED" | "NOT_REGISTERED" | "B4_LOCAL_AUTHORING_DISABLED";
+  candidate?: {
+    capture_id: string; sample_index: number; market: string;
+    ticker: string; snapshot_hash: string; horizon_intent: string;
+  };
+  note_version?: number | null;
+  note?: string | null;
+  authored_at_utc?: string | null;
+  original_authorship_self_attested?: boolean;
+  third_party_transfer_approved?: false;
+  provider_calls?: 0;
+};
+
+export function getJevStockChoiceAuthored(captureId: string, sampleIndex: number) {
+  const params = new URLSearchParams({
+    capture_id: captureId, sample_index: String(sampleIndex),
+  });
+  return jevJson<JevStockChoiceAuthored>(
+    "/api/simulation/jev/stock-choice/authored?" + params.toString(),
+  );
+}
+
+export function saveJevStockChoiceAuthored(payload: {
+  capture_id: string; sample_index: number; note: string;
+  original_authorship_attested: true;
+  no_third_party_material_attested: true;
+  external_ai_transfer_attested: true;
+}) {
+  return jevJson<{status: string; note_version: number}>(
+    "/api/simulation/jev/stock-choice/authored", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export function verifyJevStockChoiceModels() {
+  return jevJson<{
+    status: "VERIFIED"; model: string; expires_in_seconds: number;
+    model_count: number; paid_model_calls: 0;
+  }>("/api/simulation/jev/stock-choice/models/verify", {method: "POST"});
 }
 
 export type JevManualReviewRequest = {
