@@ -18,6 +18,7 @@ from app.jev import (
     TypeSafeJevEvaluationCatalog,
     TypeSafeJevEvaluationCatalogError,
 )
+from app.jev.stock_choice_catalog import StockChoiceCatalog, StockChoiceStorageError
 from app.prospective import ProspectiveCatalogError, ProspectiveService
 from app.quotes.websocket_manager import quote_websocket_manager
 from app.watch import WatchCoordinator, WatchService
@@ -76,6 +77,14 @@ async def lifespan(_app: FastAPI):
         if exc.code not in {
             "JEV_TYPESAFE_MIGRATION_REQUIRED",
             "JEV_TYPESAFE_SCHEMA_UNSUPPORTED",
+        }:
+            raise
+
+    try:
+        StockChoiceCatalog(simulation_db).mark_pending_unknown_after_restart()
+    except StockChoiceStorageError as exc:
+        if exc.code not in {
+            "CHOICE_DB_NOT_FOUND", "CHOICE_MIGRATION_REQUIRED", "CHOICE_SCHEMA_UNSUPPORTED",
         }:
             raise
 
